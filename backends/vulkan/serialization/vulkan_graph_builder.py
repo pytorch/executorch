@@ -225,7 +225,12 @@ class VkGraphBuilder:
             if arg in self.node_to_value_ids:
                 return self.node_to_value_ids[arg]
             return self.create_node_value(arg)
-        elif isinstance(arg, NoneType):
+        elif (
+            isinstance(arg, NoneType)
+            or isinstance(arg, torch.device)
+            or isinstance(arg, torch.dtype)
+            or isinstance(arg, torch.layout)
+        ):
             return self.create_null_value()
         elif isinstance(arg, _ScalarType):
             return self.create_scalar_value(arg)

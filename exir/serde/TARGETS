@@ -3,6 +3,8 @@ load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 oncall("executorch")
 
 python_library(
+    # @autodeps-skip for some reason autodeps thinks this target
+    # needs to depend on exir:lib which it doesn't.
     name = "serialize",
     srcs = [
         "export_serialize.py",

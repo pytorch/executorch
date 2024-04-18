@@ -20,6 +20,9 @@
 
 #include "indexing_utils.h"
 
+$if DTYPE == "half":
+  #extension GL_EXT_shader_16bit_storage : require
+
 layout(std430) buffer;
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
@@ -52,20 +55,21 @@ void main() {
   const ivec4 buf_indices =
       base_index + ivec4(0, 1, 2, 3) * get_packed_stride(cpu_sizes.data);
 
-  SCALAR_T val_x = SCALAR_T(buffer_in.data[buf_indices.x]);
-  SCALAR_T val_y = SCALAR_T(buffer_in.data[buf_indices.y]);
-  SCALAR_T val_z = SCALAR_T(buffer_in.data[buf_indices.z]);
-  SCALAR_T val_w = SCALAR_T(buffer_in.data[buf_indices.w]);
-
-  VEC4_T texel = VEC4_T(val_x, val_y, val_z, val_w);
-
   const int packed_dim_size = get_packed_dim(cpu_sizes.data);
   int packed_idx = get_packed_dim(idx);
 
-  if (packed_idx + 3 >= packed_dim_size) {
-    ivec4 packed_ind = ivec4(packed_idx) + ivec4(0, 1, 2, 3);
-    VEC4_T valid_idx = VEC4_T(lessThan(packed_ind, ivec4(packed_dim_size)));
-    texel = texel * valid_idx;
+  VEC4_T texel = VEC4_T(0);
+  if (packed_idx < packed_dim_size) {
+    texel.x = SCALAR_T(buffer_in.data[buf_indices.x]);
+  }
+  if (packed_idx + 1 < packed_dim_size) {
+    texel.y = SCALAR_T(buffer_in.data[buf_indices.y]);
+  }
+  if (packed_idx + 2 < packed_dim_size) {
+    texel.z = SCALAR_T(buffer_in.data[buf_indices.z]);
+  }
+  if (packed_idx + 3 < packed_dim_size) {
+    texel.w = SCALAR_T(buffer_in.data[buf_indices.w]);
   }
 
   imageStore(image_out, ${get_pos[NDIM]("pos")}, texel);

@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// @lint-ignore-every CLANGTIDY clang-diagnostic-missing-field-initializers
+
 #include <executorch/backends/vulkan/runtime/api/Adapter.h>
 
 #include <bitset>
@@ -21,14 +23,32 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
     : handle(physical_device_handle),
       properties{},
       memory_properties{},
+      shader_16bit_storage{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES},
+      shader_8bit_storage{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES},
+      shader_float16_int8_types{
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR},
       queue_families{},
       num_compute_queues(0),
       has_unified_memory(false),
       has_timestamps(properties.limits.timestampComputeAndGraphics),
-      timestamp_period(properties.limits.timestampPeriod) {
+      timestamp_period(properties.limits.timestampPeriod),
+      extension_features(&shader_16bit_storage) {
   // Extract physical device properties
   vkGetPhysicalDeviceProperties(handle, &properties);
   vkGetPhysicalDeviceMemoryProperties(handle, &memory_properties);
+
+  VkPhysicalDeviceFeatures2 features2{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+
+  // Create linked list to query availability of extensions
+  features2.pNext = &shader_16bit_storage;
+  shader_16bit_storage.pNext = &shader_8bit_storage;
+  shader_8bit_storage.pNext = &shader_float16_int8_types;
+  shader_float16_int8_types.pNext = nullptr;
+
+  vkGetPhysicalDeviceFeatures2(handle, &features2);
 
   // Check if there are any memory types have both the HOST_VISIBLE and the
   // DEVICE_LOCAL property flags
@@ -140,6 +160,9 @@ VkDevice create_logical_device(
 #ifdef VK_KHR_portability_subset
       VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME,
 #endif /* VK_KHR_portability_subset */
+      VK_KHR_16BIT_STORAGE_EXTENSION_NAME,
+      VK_KHR_8BIT_STORAGE_EXTENSION_NAME,
+      VK_KHR_SHADER_FLOAT16_INT8_EXTENSION_NAME,
   };
 
   std::vector<const char*> enabled_device_extensions;
@@ -148,7 +171,7 @@ VkDevice create_logical_device(
       enabled_device_extensions,
       requested_device_extensions);
 
-  const VkDeviceCreateInfo device_create_info{
+  VkDeviceCreateInfo device_create_info{
       VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, // sType
       nullptr, // pNext
       0u, // flags
@@ -161,6 +184,8 @@ VkDevice create_logical_device(
       enabled_device_extensions.data(), // ppEnabledExtensionNames
       nullptr, // pEnabledFeatures
   };
+
+  device_create_info.pNext = physical_device.extension_features;
 
   VkDevice handle = nullptr;
   VK_CHECK(vkCreateDevice(
@@ -371,33 +396,53 @@ std::string Adapter::stringize() const {
   ss << "    deviceType:    " << device_type << std::endl;
   ss << "    deviceName:    " << properties.deviceName << std::endl;
 
-#define PRINT_LIMIT_PROP(name)                                         \
-  ss << "      " << std::left << std::setw(36) << #name << limits.name \
+#define PRINT_PROP(struct, name)                                       \
+  ss << "      " << std::left << std::setw(36) << #name << struct.name \
      << std::endl;
 
-#define PRINT_LIMIT_PROP_VEC3(name)                                       \
-  ss << "      " << std::left << std::setw(36) << #name << limits.name[0] \
-     << "," << limits.name[1] << "," << limits.name[2] << std::endl;
+#define PRINT_PROP_VEC3(struct, name)                                     \
+  ss << "      " << std::left << std::setw(36) << #name << struct.name[0] \
+     << "," << struct.name[1] << "," << struct.name[2] << std::endl;
 
   ss << "    Physical Device Limits {" << std::endl;
-  PRINT_LIMIT_PROP(maxImageDimension1D);
-  PRINT_LIMIT_PROP(maxImageDimension2D);
-  PRINT_LIMIT_PROP(maxImageDimension3D);
-  PRINT_LIMIT_PROP(maxTexelBufferElements);
-  PRINT_LIMIT_PROP(maxPushConstantsSize);
-  PRINT_LIMIT_PROP(maxMemoryAllocationCount);
-  PRINT_LIMIT_PROP(maxSamplerAllocationCount);
-  PRINT_LIMIT_PROP(maxComputeSharedMemorySize);
-  PRINT_LIMIT_PROP_VEC3(maxComputeWorkGroupCount);
-  PRINT_LIMIT_PROP(maxComputeWorkGroupInvocations);
-  PRINT_LIMIT_PROP_VEC3(maxComputeWorkGroupSize);
+  PRINT_PROP(limits, maxImageDimension1D);
+  PRINT_PROP(limits, maxImageDimension2D);
+  PRINT_PROP(limits, maxImageDimension3D);
+  PRINT_PROP(limits, maxTexelBufferElements);
+  PRINT_PROP(limits, maxPushConstantsSize);
+  PRINT_PROP(limits, maxMemoryAllocationCount);
+  PRINT_PROP(limits, maxSamplerAllocationCount);
+  PRINT_PROP(limits, maxComputeSharedMemorySize);
+  PRINT_PROP_VEC3(limits, maxComputeWorkGroupCount);
+  PRINT_PROP(limits, maxComputeWorkGroupInvocations);
+  PRINT_PROP_VEC3(limits, maxComputeWorkGroupSize);
   ss << "    }" << std::endl;
-  ss << "  }" << std::endl;
-  ;
+
+  ss << "    16bit Storage Features {" << std::endl;
+  PRINT_PROP(physical_device_.shader_16bit_storage, storageBuffer16BitAccess);
+  PRINT_PROP(
+      physical_device_.shader_16bit_storage,
+      uniformAndStorageBuffer16BitAccess);
+  PRINT_PROP(physical_device_.shader_16bit_storage, storagePushConstant16);
+  PRINT_PROP(physical_device_.shader_16bit_storage, storageInputOutput16);
+  ss << "    }" << std::endl;
+
+  ss << "    8bit Storage Features {" << std::endl;
+  PRINT_PROP(physical_device_.shader_8bit_storage, storageBuffer8BitAccess);
+  PRINT_PROP(
+      physical_device_.shader_8bit_storage, uniformAndStorageBuffer8BitAccess);
+  PRINT_PROP(physical_device_.shader_8bit_storage, storagePushConstant8);
+  ss << "    }" << std::endl;
+
+  ss << "    Shader 16bit and 8bit Features {" << std::endl;
+  PRINT_PROP(physical_device_.shader_float16_int8_types, shaderFloat16);
+  PRINT_PROP(physical_device_.shader_float16_int8_types, shaderInt8);
+  ss << "    }" << std::endl;
 
   const VkPhysicalDeviceMemoryProperties& mem_props =
       physical_device_.memory_properties;
 
+  ss << "  }" << std::endl;
   ss << "  Memory Info {" << std::endl;
   ss << "    Memory Types [" << std::endl;
   for (size_t i = 0; i < mem_props.memoryTypeCount; ++i) {
@@ -431,6 +476,9 @@ std::string Adapter::stringize() const {
   }
   ss << "  ]" << std::endl;
   ss << "}";
+
+#undef PRINT_PROP
+#undef PRINT_PROP_VEC3
 
   return ss.str();
 }

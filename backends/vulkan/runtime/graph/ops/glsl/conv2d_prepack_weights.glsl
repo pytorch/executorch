@@ -19,6 +19,9 @@
 
 #include "indexing_utils.h"
 
+$if DTYPE == "half":
+  #extension GL_EXT_shader_16bit_storage : require
+
 layout(std430) buffer;
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[2][DTYPE]} image_out;

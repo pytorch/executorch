@@ -33,14 +33,12 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.lowered_backend_module import (
     LoweredBackendModule as ExirLoweredBackendModule,
 )
-from executorch.exir.serde.export_serialize import SerializedArtifact
 from executorch.exir.serde.schema import (
     CompileSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
     SCHEMA_VERSION,
 )
 from torch._export.serde.schema import SchemaVersion
-from torch._export.serde.serialize import SerializeError
 from torch._export.serde.union import _Union
 from torch._export.verifier import load_verifier
 from torch.fx.experimental import symbolic_shapes
@@ -484,23 +482,22 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
 
         return res
 
-    def deserialize_graph_output(self, output: schema.Argument) -> torch.fx.Node:
-        if isinstance(output.value, schema.TensorArgument):
-            if output.value.name in self.state_dict:  # TODO(T157676982)
-                val = self.state_dict[output.value.name]
-                setattr(self.module, output.value.name, val)
-                node = self.graph.create_node(
-                    "get_attr",
-                    output.value.name,
-                    name=output.value.name,
-                )
-                node.meta = {"val": ""}
-                return node
-            return self.serialized_name_to_node[output.value.name]
-        elif isinstance(output.value, (schema.SymIntArgument, schema.SymBoolArgument)):
-            return self.serialized_name_to_node[output.value.as_name]
-        else:
-            raise SerializeError(f"Unable to deserialize output node {output}")
+    def deserialize_graph_output(
+        self, output: schema.Argument
+    ) -> Optional[Union[torch.fx.Node, int]]:
+        if (
+            output.type == "as_tensor" and output.value.name in self.state_dict
+        ):  # TODO(T157676982)
+            val = self.state_dict[output.value.name]
+            setattr(self.module, output.value.name, val)
+            node = self.graph.create_node(
+                "get_attr",
+                output.value.name,
+                name=output.value.name,
+            )
+            node.meta = {"val": ""}
+            return node
+        return super().deserialize_graph_output(output)
 
     # pyre-ignore
     def deserialize_alloc_inputs(self, serialized_inputs: List[schema.NamedArgument]):
@@ -682,7 +679,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             root=state_dict,
             graph=dummy_g,
             graph_signature=ep.ExportGraphSignature(input_specs=[], output_specs=[]),
-            state_dict={},  # TODO(T157676982)
+            state_dict=state_dict,  # TODO(T157676982)
             range_constraints=range_constraints,
             module_call_graph=module_call_graph,
             verifier=load_verifier(
@@ -767,7 +764,7 @@ def save(
     if not isinstance(ep_save, ep.ExportedProgram):
         raise TypeError(f"save() expects an ExportedProgram but got {type(ep)}")
 
-    artifact: SerializedArtifact = serialize(ep_save, opset_version)
+    artifact: export_serialize.SerializedArtifact = serialize(ep_save, opset_version)
 
     if isinstance(f, (str, os.PathLike)):
         f = os.fspath(f)
@@ -838,10 +835,12 @@ def load(
         assert serialized_exported_program is not None
         assert serialized_state_dict is not None
         assert serialized_constants is not None
-        artifact: SerializedArtifact = SerializedArtifact(
-            serialized_exported_program,
-            serialized_state_dict,
-            serialized_constants,
+        artifact: export_serialize.SerializedArtifact = (
+            export_serialize.SerializedArtifact(
+                serialized_exported_program,
+                serialized_state_dict,
+                serialized_constants,
+            )
         )
 
         # Deserialize ExportedProgram

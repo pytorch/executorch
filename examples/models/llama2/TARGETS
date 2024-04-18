@@ -42,7 +42,6 @@ runtime.python_library(
         "//caffe2:torch",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models/llama2:llama_transformer",
-        "//executorch/examples/models/llama2/ops:quantized_aot_lib",
     ],
 )
 

@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from dataclasses import dataclass
 from typing import Any, List
 
 from torchgen.api import cpp
@@ -18,21 +17,28 @@ from torchgen.model import Argument, NativeFunction
 AT_INT_ARRAY_REF = "at::IntArrayRef"
 AT_SCALAR = "at::Scalar"
 AT_TENSOR = "at::Tensor"
-AT_TENSOR_OPT = "::std::optional<at::Tensor>"
 BOOL = "bool"
+DOUBLE = "double"
 INT = "int64_t"
-TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor>"
+OPT_AT_TENSOR = "::std::optional<at::Tensor>"
+OPT_BOOL = "::std::optional<bool>"
+OPT_DEVICE = "::std::optional<at::Device>"
+OPT_LAYOUT = "::std::optional<at::Layout>"
+OPT_SCALARTYPE = "::std::optional<at::ScalarType>"
+TWO_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor>"
+THREE_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor,at::Tensor>"
 
 ###########################
 ## Test Suite definition ##
 ###########################
 
 
-@dataclass
 class TestSuite:
-    input_cases: List[Any]
-    prepacked_args = []
-    requires_prepack = False
+    def __init__(self, input_cases: List[Any]):
+        self.input_cases: List[Any] = input_cases
+        self.prepacked_args: List[str] = []
+        self.requires_prepack: bool = False
+        self.dtypes: List[str] = ["at::kFloat", "at::kHalf"]
 
     def supports_prepack(self):
         return len(self.prepacked_args) > 0
@@ -118,7 +124,7 @@ class TestSuiteGen:
 
         if cpp_type == AT_TENSOR:
             ret_str += f"make_rand_tensor({init_list_str(data)}, test_dtype);"
-        elif cpp_type == AT_TENSOR_OPT:
+        elif cpp_type == OPT_AT_TENSOR:
             if str(data) == "None":
                 ret_str += "std::nullopt;"
             else:
@@ -131,6 +137,15 @@ class TestSuiteGen:
             ret_str += f"{str(data).lower()};"
         elif cpp_type == INT:
             ret_str += f"{str(data).lower()};"
+        elif cpp_type == DOUBLE:
+            ret_str += f"{str(data).lower()};"
+        elif (
+            cpp_type == OPT_SCALARTYPE
+            or cpp_type == OPT_LAYOUT
+            or cpp_type == OPT_DEVICE
+            or cpp_type == OPT_BOOL
+        ):
+            ret_str += "std::nullopt;"
         else:
             raise RuntimeError(f"Unsupported cpp type {cpp_type}")
         return ret_str + "\n"
@@ -203,6 +218,25 @@ at::Tensor make_rand_tensor(
     return at::rand(sizes, at::device(at::kCPU).dtype(dtype)) * (high - low) + low;
 }}
 
+
+at::Tensor make_seq_tensor(
+    std::vector<int64_t> sizes,
+      at::ScalarType dtype = at::kFloat) {{
+  int64_t n = 1;
+  for (auto size: sizes) {{
+    n *= size;
+  }}
+
+  std::vector<float> values(n);
+  for (int i=0;i<n;i++) {{
+    values[i] = (float) i;
+  }}
+
+  // from_blob doesn't take ownership of data. Hence must create a copy as
+  // "values" will go out of scope.
+  return at::from_blob(values.data(), sizes, dtype).detach().clone();
+}}
+
 {test_suites_cpp}
 """
 
@@ -224,6 +258,6 @@ class CppTestFileGen:
     def generate_test_suites_cpp(self) -> str:
         return "\n".join([h.generate_suite_cpp() for h in self.suites_gens])
 
-    def add_suite(self, f: NativeFunction, test_suite: TestSuite) -> None:
-        suites_gen = TestSuiteGen(f, test_suite)
+    def add_suite(self, op_reg_name: str, f: NativeFunction, all_input_cases) -> None:
+        suites_gen = TestSuiteGen(f, all_input_cases)
         self.suites_gens.append(suites_gen)
