@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
-from typing import Callable, List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import torch
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
@@ -15,6 +15,7 @@ from executorch.exir.passes.replace_aten_with_edge_pass import (
 )
 from torch import fx
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib
+from torch.library import impl, impl_abstract
 
 
 __all__ = [
@@ -33,6 +34,143 @@ quantized_decomposed_lib.define(
     "embedding_byte.dtype(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
     "int weight_quant_min, int weight_quant_max, Tensor indices, *, ScalarType? dtype=None) -> Tensor",
 )
+
+quantized_decomposed_lib.define(
+    "embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "int weight_quant_min, int weight_quant_max, Tensor indices, *, Tensor(a!) out) -> Tensor(a!)",
+)
+
+quantized_decomposed_lib.define(
+    "embedding_byte.dtype_out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "int weight_quant_min, int weight_quant_max, Tensor indices, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
+)
+
+
+def embedding_byte_weight_checks(weight, weight_scales, weight_zero_points):
+    assert weight.dtype in [
+        torch.int8,
+        torch.uint8,
+    ], f"Expecting weights to be of dtype in [torch.int8, torch.uint8], but got {weight.dtype}"
+    assert (
+        weight.dim() == 2
+    ), f"Expecting weight tensor to have dim()==2, but found {weight.dim()}"
+
+    assert weight_scales.dtype in [
+        torch.float16,
+        torch.float32,
+    ], f"Expecting weight_scales to be of dtype in [torch.float16, torch.float32], but got {weight_scales.dtype}"
+    assert (
+        weight_scales.dim() == 1 or weight_scales.dim() == 2
+    ), f"Expecting weight_scales tensor to have rank 1 or 2, but found {weight_scales.dim()}"
+    assert weight_scales.size(0) == weight.size(
+        0
+    ), f"Expecting weight and scale tensor to have same number of rows, but found {weight.size()} and {weight_scales.size()}"
+
+    assert (
+        weight_zero_points is None or weight_zero_points.dtype == weight_scales.dtype
+    ), "Expecting weight_zero_points to be None or have same dtype as weight_scales"
+    assert (
+        weight_zero_points is None or weight_zero_points.dim() == 1
+    ), f"Expecting weight_zero_points tensor to be None or have dim()==1, but found {weight_zero_points.dim()}"
+    assert weight_zero_points is None or weight_zero_points.size(0) == weight.size(
+        0
+    ), f"Expecting weight_zero_points tensor to be None or have same number of rows as weights, but found {weight.size()} and {weight_zero_points.size()}"
+
+
+@impl(quantized_decomposed_lib, "embedding_byte", "CompositeExplicitAutograd")
+def embedding_byte(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
+) -> torch.Tensor:
+    embedding_byte_weight_checks(weight, weight_scales, weight_zero_points)
+    group_size = weight.size(1) // (
+        weight_scales.size(1) if weight_scales.dim() == 2 else 1
+    )
+    weight = torch.ops.quantized_decomposed.dequantize_per_channel_group.default(
+        weight,
+        weight_scales,
+        weight_zero_points,
+        weight_quant_min,
+        weight_quant_max,
+        weight.dtype,
+        group_size,
+        weight_scales.dtype,
+    )
+    return torch.ops.aten.embedding.default(weight, indices)
+
+
+@impl_abstract("quantized_decomposed::embedding_byte.out")
+def embedding_byte_out_meta(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    return embedding_byte(
+        weight,
+        weight_scales,
+        weight_zero_points,
+        weight_quant_min,
+        weight_quant_max,
+        indices,
+    )
+
+
+@impl(quantized_decomposed_lib, "embedding_byte.dtype", "CompositeExplicitAutograd")
+def embedding_byte_dtype(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
+    dtype: Optional[torch.dtype],
+) -> torch.Tensor:
+    embedding_byte_weight_checks(weight, weight_scales, weight_zero_points)
+    group_size = weight.size(1) // (
+        weight_scales.size(1) if weight_scales.dim() == 2 else 1
+    )
+    weight = torch.ops.quantized_decomposed.dequantize_per_channel_group.default(
+        weight,
+        weight_scales,
+        weight_zero_points,
+        weight_quant_min,
+        weight_quant_max,
+        weight.dtype,
+        group_size,
+        dtype,
+    )
+    return torch.ops.aten.embedding.default(weight, indices)
+
+
+@impl_abstract("quantized_decomposed::embedding_byte.dtype_out")
+def embedding_byte_dtype_out_meta(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
+    dtype: Optional[torch.dtype],
+    out: torch.Tensor,
+) -> torch.Tensor:
+    return embedding_byte_dtype(
+        weight,
+        weight_scales,
+        weight_zero_points,
+        weight_quant_min,
+        weight_quant_max,
+        indices,
+        dtype,
+    )
+
 
 quantized_decomposed_lib.define(
     "mixed_mm(Tensor input, Tensor weight, Tensor weight_scales, Tensor? weight_zero_points) -> Tensor",
