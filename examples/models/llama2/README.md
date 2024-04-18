@@ -263,8 +263,8 @@ This example tries to reuse the Python code, with minimal modifications to make 
 3. No dependencies on fairscale. The ColumnParallelLinear, ParallelEmbedding and training are not needed and supported in ExecuTorch.
 
 
-# Clean
-To clean your build:
+# Common Issues and Mitigations: 
+- To clean your build:
 ```
 git clean -xfd
 pip uninstall executorch
@@ -272,3 +272,5 @@ pip uninstall executorch
 
 rm -rf cmake-out
 ```
+- If you encounter `pthread` related issues during link time, add `pthread` in `target_link_libraries` in `CMakeLists.txt`
+
