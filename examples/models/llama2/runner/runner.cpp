@@ -10,10 +10,11 @@
 // The module takes in a string as input and emits a string as output.
 
 #include <executorch/examples/models/llama2/runner/runner.h>
-#include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
 #if defined(ET_USE_TIKTOKEN)
 #include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
-#endif
+#else /* BPE */
+#include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
+#endif /* ET_USE_TIKTOKEN*/
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
