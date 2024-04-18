@@ -22,6 +22,8 @@
 #import <iostream>
 #import <memory>
 #import <model_metadata.h>
+#import <multiarray.h>
+#import <objc_array_util.h>
 #import <optional>
 #import <os/lock.h>
 #import <serde_json.h>
@@ -98,32 +100,60 @@ MLPredictionOptions *get_prediction_options(NSArray<MLMultiArray *> *outputs,
     return options;
 }
 
-BOOL copy(MLMultiArray *src, MLMultiArray *dst, NSError * __autoreleasing *error) {
-    if (![src.shape isEqualToArray:dst.shape]) {
-        ETCoreMLLogErrorAndSetNSError(error, 0, "%@: Model is broken", NSStringFromClass(ETCoreMLModelManager.class));
-        return NO;
-    }
+void copy(MLMultiArray *src, MLMultiArray *dst) {
     if (::is_backed_by_same_buffer(src, dst)) {
-        return YES;
+        return;
     }
-    @autoreleasepool {
-        [src copyInto:dst];
-    }
-    return YES;
+    
+    [src copyInto:dst];
 }
 
-BOOL set_outputs(NSArray<MLMultiArray *> *outputs,
-                 NSArray<MLMultiArray *> *model_outputs,
-                 NSError * __autoreleasing *error) {
+void set_outputs(NSArray<MLMultiArray *> *outputs, NSArray<MLMultiArray *> *model_outputs) {
     NSEnumerator<MLMultiArray *> *enumerator = [model_outputs objectEnumerator];
     for (MLMultiArray *output in outputs) {
         MLMultiArray *model_output = [enumerator nextObject];
-        if (!::copy(output, model_output, error)) {
-            return NO;
+        ::copy(model_output, output);
+    }
+}
+
+std::optional<MultiArray::DataType> get_data_type(MLMultiArrayDataType data_type) {
+    switch (data_type) {
+        case MLMultiArrayDataTypeFloat16: {
+            return MultiArray::DataType::Float16;
+        }
+        case MLMultiArrayDataTypeFloat32: {
+            return MultiArray::DataType::Float32;
+        }
+        case MLMultiArrayDataTypeFloat64: {
+            return MultiArray::DataType::Float64;
+        }
+        case MLMultiArrayDataTypeInt32: {
+            return MultiArray::DataType::Int32;
+        }
+        default: {
+            return std::nullopt;
         }
     }
-    
-    return YES;
+}
+
+void copy(MLMultiArray *src, executorchcoreml::MultiArray& dst) {
+    [src getBytesWithHandler:^(const void * _Nonnull bytes, NSInteger size) {
+        if (bytes == dst.data()) {
+            return;
+        }
+        
+        MultiArray::MemoryLayout src_layout(get_data_type(src.dataType).value(), to_vector<size_t>(src.shape), to_vector<ssize_t>(src.strides));
+        MultiArray(const_cast<void *>(bytes), std::move(src_layout)).copy(dst);
+    }];
+}
+
+void set_outputs(std::vector<executorchcoreml::MultiArray>& outputs,
+                 NSArray<MLMultiArray *> *model_outputs) {
+    NSEnumerator<MLMultiArray *> *enumerator = [model_outputs objectEnumerator];
+    for (auto& output : outputs) {
+        MLMultiArray *model_output = [enumerator nextObject];
+        ::copy(model_output, output);
+    }
 }
 
 NSData * _Nullable get_file_data(const inmemoryfs::InMemoryFileSystem *inMemoryFS,
@@ -313,6 +343,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation
     
     return result;
 }
+
 #endif
 } //namespace
 
@@ -467,7 +498,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation
     return [[ETCoreMLModelAnalyzer alloc] initWithCompiledModelAsset:compiledModelAsset
                                                           modelAsset:modelAsset
                                                             metadata:metadata
-                                       operationPathToDebugSymbolMap: operation_path_to_symbol_name_map
+                                       operationPathToDebugSymbolMap:operation_path_to_symbol_name_map
                                                        configuration:configuration
                                                         assetManager:self.assetManager
                                                                error:error];
@@ -641,6 +672,48 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation
     os_unfair_lock_unlock(&_lock);
 }
 
+- (nullable NSArray<MLMultiArray *> *)executeModelUsingExecutor:(id<ETCoreMLModelExecutor>)executor
+                                                         inputs:(NSArray<MLMultiArray *> *)inputs
+                                                 outputBackings:(NSArray<MLMultiArray *> *)outputBackings
+                                                 loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
+                                                    eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
+                                                          error:(NSError * __autoreleasing *)error {
+    NSError *localError = nil;
+    ETCoreMLModel *model = executor.model;
+    MLPredictionOptions *predictionOptions = ::get_prediction_options(outputBackings, model.orderedOutputNames, error);
+    if (!predictionOptions) {
+        return nil;
+    }
+    
+    id<MLFeatureProvider> inputFeatures = ::get_feature_provider(inputs, model.orderedInputNames, error);
+    if (!inputFeatures) {
+        return nil;
+    }
+    
+    NSArray<MLMultiArray *> *modelOutputs = [executor executeModelWithInputs:inputFeatures
+                                                           predictionOptions:predictionOptions
+                                                             loggingOptions:loggingOptions
+                                                                 eventLogger:eventLogger
+                                                                       error:&localError];
+    // Try without output backings.
+    if (!modelOutputs && predictionOptions.outputBackings.count > 0) {
+        localError = nil;
+        executor.ignoreOutputBackings = YES;
+    }
+    
+    modelOutputs = [executor executeModelWithInputs:inputFeatures
+                                  predictionOptions:predictionOptions
+                                     loggingOptions:loggingOptions
+                                        eventLogger:eventLogger
+                                              error:&localError];
+    
+    if (error) {
+        *error = localError;
+    }
+    
+    return modelOutputs;
+}
+
 - (BOOL)executeModelWithHandle:(ModelHandle *)handle
                           args:(NSArray<MLMultiArray *> *)args
                 loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
@@ -659,33 +732,91 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation
     if (args.count != model.orderedInputNames.count + model.orderedOutputNames.count) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedModel,
-                                      "%@: Model is invalid.",
+                                      "%@: Model is invalid, expected args count to be %lu but got %lu.",
+                                      NSStringFromClass(self.class),
+                                      static_cast<unsigned long>(model.orderedInputNames.count + model.orderedOutputNames.count),
+                                      args.count);
+        return NO;
+    }
+    @autoreleasepool {
+        NSArray<MLMultiArray *> *inputs = [args subarrayWithRange:NSMakeRange(0, model.orderedInputNames.count)];
+        NSArray<MLMultiArray *> *outputs = [args subarrayWithRange:NSMakeRange(model.orderedInputNames.count, args.count - model.orderedInputNames.count)];
+        NSArray<MLMultiArray *> *outputBackings = @[];
+        if (executor.ignoreOutputBackings == NO) {
+            outputBackings = outputs;
+        }
+        
+        NSArray<MLMultiArray *> *modelOutputs = [self executeModelUsingExecutor:executor
+                                                                         inputs:inputs
+                                                                 outputBackings:outputBackings
+                                                                 loggingOptions:loggingOptions
+                                                                    eventLogger:eventLogger
+                                                                          error:error];
+        if (!modelOutputs) {
+            return NO;
+        }
+        
+        ::set_outputs(outputs, modelOutputs);
+    }
+    
+    return YES;
+}
+
+- (BOOL)executeModelWithHandle:(ModelHandle *)handle
+                       argsVec:(const std::vector<executorchcoreml::MultiArray>&)argsVec
+                loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
+                   eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
+                         error:(NSError * __autoreleasing *)error {
+    id<ETCoreMLModelExecutor> executor = [self executorWithHandle:handle];
+    if (!executor) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      0,
+                                      "%@: Model is already unloaded.",
                                       NSStringFromClass(self.class));
         return NO;
     }
     
-    NSArray<MLMultiArray *> *inputs = [args subarrayWithRange:NSMakeRange(0, model.orderedInputNames.count)];
-    NSArray<MLMultiArray *> *outputs = [args subarrayWithRange:NSMakeRange(model.orderedInputNames.count, args.count - model.orderedInputNames.count)];
-    id<MLFeatureProvider> inputFeatures = ::get_feature_provider(inputs, model.orderedInputNames, error);
-    if (!inputFeatures) {
+    ETCoreMLModel *model = executor.model;
+    if (argsVec.size() != model.orderedInputNames.count + model.orderedOutputNames.count) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "%@: Model is invalid, expected args count to be %lu but got %lu.",
+                                      NSStringFromClass(self.class),
+                                      static_cast<unsigned long>(model.orderedInputNames.count + model.orderedOutputNames.count),
+                                      argsVec.size());
         return NO;
     }
     
-    MLPredictionOptions *predictionOptions = ::get_prediction_options(outputs, model.orderedOutputNames, error);
-    if (!predictionOptions) {
-        return NO;
+    std::vector<executorchcoreml::MultiArray> inputArgs(argsVec.begin(), argsVec.begin() + model.orderedInputNames.count);
+    std::vector<executorchcoreml::MultiArray> outputArgs(argsVec.begin() + model.orderedInputNames.count, argsVec.end());
+    @autoreleasepool {
+        NSArray<MLMultiArray *> *inputs = [model prepareInputs:inputArgs error:error];
+        if (!inputs) {
+            return NO;
+        }
+        
+        NSArray<MLMultiArray *> *outputBackings = @[];
+        if (executor.ignoreOutputBackings == NO) {
+            outputBackings = [model prepareOutputBackings:outputArgs error:error];
+        }
+        
+        if (!outputBackings) {
+            return NO;
+        }
+        
+        NSArray<MLMultiArray *> *modelOutputs = [self executeModelUsingExecutor:executor
+                                                                         inputs:inputs
+                                                                 outputBackings:outputBackings
+                                                                 loggingOptions:loggingOptions
+                                                                    eventLogger:eventLogger
+                                                                          error:error];
+        if (!modelOutputs) {
+            return NO;
+        }
+        
+        ::set_outputs(outputArgs, modelOutputs);
+        return YES;
     }
-    
-    NSArray<MLMultiArray *> *modelOutputs = [executor executeModelWithInputs:inputFeatures
-                                                           predictionOptions:predictionOptions
-                                                             loggingOptions:loggingOptions
-                                                                 eventLogger:eventLogger
-                                                                       error:error];
-    if (!outputs) {
-        return NO;
-    }
-    
-    return ::set_outputs(outputs, modelOutputs, error);
 }
 
 - (BOOL)unloadModelWithHandle:(ModelHandle *)handle {
