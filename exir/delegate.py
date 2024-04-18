@@ -102,7 +102,7 @@ def call_delegate_autograd(lowered_module, *args):
                         var.requires_grad = True
                 return var
 
-            return pytree.tree_map(fake_requires_grad, res)
+            return pytree.tree_map_only(torch.Tensor, fake_requires_grad, res)
 
         return res
 

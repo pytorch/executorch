@@ -28,6 +28,9 @@ __attribute__((objc_subclassing_restricted))
 /// The model.
 @property (readonly, strong, nonatomic) ETCoreMLModel* model;
 
+/// If set to `YES` then output backing are ignored.
+@property (readwrite, atomic) BOOL ignoreOutputBackings;
+
 @end
 
 NS_ASSUME_NONNULL_END

@@ -90,14 +90,28 @@ def define_variable(name: str) -> str:
 
 
 def get_buffer_scalar_type(dtype: str) -> str:
-    # TODO(ssjia): use float16_t for half types
     if dtype == "half":
-        return "float"
-    # TODO(ssjia): use int8_t for int8 types
+        return "float16_t"
     elif dtype[-1] == "8":
-        return dtype[:-1]
+        return dtype + "_t"
 
     return dtype
+
+
+def get_buffer_gvec_type(dtype: str, n: int) -> str:
+    if n == 1:
+        return get_buffer_scalar_type(dtype)
+
+    if dtype == "float":
+        return f"vec{n}"
+    elif dtype == "half":
+        return f"f16vec{n}"
+    elif dtype == "int8":
+        return f"i8vec{n}"
+    elif dtype == "uint8":
+        return f"u8vec{n}"
+
+    raise AssertionError(f"Invalid dtype: {dtype}")
 
 
 def get_texel_type(dtype: str) -> str:
@@ -134,6 +148,7 @@ UTILITY_FNS: Dict[str, Any] = {
         2: lambda pos: f"{pos}.xy",
     },
     "buffer_scalar_type": get_buffer_scalar_type,
+    "buffer_gvec_type": get_buffer_gvec_type,
     "texel_type": get_texel_type,
     "gvec_type": get_gvec_type,
     "texel_component_type": get_texel_component_type,
@@ -456,7 +471,7 @@ class SPVGenerator:
                     glsl_out_path,
                     "-o",
                     spv_out_path,
-                    "--target-env=vulkan1.0",
+                    "--target-env=vulkan1.1",
                     "-Werror",
                 ] + [
                     arg

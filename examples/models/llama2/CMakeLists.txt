@@ -21,7 +21,7 @@ project(llama_runner)
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
 
-option(EXECUTORCH_BUILD_RE2 "Build RE2" OFF)
+option(EXECUTORCH_USE_TIKTOKEN "Use Tiktoken as a tokenizer" OFF)
 
 include(CMakeDependentOption)
 #
@@ -88,9 +88,10 @@ endif()
 
 # llama_runner library
 add_subdirectory(runner)
-if(EXECUTORCH_BUILD_RE2)
+if(EXECUTORCH_USE_TIKTOKEN)
   # find RE2 for tokenizer
   set(ABSL_ENABLE_INSTALL ON)
+  set(ABSL_PROPAGATE_CXX_STD ON)
   set(_pic_flag
     ${CMAKE_POSITION_INDEPENDENT_CODE})
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -117,6 +118,10 @@ else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
   target_link_options_shared_lib(portable_ops_lib)
 endif()
+
+# quantized_ops_lib: Register quantized op kernels into the runtime
+target_link_options_shared_lib(quantized_ops_lib)
+list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
 if(EXECUTORCH_BUILD_CUSTOM)
   target_link_options_shared_lib(custom_ops)

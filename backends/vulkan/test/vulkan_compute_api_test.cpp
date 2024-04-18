@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include <c10/util/Half.h>
+
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
@@ -37,11 +39,94 @@ class VulkanComputeAPITest : public ::testing::Test {
   }
 };
 
+TEST_F(VulkanComputeAPITest, print_adapter) {
+  std::cout << *(api::context()->adapter_ptr()) << std::endl;
+}
+
 TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {
   // Try to get shader from custom shader library
   const api::ShaderInfo& kernel = VK_KERNEL(test_shader);
 
   ASSERT_TRUE(kernel.kernel_name == "test_shader");
+}
+
+TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
+  // Check equality operator
+  ASSERT_TRUE(SV(1.5f) == SV(1.5f));
+  ASSERT_FALSE(SV(15.0f) == SV(15));
+  ASSERT_FALSE(SV(1u) == SV(true));
+
+  size_t sv_size = sizeof(api::SpecVar);
+
+  api::SpecVarList spec_vars = {};
+  ASSERT_TRUE(spec_vars.size() == 0);
+  spec_vars = {SV(1.1f), SV(32), SV(45)};
+  ASSERT_TRUE(spec_vars.size() == 3);
+  api::SpecVarList spec_vars_other = {SV(2.6f), SV(true), SV(78u), SV(5.5f)};
+  spec_vars.append(spec_vars_other);
+  ASSERT_TRUE(spec_vars.size() == 7);
+
+  // Check validity of the data
+  const api::SpecVar* data = spec_vars.data();
+  ASSERT_TRUE(*(reinterpret_cast<const float*>(data + 3)) == 2.6f);
+  ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(data + 1)) == 32);
+  ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(data + 5)) == 78u);
+
+  // Check validity of the map entries
+  std::vector<VkSpecializationMapEntry> entries =
+      spec_vars.generate_map_entries();
+
+  for (size_t i = 0; i < spec_vars.size(); ++i) {
+    ASSERT_TRUE(entries[i].constantID == i);
+    ASSERT_TRUE(entries[i].offset == sv_size * i);
+    if (i != 4) {
+      ASSERT_TRUE(entries[i].size == 4);
+    } else {
+      ASSERT_TRUE(entries[i].size == 1);
+    }
+  }
+
+  // Check copy
+  api::SpecVarList spec_vars_copy(spec_vars);
+  ASSERT_TRUE(spec_vars_copy.size() == 7);
+
+  // Check validity of the copied data
+  const api::SpecVar* copy_data = spec_vars_copy.data();
+  ASSERT_TRUE(*(reinterpret_cast<const bool*>(copy_data + 4)) == true);
+  ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(copy_data + 2)) == 45);
+  ASSERT_TRUE(*(reinterpret_cast<const float*>(copy_data + 6)) == 5.5f);
+}
+
+TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
+  size_t len = 16;
+  api::StorageBuffer buffer(api::context(), api::kFloat, len);
+
+  float scale = 3.0f;
+  float offset = 1.5f;
+
+  {
+    api::UniformParamsBuffer params(api::context(), int32_t(len));
+    uint32_t len_div4 = api::utils::div_up(uint32_t(len), uint32_t(4));
+    api::PipelineBarrier pipeline_barrier{};
+    api::context()->submit_compute_job(
+        VK_KERNEL(fill_buffer),
+        pipeline_barrier,
+        {64, 1, 1},
+        {len_div4, 1, 1},
+        {SV(scale), SV(offset)},
+        VK_NULL_HANDLE,
+        buffer.buffer(),
+        params.buffer());
+  }
+
+  submit_to_gpu();
+
+  std::vector<float> data(len);
+  copy_staging_to_ptr(buffer, data.data(), buffer.nbytes());
+
+  for (size_t i = 0; i < len; ++i) {
+    CHECK_VALUE(data, i, scale * i + offset);
+  }
 }
 
 TEST_F(VulkanComputeAPITest, update_params_between_submit) {
@@ -68,11 +153,13 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
 
   {
     api::PipelineBarrier pipeline_barrier{};
+    api::SpecVarList specialization_constants = {};
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
         {4, 4, 4},
         {4, 4, 4},
+        specialization_constants,
         VK_NULL_HANDLE,
         a.image(
             pipeline_barrier,
@@ -97,6 +184,74 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
 
   submit_to_gpu();
   check_staging_buffer(staging_buffer, 4.0f);
+}
+
+template <typename T, api::ScalarType dtype>
+void test_storage_buffer_type(const size_t len) {
+  api::StorageBuffer buffer(api::context(), dtype, len);
+
+  std::string kernel_name("idx_fill_buffer");
+  switch (dtype) {
+    case api::kFloat:
+      kernel_name += "_float";
+      break;
+    case api::kHalf:
+      kernel_name += "_half";
+      break;
+    case api::kQInt8:
+      kernel_name += "_int8";
+      break;
+    case api::kQUInt8:
+      kernel_name += "_uint8";
+      break;
+    default:
+      throw std::runtime_error("Unsupported dtype");
+      break;
+  }
+
+  api::UniformParamsBuffer params(api::context(), int32_t(len));
+
+  {
+    uint32_t len_div4 = api::utils::div_up(uint32_t(len), uint32_t(4));
+    api::PipelineBarrier pipeline_barrier{};
+    api::SpecVarList specialization_constants = {};
+    api::context()->submit_compute_job(
+        VK_KERNEL_FROM_STR(kernel_name),
+        pipeline_barrier,
+        {64, 1, 1},
+        {len_div4, 1, 1},
+        specialization_constants,
+        VK_NULL_HANDLE,
+        buffer.buffer(),
+        params.buffer());
+  }
+
+  submit_to_gpu();
+
+  std::vector<T> data(len);
+  copy_staging_to_ptr(buffer, data.data(), buffer.nbytes());
+
+  for (size_t i = 0; i < len; ++i) {
+    CHECK_VALUE(data, i, T(i));
+  }
+}
+
+TEST_F(VulkanComputeAPITest, test_buffer_float) {
+  test_storage_buffer_type<float, api::kFloat>(16);
+}
+
+TEST_F(VulkanComputeAPITest, test_buffer_float16) {
+  if (!api::context()->adapter_ptr()->has_full_float16_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_storage_buffer_type<c10::Half, api::kHalf>(16);
+}
+
+TEST_F(VulkanComputeAPITest, test_buffer_int8) {
+  if (!api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_storage_buffer_type<int8_t, api::kQInt8>(16);
 }
 
 TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
@@ -743,8 +898,12 @@ void run_from_gpu_test(
         api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     api::ScalarType dtype = api::kFloat,
     api::StorageType storage_type = api::StorageType::TEXTURE_3D) {
+  if (dtype == api::kHalf &&
+      !api::context()->adapter_ptr()->has_16bit_storage()) {
+    return;
+  }
   vTensor vten =
-      vTensor(api::context(), sizes, api::kFloat, storage_type, memory_layout);
+      vTensor(api::context(), sizes, dtype, storage_type, memory_layout);
 
   std::string kernel_name("idx_fill_texture");
   add_memory_layout_suffix(kernel_name, vten);
@@ -752,11 +911,13 @@ void run_from_gpu_test(
 
   {
     api::PipelineBarrier pipeline_barrier{};
+    api::SpecVarList specialization_constants = {};
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
         vten.virtual_extents(),
         {4, 4, 4},
+        specialization_constants,
         VK_NULL_HANDLE,
         vten.image(
             pipeline_barrier,
@@ -766,16 +927,14 @@ void run_from_gpu_test(
         vten.cpu_sizes_ubo()->buffer());
   }
 
-  api::StorageBuffer staging_buffer(
-      api::context(), api::kFloat, vten.gpu_numel());
+  api::StorageBuffer staging_buffer(api::context(), dtype, vten.gpu_numel());
 
   record_image_to_nchw_op(api::context(), vten, staging_buffer.buffer());
 
   submit_to_gpu();
 
   std::vector<T> data_out(staging_buffer.numel());
-  copy_staging_to_ptr(
-      staging_buffer, data_out.data(), sizeof(float) * staging_buffer.numel());
+  copy_staging_to_ptr(staging_buffer, data_out.data(), staging_buffer.nbytes());
 
   for (int i = 0; i < vten.numel(); i++) {
     CHECK_VALUE(data_out, i, i);
@@ -789,12 +948,16 @@ void run_to_gpu_test(
         api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     api::ScalarType dtype = api::kFloat,
     api::StorageType storage_type = api::StorageType::TEXTURE_3D) {
+  if (dtype == api::kHalf &&
+      !api::context()->adapter_ptr()->has_16bit_storage()) {
+    return;
+  }
+
   vTensor vten =
       vTensor(api::context(), sizes, api::kFloat, storage_type, memory_layout);
 
   // Create and fill input staging buffer
-  api::StorageBuffer staging_buffer_in(
-      api::context(), api::kFloat, vten.gpu_numel());
+  api::StorageBuffer staging_buffer_in(api::context(), dtype, vten.gpu_numel());
 
   std::vector<T> data_in(staging_buffer_in.numel());
   for (int i = 0; i < staging_buffer_in.numel(); i++) {
@@ -804,7 +967,7 @@ void run_to_gpu_test(
 
   // Output staging buffer
   api::StorageBuffer staging_buffer_out(
-      api::context(), api::kFloat, vten.gpu_numel());
+      api::context(), dtype, vten.gpu_numel());
 
   // Copy data in and out of the tensor
   record_nchw_to_image_op(api::context(), staging_buffer_in.buffer(), vten);
@@ -816,9 +979,7 @@ void run_to_gpu_test(
   // Extract data from output staging buffer
   std::vector<T> data_out(staging_buffer_out.numel());
   copy_staging_to_ptr(
-      staging_buffer_out,
-      data_out.data(),
-      sizeof(float) * staging_buffer_out.numel());
+      staging_buffer_out, data_out.data(), staging_buffer_out.nbytes());
 
   // All indices should be equal to the input data
   for (int i = 0; i < vten.numel(); i++) {
@@ -871,7 +1032,7 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
 
   for (auto& sizes : to_test) {
     RUN_TESTS(float, api::kFloat)
-    RUN_TESTS(float, api::kHalf)
+    RUN_TESTS(c10::Half, api::kHalf)
   }
 #undef RUN_TESTS
 }

@@ -159,6 +159,28 @@ class TestSerde(unittest.TestCase):
         edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, model_inputs)
 
+    def test_model_with_weights(self) -> None:
+        class LinearAdd(nn.Module):
+            def __init__(self, M: int, N: int):
+                super().__init__()
+                self.M = M
+                self.N = N
+                self.linear = torch.nn.Linear(M, N)
+
+            def forward(self, x, y):
+                x = self.linear(x)
+                y = self.linear(y)
+                return torch.add(x, y)
+
+            @classmethod
+            def _get_random_inputs(cls):
+                return (torch.rand(128, 20), torch.rand(128, 20))
+
+        linear_add = LinearAdd(20, 30)
+        model_inputs = LinearAdd._get_random_inputs()
+
+        self.check_serde(linear_add, model_inputs)
+
     def test_delegate_partitioner(self) -> None:
         class Model(torch.nn.Module):
             def __init__(self):

@@ -36,6 +36,7 @@ class ConvertToLinearPass(XNNPACKPass):
     targets = [
         exir_ops.edge.aten.mm.default,
         exir_ops.edge.aten.addmm.default,
+        exir_ops.edge.aten.bmm.default,
     ]
 
     @staticmethod
