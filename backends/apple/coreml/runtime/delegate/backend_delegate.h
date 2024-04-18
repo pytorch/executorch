@@ -26,7 +26,7 @@ public:
 
     struct Config {
         // Max models cache size in bytes.
-        size_t max_models_cache_size = 2 * size_t(1024) * size_t(1024) * size_t(1024);
+        size_t max_models_cache_size = 10 * size_t(1024) * size_t(1024) * size_t(1024);
         // If set to `true`, delegate pre-warms the most recently used asset.
         bool should_prewarm_asset = true;
         // If set to `true`, delegate pre-warms the model in `init`.

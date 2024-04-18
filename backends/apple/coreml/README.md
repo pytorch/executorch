@@ -28,6 +28,10 @@ For delegating the Program to the **Core ML** backend, the client must be respon
 import executorch.exir as exir
 import torch
 
+from torch.export import export
+
+from executorch.exir import to_edge
+
 from executorch.exir.backend.backend_api import to_backend
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
@@ -42,7 +46,7 @@ class LowerableSubModel(torch.nn.Module):
 # Convert the lowerable module to Edge IR Representation
 to_be_lowered = LowerableSubModel()
 example_input = (torch.ones(1), )
-to_be_lowered_exir_submodule = exir.capture(to_be_lowered, example_input).to_edge()
+to_be_lowered_exir_submodule = to_edge(export(to_be_lowered, example_input))
 
 # Lower to Core ML backend
 lowered_module = to_backend('CoreMLBackend', to_be_lowered_exir_submodule.exported_program, [])

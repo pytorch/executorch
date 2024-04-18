@@ -7,6 +7,7 @@
 
 #import <Foundation/Foundation.h>
 
+#import <executorch/runtime/platform/log.h>
 #import <os/log.h>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -48,7 +49,11 @@ typedef NS_ERROR_ENUM(ETCoreMLErrorDomain, ETCoreMLError) {
 
 /// Record the error with `os_log_error` and fills `*errorOut` with `NSError`.
 #define ETCoreMLLogErrorAndSetNSError(errorOut, errorCode, formatString, ...)                                        \
-    os_log_error(ETCoreMLErrorUtils.loggingChannel, formatString, ##__VA_ARGS__);                                    \
+    if (ET_LOG_ENABLED) {                                                                                            \
+        ET_LOG(Error, "%s", [NSString stringWithFormat:@formatString, ##__VA_ARGS__].UTF8String);                    \
+    } else {                                                                                                         \
+        os_log_error(ETCoreMLErrorUtils.loggingChannel, formatString, ##__VA_ARGS__);                                \
+    }                                                                                                                \
     if (errorOut) {                                                                                                  \
         *errorOut =                                                                                                  \
             [NSError errorWithDomain:ETCoreMLErrorDomain                                                             \
@@ -58,24 +63,31 @@ typedef NS_ERROR_ENUM(ETCoreMLErrorDomain, ETCoreMLError) {
                             }];                                                                                      \
     }
 
-/// Record the error and its underlying error with `os_log_error` and fills
-/// `*errorOut` with NSError.
+/// Record the error and its underlying error with `os_log_error` and fills `*errorOut` with `NSError`.
 #define ETCoreMLLogUnderlyingErrorAndSetNSError(errorOut, errorCode, underlyingNSError, formatString, ...) \
-    os_log_error(ETCoreMLErrorUtils.loggingChannel,                                                        \
-                 formatString ", with underlying error= %@.",                                              \
-                 ##__VA_ARGS__,                                                                            \
-                 (underlyingNSError).localizedDescription);                                                \
+    if (ET_LOG_ENABLED) {                                                                                  \
+        ET_LOG(Error, "%s", [NSString stringWithFormat:@formatString, ##__VA_ARGS__].UTF8String);          \
+    } else {                                                                                               \
+        os_log_error(ETCoreMLErrorUtils.loggingChannel,                                                    \
+                     formatString ", with underlying error= %@.",                                          \
+                     ##__VA_ARGS__,                                                                        \
+                     (underlyingNSError).localizedDescription);                                            \
+    }                                                                                                      \
     if (errorOut) {                                                                                        \
         *errorOut = [ETCoreMLErrorUtils errorWithCode:errorCode                                            \
                                       underlyingError:underlyingNSError                                    \
                                                format:@formatString, ##__VA_ARGS__];                       \
     }
 
-#define ETCoreMLLogError(error, formatString, ...)  \
-    os_log_error(ETCoreMLErrorUtils.loggingChannel, \
-                 formatString ", with error= %@.",  \
-                 ##__VA_ARGS__,                     \
-                 (error).localizedDescription);
+#define ETCoreMLLogError(error, formatString, ...)                                                \
+    if (ET_LOG_ENABLED) {                                                                         \
+        ET_LOG(Error, "%s", [NSString stringWithFormat:@formatString, ##__VA_ARGS__].UTF8String); \
+    } else {                                                                                      \
+        os_log_error(ETCoreMLErrorUtils.loggingChannel,                                           \
+                     formatString ", with error= %@.",                                            \
+                     ##__VA_ARGS__,                                                               \
+                     (error).localizedDescription);                                               \
+    }
 
 
 #pragma clang diagnostic pop

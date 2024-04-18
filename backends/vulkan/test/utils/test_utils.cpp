@@ -21,12 +21,14 @@ void record_nchw_to_image_op(
     api::VulkanBuffer& src_buffer,
     vTensor& v_dst) {
   api::PipelineBarrier pipeline_barrier{};
+  api::SpecVarList specialization_constants = {};
 
   context->submit_compute_job(
       get_nchw_to_image_shader(v_dst),
       pipeline_barrier,
       v_dst.virtual_extents(),
       adaptive_work_group_size(v_dst.virtual_extents()),
+      specialization_constants,
       VK_NULL_HANDLE,
       v_dst.image(
           pipeline_barrier,
@@ -42,11 +44,14 @@ void record_image_to_nchw_op(
     vTensor& v_src,
     api::VulkanBuffer& dst_buffer) {
   api::PipelineBarrier pipeline_barrier{};
+  api::SpecVarList specialization_constants = {};
+
   context->submit_compute_job(
       get_image_to_nchw_shader(v_src),
       pipeline_barrier,
       v_src.virtual_extents(),
       adaptive_work_group_size(v_src.virtual_extents()),
+      specialization_constants,
       VK_NULL_HANDLE,
       v_src.image(pipeline_barrier, api::PipelineStage::COMPUTE),
       dst_buffer,
@@ -78,11 +83,13 @@ void record_conv2d_prepack_weights_op(
   api::UniformParamsBuffer padded_sizes_ubo(
       context, api::utils::make_ivec2(padded_sizes, /*reverse = */ true));
 
+  api::SpecVarList specialization_constants = {};
   context->submit_compute_job(
       shader,
       pipeline_barrier,
       v_dst.virtual_extents(),
       adaptive_work_group_size(v_dst.virtual_extents()),
+      specialization_constants,
       VK_NULL_HANDLE,
       v_dst.image(
           pipeline_barrier,
@@ -104,11 +111,13 @@ void record_binary_op(
   add_dtype_suffix(kernel_name, v_dst);
 
   api::PipelineBarrier pipeline_barrier{};
+  api::SpecVarList specialization_constants = {};
   context->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel_name),
       pipeline_barrier,
       v_dst.virtual_extents(),
       adaptive_work_group_size(v_dst.virtual_extents()),
+      specialization_constants,
       VK_NULL_HANDLE,
       v_dst.image(
           pipeline_barrier,

@@ -56,7 +56,8 @@ class ExecuteNode final {
       const std::vector<ArgGroup>& args,
       const std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params,
       const ResizeFunction& resize_fn = nullptr,
-      const std::vector<ValueRef>& resize_args = {});
+      const std::vector<ValueRef>& resize_args = {},
+      const api::SpecVarList& spec_vars = {});
 
   ~ExecuteNode() = default;
 
@@ -76,6 +77,7 @@ class ExecuteNode final {
   std::vector<std::shared_ptr<api::UniformParamsBuffer>> params_;
   const ResizeFunction resize_fn_;
   const std::vector<ValueRef> resize_args_;
+  const api::SpecVarList spec_vars_;
 };
 
 } // namespace vkcompute

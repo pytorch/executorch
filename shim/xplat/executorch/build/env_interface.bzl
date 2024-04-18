@@ -42,6 +42,7 @@ _EXTERNAL_DEPS = {
     "libtorch_python": "//third-party:libtorch_python",
     "prettytable": "//third-party:prettytable",
     "pybind11": "//third-party:pybind11",
+    "re2": [],  # TODO(larryliu0820): Add support
     # Core C++ PyTorch functionality like Tensor and ScalarType.
     "torch-core-cpp": "//third-party:libtorch",
     "torchgen": "//third-party:torchgen",
@@ -215,7 +216,7 @@ env = struct(
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     genrule = native.genrule,
     is_oss = True,
-    is_xplat = False,
+    is_xplat = lambda: False,
     patch_deps = _patch_deps,
     patch_cxx_compiler_flags = _patch_cxx_compiler_flags,
     patch_executorch_genrule_cmd = _patch_executorch_genrule_cmd,

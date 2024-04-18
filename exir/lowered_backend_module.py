@@ -528,7 +528,7 @@ def _get_new_signature(  # noqa: C901
                         output_specs.append(
                             OutputSpec(
                                 kind=OutputKind.USER_OUTPUT,
-                                arg=ConstantArgument(output_node),
+                                arg=ConstantArgument(name="", value=output_node),
                                 target=None,
                             )
                         )
@@ -555,7 +555,7 @@ def _get_new_signature(  # noqa: C901
                         output_specs.append(
                             OutputSpec(
                                 kind=OutputKind.USER_OUTPUT,
-                                arg=ConstantArgument(output_node),
+                                arg=ConstantArgument(name="", value=output_node),
                                 target=None,
                             )
                         )

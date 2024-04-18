@@ -7,7 +7,6 @@
 from typing import cast, Dict
 
 import torch
-from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -53,7 +52,21 @@ class SqueezeVisitor(NodeVisitor):
             "val" in input_node.meta,
             "Missing val in tensor metadata for input when serializing XNNStaticReshape node",
         )
-        new_shape = get_shape(input_node)[:-1]
+        dynamic_shape = node.meta["val"].shape
+        new_shape = []
+
+        num_dynamic_dims = 0
+        for dim in dynamic_shape:
+            if isinstance(dim, torch.SymInt):
+                num_dynamic_dims += 1
+                new_shape.append(0)
+            else:
+                new_shape.append(dim)
+
+        check_or_raise(
+            num_dynamic_dims <= 1,
+            "XNNPACK reshape only supports 1 dynamic dimension. This may occur when ",
+        )
 
         ser_node = XNode(
             xnode_union=XNNStaticReshape(
@@ -101,7 +114,21 @@ class UnsqueezeVisitor(NodeVisitor):
             "val" in input_node.meta,
             "Missing val in tensor metadata for input when serializing XNNStaticReshape node",
         )
-        new_shape = get_shape(input_node) + [1]
+        dynamic_shape = node.meta["val"].shape
+        new_shape = []
+
+        num_dynamic_dims = 0
+        for dim in dynamic_shape:
+            if isinstance(dim, torch.SymInt):
+                num_dynamic_dims += 1
+                new_shape.append(0)
+            else:
+                new_shape.append(dim)
+
+        check_or_raise(
+            num_dynamic_dims <= 1,
+            "XNNPACK reshape only supports 1 dynamic dimension. This may occur when ",
+        )
 
         ser_node = XNode(
             xnode_union=XNNStaticReshape(
