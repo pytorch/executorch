@@ -1,0 +1,14 @@
+view:
+  parameter_names_with_default_values:
+    DTYPE: float
+    NDIM: 3
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+    PACKING:
+      - VALUE: C_packed
+      - VALUE: W_packed
+      - VALUE: H_packed
+  shader_variants:
+    - NAME: view
