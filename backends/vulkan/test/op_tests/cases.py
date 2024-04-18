@@ -194,6 +194,33 @@ def get_permute_inputs():
     return test_suite
 
 
+def get_view_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((3,4,5), [1, 1, -1]),
+            ((3,4,5), [1, -1, 1]),
+            ((3,4,5), [-1, 1, 1]),
+            ((8, 7, 2, 3), [4, 3, 7, 4]),
+            ((8, 7, 2, 3), [7, -1, 2, 1]),
+            ((8, 7, 2, 3), [1, 1, 1, -1]),
+            ((8, 7, 2, 3), [-1]),
+            ((2, 3, 3, 7), [2, -1, 1, 1]),
+            ((3, 5, 2, 7), [7, -1, 2, 1]),
+            ((2, 2, 8, 6), [2, 6, -1, 1]),
+            ((2, 2, 8, 6), [6, -1, 1]),
+            ((S1, S2, S1, S2), [S2, -1, 1, S1]),
+            ((S1, S2, S1, S2), [S1, 1, -1, S2]),
+            ((S1, S2, S1, S2), [-1, 1, S1, S2]),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kWidthPacked",
+        "api::kHeightPacked",
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -208,4 +235,5 @@ test_suites = {
     "aten.select_copy.int": get_select_int_inputs(),
     "aten.permute.default": get_permute_inputs(),
     "aten.permute_copy.default": get_permute_inputs(),
+    "aten.view_copy.default": get_view_inputs(),
 }
