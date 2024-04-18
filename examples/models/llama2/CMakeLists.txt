@@ -44,7 +44,6 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -120,25 +119,9 @@ else()
   target_link_options_shared_lib(portable_ops_lib)
 endif()
 
-# quantized ops yaml file operation
-merge_yaml(
-  FUNCTIONS_YAML ${CMAKE_CURRENT_SOURCE_DIR}/ops/quantized.yaml
-  FALLBACK_YAML ${EXECUTORCH_ROOT}/kernels/quantized/quantized.yaml
-  OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR})
-
-gen_selected_ops("${CMAKE_CURRENT_BINARY_DIR}/merged.yaml" "" "")
-generate_bindings_for_kernels(
-    FUNCTIONS_YAML ${CMAKE_CURRENT_BINARY_DIR}/merged.yaml)
-message("Generated files ${gen_command_sources}")
-
-# quantized_merge_ops_lib: Register quantized op kernels into the runtime
-gen_operators_lib(
-  "quantized_merge_ops_lib"
-  KERNEL_LIBS quantized_kernels
-  DEPS executorch)
-target_include_directories(quantized_merge_ops_lib PUBLIC ${_common_include_directories})
-target_link_options_shared_lib(quantized_merge_ops_lib)
-list(APPEND link_libraries quantized_kernels quantized_merge_ops_lib)
+# quantized_ops_lib: Register quantized op kernels into the runtime
+target_link_options_shared_lib(quantized_ops_lib)
+list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
 if(EXECUTORCH_BUILD_CUSTOM)
   target_link_options_shared_lib(custom_ops)
