@@ -12,4 +12,3 @@ view:
       - VALUE: H_packed
   shader_variants:
     - NAME: view
-

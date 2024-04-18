@@ -106,13 +106,15 @@ class TestSuiteGen:
                     name_str += str(size) + "x"
                 name_str = name_str[:-1]
                 # minus sign is a invalid char for test case. change to "n".
-                name_str = name_str.replace('-', 'n')
+                name_str = name_str.replace("-", "n")
+
             elif isinstance(arg_sizes_or_val, list):
                 for size in arg_sizes_or_val:
                     name_str += str(size) + "c"
                 name_str = name_str[:-1]
                 # minus sign is a invalid char for test case. change to "n".
-                name_str = name_str.replace('-', 'n')
+                name_str = name_str.replace("-", "n")
+
             else:
                 name_str += str(arg_sizes_or_val).replace(".", "p")
         return name_str
