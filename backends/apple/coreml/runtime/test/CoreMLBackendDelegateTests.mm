@@ -15,7 +15,7 @@
 #import <executorch/runtime/executor/program.h>
 #import <executorch/runtime/platform/runtime.h>
 
-static constexpr size_t kRuntimeMemorySize = 10 * 1024U * 1024U; // 10 MB
+static constexpr size_t kRuntimeMemorySize = 50 * 1024U * 1024U; // 50 MB
 
 using namespace torch::executor;
 using torch::executor::testing::TensorFactory;
@@ -104,7 +104,7 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
              ET_LOG(Info, "Skipping non-tensor input %zu", i);
              continue;
          }
-         Buffer buffer(tensor_meta->nbytes(), 1);
+         Buffer buffer(tensor_meta->nbytes(), 0);
          auto sizes = tensor_meta->sizes();
          exec_aten::TensorImpl tensor_impl(tensor_meta->scalar_type(), std::size(sizes), const_cast<int *>(sizes.data()), buffer.data());
          exec_aten::Tensor tensor(&tensor_impl);
@@ -155,8 +155,8 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
     XCTAssert(method.ok());
 }
 
-- (void)executeModelAtURL:(NSURL *)modelURL nTimes:(NSUInteger)nTimes {
-    for (NSUInteger i = 0; i < nTimes; i++) {
+- (void)executeModelAtURL:(NSURL *)modelURL nLoads:(NSUInteger)nLoads nExecutions:(NSUInteger)nExecutions {
+    for (NSUInteger i = 0; i < nLoads; ++i) {
         auto loader = std::make_unique<DataLoaderImpl>(modelURL.path.UTF8String);
         auto program = get_program(loader.get());
         XCTAssert(program != nullptr);
@@ -165,41 +165,44 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
         auto plannedBuffers = get_planned_buffers(methodName.get(), program.get());
         XCTAssert(plannedBuffers.ok());
         Buffer methodBuffer(kRuntimeMemorySize, 0);
-        MemoryAllocator methodAllocator(static_cast<int32_t>(methodBuffer.size()), methodBuffer.data());
+        __block MemoryAllocator methodAllocator(static_cast<int32_t>(methodBuffer.size()), methodBuffer.data());
         auto spans = to_spans(plannedBuffers.get());
         HierarchicalAllocator plannedAllocator({spans.data(), spans.size()});
         MemoryManager memoryManger(&methodAllocator, &plannedAllocator);
-        auto method = program->load_method(methodName.get().c_str(), &memoryManger);
+        __block auto method = program->load_method(methodName.get().c_str(), &memoryManger);
         XCTAssert(method.ok());
         auto inputs = ::prepare_input_tensors(method.get());
-        auto status = method->execute();
-        XCTAssertEqual(status, Error::Ok);
         auto outputs = methodAllocator.allocateList<EValue>(method->outputs_size());
-        status = method->get_outputs(outputs, method->outputs_size());
-        XCTAssertEqual(status, Error::Ok);
+        for (NSUInteger j = 0; j < nExecutions; ++j) {
+            auto status = method->execute();
+            XCTAssertEqual(status, Error::Ok);
+            status = method->get_outputs(outputs, method->outputs_size());
+            XCTAssertEqual(status, Error::Ok);
+        }
     }
 }
 
 - (void)testAddProgramExecute {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"pte"];
     XCTAssertNotNil(modelURL);
-    [self executeModelAtURL:modelURL nTimes:10];
+    [self executeModelAtURL:modelURL nLoads:5 nExecutions:2];
 }
 
 - (void)testMulProgramExecute {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"mul_coreml_all" extension:@"pte"];
     XCTAssertNotNil(modelURL);
-    [self executeModelAtURL:modelURL nTimes:10];
+    [self executeModelAtURL:modelURL nLoads:5 nExecutions:2];
 }
 
 - (void)testMV3ProgramExecute {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"mv3_coreml_all" extension:@"pte"];
     XCTAssertNotNil(modelURL);
-    [self executeModelAtURL:modelURL nTimes:10];
+    [self executeModelAtURL:modelURL nLoads:5 nExecutions:2];
 }
 
 - (void)executeMultipleModelsConcurrently:(NSArray<NSURL *> *)modelURLs
-                                   nTimes:(NSUInteger)nTimes
+                                   nLoads:(NSUInteger)nLoads
+                              nExecutions:(NSUInteger)nExecutions
                                   timeout:(NSTimeInterval)timeout {
     NSMutableArray<XCTestExpectation *> *expectations = [NSMutableArray arrayWithCapacity:modelURLs.count];
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
@@ -208,7 +211,7 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
         XCTestExpectation *expectation = [[XCTestExpectation alloc] initWithDescription:description];
         [expectations addObject:expectation];
         dispatch_async(queue, ^{
-            [self executeModelAtURL:modelURL nTimes:nTimes];
+            [self executeModelAtURL:modelURL nLoads:nLoads nExecutions:nExecutions];
             [expectation fulfill];
         });
     }
@@ -221,7 +224,8 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
     NSURL *modelURL2 = [[self class] bundledResourceWithName:@"mul_coreml_all" extension:@"pte"];
     NSURL *modelURL3 = [[self class] bundledResourceWithName:@"mv3_coreml_all" extension:@"pte"];
     [self executeMultipleModelsConcurrently:@[modelURL1, modelURL2, modelURL3]
-                                     nTimes:10
+                                     nLoads:5
+                                nExecutions:2
                                     timeout:5 * 60];
 }
 
@@ -229,7 +233,8 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
     NSURL *modelURL1 = [[self class] bundledResourceWithName:@"mv3_coreml_all" extension:@"pte"];
     NSURL *modelURL2 = [[self class] bundledResourceWithName:@"mv3_coreml_all" extension:@"pte"];
     [self executeMultipleModelsConcurrently:@[modelURL1, modelURL2]
-                                     nTimes:10
+                                     nLoads:5
+                                nExecutions:2
                                     timeout:5 * 60];
 }
 

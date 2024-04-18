@@ -13,6 +13,8 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
+option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
+
 # inmemoryfs sources
 set(INMEMORYFS_SOURCES
   runtime/inmemoryfs/inmemory_filesystem.cpp
@@ -180,6 +182,14 @@ target_link_libraries(coremldelegate
   ${FOUNDATION_FRAMEWORK}
   ${SQLITE_LIBRARY}
 )
+
+if(COREML_BUILD_EXECUTOR_RUNNER)
+target_link_libraries(coremldelegate
+  PRIVATE
+  portable_ops_lib
+  portable_kernels
+)
+endif()
 
 target_compile_options(coremldelegate PRIVATE "-fobjc-arc")
 target_compile_options(coremldelegate PRIVATE "-fno-exceptions")
