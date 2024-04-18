@@ -449,6 +449,9 @@ class VulkanBackend final : public PyTorchBackendInterface {
 
     Error err = compileModel(processed->data(), compute_graph);
 
+    // This backend does not need its processed data after compiling the model.
+    processed->Free();
+
     if (err != Error::Ok) {
       return err;
     }
