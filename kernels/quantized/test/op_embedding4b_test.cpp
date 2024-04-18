@@ -19,6 +19,7 @@
 using namespace ::testing;
 using exec_aten::ArrayRef;
 using exec_aten::optional;
+using exec_aten::RuntimeContext;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::native::quantized_embedding_4bit_out;
@@ -50,6 +51,20 @@ TEST(OpQuantizedEmbedding4bTest, TestGroupWiseQuantizedEmbedding) {
       {3, 4}, {-2.0, 0.0, 2.5, 3.0, -12.0, 4.5, -1.5, 9.0, 7.0, 0.0, 1.0, 5.0});
 
   quantized_embedding_4bit_out(
+      qweight,
+      weight_scales,
+      weight_zero_points,
+      quant_min,
+      quant_max,
+      indices,
+      out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+
+  out = tf.zeros({3, 4});
+  auto context = RuntimeContext();
+  torch::executor::native::quantized_embedding_4bit_out(
+      context,
       qweight,
       weight_scales,
       weight_zero_points,
