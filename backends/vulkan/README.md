@@ -14,7 +14,7 @@ are subject to change.
 ## What is Vulkan?
 
 Vulkan is a low-level GPU API specification developed as a successor to OpenGL.
-It is designed to offer developers a more explicit control over GPUs compared to
+It is designed to offer developers more explicit control over GPUs compared to
 previous specifications in order to reduce overhead and maximize the
 capabilities of the modern graphics hardware.
 
@@ -30,8 +30,7 @@ come with a built-in library of performant compute kernels.
 
 The ExecuTorch Vulkan Delegate is a wrapper around a standalone runtime known as
 the **Vulkan Compute Library**. The aim of the Vulkan Compute Library is to
-provide GPU implementations for PyTorch operators via GLSL compute shaders to be
-executed using Vulkan.
+provide GPU implementations for PyTorch operators via GLSL compute shaders.
 
 The Vulkan Compute Library is a fork/iteration of the [PyTorch Vulkan Backend](https://pytorch.org/tutorials/prototype/vulkan_workflow.html).
 The core components of the PyTorch Vulkan backend were forked into ExecuTorch
