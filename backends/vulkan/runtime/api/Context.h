@@ -172,7 +172,16 @@ class Context final {
     }
   }
 
-  DescriptorSet get_descriptor_set(const ShaderInfo&, const utils::uvec3&);
+  DescriptorSet get_descriptor_set(
+      const ShaderInfo&,
+      const utils::uvec3&,
+      const SpecVarList&);
+
+  inline DescriptorSet get_descriptor_set(
+      const ShaderInfo& shader_descriptor,
+      const utils::uvec3& local_work_group_size) {
+    return get_descriptor_set(shader_descriptor, local_work_group_size, {});
+  }
 
   void register_shader_dispatch(
       const DescriptorSet&,
@@ -196,6 +205,7 @@ class Context final {
       PipelineBarrier&,
       const utils::uvec3&,
       const utils::uvec3&,
+      const SpecVarList&,
       VkFence fence_handle,
       Arguments&&...);
 
@@ -485,6 +495,7 @@ inline bool Context::submit_compute_job(
     PipelineBarrier& pipeline_barrier,
     const utils::uvec3& global_work_group,
     const utils::uvec3& local_work_group_size,
+    const SpecVarList& specialization_constants,
     VkFence fence_handle,
     Arguments&&... arguments) {
   // If any of the provided arguments does not have memory associated with it,
@@ -527,8 +538,8 @@ inline bool Context::submit_compute_job(
 #endif /* USE_VULKAN_GPU_DIAGNOSTICS */
 
   // Factor out template parameter independent code to minimize code bloat.
-  DescriptorSet descriptor_set =
-      get_descriptor_set(shader, local_work_group_size);
+  DescriptorSet descriptor_set = get_descriptor_set(
+      shader, local_work_group_size, specialization_constants);
 
   detail::bind(
       descriptor_set,

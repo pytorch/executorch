@@ -44,44 +44,6 @@ MLModelConfiguration *get_model_configuration(const std::unordered_map<std::stri
     return configuration;
 }
 
-template<typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value, T>::type>
-NSArray<NSNumber *> *to_array(const std::vector<T>& array) {
-    NSMutableArray<NSNumber *> *result = [NSMutableArray arrayWithCapacity:array.size()];
-    for (T value : array) {
-        [result addObject:@(value)];
-    }
-    
-    return result;
-}
-
-MLMultiArrayDataType get_data_type(MultiArray::DataType dataType) {
-    switch (dataType) {
-        case MultiArray::DataType::Float16: {
-            return MLMultiArrayDataTypeFloat16;
-        }
-        case MultiArray::DataType::Float: {
-            return MLMultiArrayDataTypeFloat32;
-        }
-        case MultiArray::DataType::Double: {
-            return MLMultiArrayDataTypeDouble;
-        }
-        case MultiArray::DataType::Int: {
-            return MLMultiArrayDataTypeInt32;
-        }
-    }
-}
-
-MLMultiArray * _Nullable to_ml_multiarray(const MultiArray& array, NSError * __autoreleasing *error) {
-    const auto& layout = array.layout();
-    MLMultiArray *result = [[MLMultiArray alloc] initWithDataPointer:array.data()
-                                                               shape:to_array(layout.shape())
-                                                            dataType:get_data_type(layout.dataType())
-                                                             strides:to_array(layout.strides())
-                                                         deallocator:^(void * _Nonnull bytes) {}
-                                                               error:error];
-    return result;
-}
-
 NSURL * _Nullable create_directory_if_needed(NSURL *url,
                                              NSFileManager *fileManager,
                                              NSError * __autoreleasing *error) {
@@ -194,17 +156,8 @@ public:
                  ModelEventLogger *event_logger,
                  std::error_code& ec) const noexcept override {
         NSError *error = nil;
-        NSMutableArray<MLMultiArray *> *model_args = [NSMutableArray arrayWithCapacity:args.size()];
-        for (const auto& arg : args) {
-            MLMultiArray *multi_array = to_ml_multiarray(arg, &error);
-            if (!multi_array) {
-                return false;
-            }
-            [model_args addObject:multi_array];
-        }
-        
         if (![model_manager_ executeModelWithHandle:handle
-                                               args:model_args
+                                            argsVec:args
                                     loggingOptions:logging_options
                                         eventLogger:event_logger
                                               error:&error]) {

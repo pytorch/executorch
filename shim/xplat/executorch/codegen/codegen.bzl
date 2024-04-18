@@ -332,6 +332,7 @@ def executorch_generated_lib(
         define_static_targets = False,
         custom_ops_aten_kernel_deps = [],
         custom_ops_requires_runtime_registration = True,
+        custom_ops_requires_aot_registration = True,
         visibility = [],
         aten_mode = False,
         manual_registration = False,
@@ -536,7 +537,7 @@ def executorch_generated_lib(
             platforms = platforms,
         )
 
-    if custom_ops_yaml_target:
+    if custom_ops_yaml_target and custom_ops_requires_aot_registration:
         exir_custom_ops_aot_lib(
             name = "custom_ops_" + name,
             yaml_target = custom_ops_yaml_target,

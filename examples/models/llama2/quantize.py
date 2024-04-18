@@ -9,7 +9,9 @@ from typing import Dict, Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .ops.quantized_ops import *  # noqa
+from executorch.exir.passes._quant_patterns_and_replacements import (  # noqa
+    quantized_decomposed_lib,
+)
 
 
 try:
@@ -377,7 +379,7 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self, indices: torch.Tensor) -> torch.Tensor:
-        return torch.ops.llama_quantized.embedding_byte.dtype(
+        return torch.ops.quantized_decomposed.embedding_byte.dtype(
             self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
         )
 

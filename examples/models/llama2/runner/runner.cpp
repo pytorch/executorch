@@ -11,6 +11,9 @@
 
 #include <executorch/examples/models/llama2/runner/runner.h>
 #include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
+#if defined(ET_USE_TIKTOKEN)
+#include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
+#endif
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
@@ -77,7 +80,11 @@ Error Runner::load() {
   append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
   // Load tokenizer
+#if defined(ET_USE_TIKTOKEN)
+  tokenizer_ = std::make_unique<Tiktoken>(vocab_size_, bos_id_, eos_id_);
+#else
   tokenizer_ = std::make_unique<BPETokenizer>(vocab_size_, bos_id_, eos_id_);
+#endif
   tokenizer_->load(tokenizer_path_);
   if (tokenizer_->bos_tok() != bos_id_) {
     ET_LOG(

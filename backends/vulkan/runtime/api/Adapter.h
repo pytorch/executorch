@@ -30,6 +30,12 @@ struct PhysicalDevice final {
   // Properties obtained from Vulkan
   VkPhysicalDeviceProperties properties;
   VkPhysicalDeviceMemoryProperties memory_properties;
+  // Additional features available from extensions
+  VkPhysicalDevice16BitStorageFeatures shader_16bit_storage;
+  VkPhysicalDevice8BitStorageFeatures shader_8bit_storage;
+  VkPhysicalDeviceShaderFloat16Int8Features shader_float16_int8_types;
+
+  // Available GPU queues
   std::vector<VkQueueFamilyProperties> queue_families;
 
   // Metadata
@@ -37,6 +43,9 @@ struct PhysicalDevice final {
   bool has_unified_memory;
   bool has_timestamps;
   float timestamp_period;
+
+  // Head of the linked list of extensions to be requested
+  void* extension_features{nullptr};
 
   explicit PhysicalDevice(VkPhysicalDevice);
 };
@@ -187,6 +196,34 @@ class Adapter final {
 
   inline MemoryAllocator& vma() {
     return vma_;
+  }
+
+  // Physical Device Features
+
+  inline bool has_16bit_storage() {
+    return physical_device_.shader_16bit_storage.storageBuffer16BitAccess ==
+        VK_TRUE;
+  }
+
+  inline bool has_8bit_storage() {
+    return physical_device_.shader_8bit_storage.storageBuffer8BitAccess ==
+        VK_TRUE;
+  }
+
+  inline bool has_16bit_compute() {
+    return physical_device_.shader_float16_int8_types.shaderFloat16 == VK_TRUE;
+  }
+
+  inline bool has_8bit_compute() {
+    return physical_device_.shader_float16_int8_types.shaderInt8 == VK_TRUE;
+  }
+
+  inline bool has_full_float16_buffers_support() {
+    return has_16bit_storage() && has_16bit_compute();
+  }
+
+  inline bool has_full_int8_buffers_support() {
+    return has_8bit_storage() && has_8bit_compute();
   }
 
   // Command Buffer Submission

@@ -33,6 +33,17 @@ fill_texture__test:
   shader_variants:
     - NAME: fill_texture__test
 
+idx_fill_buffer:
+  parameter_names_with_default_values:
+    DTYPE: float
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+      - VALUE: int8
+  shader_variants:
+    - NAME: idx_fill_buffer
+
 idx_fill_texture:
   parameter_names_with_default_values:
     DTYPE: float
