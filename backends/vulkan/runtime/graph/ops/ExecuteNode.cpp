@@ -20,7 +20,7 @@ ExecuteNode::ExecuteNode(
     const api::utils::uvec3& global_workgroup_size,
     const api::utils::uvec3& local_workgroup_size,
     const std::vector<ArgGroup>& args,
-    const std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params,
+    const api::ParamsBindList& params,
     const ResizeFunction& resize_fn,
     const std::vector<ValueRef>& resize_args,
     const api::SpecVarList& spec_vars)
@@ -47,6 +47,7 @@ void ExecuteNode::encode(ComputeGraph* graph) {
   uint32_t idx = 0;
   idx = bind_values_to_descriptor_set(
       graph, args_, pipeline_barrier, descriptor_set, idx);
+
   bind_params_to_descriptor_set(params_, descriptor_set, idx);
 
   context->register_shader_dispatch(
