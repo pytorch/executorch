@@ -35,12 +35,12 @@ class HardTanhVisitor(NodeVisitor):
 
         if is_quant_node:
             # Get quant parameters
-            scale, zp = get_quant_node_args(node.all_input_nodes[0])
+            scale, zp, qmin, qmax = get_quant_node_args(node.all_input_nodes[0])
             # Convert to quantized representation
             clamp_min_qs = round((inputs[1].number / scale) + zp)
-            clamp_min_qs = max(clamp_min_qs, -128)
+            clamp_min_qs = max(clamp_min_qs, qmin)
             clamp_max_qs = round((inputs[2].number / scale) + zp)
-            clamp_max_qs = min(clamp_max_qs, 127)
+            clamp_max_qs = min(clamp_max_qs, qmax)
             # Set fp values to 0.0 since they are not used
             clamp_min_fp = 0.0
             clamp_max_fp = 0.0
