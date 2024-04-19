@@ -17,9 +17,9 @@ Please note that the models are subject to the [acceptable use policy](https://g
 
 # Results
 
-Since 7B Llama2 model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model. 
+Since 7B Llama2 model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
 
-For Llama3, we can use the same process. Note that it's only supported in the ExecuTorch main branch. 
+For Llama3, we can use the same process. Note that it's only supported in the ExecuTorch main branch.
 
 ## Quantization:
 We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://github.com/pytorch-labs/ao/).
@@ -242,6 +242,16 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 
 ### Android
 Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
+
+## Optional: Smaller models delegated to other backends
+Currently we supported lowering the stories model to other backends, including, CoreML, MPS and QNN. Please refer to the instruction
+for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.html), [MPS](https://pytorch.org/executorch/main/build-run-mps.html), [QNN](https://pytorch.org/executorch/main/build-run-qualcomm.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
+
+- Lower to CoreML: `python -m examples.models.llama2.export_llama -kv --coreml -c stories110M.pt -p params.json`
+- MPS: `python -m examples.models.llama2.export_llama -kv --MPS -c stories110M.pt -p params.json`
+- QNN: `python -m examples.models.llama2.export_llama -kv --qnn -c stories110M.pt -p params.json`
+
+The iOS LLAMA app supports the CoreML and MPS model and the Android LLAMA app supports the QNN model. On Android, it also allow to cross compiler the llama runner binary, push to the device and run.
 
 # What is coming next?
 ## Quantization
