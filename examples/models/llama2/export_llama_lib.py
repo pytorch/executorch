@@ -19,7 +19,6 @@ from typing import Any, Optional, Union
 
 import pkg_resources
 import torch
-import torch.nn.functional as F
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
