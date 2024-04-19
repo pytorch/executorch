@@ -1,0 +1,239 @@
+name: Build MacOS Wheels
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        description: 'Repository to checkout, defaults to ""'
+        default: ""
+        type: string
+      ref:
+        description: 'Reference to checkout, defaults to "nightly"'
+        default: "nightly"
+        type: string
+      test-infra-repository:
+        description: "Test infra repository to use"
+        default: "pytorch/test-infra"
+        type: string
+      test-infra-ref:
+        description: "Test infra reference to use"
+        default: ""
+        type: string
+      build-matrix:
+        description: "Build matrix to utilize"
+        default: ""
+        type: string
+      pre-script:
+        description: "Pre script to run prior to build"
+        default: ""
+        type: string
+      post-script:
+        description: "Post script to run prior to build"
+        default: ""
+        type: string
+      runner-type:
+        description: "Runner environment specified."
+        default: ""
+        type: string
+      package-name:
+        description: "Name of the actual python package that is imported"
+        default: ""
+        type: string
+      env-var-script:
+        description: "Script that sets Domain-Specific Environment Variables"
+        default: ""
+        type: string
+      trigger-event:
+        description: "Trigger Event in caller that determines whether or not to upload"
+        default: ""
+        type: string
+      smoke-test-script:
+        description: "Script for Smoke Test for a specific domain"
+        default: ""
+        type: string
+      cache-path:
+        description: "The path(s) on the runner to cache or restore. The path is relative to repository."
+        default: ""
+        type: string
+      cache-key:
+        description: "The key created when saving a cache and the key used to search for a cache."
+        default: ""
+        type: string
+      submodules:
+        description: "Works as stated in actions/checkout, but the default value is recursive"
+        required: false
+        type: string
+        default: recursive
+      delocate-wheel:
+        description: "Whether to run delocate-wheel after building."
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.build-matrix) }}
+    env:
+      PYTHON_VERSION: ${{ matrix.python_version }}
+      PACKAGE_TYPE: wheel
+      REPOSITORY: ${{ inputs.repository }}
+      REF: ${{ inputs.ref }}
+      CU_VERSION: ${{ matrix.desired_cuda }}
+    name: ${{ matrix.build_name }}
+    runs-on: ${{ inputs.runner-type }}
+    # If a build is taking longer than 60 minutes on these runners we need
+    # to have a conversation
+    timeout-minutes: 60
+    steps:
+      - name: Clean workspace
+        run: |
+          set -euxo pipefail
+          echo "::group::Cleanup debug output"
+          rm -rfv "${GITHUB_WORKSPACE}"
+          mkdir -p "${GITHUB_WORKSPACE}"
+          echo "::endgroup::"
+      - uses: actions/checkout@v3
+        with:
+          # Support the use case where we need to checkout someone's fork
+          repository: ${{ inputs.test-infra-repository }}
+          ref: ${{ inputs.test-infra-ref }}
+          path: test-infra
+      - uses: pytorch/test-infra/.github/actions/set-channel@release/2.3
+      - name: Set PYTORCH_VERSION
+        if: ${{ env.CHANNEL == 'test' }}
+        run: |
+          # When building RC, set the version to be the current candidate version,
+          # otherwise, leave it alone so nightly will pick up the latest
+          echo "PYTORCH_VERSION=${{ matrix.stable_version }}" >> "${GITHUB_ENV}"
+      - uses: pytorch/test-infra/.github/actions/setup-binary-builds@release/2.3
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          submodules: ${{ inputs.submodules }}
+          setup-miniconda: false
+          python-version: ${{ env.PYTHON_VERSION }}
+          cuda-version: ${{ env.CU_VERSION }}
+          arch: ${{ env.ARCH }}
+      - name: Combine Env Var and Build Env Files
+        if: ${{ inputs.env-var-script != '' }}
+        working-directory: ${{ inputs.repository }}
+        run: |
+          cat "${{ inputs.env-var-script }}" >> "${BUILD_ENV_FILE}"
+      - name: Install delocate-wheel
+        if: ${{ inputs.delocate-wheel }}
+        run: |
+          set -euxo pipefail
+          ${CONDA_RUN} python3 -m pip install delocate==0.10.7
+      - name: Install torch dependency
+        run: |
+          set -euxo pipefail
+          # shellcheck disable=SC1090
+          source "${BUILD_ENV_FILE}"
+          # shellcheck disable=SC2086
+          ${CONDA_RUN} ${PIP_INSTALL_TORCH}
+      - name: Run Pre-Script with Caching
+        if: ${{ inputs.pre-script != '' }}
+        uses: pytorch/test-infra/.github/actions/run-script-with-cache@release/2.3
+        with:
+          cache-path: ${{ inputs.cache-path }}
+          cache-key: ${{ inputs.cache-key }}
+          repository: ${{ inputs.repository  }}
+          script: ${{ inputs.pre-script }}
+      - name: Build clean
+        working-directory: ${{ inputs.repository }}
+        run: |
+          set -euxo pipefail
+          # shellcheck disable=SC1090
+          source "${BUILD_ENV_FILE}"
+          ${CONDA_RUN} python3 setup.py clean
+      - name: Build the wheel (bdist_wheel)
+        working-directory: ${{ inputs.repository }}
+        run: |
+          set -euxo pipefail
+          # shellcheck disable=SC1090
+          source "${BUILD_ENV_FILE}"
+
+          if [[ "${{ inputs.package-name }}" = "torchaudio" ]]; then
+            export USE_OPENMP="0"
+          fi
+          PYTORCH_VERSION="$(${CONDA_RUN} pip show torch | grep ^Version: | sed 's/Version:  *//')"
+          export PYTORCH_VERSION
+
+          ${CONDA_RUN} python3 setup.py bdist_wheel
+      - name: Delocate wheel
+        if: ${{ inputs.delocate-wheel }}
+        working-directory: ${{ inputs.repository }}
+        run: |
+          set -euxo pipefail
+          ${CONDA_RUN} DYLD_FALLBACK_LIBRARY_PATH="${CONDA_ENV}/lib" delocate-wheel -v --ignore-missing-dependencies dist/*.whl
+      - name: Run Post-Script
+        if: ${{ inputs.post-script != '' }}
+        uses: pytorch/test-infra/.github/actions/run-script-with-cache@release/2.3
+        with:
+          repository: ${{ inputs.repository  }}
+          script: ${{ inputs.post-script }}
+      - name: Smoke Test
+        shell: bash -l {0}
+        env:
+          PACKAGE_NAME: ${{ inputs.package-name }}
+          SMOKE_TEST_SCRIPT: ${{ inputs.smoke-test-script }}
+        run: |
+          set -euxo pipefail
+          # shellcheck disable=SC1090
+          source "${BUILD_ENV_FILE}"
+          WHEEL_NAME=$(ls "${{ inputs.repository }}/dist/")
+          echo "$WHEEL_NAME"
+          # Checking that we have a pinned version of torch in our dependency tree
+          (
+            pushd "${RUNNER_TEMP}"
+            unzip -o "${GITHUB_WORKSPACE}/${{ inputs.repository }}/dist/$WHEEL_NAME"
+            # Ensure that pytorch version is pinned, should output file where it was found
+            grep "Requires-Dist: torch (==.*)" -r .
+          )
+          export OLD_PATH=${PATH}
+          export PATH="${CONDA_ENV}/bin:${PATH}"
+
+          ${CONDA_RUN} pip install "${{ inputs.repository }}/dist/$WHEEL_NAME"
+
+          if [[ ! -f "${{ inputs.repository }}"/${SMOKE_TEST_SCRIPT} ]]; then
+            echo "${{ inputs.repository }}/${SMOKE_TEST_SCRIPT} not found"
+            ${CONDA_RUN} python -c "import ${PACKAGE_NAME}; print('package version is ', ${PACKAGE_NAME}.__version__)"
+          else
+            echo "${{ inputs.repository }}/${SMOKE_TEST_SCRIPT} found"
+
+            ${CONDA_RUN} python3 "${{ inputs.repository }}/${SMOKE_TEST_SCRIPT}"
+          fi
+          export PATH=${OLD_PATH}
+      # NB: Only upload to GitHub after passing smoke tests
+      - name: Upload wheel to GitHub
+        continue-on-error: true
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ inputs.repository }}/dist/
+      - name: Clean up disk space
+        if: always()
+        continue-on-error: true
+        uses: pytorch/test-infra/.github/actions/check-disk-space@release/2.3
+
+  upload:
+    needs: build
+    uses: pytorch/test-infra/.github/workflows/_binary_upload.yml@release/2.3
+    if: always()
+    with:
+      repository: ${{ inputs.repository }}
+      ref: ${{ inputs.ref }}
+      test-infra-repository: ${{ inputs.test-infra-repository }}
+      test-infra-ref: ${{ inputs.test-infra-ref }}
+      build-matrix: ${{ inputs.build-matrix }}
+      trigger-event: ${{ inputs.trigger-event }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ inputs.repository }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
