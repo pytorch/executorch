@@ -685,15 +685,20 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # more custom quantization are supported including 16a4w etc. default to 8bit quantized
         custom_annotations = ()
         if quant_config == "8a8w":
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
             quant_dtype = QuantDtype.use_8a8w
             pass
         elif quant_config == "16a16w":
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
             quant_dtype = QuantDtype.use_16a16w
             qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
             qnn_quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
         elif quant_config == "16a4w":
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
             quant_dtype = QuantDtype.use_16a4w
             qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
             qnn_quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config())
             qnn_quantizer.set_per_channel_weight_dtype(
                 weight_dtype_for_16bit_act="int4"
@@ -822,16 +827,18 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
                 "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
             )
 
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
         use_fp16 = True
         skip_node_op_set = {}
         if args.pt2e_quantize:
             use_fp16 = False
             # TODO: fix the lowering error without skipping nodes
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
             if quant_dtype == QuantDtype.use_8a8w:
                 raise NotImplementedError("8a8w for llama is still under development")
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
             elif quant_dtype == QuantDtype.use_16a16w:
                 raise NotImplementedError("16a16w for llama is still under development")
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
             elif quant_dtype == QuantDtype.use_16a4w:
                 raise NotImplementedError("16a4w for llama is still under development")
         partitioners.append(
@@ -841,6 +848,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
                 generate_qnn_executorch_compiler_spec(
                     # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
                     soc_model=QcomChipset.SM8650,  # default to SM8650
+                    # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
                     backend_options=generate_htp_compiler_spec(use_fp16=use_fp16),
                     debug=False,
                     saver=False,
