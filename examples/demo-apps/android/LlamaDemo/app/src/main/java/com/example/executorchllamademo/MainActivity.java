@@ -119,6 +119,10 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
   private void modelDialog() {
     String[] pteFiles = listLocalFile("/data/local/tmp/llama/", ".pte");
     String[] binFiles = listLocalFile("/data/local/tmp/llama/", ".bin");
+    String[] modelFiles = listLocalFile("/data/local/tmp/llama/", ".model");
+    String[] tokenizerFiles = new String[binFiles.length + modelFiles.length];
+    System.arraycopy(binFiles, 0, tokenizerFiles, 0, binFiles.length);
+    System.arraycopy(modelFiles, 0, tokenizerFiles, binFiles.length, modelFiles.length);
     AlertDialog.Builder modelPathBuilder = new AlertDialog.Builder(this);
     modelPathBuilder.setTitle("Select model path");
     AlertDialog.Builder tokenizerPathBuilder = new AlertDialog.Builder(this);
@@ -134,10 +138,10 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
         });
 
     tokenizerPathBuilder.setSingleChoiceItems(
-        binFiles,
+        tokenizerFiles,
         -1,
         (dialog, item) -> {
-          mTokenizerFilePath = binFiles[item];
+          mTokenizerFilePath = tokenizerFiles[item];
           Runnable runnable =
               new Runnable() {
                 @Override
