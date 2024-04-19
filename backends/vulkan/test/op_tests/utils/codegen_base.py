@@ -22,6 +22,7 @@ DOUBLE = "double"
 INT = "int64_t"
 OPT_AT_TENSOR = "::std::optional<at::Tensor>"
 OPT_BOOL = "::std::optional<bool>"
+OPT_INT64 = "::std::optional<int64_t>"
 OPT_DEVICE = "::std::optional<at::Device>"
 OPT_LAYOUT = "::std::optional<at::Layout>"
 OPT_SCALARTYPE = "::std::optional<at::ScalarType>"
@@ -105,18 +106,15 @@ class TestSuiteGen:
                 for size in arg_sizes_or_val:
                     name_str += str(size) + "x"
                 name_str = name_str[:-1]
-                # minus sign is a invalid char for test case. change to "n".
-                name_str = name_str.replace("-", "n")
-
             elif isinstance(arg_sizes_or_val, list):
                 for size in arg_sizes_or_val:
                     name_str += str(size) + "c"
                 name_str = name_str[:-1]
-                # minus sign is a invalid char for test case. change to "n".
-                name_str = name_str.replace("-", "n")
-
             else:
                 name_str += str(arg_sizes_or_val).replace(".", "p")
+
+        # minus sign is a invalid char for test case. change to "n".
+        name_str = name_str.replace("-", "n")
         return name_str
 
     def create_input_data(self, arg: Argument, data: Any) -> str:
@@ -129,7 +127,7 @@ class TestSuiteGen:
             ret_str = f"{cpp_type} {arg.name} = "
 
         if cpp_type == AT_TENSOR:
-            ret_str += f"make_rand_tensor({init_list_str(data)}, test_dtype);"
+            ret_str += f"{self.suite_def.data_gen}({init_list_str(data)}, test_dtype);"
         elif cpp_type == OPT_AT_TENSOR:
             if str(data) == "None":
                 ret_str += "std::nullopt;"
@@ -145,6 +143,11 @@ class TestSuiteGen:
             ret_str += f"{str(data).lower()};"
         elif cpp_type == DOUBLE:
             ret_str += f"{str(data).lower()};"
+        elif cpp_type == OPT_INT64:
+            if str(data) == "None":
+                ret_str += "std::nullopt;"
+            else:
+                ret_str += f"{str(data)};"
         elif (
             cpp_type == OPT_SCALARTYPE
             or cpp_type == OPT_LAYOUT
