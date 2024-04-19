@@ -62,6 +62,7 @@ class DType(Enum):
 
 def load_llama_model(
     *,
+    modelname: str = "llama2",
     checkpoint: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
     params_path: str,
@@ -114,6 +115,7 @@ def load_llama_model(
 
     return LlamaEdgeManager(
         model=model,
+        modelname=modelname,
         weight_type=weight_type,
         dtype=dtype,
         use_kv_cache=use_kv_cache,
@@ -131,6 +133,7 @@ class LlamaEdgeManager:
     def __init__(
         self,
         model,
+        modelname,
         weight_type,
         dtype,
         use_kv_cache,
@@ -139,6 +142,7 @@ class LlamaEdgeManager:
         verbose: bool = False,
     ):
         self.model = model
+        self.modelname = modelname
         self.weight_type = weight_type
         self.dtype = dtype
         self.example_inputs = example_inputs

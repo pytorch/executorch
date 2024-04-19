@@ -37,7 +37,7 @@ from sentencepiece import SentencePieceProcessor
 from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 from .quant_lib import _get_pt2e_quantization_params, get_pt2e_quantizers
 
-from .quantize import EmbeddingOnlyInt8QuantHandler, WeightOnlyInt8QuantHandler
+from .quantize import EmbeddingQuantHandler, WeightOnlyInt8QuantHandler
 
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
@@ -485,7 +485,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     )
     params_path = canonical_path(args.params)
     output_dir_path = canonical_path(args.output_dir, dir=True)
-    modelname = "llama2"
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
 
     # dtype override
@@ -539,7 +538,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             group_size = int(group_size)
         bitwidth = int(bitwidth)
         transforms.append(
-            lambda model: EmbeddingOnlyInt8QuantHandler(
+            lambda model: EmbeddingQuantHandler(
                 model, bitwidth=bitwidth, group_size=group_size
             ).quantized_model()
         )
@@ -552,6 +551,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
 
     return (
         load_llama_model(
+            modelname=modelname,
             checkpoint=checkpoint_path,
             checkpoint_dir=checkpoint_dir,
             params_path=params_path,
@@ -598,6 +598,8 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     builder_exported_to_edge = _prepare_for_llama_export(
         modelname, args
     ).export_to_edge(quantizers)
+
+    modelname = builder_exported_to_edge.modelname
 
     # to_backend
     partitioners = []
