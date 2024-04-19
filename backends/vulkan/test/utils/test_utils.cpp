@@ -26,8 +26,8 @@ void record_nchw_to_image_op(
   context->submit_compute_job(
       get_nchw_to_image_shader(v_dst),
       pipeline_barrier,
-      v_dst.virtual_extents(),
-      adaptive_work_group_size(v_dst.virtual_extents()),
+      v_dst.extents(),
+      adaptive_work_group_size(v_dst.extents()),
       specialization_constants,
       VK_NULL_HANDLE,
       v_dst.image(
@@ -49,8 +49,8 @@ void record_image_to_nchw_op(
   context->submit_compute_job(
       get_image_to_nchw_shader(v_src),
       pipeline_barrier,
-      v_src.virtual_extents(),
-      adaptive_work_group_size(v_src.virtual_extents()),
+      v_src.extents(),
+      adaptive_work_group_size(v_src.extents()),
       specialization_constants,
       VK_NULL_HANDLE,
       v_src.image(pipeline_barrier, api::PipelineStage::COMPUTE),
@@ -87,8 +87,8 @@ void record_conv2d_prepack_weights_op(
   context->submit_compute_job(
       shader,
       pipeline_barrier,
-      v_dst.virtual_extents(),
-      adaptive_work_group_size(v_dst.virtual_extents()),
+      v_dst.extents(),
+      adaptive_work_group_size(v_dst.extents()),
       specialization_constants,
       VK_NULL_HANDLE,
       v_dst.image(
@@ -115,8 +115,8 @@ void record_binary_op(
   context->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel_name),
       pipeline_barrier,
-      v_dst.virtual_extents(),
-      adaptive_work_group_size(v_dst.virtual_extents()),
+      v_dst.extents(),
+      adaptive_work_group_size(v_dst.extents()),
       specialization_constants,
       VK_NULL_HANDLE,
       v_dst.image(

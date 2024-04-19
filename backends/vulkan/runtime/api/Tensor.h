@@ -42,11 +42,11 @@ class vTensorStorage final {
       const api::ScalarType dtype,
       const bool allocate_memory = true);
 
-  vTensorStorage(const vTensorStorage&) = delete;
-  vTensorStorage& operator=(const vTensorStorage&) = delete;
+  vTensorStorage(const vTensorStorage& other) = delete;
+  vTensorStorage& operator=(const vTensorStorage& other) = delete;
 
-  vTensorStorage(vTensorStorage&&) = default;
-  vTensorStorage operator=(vTensorStorage&&) = delete;
+  vTensorStorage(vTensorStorage&& other) = default;
+  vTensorStorage& operator=(vTensorStorage&& other) = default;
 
   ~vTensorStorage();
 
@@ -95,11 +95,7 @@ class vTensorStorage final {
 
 class vTensor final {
  public:
-  // Do not allow empty vTensor construction
-  vTensor() = default;
-
-  // Default constructor
-  vTensor(
+  explicit vTensor(
       api::Context* context,
       const std::vector<int64_t>& sizes,
       const api::ScalarType dtype,
@@ -107,47 +103,18 @@ class vTensor final {
       const api::GPUMemoryLayout memory_layout = api::kChannelsPacked,
       const bool allocate_memory = true);
 
-  // Default constructor for quantized vTensor
-  vTensor(
-      api::Context* const context,
-      const std::vector<int64_t>& sizes,
-      double q_scale,
-      int64_t q_zero_point,
-      const api::ScalarType dtype,
-      const api::StorageType storage_type = api::kTexture3D,
-      const api::GPUMemoryLayout memory_layout = api::kChannelsPacked);
+  vTensor(const vTensor& other) = delete;
+  vTensor& operator=(const vTensor& other) = delete;
 
-  // Copy Constructor and Assignment; Ideally copying  would be disabled
-  // (see the reasoning for move assignment below) but it is required for
-  // compatibility with OpaqueTensorImpl
-  vTensor(const vTensor& other) = default;
-  vTensor& operator=(const vTensor& other) = default;
-
-  // Move Constructor and assignment
   vTensor(vTensor&& other) = default;
   vTensor& operator=(vTensor&& other) = default;
 
  private:
-  // Tensor Options
   api::ScalarType dtype_;
-
-  // GPU specific memory layout qualifier
   api::GPUMemoryLayout memory_layout_;
 
-  // Sizes and Strides
   std::vector<int64_t> sizes_;
-  std::vector<int64_t> strides_;
-
-  // Storage Dimensions. When stored on the GPU, one dimension will be aligned
-  // to the next multiple of 4 in order to take advantage of vec4 data types.
   std::vector<int64_t> gpu_sizes_;
-  std::vector<int64_t> gpu_strides_;
-
-  // The extents that correspond to the tensor's size metadata. Note that this
-  // may not be the same as the extents of the underlying image texture because
-  // vTensor can be virtually resized via virtual_resize() which will cause it
-  // to be interpreted as a tensor with a different size.
-  api::utils::uvec3 virtual_extents_;
 
   // A Vulkan uniform buffer containing the tensor sizes in WHCN that can be
   // passed into a shader.
@@ -163,45 +130,20 @@ class vTensor final {
   // image texture that can be passed into a shader.
   std::shared_ptr<api::UniformParamsBuffer> extents_uniform_;
 
-  // Quantization params
-  bool is_quantized_{false};
-  double q_scale_{1.0f};
-  int64_t q_zero_point_{0u};
-
-  // Even at the cost of a heap allocation plus the resulting negative impact
-  // on cache locality due to the subsequent pointer chasing, it is still
-  // critical to share the view across vTensor implementations to minimize
-  // programmer errors.  Ideally this class should have been only made movable,
-  // and non-copyable - something we cannot do unfortunately due to the inner
-  // workings of at::TensorImpl requiring copy semantics in
-  // at::TensorImpl::release_resources() to function as expected.  Now that this
-  // class is made copyable though, a new door to a whole new class of bugs is
-  // opened, in that there now is a chance of two [shallow] copies, have their
-  // StorageState objects go out of sync as a result of an operation being
-  // performed on one shallow copy that is not reflected in the other.
-  // Technically, if the programmer is very careful, it is possible to avoid
-  // this trap and not pay the cost of indirection, but the resulting bugs of
-  // missing memory barriers will be so frustrating to hunt down for those
-  // unfamiliar with the internal mechanics of this class, that I decided to
-  // take the performance penalty of this extra layer of indirection in favor
-  // of making this class easier to use.
-  std::shared_ptr<vTensorStorage> view_;
+  vTensorStorage storage_;
 
  public:
   /*
    Texture Access
   */
 
-  inline api::StorageType storage_type() const {
-    return view_->storage_type_;
-  }
-
   inline api::VulkanImage& image() const& {
-    return view_->image_;
+    return storage_.image_;
   }
 
-  api::VulkanImage& image(api::PipelineBarrier&, const api::PipelineStageFlags)
-      const&;
+  api::VulkanImage& image(
+      api::PipelineBarrier&,
+      const api::PipelineStageFlags) &;
 
   api::VulkanImage& image(
       api::PipelineBarrier&,
@@ -209,12 +151,12 @@ class vTensor final {
       const api::MemoryAccessFlags) &;
 
   inline api::VulkanBuffer& buffer() const& {
-    return view_->buffer_;
+    return storage_.buffer_;
   }
 
   api::VulkanBuffer& buffer(
       api::PipelineBarrier&,
-      const api::PipelineStageFlags) const&;
+      const api::PipelineStageFlags) &;
 
   api::VulkanBuffer& buffer(
       api::PipelineBarrier&,
@@ -225,8 +167,12 @@ class vTensor final {
     Metadata
   */
 
+  inline api::StorageType storage_type() const {
+    return storage_.storage_type_;
+  }
+
   inline const api::utils::uvec3& extents() const {
-    return view_->extents_;
+    return storage_.extents_;
   }
 
   /*
@@ -236,20 +182,12 @@ class vTensor final {
     return dtype_;
   }
 
-  /*
-   * Get an `api::ScalarType` that corresponds to the image format of the
-   * texture
-   */
-  inline api::ScalarType texture_dtype() const {
-    return api::element_scalartype(view_->texture_format());
-  }
-
   inline api::GPUMemoryLayout gpu_memory_layout() const {
     return memory_layout_;
   }
 
-  inline uint32_t gpu_memory_layout_as_uint() const {
-    return static_cast<uint32_t>(memory_layout_);
+  inline int32_t gpu_memory_layout_int() const {
+    return static_cast<int32_t>(memory_layout_);
   }
 
   inline const std::vector<int64_t>& sizes() const {
@@ -262,22 +200,6 @@ class vTensor final {
 
   inline const int64_t dim() const {
     return sizes_.size();
-  }
-
-  inline const std::vector<int64_t>& strides() const {
-    return strides_;
-  }
-
-  inline const std::vector<int64_t>& gpu_sizes() const {
-    return gpu_sizes_;
-  }
-
-  inline const std::vector<int64_t>& gpu_strides() const {
-    return gpu_strides_;
-  }
-
-  inline const api::utils::uvec3& virtual_extents() const {
-    return virtual_extents_;
   }
 
   /*
@@ -301,38 +223,6 @@ class vTensor final {
    */
   std::shared_ptr<api::UniformParamsBuffer> extents_ubo();
 
-  inline void set_is_quantized() {
-    is_quantized_ = true;
-  }
-
-  inline bool is_quantized() const {
-    return is_quantized_;
-  }
-
-  inline void set_scale(const double q_scale) {
-    q_scale_ = q_scale;
-  }
-
-  inline double get_scale() const {
-    return q_scale_;
-  }
-
-  inline float get_scale_float() const {
-    return api::utils::safe_downcast<float>(q_scale_);
-  }
-
-  inline void set_zero_point(const int64_t q_zero_point) {
-    q_zero_point_ = q_zero_point;
-  }
-
-  inline int64_t get_zero_point() const {
-    return q_zero_point_;
-  }
-
-  inline int32_t get_zero_point_int32() const {
-    return api::utils::safe_downcast<int32_t>(q_zero_point_);
-  }
-
   inline size_t numel() const {
     return api::utils::multiply_integers(sizes());
   }
@@ -349,7 +239,7 @@ class vTensor final {
   }
 
   /*
-   * Return nbytes but bnased on gpu_sizes_ instead of sizes_
+   * Return nbytes but based on gpu_sizes_ instead of sizes_
    */
   inline VkDeviceSize gpu_nbytes() const {
     return api::element_size(dtype()) * gpu_numel();
@@ -391,13 +281,5 @@ class vTensor final {
    */
   void virtual_resize(const std::vector<int64_t>& new_sizes);
 };
-
-void add_buffer_barrier(
-    api::PipelineBarrier&,
-    const api::VulkanBuffer&,
-    const api::PipelineStageFlags,
-    const api::MemoryAccessFlags,
-    const api::PipelineStageFlags,
-    const api::MemoryAccessFlags);
 
 } // namespace vkcompute
