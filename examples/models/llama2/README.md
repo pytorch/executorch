@@ -248,7 +248,7 @@ Currently we supported lowering the stories model to other backends, including, 
 for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.html), [MPS](https://pytorch.org/executorch/main/build-run-mps.html), [QNN](https://pytorch.org/executorch/main/build-run-qualcomm.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
 
 - Lower to CoreML: `python -m examples.models.llama2.export_llama -kv --coreml -c stories110M.pt -p params.json`
-- MPS: `python -m examples.models.llama2.export_llama -kv --MPS -c stories110M.pt -p params.json`
+- MPS: `python -m examples.models.llama2.export_llama -kv --mps -c stories110M.pt -p params.json`
 - QNN: `python -m examples.models.llama2.export_llama -kv --qnn -c stories110M.pt -p params.json`
 
 The iOS LLAMA app supports the CoreML and MPS model and the Android LLAMA app supports the QNN model. On Android, it also allow to cross compiler the llama runner binary, push to the device and run.
