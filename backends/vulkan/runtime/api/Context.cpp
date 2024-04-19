@@ -241,22 +241,5 @@ ParamsBindList::ParamsBindList(
   std::copy(init_list.begin(), init_list.end(), bind_infos.begin());
 }
 
-ParamsBindList::ParamsBindList(
-    std::initializer_list<const api::UniformParamsBuffer*> init_list) {
-  bind_infos.resize(init_list.size());
-  for (int i = 0; i < init_list.size(); ++i) {
-    bind_infos[i] = api::BufferBindInfo(init_list.begin()[i]->buffer());
-  }
-}
-
-ParamsBindList::ParamsBindList(
-    std::initializer_list<std::shared_ptr<api::UniformParamsBuffer>>
-        init_list) {
-  bind_infos.resize(init_list.size());
-  for (int i = 0; i < init_list.size(); ++i) {
-    bind_infos[i] = api::BufferBindInfo(init_list.begin()[i]->buffer());
-  }
-}
-
 } // namespace api
 } // namespace vkcompute

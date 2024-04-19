@@ -42,13 +42,13 @@ class vTensorStorage final {
       const api::ScalarType dtype,
       const bool allocate_memory = true);
 
-  ~vTensorStorage();
-
   vTensorStorage(const vTensorStorage& other) = delete;
   vTensorStorage& operator=(const vTensorStorage& other) = delete;
 
   vTensorStorage(vTensorStorage&& other) = default;
   vTensorStorage& operator=(vTensorStorage&& other) = default;
+
+  ~vTensorStorage();
 
   friend class vTensor;
 
@@ -130,9 +130,6 @@ class vTensor final {
   // image texture that can be passed into a shader.
   api::UniformParamsBuffer extents_uniform_;
 
-  // Store the backing storage of the tensor as a shared pointer to allow two
-  // tensors to share the same underlying resource, but with different metadata.
-  // This will
   vTensorStorage storage_;
 
  public:

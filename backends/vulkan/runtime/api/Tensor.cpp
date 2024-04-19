@@ -307,16 +307,16 @@ api::VulkanImage allocate_image(
   };
 
   VkImageType image_type = VK_IMAGE_TYPE_3D;
-  VkImageViewType image_storage_type = VK_IMAGE_VIEW_TYPE_3D;
+  VkImageViewType image_view_type;
 
   switch (storage_type) {
     case api::kTexture3D:
       image_type = VK_IMAGE_TYPE_3D;
-      image_storage_type = VK_IMAGE_VIEW_TYPE_3D;
+      image_view_type = VK_IMAGE_VIEW_TYPE_3D;
       break;
     case api::kTexture2D:
       image_type = VK_IMAGE_TYPE_2D;
-      image_storage_type = VK_IMAGE_VIEW_TYPE_2D;
+      image_view_type = VK_IMAGE_VIEW_TYPE_2D;
       break;
     default:
       // Return an empty VulkanImage by default
@@ -329,7 +329,7 @@ api::VulkanImage allocate_image(
       api::create_extent3d(extents),
       image_format,
       image_type,
-      image_storage_type,
+      image_view_type,
       sampler_props,
       sampler,
       /*allow_transfer = */ true,
