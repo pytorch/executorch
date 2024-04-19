@@ -39,7 +39,7 @@ from sentencepiece import SentencePieceProcessor
 from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 from .quant_lib import _get_pt2e_quantization_params, get_pt2e_quantizers
 
-from .quantize import EmbeddingOnlyInt8QuantHandler, WeightOnlyInt8QuantHandler
+from .quantize import EmbeddingQuantHandler, WeightOnlyInt8QuantHandler
 
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
@@ -146,6 +146,10 @@ def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
 
 
 class SDPASimple(torch.nn.Module):
+    """
+    This is a simpler implementation of SDPA module defined in llama_transformer.py. Notice that it's
+    an implementation including both some preprocessing logic and F.scaled_dot_product_attention.
+    """
     def __init__(
         self,
         kv_cache: KVCache,
@@ -169,6 +173,7 @@ class SDPASimple(torch.nn.Module):
         seqlen,
         mask,
     ):
+        # The first few lines are the same as the original SDPA module.
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
@@ -178,6 +183,11 @@ class SDPASimple(torch.nn.Module):
 
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
+
+        # Following is the different part. Instead of calling F.scaled_dot_product_attention,
+        # we use the following implementation to avoid the decomposition from F.scaled_dot_product_attention,
+        # as the decompostion is too expensive. The following will get rid of aten.full_like, aten.logical_not,
+        # aten.scalar_tensor, aten.where and 2 extra aten.mul.
         scale_factor = 1 / math.sqrt(q.size(-1))
         attn_weight = q @ k.transpose(-2, -1) * scale_factor
         attn_weight += attn_mask
@@ -567,7 +577,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     )
     params_path = canonical_path(args.params)
     output_dir_path = canonical_path(args.output_dir, dir=True)
-    modelname = "llama2"
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
 
     # dtype override
@@ -621,7 +630,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             group_size = int(group_size)
         bitwidth = int(bitwidth)
         transforms.append(
-            lambda model: EmbeddingOnlyInt8QuantHandler(
+            lambda model: EmbeddingQuantHandler(
                 model, bitwidth=bitwidth, group_size=group_size
             ).quantized_model()
         )
@@ -637,6 +646,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
         transforms.append(replace_causal_mask)
     return (
         load_llama_model(
+            modelname=modelname,
             checkpoint=checkpoint_path,
             checkpoint_dir=checkpoint_dir,
             params_path=params_path,
@@ -712,6 +722,8 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     builder_exported_to_edge = _prepare_for_llama_export(
         modelname, args
     ).export_to_edge(quantizers)
+
+    modelname = builder_exported_to_edge.modelname
 
     # to_backend
     partitioners = []
