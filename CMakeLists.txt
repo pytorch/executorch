@@ -604,6 +604,24 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PUBLIC ${_dep_libs})
+  if(APPLE)
+    # pip wheels will need to be able to find the torch libraries. On Linux, the
+    # .so has non-absolute dependencies on libs like "libtorch.so" without
+    # paths; as long as we `import torch` first, those dependencies will work.
+    # But Apple dylibs do not support non-absolute dependencies, so we need to
+    # tell the loader where to look for its libraries. The LC_LOAD_DYLIB entries
+    # for the torch libraries will look like "@rpath/libtorch.dylib", so we can
+    # add an LC_RPATH entry to look in a directory relative to the installed
+    # location of our _portable_lib.so file. To see these LC_* values, run
+    # `otool -l _portable_lib*.so`.
+    set_target_properties(
+      portable_lib
+      PROPERTIES # Assume that this library will be installed in
+                 # `site-packages/executorch/extension/pybindings`, and that
+                 # the torch libs are in `site-packages/torch/lib`.
+                 BUILD_RPATH "@loader_path/../../../torch/lib"
+                 INSTALL_RPATH "@loader_path/../../../torch/lib")
+  endif()
 
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings)
