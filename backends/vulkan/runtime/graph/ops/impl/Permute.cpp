@@ -79,7 +79,7 @@ void add_permute_node(
       {out_c_aligned, in_c_aligned},
   };
 
-  api::utils::uvec3 global_size = t_out->virtual_extents();
+  api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
