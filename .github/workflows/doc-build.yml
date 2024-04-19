@@ -83,7 +83,7 @@ jobs:
 
   upload-gh-pages:
     needs: build
-    if: github.repository == 'pytorch/executorch' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v'))
+    if: github.repository == 'pytorch/executorch' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     permissions:
       contents: write
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
@@ -95,28 +95,14 @@ jobs:
       script: |
         set -euo pipefail
 
-        REF_TYPE=${{ github.ref_type }}
-        REF_NAME=${{ github.ref_name }}
+        GITHUB_REF=${{ github.ref }}
 
-        # If building for a release tag, branch, set the branch/tag name
-        # as the target folder in the gh-pages branch. The artifacts created
-        # during the build will be copied over to the target dir in the
-        # gh-pages branch.
-        if [[ "${REF_TYPE}" == branch ]]; then
-          TARGET_FOLDER="${REF_NAME}"
-        elif [[ "${REF_TYPE}" == tag ]]; then
-          # Strip the leading "v" as well as the trailing patch version and "-rc" suffix.
-          # For example: 'v0.1.2' -> '0.1' and 'v0.1.2-rc1' -> 0.1.
-          case "${REF_NAME}" in
-            *-rc*)
-              echo "Aborting upload since this is an RC tag: ${REF_NAME}"
-              # We don't generate -rc* documentation but for actual tag only.
-              exit 0
-              ;;
-            *)
-              TARGET_FOLDER=$(echo "${REF_NAME}" | sed 's/v\([0-9]\+\)\.\([0-9]\+\)\.[0-9]\+/\1.\2/')
-              ;;
-          esac
+        # Convert refs/tags/v1.12.0rc3 into 1.12. 
+        # Adopted from https://github.com/pytorch/pytorch/blob/main/.github/workflows/_docs.yml#L150C11-L155C13
+        if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+)\.* ]]; then
+          TARGET_FOLDER="${BASH_REMATCH[1]}"
+        else
+          TARGET_FOLDER="main"
         fi
         echo "Target Folder: ${TARGET_FOLDER}"
 
