@@ -17,18 +17,19 @@ Please note that the models are subject to the [acceptable use policy](https://g
 
 # Results
 
-Since 7B Llama2 model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model. 
+Since 7B Llama2 model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
 
-For Llama3, we can use the same process. Note that it's only supported in the ExecuTorch main branch. 
+For Llama3, we can use the same process. Note that it's only supported in the ExecuTorch main branch.
 
 ## Quantization:
 We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://github.com/pytorch-labs/ao/).
 
-We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Below are the results for two different groupsizes.
+We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Below are the results for two different groupsizes, with max_seq_len 2048, and 1000 samples.
 
-|Llama 2 | Baseline (FP32) | Groupwise 4-bit (128) | Groupwise 4-bit (256)
+|Model | Baseline (FP32) | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------|-----------------| ---------------------- | ---------------
-|Wikitext Perplexity | 9.16 | 10.2 | 10.7
+|Llama 2 7B | 9.2 | 10.2 | 10.7
+|Llama 3 8B | 7.9 | 9.4 | 9.7
 
 Note that groupsize less than 128 was not enabled, since such model were still too large. This is because our current efforts have focused on enabling FP32 and support for FP16 is under way. What this implies for model size is that 1) embedding table is in FP32 and 2) quantized weights scales are FP32.
 
@@ -56,7 +57,7 @@ Performance was measured on Samsung Galaxy S22, S24, One Plus 12 and iPhone 15 m
 - For Llama7b, your device may require at least 32GB RAM. If this is a constraint for you, please try the smaller stories model.
 
 ## Step 1: Setup
-1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch
+1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_requirements.sh --pybind xnnpack`
 2. Run `examples/models/llama2/install_requirements.sh` to install a few dependencies.
 
 ## Step 2: Prepare model
@@ -102,6 +103,16 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
     ```
 
+### Option C: Download and export Llama3 8B model
+
+You can export and run the original Llama3 8B model.
+
+1. Llama3 pretrained parameters can be downloaded from [Meta's official llama3 repository](https://github.com/meta-llama/llama3/).
+
+2. Export model and generate `.pte` file
+    ```
+    python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -d=fp32 -X -qmode 8da4w -kv --use_sdpa_with_kv_cache --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte" group_size 128 --metadata '{"get_bos_id":128000, "get_eos_id":128001}' --embedding-quantize 4,32
+    ```
 
 ## (Optional) Finetuning
 
@@ -147,6 +158,7 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DEXECUTORCH_BUILD_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_CUSTOM=ON \
         -Bcmake-out .
@@ -162,16 +174,21 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
         -DEXECUTORCH_BUILD_CUSTOM=ON \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DEXECUTORCH_BUILD_QUANTIZED=ON \
         -Bcmake-out/examples/models/llama2 \
         examples/models/llama2
 
     cmake --build cmake-out/examples/models/llama2 -j16 --config Release
     ```
 
+For Llama3, add `-DEXECUTORCH_USE_TIKTOKEN=ON` option when building the llama runner.
+
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L18-L40).
     ```
     cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
     ```
+
+For Llama3, you can pass the original `tokenizer.model` (without converting to `.bin` file).
 
 ## Step 5: Run benchmark on Android phone
 
@@ -270,7 +287,7 @@ This example tries to reuse the Python code, with minimal modifications to make 
 ```
 git clean -xfd
 pip uninstall executorch
-./install_requirements.sh <options>
+./install_requirements.sh --pybind xnnpack
 
 rm -rf cmake-out
 ```
