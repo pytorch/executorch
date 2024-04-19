@@ -8,15 +8,15 @@
 
 #define divup4(x) ((x + 3) / 4)
 
-// Input: idx is a ivec4 user-level coordinate, sizes is the tensor shape
-// Output: buffer_idx in the continuous nchw-buffer.
+// Input: idx is a ivec4 user-level (w, h, c, n) coordinate, sizes is the tensor
+// shape Output: buffer_idx in the continuous nchw-buffer.
 #define to_buffer_i(idx, sizes)                          \
   (idx.x + idx.y * sizes.x + idx.z * sizes.y * sizes.x + \
    idx.w * sizes.z * sizes.y * sizes.x)
 
 // Inverse of to_buffer_i
 // Input: buffer_idx in the continuous nchw-buffer, sizes is the tensor shape
-// Output: ivec4 user-level coorindate
+// Output: ivec4 user-level (w, h, c, n) coorindate
 #define from_buffer_i(buf_i, sizes)            \
   ivec4(                                       \
       buf_i % sizes.x,                         \

@@ -4,8 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import re
 from dataclasses import dataclass
-
 from typing import Any, List, Optional, Union
 
 from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
@@ -19,6 +19,7 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     OPT_AT_TENSOR,
     OPT_BOOL,
     OPT_DEVICE,
+    OPT_INT64,
     OPT_LAYOUT,
     OPT_SCALARTYPE,
     TestSuite,
@@ -43,6 +44,7 @@ class VkTestSuite(TestSuite):
         super().__init__(input_cases)
         self.storage_types: List[str] = ["api::kTexture3D"]
         self.layouts: List[str] = ["api::kChannelsPacked"]
+        self.data_gen: str = "make_rand_tensor"
 
 
 ##########################
@@ -219,6 +221,13 @@ class ComputeGraphGen:
                 ret_str += f"from_at_scalartype({ref.src_cpp_name}->scalar_type()), "
                 ret_str += f"{ref.src_cpp_name}->const_data_ptr()); \n"
             return ret_str
+        elif ref.src_cpp_type == OPT_INT64:
+            ret_str = f"{cpp_type} {ref.name} = "
+            ret_str += f"!{ref.src_cpp_name}.has_value() ? "
+            ret_str += f"{self.graph}{self.dot}add_none() : "
+            ret_str += f"{self.graph}{self.dot}add_scalar<int64_t>"
+            ret_str += f"({ref.src_cpp_name}.value());\n"
+            return ret_str
 
         ret_str = f"{cpp_type} {ref.name} = {self.graph}{self.dot}"
         if ref.src_cpp_type == AT_TENSOR and not prepack:
@@ -383,14 +392,22 @@ class ComputeGraphGen:
 
     def gen_op_check_fn(self) -> str:
         op_name = self.f.func.name.unambiguous_name()
-        op_check_fn = self.gen_decl(f"check_{op_name}") + " {"
+        op_check_fn = self.gen_decl(f"check_{op_name}") + " {\n"
         if self.should_prepack:
             op_check_fn = self.gen_decl(f"prepacked_check_{op_name}") + " {"
-        op_check_fn += self.gen_conditional_skips()
-        op_check_fn += self.gen_graph_build_code()
-        op_check_fn += self.gen_graph_exec_code()
-        op_check_fn += self.check_graph_out(self.refs["out"])
-        op_check_fn += "}\n"
+
+        op_check_fn_body = ""
+        op_check_fn_body += self.gen_conditional_skips()
+        op_check_fn_body += self.gen_graph_build_code()
+        op_check_fn_body += self.gen_graph_exec_code()
+        op_check_fn_body += self.check_graph_out(self.refs["out"])
+
+        # Add two level of indent for readability
+        op_check_fn_body = re.sub(r"^", "        ", op_check_fn_body, flags=re.M)
+
+        op_check_fn += op_check_fn_body + "\n"
+        op_check_fn += "    }\n"
+
         return op_check_fn
 
 
