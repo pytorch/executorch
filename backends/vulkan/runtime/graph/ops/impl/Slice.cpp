@@ -86,9 +86,8 @@ void add_slice_tensor_out_node(
         local_size,
         {{out, api::MemoryAccessType::WRITE},
          {in, api::MemoryAccessType::READ}},
-        {t_out->gpu_sizes_ubo(),
-         t_out->cpu_sizes_ubo(),
-         t_in->gpu_sizes_ubo(),
+        {t_out->sizes_ubo(),
+         t_in->sizes_ubo(),
          graph.create_params_buffer(params)}));
 
   } else {
@@ -137,7 +136,7 @@ void add_slice_tensor_out_node(
         local_size,
         {{out, api::MemoryAccessType::WRITE},
          {in, api::MemoryAccessType::READ}},
-        {t_out->gpu_sizes_ubo(), graph.create_params_buffer(params)}));
+        {t_out->sizes_ubo(), graph.create_params_buffer(params)}));
   }
 }
 

@@ -33,7 +33,8 @@ class PrepackNode final {
       const api::utils::uvec3& local_workgroup_size,
       const ValueRef tref,
       const ValueRef packed,
-      const api::ParamsBindList& params);
+      const api::ParamsBindList& params,
+      const api::SpecVarList& spec_vars = {});
 
   ~PrepackNode() = default;
 
@@ -47,6 +48,7 @@ class PrepackNode final {
   const ValueRef tref_;
   const ValueRef packed_;
   const api::ParamsBindList params_;
+  const api::SpecVarList spec_vars_;
 
  private:
   api::StorageBuffer create_staging_buffer(ComputeGraph* graph);

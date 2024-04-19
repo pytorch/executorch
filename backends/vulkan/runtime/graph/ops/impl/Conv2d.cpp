@@ -83,7 +83,9 @@ ValueRef prepack_biases(
       local_size,
       vref,
       v,
-      {t->gpu_sizes_ubo(), t->cpu_sizes_ubo()}));
+      {t->sizes_ubo()},
+      // Specialization constants
+      {SV(t->gpu_memory_layout_int())}));
 
   return v;
 }
@@ -210,11 +212,13 @@ ValueRef prepack_weights(
       local_size,
       vref,
       v,
-      {t->gpu_sizes_ubo(),
+      {t->sizes_ubo(),
        graph.create_params_buffer(
            api::utils::make_ivec4(original_sizes, /*reverse = */ true)),
        graph.create_params_buffer(
-           api::utils::make_ivec2(padded_sizes, /*reverse = */ true))}));
+           api::utils::make_ivec2(padded_sizes, /*reverse = */ true))},
+      // Specialization constants
+      {SV(t->gpu_memory_layout_int())}));
 
   return v;
 }

@@ -189,7 +189,7 @@ api::VulkanBuffer& vTensor::buffer(
   return storage_.buffer_;
 }
 
-const api::BufferBindInfo vTensor::cpu_sizes_ubo() {
+const api::BufferBindInfo vTensor::sizes_ubo() {
   if (!cpu_sizes_uniform_.buffer()) {
     cpu_sizes_uniform_ = api::UniformParamsBuffer(
         storage_.context_, api::utils::make_whcn_ivec4(sizes_));

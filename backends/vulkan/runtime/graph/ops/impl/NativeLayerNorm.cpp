@@ -109,10 +109,12 @@ void add_native_layer_norm_node(
         api::MemoryAccessType::WRITE},
        {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->gpu_sizes_ubo(), graph.create_params_buffer(epsilon)},
+      {t_out->sizes_ubo(), graph.create_params_buffer(epsilon)},
       // Resizing
       resize_native_layer_norm_node,
-      {normalized_shape}));
+      {normalized_shape},
+      // Specialization Constants
+      {SV(t_out->gpu_memory_layout_int())}));
 }
 
 void native_layer_norm(ComputeGraph& graph, const std::vector<ValueRef>& args) {

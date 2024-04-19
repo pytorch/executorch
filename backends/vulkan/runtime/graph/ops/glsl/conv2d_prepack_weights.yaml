@@ -7,7 +7,6 @@
 conv2d_prepack_weights:
   parameter_names_with_default_values:
     DTYPE: float
-    PACKING: C_packed
   generate_variant_forall:
     DTYPE:
       - VALUE: half

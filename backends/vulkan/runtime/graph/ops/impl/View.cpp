@@ -32,10 +32,15 @@ void add_view_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
       global_size,
       local_size,
       {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
-      {t_out->gpu_sizes_ubo(),
-       t_out->cpu_sizes_ubo(),
-       t_in->gpu_sizes_ubo(),
-       t_in->cpu_sizes_ubo()}));
+      {t_out->sizes_ubo(),
+       t_out->sizes_ubo(),
+       t_in->sizes_ubo(),
+       t_in->sizes_ubo()},
+      // Resizing
+      nullptr,
+      {},
+      // Specialization Constants
+      {SV(t_out->gpu_memory_layout_int())}));
 }
 
 void view(ComputeGraph& graph, const std::vector<ValueRef>& args) {

@@ -93,7 +93,7 @@ void add_matmul_node(
       {{out, api::MemoryAccessType::WRITE},
        {{arg1, arg2}, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->extents_ubo(), t_mat1->cpu_sizes_ubo()},
+      {t_out->extents_ubo(), t_mat1->sizes_ubo()},
       // Resizing
       resize_matmul_node));
 }

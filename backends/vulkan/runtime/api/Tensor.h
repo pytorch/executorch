@@ -207,7 +207,7 @@ class vTensor final {
    * shader. Note that the UBO will be created the first time this function is
    * called.
    */
-  const api::BufferBindInfo cpu_sizes_ubo();
+  const api::BufferBindInfo sizes_ubo();
 
   /*
    * Get a uniform buffer object containing the tensor GPU sizes to use in a

@@ -711,9 +711,9 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       api::kFloat,
       /*shared_object_idx = */ 4);
 
-  // +4: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for each staging shader
+  // +2: t.sizes_ubo() for each staging shader
   // +2: staging buffer for each input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 6);
+  EXPECT_TRUE(get_vma_allocation_count() == 4);
 
   ValueRef c = graph.add_tensor(
       size_big,
@@ -728,10 +728,10 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       api::kFloat,
       /*shared_object_idx = */ 2);
 
-  // +3: out.gpu_sizes_ubo(), alpha UBO, broadcast UBO for arithmetic shader
-  // +2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() uniform buffer for staging shader
+  // +2: alpha UBO, broadcast UBO for arithmetic shader
+  // +1: t.sizes_ubo() uniform buffer for staging shader
   // +1: staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 12);
+  EXPECT_TRUE(get_vma_allocation_count() == 9);
 
   ValueRef e = graph.add_tensor(
       size_big,
@@ -746,15 +746,15 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   out.staging = graph.set_output_tensor(out.value);
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
-  // +2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for staging shader
+  // +1: t.sizes_ubo() for staging shader
   // +1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 17);
+  EXPECT_TRUE(get_vma_allocation_count() == 13);
 
   graph.prepare();
   graph.encode_execute();
 
   // +3: shared memory allocations for tensors
-  EXPECT_TRUE(get_vma_allocation_count() == 20);
+  EXPECT_TRUE(get_vma_allocation_count() == 16);
 
   // Run graph
 
@@ -924,7 +924,7 @@ void run_from_gpu_test(
             api::PipelineStage::COMPUTE,
             api::MemoryAccessType::WRITE),
         vten.gpu_sizes_ubo(),
-        vten.cpu_sizes_ubo());
+        vten.sizes_ubo());
   }
 
   api::StorageBuffer staging_buffer(api::context(), dtype, vten.gpu_numel());
