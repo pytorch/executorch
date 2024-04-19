@@ -117,7 +117,7 @@ class TestSuiteGen:
         name_str = name_str.replace("-", "n")
         return name_str
 
-    def create_input_data(self, arg: Argument, data: Any) -> str:
+    def create_input_data(self, arg: Argument, data: Any) -> str:  # noqa: C901
         ctype = cpp.argumenttype_type(arg.type, mutable=arg.is_write, binds=arg.name)
         cpp_type = ctype.cpp_type(strip_ref=True)
 
