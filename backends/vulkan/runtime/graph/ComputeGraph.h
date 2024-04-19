@@ -10,6 +10,8 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
+#include <optional>
+
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
@@ -182,6 +184,15 @@ class ComputeGraph final {
       return static_cast<T>(value.toBool());
     }
     VK_THROW("Cannot extract scalar from Value with type ", value.type());
+  }
+
+  template <typename T>
+  std::optional<T> extract_optional_scalar(const ValueRef idx) {
+    if (val_is_none(idx)) {
+      return ::std::nullopt;
+    } else {
+      return extract_scalar<T>(idx);
+    }
   }
 
   inline std::vector<std::unique_ptr<PrepackNode>>& prepack_nodes() {
