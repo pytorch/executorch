@@ -38,7 +38,16 @@ Note: `<path_to_android_ndk>` is the root for the NDK, which is usually under
 `~/Library/Android/sdk/ndk/XX.Y.ZZZZZ` for macOS, and contains NOTICE and README.md.
 We use `<path_to_android_ndk>/build/cmake/android.toolchain.cmake` for CMake to cross-compile.
 
-3. Run the following command set up the required JNI library:
+3. (**LLaMA3 ONLY**) If you need to use tiktoken as the tokenizer (for LLaMA3),
+set `EXECUTORCH_USE_TIKTOKEN=ON` and CMake will use it as the tokenizer.
+
+If you need to run other models like LLaMA2, **skip** this step.
+
+```bash
+export EXECUTORCH_USE_TIKTOKEN=ON # Only for LLaMA3
+```
+
+4. Run the following command set up the required JNI library:
 ```bash
 pushd examples/demo-apps/android/LlamaDemo
 ./gradlew :app:setup
