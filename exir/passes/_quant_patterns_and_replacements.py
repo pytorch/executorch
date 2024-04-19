@@ -179,7 +179,7 @@ quantized_decomposed_lib.define(
 
 quantized_decomposed_lib.define(
     "embedding_4bit.dtype(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
-    "int weight_quant_min, int weight_quant_max, Tensor indices, ScalarType? dtype=None) -> Tensor",
+    "int weight_quant_min, int weight_quant_max, Tensor indices, *, ScalarType? dtype=None) -> Tensor",
 )
 
 quantized_decomposed_lib.define(

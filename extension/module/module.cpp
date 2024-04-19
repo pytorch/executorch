@@ -51,8 +51,8 @@ Module::Module(
     std::unique_ptr<EventTracer> event_tracer)
     : data_loader_(std::move(data_loader)),
       memory_allocator_(
-          std::move(memory_allocator)
-              ?: std::make_unique<util::MallocMemoryAllocator>()),
+          memory_allocator ? std::move(memory_allocator)
+                           : std::make_unique<util::MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
   runtime_init();
 }
