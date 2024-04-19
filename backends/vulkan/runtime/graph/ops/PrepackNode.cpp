@@ -31,7 +31,7 @@ PrepackNode::PrepackNode(
     const api::utils::uvec3& local_workgroup_size,
     const ValueRef tref,
     const ValueRef packed,
-    const std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params)
+    const api::ParamsBindList& params)
     : shader_(shader),
       noop_shader_(get_noop_shader(graph, packed)),
       global_workgroup_size_(global_workgroup_size),

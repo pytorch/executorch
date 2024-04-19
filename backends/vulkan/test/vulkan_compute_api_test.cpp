@@ -923,8 +923,8 @@ void run_from_gpu_test(
             pipeline_barrier,
             api::PipelineStage::COMPUTE,
             api::MemoryAccessType::WRITE),
-        vten.gpu_sizes_ubo()->buffer(),
-        vten.cpu_sizes_ubo()->buffer());
+        vten.gpu_sizes_ubo(),
+        vten.cpu_sizes_ubo());
   }
 
   api::StorageBuffer staging_buffer(api::context(), dtype, vten.gpu_numel());

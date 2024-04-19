@@ -93,6 +93,7 @@ class ComputeGraph final {
   std::unique_ptr<api::Context> context_;
   std::vector<SharedObject> shared_objects_;
   std::vector<Value> values_;
+  std::vector<api::UniformParamsBuffer> param_ubos_;
 
   std::vector<std::unique_ptr<PrepackNode>> prepack_nodes_;
   std::vector<std::unique_ptr<ExecuteNode>> execute_nodes_;
@@ -314,9 +315,9 @@ class ComputeGraph final {
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
   template <typename Block>
-  inline std::shared_ptr<api::UniformParamsBuffer> create_params_buffer(
-      const Block& data) {
-    return std::make_shared<api::UniformParamsBuffer>(context_.get(), data);
+  const api::BufferBindInfo create_params_buffer(const Block& data) {
+    param_ubos_.emplace_back(api::UniformParamsBuffer(context_.get(), data));
+    return api::BufferBindInfo(param_ubos_.back().buffer());
   }
 
   /*
