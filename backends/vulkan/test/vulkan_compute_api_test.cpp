@@ -915,7 +915,7 @@ void run_from_gpu_test(
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        vten.virtual_extents(),
+        vten.extents(),
         {4, 4, 4},
         specialization_constants,
         VK_NULL_HANDLE,

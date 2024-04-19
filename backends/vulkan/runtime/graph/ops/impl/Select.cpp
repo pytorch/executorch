@@ -102,7 +102,7 @@ void add_select_int_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  api::utils::uvec3 global_size = t_out->virtual_extents();
+  api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   // TODO: add resizing to support dynamic shapes.

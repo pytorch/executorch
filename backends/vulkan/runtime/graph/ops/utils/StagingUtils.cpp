@@ -96,10 +96,6 @@ void set_staging_zeros(api::StorageBuffer& staging, const size_t nbytes) {
 }
 
 api::ShaderInfo get_nchw_to_image_shader(const vTensor& v_dst) {
-  if (v_dst.is_quantized()) {
-    VK_THROW("Quantized Tensors are currently not supported!");
-  }
-
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
@@ -121,10 +117,6 @@ api::ShaderInfo get_nchw_to_image_shader(const vTensor& v_dst) {
 }
 
 api::ShaderInfo get_image_to_nchw_shader(const vTensor& v_src) {
-  if (v_src.is_quantized()) {
-    VK_THROW("Quantized Tensors are currently not supported!");
-  }
-
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
