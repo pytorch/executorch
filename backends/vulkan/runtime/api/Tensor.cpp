@@ -140,9 +140,9 @@ vTensor::vTensor(
       sizes_(sizes.begin(), sizes.end()),
       gpu_sizes_{calc_gpu_sizes(sizes, memory_layout_, storage_type)},
       // Utility Uniform Buffers that can be passed to shaders as arguments
-      cpu_sizes_uniform_(nullptr),
-      gpu_sizes_uniform_(nullptr),
-      extents_uniform_(nullptr),
+      cpu_sizes_uniform_(),
+      gpu_sizes_uniform_(),
+      extents_uniform_(),
       // Construct Tensor storage
       storage_(
           context,
@@ -189,33 +189,33 @@ api::VulkanBuffer& vTensor::buffer(
   return storage_.buffer_;
 }
 
-std::shared_ptr<api::UniformParamsBuffer> vTensor::cpu_sizes_ubo() {
-  if (!cpu_sizes_uniform_) {
-    cpu_sizes_uniform_.reset(new api::UniformParamsBuffer(
-        storage_.context_, api::utils::make_whcn_ivec4(sizes_)));
+const api::BufferBindInfo vTensor::cpu_sizes_ubo() {
+  if (!cpu_sizes_uniform_.buffer()) {
+    cpu_sizes_uniform_ = api::UniformParamsBuffer(
+        storage_.context_, api::utils::make_whcn_ivec4(sizes_));
   }
-  return cpu_sizes_uniform_;
+  return api::BufferBindInfo(cpu_sizes_uniform_.buffer());
 }
 
-std::shared_ptr<api::UniformParamsBuffer> vTensor::gpu_sizes_ubo() {
-  if (!gpu_sizes_uniform_) {
-    gpu_sizes_uniform_.reset(new api::UniformParamsBuffer(
-        storage_.context_, api::utils::make_whcn_ivec4(gpu_sizes_)));
+const api::BufferBindInfo vTensor::gpu_sizes_ubo() {
+  if (!gpu_sizes_uniform_.buffer()) {
+    gpu_sizes_uniform_ = api::UniformParamsBuffer(
+        storage_.context_, api::utils::make_whcn_ivec4(gpu_sizes_));
   }
-  return gpu_sizes_uniform_;
+  return api::BufferBindInfo(gpu_sizes_uniform_.buffer());
 }
 
-std::shared_ptr<api::UniformParamsBuffer> vTensor::extents_ubo() {
-  if (!extents_uniform_) {
-    extents_uniform_.reset(new api::UniformParamsBuffer(
+const api::BufferBindInfo vTensor::extents_ubo() {
+  if (!extents_uniform_.buffer()) {
+    extents_uniform_ = api::UniformParamsBuffer(
         storage_.context_,
         api::utils::uvec4(
             {storage_.extents_.data[0],
              storage_.extents_.data[1],
              storage_.extents_.data[2],
-             1u})));
+             1u}));
   }
-  return extents_uniform_;
+  return api::BufferBindInfo(extents_uniform_.buffer());
 }
 
 VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
@@ -258,16 +258,16 @@ void vTensor::update_size_metadata(const std::vector<int64_t>& new_sizes) {
   api::utils::uvec3 virtual_extents =
       create_image_extents(gpu_sizes_, storage_type(), memory_layout_);
 
-  if (cpu_sizes_uniform_) {
-    cpu_sizes_uniform_->update(api::utils::make_whcn_ivec4(sizes_));
+  if (cpu_sizes_uniform_.buffer()) {
+    cpu_sizes_uniform_.update(api::utils::make_whcn_ivec4(sizes_));
   }
 
-  if (gpu_sizes_uniform_) {
-    gpu_sizes_uniform_->update(api::utils::make_whcn_ivec4(gpu_sizes_));
+  if (gpu_sizes_uniform_.buffer()) {
+    gpu_sizes_uniform_.update(api::utils::make_whcn_ivec4(gpu_sizes_));
   }
 
-  if (extents_uniform_) {
-    extents_uniform_->update(api::utils::uvec4(
+  if (extents_uniform_.buffer()) {
+    extents_uniform_.update(api::utils::uvec4(
         {virtual_extents.data[0],
          virtual_extents.data[1],
          virtual_extents.data[2],
