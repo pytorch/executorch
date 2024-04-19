@@ -614,7 +614,10 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
         bitwidth = int(bitwidth)
         transforms.append(
             lambda model: EmbeddingQuantHandler(
-                model, bitwidth=bitwidth, group_size=group_size
+                model,
+                bitwidth=bitwidth,
+                group_size=group_size,
+                packed=(bitwidth == 4),
             ).quantized_model()
         )
 
