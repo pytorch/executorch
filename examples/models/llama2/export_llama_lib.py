@@ -146,10 +146,7 @@ def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
 
 
 class SDPASimple(torch.nn.Module):
-    """
-    This is a simpler implementation of SDPA module defined in llama_transformer.py. Notice that it's
-    an implementation including both some preprocessing logic and F.scaled_dot_product_attention.
-    """
+
     def __init__(
         self,
         kv_cache: KVCache,
@@ -173,7 +170,6 @@ class SDPASimple(torch.nn.Module):
         seqlen,
         mask,
     ):
-        # The first few lines are the same as the original SDPA module.
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
@@ -183,11 +179,6 @@ class SDPASimple(torch.nn.Module):
 
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
-
-        # Following is the different part. Instead of calling F.scaled_dot_product_attention,
-        # we use the following implementation to avoid the decomposition from F.scaled_dot_product_attention,
-        # as the decompostion is too expensive. The following will get rid of aten.full_like, aten.logical_not,
-        # aten.scalar_tensor, aten.where and 2 extra aten.mul.
         scale_factor = 1 / math.sqrt(q.size(-1))
         attn_weight = q @ k.transpose(-2, -1) * scale_factor
         attn_weight += attn_mask
