@@ -34,24 +34,23 @@ slice_arg;
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = 2;
+layout(constant_id = 3) const int packed_dim = C_DIM;
 
 void main() {
-  const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 idx = to_tensor_idx(out_pos, sizes, packed_dim);
+  const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
-  if (any(greaterThanEqual(idx, sizes))) {
+  if (pos_out_of_bounds(pos, sizes, packed_dim)) {
     return;
   }
 
-  ivec3 in_pos = out_pos;
+  ivec3 in_pos = pos;
 
-  int index = out_pos[slice_arg.dim] / slice_arg.stride;
-  int within_stride = out_pos[slice_arg.dim] % slice_arg.stride;
+  int index = pos[slice_arg.dim] / slice_arg.stride;
+  int within_stride = pos[slice_arg.dim] % slice_arg.stride;
 
   in_pos[slice_arg.dim] = slice_arg.offset * slice_arg.stride + index * slice_arg.step *
     slice_arg.stride + within_stride;
 
-  imageStore(image_out, out_pos, texelFetch(image_in, in_pos, 0));
+  imageStore(image_out, pos, texelFetch(image_in, in_pos, 0));
 
 }

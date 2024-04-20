@@ -17,8 +17,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-#include <iostream>
-
 namespace vkcompute {
 
 void resize_conv2d_node(
@@ -56,19 +54,41 @@ void resize_conv2d_node(
   out->virtual_resize(new_out_sizes);
 }
 
+void resize_conv1d_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
+  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
+  TensorRefPtr weight_ref = graph->get_tref(extra_args[0]);
+  const std::vector<int64_t>& weight_sizes = weight_ref->sizes;
+
+  const std::vector<int64_t>& in_sizes = self->sizes();
+  size_t ndim = in_sizes.size();
+  std::vector<int64_t> new_out_sizes(ndim);
+
+  int64_t kernel_size = weight_sizes.at(2);
+  int64_t in_length = in_sizes.at(2);
+
+  new_out_sizes.at(0) = in_sizes.at(0);
+  new_out_sizes.at(1) = in_sizes.at(1);
+  new_out_sizes.at(2) = in_length - kernel_size + 1;
+
+  out->virtual_resize(new_out_sizes);
+}
+
 ValueRef prepack_biases(
     ComputeGraph& graph,
     const ValueRef vref,
     const ValueRef weight,
-    const bool transposed) {
+    const bool transposed,
+    const api::StorageType storage_type,
+    const api::GPUMemoryLayout memory_layout) {
   auto sizes = graph.get_sizes_of(weight);
   const int64_t out_channels = transposed ? sizes.at(1) : sizes.at(0);
 
   ValueRef v = graph.add_tensor(
-      {out_channels},
-      graph.get_dtype_of(weight),
-      api::kTexture2D,
-      api::kWidthPacked);
+      {out_channels}, graph.get_dtype_of(weight), storage_type, memory_layout);
   vTensorPtr t = graph.get_tensor(v);
 
   api::ShaderInfo shader = get_nchw_to_image_shader(*t);
@@ -223,7 +243,7 @@ ValueRef prepack_weights(
   return v;
 }
 
-void check_conv2d_args(const vTensor& in, const vTensor& out) {
+void check_conv_args(const vTensor& in, const vTensor& out) {
   if (in.sizes().at(0) > 1) {
     VK_THROW(
         "aten.convolution.default: input batch size > 1 is not supported yet!");
@@ -312,11 +332,17 @@ void add_conv2d_node(
 
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
   ValueRef arg_weight = prepack_weights(graph, weight, method);
-  ValueRef arg_bias = prepack_biases(graph, bias, weight, transposed_val);
+  ValueRef arg_bias = prepack_biases(
+      graph,
+      bias,
+      weight,
+      transposed_val,
+      /* storage_type = */ api::kTexture2D,
+      /* memory_layout = */ api::kWidthPacked);
 
   vTensorPtr t_in = graph.get_tensor(arg_in);
   vTensorPtr t_out = graph.get_tensor(out);
-  check_conv2d_args(*t_in, *t_out);
+  check_conv_args(*t_in, *t_out);
 
   api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
@@ -346,33 +372,136 @@ void add_conv2d_node(
        {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          t_out->extents_ubo(),
-          t_in->extents_ubo(),
+          t_out->sizes_ubo(),
+          t_in->sizes_ubo(),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(extra_params),
       },
-      // Resizing
+      // Specialization Constants
+      {t_out->gpu_memory_layout_int()},
+      // Resizing Logic
       resize_conv2d_node,
       {weight, stride, padding, dilation, transposed, output_padding}));
 }
 
-void conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  return add_conv2d_node(
+void add_conv1d_node(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef weight,
+    const ValueRef bias,
+    const ValueRef stride,
+    const ValueRef padding,
+    const ValueRef dilation,
+    const ValueRef groups,
+    const ValueRef out) {
+  ValueRef arg_in = prepack_if_tensor_ref(graph, in);
+  ValueRef arg_weight =
+      prepack_if_tensor_ref(graph, weight, graph.memory_layout_of(arg_in));
+  ValueRef arg_bias = prepack_biases(
       graph,
-      args[0],
-      args[1],
-      args[2],
-      args[3],
-      args[4],
-      args[5],
-      args[6],
-      args[7],
-      args[8],
-      args[9]);
+      bias,
+      weight,
+      /*transposed = */ false,
+      /*storage_type = */ api::kTexture3D,
+      /*memory_layout = */ api::kChannelsPacked);
+
+  vTensorPtr t_in = graph.get_tensor(arg_in);
+  vTensorPtr t_weight = graph.get_tensor(arg_weight);
+  vTensorPtr t_bias = graph.get_tensor(arg_bias);
+  vTensorPtr t_out = graph.get_tensor(out);
+  const int64_t groups_val = graph.get_int(groups);
+
+  std::vector<int64_t> in_sizes = t_in->sizes();
+  std::vector<int64_t> weight_sizes = t_weight->sizes();
+  std::vector<int64_t> out_sizes = t_out->sizes();
+  IntListPtr stride_sizes = graph.get_int_list(stride);
+  IntListPtr padding_sizes = graph.get_int_list(padding);
+  IntListPtr dilation_sizes = graph.get_int_list(dilation);
+  int64_t weight_out_channels = weight_sizes.at(0);
+  int64_t kernel_size = weight_sizes.at(2);
+  int64_t in_length = in_sizes.at(2);
+
+  VK_CHECK_COND(in_sizes.size() == 3, "input must be a 3-dim tensor");
+  VK_CHECK_COND(weight_sizes.size() == 3, "weight must be a 3-dim tensor");
+  VK_CHECK_COND(
+      stride_sizes->size() == 1 && stride_sizes->at(0) == 1,
+      "stride must be 1");
+  VK_CHECK_COND(
+      padding_sizes->size() == 1 && padding_sizes->at(0) == 0,
+      "padding must be 0");
+  VK_CHECK_COND(
+      dilation_sizes->size() == 1 && dilation_sizes->at(0) == 1,
+      "dilation must be 1");
+  VK_CHECK_COND(
+      groups_val == in_sizes.at(1), "groups must be equal to in_channels");
+  VK_CHECK_COND(
+      groups_val == weight_sizes.at(0),
+      "groups must be equal to weight_sizes.at(0)");
+  VK_CHECK_COND(weight_sizes.at(1) == 1, "weight_sizes.at(1) must be 1");
+
+  check_conv_args(*t_in, *t_out);
+
+  api::utils::uvec3 global_size = {
+      1, static_cast<uint32_t>(weight_out_channels), 1};
+  api::utils::uvec3 local_size = {1, 1, 1};
+
+  std::string kernel_name("conv1d");
+  kernel_name.reserve(kShaderNameReserve);
+
+  add_dtype_suffix(kernel_name, *t_out);
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_size,
+      local_size,
+      // Inputs and Outputs
+      {{out, api::MemoryAccessType::WRITE},
+       {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
+      // Shader params buffers
+      {
+          graph.create_params_buffer(weight_out_channels),
+          graph.create_params_buffer(in_length),
+          graph.create_params_buffer(kernel_size),
+      },
+      // Specialization Constants
+      {},
+      // Resizing Logic
+      resize_conv1d_node,
+      {weight}));
+}
+
+void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  int64_t in_ndim = graph.get_tensor(args[0])->sizes().size();
+  if (in_ndim == 4) {
+    return add_conv2d_node(
+        graph,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+        args[8],
+        args[9]);
+  } else {
+    return add_conv1d_node(
+        graph,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[8],
+        args[9]);
+  }
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(aten.convolution.default, conv2d);
+  VK_REGISTER_OP(aten.convolution.default, conv);
 }
 
 } // namespace vkcompute

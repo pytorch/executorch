@@ -50,11 +50,11 @@ void add_full_node(
       {{out, api::MemoryAccessType::WRITE}},
       // Shader params buffers
       {t_out->sizes_ubo(), graph.create_params_buffer(fill_value_val)},
-      // Resizing
-      resize_full_node,
-      {size},
       // Specialization Constants
-      {SV(t_out->gpu_memory_layout_int())}));
+      {SV(t_out->gpu_memory_layout_int())},
+      // Resizing Logic
+      resize_full_node,
+      {size}));
 }
 
 void full(ComputeGraph& graph, const std::vector<ValueRef>& args) {

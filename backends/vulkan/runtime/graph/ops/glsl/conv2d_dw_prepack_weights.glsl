@@ -23,9 +23,8 @@ layout(std430) buffer;
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[2][DTYPE]} image_out;
 layout(set = 0, binding = 1) buffer  PRECISION restrict readonly Buffer {
-  BUF_T data[];
-}
-buffer_in;
+  BUF_T buffer_in[];
+};
 
 // Corresponds to {1,4,3,9} in the example below.
 layout(set = 0, binding = 2) uniform PRECISION restrict Sizes {
@@ -44,7 +43,7 @@ layout(set = 0, binding = 4) uniform PRECISION restrict PaddedSizes {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = 2;
+layout(constant_id = 3) const int packed_dim = C_DIM;
 
 /*
  * Computes special prepacking for a depthwise convolution. Each shader invocation
@@ -81,9 +80,7 @@ void main() {
 
   // As in usual staging shaders, map from GPU texel position to normal CPU
   // buffer indices: (9,3) -> (4,3,9)
-  const int base_index = to_nchw_i(idx, sizes);
-  const ivec4 p0 =
-      base_index + ivec4(0, 1, 2, 3) * get_nchw_stride(sizes, packed_dim);
+  const ivec4 p0 = get_texel_nchw_buffer_ixs(idx, sizes, packed_dim);
 
   // Re-map the normal CPU buffer indices to special indices, through a series
   // of mappings: reshape is a no-op to the underlying indices, so we only map
@@ -102,12 +99,19 @@ void main() {
   const ivec4 n = p1 / (C * H * W);
   const ivec4 mask = ivec4(greaterThanEqual(n, ivec4(N)));
 
-  SCALAR_T val_x = mix(SCALAR_T(buffer_in.data[p1.x]), 0, mask.x);
-  SCALAR_T val_y = mix(SCALAR_T(buffer_in.data[p1.y]), 0, mask.y);
-  SCALAR_T val_z = mix(SCALAR_T(buffer_in.data[p1.z]), 0, mask.z);
-  SCALAR_T val_w = mix(SCALAR_T(buffer_in.data[p1.w]), 0, mask.w);
-
-  VEC4_T texel = VEC4_T(val_x, val_y, val_z, val_w);
+  VEC4_T texel = VEC4_T(0);
+  if (mask.x == 0) {
+    texel.x = SCALAR_T(buffer_in[p1.x]);
+  }
+  if (mask.y == 0) {
+    texel.y = SCALAR_T(buffer_in[p1.y]);
+  }
+  if (mask.z == 0) {
+    texel.z = SCALAR_T(buffer_in[p1.z]);
+  }
+  if (mask.w == 0) {
+    texel.w = SCALAR_T(buffer_in[p1.w]);
+  }
 
   imageStore(image_out, pos.xy, texel);
 }

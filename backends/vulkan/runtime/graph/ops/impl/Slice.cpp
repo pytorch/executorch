@@ -66,7 +66,6 @@ void add_slice_tensor_out_node(
     std::string kernel_name = "slice_channel";
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
-    add_memory_layout_suffix(kernel_name, *t_out);
 
     api::utils::uvec3 global_size = t_out->extents();
     api::utils::uvec3 local_size = adaptive_work_group_size(global_size);

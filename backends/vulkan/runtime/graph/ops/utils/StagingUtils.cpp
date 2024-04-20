@@ -101,16 +101,14 @@ api::ShaderInfo get_nchw_to_image_shader(const vTensor& v_dst) {
 
   switch (v_dst.storage_type()) {
     case api::kTexture3D:
-      kernel_name = "nchw_to_image3d";
-      break;
     case api::kTexture2D:
-      kernel_name = "nchw_to_image2d";
+      kernel_name = "nchw_to_image";
       break;
     default:
       VK_THROW("No kernel available!");
   }
 
-  add_memory_layout_suffix(kernel_name, v_dst);
+  add_ndim_suffix(kernel_name, v_dst);
   add_dtype_suffix(kernel_name, v_dst);
 
   return VK_KERNEL_FROM_STR(kernel_name);

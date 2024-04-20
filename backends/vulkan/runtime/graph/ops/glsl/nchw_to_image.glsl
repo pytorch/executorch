@@ -32,7 +32,7 @@ layout(set = 0, binding = 2) uniform PRECISION restrict Sizes {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = 2;
+layout(constant_id = 3) const int packed_dim = C_DIM;
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
@@ -42,9 +42,7 @@ void main() {
     return;
   }
 
-  const int base_index = to_nchw_i(idx, sizes);
-  const ivec4 buf_indices =
-      base_index + ivec4(0, 1, 2, 3) * get_nchw_stride(sizes, packed_dim);
+  const ivec4 buf_indices = get_texel_nchw_buffer_ixs(idx, sizes, packed_dim);
 
   const int packed_dim_size = sizes[packed_dim];
   int packed_idx = idx[packed_dim];

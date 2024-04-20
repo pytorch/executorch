@@ -89,11 +89,11 @@ void add_permute_node(
       local_size,
       {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
       {t_out->sizes_ubo(), graph.create_params_buffer(params)},
-      // Resizing
-      nullptr,
-      {},
       // Specialization Constants
-      {SV(t_out->gpu_memory_layout_int())}));
+      {SV(t_out->gpu_memory_layout_int())},
+      // Resizing Logic
+      nullptr,
+      {}));
 }
 
 void permute(ComputeGraph& graph, const std::vector<ValueRef>& args) {

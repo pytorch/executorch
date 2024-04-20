@@ -93,11 +93,11 @@ void add_binary_op_node(
        t_in2->sizes_ubo(),
        graph.create_params_buffer(broadcast_params),
        graph.create_params_buffer(alpha_val)},
-      // Resizing
-      resize_binary_op_node,
-      {},
       // Specialization Constants
-      {SV(t_out->gpu_memory_layout_int())}));
+      {SV(t_out->gpu_memory_layout_int())},
+      // Resizing Logic
+      resize_binary_op_node,
+      {}));
 }
 
 #define DEFINE_BINARY_OP_WITH_ALPHA_FN(op_name)                          \

@@ -33,13 +33,12 @@ layout(set = 0, binding = 3) uniform PRECISION restrict IndexVal {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = 2;
+layout(constant_id = 3) const int packed_dim = C_DIM;
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 idx = to_tensor_idx(pos, sizes, packed_dim);
 
-  if (any(greaterThanEqual(idx, sizes))) {
+  if (pos_out_of_bounds(pos, sizes, packed_dim)) {
     return;
   }
 

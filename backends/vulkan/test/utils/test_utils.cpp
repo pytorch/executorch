@@ -96,7 +96,7 @@ void record_conv2d_prepack_weights_op(
           api::PipelineStage::COMPUTE,
           api::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.gpu_sizes_ubo(),
+      v_dst.sizes_ubo(),
       original_sizes_ubo.buffer(),
       padded_sizes_ubo.buffer());
 }
@@ -125,7 +125,7 @@ void record_binary_op(
           api::MemoryAccessType::WRITE),
       v_in1.image(pipeline_barrier, api::PipelineStage::COMPUTE),
       v_in2.image(pipeline_barrier, api::PipelineStage::COMPUTE),
-      v_dst.extents_ubo());
+      v_dst.sizes_ubo());
 }
 
 void execute_and_check_add(

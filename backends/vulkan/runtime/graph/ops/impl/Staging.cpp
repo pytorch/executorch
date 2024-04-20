@@ -32,13 +32,16 @@ void add_staging_to_tensor_node(
       shader,
       global_size,
       local_size,
+      // Input and Outputs
       {{out_tensor, api::MemoryAccessType::WRITE},
        {in_staging, api::MemoryAccessType::READ}},
+      // Parameter Buffers
       {t_out->sizes_ubo()},
-      // Resizing logic
+      // Specialization Constants
+      {SV(t_out->gpu_memory_layout_int())},
+      // Resizing Logic
       nullptr,
-      {},
-      {SV(t_out->gpu_memory_layout_int())}));
+      {}));
 }
 
 void add_tensor_to_staging_node(
@@ -58,13 +61,12 @@ void add_tensor_to_staging_node(
       shader,
       global_size,
       local_size,
+      // Input and Outputs
       {{in_tensor, api::MemoryAccessType::READ},
        {out_staging, api::MemoryAccessType::WRITE}},
+      // Parameter Buffers
       {t_in->sizes_ubo()},
-      // Resizing logic
-      nullptr,
-      {},
-      // Specialization constants
+      // Specialization Constants
       {SV(t_in->gpu_memory_layout_int())}));
 }
 
@@ -88,7 +90,7 @@ ValueRef prepack(
       vref,
       v,
       {t->sizes_ubo()},
-      // Specialization constants
+      // Specialization Constants
       {SV(t->gpu_memory_layout_int())}));
 
   return v;

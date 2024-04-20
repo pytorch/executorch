@@ -17,29 +17,27 @@ layout(std430) buffer;
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 
-layout(set = 0, binding = 2) uniform PRECISION restrict OutExtents {
-  uvec4 data;
-}
-out_extents;
+layout(set = 0, binding = 2) uniform PRECISION restrict OutSizes {
+  ivec4 out_sizes;
+};
 
 // dim to sum
 layout(set = 0, binding = 3) uniform PRECISION restrict DimVal {
-  int data;
-}
-dim;
+  int dim;
+};
 
 // size of dim (in the input)
 layout(set = 0, binding = 4) uniform PRECISION restrict DimSize {
-  int data;
-}
-dim_size;
+  int dim_size;
+};
 
 layout(set = 0, binding = 5) uniform PRECISION restrict Channel {
-  int data;
-}
-flattened_channels;
+  int flattened_channels;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+layout(constant_id = 3) const int packed_dim = C_DIM;
 
 /*
  * Returns a new tensor with values summed along dimension dim.
@@ -50,29 +48,33 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
+  if (pos_out_of_bounds(pos, out_sizes, packed_dim)) {
+    return;
+  }
+
   vec4 out_texel = vec4(0);
 
   int src_n;
   int src_c;
 
   // Batch
-  if (dim.data == 0) {
-    for (int batch = 0; batch < dim_size.data; ++batch) {
+  if (dim == 0) {
+    for (int batch = 0; batch < dim_size; ++batch) {
       src_n = batch;
       src_c = pos.z;
-      int src_z = src_n * flattened_channels.data + src_c;
+      int src_z = src_n * flattened_channels + src_c;
       out_texel += texelFetch(image_in, ivec3(pos.x, pos.y, src_z), 0);
     }
     imageStore(image_out, pos, out_texel);
   }
 
   // Channel
-  else if (dim.data == 1) {
+  else if (dim == 1) {
     for (int out_index = 0; out_index < 4; ++out_index) {
-      for (int channel = 0; channel < dim_size.data; ++channel) {
+      for (int channel = 0; channel < dim_size; ++channel) {
         src_n = pos.z;
         src_c = channel;
-        int src_z = src_n * flattened_channels.data + src_c / 4;
+        int src_z = src_n * flattened_channels + src_c / 4;
         vec4 v = texelFetch(image_in, ivec3(pos.x, pos.y, src_z), 0);
         out_texel[out_index] += v[channel % 4];
       }
@@ -82,8 +84,8 @@ void main() {
 
   // Height, Width
   else {
-    for (int hw = 0; hw < dim_size.data; ++hw) {
-      vec4 v = (dim.data == 2)
+    for (int hw = 0; hw < dim_size; ++hw) {
+      vec4 v = (dim == 2)
           ? texelFetch(image_in, ivec3(pos.x, hw, pos.z), 0) // Height
           : texelFetch(image_in, ivec3(hw, pos.y, pos.z), 0); // Width
       out_texel += v;

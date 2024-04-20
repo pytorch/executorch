@@ -55,9 +55,9 @@ class ExecuteNode final {
       const api::utils::uvec3& local_workgroup_size,
       const std::vector<ArgGroup>& args,
       const api::ParamsBindList& params,
+      const api::SpecVarList& spec_vars = {},
       const ResizeFunction& resize_fn = nullptr,
-      const std::vector<ValueRef>& resize_args = {},
-      const api::SpecVarList& spec_vars = {});
+      const std::vector<ValueRef>& resize_args = {});
 
   ~ExecuteNode() = default;
 
@@ -75,9 +75,9 @@ class ExecuteNode final {
   const api::utils::uvec3 local_workgroup_size_;
   const std::vector<ArgGroup> args_;
   const api::ParamsBindList params_;
+  const api::SpecVarList spec_vars_;
   const ResizeFunction resize_fn_;
   const std::vector<ValueRef> resize_args_;
-  const api::SpecVarList spec_vars_;
 };
 
 } // namespace vkcompute

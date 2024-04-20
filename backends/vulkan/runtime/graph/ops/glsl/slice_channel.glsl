@@ -35,7 +35,7 @@ slice_arg;
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = 2;
+layout(constant_id = 3) const int packed_dim = C_DIM;
 
 void main() {
   const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
@@ -50,14 +50,11 @@ void main() {
   // we calculate the source whcn-coordinate amended with offset-ed channel
   // value.  Then we calculate the actual texture position from the
   // whcn-coordinate.
-
-  const int base_index = to_nchw_i(idx, out_sizes);
-  ivec4 buf_indices =
-    base_index + ivec4(0, 1, 2, 3) * get_nchw_stride(out_sizes, packed_dim);
+  const ivec4 buf_indices = get_texel_nchw_buffer_ixs(idx, out_sizes, packed_dim);
 
   vec4 outex;
   for (int i=0;i<4;i++) {
-      ivec4 user_coor = from_buffer_i(buf_indices[i], out_sizes);
+      ivec4 user_coor = from_nchw_buffer_i(buf_indices[i], out_sizes);
 
       int in_channel = user_coor.z;
 
@@ -68,9 +65,6 @@ void main() {
         in_user_coor,
         in_sizes,
         packed_dim);
-      // ivec4 in_pow_elem = to_texture_pos_elem_C_packed(
-      //   in_user_coor,
-      //   get_gpu_sizes(in_sizes, packed_dim));
 
       vec4 v = texelFetch(image_in, in_pow_elem.xyz, 0);
 
