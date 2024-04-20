@@ -1,5 +1,0 @@
-# exclude the pybind libraries
-*
-
-# keep folder for ease of use
-!.gitignore

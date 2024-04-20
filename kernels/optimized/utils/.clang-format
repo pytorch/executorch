@@ -1,5 +1,0 @@
-# TODO(T149249408): Re-enable formatting for utils lib
----
-DisableFormat: true
-SortIncludes: false
-...
