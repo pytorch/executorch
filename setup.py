@@ -435,7 +435,7 @@ def get_ext_modules() -> list[Extension]:
             # portable kernels, and a selection of backends. This lets users
             # load and execute .pte files from python.
             BuiltExtension(
-                "portable_lib.*", "executorch.extension.pybindings.portable_lib"
+                "_portable_lib.*", "executorch.extension.pybindings._portable_lib"
             )
         )
 
