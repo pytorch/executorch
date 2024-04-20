@@ -135,6 +135,17 @@ def get_conv_inputs():
                 [0],
                 6,
             ),
+            (
+                (1, 9, 11),
+                (9, 1, 3),
+                None,
+                [1],
+                [0],
+                [1],
+                False,
+                [0],
+                9,
+            ),
         ]
     )
     return test_suite
