@@ -1,5 +1,0 @@
-local.properties
-.gradle
-.idea/*
-.externalNativeBuild
-build

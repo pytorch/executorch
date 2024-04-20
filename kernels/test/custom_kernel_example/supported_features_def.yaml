@@ -1,4 +1,0 @@
-# Just some example. In most cases overrides are not needed here.
-
-- namespace: global
-  is_aten: false
