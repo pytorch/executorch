@@ -81,15 +81,14 @@ ValueRef prepack_biases(
     ComputeGraph& graph,
     const ValueRef vref,
     const ValueRef weight,
-    const bool transposed) {
+    const bool transposed,
+    const api::StorageType storage_type,
+    const api::GPUMemoryLayout memory_layout) {
   auto sizes = graph.get_sizes_of(weight);
   const int64_t out_channels = transposed ? sizes.at(1) : sizes.at(0);
 
   ValueRef v = graph.add_tensor(
-      {out_channels},
-      graph.get_dtype_of(weight),
-      api::kTexture2D,
-      api::kWidthPacked);
+      {out_channels}, graph.get_dtype_of(weight), storage_type, memory_layout);
   vTensorPtr t = graph.get_tensor(v);
 
   api::ShaderInfo shader = get_nchw_to_image_shader(*t);
@@ -329,7 +328,13 @@ void add_conv2d_node(
 
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
   ValueRef arg_weight = prepack_weights(graph, weight, method);
-  ValueRef arg_bias = prepack_biases(graph, bias, weight, transposed_val);
+  ValueRef arg_bias = prepack_biases(
+      graph,
+      bias,
+      weight,
+      transposed_val,
+      /* storage_type = */ api::kTexture2D,
+      /* memory_layout = */ api::kWidthPacked);
 
   vTensorPtr t_in = graph.get_tensor(arg_in);
   vTensorPtr t_out = graph.get_tensor(out);
@@ -383,15 +388,16 @@ void add_conv1d_node(
     const ValueRef dilation,
     const ValueRef groups,
     const ValueRef out) {
-  if (graph.val_is_none(bias)) {
-    VK_THROW("conv1d: Null bias is not supported yet!");
-  }
-
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
   ValueRef arg_weight =
       prepack_if_tensor_ref(graph, weight, graph.memory_layout_of(arg_in));
-  ValueRef arg_bias =
-      prepack_if_tensor_ref(graph, bias, graph.memory_layout_of(arg_in));
+  ValueRef arg_bias = prepack_biases(
+      graph,
+      bias,
+      weight,
+      /*transposed = */ false,
+      /*storage_type = */ api::kTexture3D,
+      /*memory_layout = */ api::kChannelsPacked);
 
   vTensorPtr t_in = graph.get_tensor(arg_in);
   vTensorPtr t_weight = graph.get_tensor(arg_weight);
