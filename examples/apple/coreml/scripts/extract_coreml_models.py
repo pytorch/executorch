@@ -1,5 +1,3 @@
-#!/usr/bin/env bash
-#
 # Copyright © 2024 Apple Inc. All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -55,7 +53,8 @@ def extract_coreml_models(pte_data: bytes):
         if executorchcoreml.unflatten_directory_contents(
             coreml_processed_bytes, str(model_path.absolute())
         ):
-            print(f"CoreML model is extracted and saved to path = {model_path}")
+            print(f"Core ML models are extracted and saved to path = {model_path}")
+        model_index += 1
 
     if len(coreml_delegates) == 0:
         print("The model isn't delegated to CoreML.")
@@ -63,7 +62,7 @@ def extract_coreml_models(pte_data: bytes):
 
 if __name__ == "__main__":
     """
-    Extracts the CoreML models embedded in the ``.pte`` file and saves them to the
+    Extracts the Core ML models embedded in the ``.pte`` file and saves them to the
     file system.
     """
     parser = argparse.ArgumentParser()

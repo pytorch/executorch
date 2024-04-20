@@ -26,23 +26,27 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import Quantization
 class TestLinear(unittest.TestCase):
     def test_fp16_linear(self):
         for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: torch.nn.Linear(
-                    in_size, out_size, bias=use_bias  # noqa
-                ),
-                uses_bias=use_bias,
-                dtype=torch.float16,
-                atol=5e-2,
-            )
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: torch.nn.Linear(
+                        in_size, out_size, bias=use_bias  # noqa
+                    ),
+                    num_batch_dims=num_batch_dims,
+                    uses_bias=use_bias,
+                    dtype=torch.float16,
+                    atol=5e-2,
+                )
 
     def test_fp32_linear(self):
         for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: torch.nn.Linear(
-                    in_size, out_size, bias=use_bias  # noqa
-                ),
-                uses_bias=use_bias,
-            )
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: torch.nn.Linear(
+                        in_size, out_size, bias=use_bias  # noqa
+                    ),
+                    uses_bias=use_bias,
+                    num_batch_dims=num_batch_dims,
+                )
 
     def test_fp32_addmm(self):
         """
@@ -63,24 +67,71 @@ class TestLinear(unittest.TestCase):
             uses_bias=True,
         )
 
+    def test_fp32_linear_fused_relu(self):
+        class LinearReluModule(torch.nn.Module):
+            def __init__(self, in_size, out_size, use_bias):
+                super().__init__()
+                self.linear = torch.nn.Linear(in_size, out_size, bias=use_bias)
+
+            def forward(self, x):
+                return torch.nn.functional.relu(self.linear(x))
+
+        for use_bias in (True, False):
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: LinearReluModule(
+                        in_size,
+                        out_size,
+                        use_bias,  # noqa
+                    ),
+                    uses_bias=use_bias,
+                    num_batch_dims=num_batch_dims,
+                )
+
+    def test_qs8_linear_fused_relu(self):
+        class LinearReluModule(torch.nn.Module):
+            def __init__(self, in_size, out_size, use_bias):
+                super().__init__()
+                self.linear = torch.nn.Linear(in_size, out_size, bias=use_bias)
+
+            def forward(self, x):
+                return torch.nn.functional.relu(self.linear(x))
+
+        for use_bias in (True, False):
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: LinearReluModule(
+                        in_size,
+                        out_size,
+                        use_bias,  # noqa
+                    ),
+                    num_batch_dims=num_batch_dims,
+                    uses_bias=use_bias,
+                    quant=True,
+                )
+
     def test_qs8_linear(self):
         for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: torch.nn.Linear(
-                    in_size, out_size, bias=use_bias  # noqa
-                ),
-                uses_bias=use_bias,
-            )
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: torch.nn.Linear(
+                        in_size, out_size, bias=use_bias  # noqa
+                    ),
+                    uses_bias=use_bias,
+                    num_batch_dims=num_batch_dims,
+                )
 
     @unittest.skip("XNNPACK currently only supports per-channel dynamic quantization.")
     def test_qd8_per_tensor_linear(self):
         for uses_bias in (False, True):
             inputs = (torch.randn(2, 4),)
             module = torch.nn.Linear(4, 5, bias=uses_bias)
+            dynamic_shapes = ({0: torch.export.Dim("batch", max=100)},)
 
             self._test_dqlinear(
                 module,
                 inputs,
+                dynamic_shapes=dynamic_shapes,
                 is_per_channel=False,
                 uses_bias=uses_bias,
             )
@@ -93,6 +144,7 @@ class TestLinear(unittest.TestCase):
             self._test_dqlinear(
                 module,
                 inputs,
+                dynamic_shapes=({0: torch.export.Dim("batch", max=100)},),
                 is_per_channel=True,
                 uses_bias=uses_bias,
             )
@@ -114,7 +166,7 @@ class TestLinear(unittest.TestCase):
         qconfig = self._get_4b_dqconfig()
         input_channels = [2, 63]
         output_channels = [1, 8, 127]
-        batches = [1, 2]
+        batches = [2, 2]
         use_bias = [False, True]
 
         for bs, bias, ipc, opc in product(
@@ -129,13 +181,14 @@ class TestLinear(unittest.TestCase):
             self._test_dqlinear(
                 module,
                 inputs,
+                dynamic_shapes=({0: torch.export.Dim("batch", max=100)},),
                 is_per_channel=True,
                 uses_bias=bias,
                 qconfig=qconfig,
             )
 
     def test_qd8_per_channel_linear_parallel(self):
-        in_size = 1
+        in_size = 2
         input_size = 4
         output_size = 5
 
@@ -165,17 +218,39 @@ class TestLinear(unittest.TestCase):
             torch.rand(in_size, input_size, dtype=torch.float),
             torch.rand(in_size, input_size, dtype=torch.float),
         )
+        batch_dim = torch.export.Dim("batch", max=100)
+        dynamic_shapes = ({0: batch_dim}, {0: batch_dim})
 
         self._test_dqlinear(
             ParallelLinear(),
             inputs,
+            dynamic_shapes=dynamic_shapes,
             linear_count=2,
             is_per_channel=True,
             uses_bias=True,
         )
 
+    def test_qd8_per_channel_linear_with_two_batch(self):
+        in_size = 2
+        input_size = 4
+        output_size = 5
+
+        linear = torch.nn.Linear(input_size, output_size)
+        inputs = (torch.randn(2, in_size, input_size, dtype=torch.float),)
+        batch_dim = torch.export.Dim("batch", max=100)
+        dynamic_shapes = ({0: batch_dim, 1: batch_dim},)
+
+        self._test_dqlinear(
+            linear,
+            inputs,
+            dynamic_shapes=dynamic_shapes,
+            linear_count=1,
+            is_per_channel=True,
+            uses_bias=True,
+        )
+
     def test_qd8_per_channel_linear_sequential(self):
-        in_size = 1
+        in_size = 2
         input_size = 4
         intermediate_size = 5
         output_size = 3
@@ -203,17 +278,20 @@ class TestLinear(unittest.TestCase):
                 return b
 
         inputs = (torch.rand(in_size, input_size, dtype=torch.float),)
+        dynamic_shapes = ({0: torch.export.Dim("batch", max=100)},)
 
         self._test_dqlinear(
             LinearSequential(),
             inputs,
+            dynamic_shapes=dynamic_shapes,
             linear_count=2,
             is_per_channel=True,
             uses_bias=True,
+            atol=1e-1,
         )
 
     def test_qd8_per_channel_linear_parellel_and_sequential(self):
-        in_size = 1
+        in_size = 2
         input_size = 4
         intermediate_size = 5
         output_size = 3
@@ -252,49 +330,20 @@ class TestLinear(unittest.TestCase):
             torch.rand(in_size, input_size, dtype=torch.float),
             torch.rand(in_size, input_size, dtype=torch.float),
         )
-
-        self._test_dqlinear(
-            LinearModule(), inputs, linear_count=3, is_per_channel=True, uses_bias=True
+        dynamic_shapes = (
+            {0: torch.export.Dim("batch", max=100)},
+            {0: torch.export.Dim("batch2", max=100)},
         )
 
-    def test_fp32_linear_fused_relu(self):
-        class LinearReluModule(torch.nn.Module):
-            def __init__(self, in_size, out_size, use_bias):
-                super().__init__()
-                self.linear = torch.nn.Linear(in_size, out_size, bias=use_bias)
-
-            def forward(self, x):
-                return torch.nn.functional.relu(self.linear(x))
-
-        for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: LinearReluModule(
-                    in_size,
-                    out_size,
-                    use_bias,  # noqa
-                ),
-                uses_bias=use_bias,
-            )
-
-    def test_qs8_linear_fused_relu(self):
-        class LinearReluModule(torch.nn.Module):
-            def __init__(self, in_size, out_size, use_bias):
-                super().__init__()
-                self.linear = torch.nn.Linear(in_size, out_size, bias=use_bias)
-
-            def forward(self, x):
-                return torch.nn.functional.relu(self.linear(x))
-
-        for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: LinearReluModule(
-                    in_size,
-                    out_size,
-                    use_bias,  # noqa
-                ),
-                uses_bias=use_bias,
-                quant=True,
-            )
+        self._test_dqlinear(
+            LinearModule(),
+            inputs,
+            dynamic_shapes=dynamic_shapes,
+            linear_count=3,
+            is_per_channel=True,
+            uses_bias=True,
+            atol=1e-1,
+        )
 
     class ManualDQLinear(torch.nn.Module):
         def __init__(
@@ -595,8 +644,7 @@ class TestLinear(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs(atol=atol, rtol=rtol)
+            .run_method_and_compare_outputs(atol=atol, rtol=rtol)
         )
 
     def _run_manual_dqlinear_tests(self, weight_n_bit: int, op_dtype: torch.dtype):
@@ -677,6 +725,7 @@ class TestLinear(unittest.TestCase):
         self,
         make_module,
         uses_bias,
+        num_batch_dims=1,
         quant=False,
         dtype: torch.dtype = torch.float,
         atol=1e-03,
@@ -693,7 +742,7 @@ class TestLinear(unittest.TestCase):
             )
         )
 
-        in_sizes = [1, 4, 4]
+        in_sizes = [3, 4, 4]
         input_sizes = [4, 37, 17]
         output_sizes = [4, 17, 37]
 
@@ -705,11 +754,19 @@ class TestLinear(unittest.TestCase):
             in_size = int(in_sizes[i])
             input_size = int(input_sizes[i])
             output_size = int(output_sizes[i])
+            input_shape = [in_size] * num_batch_dims + [input_size]
+            print(f"Testing input_shape {input_shape} with {output_size} out_channels")
 
             module = make_module(input_size, output_size).eval().to(dtype)
-            inputs = (torch.randn(in_size, input_size).to(dtype),)
+            inputs = (torch.randn(input_shape).to(dtype),)
+            dynamic_shape = {}
+            for i in range(num_batch_dims):
+                dynamic_shape[i] = torch.export.Dim(f"batch{i}", min=2, max=in_size)
 
-            tester = Tester(module, inputs)
+            dynamic_shape = (dynamic_shape,)
+            print(dynamic_shape)
+
+            tester = Tester(module, inputs, dynamic_shapes=dynamic_shape)
 
             if quant:
                 tester.quantize()
@@ -731,18 +788,18 @@ class TestLinear(unittest.TestCase):
 
             tester.to_executorch()
             tester.serialize()
-            tester.run_method()
-            tester.compare_outputs(qtol=quant, atol=atol)
-            print("success")
+            tester.run_method_and_compare_outputs(qtol=quant, atol=atol)
 
     def _test_dqlinear(
         self,
         module,
         inputs,
+        dynamic_shapes,
         linear_count=1,
         is_per_channel=False,
         uses_bias=False,
         qconfig: Optional[QuantizationConfig] = None,
+        atol=5e-02,
     ):
         aten_op, edge_op = (
             (
@@ -761,13 +818,12 @@ class TestLinear(unittest.TestCase):
             is_dynamic=True,
         )
 
-        tester = Tester(module, inputs)
+        tester = Tester(module, inputs, dynamic_shapes=dynamic_shapes)
         tester.quantize(Quantize(quantization_config=quant_config))
 
         tester.export()
         tester.check_count({aten_op: linear_count})
         tester.check(["torch.ops.quantized_decomposed"])
-        tester.dump_artifact()
         tester.to_edge()
         tester.check_count({edge_op: linear_count})
 
@@ -779,5 +835,4 @@ class TestLinear(unittest.TestCase):
 
         tester.to_executorch()
         tester.serialize()
-        tester.run_method()
-        tester.compare_outputs(atol=5e-02)
+        tester.run_method_and_compare_outputs(atol=atol)

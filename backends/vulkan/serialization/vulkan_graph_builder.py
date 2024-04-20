@@ -178,7 +178,11 @@ class VkGraphBuilder:
 
     def create_scalar_list_value(self, arg: List[_ScalarType]) -> int:
         new_id = len(self.values)
-        if isinstance(arg[0], bool):
+        if len(arg) == 0:
+            self.values.append(
+                vk_graph_schema.VkValue(vk_graph_schema.IntList(items=[]))
+            )
+        elif isinstance(arg[0], bool):
             self.values.append(
                 vk_graph_schema.VkValue(
                     vk_graph_schema.BoolList(items=[cast(bool, e) for e in arg])
@@ -221,13 +225,20 @@ class VkGraphBuilder:
             if arg in self.node_to_value_ids:
                 return self.node_to_value_ids[arg]
             return self.create_node_value(arg)
-        elif isinstance(arg, NoneType):
+        elif (
+            isinstance(arg, NoneType)
+            or isinstance(arg, torch.device)
+            or isinstance(arg, torch.dtype)
+            or isinstance(arg, torch.layout)
+        ):
             return self.create_null_value()
         elif isinstance(arg, _ScalarType):
             return self.create_scalar_value(arg)
         elif isinstance(arg, TensorSpec):
             return self.create_tensor_value(arg)
-        elif isinstance(arg, list) and isinstance(arg[0], _ScalarType):
+        elif isinstance(arg, list) and (
+            len(arg) == 0 or isinstance(arg[0], _ScalarType)
+        ):
             # pyre-ignore[6]
             return self.create_scalar_list_value(arg)
         elif isinstance(arg, list) and isinstance(arg[0], Node):

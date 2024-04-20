@@ -6,12 +6,18 @@
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import <CoreML/CoreML.h>
+#import <vector>
 
 NS_ASSUME_NONNULL_BEGIN
 
 @class ETCoreMLAsset;
 
+namespace executorchcoreml {
+class MultiArray;
+}
+
 /// Represents a ML model, the class is a thin wrapper over `MLModel` with additional properties.
+__attribute__((objc_subclassing_restricted))
 @interface ETCoreMLModel : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -30,6 +36,12 @@ NS_ASSUME_NONNULL_BEGIN
                      orderedInputNames:(NSOrderedSet<NSString*>*)orderedInputNames
                     orderedOutputNames:(NSOrderedSet<NSString*>*)orderedOutputNames
                                  error:(NSError* __autoreleasing*)error NS_DESIGNATED_INITIALIZER;
+
+- (nullable NSArray<MLMultiArray*>*)prepareInputs:(const std::vector<executorchcoreml::MultiArray>&)inputs
+                                            error:(NSError* __autoreleasing*)error;
+
+- (nullable NSArray<MLMultiArray*>*)prepareOutputBackings:(const std::vector<executorchcoreml::MultiArray>&)outputs
+                                                    error:(NSError* __autoreleasing*)error;
 
 /// The underlying MLModel.
 @property (strong, readonly, nonatomic) MLModel* mlModel;

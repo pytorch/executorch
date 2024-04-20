@@ -12,7 +12,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 MODEL_NAME=$1 # stories110M.pt
 BUILD_TOOL=$2 # buck2 or cmake
 DTYPE=$3 # fp16 or fp32
-MODE=${4:-"xnnpack"} # portable or xnnpack
+MODE=${4:-"xnnpack+custom"} # portable or xnnpack+custom or xnnpack+custom+qe
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
     echo "Usage: [...]"
@@ -37,6 +37,24 @@ if [[ -z "${MODE:-}" ]]; then
   exit 1
 fi
 
+if [[ "${MODE}" =~ .*xnnpack.* ]]; then
+  XNNPACK=ON
+else
+  XNNPACK=OFF
+fi
+
+if [[ "${MODE}" =~ .*custom.* ]]; then
+  CUSTOM=ON
+else
+  CUSTOM=OFF
+fi
+
+if [[ "${MODE}" =~ .*qe.* ]]; then
+  QE=ON
+else
+  QE=OFF
+fi
+
 if [[ -z "${BUCK:-}" ]]; then
   BUCK=buck2
 fi
@@ -47,25 +65,21 @@ fi
 
 which "${PYTHON_EXECUTABLE}"
 
-
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
-    if [[ "${MODE}" == "xnnpack" ]]; then
-      XNNPACK=ON
-    else
-      XNNPACK=OFF
-    fi
     retry cmake -DBUCK2="$BUCK" \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_BUILD_TYPE=Debug \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
-    cmake --build cmake-out -j9 --target install --config Release
+    cmake --build cmake-out -j9 --target install --config Debug
 }
 
 cmake_build_llama_runner() {
@@ -73,12 +87,14 @@ cmake_build_llama_runner() {
     dir="examples/models/llama2"
     retry cmake -DBUCK2="$BUCK" \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DEXECUTORCH_BUILD_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
-    cmake --build cmake-out/${dir} -j9 --config Release
+    cmake --build cmake-out/${dir} -j9 --config Debug
 
 }
 
@@ -116,10 +132,17 @@ fi
 # Export model.
 EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
-EXPORT_ARGS="-c stories110M.pt -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME}"
-if [[ "${MODE}" == "xnnpack" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} -kv --use_sdpa_with_kv_cache -X -qmode 8da4w -G 128"
+EXPORT_ARGS="-c stories110M.pt -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME} -kv"
+if [[ "${XNNPACK}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} -X -qmode 8da4w -G 128"
 fi
+if [[ "${CUSTOM}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} --use_sdpa_with_kv_cache"
+fi
+if [[ "${QE}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} --embedding-quantize 8,1024"
+fi
+# Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
 
 # Create tokenizer.bin.

@@ -59,17 +59,25 @@ Context::~Context() {
 
 DescriptorSet Context::get_descriptor_set(
     const ShaderInfo& shader_descriptor,
-    const utils::uvec3& local_workgroup_size) {
+    const utils::uvec3& local_workgroup_size,
+    const SpecVarList& additional_constants) {
   VkDescriptorSetLayout shader_layout =
       shader_layout_cache().retrieve(shader_descriptor.kernel_layout);
 
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout);
 
+  SpecVarList spec_constants = {
+      SV(local_workgroup_size.data[0u]),
+      SV(local_workgroup_size.data[1u]),
+      SV(local_workgroup_size.data[2u])};
+
+  spec_constants.append(additional_constants);
+
   VkPipeline pipeline = pipeline_cache().retrieve(
       {pipeline_layout_cache().retrieve(shader_layout),
        shader_cache().retrieve(shader_descriptor),
-       local_workgroup_size});
+       spec_constants});
 
   cmd_.bind_pipeline(pipeline, pipeline_layout, local_workgroup_size);
 
@@ -225,6 +233,12 @@ UniformParamsBuffer& UniformParamsBuffer::operator=(
   }
 
   return *this;
+}
+
+ParamsBindList::ParamsBindList(
+    std::initializer_list<const api::BufferBindInfo> init_list) {
+  bind_infos.resize(init_list.size());
+  std::copy(init_list.begin(), init_list.end(), bind_infos.begin());
 }
 
 } // namespace api

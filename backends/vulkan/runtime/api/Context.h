@@ -172,7 +172,16 @@ class Context final {
     }
   }
 
-  DescriptorSet get_descriptor_set(const ShaderInfo&, const utils::uvec3&);
+  DescriptorSet get_descriptor_set(
+      const ShaderInfo&,
+      const utils::uvec3&,
+      const SpecVarList&);
+
+  inline DescriptorSet get_descriptor_set(
+      const ShaderInfo& shader_descriptor,
+      const utils::uvec3& local_work_group_size) {
+    return get_descriptor_set(shader_descriptor, local_work_group_size, {});
+  }
 
   void register_shader_dispatch(
       const DescriptorSet&,
@@ -196,6 +205,7 @@ class Context final {
       PipelineBarrier&,
       const utils::uvec3&,
       const utils::uvec3&,
+      const SpecVarList&,
       VkFence fence_handle,
       Arguments&&...);
 
@@ -234,7 +244,7 @@ class UniformParamsBuffer final {
     }
   }
 
-  VulkanBuffer& buffer() {
+  const VulkanBuffer& buffer() const {
     return vulkan_buffer_;
   }
 
@@ -252,6 +262,12 @@ class UniformParamsBuffer final {
       *data_ptr = block;
     }
   }
+};
+
+struct ParamsBindList final {
+  std::vector<api::BufferBindInfo> bind_infos;
+
+  ParamsBindList(std::initializer_list<const api::BufferBindInfo> init_list);
 };
 
 class StorageBuffer final {
@@ -319,6 +335,10 @@ inline void arg_is_empty(bool& any_is_empty, const VulkanBuffer& buffer) {
 inline void arg_is_empty(bool& any_is_empty, const VulkanImage& image) {
   // bool(image) will evaluate to false if no memory has been allocated
   any_is_empty = any_is_empty || !image;
+}
+
+inline void arg_is_empty(bool& any_is_empty, const BufferBindInfo& bind_info) {
+  any_is_empty = any_is_empty || (bind_info.handle == VK_NULL_HANDLE);
 }
 
 /*
@@ -485,6 +505,7 @@ inline bool Context::submit_compute_job(
     PipelineBarrier& pipeline_barrier,
     const utils::uvec3& global_work_group,
     const utils::uvec3& local_work_group_size,
+    const SpecVarList& specialization_constants,
     VkFence fence_handle,
     Arguments&&... arguments) {
   // If any of the provided arguments does not have memory associated with it,
@@ -527,8 +548,8 @@ inline bool Context::submit_compute_job(
 #endif /* USE_VULKAN_GPU_DIAGNOSTICS */
 
   // Factor out template parameter independent code to minimize code bloat.
-  DescriptorSet descriptor_set =
-      get_descriptor_set(shader, local_work_group_size);
+  DescriptorSet descriptor_set = get_descriptor_set(
+      shader, local_work_group_size, specialization_constants);
 
   detail::bind(
       descriptor_set,

@@ -9,9 +9,12 @@
 import base64
 import copy
 import dataclasses
+import io
 import json
 import logging
 import operator
+import os
+import zipfile
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import executorch.exir as exir
@@ -33,9 +36,9 @@ from executorch.exir.lowered_backend_module import (
 from executorch.exir.serde.schema import (
     CompileSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
+    SCHEMA_VERSION,
 )
 from torch._export.serde.schema import SchemaVersion
-from torch._export.serde.serialize import SerializeError
 from torch._export.serde.union import _Union
 from torch._export.verifier import load_verifier
 from torch.fx.experimental import symbolic_shapes
@@ -479,23 +482,22 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
 
         return res
 
-    def deserialize_graph_output(self, output: schema.Argument) -> torch.fx.Node:
-        if isinstance(output.value, schema.TensorArgument):
-            if output.value.name in self.state_dict:  # TODO(T157676982)
-                val = self.state_dict[output.value.name]
-                setattr(self.module, output.value.name, val)
-                node = self.graph.create_node(
-                    "get_attr",
-                    output.value.name,
-                    name=output.value.name,
-                )
-                node.meta = {"val": ""}
-                return node
-            return self.serialized_name_to_node[output.value.name]
-        elif isinstance(output.value, (schema.SymIntArgument, schema.SymBoolArgument)):
-            return self.serialized_name_to_node[output.value.as_name]
-        else:
-            raise SerializeError(f"Unable to deserialize output node {output}")
+    def deserialize_graph_output(
+        self, output: schema.Argument
+    ) -> Optional[Union[torch.fx.Node, int]]:
+        if (
+            output.type == "as_tensor" and output.value.name in self.state_dict
+        ):  # TODO(T157676982)
+            val = self.state_dict[output.value.name]
+            setattr(self.module, output.value.name, val)
+            node = self.graph.create_node(
+                "get_attr",
+                output.value.name,
+                name=output.value.name,
+            )
+            node.meta = {"val": ""}
+            return node
+        return super().deserialize_graph_output(output)
 
     # pyre-ignore
     def deserialize_alloc_inputs(self, serialized_inputs: List[schema.NamedArgument]):
@@ -628,7 +630,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
     def deserialize(
         self,
         serialized_artifact: export_serialize.SerializedArtifact,
-    ) -> exir.ExportedProgram:
+    ) -> ep.ExportedProgram:
         assert isinstance(serialized_artifact.exported_program, schema.ExportedProgram)
 
         symbol_name_to_range = {
@@ -677,7 +679,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             root=state_dict,
             graph=dummy_g,
             graph_signature=ep.ExportGraphSignature(input_specs=[], output_specs=[]),
-            state_dict={},  # TODO(T157676982)
+            state_dict=state_dict,  # TODO(T157676982)
             range_constraints=range_constraints,
             module_call_graph=module_call_graph,
             verifier=load_verifier(
@@ -738,7 +740,7 @@ def serialize(
 def deserialize(
     artifact: export_serialize.SerializedArtifact,
     expected_opset_version: Optional[Dict[str, int]] = None,
-) -> exir.ExportedProgram:
+) -> ep.ExportedProgram:
     assert isinstance(artifact.exported_program, bytes)
     exported_program_str = artifact.exported_program.decode("utf-8")
     exported_program_dict = json.loads(exported_program_str)
@@ -750,3 +752,98 @@ def deserialize(
             serialized_exported_program, artifact.state_dict, artifact.constants
         )
     )
+
+
+def save(
+    ep_save: ep.ExportedProgram,
+    f: Union[str, os.PathLike, io.BytesIO],
+    *,
+    extra_files: Optional[Dict[str, Any]] = None,
+    opset_version: Optional[Dict[str, int]] = None,
+) -> None:
+    if not isinstance(ep_save, ep.ExportedProgram):
+        raise TypeError(f"save() expects an ExportedProgram but got {type(ep)}")
+
+    artifact: export_serialize.SerializedArtifact = serialize(ep_save, opset_version)
+
+    if isinstance(f, (str, os.PathLike)):
+        f = os.fspath(f)
+
+    with zipfile.ZipFile(f, "w") as zipf:
+        # Save every field in the SerializedArtifact to a file.
+        assert isinstance(artifact.exported_program, bytes)
+        zipf.writestr("serialized_exported_program.json", artifact.exported_program)
+        zipf.writestr("serialized_state_dict.pt", artifact.state_dict)
+        zipf.writestr("serialized_constants.pt", artifact.constants)
+
+        zipf.writestr("version", ".".join(map(str, SCHEMA_VERSION)))
+
+        # Add extra files if provided
+        if extra_files:
+            for extra_file_name, content in extra_files.items():
+                encoded_content = content.encode("utf-8")
+                zipf.writestr(f"extra_files/{extra_file_name}", encoded_content)
+
+
+def load(
+    f: Union[str, os.PathLike, io.BytesIO],
+    *,
+    extra_files: Optional[Dict[str, Any]] = None,
+    expected_opset_version: Optional[Dict[str, int]] = None,
+) -> ep.ExportedProgram:
+    if isinstance(f, (str, os.PathLike)):
+        f = os.fspath(f)
+
+    extra_files = extra_files or {}
+
+    with zipfile.ZipFile(f, "r") as zipf:
+        # Check the version
+        version = zipf.read("version").decode().split(".")
+
+        assert len(version) == len(SCHEMA_VERSION)
+        if version[0] != str(SCHEMA_VERSION[0]):
+            raise RuntimeError(
+                f"Serialized version {version} does not match our current "
+                f"schema version {SCHEMA_VERSION}."
+            )
+
+        # Load serialized_ep and serialized_state_dict from the zip file
+
+        serialized_exported_program: Optional[bytes] = None
+        serialized_state_dict: Optional[bytes] = None
+        serialized_constants: Optional[bytes] = None
+
+        for file_info in zipf.infolist():
+            file_content = zipf.read(file_info.filename)
+
+            if file_info.filename == "serialized_exported_program.json":
+                serialized_exported_program = file_content
+            elif file_info.filename == "serialized_state_dict.json":
+                print("This version of file is deprecated")
+                serialized_state_dict = file_content
+            elif file_info.filename == "serialized_constants.json":
+                print("This version of file is deprecated")
+                serialized_constants = file_content
+            elif file_info.filename == "serialized_state_dict.pt":
+                serialized_state_dict = file_content
+            elif file_info.filename == "serialized_constants.pt":
+                serialized_constants = file_content
+            elif file_info.filename.startswith("extra_files"):
+                filename = file_info.filename.split("/", 1)[1]
+                extra_files[filename] = file_content.decode("utf-8")
+
+        assert serialized_exported_program is not None
+        assert serialized_state_dict is not None
+        assert serialized_constants is not None
+        artifact: export_serialize.SerializedArtifact = (
+            export_serialize.SerializedArtifact(
+                serialized_exported_program,
+                serialized_state_dict,
+                serialized_constants,
+            )
+        )
+
+        # Deserialize ExportedProgram
+        ep = deserialize(artifact, expected_opset_version)
+
+        return ep

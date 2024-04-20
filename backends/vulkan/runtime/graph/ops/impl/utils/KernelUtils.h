@@ -36,9 +36,7 @@ std::vector<int64_t> calc_out_sizes_hw(
     const std::vector<int64_t>& in_sizes,
     const ValueRef weight,
     const bool kernel_size_only,
-    const ValueRef stride,
-    const ValueRef padding,
-    const ValueRef dilation,
-    const ValueRef ceil_mode = kDummyValueRef);
+    const std::vector<ValueRef>& args,
+    const bool transposed = false);
 
 } // namespace vkcompute

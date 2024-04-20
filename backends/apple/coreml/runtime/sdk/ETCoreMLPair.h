@@ -9,7 +9,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 /// A class representing a pair with first and second objects.
-__attribute__((objc_subclassing_restricted)) @interface ETCoreMLPair<First, Second> : NSObject<NSCopying>
+__attribute__((objc_subclassing_restricted))
+@interface ETCoreMLPair<First, Second> : NSObject<NSCopying>
 
 - (instancetype)init NS_UNAVAILABLE;
 

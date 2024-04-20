@@ -24,6 +24,7 @@ from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     base_post_op_replace_passes,
     base_pre_op_replace_passes,
+    dead_code_elimination_pass,
     EdgeToBackendOpsPass,
     MemoryFormatOpsPass,
     OpReplacePass,
@@ -31,8 +32,14 @@ from executorch.exir.passes import (
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
+from executorch.exir.passes.normalize_view_copy_base_pass import (
+    NormalizeViewCopyBasePass,
+)
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
+from executorch.exir.passes.replace_view_copy_with_view_pass import (
+    ReplaceViewCopyWithViewPass,
+)
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.schema import Program
@@ -615,8 +622,25 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     return new_ep
 
 
+def pre_memory_planning_passes(config: ExecutorchBackendConfig) -> List[PassType]:
+    if config.remove_view_copy:
+        # pyre-ignore
+        return [
+            NormalizeViewCopyBasePass(),
+            dead_code_elimination_pass,
+            ReplaceViewCopyWithViewPass(),
+            config.sym_shape_eval_pass,
+            config.to_out_var_pass,
+        ]
+    else:
+        # pyre-ignore
+        return [
+            config.sym_shape_eval_pass,
+            config.to_out_var_pass,
+        ]
+
+
 def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]:
-    # pyre-ignore
     passes: List[PassType] = [
         *config.passes,
         SpecPropPass(),
@@ -625,9 +649,8 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
         # there exists an unbacked symint operation.
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
-        config.sym_shape_eval_pass,
-        config.to_out_var_pass,
-    ]
+    ] + pre_memory_planning_passes(config)
+
     return passes
 
 
@@ -720,7 +743,7 @@ class EdgeProgramManager:
 
     def __init__(
         self,
-        edge_programs: Dict[str, ExportedProgram],
+        edge_programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
         constant_methods: Optional[Dict[str, Any]] = None,
         compile_config: Optional[EdgeCompileConfig] = None,
     ):
@@ -730,6 +753,8 @@ class EdgeProgramManager:
         Constructs an EdgeProgramManager from an existing set of exported programs in edge dialect.
         """
         config = compile_config or EdgeCompileConfig()
+        if not isinstance(edge_programs, dict):
+            edge_programs = {"forward": edge_programs}
         for name, program in edge_programs.items():
             try:
                 EXIREdgeDialectVerifier(
@@ -740,7 +765,7 @@ class EdgeProgramManager:
                 logging.info(f"Input program {name} is not in aten dialect.")
                 raise e
 
-        self._edge_programs = edge_programs
+        self._edge_programs: Dict[str, ExportedProgram] = edge_programs
         self._config_methods = constant_methods
 
     @property

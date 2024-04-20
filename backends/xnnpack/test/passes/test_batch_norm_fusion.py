@@ -40,8 +40,7 @@ class TestBatchNormFusion(unittest.TestCase):
             .to_edge()
             .run_passes(self.PassStage)
             .check_count({self.bn_name: 1})
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_q8_batch_norm_fusion(self):
@@ -52,8 +51,7 @@ class TestBatchNormFusion(unittest.TestCase):
             .to_edge()
             .run_passes(self.PassStage)
             .check_count({self.bn_name: 1})
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp32_batch_norm_no_fusion_doesnt_partition(self):

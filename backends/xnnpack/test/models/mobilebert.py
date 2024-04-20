@@ -38,6 +38,5 @@ class TestMobilebert(unittest.TestCase):
             .check_not(list(self.supported_ops))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

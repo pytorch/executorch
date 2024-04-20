@@ -34,22 +34,20 @@ void resize_sum_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)args;
-  vTensor& out = graph->get_val(extra_args[0]).toTensor();
-  vTensor& in = graph->get_val(extra_args[1]).toTensor();
+  vTensorPtr out = graph->get_tensor(extra_args[0]);
+  vTensorPtr in = graph->get_tensor(extra_args[1]);
 
   const auto dim = extra_args[2];
   const auto keepdim = extra_args[3];
 
-  std::vector<int64_t> output_size = calc_out_sizes(in, dim, keepdim);
+  std::vector<int64_t> output_size = calc_out_sizes(*in, dim, keepdim);
 
-  out.virtual_resize(output_size);
+  out->virtual_resize(output_size);
 }
 
 void check_sum_args(const vTensor& in, const vTensor& out) {
-  VK_CHECK_COND(
-      check_memory_layout_is(in, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
-  VK_CHECK_COND(check_memory_layout_is(
-      out, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
+  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
 }
 
 void add_sum_dim_node(
@@ -60,36 +58,36 @@ void add_sum_dim_node(
     const ValueRef out) {
   ValueRef arg = prepack_if_tensor_ref(graph, in);
 
-  vTensor& t_out = graph.get_val(out).toTensor();
-  vTensor& t_input = graph.get_val(in).toTensor();
+  vTensorPtr t_out = graph.get_tensor(out);
+  vTensorPtr t_input = graph.get_tensor(in);
 
-  check_sum_args(t_input, t_out);
+  check_sum_args(*t_input, *t_out);
 
-  int64_t in_dim = t_input.sizes().size();
+  int64_t in_dim = t_input->sizes().size();
   int32_t channel =
-      in_dim > 2 ? static_cast<int32_t>(t_input.sizes()[in_dim - 3]) : 1;
-  uint32_t dim_size = t_input.sizes()[dim];
+      in_dim > 2 ? static_cast<int32_t>(t_input->sizes()[in_dim - 3]) : 1;
+  uint32_t dim_size = t_input->sizes()[dim];
 
-  api::utils::uvec3 global_size = t_out.virtual_extents();
+  api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  std::stringstream kernel_name;
-  kernel_name << "sum_dim";
+  std::string kernel_name("sum_dim");
+  kernel_name.reserve(kShaderNameReserve);
   if (keepdim) {
-    kernel_name << "_keepdim";
+    kernel_name += "_keepdim";
   }
 
-  apply_dtype_suffix(kernel_name, t_out);
+  add_dtype_suffix(kernel_name, *t_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name.str()),
+      VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE}, {arg, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out.extents_ubo(),
+      {t_out->extents_ubo(),
        graph.create_params_buffer(dim + 4 - in_dim),
        graph.create_params_buffer(dim_size),
        graph.create_params_buffer(int(ceil(channel / 4.0)))},
@@ -104,10 +102,9 @@ ValueRef add_node(
     const int dim,
     const bool keepdim,
     const api::ScalarType dtype = api::kFloat) {
-  vTensor& v_input = graph.get_val(input).toTensor();
-  std::vector<int64_t> output_size = calc_out_sizes(v_input, dim, keepdim);
-  return graph.add_tensor(
-      output_size, dtype, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+  std::vector<int64_t> output_size =
+      calc_out_sizes(*(graph.get_tensor(input)), dim, keepdim);
+  return graph.add_tensor(output_size, dtype, api::kChannelsPacked);
 }
 
 void add_sum_dim_IntList(
@@ -116,17 +113,23 @@ void add_sum_dim_IntList(
     const ValueRef opt_dim,
     const ValueRef keepdim,
     const ValueRef out) {
-  bool keepdim_val = graph.get_val(keepdim).toBool();
-  vTensor& in_tensor = graph.get_val(in).toTensor();
+  bool keepdim_val = graph.get_bool(keepdim);
 
   std::set<int64_t> dims_set;
-  const auto& dims_to_sum = graph.get_val(opt_dim).toIntList();
-  int64_t in_dim = in_tensor.sizes().size();
+  const auto dims_to_sum = *graph.get_int_list(opt_dim);
+  int64_t in_dim = graph.get_tensor(in)->sizes().size();
 
-  for (const auto& dim : dims_to_sum) {
-    // Normalize (negative) dim into range [0, self.dim() - 1]
-    int64_t dim_normalized = normalize(dim, in_dim);
-    dims_set.insert(dim_normalized);
+  if (dims_to_sum.empty()) {
+    // If dim is not specified, reduce over all dims
+    for (int64_t i = 0; i < in_dim; ++i) {
+      dims_set.insert(i);
+    }
+  } else {
+    for (const auto& dim : dims_to_sum) {
+      // Normalize (negative) dim into range [0, self.dim() - 1]
+      int64_t dim_normalized = normalize(dim, in_dim);
+      dims_set.insert(dim_normalized);
+    }
   }
 
   // Reduce the higher dimensionalities first, otherwise when keepdim is

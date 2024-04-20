@@ -34,22 +34,13 @@ except ImportError:
 CPP_H_NAME = "spv.h"
 CPP_SRC_NAME = "spv.cpp"
 
+# Basic configuration settings for shaders
 DEFAULT_ENV: Dict[str, Any] = {
     "PRECISION": "highp",
-    "FLOAT_IMAGE_FORMAT": "rgba16f",
-    "INT_IMAGE_FORMAT": "rgba32i",
-    "UINT_IMAGE_FORMAT": "rgba32ui",
 }
 
-TYPES_ENV: Dict[str, Any] = {
-    "IMAGE_FORMAT": {
-        "float": "rgba32f",
-        "half": "rgba16f",
-        "int": "rgba32i",
-        "uint": "rgba32ui",
-        "int8": "rgba8i",
-        "uint8": "rgba8ui",
-    },
+# Establishes relationships between different tensor types and different GLSL types
+TYPE_MAPPINGS: Dict[str, Any] = {
     "IMAGE_T": {
         3: {
             "float": "image3D",
@@ -78,29 +69,89 @@ TYPES_ENV: Dict[str, Any] = {
             "uint": "usampler2D",
         },
     },
-    "VEC4_T": {
-        "float": "vec4",
-        "half": "vec4",
-        "int": "ivec4",
-        "uint": "uvec4",
-        "int8": "vec4",
-        "uint8": "uvec4",
-    },
-    "T": {
-        "float": "float",
-        "half": "float",
-        "int": "int",
-        "uint": "uint",
-        "int8": "int",
-        "uint8": "uint8",
+    "IMAGE_FORMAT": {
+        "float": "rgba32f",
+        "half": "rgba16f",
+        "int": "rgba32i",
+        "uint": "rgba32ui",
+        "int8": "rgba8i",
+        "uint8": "rgba8ui",
     },
 }
 
-FUNCS_ENV: Dict[str, Any] = {
-    "GET_POS": {
+
+def define_variable(name: str) -> str:
+    if name in locals():
+        return f"#define {name} {locals()[name]}"
+    elif name in globals():
+        return f"#define {name} {globals()[name]}"
+    else:
+        raise RuntimeError(f"{name} is not defined")
+
+
+def get_buffer_scalar_type(dtype: str) -> str:
+    if dtype == "half":
+        return "float16_t"
+    elif dtype[-1] == "8":
+        return dtype + "_t"
+
+    return dtype
+
+
+def get_buffer_gvec_type(dtype: str, n: int) -> str:
+    if n == 1:
+        return get_buffer_scalar_type(dtype)
+
+    if dtype == "float":
+        return f"vec{n}"
+    elif dtype == "half":
+        return f"f16vec{n}"
+    elif dtype == "int8":
+        return f"i8vec{n}"
+    elif dtype == "uint8":
+        return f"u8vec{n}"
+
+    raise AssertionError(f"Invalid dtype: {dtype}")
+
+
+def get_texel_type(dtype: str) -> str:
+    image_format = TYPE_MAPPINGS["IMAGE_FORMAT"][dtype]
+    if image_format[-1] == "f":
+        return "vec4"
+    elif image_format[-2] == "ui":
+        return "uvec4"
+    elif image_format[-1] == "i":
+        return "ivec4"
+    raise AssertionError(f"Invalid image format: {image_format}")
+
+
+def get_gvec_type(dtype: str, n: int) -> str:
+    gvec4_type = get_texel_type(dtype)
+    return gvec4_type[:-1] + str(n)
+
+
+def get_texel_component_type(dtype: str) -> str:
+    vec4_type = get_texel_type(dtype)
+    if vec4_type[:3] == "vec":
+        return "float"
+    elif vec4_type[:4] == "ivec":
+        return "int"
+    elif vec4_type[:4] == "uvec":
+        return "uint"
+    raise AssertionError(f"Invalid vec4 type: {vec4_type}")
+
+
+UTILITY_FNS: Dict[str, Any] = {
+    "macro_define": define_variable,
+    "get_pos": {
         3: lambda pos: pos,
         2: lambda pos: f"{pos}.xy",
-    }
+    },
+    "buffer_scalar_type": get_buffer_scalar_type,
+    "buffer_gvec_type": get_buffer_gvec_type,
+    "texel_type": get_texel_type,
+    "gvec_type": get_gvec_type,
+    "texel_component_type": get_texel_component_type,
 }
 
 
@@ -376,26 +427,6 @@ class SPVGenerator:
         for key, value in variant_params.items():
             shader_params[key] = value
 
-        shader_dtype = shader_params.get("DTYPE", "float")
-
-        if shader_dtype == "int":
-            shader_params["FORMAT"] = self.env["INT_IMAGE_FORMAT"]
-        elif shader_dtype == "uint":
-            shader_params["FORMAT"] = self.env["UINT_IMAGE_FORMAT"]
-        elif shader_dtype == "int32":
-            shader_params["FORMAT"] = "rgba32i"
-        elif shader_dtype == "uint32":
-            shader_params["FORMAT"] = "rgba32ui"
-        elif shader_dtype == "int8":
-            shader_params["FORMAT"] = "rgba8i"
-        elif shader_dtype == "uint8":
-            shader_params["FORMAT"] = "rgba8ui"
-        elif shader_dtype == "float32":
-            shader_params["FORMAT"] = "rgba32f"
-        # Assume float by default
-        else:
-            shader_params["FORMAT"] = self.env["FLOAT_IMAGE_FORMAT"]
-
         return shader_params
 
     def constructOutputMap(self) -> None:
@@ -440,7 +471,7 @@ class SPVGenerator:
                     glsl_out_path,
                     "-o",
                     spv_out_path,
-                    "--target-env=vulkan1.0",
+                    "--target-env=vulkan1.1",
                     "-Werror",
                 ] + [
                     arg
@@ -543,13 +574,6 @@ typeIdMapping = {
     r"\buniform\b": "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER",
 }
 
-storageTypeToEnum = {
-    "TEXTURE_2D": "api::StorageType::TEXTURE_2D",
-    "TEXTURE_3D": "api::StorageType::TEXTURE_3D",
-    "BUFFER": "api::StorageType::BUFFER",
-    "": "api::StorageType::UNKNOWN",
-}
-
 
 def determineDescriptorType(lineStr: str) -> str:
     for identifier, typeNum in typeIdMapping.items():
@@ -632,7 +656,7 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
     tile_size = (
         f"{{{', '.join(str(x) for x in shader_info.tile_size)}}}"
         if (len(shader_info.tile_size) > 0)
-        else "std::vector<uint32_t>()"
+        else "{1, 1, 1}"
     )
 
     shader_info_layouts = "{{{}}}".format(",\n ".join(shader_info.layouts))
@@ -643,8 +667,6 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
         str(sizeBytes),
         shader_info_layouts,
         tile_size,
-        storageTypeToEnum[shader_info.weight_storage_type],
-        storageTypeToEnum[shader_info.bias_storage_type],
     ]
 
     shader_info_str = textwrap.indent(
@@ -741,9 +763,9 @@ def main(argv: List[str]) -> int:
     )
     options = parser.parse_args()
 
-    DEFAULT_ENV.update(TYPES_ENV)
-    DEFAULT_ENV.update(FUNCS_ENV)
     env = DEFAULT_ENV
+    env.update(TYPE_MAPPINGS)
+    env.update(UTILITY_FNS)
 
     for key, value in parse_arg_env(options.env).items():
         env[key] = value

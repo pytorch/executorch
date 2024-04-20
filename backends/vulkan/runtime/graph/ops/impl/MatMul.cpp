@@ -25,9 +25,8 @@ void check_matmul_args(
   VK_CHECK_COND(check_same_ndim(mat1, mat2));
 
   VK_CHECK_COND(
-      check_memory_layout_is(
-          mat1, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED) ||
-      check_memory_layout_is(mat1, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED));
+      check_memory_layout_is(mat1, api::kChannelsPacked) ||
+      check_memory_layout_is(mat1, api::kWidthPacked));
   VK_CHECK_COND(check_same_memory_layout(mat1, out));
 
   VK_CHECK_COND(check_same_sizes_at(mat1, -1, mat2, -2));
@@ -38,22 +37,22 @@ void resize_matmul_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
-  vTensor& out = graph->get_val(args[0].refs[0]).toTensor();
-  vTensor& mat1 = graph->get_val(args[1].refs[0]).toTensor();
-  vTensor& mat2 = graph->get_val(args[1].refs[1]).toTensor();
+  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
+  vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
+  vTensorPtr mat2 = graph->get_tensor(args[1].refs[1]);
 
   std::vector<int64_t> new_out_sizes(3);
-  if (mat1.sizes().size() == 2) {
+  if (mat1->sizes().size() == 2) {
     new_out_sizes.resize(2);
-    new_out_sizes.at(0) = mat1.sizes().at(0);
-    new_out_sizes.at(1) = mat2.sizes().at(1);
+    new_out_sizes.at(0) = mat1->sizes().at(0);
+    new_out_sizes.at(1) = mat2->sizes().at(1);
   } else {
-    new_out_sizes.at(0) = mat1.sizes().at(0);
-    new_out_sizes.at(1) = mat1.sizes().at(1);
-    new_out_sizes.at(2) = mat2.sizes().at(2);
+    new_out_sizes.at(0) = mat1->sizes().at(0);
+    new_out_sizes.at(1) = mat1->sizes().at(1);
+    new_out_sizes.at(2) = mat2->sizes().at(2);
   }
 
-  out.virtual_resize(new_out_sizes);
+  out->virtual_resize(new_out_sizes);
 }
 
 void add_matmul_node(
@@ -61,41 +60,40 @@ void add_matmul_node(
     const ValueRef mat1,
     const ValueRef mat2,
     const ValueRef out) {
-  ValueRef arg1 = prepack_if_tensor_ref(
-      graph, mat1, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED);
+  ValueRef arg1 = prepack_if_tensor_ref(graph, mat1, api::kWidthPacked);
 
-  api::GPUMemoryLayout mat2_layout = graph.memory_layout_of(arg1) ==
-          api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED
-      ? api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED
-      : api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED;
+  api::GPUMemoryLayout mat2_layout =
+      graph.memory_layout_of(arg1) == api::kChannelsPacked
+      ? api::kChannelsPacked
+      : api::kHeightPacked;
 
   ValueRef arg2 = prepack_if_tensor_ref(graph, mat2, mat2_layout);
 
-  vTensor& t_mat1 = graph.get_val(arg1).toTensor();
-  vTensor& t_mat2 = graph.get_val(arg2).toTensor();
-  vTensor& t_out = graph.get_val(out).toTensor();
+  vTensorPtr t_mat1 = graph.get_tensor(arg1);
+  vTensorPtr t_mat2 = graph.get_tensor(arg2);
+  vTensorPtr t_out = graph.get_tensor(out);
 
-  check_matmul_args(t_mat1, t_mat2, t_out);
+  check_matmul_args(*t_mat1, *t_mat2, *t_out);
 
-  api::utils::uvec3 global_size = t_out.virtual_extents();
+  api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  std::stringstream kernel_name;
-  kernel_name << "matmul";
-  apply_memory_layout_suffix(kernel_name, t_mat1);
-  apply_memory_layout_suffix(kernel_name, t_mat2);
-  apply_dtype_suffix(kernel_name, t_out);
+  std::string kernel_name("matmul");
+  kernel_name.reserve(kShaderNameReserve);
+  add_memory_layout_suffix(kernel_name, *t_mat1);
+  add_memory_layout_suffix(kernel_name, *t_mat2);
+  add_dtype_suffix(kernel_name, *t_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name.str()),
+      VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE},
        {{arg1, arg2}, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out.extents_ubo(), t_mat1.cpu_sizes_ubo()},
+      {t_out->extents_ubo(), t_mat1->cpu_sizes_ubo()},
       // Resizing
       resize_matmul_node));
 }

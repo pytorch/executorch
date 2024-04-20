@@ -144,6 +144,8 @@ option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
 option(EXECUTORCH_BUILD_CUSTOM "Build the custom kernels" OFF)
 
+option(EXECUTORCH_BUILD_CUSTOM_OPS_AOT "Build the custom ops lib for AOT" OFF)
+
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF)
 
@@ -175,8 +177,9 @@ option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
 #
-cmake_dependent_option(EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library."
-                       ON "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library." ON
+  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
 
 #
 # cpuinfo: build cpuinfo library. Disable on unsupported platforms
@@ -184,8 +187,19 @@ cmake_dependent_option(EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library."
 cmake_dependent_option(EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
                        "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
 
+if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT)
+  set(EXECUTORCH_BUILD_CUSTOM ON)
+endif()
+
+if(EXECUTORCH_BUILD_CUSTOM)
+  set(EXECUTORCH_BUILD_OPTIMIZED ON)
+endif()
+
 if(EXECUTORCH_BUILD_CPUINFO)
   # --- cpuinfo
+  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+      ${CMAKE_POSITION_INDEPENDENT_CODE})
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
   set(CPUINFO_BUILD_TOOLS
       OFF
@@ -207,10 +221,15 @@ if(EXECUTORCH_BUILD_CPUINFO)
       CACHE STRING "")
   set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
   add_subdirectory("${CPUINFO_SOURCE_DIR}")
+  set(CMAKE_POSITION_INDEPENDENT_CODE
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG})
 endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   # --- pthreadpool
+  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+      ${CMAKE_POSITION_INDEPENDENT_CODE})
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
   set(PTHREADPOOL_BUILD_TESTS
       OFF
@@ -230,6 +249,8 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
        CACHE STRING "")
   endif()
   add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
+  set(CMAKE_POSITION_INDEPENDENT_CODE
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG})
 endif()
 
 if(NOT PYTHON_EXECUTABLE)
@@ -352,22 +373,26 @@ add_subdirectory(schema)
 # Only contains primitive operators; does not contain portable kernels or other
 # full operators. Does not contain any backends.
 #
-
-add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PRIVATE program_schema)
-target_link_options_shared_lib(executorch)
+add_library(executorch_no_prim_ops ${_executorch_no_prim_ops__srcs})
+target_link_libraries(executorch_no_prim_ops PRIVATE program_schema)
 # Check if dl exists for this toolchain and only then link it.
 find_library(DL_LIBRARY_EXISTS NAMES dl)
 # Check if the library was found
 if(DL_LIBRARY_EXISTS)
-  target_link_libraries(executorch PRIVATE dl) # For dladdr()
+  target_link_libraries(executorch_no_prim_ops PRIVATE dl) # For dladdr()
 endif()
-target_include_directories(executorch PUBLIC ${_common_include_directories})
-target_compile_options(executorch PUBLIC ${_common_compile_options})
+target_include_directories(executorch_no_prim_ops PUBLIC ${_common_include_directories})
+target_compile_options(executorch_no_prim_ops PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
-  target_compile_definitions(executorch
+  target_compile_definitions(executorch_no_prim_ops
                              PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM})
 endif()
+
+add_library(executorch ${_executorch__srcs})
+target_link_libraries(executorch PRIVATE executorch_no_prim_ops)
+target_include_directories(executorch PUBLIC ${_common_include_directories})
+target_compile_options(executorch PUBLIC ${_common_compile_options})
+target_link_options_shared_lib(executorch)
 
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
@@ -406,7 +431,7 @@ endif()
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
 install(
-  TARGETS executorch
+  TARGETS executorch executorch_no_prim_ops
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories})
@@ -504,25 +529,43 @@ if(EXECUTORCH_BUILD_PYBIND)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
   endif()
 
-  if(EXECUTORCH_BUILD_COREML)
-    set(PYBIND_LINK_COREML "coremldelegate")
-  endif()
-
-  if(EXECUTORCH_BUILD_MPS)
-    set(PYBIND_LINK_MPS "mpsdelegate")
-  endif()
-
-  if(EXECUTORCH_BUILD_XNNPACK)
-    # need to explicitly specify XNNPACK here
-    # otherwise uses XNNPACK symbols from libtorch_cpu
-    set(PYBIND_LINK_XNNPACK xnnpack_backend XNNPACK)
-  endif()
-
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
   find_package(Torch CONFIG REQUIRED)
   find_library(TORCH_PYTHON_LIBRARY torch_python
                PATHS "${TORCH_INSTALL_PREFIX}/lib")
 
+  set(_dep_libs
+      ${TORCH_PYTHON_LIBRARY}
+      bundled_program
+      etdump
+      executorch
+      extension_data_loader
+      portable_ops_lib
+      util
+      torch)
+
+  if(EXECUTORCH_BUILD_COREML)
+    list(APPEND _dep_libs coremldelegate)
+  endif()
+
+  if(EXECUTORCH_BUILD_MPS)
+    list(APPEND _dep_libs mpsdelegate)
+  endif()
+
+  if(EXECUTORCH_BUILD_XNNPACK)
+    # need to explicitly specify XNNPACK here otherwise uses XNNPACK symbols
+    # from libtorch_cpu
+    list(APPEND _dep_libs xnnpack_backend XNNPACK)
+  endif()
+
+  if(EXECUTORCH_BUILD_CUSTOM)
+    list(APPEND _dep_libs custom_ops)
+  endif()
+
+  # TODO(larryliu): Fix macOS 2 dylibs having 2 sets of static variables issue
+  if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT AND NOT APPLE)
+    list(APPEND _dep_libs custom_ops_aot_lib)
+  endif()
   # compile options for pybind
 
   set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti
@@ -544,19 +587,7 @@ if(EXECUTORCH_BUILD_PYBIND)
                              PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=portable_lib)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
-  target_link_libraries(
-    portable_lib
-    PUBLIC ${TORCH_PYTHON_LIBRARY}
-           bundled_program
-           etdump
-           executorch
-           extension_data_loader
-           portable_ops_lib
-           util
-           torch
-           ${PYBIND_LINK_COREML}
-           ${PYBIND_LINK_MPS}
-           ${PYBIND_LINK_XNNPACK})
+  target_link_libraries(portable_lib PUBLIC ${_dep_libs})
 
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings)

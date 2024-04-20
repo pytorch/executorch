@@ -23,15 +23,15 @@
 #define VK_FORMAT_FLOAT4 VK_FORMAT_R32G32B32A32_SFLOAT
 #endif /* USE_VULKAN_FP16_INFERENCE */
 
-#define VK_FORALL_SCALAR_TYPES(_)               \
-  _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, Byte)     \
-  _(int8_t, VK_FORMAT_R8G8B8A8_SINT, Char)      \
-  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, Int)  \
-  _(bool, VK_FORMAT_R8G8B8A8_SINT, Bool)        \
-  _(float, VK_FORMAT_R16G16B16A16_SFLOAT, Half) \
-  _(float, VK_FORMAT_FLOAT4, Float)             \
-  _(int8_t, VK_FORMAT_R8G8B8A8_SINT, QInt8)     \
-  _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, QUInt8)   \
+#define VK_FORALL_SCALAR_TYPES(_)                  \
+  _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, Byte)        \
+  _(int8_t, VK_FORMAT_R8G8B8A8_SINT, Char)         \
+  _(int32_t, VK_FORMAT_R32G32B32A32_SINT, Int)     \
+  _(bool, VK_FORMAT_R8G8B8A8_SINT, Bool)           \
+  _(uint16_t, VK_FORMAT_R16G16B16A16_SFLOAT, Half) \
+  _(float, VK_FORMAT_FLOAT4, Float)                \
+  _(int8_t, VK_FORMAT_R8G8B8A8_SINT, QInt8)        \
+  _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, QUInt8)      \
   _(int32_t, VK_FORMAT_R32G32B32A32_SINT, QInt32)
 
 namespace vkcompute {
@@ -162,12 +162,15 @@ VK_FORALL_SCALAR_TYPES(SPECIALIZE_ScalarTypeToCType)
  *
  * UNKNOWN is not expected to be used.
  */
-enum class StorageType {
+enum class StorageType : uint8_t {
   BUFFER,
   TEXTURE_3D,
   TEXTURE_2D,
-  UNKNOWN,
 };
+
+static constexpr StorageType kBuffer = StorageType::BUFFER;
+static constexpr StorageType kTexture3D = StorageType::TEXTURE_3D;
+static constexpr StorageType kTexture2D = StorageType::TEXTURE_2D;
 
 /**
  * The enum below is used to describe how tensor data is laid out when stored in
@@ -182,11 +185,20 @@ enum class StorageType {
  * strides of the tensor will be used instead to convert between logical tensor
  * coordinates and linear access indices.
  */
-enum class GPUMemoryLayout : uint32_t {
+enum class GPUMemoryLayout : uint8_t {
   TENSOR_WIDTH_PACKED = 0u,
   TENSOR_HEIGHT_PACKED = 1u,
   TENSOR_CHANNELS_PACKED = 2u,
 };
+
+static constexpr GPUMemoryLayout kWidthPacked =
+    GPUMemoryLayout::TENSOR_WIDTH_PACKED;
+
+static constexpr GPUMemoryLayout kHeightPacked =
+    GPUMemoryLayout::TENSOR_HEIGHT_PACKED;
+
+static constexpr GPUMemoryLayout kChannelsPacked =
+    GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
 
 } // namespace api
 } // namespace vkcompute

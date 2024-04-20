@@ -497,6 +497,25 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_sum(self):
+        class SumModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = torch.sum(x, (), keepdim=True)
+                x = torch.sum(x)
+                return x
+
+        module = SumModule()
+        sample_inputs = (torch.rand(size=(3, 2, 7, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_conv2d(self):
         class Conv2dModule(torch.nn.Module):
             def __init__(self):
@@ -520,6 +539,145 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(
             conv2d_module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_conv_transpose2d(self):
+        class ConvTranspose2dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.ConvTranspose2d(
+                    in_channels=6,
+                    out_channels=8,
+                    kernel_size=(3, 3),
+                    padding=(2, 3),
+                    stride=(1, 2),
+                    output_padding=(0, 1),
+                    dilation=1,
+                    groups=1,
+                    bias=True,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv_transpose2d_module = ConvTranspose2dModule()
+        sample_inputs = (torch.randn(size=(1, 6, 40, 50), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv_transpose2d_module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_conv2d_dw(self):
+        class Conv2dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    in_channels=8,
+                    out_channels=8,
+                    kernel_size=3,
+                    padding=1,
+                    groups=8,
+                    bias=True,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv2d_module = Conv2dModule()
+        sample_inputs = (torch.randn(size=(1, 8, 72, 96), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv2d_module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_conv2d_pw(self):
+        class Conv2dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    in_channels=8,
+                    out_channels=8,
+                    kernel_size=1,
+                    padding=1,
+                    groups=1,
+                    bias=True,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv2d_module = Conv2dModule()
+        sample_inputs = (torch.randn(size=(1, 8, 72, 96), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv2d_module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_conv2d_bias_false(self):
+        class Conv2dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    in_channels=6,
+                    out_channels=8,
+                    kernel_size=(3, 3),
+                    padding=(2, 3),
+                    stride=(1, 2),
+                    dilation=1,
+                    groups=1,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv2d_module = Conv2dModule()
+        sample_inputs = (torch.randn(size=(1, 6, 40, 50), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv2d_module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_native_layer_norm(self):
+        class NativeLayerNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.native_layer_norm(
+                    x, [5], torch.ones(5), torch.zeros(5), 1e-5
+                )
+
+        sample_inputs = (torch.randn(size=(3, 4, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            NativeLayerNormModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_full(self):
+        class FullModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.full(x.shape, 42.0)
+
+        sample_inputs = (torch.randn(size=(2, 3, 4, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            FullModule(),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )

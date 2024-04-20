@@ -54,9 +54,10 @@ class ExecuteNode final {
       const api::utils::uvec3& global_workgroup_size,
       const api::utils::uvec3& local_workgroup_size,
       const std::vector<ArgGroup>& args,
-      const std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params,
+      const api::ParamsBindList& params,
       const ResizeFunction& resize_fn = nullptr,
-      const std::vector<ValueRef>& resize_args = {});
+      const std::vector<ValueRef>& resize_args = {},
+      const api::SpecVarList& spec_vars = {});
 
   ~ExecuteNode() = default;
 
@@ -73,9 +74,10 @@ class ExecuteNode final {
   const api::utils::uvec3 global_workgroup_size_;
   const api::utils::uvec3 local_workgroup_size_;
   const std::vector<ArgGroup> args_;
-  std::vector<std::shared_ptr<api::UniformParamsBuffer>> params_;
+  const api::ParamsBindList params_;
   const ResizeFunction resize_fn_;
   const std::vector<ValueRef> resize_args_;
+  const api::SpecVarList spec_vars_;
 };
 
 } // namespace vkcompute

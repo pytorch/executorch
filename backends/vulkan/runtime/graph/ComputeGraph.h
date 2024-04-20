@@ -10,6 +10,8 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
+#include <optional>
+
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
@@ -36,6 +38,38 @@ struct is_valid_scalar_type<double> : std::true_type {};
 template <>
 struct is_valid_scalar_type<bool> : std::true_type {};
 
+//
+// Guarded Pointer Classes
+//
+
+class ComputeGraph;
+
+#define DECL_VALUE_PTR_CLASS(classname, ctype)                         \
+  class classname final {                                              \
+    ComputeGraph* const graph_;                                        \
+    ctype* ptr_;                                                       \
+                                                                       \
+   public:                                                             \
+    explicit classname(ComputeGraph* const graph, const ValueRef idx); \
+    ctype* operator->() const;                                         \
+    ctype& operator*() const;                                          \
+    ~classname();                                                      \
+  };
+
+DECL_VALUE_PTR_CLASS(vTensorPtr, vTensor)
+DECL_VALUE_PTR_CLASS(TensorRefPtr, TensorRef)
+DECL_VALUE_PTR_CLASS(StagingPtr, api::StorageBuffer)
+DECL_VALUE_PTR_CLASS(IntListPtr, std::vector<int64_t>)
+DECL_VALUE_PTR_CLASS(DoubleListPtr, std::vector<double>)
+DECL_VALUE_PTR_CLASS(BoolListPtr, std::vector<bool>)
+DECL_VALUE_PTR_CLASS(ValueListPtr, std::vector<ValueRef>)
+
+#undef DECL_VALUE_PTR_CLASS
+
+//
+// ComputeGraph
+//
+
 /*
  * This is the core data structure used to execute Vulkan models in graph mode.
  * As opposed to ATen/eager mode where a command buffer is encoded every
@@ -61,12 +95,16 @@ class ComputeGraph final {
   std::unique_ptr<api::Context> context_;
   std::vector<SharedObject> shared_objects_;
   std::vector<Value> values_;
+  std::vector<api::UniformParamsBuffer> param_ubos_;
 
   std::vector<std::unique_ptr<PrepackNode>> prepack_nodes_;
   std::vector<std::unique_ptr<ExecuteNode>> execute_nodes_;
 
   std::vector<IOValueRef> inputs_;
   std::vector<IOValueRef> outputs_;
+
+ protected:
+  size_t values_in_use_ = 0;
 
  public:
   //
@@ -89,34 +127,73 @@ class ComputeGraph final {
       const api::ShaderInfo& shader_info,
       bool execute);
 
-  /*
-   * Returns the value at a particular index in the graph. If storing this
-   * function's return value in a lvalue reference, it is imperative that no
-   * values are added to the graph while the reference is in scope, otherwise
-   * the underlying value may have been moved as part of a vector resize.
-   */
-  inline Value& get_val(ValueRef idx) {
-    return values_.at(idx);
+#define GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(ptr_type, short_name, type_name) \
+  inline ptr_type get_##short_name(const ValueRef idx) {                   \
+    return ptr_type(this, idx);                                            \
+  }                                                                        \
+  inline bool val_is_##short_name(const ValueRef idx) {                    \
+    return values_.at(idx).is##type_name();                                \
   }
 
-  inline const std::vector<int64_t>& get_val_sizes(ValueRef idx) {
-    Value& val = get_val(idx);
-    if (val.isTensor()) {
-      return val.toTensor().sizes();
-    } else if (val.isTensorRef()) {
-      return val.toTensorRef().sizes;
-    }
-    VK_THROW("Could not get sizes of value with type ", val.type());
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(vTensorPtr, tensor, Tensor)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(TensorRefPtr, tref, TensorRef)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(StagingPtr, staging, Staging)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(IntListPtr, int_list, IntList)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(DoubleListPtr, double_list, DoubleList)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(BoolListPtr, bool_list, BoolList)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(ValueListPtr, value_list, ValueList)
+
+#undef GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS
+
+#define GET_AND_CHECK_VAL_AS_TYPE_FNS(ctype, short_name, type_name) \
+  inline ctype get_##short_name(const ValueRef idx) {               \
+    return values_.at(idx).to##type_name();                         \
+  }                                                                 \
+  inline bool val_is_##short_name(const ValueRef idx) {             \
+    return values_.at(idx).is##type_name();                         \
   }
 
-  inline api::ScalarType get_val_dtype(ValueRef idx) {
-    Value& val = get_val(idx);
-    if (val.isTensor()) {
-      return val.toTensor().dtype();
-    } else if (val.isTensorRef()) {
-      return val.toTensorRef().dtype;
+  GET_AND_CHECK_VAL_AS_TYPE_FNS(int64_t, int, Int)
+  GET_AND_CHECK_VAL_AS_TYPE_FNS(double, double, Double)
+  GET_AND_CHECK_VAL_AS_TYPE_FNS(bool, bool, Bool)
+  GET_AND_CHECK_VAL_AS_TYPE_FNS(std::string, string, String)
+
+#undef GET_AND_CHECK_VAL_AS_TYPE_FNS
+
+  inline bool val_is_none(const ValueRef idx) {
+    return values_.at(idx).isNone();
+  }
+
+  inline TypeTag get_val_type(const ValueRef idx) {
+    return values_.at(idx).type();
+  }
+
+  std::vector<int64_t> get_sizes_of(ValueRef idx);
+
+  api::ScalarType get_dtype_of(ValueRef idx);
+
+  template <typename T>
+  T extract_scalar(const ValueRef idx) {
+    Value& value = values_.at(idx);
+    if (value.isInt()) {
+      return static_cast<T>(value.toInt());
     }
-    VK_THROW("Could not get dtype of value with type ", val.type());
+    if (value.isDouble()) {
+      return static_cast<T>(value.toDouble());
+    }
+    if (value.isBool()) {
+      return static_cast<T>(value.toBool());
+    }
+    VK_THROW("Cannot extract scalar from Value with type ", value.type());
+  }
+
+  template <typename T>
+  std::optional<T> extract_optional_scalar(const ValueRef idx) {
+    if (val_is_none(idx)) {
+      return ::std::nullopt;
+    } else {
+      return extract_scalar<T>(idx);
+    }
   }
 
   inline std::vector<std::unique_ptr<PrepackNode>>& prepack_nodes() {
@@ -156,13 +233,17 @@ class ComputeGraph final {
    * Returns the memory layout of a Tensor value at the specified index.
    */
   inline api::GPUMemoryLayout memory_layout_of(ValueRef idx) {
-    return get_val(idx).toTensor().gpu_memory_layout();
+    return get_tensor(idx)->gpu_memory_layout();
   }
 
   //
   // Graph Building
   //
 
+ private:
+  void check_no_active_value_ptrs();
+
+ public:
   /*
    * Add a `vTensor` value to the graph with the specified properties. There are
    * various convenience overloads of this function that may be used instead.
@@ -245,9 +326,9 @@ class ComputeGraph final {
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
   template <typename Block>
-  inline std::shared_ptr<api::UniformParamsBuffer> create_params_buffer(
-      const Block& data) {
-    return std::make_shared<api::UniformParamsBuffer>(context_.get(), data);
+  const api::BufferBindInfo create_params_buffer(const Block& data) {
+    param_ubos_.emplace_back(api::UniformParamsBuffer(context_.get(), data));
+    return api::BufferBindInfo(param_ubos_.back().buffer());
   }
 
   /*
@@ -312,12 +393,31 @@ class ComputeGraph final {
 
   void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
   void propagate_resize();
+
+  //
+  // Debug support (implemented in Logging.cpp)
+  //
+
+  void print_readable();
+
+  //
+  // Friend classes
+  //
+
+  friend class vTensorPtr;
+  friend class TensorRefPtr;
+  friend class StagingPtr;
+  friend class IntListPtr;
+  friend class DoubleListPtr;
+  friend class BoolListPtr;
+  friend class ValueListPtr;
 };
 
 template <typename T>
 inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
 ComputeGraph::add_scalar(T value) {
   ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
   values_.emplace_back(value);
   return idx;
 }
@@ -326,6 +426,7 @@ template <typename T>
 inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
 ComputeGraph::add_scalar_list(std::vector<T>&& value) {
   ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
   values_.emplace_back(std::move(value));
   return idx;
 }

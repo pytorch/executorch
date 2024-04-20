@@ -170,6 +170,10 @@ static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
                                               loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
                                                  eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
                                                        error:(NSError * __autoreleasing *)error {
+    if (self.ignoreOutputBackings) {
+        predictionOptions.outputBackings = @{};
+    }
+    
     NSError *localError = nil;
     NSArray<MLMultiArray *> *outputs = nil;
     if (loggingOptions.log_profiling_info) {

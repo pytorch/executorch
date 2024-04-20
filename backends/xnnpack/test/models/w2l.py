@@ -15,13 +15,15 @@ class TestW2L(unittest.TestCase):
     batch_size = 10
     input_frames = 700
     vocab_size = 4096
+    num_features = 1
     wav2letter = models.Wav2Letter(num_classes=vocab_size).eval()
 
-    model_inputs = (torch.randn(batch_size, 1, input_frames),)
+    model_inputs = (torch.randn(batch_size, num_features, input_frames),)
+    dynamic_shape = ({0: torch.export.Dim("batch", min=2, max=10)},)
 
     def test_fp32_w2l(self):
         (
-            Tester(self.wav2letter, self.model_inputs)
+            Tester(self.wav2letter, self.model_inputs, self.dynamic_shape)
             .export()
             .to_edge()
             .partition()
@@ -34,13 +36,12 @@ class TestW2L(unittest.TestCase):
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs(num_runs=10)
         )
 
     def test_qs8_w2l(self):
         (
-            Tester(self.wav2letter.eval(), self.model_inputs)
+            Tester(self.wav2letter.eval(), self.model_inputs, self.dynamic_shape)
             .quantize()
             .export()
             .to_edge()
@@ -54,6 +55,5 @@ class TestW2L(unittest.TestCase):
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs(num_runs=10)
         )

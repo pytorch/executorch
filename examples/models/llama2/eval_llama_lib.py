@@ -6,16 +6,22 @@
 
 
 import argparse
-from typing import Optional
+
+from typing import Optional, Union
 
 import lm_eval
 import torch
+
+from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
+from executorch.examples.models.llama2.tokenizer.tokenizer import (
+    Tokenizer as SentencePieceTokenizer,
+)
 
 from lm_eval.api.model import LM
 from lm_eval.evaluator import evaluate
 from lm_eval.models.huggingface import HFLM as eval_wrapper
 from lm_eval.tasks import get_task_dict
-from sentencepiece import SentencePieceProcessor
+
 from torch import nn
 
 from .builder import LlamaEdgeManager
@@ -33,20 +39,21 @@ class GPTFastEvalWrapper(eval_wrapper):
     def __init__(
         self,
         model: nn.Module,
-        tokenizer: SentencePieceProcessor,
+        tokenizer: Union[SentencePieceTokenizer, Tiktoken],
         max_seq_length: Optional[int] = None,
+        use_kv_cache: bool = False,
     ):
-        super().__init__()
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        super().__init__(device=device)
         self._model = model
         self._tokenizer = tokenizer
-        self._device = (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        )
+        self._device = torch.device(device)
         self._max_seq_length = 2048 if max_seq_length is None else max_seq_length
+        self._use_kv_cache = use_kv_cache
 
     @property
     def eot_token_id(self):
-        return self._tokenizer.eos_id()
+        return self._tokenizer.eos_id
 
     @property
     def max_length(self):
@@ -65,7 +72,7 @@ class GPTFastEvalWrapper(eval_wrapper):
         return self._device
 
     def tok_encode(self, string: str, **kwargs):
-        tokens = [self._tokenizer.bos_id()] + self._tokenizer.encode(string)
+        tokens = self._tokenizer.encode(string, bos=True, eos=False)
         encoded = torch.tensor(tokens, dtype=torch.int, device=self.device)
         # encoded is a pytorch tensor, but some internal logic in the
         # eval harness expects it to be a list instead
@@ -78,7 +85,15 @@ class GPTFastEvalWrapper(eval_wrapper):
         return decoded
 
     def _model_call(self, inps):
-        return self._model(inps)
+        if self._use_kv_cache:
+            result_logits = []
+            for pos in range(self._max_seq_length):
+                pos_tensor = torch.tensor([pos], dtype=torch.int64)
+                logits = self._model(inps[:, pos : pos + 1], pos_tensor)
+                result_logits.append(logits)
+            return torch.cat(result_logits, dim=1)
+        else:
+            return self._model(inps)
 
     def _model_generate(self, context, max_length, eos_token_id):
         raise Exception("unimplemented")
@@ -93,7 +108,7 @@ class ETEagerEvalWrapper(GPTFastEvalWrapper):
     def __init__(
         self,
         model: str,
-        tokenizer: SentencePieceProcessor,
+        tokenizer: Union[SentencePieceTokenizer, Tiktoken],
         max_seq_length: Optional[int] = None,
     ):
         super().__init__(None, tokenizer, max_seq_length)
@@ -102,13 +117,22 @@ class ETEagerEvalWrapper(GPTFastEvalWrapper):
         from executorch.extension.pybindings.portable_lib import _load_for_executorch
 
         self._et_model = _load_for_executorch(self._model)
+        self._use_kv_cache = self._et_model.run_method("use_kv_cache")[0]
 
     def _model_call(self, inps):
         # Given inps (tokens), return the logits from a single forward call
         # inps: Tensor of shape (1, max_seq_len - 1)
-        # logits: Tensor of shape (1, max_seq_len - 1, 32000)
-        result = self._et_model.forward((inps,))
-        return result[0]
+        # logits: Tensor of shape (1, max_seq_len - 1, vocab_size)
+        if self._use_kv_cache:
+            result_logits = []
+            for pos in range(self._max_seq_length):
+                pos_tensor = torch.tensor([pos], dtype=torch.int64)
+                logits = self._et_model.forward((inps[:, pos : pos + 1], pos_tensor))
+                result_logits.append(logits[0])
+            return torch.cat(result_logits, dim=1)
+        else:
+            result = self._et_model.forward((inps,))
+            return result[0]
 
 
 class ETRunnerEvalWrapper(GPTFastEvalWrapper):
@@ -120,7 +144,7 @@ class ETRunnerEvalWrapper(GPTFastEvalWrapper):
     def __init__(
         self,
         model: str,
-        tokenizer: SentencePieceProcessor,
+        tokenizer: Union[SentencePieceTokenizer, Tiktoken],
         tokenizer_bin: str,
         max_seq_length: Optional[int] = None,
     ):
@@ -134,7 +158,7 @@ class ETRunnerEvalWrapper(GPTFastEvalWrapper):
 
         # Example:
         # inps: Tensor of shape (1, N)
-        # logits: Tensor of shape (1, N, 32000)
+        # logits: Tensor of shape (1, N, vocab_size)
         pass
 
 
@@ -183,7 +207,11 @@ def gen_eval_wrapper(
     Returns:
         eval_wrapper (LM): A wrapper interface for the lm-evaluation-harness library.
     """
-    tokenizer = SentencePieceProcessor(model_file=str(args.tokenizer_path))
+    try:
+        tokenizer = SentencePieceTokenizer(model_path=str(args.tokenizer_path))
+    except Exception:
+        print("Using Tiktokenizer")
+        tokenizer = Tiktoken(model_path=str(args.tokenizer_path))
 
     # ExecuTorch Binary Evaluation
     if (model := args.pte) is not None:
@@ -216,6 +244,7 @@ def gen_eval_wrapper(
         model=model,
         tokenizer=tokenizer,
         max_seq_length=args.max_seq_length,
+        use_kv_cache=args.use_kv_cache,
     )
 
 

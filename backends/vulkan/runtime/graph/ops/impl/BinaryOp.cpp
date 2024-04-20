@@ -32,16 +32,16 @@ void resize_binary_op_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
-  vTensor& out = graph->get_val(args[0].refs[0]).toTensor();
+  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
 
   // TODO(T183442143): Verify tensors are broadcastable.
-  vTensor& self = graph->get_val(args[1].refs[0]).toTensor();
-  vTensor& other = graph->get_val(args[1].refs[1]).toTensor();
+  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
+  vTensorPtr other = graph->get_tensor(args[1].refs[1]);
 
   std::vector<int64_t> new_out_sizes =
-      calculate_broadcasted_output_size(self, other);
+      calculate_broadcasted_output_size(*self, *other);
 
-  out.virtual_resize(new_out_sizes);
+  out->virtual_resize(new_out_sizes);
 }
 
 void add_binary_op_node(
@@ -55,43 +55,43 @@ void add_binary_op_node(
   ValueRef arg2 =
       prepack_if_tensor_ref(graph, in2, graph.memory_layout_of(arg1));
 
-  vTensor& t_in1 = graph.get_val(arg1).toTensor();
-  vTensor& t_in2 = graph.get_val(arg2).toTensor();
+  vTensorPtr t_in1 = graph.get_tensor(arg1);
+  vTensorPtr t_in2 = graph.get_tensor(arg2);
+  vTensorPtr t_out = graph.get_tensor(out);
 
-  vTensor& t_out = graph.get_val(out).toTensor();
+  check_binary_op_args(*t_in1, *t_in2, *t_out);
 
-  check_binary_op_args(t_in1, t_in2, t_out);
-
-  api::utils::uvec3 global_size = t_out.virtual_extents();
+  api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   float alpha_val = 1.0f;
   // String is checked since floor_div passes in an unused string argument in
   // place of alpha
-  if (is_valid(alpha) && !graph.get_val(alpha).isString()) {
-    alpha_val = extract_scalar<float>(graph.get_val(alpha));
+  if (is_valid(alpha) && !graph.val_is_string(alpha)) {
+    alpha_val = graph.extract_scalar<float>(alpha);
   }
 
   const api::utils::ivec2 broadcast_params =
-      create_broadcast_params(t_in1, t_in2);
+      create_broadcast_params(*t_in1, *t_in2);
 
-  std::stringstream kernel_name;
-  kernel_name << "binary_" << op_name;
-  apply_memory_layout_suffix(kernel_name, t_out);
-  apply_dtype_suffix(kernel_name, t_out);
+  std::string kernel_name("binary_");
+  kernel_name.reserve(kShaderNameReserve);
+  kernel_name += op_name;
+  add_memory_layout_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, *t_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name.str()),
+      VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE},
        {{arg1, arg2}, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out.gpu_sizes_ubo(),
-       t_in1.gpu_sizes_ubo(),
-       t_in2.gpu_sizes_ubo(),
+      {t_out->gpu_sizes_ubo(),
+       t_in1->gpu_sizes_ubo(),
+       t_in2->gpu_sizes_ubo(),
        graph.create_params_buffer(broadcast_params),
        graph.create_params_buffer(alpha_val)},
       // Resizing

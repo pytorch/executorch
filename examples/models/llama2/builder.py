@@ -62,7 +62,9 @@ class DType(Enum):
 
 def load_llama_model(
     *,
-    checkpoint: str,
+    modelname: str = "llama2",
+    checkpoint: Optional[str] = None,
+    checkpoint_dir: Optional[str] = None,
     params_path: str,
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
@@ -76,7 +78,9 @@ def load_llama_model(
     Returns:
         An instance of LlamaEdgeManager which contains the eager mode model.
     """
-    assert checkpoint and params_path, "Both checkpoint and params can't be empty"
+    assert (
+        checkpoint or checkpoint_dir
+    ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
     logging.info(
         f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
     )
@@ -84,6 +88,7 @@ def load_llama_model(
         "llama2",
         "Llama2Model",
         checkpoint=checkpoint,
+        checkpoint_dir=checkpoint_dir,
         params=params_path,
         use_kv_cache=use_kv_cache,
         use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
@@ -110,6 +115,7 @@ def load_llama_model(
 
     return LlamaEdgeManager(
         model=model,
+        modelname=modelname,
         weight_type=weight_type,
         dtype=dtype,
         use_kv_cache=use_kv_cache,
@@ -127,6 +133,7 @@ class LlamaEdgeManager:
     def __init__(
         self,
         model,
+        modelname,
         weight_type,
         dtype,
         use_kv_cache,
@@ -135,6 +142,7 @@ class LlamaEdgeManager:
         verbose: bool = False,
     ):
         self.model = model
+        self.modelname = modelname
         self.weight_type = weight_type
         self.dtype = dtype
         self.example_inputs = example_inputs
@@ -202,11 +210,7 @@ class LlamaEdgeManager:
     def _get_dynamic_shape(self) -> Any:
         dim = torch.export.Dim("token_dim", max=self.model.params.max_seq_len - 1)
         if self.use_kv_cache:
-            if self.use_sdpa_with_kv_cache:
-                return None
-            else:
-                # return {1: dim}, {0: dim}} TODO update xnnpack to be able to handle dynamic shape kv cache
-                return None
+            return None
         else:
             return ({1: dim},)
 

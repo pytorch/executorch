@@ -81,9 +81,15 @@ class TestConv1d(unittest.TestCase):
             z = torch.add(y, z)
             return z
 
-    def _test_conv1d(self, module, inputs, conv_count, quantized=False):
+    def _test_conv1d(
+        self, module, inputs, conv_count, quantized=False, dynamic_shape=None
+    ):
         (
-            (Tester(module, inputs).quantize() if quantized else Tester(module, inputs))
+            (
+                Tester(module, inputs, dynamic_shape).quantize()
+                if quantized
+                else Tester(module, inputs)
+            )
             .export()
             .check_count({"torch.ops.aten.convolution.default": conv_count})
             .to_edge()
@@ -97,26 +103,45 @@ class TestConv1d(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_conv1d(self):
-        inputs = (torch.randn(1, 2, 4).to(torch.float16),)
-        self._test_conv1d(self.Conv1d(dtype=torch.float16), inputs, conv_count=1)
+        inputs = (torch.randn(2, 2, 4).to(torch.float16),)
+        dynamic_shapes = ({0: torch.export.Dim("batch", min=2, max=10)},)
+        self._test_conv1d(
+            self.Conv1d(dtype=torch.float16),
+            inputs,
+            conv_count=1,
+            dynamic_shape=dynamic_shapes,
+        )
 
     def test_fp32_conv1d(self):
-        inputs = (torch.randn(1, 2, 4),)
-        self._test_conv1d(self.Conv1d(), inputs, 1)
+        inputs = (torch.randn(2, 2, 4),)
+        dynamic_shapes = ({0: torch.export.Dim("batch", min=2, max=10)},)
+        self._test_conv1d(self.Conv1d(), inputs, 1, dynamic_shape=dynamic_shapes)
 
     def test_fp32_conv1d_batchnorm_seq(self):
-        inputs = (torch.randn(1, 2, 4),)
-        self._test_conv1d(self.Conv1dBatchNormSequential(), inputs, 2)
+        inputs = (torch.randn(2, 2, 4),)
+        dynamic_shapes = ({0: torch.export.Dim("batch", min=2, max=10)},)
+        self._test_conv1d(
+            self.Conv1dBatchNormSequential(), inputs, 2, dynamic_shape=dynamic_shapes
+        )
 
     def test_qs8_conv1d(self):
-        inputs = (torch.randn(1, 2, 4),)
-        self._test_conv1d(self.Conv1d(), inputs, 1, quantized=True)
+        inputs = (torch.randn(2, 2, 4),)
+        dynamic_shapes = ({0: torch.export.Dim("batch", min=2, max=10)},)
+        self._test_conv1d(
+            self.Conv1d(), inputs, 1, quantized=True, dynamic_shape=dynamic_shapes
+        )
 
     def test_qs8_conv1d_batchnorm_seq(self):
-        inputs = (torch.randn(1, 2, 4),)
-        self._test_conv1d(self.Conv1dBatchNormSequential(), inputs, 2, quantized=True)
+        inputs = (torch.randn(2, 2, 4),)
+        dynamic_shapes = ({0: torch.export.Dim("batch", min=2, max=10)},)
+        self._test_conv1d(
+            self.Conv1dBatchNormSequential(),
+            inputs,
+            2,
+            quantized=True,
+            dynamic_shape=dynamic_shapes,
+        )

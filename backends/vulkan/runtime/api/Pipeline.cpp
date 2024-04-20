@@ -99,6 +99,101 @@ VkImageLayout vk_layout(
 }
 
 //
+// SpecVar
+//
+
+SpecVar::SpecVar() : type(SpecVar::Type::INT) {
+  value.as_int32 = 0;
+}
+
+SpecVar::SpecVar(const float val) : type(SpecVar::Type::FLOAT) {
+  value.as_float = val;
+}
+
+SpecVar::SpecVar(const int32_t val) : type(SpecVar::Type::INT) {
+  value.as_int32 = val;
+}
+
+SpecVar::SpecVar(const uint32_t val) : type(SpecVar::Type::UINT) {
+  value.as_uint32 = val;
+}
+
+SpecVar::SpecVar(const bool val) : type(SpecVar::Type::BOOL) {
+  value.as_bool = val;
+}
+
+uint32_t SpecVar::val_size() const {
+  switch (type) {
+    case SpecVar::Type::FLOAT:
+      return sizeof(float);
+    case SpecVar::Type::INT:
+      return sizeof(int32_t);
+    case SpecVar::Type::UINT:
+      return sizeof(uint32_t);
+    case SpecVar::Type::BOOL:
+      return sizeof(bool);
+  }
+  return 4;
+}
+
+uint32_t SpecVar::val_offset() const {
+  return api::utils::safe_downcast<uint32_t>(offsetof(SpecVar, value));
+}
+
+bool operator==(const SpecVar& lhs, const SpecVar& rhs) {
+  if (lhs.type != rhs.type) {
+    return false;
+  }
+  switch (lhs.type) {
+    case SpecVar::Type::FLOAT:
+      return lhs.value.as_float == rhs.value.as_float;
+    case SpecVar::Type::INT:
+      return lhs.value.as_int32 == rhs.value.as_int32;
+    case SpecVar::Type::UINT:
+      return lhs.value.as_uint32 == rhs.value.as_uint32;
+    case SpecVar::Type::BOOL:
+      return lhs.value.as_bool == rhs.value.as_bool;
+  }
+  return false;
+}
+
+SpecVarList::SpecVarList() {}
+
+SpecVarList::SpecVarList(std::initializer_list<SpecVar> init_list) {
+  vars.resize(init_list.size());
+  std::copy(init_list.begin(), init_list.end(), vars.begin());
+}
+
+void SpecVarList::append(const SpecVarList& other) {
+  vars.insert(vars.end(), other.vars.begin(), other.vars.end());
+}
+
+std::vector<VkSpecializationMapEntry> SpecVarList::generate_map_entries()
+    const {
+  std::vector<VkSpecializationMapEntry> map_entries;
+  map_entries.resize(vars.size());
+  uint32_t cur_offset = 0u;
+  for (uint32_t i = 0; i < vars.size(); ++i) {
+    map_entries.at(i) = {
+        i, cur_offset + vars.at(i).val_offset(), vars.at(i).val_size()};
+    cur_offset += sizeof(SpecVar);
+  }
+  return map_entries;
+}
+
+bool operator==(const SpecVarList& lhs, const SpecVarList& rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+  for (uint32_t i = 0; i < lhs.size(); ++i) {
+    if (lhs.vars.at(i) != rhs.vars.at(i)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+//
 // PipelineLayout
 //
 
@@ -154,33 +249,14 @@ ComputePipeline::ComputePipeline(
     const ComputePipeline::Descriptor& descriptor,
     VkPipelineCache pipeline_cache)
     : device_(device), handle_{VK_NULL_HANDLE} {
-  // NOLINTNEXTLINE
-  constexpr VkSpecializationMapEntry specialization_map_entries[3]{
-      // X
-      {
-          0u,
-          offsetof(utils::uvec3, data[0u]),
-          sizeof(utils::uvec3::data[0u]),
-      },
-      // Y
-      {
-          1u,
-          offsetof(utils::uvec3, data[1u]),
-          sizeof(utils::uvec3::data[1u]),
-      },
-      // Z
-      {
-          2u,
-          offsetof(utils::uvec3, data[2u]),
-          sizeof(utils::uvec3::data[2u]),
-      },
-  };
+  std::vector<VkSpecializationMapEntry> map_entries =
+      descriptor.specialization_constants.generate_map_entries();
 
   const VkSpecializationInfo specialization_info{
-      3u, // mapEntryCount
-      specialization_map_entries, // pMapEntries
-      sizeof(descriptor.local_work_group), // dataSize
-      &descriptor.local_work_group, // pData
+      descriptor.specialization_constants.size(), // mapEntryCount
+      map_entries.data(), // pMapEntries
+      descriptor.specialization_constants.data_nbytes(), // dataSize
+      descriptor.specialization_constants.data(), // pData
   };
 
   const VkPipelineShaderStageCreateInfo shader_stage_create_info{
@@ -242,7 +318,7 @@ bool operator==(
   return (
       _1.pipeline_layout == _2.pipeline_layout &&
       _1.shader_module == _2.shader_module &&
-      _1.local_work_group == _2.local_work_group);
+      _1.specialization_constants == _2.specialization_constants);
 }
 
 //

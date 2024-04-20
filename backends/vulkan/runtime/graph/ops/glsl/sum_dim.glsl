@@ -8,10 +8,10 @@
 
 #version 450 core
 
+#define PRECISION ${PRECISION}
+
 #include "broadcasting_utils.h"
 #include "indexing_utils.h"
-
-#define PRECISION ${PRECISION}
 
 layout(std430) buffer;
 

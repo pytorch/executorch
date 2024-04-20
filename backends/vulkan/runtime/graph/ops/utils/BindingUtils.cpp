@@ -36,18 +36,18 @@ uint32_t bind_values_to_descriptor_set(
   uint32_t idx = base_idx;
   for (auto& arg : args) {
     for (auto& ref : arg.refs) {
-      Value& val = graph->get_val(ref);
-      if (val.isTensor()) {
+      if (graph->val_is_tensor(ref)) {
         bind_tensor_to_descriptor_set(
-            val.toTensor(),
+            *(graph->get_tensor(ref)),
             pipeline_barrier,
             arg.access,
             descriptor_set,
             idx++);
-      } else if (val.isStaging()) {
-        bind_staging_to_descriptor_set(val.toStaging(), descriptor_set, idx++);
+      } else if (graph->val_is_staging(ref)) {
+        bind_staging_to_descriptor_set(
+            *(graph->get_staging(ref)), descriptor_set, idx++);
       } else {
-        VK_THROW("Unsupported type: ", val.type());
+        VK_THROW("Unsupported type: ", graph->get_val_type(ref));
       }
     }
   }
@@ -55,12 +55,12 @@ uint32_t bind_values_to_descriptor_set(
 }
 
 uint32_t bind_params_to_descriptor_set(
-    std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params,
+    const api::ParamsBindList& params,
     api::DescriptorSet& descriptor_set,
     const uint32_t base_idx) {
   uint32_t idx = base_idx;
-  for (auto& param : params) {
-    descriptor_set.bind(idx++, param->buffer());
+  for (auto& param : params.bind_infos) {
+    descriptor_set.bind(idx++, param);
   }
   return idx;
 }

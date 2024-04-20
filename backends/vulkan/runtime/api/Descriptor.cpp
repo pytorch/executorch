@@ -16,6 +16,18 @@ namespace vkcompute {
 namespace api {
 
 //
+// BufferBinding
+//
+
+BufferBindInfo::BufferBindInfo()
+    : handle(VK_NULL_HANDLE), offset(0u), range(0u) {}
+
+BufferBindInfo::BufferBindInfo(const VulkanBuffer& buffer_p)
+    : handle(buffer_p.handle()),
+      offset(buffer_p.mem_offset()),
+      range(buffer_p.mem_range()) {}
+
+//
 // DescriptorSet
 //
 
@@ -61,6 +73,21 @@ DescriptorSet& DescriptorSet::bind(
   binder.resource_info.buffer_info.buffer = buffer.handle(); // buffer
   binder.resource_info.buffer_info.offset = buffer.mem_offset(); // offset
   binder.resource_info.buffer_info.range = buffer.mem_range(); // range
+  add_binding(binder);
+
+  return *this;
+}
+
+DescriptorSet& DescriptorSet::bind(
+    const uint32_t idx,
+    const BufferBindInfo& bind_info) {
+  DescriptorSet::ResourceBinding binder{};
+  binder.binding_idx = idx; // binding_idx
+  binder.descriptor_type = shader_layout_signature_[idx]; // descriptor_type
+  binder.is_image = false; // is_image
+  binder.resource_info.buffer_info.buffer = bind_info.handle; // buffer
+  binder.resource_info.buffer_info.offset = bind_info.offset; // offset
+  binder.resource_info.buffer_info.range = bind_info.range; // range
   add_binding(binder);
 
   return *this;

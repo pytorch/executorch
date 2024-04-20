@@ -25,10 +25,10 @@ void resize_unary_op_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
-  vTensor& out = graph->get_val(args[0].refs[0]).toTensor();
-  vTensor& self = graph->get_val(args[1].refs[0]).toTensor();
+  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
+  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
 
-  out.virtual_resize(self.sizes());
+  out->virtual_resize(self->sizes());
 }
 
 void add_unary_op_node(
@@ -40,23 +40,22 @@ void add_unary_op_node(
     const std::string& op_name) {
   ValueRef arg = prepack_if_tensor_ref(graph, in);
 
-  vTensor& t_out = graph.get_val(out).toTensor();
-  api::utils::uvec3 global_size = t_out.virtual_extents();
+  vTensorPtr t_out = graph.get_tensor(out);
+  api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  std::stringstream kernel_name;
-  kernel_name << op_name;
-  apply_dtype_suffix(kernel_name, t_out);
+  std::string kernel_name(op_name);
+  add_dtype_suffix(kernel_name, *t_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name.str()),
+      VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE}, {arg, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out.extents_ubo(),
+      {t_out->extents_ubo(),
        graph.create_params_buffer(min),
        graph.create_params_buffer(max)},
       // Resizing
@@ -64,8 +63,8 @@ void add_unary_op_node(
 }
 
 float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
-  if (!graph.get_val(val).isNone()) {
-    return extract_scalar<float>(graph.get_val(val));
+  if (!graph.val_is_none(val)) {
+    return graph.extract_scalar<float>(val);
   }
   return max ? std::numeric_limits<float>::infinity()
              : -std::numeric_limits<float>::infinity();

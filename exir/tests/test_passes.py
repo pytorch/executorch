@@ -65,6 +65,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 from torch.export import export
+from torch.export.graph_signature import InputKind, InputSpec, TensorArgument
 from torch.fx import GraphModule, subgraph_rewriter
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.library import impl, Library
@@ -1145,7 +1146,7 @@ class TestPasses(unittest.TestCase):
 
         # Check (_lifted_tensor_constant + to_copy) node is replaced by prop tensor
         FileCheck().check_not("_lifted_tensor_constant").check(
-            "_prop_tensor_constant1"
+            "_prop_tensor_constant0"
         ).check_not("executorch_exir_dialects_edge__ops_aten__to_copy_default").run(
             new_ep.graph_module.code
         )
@@ -1173,6 +1174,105 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(count_additions(aten.graph_module), 3)
         new_ep = constant_prop_pass(aten)
         self.assertEqual(count_additions(new_ep.graph_module), 1)
+
+    def test_constant_prop_pass_graph_signature(self) -> None:
+        def count_additions(gm: torch.fx.GraphModule) -> int:
+            return sum(
+                (node.target == torch.ops.aten.add.Tensor) for node in gm.graph.nodes
+            )
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.a = torch.nn.Parameter(torch.ones(1, 2, 3))
+
+            def forward(self, x):
+                b = self.a + self.a
+                c = torch.cat([self.a, b])
+                return (c + c) + x
+
+        aten = export(
+            M(),
+            (torch.zeros(2, 2, 3),),
+        )
+        # Input signature will have two entries:
+        # (1) parameter `a` and (2) user input `x`.
+        self.assertEqual(len(aten.graph_signature.input_specs), 2)
+        new_ep = constant_prop_pass(aten)
+        # Check that there are exactly two propagated tensors - (1) propagated
+        # constant and (2) user input.
+        self.assertEqual(
+            new_ep.graph_signature.input_specs,
+            [
+                InputSpec(
+                    kind=InputKind.CONSTANT_TENSOR,
+                    arg=TensorArgument(name="_prop_tensor_constant0"),
+                    target="_prop_tensor_constant0",
+                    persistent=True,
+                ),
+                # User input graph signature.
+                aten.graph_signature.input_specs[-1],
+            ],
+        )
+
+    def test_constant_prop_pass_for_parameter_slice(self) -> None:
+        def count_slice(gm: torch.fx.GraphModule) -> int:
+            return sum(
+                (node.target == torch.ops.aten.slice_copy.Tensor)
+                for node in gm.graph.nodes
+            )
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.a = torch.nn.Parameter(torch.ones(3, 2, 2))
+
+            def forward(self, x):
+                # Create slice of shape (1, 2, 2)
+                slice_tensor = torch.slice_copy(self.a, dim=0, start=0, end=1)
+                return torch.cat([x, slice_tensor])
+
+        aten = export(
+            M(),
+            (torch.zeros(2, 2, 2),),
+        )
+        self.assertIn("a", aten.state_dict)
+        self.assertEqual(count_slice(aten.graph_module), 1)
+
+        new_ep = constant_prop_pass(aten)
+        # Check there is a propagated tensor.
+        FileCheck().check("_prop_tensor_constant0").run(aten.graph_module.code)
+        self.assertIn("_prop_tensor_constant0", new_ep.constants)
+        self.assertNotIn("a", new_ep.state_dict)
+        # No more slice copy.
+        self.assertEqual(count_slice(new_ep.graph_module), 0)
+
+    def test_constant_prop_pass_no_propagate(self) -> None:
+        def count_placeholder(gm: torch.fx.GraphModule) -> int:
+            return sum((node.op == "placeholder") for node in gm.graph.nodes)
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.a = torch.nn.Parameter(torch.ones(3, 2, 4))
+
+            def forward(self, x, y):
+                # y is unused.
+                return x + self.a
+
+        aten = export(
+            M(),
+            (torch.zeros(3, 2, 4), torch.zeros(3, 2, 4)),
+        )
+        self.assertIn("a", aten.state_dict)
+        self.assertEqual(count_placeholder(aten.graph_module), 3)
+
+        new_ep = constant_prop_pass(aten)
+        # Check there is no propagated tensor.
+        FileCheck().check("p_a").check("x").check("y").run(aten.graph_module.code)
+        self.assertNotIn("_prop_tensor_constant0", new_ep.constants)
+        self.assertIn("a", new_ep.state_dict)
+        self.assertEqual(count_placeholder(new_ep.graph_module), 3)
 
     def test_constant_prop_pass_for_control_flow(self) -> None:
         class Module(torch.nn.Module):
@@ -1498,61 +1598,29 @@ class TestPasses(unittest.TestCase):
                 self.parameter = torch.nn.Parameter(torch.ones(1))
 
             def forward(self, x):
-                o1 = torch.ops.aten.view_copy.default(
-                    self.parameter, [1]
-                )  # replaceable parameter
-                o2 = torch.ops.aten.view_copy.default(x, [1])  # replaceable user input
-                o3 = torch.ops.aten.view_copy.default(
-                    torch.ops.aten.relu.default(x), [1]
-                )  # replaceable dynamic unbound
-                o4 = torch.ops.aten.view_copy.default(
-                    torch.ops.aten.gelu.default(x), [1]
-                )  # replaceable dynamic bound
-                o5 = torch.ops.aten.view_copy.default(
-                    torch.ops.aten.tanh.default(x), [1]
-                )  # replaceable static
-                return o1, o2, o3, o4, o5
+                o1 = torch.ops.aten.view_copy.default(x, [1])
+                o2 = torch.ops.aten.view_copy.default(self.parameter, [1])
+                return o1, o2
 
         ep = torch.export.export(
             TestViewCopies(),
             args=(torch.ones(1),),
         )
-        self.assertEqual(len(ep.graph.nodes), 11)
         for node in ep.graph.nodes:
             if node.op == "placeholder":
                 node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
                 node.meta["spec"].shape_dynamism = TensorShapeDynamism.STATIC
-            elif node.target == torch.ops.aten.relu.default:
-                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
-                node.meta["spec"].shape_dynamism = TensorShapeDynamism.DYNAMIC_UNBOUND
-            elif node.target == torch.ops.aten.gelu.default:
-                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
-                node.meta["spec"].shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
-            elif node.target == torch.ops.aten.tanh.default:
-                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
-                node.meta["spec"].shape_dynamism = TensorShapeDynamism.STATIC
-            elif node.target == torch.ops.aten.view_copy.default:
-                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
-                node.meta["spec"].shape_dynamism = (
-                    node.args[0].meta["spec"].shape_dynamism
-                )
-            else:
-                pass
 
         # Run tests
         gm = ep.graph_module
 
         # Check before transformation
-        n_view_copy_before = 0
-        n_memory_view_before = 0
-        for node in gm.graph.nodes:
-            if is_view_copy(node):
-                n_view_copy_before += 1
-            if is_memory_view(node):
-                n_memory_view_before += 1
-
-        self.assertEqual(n_view_copy_before, 5)
-        self.assertEqual(n_memory_view_before, 0)
+        FileCheck().check_count(
+            "torch.ops.aten.view_copy.default", 2, exactly=True
+        ).run(gm.code)
+        FileCheck().check_count("executorch_exir_memory_view", 0, exactly=True).run(
+            gm.code
+        )
 
         # Do transformation
         p = ReplaceViewCopyWithViewPass()
@@ -1560,14 +1628,10 @@ class TestPasses(unittest.TestCase):
         assert gm_res is not None
         gm = gm_res.graph_module
 
-        # Check after transformation
-        n_view_copy_after = 0
-        n_memory_view_after = 0
-        for node in gm.graph.nodes:
-            if is_view_copy(node):
-                n_view_copy_after += 1
-            if is_memory_view(node):
-                n_memory_view_after += 1
-
-        self.assertEqual(n_view_copy_after, 0)
-        self.assertEqual(n_memory_view_after, 5)
+        # Check before transformation
+        FileCheck().check_count(
+            "torch.ops.aten.view_copy.default", 0, exactly=True
+        ).run(gm.code)
+        FileCheck().check_count("executorch_exir_memory_view", 2, exactly=True).run(
+            gm.code
+        )

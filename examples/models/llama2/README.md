@@ -5,7 +5,7 @@ This example demonstrates how to run a [Llama 2](https://ai.meta.com/llama/) 7B 
 For Llama2, please refer to [the llama's github page](https://github.com/facebookresearch/llama) for details.
 Pretrained parameters are not included in this repo. Users are suggested to download them through [the llama's download page](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
 
-# What is Llama 2?
+# What are Llama 2 and 3?
 Llama is a family of large language models that uses publicly available data for training. These models are based on the transformer architecture, which allows it to process input sequences of arbitrary length and generate output sequences of variable length. One of the key features of Llama models is its ability to generate coherent and contextually relevant text. This is achieved through the use of attention mechanisms, which allow the model to focus on different parts of the input sequence as it generates output. Additionally, Llama models use a technique called “masked language modeling” to pre-train the model on a large corpus of text, which helps it learn to predict missing words in a sentence.
 
 Llama models have shown to perform well on a variety of natural language processing tasks, including language translation, question answering, and text summarization and are also capable of generating human-like text, making Llama models a useful tool for creative writing and other applications where natural language generation is important.
@@ -19,14 +19,17 @@ Please note that the models are subject to the [acceptable use policy](https://g
 
 Since 7B Llama2 model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
 
+For Llama3, we can use the same process. Note that it's only supported in the ExecuTorch main branch.
+
 ## Quantization:
-We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html).
+We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://github.com/pytorch-labs/ao/).
 
-We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Below are the results for two different groupsizes.
+We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Below are the results for two different groupsizes, with max_seq_len 2048, and 1000 samples.
 
-|Llama 2 | Baseline (FP32) | Groupwise 4-bit (128) | Groupwise 4-bit (256)
+|Model | Baseline (FP32) | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------|-----------------| ---------------------- | ---------------
-|Wikitext Perplexity | 9.16 | 10.2 | 10.7
+|Llama 2 7B | 9.2 | 10.2 | 10.7
+|Llama 3 8B | 7.9 | 9.4 | 9.7
 
 Note that groupsize less than 128 was not enabled, since such model were still too large. This is because our current efforts have focused on enabling FP32 and support for FP16 is under way. What this implies for model size is that 1) embedding table is in FP32 and 2) quantized weights scales are FP32.
 
@@ -54,7 +57,7 @@ Performance was measured on Samsung Galaxy S22, S24, One Plus 12 and iPhone 15 m
 - For Llama7b, your device may require at least 32GB RAM. If this is a constraint for you, please try the smaller stories model.
 
 ## Step 1: Setup
-1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch
+1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_requirements.sh --pybind xnnpack`
 2. Run `examples/models/llama2/install_requirements.sh` to install a few dependencies.
 
 ## Step 2: Prepare model
@@ -100,6 +103,16 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
     ```
 
+### Option C: Download and export Llama3 8B model
+
+You can export and run the original Llama3 8B model.
+
+1. Llama3 pretrained parameters can be downloaded from [Meta's official llama3 repository](https://github.com/meta-llama/llama3/).
+
+2. Export model and generate `.pte` file
+    ```
+    python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -d=fp32 -X -qmode 8da4w -kv --use_sdpa_with_kv_cache --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte" group_size 128 --metadata '{"get_bos_id":128000, "get_eos_id":128001}' --embedding-quantize 4,32
+    ```
 
 ## (Optional) Finetuning
 
@@ -145,7 +158,9 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DEXECUTORCH_BUILD_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_CUSTOM=ON \
         -Bcmake-out .
 
     cmake --build cmake-out -j16 --target install --config Release
@@ -156,17 +171,24 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
     cmake -DPYTHON_EXECUTABLE=python \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_CUSTOM=ON \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DEXECUTORCH_BUILD_QUANTIZED=ON \
         -Bcmake-out/examples/models/llama2 \
         examples/models/llama2
 
     cmake --build cmake-out/examples/models/llama2 -j16 --config Release
     ```
 
+For Llama3, add `-DEXECUTORCH_USE_TIKTOKEN=ON` option when building the llama runner.
+
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L18-L40).
     ```
     cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
     ```
+
+For Llama3, you can pass the original `tokenizer.model` (without converting to `.bin` file).
 
 ## Step 5: Run benchmark on Android phone
 
@@ -227,7 +249,7 @@ adb push cmake-out-android/examples/models/llama2/llama_main /data/local/tmp/lla
 
 **2.3 Run model**
 ```
-adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt "Once upon a time" --seq_len 120
+adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt \"Once upon a time\" --seq_len 120"
 ```
 ## Step 6: Build Mobile apps
 
@@ -237,6 +259,16 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 
 ### Android
 Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
+
+## Optional: Smaller models delegated to other backends
+Currently we supported lowering the stories model to other backends, including, CoreML, MPS and QNN. Please refer to the instruction
+for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.html), [MPS](https://pytorch.org/executorch/main/build-run-mps.html), [QNN](https://pytorch.org/executorch/main/build-run-qualcomm.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
+
+- Lower to CoreML: `python -m examples.models.llama2.export_llama -kv --coreml -c stories110M.pt -p params.json`
+- MPS: `python -m examples.models.llama2.export_llama -kv --mps -c stories110M.pt -p params.json`
+- QNN: `python -m examples.models.llama2.export_llama -kv --qnn -c stories110M.pt -p params.json`
+
+The iOS LLAMA app supports the CoreML and MPS model and the Android LLAMA app supports the QNN model. On Android, it also allow to cross compiler the llama runner binary, push to the device and run.
 
 # What is coming next?
 ## Quantization
@@ -260,12 +292,13 @@ This example tries to reuse the Python code, with minimal modifications to make 
 3. No dependencies on fairscale. The ColumnParallelLinear, ParallelEmbedding and training are not needed and supported in ExecuTorch.
 
 
-# Clean
-To clean your build:
+# Common Issues and Mitigations:
+- To clean your build:
 ```
 git clean -xfd
 pip uninstall executorch
-./install_requirements.sh <options>
+./install_requirements.sh --pybind xnnpack
 
 rm -rf cmake-out
 ```
+- If you encounter `pthread` related issues during link time, add `pthread` in `target_link_libraries` in `CMakeLists.txt`

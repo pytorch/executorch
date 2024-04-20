@@ -18,7 +18,6 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/examples/models/llama2/custom_ops:llama_custom_ops_aot_lib",
     ],
 )
 
@@ -43,7 +42,6 @@ runtime.python_library(
         "//caffe2:torch",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models/llama2:llama_transformer",
-        "//executorch/examples/models/llama2/ops:quantized_aot_lib",
     ],
 )
 
@@ -52,6 +50,7 @@ runtime.python_binary(
     main_module = "executorch.examples.models.llama2.export_llama",
     # visibility = ["//executorch/examples/..."],
     preload_deps = [
+        "//executorch/examples/models/llama2/custom_ops:custom_ops_aot_lib",
         "//executorch/kernels/quantized:aot_lib",
     ],
     deps = [
@@ -85,6 +84,7 @@ runtime.python_library(
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
+        "//executorch/examples/models/llama2/custom_ops:custom_ops_aot_py",
         "//executorch/examples/portable:utils",
         "//executorch/exir:lib",
         "//executorch/sdk/etrecord:etrecord",
