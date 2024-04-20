@@ -43,6 +43,7 @@ def register_annotator(ops: List[OpOverload]):
     return decorator
 
 
+
 def _is_input_float_tensor(node: Node):
     """Check if the input is not a float tensor, so that we can skip quantization for the node
     since observers only works with float Tensors
@@ -176,6 +177,11 @@ def annotate_rsub(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.sum.dim_IntList])
+def annotate_sum(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_binary(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.ceil.default])
 def annotate_ceil(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -300,6 +306,11 @@ def annotate_mean_dim(node: Node, quantization_config: QuantizationConfig) -> No
 
 @register_annotator([torch.ops.aten.slice.Tensor])
 def annotate_slice(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.sqrt.default])
+def annotate_sqrt(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
 
