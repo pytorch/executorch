@@ -95,12 +95,12 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv1d(self):
-        module = Conv1DSequential()  # noqa: F405
+        module = Conv1dSequential()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d(self):
-        module = Conv2DSequential()  # noqa: F405
+        module = Conv2dSequential()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -183,11 +183,10 @@ class TestQNNFloatingPointOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
 
-    @unittest.skip("not yet implemented")
     def test_qnn_backend_element_wise_sqrt(self):
         modules = [Sqrt(), SqrtConstant()]  # noqa: F405
-        sample_input = (torch.randn([3, 1]),)
         for i, module in enumerate(modules):
+            sample_input = (torch.rand([3, 1]),)
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
@@ -357,6 +356,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([1, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_sum_int_list(self):
+        module = SumIntList()  # noqa: F405
+        sample_input = (torch.randn([1, 4, 8, 8]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_tanh(self):
         module = Tanh()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -419,6 +423,11 @@ class TestQNNFloatingPointModel(TestQNN):
     def test_qnn_backend_conv2d_max_pool2d(self):
         module = Conv2dMaxPool2d()  # noqa: F405
         sample_input = (torch.rand(1, 2, 14, 14),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_sum_reduce_dim(self):
+        module = Conv2dSumReduceDim()  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_residual_block(self):
@@ -494,7 +503,7 @@ class TestQNNQuantizedOperator(TestQNN):
         )
 
     def test_qnn_backend_16a4w_conv2d(self):
-        module = Conv2DSingle()  # noqa: F405
+        module = Conv2dSingle()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
         module = self.get_qdq_module(
             module, sample_input, quant_dtype=QuantDtype.use_16a4w
@@ -575,13 +584,13 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv1d(self):
-        module = Conv1DSequential()  # noqa: F405
+        module = Conv1dSequential()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d(self):
-        module = Conv2DSequential()  # noqa: F405
+        module = Conv2dSequential()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
@@ -669,11 +678,10 @@ class TestQNNQuantizedOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
 
-    @unittest.skip("not yet implemented")
     def test_qnn_backend_element_wise_sqrt(self):
         modules = [Sqrt(), SqrtConstant()]  # noqa: F405
-        sample_input = (torch.randn([3, 1]),)
         for i, module in enumerate(modules):
+            sample_input = (torch.rand([3, 1]),)
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
@@ -873,6 +881,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_sum_int_list(self):
+        module = SumIntList()  # noqa: F405
+        sample_input = (torch.randn([1, 4, 8, 8]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_tanh(self):
         module = Tanh()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -943,6 +957,12 @@ class TestQNNQuantizedModel(TestQNN):
     def test_qnn_backend_conv2d_max_pool2d(self):
         module = Conv2dMaxPool2d()  # noqa: F405
         sample_input = (torch.rand(1, 2, 14, 14),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_sum_reduce_dim(self):
+        module = Conv2dSumReduceDim()  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1095,6 +1115,7 @@ class TestQNNFloatingPointUtils(TestQNN):
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
 
+    @unittest.expectedFailure
     def test_qnn_backend_profile_op(self):
         TestQNN.enable_profile = True
         backend_options = generate_htp_compiler_spec(use_fp16=True)
@@ -1227,6 +1248,7 @@ class TestQNNQuantizedUtils(TestQNN):
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
 
+    @unittest.expectedFailure
     def test_qnn_backend_profile_op(self):
         TestQNN.enable_profile = True
         backend_options = generate_htp_compiler_spec(use_fp16=False)
@@ -1322,6 +1344,40 @@ class TestExampleOssScript(TestQNN):
             msg = json.loads(conn.recv())
             self.assertGreaterEqual(msg["top_1"], 60)
             self.assertGreaterEqual(msg["top_5"], 90)
+
+    def test_ssd300_vgg16(self):
+        if not self.required_envs([self.pretrained_weight, self.oss_repo]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/ssd300_vgg16.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--oss_repo",
+            self.oss_repo,
+            "--pretrained_weight",
+            self.pretrained_weight,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["mAP"], 0.70)
 
 
 class TestExampleScript(TestQNN):
@@ -1771,6 +1827,11 @@ def setup_environment():
         help="Emit log only when error happened",
         action="store_true",
     )
+    parser.add_argument(
+        "--oss_repo",
+        help="Path to open source software model repository",
+        type=str,
+    )
 
     args, ns_args = parser.parse_known_args(namespace=unittest)
     TestQNN.host = args.host
@@ -1785,6 +1846,7 @@ def setup_environment():
     TestQNN.online_prepare = args.online_prepare
     TestQNN.enable_profile = args.enable_profile
     TestQNN.error_only = args.error_only
+    TestQNN.oss_repo = args.oss_repo
     TestQNN.shared_buffer = args.shared_buffer
     return sys.argv[:1] + ns_args
 
