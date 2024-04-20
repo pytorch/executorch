@@ -58,7 +58,7 @@ jobs:
       timeout: 90
       script: |
         BUILD_TOOL=cmake
-        VERSION="0.1.0"
+        VERSION="main"
         FRAMEWORKS=(
           "executorch"
           "coreml_backend"
