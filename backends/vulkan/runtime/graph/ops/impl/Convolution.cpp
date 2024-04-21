@@ -103,7 +103,9 @@ ValueRef prepack_biases(
       local_size,
       vref,
       v,
-      {t->gpu_sizes_ubo(), t->cpu_sizes_ubo()}));
+      {t->sizes_ubo()},
+      // Specialization constants
+      {SV(t->gpu_memory_layout_int())}));
 
   return v;
 }
@@ -230,11 +232,13 @@ ValueRef prepack_weights(
       local_size,
       vref,
       v,
-      {t->gpu_sizes_ubo(),
+      {t->sizes_ubo(),
        graph.create_params_buffer(
            api::utils::make_ivec4(original_sizes, /*reverse = */ true)),
        graph.create_params_buffer(
-           api::utils::make_ivec2(padded_sizes, /*reverse = */ true))}));
+           api::utils::make_ivec2(padded_sizes, /*reverse = */ true))},
+      // Specialization constants
+      {SV(t->gpu_memory_layout_int())}));
 
   return v;
 }
@@ -368,12 +372,14 @@ void add_conv2d_node(
        {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          t_out->extents_ubo(),
-          t_in->extents_ubo(),
+          t_out->sizes_ubo(),
+          t_in->sizes_ubo(),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(extra_params),
       },
-      // Resizing
+      // Specialization Constants
+      {t_out->gpu_memory_layout_int()},
+      // Resizing Logic
       resize_conv2d_node,
       {weight, stride, padding, dilation, transposed, output_padding}));
 }
@@ -458,7 +464,9 @@ void add_conv1d_node(
           graph.create_params_buffer(in_length),
           graph.create_params_buffer(kernel_size),
       },
-      // Resizing
+      // Specialization Constants
+      {},
+      // Resizing Logic
       resize_conv1d_node,
       {weight}));
 }

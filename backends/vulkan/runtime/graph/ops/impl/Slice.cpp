@@ -66,7 +66,6 @@ void add_slice_tensor_out_node(
     std::string kernel_name = "slice_channel";
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
-    add_memory_layout_suffix(kernel_name, *t_out);
 
     api::utils::uvec3 global_size = t_out->extents();
     api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
@@ -86,9 +85,8 @@ void add_slice_tensor_out_node(
         local_size,
         {{out, api::MemoryAccessType::WRITE},
          {in, api::MemoryAccessType::READ}},
-        {t_out->gpu_sizes_ubo(),
-         t_out->cpu_sizes_ubo(),
-         t_in->gpu_sizes_ubo(),
+        {t_out->sizes_ubo(),
+         t_in->sizes_ubo(),
          graph.create_params_buffer(params)}));
 
   } else {
@@ -137,7 +135,7 @@ void add_slice_tensor_out_node(
         local_size,
         {{out, api::MemoryAccessType::WRITE},
          {in, api::MemoryAccessType::READ}},
-        {t_out->gpu_sizes_ubo(), graph.create_params_buffer(params)}));
+        {t_out->sizes_ubo(), graph.create_params_buffer(params)}));
   }
 }
 
