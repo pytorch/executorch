@@ -31,14 +31,16 @@ PrepackNode::PrepackNode(
     const api::utils::uvec3& local_workgroup_size,
     const ValueRef tref,
     const ValueRef packed,
-    const api::ParamsBindList& params)
+    const api::ParamsBindList& params,
+    const api::SpecVarList& spec_vars)
     : shader_(shader),
       noop_shader_(get_noop_shader(graph, packed)),
       global_workgroup_size_(global_workgroup_size),
       local_workgroup_size_(local_workgroup_size),
       tref_(tref),
       packed_(packed),
-      params_(params) {
+      params_(params),
+      spec_vars_(spec_vars) {
   graph.update_descriptor_counts(shader, /*execute = */ false);
   graph.update_descriptor_counts(noop_shader_, /*execute = */ false);
 }
@@ -75,7 +77,7 @@ void PrepackNode::encode(ComputeGraph* graph) {
   {
     api::PipelineBarrier pipeline_barrier{};
     api::DescriptorSet descriptor_set =
-        context->get_descriptor_set(shader_, local_workgroup_size_);
+        context->get_descriptor_set(shader_, local_workgroup_size_, spec_vars_);
 
     uint32_t idx = 0;
     bind_tensor_to_descriptor_set(

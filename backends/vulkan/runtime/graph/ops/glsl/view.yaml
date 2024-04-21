@@ -6,9 +6,5 @@ view:
     DTYPE:
       - VALUE: half
       - VALUE: float
-    PACKING:
-      - VALUE: C_packed
-      - VALUE: W_packed
-      - VALUE: H_packed
   shader_variants:
     - NAME: view

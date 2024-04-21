@@ -77,7 +77,6 @@ void add_binary_op_node(
   std::string kernel_name("binary_");
   kernel_name.reserve(kShaderNameReserve);
   kernel_name += op_name;
-  add_memory_layout_suffix(kernel_name, *t_out);
   add_dtype_suffix(kernel_name, *t_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
@@ -89,13 +88,16 @@ void add_binary_op_node(
       {{out, api::MemoryAccessType::WRITE},
        {{arg1, arg2}, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->gpu_sizes_ubo(),
-       t_in1->gpu_sizes_ubo(),
-       t_in2->gpu_sizes_ubo(),
+      {t_out->sizes_ubo(),
+       t_in1->sizes_ubo(),
+       t_in2->sizes_ubo(),
        graph.create_params_buffer(broadcast_params),
        graph.create_params_buffer(alpha_val)},
-      // Resizing
-      resize_binary_op_node));
+      // Specialization Constants
+      {SV(t_out->gpu_memory_layout_int())},
+      // Resizing Logic
+      resize_binary_op_node,
+      {}));
 }
 
 #define DEFINE_BINARY_OP_WITH_ALPHA_FN(op_name)                          \

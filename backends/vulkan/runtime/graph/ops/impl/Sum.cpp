@@ -87,11 +87,13 @@ void add_sum_dim_node(
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE}, {arg, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->extents_ubo(),
+      {t_out->sizes_ubo(),
        graph.create_params_buffer(dim + 4 - in_dim),
        graph.create_params_buffer(dim_size),
        graph.create_params_buffer(int(ceil(channel / 4.0)))},
-      // Resizing
+      // Specialization Constants
+      {t_out->gpu_memory_layout_int()},
+      // Resizing Logic
       resize_sum_node,
       {out, in, static_cast<int>(dim), keepdim}));
 }

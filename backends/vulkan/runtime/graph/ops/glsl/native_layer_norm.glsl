@@ -12,8 +12,8 @@
 #include "indexing_utils.h"
 
 #define PRECISION ${PRECISION}
+
 #define VEC4_T ${texel_type(DTYPE)}
-#define to_tensor_idx to_tensor_idx_${PACKING}
 
 layout(std430) buffer;
 
@@ -25,27 +25,26 @@ layout(set = 0, binding = 3) uniform PRECISION sampler3D image_in;
 layout(set = 0, binding = 4) uniform PRECISION sampler3D weight_in;
 layout(set = 0, binding = 5) uniform PRECISION sampler3D bias_in;
 
-layout(set = 0, binding = 6) uniform PRECISION restrict OutExtents {
-  uvec4 data;
-}
-out_sizes;
+layout(set = 0, binding = 6) uniform PRECISION restrict Sizes {
+  ivec4 sizes;
+};
 
 layout(set = 0, binding = 7) uniform PRECISION restrict Epsilon {
-  float data;
-}
-epsilon;
+  float epsilon;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+layout(constant_id = 3) const int packed_dim = C_DIM;
+
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 idx = to_tensor_idx(pos, out_sizes.data);
 
-  if (any(greaterThanEqual(idx, out_sizes.data))) {
+  if (pos_out_of_bounds(pos, sizes, packed_dim)) {
     return;
   }
 
-  const int width = int(out_sizes.data.x);
+  const int width = int(sizes.x);
 
   VEC4_T mean = VEC4_T(0);
   VEC4_T delta = VEC4_T(0);
@@ -63,7 +62,7 @@ void main() {
   }
 
   VEC4_T var = M2 / width;
-  VEC4_T rstd = pow(var + epsilon.data, VEC4_T(-0.5));
+  VEC4_T rstd = pow(var + epsilon, VEC4_T(-0.5));
   VEC4_T offset = -rstd * mean;
 
   for (int w = 0; w < width; ++w) {

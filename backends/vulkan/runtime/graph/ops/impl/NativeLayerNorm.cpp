@@ -109,8 +109,10 @@ void add_native_layer_norm_node(
         api::MemoryAccessType::WRITE},
        {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->gpu_sizes_ubo(), graph.create_params_buffer(epsilon)},
-      // Resizing
+      {t_out->sizes_ubo(), graph.create_params_buffer(epsilon)},
+      // Specialization Constants
+      {SV(t_out->gpu_memory_layout_int())},
+      // Resizing Logic
       resize_native_layer_norm_node,
       {normalized_shape}));
 }

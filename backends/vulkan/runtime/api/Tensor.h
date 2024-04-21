@@ -118,17 +118,7 @@ class vTensor final {
 
   // A Vulkan uniform buffer containing the tensor sizes in WHCN that can be
   // passed into a shader.
-  api::UniformParamsBuffer cpu_sizes_uniform_;
-
-  // A Vulkan uniform buffer containing the GPU tensor sizes in WHCN that can
-  // be passed into a shader. GPU sizes refers to the sizes of the tensor after
-  // padding has been applied to one dimension to align it to the next multiple
-  // of 4.
-  api::UniformParamsBuffer gpu_sizes_uniform_;
-
-  // A Vulkan uniform buffer containing the image extents of the underlying
-  // image texture that can be passed into a shader.
-  api::UniformParamsBuffer extents_uniform_;
+  api::UniformParamsBuffer sizes_uniform_;
 
   vTensorStorage storage_;
 
@@ -203,25 +193,12 @@ class vTensor final {
   }
 
   /*
-   * Get a uniform buffer object containing the tensor sizes to use in a compute
-   * shader. Note that the UBO will be created the first time this function is
-   * called.
+   * Get the binding information for the uniform buffer object containing the
+   * tensor sizes to use in a compute shader.
    */
-  const api::BufferBindInfo cpu_sizes_ubo();
-
-  /*
-   * Get a uniform buffer object containing the tensor GPU sizes to use in a
-   * compute shader. Note that the UBO will be created the first time this
-   * function is called.
-   */
-  const api::BufferBindInfo gpu_sizes_ubo();
-
-  /*
-   * Get a uniform buffer object containing the image extents to use in a
-   * compute shader. Note that the UBO will be created the first time this
-   * function is called.
-   */
-  const api::BufferBindInfo extents_ubo();
+  inline const api::BufferBindInfo sizes_ubo() {
+    return api::BufferBindInfo(sizes_uniform_.buffer());
+  }
 
   inline size_t numel() const {
     return api::utils::multiply_integers(sizes());

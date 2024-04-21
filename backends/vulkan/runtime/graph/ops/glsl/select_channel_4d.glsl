@@ -19,38 +19,37 @@ layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict 
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 
 layout(set = 0, binding = 2) uniform PRECISION restrict OutSizes {
-  uvec4 data;
-}
-out_sizes;
+  ivec4 sizes;
+};
 
 layout(set = 0, binding = 3) uniform PRECISION restrict SelectVal {
   // data.x: index along channel dim to select
   // data.y: number of batches
   // data.z: number of texels per batch
   // data.w: unused
-  ivec4 data;
-}
-select_info;
+  ivec4 select_info;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+layout(constant_id = 3) const int packed_dim = C_DIM;
+
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 idx = to_tensor_idx_C_packed(pos, out_sizes.data);
 
-  if (any(greaterThanEqual(idx, out_sizes.data))) {
+  if (pos_out_of_bounds(pos, sizes, packed_dim)) {
     return;
   }
 
-  const int num_batches = select_info.data.y;
-  const int num_texel_per_batch = select_info.data.z;
-  const int index = select_info.data.x;
+  const int num_batches = select_info.y;
+  const int num_texel_per_batch = select_info.z;
+  const int index = select_info.x;
 
   // read in the same channel from 4 separate batches
   VEC4_T out_texel = VEC4_T(0, 0, 0, 0);
   for (int k = 0; k < 4; k++) {
     if ((k + pos.z * 4) >=
-        num_batches) { 
+        num_batches) {
       break;
     }
     const uint src_pos_z = (4 * num_texel_per_batch * pos.z) +

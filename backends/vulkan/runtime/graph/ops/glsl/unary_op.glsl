@@ -14,35 +14,36 @@
 
 #define op(X, A, B) ${OPERATOR}
 
+#include "indexing_utils.h"
+
 layout(std430) buffer;
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 
-layout(set = 0, binding = 2) uniform PRECISION restrict OutExtents {
-  uvec4 data;
-}
-out_extents;
+layout(set = 0, binding = 2) uniform PRECISION restrict OutSizes {
+  ivec4 out_sizes;
+};
 
 layout(set = 0, binding = 3) uniform PRECISION restrict Min {
-  float data;
-}
-minimum;
+  float minimum;
+};
 
 layout(set = 0, binding = 4) uniform PRECISION restrict Max {
-  float data;
-}
-maximum;
+  float maximum;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+layout(constant_id = 3) const int packed_dim = C_DIM;
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
-  if (any(greaterThanEqual(pos, out_extents.data.xyz))) {
+  if (pos_out_of_bounds(pos, out_sizes, packed_dim)) {
     return;
   }
 
   VEC4_T in_texel = texelFetch(image_in, pos, 0);
-  imageStore(image_out, pos, op(in_texel, minimum.data, maximum.data));
+  imageStore(image_out, pos, op(in_texel, minimum, maximum));
 }
