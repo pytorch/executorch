@@ -6,7 +6,6 @@ updates:
     schedule:
       interval: "weekly"
     reviewers:
-      - "kit1980"
-      - "pytorch/pytorch-dev-infra"
+      - "pytorch/team-executorch"
     allow:
       - dependency-name: "torchfix"
