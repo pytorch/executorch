@@ -376,6 +376,7 @@ class CustomBuild(build):
         if ShouldBuild.pybindings:
             cmake_args += [
                 "-DEXECUTORCH_BUILD_PYBIND=ON",
+                "-DEXECUTORCH_BUILD_QUANTIZED=ON",  # add quantized ops to pybindings.
             ]
             build_args += ["--target", "portable_lib"]
             if ShouldBuild.xnnpack:
