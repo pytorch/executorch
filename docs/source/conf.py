@@ -83,13 +83,15 @@ et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
 if et_version_docs:
     # Check if starts with release/ and set the version to the number after slash
     if et_version_docs.startswith("refs/tags/v"):
-        version = '.'.join(et_version_docs.split('/')[-1].split('-')[0].lstrip('v').split('.')[:2])
-        print(f'Version: {version}')
+        version = ".".join(
+            et_version_docs.split("/")[-1].split("-")[0].lstrip("v").split(".")[:2]
+        )
+        print(f"Version: {version}")
         release = version
         html_title = " ".join((project, version, "documentation"))
     elif et_version_docs.startswith("refs/heads/"):
-        version = et_version_docs.split('/')[-1]
-        print(f'Version: {version}')  # Debug line
+        version = et_version_docs.split("/")[-1]
+        print(f"Version: {version}")  # Debug line
         release = version
     html_title = " ".join((project, version, "documentation"))
 else:
