@@ -30,9 +30,9 @@ runtime.genrule(
     srcs = [":pybinding_types"],
     outs = {
         "aten_lib.pyi": ["aten_lib.pyi"],
-        "portable_lib.pyi": ["portable_lib.pyi"],
+        "_portable_lib.pyi": ["_portable_lib.pyi"],
     },
-    cmd = "cp $(location :pybinding_types)/* $OUT/portable_lib.pyi && cp $(location :pybinding_types)/* $OUT/aten_lib.pyi",
+    cmd = "cp $(location :pybinding_types)/* $OUT/_portable_lib.pyi && cp $(location :pybinding_types)/* $OUT/aten_lib.pyi",
     visibility = ["//executorch/extension/pybindings/..."],
 )
 
@@ -46,8 +46,9 @@ executorch_pybindings(
 executorch_pybindings(
     compiler_flags = ["-std=c++17"],
     cppdeps = PORTABLE_MODULE_DEPS + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB,
-    python_module_name = "portable_lib",
-    types = ["//executorch/extension/pybindings:pybindings_types_gen[portable_lib.pyi]"],
+    # Give this an underscore prefix because it has a pure python wrapper.
+    python_module_name = "_portable_lib",
+    types = ["//executorch/extension/pybindings:pybindings_types_gen[_portable_lib.pyi]"],
     visibility = ["PUBLIC"],
 )
 
@@ -57,4 +58,11 @@ executorch_pybindings(
     python_module_name = "aten_lib",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[aten_lib.pyi]"],
     visibility = ["PUBLIC"],
+)
+
+runtime.python_library(
+    name = "portable_lib",
+    srcs = ["portable_lib.py"],
+    visibility = ["@EXECUTORCH_CLIENTS"],
+    deps = [":_portable_lib"],
 )
