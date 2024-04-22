@@ -278,7 +278,6 @@ class TestMPS(unittest.TestCase):
                 executorch_program.buffer
             )
 
-            print(f"SAMPLE INPUTS: {original_inputs[0]}")
             model_output = executorch_module.forward(original_inputs)
 
             logging.info(f"Expected output: {expected_output}")
