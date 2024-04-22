@@ -1,5 +1,18 @@
 # Getting Started with LLMs via ExecuTorch
 
+Welcome to LLM Manual! This manual is designed to provide a practical example to leverage
+ExecuTorch in onboarding your own Large Language Models (LLMs). Our primary goal is to offer
+ a clear and concise guideline on how to integrate our system with your own LLMs.
+
+Please note that this project is intended as a demonstration and not as a fully functional
+example with optimal performance. As such, certain components such as the sampler, tokenizer,
+and others are provided in their bare minimum versions solely for demonstration purposes.
+Consequently, the results produced by the model may vary and might not always be optimal.
+
+We encourage users to use this project as a starting point and adapt it to their specific needs,
+which includes creating your own versions of the tokenizer, sampler, acceleration backends, and
+other components. We hope this project serves as a useful guide in your journey with LLMs and ExecuTorch.
+
 ### Table Of Contents
 
 
@@ -141,13 +154,23 @@ model = GPT.from_pretrained('gpt2')
 
 # Create example inputs. This is used in the export process to provide
 # hints on the expected shape of the model input.
-example_inputs = (torch.randint(0, 100, (1, 8), dtype=torch.long), )
+example_inputs = (torch.randint(0, 100, (1, model.config.block_size - 1), dtype=torch.long), )
+
+# Set up dynamic shape configuration, which makes the input tensors'
+# sizes during the runtime does not need to match the size of tensors
+# in `example_inputs`, but follow the rule dynamic shape configuration shares.
+# Here we set the range of 0th model input's 1st dimension as [0, model.config.block_size - 1]
+# Detials of dynamic shape and how to create it customized can follow
+# [ExecuTorch Concept](https://pytorch.org/executorch/0.2/concepts.html#dynamic-shapes)
+dynamic_shape = (
+    {1: torch.export.Dim("token_dim", max=model.config.block_size - 1)},
+)
 
 # Trace the model, converting it to a portable intermediate representation.
 # The torch.no_grad() call tells PyTorch to exclude training-specific logic.
 with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-    m = capture_pre_autograd_graph(model, example_inputs)
-    traced_model = export(m, example_inputs)
+    m = capture_pre_autograd_graph(model, example_inputs, dynamic_shapes=dynamic_shape)
+    traced_model = export(m, example_inputs, dynamic_shapes=dynamic_shape)
 
 # Convert the model into a runnable ExecuTorch program.
 edge_config = EdgeCompileConfig(_check_ir_validity=False)
@@ -204,11 +227,14 @@ output token by token. Each generated token is passed as input for the next run.
 ```cpp
 // main.cpp
 
+#define ENDOFTEXT 50256
+
 std::string generate(
     Module& llm_model,
     std::string& prompt,
     BasicTokenizer& tokenizer,
     BasicSampler& sampler,
+    size_t max_input_length,
     size_t max_output_length) {
 
     // Convert the input text into a list of integers (tokens) that represents
@@ -237,14 +263,23 @@ std::string generate(
 
         // Sample the next token from the logits.
         int64_t next_token = sampler.sample(logits);
+
+        // Break if we reached the end of the text.
+        if (next_token == ENDOFTEXT) {
+            break;
+        }
+
+        // Add the next token to the output.
         output_tokens.push_back(next_token);
 
         std::cout << tokenizer.decode({ next_token });
         std::cout.flush();
 
         // Update next input.
-        input_tokens.erase(input_tokens.begin());
         input_tokens.push_back(next_token);
+        if (input_tokens.size() > max_input_length) {
+            input_tokens.erase(input_tokens.begin());
+        }
     }
 
     std::cout << std::endl;
@@ -278,7 +313,9 @@ penalties for repeated tokens, and biases to prioritize or de-prioritize specifi
 
 int main() {
     // Set up the prompt. This provides the seed text for the model to elaborate.
-    std::string prompt = "Once upon a time, there was a";
+    std::cout << "Prompt: ";
+    std::string prompt;
+    std::getline(std::cin, prompt);
 
     // The tokenizer is used to convert between tokens (used by the model) and
     // human-readable strings.
@@ -290,19 +327,19 @@ int main() {
     // Load the exported nanoGPT program, which was generated via the previous steps.
     Module model("nanogpt.pte", torch::executor::Module::MlockConfig::UseMlockIgnoreErrors);
 
+    const auto max_input_tokens = 1024;
     const auto max_output_tokens = 30;
     std::cout << prompt;
-    generate(model, prompt, tokenizer, sampler, max_output_tokens);
+    generate(model, prompt, tokenizer, sampler, max_input_tokens, max_output_tokens);
 }
 ```
 
 Finally, download the following files into the same directory as main.h:
 
-TODO: This is a placeholder.
 ```
-curl -O https://raw.githubusercontent.com/GregoryComer/et-tutorials/quantization/nanogpt/managed_tensor.h
-curl -O https://raw.githubusercontent.com/GregoryComer/et-tutorials/quantization/nanogpt/basic_tokenizer.h
-curl -O https://raw.githubusercontent.com/GregoryComer/et-tutorials/quantization/nanogpt/basic_sampler.h
+curl -O https://raw.githubusercontent.com/pytorch/executorch/release/0.2/examples/llm_manual/basic_sampler.h
+curl -O https://raw.githubusercontent.com/pytorch/executorch/release/0.2/examples/llm_manual/basic_tokenizer.h
+curl -O https://raw.githubusercontent.com/pytorch/executorch/release/0.2/examples/llm_manual/managed_tensor.h
 ```
 
 To learn more, see [Running an ExecuTorch Model in C++](https://pytorch.org/executorch/main/running-a-model-cpp-tutorial.html)
@@ -363,10 +400,19 @@ cmake --build cmake-out -j10
 ./cmake-out/nanogpt_runner
 ```
 
-You should see something like the following:
+You should see the instruction like the following to make you input the initial prompt:
 
 ```
-Once upon a time, there was a man who was a member of the military...
+Prompt:
+```
+
+Here we use "Hello world!" as example prompt. After you input your prompt and press enter:
+
+```
+Prompt: Hello world!
+Hello world!
+
+I'm not sure if you've heard of the "Curse of the Dragon" or not, but it's a very popular game in
 ```
 
 At this point, it is likely to run very slowly. This is because ExecuTorch hasn't been told to optimize for
@@ -423,14 +469,24 @@ model = GPT.from_pretrained('gpt2')
 # Create example inputs. This is used in the export process to provide
 # hints on the expected shape of the model input.
 example_inputs = (
-        torch.randint(0, 100, (1, 8), dtype=torch.long),
+        torch.randint(0, 100, (1, model.config.block_size - 1), dtype=torch.long),
     )
+
+# Set up dynamic shape configuration, which makes the input tensors'
+# sizes during the runtime does not need to match the size of tensors
+# in `example_inputs`, but follow the rule dynamic shape configuration shares.
+# Here we set the range of 0th model input's 1st dimension as [0, model.config.block_size - 1]
+# Detials of dynamic shape and how to create it customized can follow
+# [ExecuTorch Concept](https://pytorch.org/executorch/0.2/concepts.html#dynamic-shapes)
+dynamic_shape = (
+    {1: torch.export.Dim("token_dim", max=model.config.block_size - 1)},
+)
 
 # Trace the model, converting it to a portable intermediate representation.
 # The torch.no_grad() call tells PyTorch to exclude training-specific logic.
 with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-    m = capture_pre_autograd_graph(model, example_inputs)
-    traced_model = export(m, example_inputs)
+    m = capture_pre_autograd_graph(model, example_inputs, dynamic_shapes=dynamic_shape)
+    traced_model = export(m, example_inputs, dynamic_shapes=dynamic_shape)
 
 # Convert the model into a runnable ExecuTorch program.
 # To be further lowered to Xnnpack backend, `traced_model` needs xnnpack-specific edge compile config
@@ -512,12 +568,23 @@ cmake --build cmake-out -j10
 ./cmake-out/nanogpt_runner
 ```
 
-You should see something like the following:
+
+You should see the instruction like the following to make you input the initial prompt:
 
 ```
-Once upon a time, there was a man who was a member of the military...
+Prompt:
 ```
 
+Here we use "Hello world!" as example prompt. After you input your prompt and press enter:
+
+```
+Prompt: Hello world!
+Hello world!
+
+I'm not sure if you've heard of the "Curse of the Dragon" or not, but it's a very popular game in
+```
+
+Now you'll be able to clearly feel the acceleration of the generation process, compare with no delegation.
 
 For more information regarding backend delegateion, see the ExecuTorch guides
 for the
