@@ -93,6 +93,13 @@ def _get_input_quantization_params(
     return quant_params
 
 
+def _has_op_nodes(program: ExportedProgram) -> bool:
+    num_inputs = len(program.graph_signature.user_inputs)
+    num_outputs = len(program.graph_signature.user_outputs)
+    num_nodes = len(program.graph.nodes)
+    return num_nodes > num_inputs + num_outputs
+
+
 def _get_output_node(program: ExportedProgram) -> Node:
     """
     Get output node to this model.
@@ -239,6 +246,10 @@ class ArmTester(Tester):
 
         export_stage = self.stages[self.stage_name(Export)]
         exported_program = export_stage.artifact
+        assert _has_op_nodes(
+            exported_program
+        ), "Cannot compare outputs on a model without ops."
+
         input_names = _get_input_names(exported_program)
         output_node = _get_output_node(exported_program)
         output_name = output_node.name
