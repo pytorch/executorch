@@ -81,11 +81,12 @@ et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
 # cut to v1.2
 # the version varible is used in layout.html: https://github.com/pytorch/executorch/blob/main/docs/source/_templates/layout.html#L29
 version = release = "main"
-if et_version_docs.startswith("refs/tags/v"):
-    version = ".".join(
-        et_version_docs.split("/")[-1].split("-")[0].lstrip("v").split(".")[:2]
-    )
-    print(f"Version: {version}")
+if et_version_docs:
+    if et_version_docs.startswith("refs/tags/v"):
+        version = ".".join(
+            et_version_docs.split("/")[-1].split("-")[0].lstrip("v").split(".")[:2]
+        )
+print(f"Version: {version}")
 html_title = " ".join((project, version, "documentation"))
 
 breathe_projects = {"ExecuTorch": "../build/xml/"}
