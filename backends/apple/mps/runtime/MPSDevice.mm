@@ -96,7 +96,7 @@ bool MPSDevice::isMacOS13Plus(MacOSVersion version) const {
 const char* getLibraryCString(LibraryType libraryType) {
   switch (libraryType) {
     case LibraryType::INDEXING_KERNELS:
-      return "Hello";
+      return "TODO";
     default:
       ET_CHECK_MSG(false, "Unhandled library type!");
   }
