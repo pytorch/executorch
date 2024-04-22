@@ -29,6 +29,24 @@ class TestSimpleView(unittest.TestCase):
         def forward(self, x: torch.Tensor):
             return x.view(-1, 5)
 
+    class ViewThenAdd(torch.nn.Module):
+
+        sizes = [10, 15]
+        test_parameters = [(torch.ones(n),) for n in sizes]
+
+        def forward(self, x: torch.Tensor):
+            y = x.view(-1, 5)
+            return y + y
+
+    class AddThenView(torch.nn.Module):
+
+        sizes = [10, 15]
+        test_parameters = [(torch.ones(n),) for n in sizes]
+
+        def forward(self, x: torch.Tensor):
+            y = x + x
+            return y.view(-1, 5)
+
     def _test_view_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: torch.Tensor
     ):
@@ -90,24 +108,50 @@ class TestSimpleView(unittest.TestCase):
             .to_executorch()
         )
 
+    # Only view tests
+
     @parameterized.expand(View.test_parameters)
     def test_view_tosa_MI(self, test_tensor: torch.Tensor):
         self._test_view_tosa_MI_pipeline(self.View(), (test_tensor,))
 
-    # Expected to fail since ArmQuantizer cannot quantize a View layer.
-    # TODO MLETROCH-125
+    # Fails since there is no previous op to share quantspec with.
     @parameterized.expand(View.test_parameters)
     @unittest.expectedFailure
     def test_view_tosa_BI(self, test_tensor: torch.Tensor):
         self._test_view_tosa_BI_pipeline(self.View(), (test_tensor,))
 
-    # Expected to fail since ArmQuantizer cannot quantize a View layer.
-    # TODO MLETROCH-125
+    # Fails since there is no previous op to share quantspec with.
     @parameterized.expand(View.test_parameters)
+    @unittest.expectedFailure
+    def test_view_u55_BI(self, test_tensor: torch.Tensor):
+        self._test_view_tosa_BI_pipeline(self.View(), (test_tensor,))
+
+    # View + Op tests
+
+    @parameterized.expand(AddThenView.test_parameters)
+    def test_add_then_view_tosa_BI(self, test_tensor: torch.Tensor):
+        self._test_view_tosa_BI_pipeline(self.AddThenView(), (test_tensor,))
+
+    # Fails since there is no previous op to share quantspec with.
+    @parameterized.expand(ViewThenAdd.test_parameters)
+    @unittest.expectedFailure
+    def test_view_then_add_tosa_BI(self, test_tensor: torch.Tensor):
+        self._test_view_tosa_BI_pipeline(self.ViewThenAdd(), (test_tensor,))
+
+    # Fails since there is no previous op to share quantspec with.
+    @parameterized.expand(ViewThenAdd.test_parameters)
     @unittest.expectedFailure
     @unittest.skipIf(
         not common.VELA_INSTALLED,
         "There is no point in running U55 tests if the Vela tool is not installed",
     )
-    def test_view_u55_BI(self, test_tensor: torch.Tensor):
-        self._test_view_u55_BI_pipeline(self.View(), (test_tensor,))
+    def test_view_then_add_u55_BI(self, test_tensor: torch.Tensor):
+        self._test_view_u55_BI_pipeline(self.ViewThenAdd(), (test_tensor,))
+
+    @parameterized.expand(AddThenView.test_parameters)
+    @unittest.skipIf(
+        not common.VELA_INSTALLED,
+        "There is no point in running U55 tests if the Vela tool is not installed",
+    )
+    def test_add_then_view_u55_BI(self, test_tensor: torch.Tensor):
+        self._test_view_u55_BI_pipeline(self.AddThenView(), (test_tensor,))
