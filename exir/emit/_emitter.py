@@ -1173,6 +1173,77 @@ class _Emitter(torch.fx.Interpreter):
         # The value is not used but the caller expects an AbstractValue returned.
         return _AbstractValue(None, None)  # pyre-ignore
 
+    def _emit_prim_getters(self, prim_getters: Dict[str, Any]) -> List[ExecutionPlan]:
+        """
+        Given a mapping of function names to return values, emit simple execution
+        plans that just return these constant values.
+
+        Precondition: All the values are primitives (bool, float, int, str, enum)
+        or structures (list, dict) of them.
+        """
+        plans = []
+        # flatten any structures
+        for method, vals in prim_getters.items():
+            # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
+            flattened_output, spec = ex_pytree.tree_flatten(vals)
+            spec = spec.to_str()
+            chain = Chain(
+                inputs=[],
+                outputs=[],
+                instructions=[],
+                stacktrace=None,
+            )
+
+            # switch on type of prim
+            values = []
+            for val in flattened_output:
+                if isinstance(val, float):
+                    values.append(EValue(Double(val)))
+
+                elif isinstance(val, bool):
+                    values.append(EValue(Bool(val)))
+
+                elif isinstance(val, int):
+                    values.append(EValue(Int(val)))
+
+                elif isinstance(val, str):
+                    values.append(EValue(String(val)))
+
+                elif isinstance(val, torch.dtype):
+                    values.append(EValue(Int(scalar_type_enum(val))))
+
+                elif isinstance(val, torch.layout):
+                    values.append(EValue(Int(layout_enum(val))))
+
+                elif isinstance(val, torch.Tensor):
+                    values.append(
+                        self._tensor_spec_to_evalue(
+                            TensorSpec.from_tensor(val, const=True)
+                        )
+                    )
+
+                else:
+                    raise ExportError(
+                        ExportErrorType.NOT_SUPPORTED,
+                        f"Error emitting {method} which returns a value of type {type(val)}. which is not a supported primitive",
+                    )
+
+            # add to plans
+            plans.append(
+                ExecutionPlan(
+                    name=method,
+                    values=values,
+                    inputs=[],
+                    outputs=list(range(0, len(values))),
+                    chains=[chain],
+                    operators=[],
+                    delegates=[],
+                    non_const_buffer_sizes=[0, 0],
+                    container_meta_type=ContainerMetadata("", spec),
+                )
+            )
+        return plans
+
     def fetch_attr(self, target: _Target) -> _AbstractValue:
         """Fetch weights and other module parameters. If the attribute is a tensor, emit it."""
         attr = super().fetch_attr(target)
