@@ -19,7 +19,7 @@ the model `SimpleConv` generated from the [Exporting to ExecuTorch tutorial](./t
 
 The first step towards running your model is to load it. ExecuTorch uses an abstraction called a `DataLoader` to handle the specifics of retrieving the `.pte` file data, and then `Program` represents the loaded state.
 
-Users can define their own `DataLoader`s to fit the needs of their particular system. In this tutorial we will be using the `FileDataLoader`, but you can look under [Example Data Loader Implementations](https://github.com/pytorch/executorch/tree/main/extension/data_loader) to see other options provided by the ExecuTorch project.
+Users can define their own `DataLoader`s to fit the needs of their particular system. In this tutorial we will be using the `FileDataLoader`, but you can look under [Example Data Loader Implementations](https://github.com/pytorch/executorch/tree/release/0.2/extension/data_loader) to see other options provided by the ExecuTorch project.
 
 For the `FileDataLoader` all we need to do is provide a file path to the constructor.
 

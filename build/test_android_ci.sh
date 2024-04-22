@@ -7,7 +7,7 @@
 
 set -ex
 
-# https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/ExecuTorchDemo
+# https://github.com/pytorch/executorch/tree/release/0.2/examples/demo-apps/android/ExecuTorchDemo
 build_executorch() {
   MODEL_NAME=dl3
   # Delegating DeepLab v3 to XNNPACK backend

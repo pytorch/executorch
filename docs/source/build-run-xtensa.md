@@ -79,7 +79,7 @@ The AoT folder contains all of the python scripts and functions needed to export
 
 ***Operators***:
 
-The operators folder contains two kinds of operators: existing operators from the [ExecuTorch portable library](https://github.com/pytorch/executorch/tree/main/kernels/portable/cpu) and new operators that define custom computations. The former is simply dispatching the operator to the relevant ExecuTorch implementation, while the latter acts as an interface, setting up everything needed for the custom kernels to compute the outputs.
+The operators folder contains two kinds of operators: existing operators from the [ExecuTorch portable library](https://github.com/pytorch/executorch/tree/release/0.2/kernels/portable/cpu) and new operators that define custom computations. The former is simply dispatching the operator to the relevant ExecuTorch implementation, while the latter acts as an interface, setting up everything needed for the custom kernels to compute the outputs.
 
 ***Kernels***:
 

@@ -193,4 +193,4 @@ explore its advanced features and capabilities below.
 * Build an [Android](demo-apps-android.md) or [iOS](demo-apps-ios.md) demo app
 * Learn more about the [export process](export-overview.md)
 * Dive deeper into the [Export Intermediate Representation (EXIR)](ir-exir.md) for complex export workflows
-* Refer to [advanced examples in executorch/examples](https://github.com/pytorch/executorch/tree/main/examples)
+* Refer to [advanced examples in executorch/examples](https://github.com/pytorch/executorch/tree/release/0.2/examples)

@@ -48,7 +48,7 @@ Explore mobile apps with ExecuTorch models integrated and deployable on Android 
 
 ## Demo of XNNPACK delegation
 
-The demos in the [`xnnpack/`](./xnnpack) directory provide valuable insights into the process of lowering and executing an ExecuTorch model with built-in performance enhancements. These demos specifically showcase the workflow involving [XNNPACK backend](https://github.com/pytorch/executorch/tree/main/backends/xnnpack) delegation and quantization.
+The demos in the [`xnnpack/`](./xnnpack) directory provide valuable insights into the process of lowering and executing an ExecuTorch model with built-in performance enhancements. These demos specifically showcase the workflow involving [XNNPACK backend](https://github.com/pytorch/executorch/tree/release/0.2/backends/xnnpack) delegation and quantization.
 
 ## Demo of ExecuTorch Apple Backend
 
