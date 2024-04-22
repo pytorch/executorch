@@ -78,14 +78,13 @@ et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
 # The code below will cut version displayed in the dropdown like this:
 # By default, set to "main".
 # If it's a tag like refs/tags/v1.2.3-rc4 or refs/tags/v1.2.3, then
-# cut to v1.2
+# cut to 1.2
 # the version varible is used in layout.html: https://github.com/pytorch/executorch/blob/main/docs/source/_templates/layout.html#L29
 version = release = "main"
 if et_version_docs:
     if et_version_docs.startswith("refs/tags/v"):
         version = ".".join(
             et_version_docs.split("/")[-1].split("-")[0].lstrip("v").split(".")[:2]
-        )
 print(f"Version: {version}")
 html_title = " ".join((project, version, "documentation"))
 
