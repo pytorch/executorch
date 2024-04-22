@@ -26,6 +26,9 @@ class MPSDataType(IntEnum):
     mps_data_type_complex_float16 = 10
     mps_data_type_complex_float32 = 11
 
+class OpType(IntEnum):
+    mps_graph = 0
+    metal_kernel = 1
 
 @dataclass
 class MPSNode1x1:
@@ -360,6 +363,11 @@ class MPSRound(MPSNode1x1):
 
 
 @dataclass
+class MPSLogicalNot(MPSNode1x1):
+    pass
+
+
+@dataclass
 class MPSBitwise(MPSNode1x1):
     pass
 
@@ -433,6 +441,17 @@ class MPSEmbedding(MPSNode2x1):
     scale_grad_by_freq: bool = False
     sparse: bool = False
 
+
+@dataclass
+class MPSIndexTensor(MPSNode1x1):
+    indices_id: List[int] = field(default_factory=list)
+
+
+@dataclass
+class MPSIndexPut(MPSNode1x1):
+    indices_id: List[int] = field(default_factory=list)
+    values_shape: List[int] = field(default_factory=list)
+    values_id: int = -1
 
 ##
 ## Shape ops
@@ -664,6 +683,7 @@ MPSNodeUnion = Union[
     MPSIsnan,
     MPSIsinf,
     MPSRound,
+    MPSLogicalNot,
     # Linear algebra ops
     MPSMatMul,
     MPSAddmm,
@@ -678,6 +698,8 @@ MPSNodeUnion = Union[
     # Indexing ops
     MPSIndexSelect,
     MPSEmbedding,
+    MPSIndexTensor,
+    MPSIndexPut,
     # Shape ops
     MPSPermute,
     MPSView,
@@ -741,3 +763,4 @@ class MPSGraph:
     input_ids: List[int]
     output_ids: List[int]
     constant_ids: List[int]
+    graph_type: OpType

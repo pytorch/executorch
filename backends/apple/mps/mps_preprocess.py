@@ -18,6 +18,7 @@ from executorch.backends.apple.mps.operators.node_visitor import (
 from executorch.backends.apple.mps.serialization.mps_graph_schema import (
     MPSGraph,
     MPSTensor,
+    OpType,
 )
 
 from executorch.backends.apple.mps.serialization.mps_graph_serialize import (
@@ -65,6 +66,7 @@ class MPSBackend(BackendDetails):
             input_ids=[],
             output_ids=[],
             constant_ids=[],
+            graph_type=OpType.mps_graph
         )
 
         convert_model_to_fp16 = True
@@ -111,6 +113,11 @@ class MPSBackend(BackendDetails):
         mps_graph: MPSGraph,
     ) -> None:
         logging.info(f"Visiting: {node}, {node.target.__name__}")
+
+        if "delegation_tag" in node.meta and "metal_kernel" in node.meta["delegation_tag"]:
+            logging.info(f"Node '{node.target.__name__}' was marked as a Metal kernel by the MPSPartitioner!")
+            mps_graph.graph_type = OpType.metal_kernel
+
         if node.target.__name__ in node_visitors:
             node_visitors[node.target.__name__].define_node(node, mps_graph)
         else:
