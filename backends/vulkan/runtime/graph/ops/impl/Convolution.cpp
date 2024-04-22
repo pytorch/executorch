@@ -372,13 +372,13 @@ void add_conv2d_node(
        {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          t_out->sizes_ubo(),
+          t_out->texture_limits_ubo(),
           t_in->sizes_ubo(),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(extra_params),
       },
       // Specialization Constants
-      {t_out->gpu_memory_layout_int()},
+      {},
       // Resizing Logic
       resize_conv2d_node,
       {weight, stride, padding, dilation, transposed, output_padding}));
