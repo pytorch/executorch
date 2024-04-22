@@ -75,8 +75,6 @@ class IndexPutVisitor(NodeVisitor):
     def infer_sizes(self, a: List[int], b: List[int]):
         dimsA = len(a)
         dimsB = len(b)
-        print(dimsA)
-        print(dimsB)
         ndim = dimsA if dimsA > dimsB else dimsB
         expandedSizes = [0] * ndim
         for i in range(ndim - 1, -1, -1):
