@@ -17,6 +17,7 @@ import serializer.tosa_serializer as ts
 from executorch.backends.arm.arm_vela import vela_compile
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm.operators.op_placeholder import process_placeholder
+from executorch.backends.arm.passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import is_quant_node
 from executorch.backends.arm.tosa_utils import (
@@ -243,6 +244,9 @@ class ArmBackend(BackendDetails):
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
         tosa_graph = ts.TosaSerializer(path)
+        edge_program = ArmPassManager(
+            exported_program=edge_program
+        ).transform_to_backend_pipeline(compile_spec=compile_spec)
 
         node_visitors = get_node_visitors(edge_program)
 
