@@ -8,30 +8,30 @@
 
 #version 450 core
 
-#include "indexing_utils.h"
-
 #define PRECISION ${PRECISION}
+
+#include "indexing_utils.h"
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly image3D im_out;
 layout(set = 0, binding = 1) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_mat1;
 layout(set = 0, binding = 2) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_mat2;
 
-layout(set = 0, binding = 3) uniform PRECISION restrict OutExtents {
-  uvec4 data;
-}
-out_extents;
+layout(set = 0, binding = 3) uniform PRECISION restrict OutSizes {
+  ivec4 out_sizes;
+};
 
 layout(set = 0, binding = 4) uniform PRECISION restrict InSizes {
-  ivec4 data;
-}
-in_sizes;
+  ivec4 in_sizes;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+layout(constant_id = 3) const int out_packed_dim = C_DIM;
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
-  if (any(greaterThanEqual(pos, out_extents.data.xyz))) {
+  if (pos_out_of_bounds(pos, out_sizes, out_packed_dim)) {
     return;
   }
 
@@ -45,7 +45,7 @@ void main() {
     ivec3 mat2_pos = ivec3(pos.x, 0, pos.z);
 
   $if MAT1_PACKING == "W_packed":
-    int K = divup4(in_sizes.data[0]);
+    int K = divup4(in_sizes[0]);
     for (int i = 0; i < K; ++i) {
       $if MAT2_PACKING == "H_packed":
         vec4 mat1_tex = texelFetch(im_mat1, mat1_pos, 0);
@@ -75,7 +75,7 @@ void main() {
         $raise Exception("Unsupported value for MAT2_PACKING")
     }
   $elif MAT1_PACKING == "C_packed" and MAT2_PACKING == "C_packed":
-    int K = in_sizes.data[0];
+    int K = in_sizes[0];
     for (int i = 0; i < K; ++i) {
       texel = fma(
           texelFetch(im_mat1, mat1_pos, 0),

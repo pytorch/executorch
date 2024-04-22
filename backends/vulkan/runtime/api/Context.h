@@ -244,7 +244,7 @@ class UniformParamsBuffer final {
     }
   }
 
-  VulkanBuffer& buffer() {
+  const VulkanBuffer& buffer() const {
     return vulkan_buffer_;
   }
 
@@ -262,6 +262,12 @@ class UniformParamsBuffer final {
       *data_ptr = block;
     }
   }
+};
+
+struct ParamsBindList final {
+  std::vector<api::BufferBindInfo> bind_infos;
+
+  ParamsBindList(std::initializer_list<const api::BufferBindInfo> init_list);
 };
 
 class StorageBuffer final {
@@ -329,6 +335,10 @@ inline void arg_is_empty(bool& any_is_empty, const VulkanBuffer& buffer) {
 inline void arg_is_empty(bool& any_is_empty, const VulkanImage& image) {
   // bool(image) will evaluate to false if no memory has been allocated
   any_is_empty = any_is_empty || !image;
+}
+
+inline void arg_is_empty(bool& any_is_empty, const BufferBindInfo& bind_info) {
+  any_is_empty = any_is_empty || (bind_info.handle == VK_NULL_HANDLE);
 }
 
 /*

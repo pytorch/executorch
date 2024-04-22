@@ -10,6 +10,8 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
+#include <optional>
+
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
@@ -93,6 +95,7 @@ class ComputeGraph final {
   std::unique_ptr<api::Context> context_;
   std::vector<SharedObject> shared_objects_;
   std::vector<Value> values_;
+  std::vector<api::UniformParamsBuffer> param_ubos_;
 
   std::vector<std::unique_ptr<PrepackNode>> prepack_nodes_;
   std::vector<std::unique_ptr<ExecuteNode>> execute_nodes_;
@@ -182,6 +185,15 @@ class ComputeGraph final {
       return static_cast<T>(value.toBool());
     }
     VK_THROW("Cannot extract scalar from Value with type ", value.type());
+  }
+
+  template <typename T>
+  std::optional<T> extract_optional_scalar(const ValueRef idx) {
+    if (val_is_none(idx)) {
+      return ::std::nullopt;
+    } else {
+      return extract_scalar<T>(idx);
+    }
   }
 
   inline std::vector<std::unique_ptr<PrepackNode>>& prepack_nodes() {
@@ -314,9 +326,9 @@ class ComputeGraph final {
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
   template <typename Block>
-  inline std::shared_ptr<api::UniformParamsBuffer> create_params_buffer(
-      const Block& data) {
-    return std::make_shared<api::UniformParamsBuffer>(context_.get(), data);
+  const api::BufferBindInfo create_params_buffer(const Block& data) {
+    param_ubos_.emplace_back(api::UniformParamsBuffer(context_.get(), data));
+    return api::BufferBindInfo(param_ubos_.back().buffer());
   }
 
   /*

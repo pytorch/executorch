@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from collections import namedtuple
+
 from executorch.backends.vulkan.test.op_tests.utils.codegen import VkTestSuite
 
 
@@ -64,7 +66,7 @@ def get_pool2d_inputs():
     return test_suite
 
 
-def get_conv2d_inputs():
+def get_conv_inputs():
     test_suite = VkTestSuite(
         [
             (
@@ -121,6 +123,28 @@ def get_conv2d_inputs():
                 False,
                 [0, 0],
                 1,
+            ),
+            (
+                (1, 6, 7),
+                (6, 1, 3),
+                (6,),
+                [1],
+                [0],
+                [1],
+                False,
+                [0],
+                6,
+            ),
+            (
+                (1, 9, 11),
+                (9, 1, 3),
+                None,
+                [1],
+                [0],
+                [1],
+                False,
+                [0],
+                9,
             ),
         ]
     )
@@ -194,6 +218,100 @@ def get_permute_inputs():
     return test_suite
 
 
+def get_view_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((3, 4, 5), [1, 1, -1]),
+            ((3, 4, 5), [1, -1, 1]),
+            ((3, 4, 5), [-1, 1, 1]),
+            ((8, 7, 2, 3), [4, 3, 7, 4]),
+            ((8, 7, 2, 3), [7, -1, 2, 1]),
+            ((8, 7, 2, 3), [1, 1, 1, -1]),
+            ((8, 7, 2, 3), [-1]),
+            ((2, 3, 3, 7), [2, -1, 1, 1]),
+            ((3, 5, 2, 7), [7, -1, 2, 1]),
+            ((2, 2, 8, 6), [2, 6, -1, 1]),
+            ((2, 2, 8, 6), [6, -1, 1]),
+            ((S1, S2, S1, S2), [S2, -1, 1, S1]),
+            ((S1, S2, S1, S2), [S1, 1, -1, S2]),
+            ((S1, S2, S1, S2), [-1, 1, S1, S2]),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kWidthPacked",
+        "api::kHeightPacked",
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
+def get_slice_inputs():
+    Test = namedtuple("VkSliceTest", ["self", "dim", "start", "end", "step"])
+    Test.__new__.__defaults__ = (None, 0, None, None, 1)
+
+    # Slice by width and height
+    test_cases = [
+        Test(self=[1, 1, 4, 10], dim=3, start=3),
+        Test(self=[1, 1, 4, 10], dim=3, start=3, step=2),
+        Test(self=[1, 1, 4, 10], dim=3, start=3, end=4, step=2),
+        Test(self=[1, 1, 4, 10], dim=2, start=3),
+        Test(self=[9, 9, 9, 9], dim=2, start=0, end=9, step=1),
+        Test(self=[9, 9, 9, 9], dim=2, start=1, end=8, step=1),
+        Test(self=[9, 9, 9, 9], dim=2, start=1, end=2, step=1),
+        Test(self=[9, 9, 9, 9], dim=3, start=1, end=5, step=1),
+        Test(self=[9, 9, 9, 9], dim=3, start=1, end=5, step=2),
+        Test(self=[9, 9, 9, 9], dim=-1, start=1, end=5, step=2),
+        Test(self=[9, 9, 9, 9], dim=-2, start=1, end=5, step=2),
+        Test(self=[9, 9, 9], dim=1, start=2, step=1),
+        Test(self=[9, 9, 9], dim=1, start=2, step=2),
+        Test(self=[9, 9, 9], dim=2, start=2, step=1),
+        Test(self=[9, 9, 9], dim=2, start=2, step=2),
+        Test(self=[9, 9], dim=0, start=2, step=1),
+        Test(self=[9, 9], dim=0, start=2, step=2),
+        Test(self=[9, 9], dim=1, start=2, step=1),
+        Test(self=[9, 9], dim=1, start=2, step=2),
+    ]
+
+    # Slice by batch
+    test_cases += [
+        Test(self=[6, 5, 3, 2], dim=0),
+        Test(self=[6, 5, 3, 2], dim=0, step=2),
+        Test(self=[13, 13, 3, 2], dim=0, step=2),
+        Test(self=[13, 13, 3, 2], dim=0, start=1, step=2),
+        Test(self=[13, 13, 3, 2], dim=0, start=1, step=5),
+        Test(self=[13, 13, 3, 2], dim=0, start=1, step=20),
+        Test(self=[13, 2, 3, 2], dim=0, start=1, step=2),
+        Test(self=[13, 2, 3, 2], dim=0, start=1, step=5),
+        Test(self=[13, 2, 3, 2], dim=0, start=1, step=20),
+    ]
+
+    # Slice by channel
+    test_cases += [
+        Test(self=[2, 5, 1, 10], dim=1),
+        Test(self=[2, 5, 1, 10], dim=1, start=1),
+        Test(self=[2, 5, 1, 10], dim=1, start=1, step=2),
+        Test(self=[5, 13, 1, 10], dim=1),
+        Test(self=[5, 13, 1, 10], dim=1, start=1),
+        Test(self=[5, 13, 1, 10], dim=1, start=1, step=2),
+        Test(self=[5, 13, 1, 10], dim=1, start=1, step=5),
+        Test(self=[5, 13, 1, 10], dim=1, start=1, step=20),
+        Test(self=[13, 1, 10], dim=0),
+        Test(self=[13, 1, 10], dim=0, start=1),
+        Test(self=[13, 1, 10], dim=0, start=1, step=2),
+        Test(self=[13, 1, 10], dim=0, start=1, step=5),
+        Test(self=[13, 1, 10], dim=0, start=1, step=20),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -201,11 +319,13 @@ test_suites = {
     "aten.mul.Tensor": get_binary_elementwise_inputs(),
     "aten.mm.default": get_mm_inputs(),
     "aten.max_pool2d_with_indices.default": get_pool2d_inputs(),
-    "aten.convolution.default": get_conv2d_inputs(),
+    "aten.convolution.default": get_conv_inputs(),
     "aten.native_layer_norm.default": get_native_layer_norm_inputs(),
     "aten.full.default": get_full_inputs(),
     "aten.select.int": get_select_int_inputs(),
     "aten.select_copy.int": get_select_int_inputs(),
     "aten.permute.default": get_permute_inputs(),
     "aten.permute_copy.default": get_permute_inputs(),
+    "aten.view_copy.default": get_view_inputs(),
+    "aten.slice_copy.Tensor": get_slice_inputs(),
 }

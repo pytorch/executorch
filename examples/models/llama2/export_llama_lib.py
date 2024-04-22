@@ -9,6 +9,7 @@
 import argparse
 import copy
 import logging
+import math
 import os
 import shlex
 
@@ -37,7 +38,7 @@ from sentencepiece import SentencePieceProcessor
 from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 from .quant_lib import _get_pt2e_quantization_params, get_pt2e_quantizers
 
-from .quantize import EmbeddingOnlyInt8QuantHandler, WeightOnlyInt8QuantHandler
+from .quantize import EmbeddingQuantHandler, WeightOnlyInt8QuantHandler
 
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
@@ -140,6 +141,80 @@ def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
     from executorch.examples.models.llama2.custom_ops import sdpa_with_kv_cache  # noqa
 
     _replace_sdpa_with_custom_op(module)
+    return module
+
+
+class SDPASimple(torch.nn.Module):
+
+    def __init__(
+        self,
+        kv_cache: KVCache,
+        dim: int,
+        head_dim: int,
+        n_rep: int,
+    ):
+        super().__init__()
+        self.kv_cache = kv_cache
+        self.dim = dim
+        self.head_dim = head_dim
+        self.n_rep = n_rep
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz,
+        seqlen,
+        mask,
+    ):
+        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        k, v = self.kv_cache.update(input_pos, k, v)
+        attn_mask = mask[None, None, input_pos]
+
+        k = k.repeat_interleave(self.n_rep, dim=1)
+        v = v.repeat_interleave(self.n_rep, dim=1)
+        scale_factor = 1 / math.sqrt(q.size(-1))
+        attn_weight = q @ k.transpose(-2, -1) * scale_factor
+        attn_weight += attn_mask
+        attn_weight = torch.softmax(attn_weight, dim=-1)
+        y = attn_weight @ v
+
+        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+
+
+def replace_sdpa_with_simple_sdpa(module: torch.nn.Module):
+    for name, child in module.named_children():
+        if isinstance(child, SDPA):
+            setattr(
+                module,
+                name,
+                SDPASimple(child.kv_cache, child.dim, child.head_dim, child.n_rep),
+            )
+        else:
+            replace_sdpa_with_simple_sdpa(child)
+    return module
+
+
+def replace_causal_mask(module: torch.nn.Module):
+    for buffer_fqn_name, buffer in module.named_buffers():
+        buffer_name = buffer_fqn_name.split(".")[-1]
+        if buffer_name == "mask":
+            max_seq_len = buffer.shape[-1]
+            mask = torch.full(
+                (max_seq_len, max_seq_len),
+                float("-inf"),
+                device="cpu",
+            )
+
+            mask = torch.triu(mask, diagonal=1)
+            module.register_buffer(buffer_name, mask)
+    for _, child in module.named_children():
+        replace_causal_mask(child)
     return module
 
 
@@ -280,6 +355,13 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--pt2e_quantize",
         default=None,
+        choices=[
+            "xnnpack_dynamic",
+            "xnnpack_dynamic_qc4",
+            "qnn_8a8w",
+            "qnn_16a16w",
+            "qnn_16a4w",
+        ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
     parser.add_argument(
@@ -485,7 +567,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     )
     params_path = canonical_path(args.params)
     output_dir_path = canonical_path(args.output_dir, dir=True)
-    modelname = "llama2"
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
 
     # dtype override
@@ -539,8 +620,11 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             group_size = int(group_size)
         bitwidth = int(bitwidth)
         transforms.append(
-            lambda model: EmbeddingOnlyInt8QuantHandler(
-                model, bitwidth=bitwidth, group_size=group_size
+            lambda model: EmbeddingQuantHandler(
+                model,
+                bitwidth=bitwidth,
+                group_size=group_size,
+                packed=(bitwidth == 4),
             ).quantized_model()
         )
 
@@ -550,8 +634,12 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_sdpa_with_custom_op)
 
+    if args.qnn and args.use_kv_cache:
+        transforms.append(replace_sdpa_with_simple_sdpa)
+        transforms.append(replace_causal_mask)
     return (
         load_llama_model(
+            modelname=modelname,
             checkpoint=checkpoint_path,
             checkpoint_dir=checkpoint_dir,
             params_path=params_path,
@@ -572,13 +660,16 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     # export_to_edge
     pt2e_quant_params = _get_pt2e_quantization_params(args)
     quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
-    if args.qnn:
-        assert (
-            args.quantization_mode is None
-        ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
+    quant_dtype = None
+    if args.qnn and args.pt2e_quantize:
         try:
             # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.quantizer.quantizer`
-            from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
+            from executorch.backends.qualcomm.quantizer.quantizer import (
+                get_16a4w_qnn_ptq_config,
+                get_default_16bit_qnn_ptq_config,
+                QnnQuantizer,
+                QuantDtype,
+            )
 
             # reset quantizers and pt2e_quant_params from xnnpack backend
             pt2e_quant_params = None
@@ -588,16 +679,49 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
                 "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
             )
 
+        backend, quant_config = args.pt2e_quantize.split("_")
+        assert (
+            backend == "qnn"
+        ), f"The quantization config is for backend {backend} instead of qnn."
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
         qnn_quantizer = QnnQuantizer()
         # more custom quantization are supported including 16a4w etc. default to 8bit quantized
         custom_annotations = ()
+        if quant_config == "8a8w":
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+            quant_dtype = QuantDtype.use_8a8w
+            pass
+        elif quant_config == "16a16w":
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+            quant_dtype = QuantDtype.use_16a16w
+            qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+            qnn_quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
+        elif quant_config == "16a4w":
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+            quant_dtype = QuantDtype.use_16a4w
+            qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+            qnn_quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config())
+            qnn_quantizer.set_per_channel_weight_dtype(
+                weight_dtype_for_16bit_act="int4"
+            )
+        else:
+            raise AssertionError(
+                f"No support for quant type {quant_config}. Support 8a8w, 16a16w and 16a4w."
+            )
+
+        assert (
+            args.quantization_mode is None
+        ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
         qnn_quantizer.add_custom_quant_annotations(custom_annotations)
         quantizers.append(qnn_quantizer)
 
     builder_exported_to_edge = _prepare_for_llama_export(
         modelname, args
     ).export_to_edge(quantizers)
+
+    modelname = builder_exported_to_edge.modelname
 
     # to_backend
     partitioners = []
@@ -706,8 +830,20 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
                 "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
             )
 
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        use_fp16 = True
+        skip_node_op_set = {}
+        if args.pt2e_quantize:
+            use_fp16 = False
+            # TODO: fix the lowering error without skipping nodes
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+            if quant_dtype == QuantDtype.use_8a8w:
+                raise NotImplementedError("8a8w for llama is still under development")
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+            elif quant_dtype == QuantDtype.use_16a16w:
+                raise NotImplementedError("16a16w for llama is still under development")
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+            elif quant_dtype == QuantDtype.use_16a4w:
+                raise NotImplementedError("16a4w for llama is still under development")
         partitioners.append(
             # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
             QnnPartitioner(
@@ -715,16 +851,17 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
                 generate_qnn_executorch_compiler_spec(
                     # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
                     soc_model=QcomChipset.SM8650,  # default to SM8650
-                    backend_options=backend_options,
+                    # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+                    backend_options=generate_htp_compiler_spec(use_fp16=use_fp16),
                     debug=False,
                     saver=False,
                 ),
                 skip_node_id_set={},
-                skip_node_op_set={},
+                skip_node_op_set=skip_node_op_set,
             )
         )
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        _transform(builder_exported_to_edge.export_program())
+        _transform(builder_exported_to_edge.edge_manager.exported_program())
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:

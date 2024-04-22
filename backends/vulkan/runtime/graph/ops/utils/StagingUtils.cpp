@@ -96,50 +96,38 @@ void set_staging_zeros(api::StorageBuffer& staging, const size_t nbytes) {
 }
 
 api::ShaderInfo get_nchw_to_image_shader(const vTensor& v_dst) {
-  if (v_dst.is_quantized()) {
-    VK_THROW("Quantized Tensors are currently not supported!");
-  }
-
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
   switch (v_dst.storage_type()) {
     case api::kTexture3D:
-      kernel_name = "nchw_to_image3d";
-      break;
     case api::kTexture2D:
-      kernel_name = "nchw_to_image2d";
+      kernel_name = "nchw_to_image";
       break;
     default:
       VK_THROW("No kernel available!");
   }
 
-  add_memory_layout_suffix(kernel_name, v_dst);
+  add_ndim_suffix(kernel_name, v_dst);
   add_dtype_suffix(kernel_name, v_dst);
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
 api::ShaderInfo get_image_to_nchw_shader(const vTensor& v_src) {
-  if (v_src.is_quantized()) {
-    VK_THROW("Quantized Tensors are currently not supported!");
-  }
-
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
   switch (v_src.storage_type()) {
     case api::kTexture3D:
-      kernel_name = "image3d_to_nchw";
-      break;
     case api::kTexture2D:
-      kernel_name = "image2d_to_nchw";
+      kernel_name = "image_to_nchw";
       break;
     default:
       VK_THROW("No kernel available!");
   }
 
-  add_memory_layout_suffix(kernel_name, v_src);
+  add_ndim_suffix(kernel_name, v_src);
   add_dtype_suffix(kernel_name, v_src);
 
   return VK_KERNEL_FROM_STR(kernel_name);

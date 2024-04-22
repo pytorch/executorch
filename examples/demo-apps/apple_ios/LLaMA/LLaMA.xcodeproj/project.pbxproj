@@ -41,8 +41,9 @@
 		03729F0C2BB203B300152F2E /* util.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F092BB203B300152F2E /* util.h */; };
 		03729F122BB2042B00152F2E /* sampler.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F102BB2042B00152F2E /* sampler.h */; };
 		03729F132BB2042B00152F2E /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F112BB2042B00152F2E /* sampler.cpp */; };
-		03729F162BB2043600152F2E /* tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F142BB2043600152F2E /* tokenizer.cpp */; };
+		03729F162BB2043600152F2E /* bpe_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F142BB2043600152F2E /* bpe_tokenizer.cpp */; };
 		03729F172BB2043600152F2E /* tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F152BB2043600152F2E /* tokenizer.h */; };
+		03BADE202BD2E88600DDFDC2 /* bpe_tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -91,8 +92,9 @@
 		03729F092BB203B300152F2E /* util.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
 		03729F102BB2042B00152F2E /* sampler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = sampler.h; sourceTree = "<group>"; };
 		03729F112BB2042B00152F2E /* sampler.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = sampler.cpp; sourceTree = "<group>"; };
-		03729F142BB2043600152F2E /* tokenizer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = tokenizer.cpp; sourceTree = "<group>"; };
+		03729F142BB2043600152F2E /* bpe_tokenizer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = bpe_tokenizer.cpp; sourceTree = "<group>"; };
 		03729F152BB2043600152F2E /* tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
+		03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = bpe_tokenizer.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -232,7 +234,8 @@
 		03729F0E2BB203D700152F2E /* tokenizer */ = {
 			isa = PBXGroup;
 			children = (
-				03729F142BB2043600152F2E /* tokenizer.cpp */,
+				03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */,
+				03729F142BB2043600152F2E /* bpe_tokenizer.cpp */,
 				03729F152BB2043600152F2E /* tokenizer.h */,
 			);
 			name = tokenizer;
@@ -256,6 +259,7 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				03BADE202BD2E88600DDFDC2 /* bpe_tokenizer.h in Headers */,
 				03729F172BB2043600152F2E /* tokenizer.h in Headers */,
 				03729EE22BB1F93E00152F2E /* LLaMARunner.h in Headers */,
 				03729F122BB2042B00152F2E /* sampler.h in Headers */,
@@ -403,7 +407,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */,
-				03729F162BB2043600152F2E /* tokenizer.cpp in Sources */,
+				03729F162BB2043600152F2E /* bpe_tokenizer.cpp in Sources */,
 				03729F0A2BB203B300152F2E /* runner.cpp in Sources */,
 				03729F132BB2042B00152F2E /* sampler.cpp in Sources */,
 			);
@@ -796,7 +800,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = main;
+				branch = latest;
 				kind = branch;
 			};
 		};

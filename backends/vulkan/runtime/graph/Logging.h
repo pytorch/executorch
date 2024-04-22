@@ -10,6 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
 
+#include <optional>
 #include <ostream>
 #include <vector>
 
@@ -31,6 +32,16 @@ inline std::ostream& operator<<(std::ostream& os, const api::utils::uvec3& v) {
 
 inline std::ostream& operator<<(std::ostream& os, const api::utils::uvec4& v) {
   return api::utils::operator<<(os, v);
+}
+
+template <typename T>
+inline std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
+  os << "[";
+  if (opt) {
+    os << opt.value();
+  }
+  os << "]";
+  return os;
 }
 
 } // namespace vkcompute

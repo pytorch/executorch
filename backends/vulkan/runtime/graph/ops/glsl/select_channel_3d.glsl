@@ -21,29 +21,27 @@ layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict 
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 
 layout(set = 0, binding = 2) uniform PRECISION restrict OutSizes {
-  uvec4 data;
-}
-out_sizes;
+  ivec4 sizes;
+};
 
 // index to select
 layout(set = 0, binding = 3) uniform PRECISION restrict IndexVal {
-  int data;
-}
-index;
+  int index;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+layout(constant_id = 3) const int packed_dim = C_DIM;
+
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  
-  const ivec4 idx = to_tensor_idx_C_packed(pos, out_sizes.data);
 
-  if (any(greaterThanEqual(idx, out_sizes.data))) {
+  if (pos_out_of_bounds(pos, sizes, packed_dim)) {
     return;
   }
 
-  const int tex = index.data / 4;
-  const int ind = index.data % 4;
+  const int tex = index / 4;
+  const int ind = index % 4;
   const T v = VEC4_T(texelFetch(image_in, ivec3(pos.x, pos.y, tex), 0))[ind];
 
   imageStore(image_out, ivec3(pos.x, pos.y, 0), VEC4_T(v, 0, 0, 0));

@@ -49,10 +49,10 @@ void add_full_node(
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE}},
       // Shader params buffers
-      {t_out->gpu_sizes_ubo(),
-       t_out->cpu_sizes_ubo(),
-       graph.create_params_buffer(fill_value_val)},
-      // Resizing
+      {t_out->sizes_ubo(), graph.create_params_buffer(fill_value_val)},
+      // Specialization Constants
+      {SV(t_out->gpu_memory_layout_int())},
+      // Resizing Logic
       resize_full_node,
       {size}));
 }

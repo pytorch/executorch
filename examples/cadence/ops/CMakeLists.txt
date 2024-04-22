@@ -29,6 +29,8 @@ set(_aten_ops__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/op_embedding.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_full.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_view_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_permute_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/copy_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/broadcast_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp")
 add_library(aten_ops_cadence ${_aten_ops__srcs})
