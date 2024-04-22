@@ -562,6 +562,11 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs custom_ops)
   endif()
 
+  if(EXECUTORCH_BUILD_QUANTIZED)
+    target_link_options_shared_lib(quantized_ops_lib)
+    list(APPEND _dep_libs quantized_kernels quantized_ops_lib)
+  endif()
+
   # TODO(larryliu): Fix macOS 2 dylibs having 2 sets of static variables issue
   if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT AND NOT APPLE)
     list(APPEND _dep_libs custom_ops_aot_lib)
