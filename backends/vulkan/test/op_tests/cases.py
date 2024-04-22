@@ -312,6 +312,25 @@ def get_slice_inputs():
     return test_suite
 
 
+def get_clone_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((S2, S1, S2, S1),),
+            ((S2, S1, S2),),
+            ((S2, S1),),
+            ((S2,),),
+            ((XS, S1, XS, S1),),
+            ((XS, S1, XS),),
+            ((S1, XS, S1),),
+            ((XS, S1),),
+            ((S1, XS),),
+            ((S1,),),
+            ((XS,),),
+        ]
+    )
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -328,4 +347,5 @@ test_suites = {
     "aten.permute_copy.default": get_permute_inputs(),
     "aten.view_copy.default": get_view_inputs(),
     "aten.slice_copy.Tensor": get_slice_inputs(),
+    "aten.clone.default": get_clone_inputs(),
 }

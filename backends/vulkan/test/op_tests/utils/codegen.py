@@ -21,6 +21,7 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     OPT_DEVICE,
     OPT_INT64,
     OPT_LAYOUT,
+    OPT_MEMORYFORMAT,
     OPT_SCALARTYPE,
     TestSuite,
     TestSuiteGen,
@@ -254,6 +255,7 @@ class ComputeGraphGen:
             or ref.src_cpp_type == OPT_LAYOUT
             or ref.src_cpp_type == OPT_DEVICE
             or ref.src_cpp_type == OPT_BOOL
+            or ref.src_cpp_type == OPT_MEMORYFORMAT
         ):
             ret_str += "add_none(); \n"
         elif ref.src_cpp_type == TWO_TENSOR_TUPLE:
