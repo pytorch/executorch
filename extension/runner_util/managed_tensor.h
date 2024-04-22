@@ -10,6 +10,10 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/assert.h>
+#include <memory>
+// NOTE: required by torchchat install_et.sh script.
+// @nolint PATTERNLINT Ok to use stdlib for this optional library
+#include <vector>
 
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
