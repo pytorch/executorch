@@ -90,7 +90,7 @@ cd ../..
 :::
 ::::
 
-For more information, see [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup.html).
+For more information, see [Setting Up ExecuTorch](https://pytorch.org/executorch/0.2/getting-started-setup.html).
 
 
 ## Running a Large Language Model Locally
@@ -184,7 +184,7 @@ with open("nanogpt.pte", "wb") as file:
 
 To export, run the script with `python export_nanogpt.py` (or python3, as appropriate for your environment). It will generate a `nanogpt.pte` file in the current directory.
 
-For more information, see [Exporting to ExecuTorch](https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial.html) and
+For more information, see [Exporting to ExecuTorch](https://pytorch.org/executorch/0.2/tutorials/export-to-executorch-tutorial.html) and
 [torch.export](https://pytorch.org/docs/stable/export.html).
 
 ### Step 2. Invoking the Runtime
@@ -342,8 +342,8 @@ curl -O https://raw.githubusercontent.com/pytorch/executorch/release/0.2/example
 curl -O https://raw.githubusercontent.com/pytorch/executorch/release/0.2/examples/llm_manual/managed_tensor.h
 ```
 
-To learn more, see [Running an ExecuTorch Model in C++](https://pytorch.org/executorch/main/running-a-model-cpp-tutorial.html)
-and the [ExecuTorch Runtime API Reference](https://pytorch.org/executorch/main/executorch-runtime-api-reference.html).
+To learn more, see [Running an ExecuTorch Model in C++](https://pytorch.org/executorch/0.2/running-a-model-cpp-tutorial.html)
+and the [ExecuTorch Runtime API Reference](https://pytorch.org/executorch/0.2/executorch-runtime-api-reference.html).
 
 ### Building and Running
 
@@ -538,9 +538,9 @@ target_link_libraries(
 ```
 
 Keep the rest of the code the same. For more details refer to
-[Exporting to ExecuTorch](https://pytorch.org/executorch/main/llm/getting-started.html#step-1-exporting-to-executorch)
+[Exporting to ExecuTorch](https://pytorch.org/executorch/0.2/llm/getting-started.html#step-1-exporting-to-executorch)
 and
-[Invoking the Runtime](https://pytorch.org/executorch/main/llm/getting-started.html#step-2-invoking-the-runtime)
+[Invoking the Runtime](https://pytorch.org/executorch/0.2/llm/getting-started.html#step-2-invoking-the-runtime)
 for more details
 
 At this point, the working directory should contain the following files:
@@ -588,9 +588,9 @@ Now you'll be able to clearly feel the acceleration of the generation process, c
 
 For more information regarding backend delegateion, see the ExecuTorch guides
 for the
-[XNNPACK Backend](https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html)
+[XNNPACK Backend](https://pytorch.org/executorch/0.2/tutorial-xnnpack-delegate-lowering.html)
 and
-[CoreML Backend](https://pytorch.org/executorch/stable/build-run-coreml.html).
+[CoreML Backend](https://pytorch.org/executorch/0.2/build-run-coreml.html).
 
 ## Quantization
 
@@ -676,7 +676,7 @@ target_link_libraries(
     xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
 ```
 
-For more information, see [Quantization in ExecuTorch](https://pytorch.org/executorch/stable/quantization-overview.html).
+For more information, see [Quantization in ExecuTorch](https://pytorch.org/executorch/0.2/quantization-overview.html).
 
 ## Profiling and Debugging
 After lowering a model by calling `to_backend()`, you may want to see what got delegated and what didn’t. ExecuTorch
@@ -754,7 +754,7 @@ Through the ExecuTorch SDK, users are able to profile model execution, giving ti
 
 ##### ETRecord generation (Optional)
 
-An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [https://pytorch.org/executorch/main/sdk-etrecord.html](https://pytorch.org/executorch/main/sdk-etrecord.html)
+An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [https://pytorch.org/executorch/0.2/sdk-etrecord.html](https://pytorch.org/executorch/0.2/sdk-etrecord.html)
 
 
 In your export script, after calling `to_edge()` and `to_executorch()`, call `generate_etrecord()` with the `EdgeProgramManager` from `to_edge()` and the `ExecuTorchProgramManager` from `to_executorch()`. Make sure to copy the `EdgeProgramManager`, as the call to `to_backend()` mutates the graph in-place.
@@ -776,7 +776,7 @@ Run the export script and the ETRecord will be generated as `etrecord.bin`.
 
 ##### ETDump generation
 
-An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see [https://pytorch.org/executorch/main/sdk-etdump.html](https://pytorch.org/executorch/main/sdk-etdump.html)
+An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see [https://pytorch.org/executorch/0.2/sdk-etdump.html](https://pytorch.org/executorch/0.2/sdk-etdump.html)
 
 Include the ETDump header in your code.
 ```cpp
@@ -846,7 +846,7 @@ This prints the performance data in a tabular format in “inspector_out.txt”,
 ![](../_static/img/llm_manual_print_data_tabular.png)
 <a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a>
 
-To learn more about the Inspector and the rich functionality it provides, see the [Inspector API Reference](https://pytorch.org/executorch/main/sdk-inspector.html).
+To learn more about the Inspector and the rich functionality it provides, see the [Inspector API Reference](https://pytorch.org/executorch/0.2/sdk-inspector.html).
 
 ## Custom Kernels
 With the ExecuTorch custom operator APIs, custom operator and kernel authors can easily bring in their kernel into PyTorch/ExecuTorch.
@@ -924,7 +924,7 @@ torch.ops.load_library("libcustom_linear.so")
 Once loaded, you can use the custom operator in PyTorch code.
 
 For more information, see [PyTorch Custom Operators](https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html) and
-and [ExecuTorch Kernel Registration](https://pytorch.org/executorch/stable/kernel-library-custom-aten-kernel.html).
+and [ExecuTorch Kernel Registration](https://pytorch.org/executorch/0.2/kernel-library-custom-aten-kernel.html).
 
 ### Using a Custom Operator in a Model
 
@@ -949,6 +949,6 @@ The remaining steps are the same as the normal flow. Now you can run this module
 ## How to build Mobile Apps
 You can execute an LLM using ExecuTorch on iOS and Android.
 
-**For iOS see the [iLLaMA App](https://pytorch.org/executorch/main/llm/llama-demo-ios.html).**
+**For iOS see the [iLLaMA App](https://pytorch.org/executorch/0.2/llm/llama-demo-ios.html).**
 
-**For Android, see the [Android Sample App](https://pytorch.org/executorch/main/llm/llama-demo-android.html).**
+**For Android, see the [Android Sample App](https://pytorch.org/executorch/0.2/llm/llama-demo-android.html).**

@@ -57,7 +57,7 @@ Performance was measured on Samsung Galaxy S22, S24, One Plus 12 and iPhone 15 m
 - For Llama7b, your device may require at least 32GB RAM. If this is a constraint for you, please try the smaller stories model.
 
 ## Step 1: Setup
-1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_requirements.sh --pybind xnnpack`
+1. Follow the [tutorial](https://pytorch.org/executorch/0.2/getting-started-setup) to set up ExecuTorch. For installation run `./install_requirements.sh --pybind xnnpack`
 2. Run `examples/models/llama2/install_requirements.sh` to install a few dependencies.
 
 ## Step 2: Prepare model
@@ -255,14 +255,14 @@ adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --t
 
 ### iOS
 
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App.
+Please refer to [this tutorial](https://pytorch.org/executorch/0.2/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App.
 
 ### Android
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
+Please refer to [this tutorial](https://pytorch.org/executorch/0.2/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
 
 ## Optional: Smaller models delegated to other backends
 Currently we supported lowering the stories model to other backends, including, CoreML, MPS and QNN. Please refer to the instruction
-for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.html), [MPS](https://pytorch.org/executorch/main/build-run-mps.html), [QNN](https://pytorch.org/executorch/main/build-run-qualcomm.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
+for each backend ([CoreML](https://pytorch.org/executorch/0.2/build-run-coreml.html), [MPS](https://pytorch.org/executorch/0.2/build-run-mps.html), [QNN](https://pytorch.org/executorch/0.2/build-run-qualcomm.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
 
 - Lower to CoreML: `python -m examples.models.llama2.export_llama -kv --coreml -c stories110M.pt -p params.json`
 - MPS: `python -m examples.models.llama2.export_llama -kv --mps -c stories110M.pt -p params.json`

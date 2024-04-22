@@ -245,7 +245,7 @@ I 00:00:01.835706 executorch:qnn_executor_runner.cpp:298] 100 inference took 109
 ### Running a model via ExecuTorch's android demo-app
 
 An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
-`examples`. Please refer to android demo app [tutorial](https://pytorch.org/executorch/stable/demo-apps-android.html).
+`examples`. Please refer to android demo app [tutorial](https://pytorch.org/executorch/0.2/demo-apps-android.html).
 
 
 ## What is coming?

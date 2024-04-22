@@ -14,7 +14,7 @@ This guide explains how to setup ExecuTorch for Android using a demo app. The ap
 
 :::{grid-item-card} Prerequisites
 :class-card: card-prerequisites
-* Refer to [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) to set up the repo and dev environment.
+* Refer to [Setting up ExecuTorch](https://pytorch.org/executorch/0.2/getting-started-setup) to set up the repo and dev environment.
 * Download and install [Android Studio and SDK](https://developer.android.com/studio).
 * Supported Host OS: CentOS, macOS Ventura (M1/x86_64). See below for Qualcomm HTP specific requirements.
 * *Qualcomm HTP Only[^1]:* To build and run on Qualcomm's AI Engine Direct, please follow [Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend](build-run-qualcomm-ai-engine-direct-backend.md) for hardware and software pre-requisites. The version we use for this tutorial is 2.19. The chip we use for this tutorial is SM8450.
