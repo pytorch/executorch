@@ -66,7 +66,7 @@ class MPSBackend(BackendDetails):
             input_ids=[],
             output_ids=[],
             constant_ids=[],
-            graph_type=OpType.mps_graph
+            graph_type=OpType.mps_graph,
         )
 
         convert_model_to_fp16 = True
@@ -114,8 +114,13 @@ class MPSBackend(BackendDetails):
     ) -> None:
         logging.info(f"Visiting: {node}, {node.target.__name__}")
 
-        if "delegation_tag" in node.meta and "metal_kernel" in node.meta["delegation_tag"]:
-            logging.info(f"Node '{node.target.__name__}' was marked as a Metal kernel by the MPSPartitioner!")
+        if (
+            "delegation_tag" in node.meta
+            and "metal_kernel" in node.meta["delegation_tag"]
+        ):
+            logging.info(
+                f"Node '{node.target.__name__}' was marked as a Metal kernel by the MPSPartitioner!"
+            )
             mps_graph.graph_type = OpType.metal_kernel
 
         if node.target.__name__ in node_visitors:

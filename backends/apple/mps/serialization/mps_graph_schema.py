@@ -26,9 +26,11 @@ class MPSDataType(IntEnum):
     mps_data_type_complex_float16 = 10
     mps_data_type_complex_float32 = 11
 
+
 class OpType(IntEnum):
     mps_graph = 0
     metal_kernel = 1
+
 
 @dataclass
 class MPSNode1x1:
@@ -452,6 +454,7 @@ class MPSIndexPut(MPSNode1x1):
     indices_id: List[int] = field(default_factory=list)
     values_shape: List[int] = field(default_factory=list)
     values_id: int = -1
+
 
 ##
 ## Shape ops

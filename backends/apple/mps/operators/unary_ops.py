@@ -30,6 +30,7 @@ from executorch.backends.apple.mps.serialization.mps_graph_schema import (
     MPSLog,
     MPSLog10,
     MPSLog2,
+    MPSLogicalNot,
     MPSNeg,
     MPSReciprocal,
     MPSRound,
@@ -41,7 +42,6 @@ from executorch.backends.apple.mps.serialization.mps_graph_schema import (
     MPSSqrt,
     MPSTan,
     MPSTanh,
-    MPSLogicalNot,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 

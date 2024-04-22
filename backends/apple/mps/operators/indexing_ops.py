@@ -13,13 +13,14 @@ from executorch.backends.apple.mps.operators.node_visitor import (
 from executorch.backends.apple.mps.serialization.mps_graph_schema import (
     MPSEmbedding,
     MPSGraph,
-    MPSIndexTensor,
     MPSIndexPut,
     MPSIndexSelect,
+    MPSIndexTensor,
 )
 from executorch.backends.apple.mps.utils.mps_utils import get_input_node
-from executorch.exir.sym_util import eval_expr
 from executorch.backends.transforms import get_shape
+from executorch.exir.sym_util import eval_expr
+
 
 @register_node_visitor
 class IndexSelectVisitor(NodeVisitor):
@@ -41,6 +42,7 @@ class IndexSelectVisitor(NodeVisitor):
 
         mps_graph.mps_nodes.append(mps_node)
 
+
 @register_node_visitor
 class IndexTensorVisitor(NodeVisitor):
     target = "aten.index.Tensor"
@@ -56,10 +58,11 @@ class IndexTensorVisitor(NodeVisitor):
         mps_node = self.create_unary_node(node, mps_graph, MPSIndexTensor)
         tensors = cast(List[torch.fx.Node], node.args[1])
         for tensor in tensors:
-            mps_node.mpsnode_union.indices_id.append(self.define_tensor(tensor, mps_graph))
+            mps_node.mpsnode_union.indices_id.append(
+                self.define_tensor(tensor, mps_graph)
+            )
 
         mps_graph.mps_nodes.append(mps_node)
-
 
 
 # [MPS TODO]: Works on a single iteration of llama2, but subsequent tokens
@@ -87,7 +90,6 @@ class IndexPutVisitor(NodeVisitor):
 
         return expandedSizes
 
-
     def define_node(
         self,
         node: torch.fx.Node,
@@ -103,12 +105,15 @@ class IndexPutVisitor(NodeVisitor):
 
         tensors = cast(List[torch.fx.Node], node.args[1])
         for tensor in tensors:
-            mps_node.mpsnode_union.indices_id.append(self.define_tensor(tensor, mps_graph))
+            mps_node.mpsnode_union.indices_id.append(
+                self.define_tensor(tensor, mps_graph)
+            )
 
         mps_node.mpsnode_union.values_id = self.define_tensor(
             get_input_node(node, 2), mps_graph
         )
         mps_graph.mps_nodes.append(mps_node)
+
 
 @register_node_visitor
 class EmbeddingVisitor(NodeVisitor):
