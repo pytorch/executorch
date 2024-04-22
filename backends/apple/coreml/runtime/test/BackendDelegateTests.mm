@@ -14,69 +14,32 @@
 #import <coreml_backend/delegate.h>
 #import <model_logging_options.h>
 #import <multiarray.h>
+#import <objc_array_util.h>
 
 using namespace executorchcoreml;
 
 namespace {
-template<typename T>
-T toValue(NSNumber *value);
 
-template<>
-size_t toValue(NSNumber *value) {
-    return value.unsignedLongLongValue;
-}
-
-template<>
-ssize_t toValue(NSNumber *value) {
-    return value.longLongValue;
-}
-
-template<typename T>
-std::vector<T> toVector(NSArray<NSNumber *> *values) {
-    std::vector<T> result;
-    result.reserve(values.count);
-    for (NSNumber *value in values) {
-        result.emplace_back(toValue<T>(value));
-    }
-    
-    return result;
-}
-
-MultiArray::DataType toDataType(MLMultiArrayDataType dataType) {
-    switch (dataType) {
-        case MLMultiArrayDataTypeFloat: {
-            return MultiArray::DataType::Float;
-        }
-        case MLMultiArrayDataTypeFloat16: {
-            return MultiArray::DataType::Float16;
-        }
-        case MLMultiArrayDataTypeDouble: {
-            return MultiArray::DataType::Double;
-        }
-        case MLMultiArrayDataTypeInt32: {
-            return MultiArray::DataType::Int;
-        }
-    }
-}
-
-MultiArray toMultiArray(MLMultiArray *mlMultiArray) {
-    auto shape = toVector<size_t>(mlMultiArray.shape);
-    auto strides = toVector<ssize_t>(mlMultiArray.strides);
-    auto layout = MultiArray::MemoryLayout(toDataType(mlMultiArray.dataType), std::move(shape), std::move(strides));
+MultiArray to_multiarray(MLMultiArray *ml_multiarray) {
+    auto shape = to_vector<size_t>(ml_multiarray.shape);
+    auto strides = to_vector<ssize_t>(ml_multiarray.strides);
+    auto layout = MultiArray::MemoryLayout(to_multiarray_data_type(ml_multiarray.dataType).value(),
+                                           std::move(shape),
+                                           std::move(strides));
     __block void *bytes = nullptr;
-    [mlMultiArray getMutableBytesWithHandler:^(void *mutableBytes, __unused NSInteger size, __unused NSArray<NSNumber *> *strides) {
+    [ml_multiarray getMutableBytesWithHandler:^(void *mutableBytes, __unused NSInteger size, __unused NSArray<NSNumber *> *strides) {
         bytes = mutableBytes;
     }];
     
     return MultiArray(bytes, std::move(layout));
 }
 
-std::vector<MultiArray> toMultiArrays(NSArray<MLMultiArray *> *mlMultiArrays) {
+std::vector<MultiArray> to_multiarrays(NSArray<MLMultiArray *> *ml_multiarrays) {
     std::vector<MultiArray> result;
-    result.reserve(mlMultiArrays.count);
+    result.reserve(ml_multiarrays.count);
     
-    for (MLMultiArray *mlMultiArray in mlMultiArrays) {
-        result.emplace_back(toMultiArray(mlMultiArray));
+    for (MLMultiArray *ml_multiarray in ml_multiarrays) {
+        result.emplace_back(to_multiarray(ml_multiarray));
     }
     return result;
 }
@@ -198,7 +161,7 @@ std::vector<MultiArray> toMultiArrays(NSArray<MLMultiArray *> *mlMultiArrays) {
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
     std::error_code errorCode;
     XCTAssertTrue(_delegate->execute(handle,
-                                     toMultiArrays(args),
+                                     to_multiarrays(args),
                                      ModelLoggingOptions(),
                                      nullptr,
                                      errorCode));
@@ -223,7 +186,7 @@ std::vector<MultiArray> toMultiArrays(NSArray<MLMultiArray *> *mlMultiArrays) {
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
     std::error_code errorCode;
     XCTAssertTrue(_delegate->execute(handle, 
-                                     toMultiArrays(args),
+                                     to_multiarrays(args),
                                      ModelLoggingOptions(),
                                      nullptr,
                                      errorCode));

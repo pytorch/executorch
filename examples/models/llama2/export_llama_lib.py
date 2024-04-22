@@ -775,7 +775,8 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
         compile_specs = CoreMLBackend.generate_compile_specs(
             compute_precision=ct.precision(ct.precision.FLOAT16.value),
-            compute_unit=ct.ComputeUnit[ct.ComputeUnit.ALL.name.upper()],
+            # using `ComputeUnit.ALL` can increase the model load time, default to `ComputeUnit.CPU_AND_GPU`
+            compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_GPU.name.upper()],
             # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
             model_type=CoreMLBackend.MODEL_TYPE.MODEL,
         )

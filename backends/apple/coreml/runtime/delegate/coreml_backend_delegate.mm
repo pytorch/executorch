@@ -28,16 +28,25 @@ using namespace torch::executor;
 using namespace executorchcoreml;
 
 std::optional<MultiArray::DataType> get_data_type(ScalarType scalar_type) {
-    if (scalar_type == ScalarType::Float) {
-        return MultiArray::DataType::Float;
-    } else if (scalar_type == ScalarType::Double) {
-        return MultiArray::DataType::Double;
-    } else if (scalar_type == ScalarType::Half) {
-        return MultiArray::DataType::Float16;
-    } else if (scalar_type == ScalarType::Int) {
-        return MultiArray::DataType::Int;
-    } else {
-        return std::nullopt;
+    switch (scalar_type) {
+        case ScalarType::Bool:
+            return MultiArray::DataType::Bool;
+        case ScalarType::Byte:
+            return MultiArray::DataType::Byte;
+        case ScalarType::Short:
+            return MultiArray::DataType::Short;
+        case ScalarType::Int:
+            return MultiArray::DataType::Int32;
+        case ScalarType::Long:
+            return MultiArray::DataType::Int64;
+        case ScalarType::Half:
+            return MultiArray::DataType::Float16;
+        case ScalarType::Float:
+            return MultiArray::DataType::Float32;
+        case ScalarType::Double:
+            return MultiArray::DataType::Float64;
+        default:
+            return std::nullopt;
     }
 }
 
@@ -54,6 +63,7 @@ std::optional<MultiArray> get_multi_array(EValue *eValue, ArgType argType) {
     auto tensor = eValue->toTensor();
     auto dataType = get_data_type(tensor.scalar_type());
     if (!dataType.has_value()) {
+        ET_LOG(Error, "%s: DataType=%d is not supported", ETCoreMLStrings.delegateIdentifier.UTF8String, (int)tensor.scalar_type());
         return std::nullopt;
     }
     
@@ -167,7 +177,7 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
         auto multi_array = get_multi_array(args[i], ArgType::Input);
         ET_CHECK_OR_RETURN_ERROR(multi_array.has_value(),
                                  Internal,
-                                 "%s: Expected tensor at args[%zu]", ETCoreMLStrings.delegateIdentifier.UTF8String, i);
+                                 "%s: Failed to create multiarray from input at args[%zu]", ETCoreMLStrings.delegateIdentifier.UTF8String, i);
         delegate_args.emplace_back(std::move(multi_array.value()));
     }
     
@@ -176,7 +186,7 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
         auto multi_array = get_multi_array(args[i], ArgType::Output);
         ET_CHECK_OR_RETURN_ERROR(multi_array.has_value(),
                                  Internal,
-                                 "%s: Expected tensor at args[%zu]", ETCoreMLStrings.delegateIdentifier.UTF8String, i);
+                                 "%s: Failed to create multiarray from output at args[%zu]", ETCoreMLStrings.delegateIdentifier.UTF8String, i);
         delegate_args.emplace_back(std::move(multi_array.value()));
     }
     
