@@ -677,188 +677,6 @@ class TestMPSUnitOpTesting(TestMPS):
             const_module, model_inputs, func_name=inspect.stack()[0].function[5:]
         )
 
-    def test_mps_constant_add(self):
-        class Module(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self._constant = torch.ones(4, 4, 4)
-
-            def forward(self, x):
-                out1 = x + self._constant
-                out2 = x + self._constant + self._constant
-                return out1, out2
-
-        const_module = Module()
-        model_inputs = (torch.randn(4, 4, 4),)
-
-        self.lower_and_test_with_partitioner(
-            const_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_mul_scalar_float(self):
-        class MulScalarModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self._scalar = 3.14
-
-            def forward(self, x):
-                out1 = torch.ops.aten.mul.Scalar(x, self._scalar)
-                return out1
-
-        mul_scalar_module = MulScalarModule()
-        model_inputs = (torch.randn(4, 4, 4),)
-
-        self.lower_and_test_with_partitioner(
-            mul_scalar_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_mul_scalar_int(self):
-        class MulScalarModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self._scalar = 3
-
-            def forward(self, x):
-                out1 = torch.ops.aten.mul.Scalar(x, self._scalar)
-                return out1
-
-        mul_scalar_module = MulScalarModule()
-        model_inputs = (torch.randint(11, (4, 4, 4)),)
-
-        self.lower_and_test_with_partitioner(
-            mul_scalar_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_backend_add_1(self):
-        class AddModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                z = torch.add(x, y, alpha=0.1)
-                return z
-
-        add_module = AddModule()
-        model_inputs = (torch.randn(1), torch.randn(1))
-
-        self.lower_and_test_with_partitioner(
-            add_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_backend_add_2(self):
-        class AddModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                z = torch.ops.aten.add.Scalar(x, 2.0)
-                return z
-
-        add_module = AddModule()
-        model_inputs = (torch.randn(2, 5),)
-
-        self.lower_and_test_with_partitioner(
-            add_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_backend_add_3(self):
-        class AddModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                z = torch.add(x, y)
-                return z
-
-        add_module = AddModule()
-        model_inputs = (torch.randn(1), torch.randn(1))
-
-        self.lower_and_test_with_partitioner(
-            add_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_backend_sub_1(self):
-        class SubModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                z = torch.sub(x, y, alpha=0.1)
-                return z
-
-        sub_module = SubModule()
-        model_inputs = (torch.randn(1), torch.randn(1))
-
-        self.lower_and_test_with_partitioner(
-            sub_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_backend_sub_2(self):
-        class SubModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                z = torch.ops.aten.sub.Scalar(x, 2.0)
-                return z
-
-        sub_module = SubModule()
-        model_inputs = (torch.randn(2, 5),)
-
-        self.lower_and_test_with_partitioner(
-            sub_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_backend_sub_3(self):
-        class SubModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                z = torch.sub(x, y)
-                return z
-
-        sub_module = SubModule()
-        model_inputs = (torch.randn(1), torch.randn(1))
-
-        self.lower_and_test_with_partitioner(
-            sub_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_backend_add_scalar_float(self):
-        class AddScalarModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self._scalar_float = 3.14
-
-            def forward(self, x):
-                out = torch.ops.aten.add.Scalar(x, self._scalar_float)
-                return out
-
-        add_scalar_module = AddScalarModule()
-        model_inputs = (torch.randn(4, 4, 4),)
-
-        self.lower_and_test_with_partitioner(
-            add_scalar_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_backend_add_scalar_int(self):
-        class AddScalarModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self._scalar_int = 3
-
-            def forward(self, x):
-                out1 = torch.ops.aten.add.Scalar(x, self._scalar_int)
-                return out1
-
-        add_scalar_module = AddScalarModule()
-        model_inputs = (torch.randint(11, (4, 4, 4), dtype=torch.int32),)
-
-        self.lower_and_test_with_partitioner(
-            add_scalar_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
     def test_mps_backend_logit_1(self):
         class LogitModule(torch.nn.Module):
             def __init__(self):
@@ -891,22 +709,6 @@ class TestMPSUnitOpTesting(TestMPS):
             logit_module, model_inputs, func_name=inspect.stack()[0].function[5:]
         )
 
-    def test_mps_backend_div(self):
-        class DivModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                z = x / y
-                return z
-
-        div_module = DivModule()
-        model_inputs = (torch.ones(1), torch.ones(1))
-
-        self.lower_and_test_with_partitioner(
-            div_module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
     def test_mps_backend_round(self):
         class RoundModule(torch.nn.Module):
             def __init__(self):
@@ -918,36 +720,6 @@ class TestMPSUnitOpTesting(TestMPS):
 
         module = RoundModule()
         model_inputs = (torch.randn(5, 2),)
-
-        self.lower_and_test_with_partitioner(
-            module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_backend_fmod(self):
-        class FModModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                return torch.fmod(x, y)
-
-        module = FModModule()
-        model_inputs = (torch.randn(2, 3, 4), torch.randn(2, 3, 4))
-
-        self.lower_and_test_with_partitioner(
-            module, model_inputs, func_name=inspect.stack()[0].function[5:]
-        )
-
-    def test_mps_backend_floor_divide(self):
-        class FloorDivideModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                return torch.floor_divide(x, y)
-
-        module = FloorDivideModule()
-        model_inputs = (torch.randn(2, 3, 4), torch.randn(2, 3, 4))
 
         self.lower_and_test_with_partitioner(
             module, model_inputs, func_name=inspect.stack()[0].function[5:]
@@ -1327,6 +1099,145 @@ class TestMPSUnitOpTesting(TestMPS):
         module = IndexTensorModule()
 
         model_inputs = (torch.randn(8, 3, 4, 5),)
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_indexing_get_1(self):
+        class IndexGet(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x[[0, 1, 2], [0, 1, 0]]
+
+        module = IndexGet()
+        model_inputs = (torch.tensor([[1, 2], [3, 4], [5, 6]]),)
+
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_indexing_get_2(self):
+        class IndexGet(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x[:, [0, 4, 2]]
+
+        module = IndexGet()
+        model_inputs = (torch.randn(5, 7, 3),)
+
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_indexing_get_3(self):
+        class IndexGet(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x[:, [[0, 1], [4, 3]]]
+
+        module = IndexGet()
+        model_inputs = (torch.randn(5, 7, 3),)
+
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_indexing_get_4(self):
+        class IndexGet(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x[[0, 4, 2]]
+
+        module = IndexGet()
+        model_inputs = (torch.randn(5, 7, 3),)
+
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_indexing_get_5(self):
+        class IndexGet(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x[[0, 2, 1], :, 0]
+
+        module = IndexGet()
+        model_inputs = (torch.ones(3, 2, 4),)
+
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_indices2d(self):
+        class IndexGet(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, rows, columns):
+                return x[rows, columns]
+
+        module = IndexGet()
+        x = torch.arange(0, 12).resize(4, 3)
+        rows = torch.tensor([[0, 0], [3, 3]])
+        columns = torch.tensor([[0, 2], [0, 2]])
+        model_inputs = (x, rows, columns, )
+
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_slicing_using_advanced_index_for_column_0(self):
+        class IndexGet(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x[1:4]
+
+        module = IndexGet()
+        model_inputs = (torch.tensor([[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]]),)
+
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_slicing_using_advanced_index_for_column_1(self):
+        class IndexGet(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                # using advanced index for column
+                return x[1:4, [1, 2]]
+
+        module = IndexGet()
+        model_inputs = (torch.tensor([[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]]),)
+
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_boolean_array_indexing(self):
+        class IndexGet(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x[x > 5]
+
+        module = IndexGet()
+        model_inputs = (torch.tensor([[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]]),)
+
         self.lower_and_test_with_partitioner(
             module, model_inputs, func_name=inspect.stack()[0].function[5:]
         )
