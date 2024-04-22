@@ -55,11 +55,11 @@ void add_unary_op_node(
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE}, {arg, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->sizes_ubo(),
+      {t_out->texture_limits_ubo(),
        graph.create_params_buffer(min),
        graph.create_params_buffer(max)},
       // Specialization Constants
-      {t_out->gpu_memory_layout_int()},
+      {},
       // Resizing Logic
       resize_unary_op_node));
 }

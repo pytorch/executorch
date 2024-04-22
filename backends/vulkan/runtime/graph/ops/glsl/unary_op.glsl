@@ -21,8 +21,8 @@ layout(std430) buffer;
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 
-layout(set = 0, binding = 2) uniform PRECISION restrict OutSizes {
-  ivec4 out_sizes;
+layout(set = 0, binding = 2) uniform PRECISION restrict OutLimits {
+  ivec3 out_limits;
 };
 
 layout(set = 0, binding = 3) uniform PRECISION restrict Min {
@@ -35,12 +35,10 @@ layout(set = 0, binding = 4) uniform PRECISION restrict Max {
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = C_DIM;
-
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
-  if (pos_out_of_bounds(pos, out_sizes, packed_dim)) {
+  if (any(greaterThanEqual(pos, out_limits))) {
     return;
   }
 

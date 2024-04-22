@@ -25,22 +25,24 @@ layout(set = 0, binding = 3) uniform PRECISION sampler3D image_in;
 layout(set = 0, binding = 4) uniform PRECISION sampler3D weight_in;
 layout(set = 0, binding = 5) uniform PRECISION sampler3D bias_in;
 
-layout(set = 0, binding = 6) uniform PRECISION restrict Sizes {
+layout(set = 0, binding = 6) uniform PRECISION restrict OutLimits {
+  ivec3 out_limits;
+};
+
+layout(set = 0, binding = 7) uniform PRECISION restrict Sizes {
   ivec4 sizes;
 };
 
-layout(set = 0, binding = 7) uniform PRECISION restrict Epsilon {
+layout(set = 0, binding = 8) uniform PRECISION restrict Epsilon {
   float epsilon;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-layout(constant_id = 3) const int packed_dim = C_DIM;
-
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
-  if (pos_out_of_bounds(pos, sizes, packed_dim)) {
+  if (any(greaterThanEqual(pos, out_limits))) {
     return;
   }
 
