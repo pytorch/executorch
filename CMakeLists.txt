@@ -548,8 +548,11 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # pybind portable_lib
   pybind11_add_module(portable_lib extension/pybindings/pybindings.cpp)
+  # The actual output file needs a leading underscore so it can coexist with
+  # portable_lib.py in the same python package.
+  set_target_properties(portable_lib PROPERTIES OUTPUT_NAME "_portable_lib")
   target_compile_definitions(portable_lib
-                             PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=portable_lib)
+                             PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_portable_lib)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(
