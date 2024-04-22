@@ -1,8 +1,8 @@
 # XNNPACK Backend
 
 [XNNPACK](https://github.com/google/XNNPACK) is a library of optimized neural network operators for ARM and x86 CPU platforms. Our delegate lowers models to run using these highly optimized CPU operators. You can try out lowering and running some example models in the demo. Please refer to the following docs for information on the XNNPACK Delegate
-- [XNNPACK Backend Delegate Overview](https://pytorch.org/executorch/stable/native-delegates-executorch-xnnpack-delegate.html)
-- [XNNPACK Delegate Export Tutorial](https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html)
+- [XNNPACK Backend Delegate Overview](https://pytorch.org/executorch/0.2/native-delegates-executorch-xnnpack-delegate.html)
+- [XNNPACK Delegate Export Tutorial](https://pytorch.org/executorch/0.2/tutorial-xnnpack-delegate-lowering.html)
 
 
 ## Directory structure
@@ -32,7 +32,7 @@ buck2 run examples/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_fp3
 ```
 
 ## Quantization
-First, learn more about the generic PyTorch 2 Export Quantization workflow in the [Quantization Flow Docs](https://pytorch.org/executorch/stable/quantization-overview.html), if you are not familiar already.
+First, learn more about the generic PyTorch 2 Export Quantization workflow in the [Quantization Flow Docs](https://pytorch.org/executorch/0.2/quantization-overview.html), if you are not familiar already.
 
 Here we will discuss quantizing a model suitable for XNNPACK delegation using XNNPACKQuantizer.
 

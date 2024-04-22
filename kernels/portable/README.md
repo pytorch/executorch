@@ -43,7 +43,7 @@ compatible but restricted subsets of those types.
 [`//runtime/core/exec_aten/exec_aten.h`](https://github.com/pytorch/executorch/blob/main/runtime/core/exec_aten/exec_aten.h)
 contains the mapping between ATen/c10 types and the ExecuTorch types. The
 ExecuTorch types are defined in other headers in that same directory,
-[`//runtime/core/portable_type/`](https://github.com/pytorch/executorch/tree/main/runtime/core/portable_type).
+[`//runtime/core/portable_type/`](https://github.com/pytorch/executorch/tree/release/0.2/runtime/core/portable_type).
 
 The ExecuTorch types are source-compatible with the ATen/c10 types; if you write
 code that works with the ExecuTorch types, then that same code should work when

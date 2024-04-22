@@ -676,7 +676,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             quantizers = []
         except ImportError:
             raise ImportError(
-                "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
+                "Please install the Qualcomm backend follwing https://pytorch.org/executorch/0.2/build-run-qualcomm.html"
             )
 
         backend, quant_config = args.pt2e_quantize.split("_")
@@ -760,7 +760,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             )
         except ImportError:
             raise ImportError(
-                "Please install the MPS backend follwing https://pytorch.org/executorch/main/build-run-mps.html"
+                "Please install the MPS backend follwing https://pytorch.org/executorch/0.2/build-run-mps.html"
             )
 
         compile_specs = [CompileSpec("use_fp16", bytes([True]))]
@@ -785,7 +785,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             )
         except ImportError:
             raise ImportError(
-                "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+                "Please install the CoreML backend follwing https://pytorch.org/executorch/0.2/build-run-coreml.html"
             )
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
@@ -827,7 +827,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             )
         except ImportError:
             raise ImportError(
-                "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
+                "Please install the Qualcomm backend follwing https://pytorch.org/executorch/0.2/build-run-qualcomm.html"
             )
 
         use_fp16 = True

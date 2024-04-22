@@ -23,7 +23,7 @@ This ExecuTorch backend delegate is under active development. You may encounter 
 ```
 
 ```{tip}
-If you are already familiar with this delegate, you may want to jump directly to the examples source dir - [https://github.com/pytorch/executorch/tree/main/examples/arm](https://github.com/pytorch/executorch/tree/main/examples/arm)
+If you are already familiar with this delegate, you may want to jump directly to the examples source dir - [https://github.com/pytorch/executorch/tree/release/0.2/examples/arm](https://github.com/pytorch/executorch/tree/release/0.2/examples/arm)
 ```
 
 ## Prerequisites

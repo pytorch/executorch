@@ -88,4 +88,4 @@ which captures the sigmoid op.
 
 #### Adding Tests for newly minted operators
 To test newly added operators, we can add unit tests in:
-[tests](https://github.com/pytorch/executorch/tree/main/backends/xnnpack/test)
+[tests](https://github.com/pytorch/executorch/tree/release/0.2/backends/xnnpack/test)

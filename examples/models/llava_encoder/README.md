@@ -1,7 +1,7 @@
 ## Summary
 In this example, we initiate the process of running multi modality through ExecuTorch.
 - Demonstrate how to export the image encoder model in the [LLava](https://github.com/haotian-liu/LLaVA) multimodal model.
-- Provide TODO steps on how to use the exported .pte file and the existing [exported Llama2 model](https://github.com/pytorch/executorch/tree/main/examples/models/llama2), to build the multimodal pipeline.
+- Provide TODO steps on how to use the exported .pte file and the existing [exported Llama2 model](https://github.com/pytorch/executorch/tree/release/0.2/examples/models/llama2), to build the multimodal pipeline.
 
 ## Instructions
 Note that this folder does not host the pretrained LLava model.

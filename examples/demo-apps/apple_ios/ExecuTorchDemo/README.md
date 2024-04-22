@@ -40,7 +40,7 @@ pip --version
 
 ### 3. Getting Started Tutorial
 
-Before proceeding, follow the [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup)
+Before proceeding, follow the [Setting Up ExecuTorch](https://pytorch.org/executorch/0.2/getting-started-setup)
 tutorial to configure the basic environment. Feel free to skip building anything
 just yet. Make sure you have all the required dependencies installed, including
 the following tools:

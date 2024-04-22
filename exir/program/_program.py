@@ -733,7 +733,7 @@ def to_edge(
 class EdgeProgramManager:
     """
     Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify
-    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/0.2/ir-exir.html
 
     Allows easy applications of transforms across a collection of exported programs
     including the delegation of subgraphs.
@@ -933,7 +933,7 @@ class EdgeProgramManager:
 class ExecutorchProgramManager:
     """
     Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify
-    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/0.2/ir-exir.html
 
     When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
     are used to form the executorch binary (in a process called emission) and then serialized
