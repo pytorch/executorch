@@ -1,0 +1,11 @@
+# From https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    reviewers:
+      - "pytorch/team-executorch"
+    allow:
+      - dependency-name: "torchfix"
