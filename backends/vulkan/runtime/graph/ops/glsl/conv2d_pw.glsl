@@ -21,8 +21,8 @@ layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 layout(set = 0, binding = 2) uniform PRECISION sampler2D kernel_in;
 layout(set = 0, binding = 3) uniform PRECISION sampler2D bias_in;
 
-layout(set = 0, binding = 4) uniform PRECISION restrict OutSizes {
-  ivec4 out_sizes;
+layout(set = 0, binding = 4) uniform PRECISION restrict OutLimits {
+  ivec3 out_limits;
 };
 
 layout(set = 0, binding = 5) uniform PRECISION restrict InSizes {
@@ -43,8 +43,6 @@ layout(set = 0, binding = 7) uniform PRECISION restrict ExtraParams {
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
-
-layout(constant_id = 3) const int packed_dim = C_DIM;
 
 /*
  * Computes a 2D pointwise convolution of an NxN output tile. Calculating an
@@ -71,7 +69,7 @@ void main() {
 
   // If the top left position is out of bounds, then this invocation will have
   // no work to do.
-  if (pos_out_of_bounds(pos[0], out_sizes, packed_dim)) {
+  if (any(greaterThanEqual(pos[0], out_limits))) {
     return;
   }
 
@@ -146,7 +144,7 @@ void main() {
   }
 
   for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
-    if (!pos_out_of_bounds(pos[i], out_sizes, packed_dim)) {
+    if (all(lessThan(pos[i], out_limits))) {
       imageStore(image_out, pos[i], sum[i]);
     }
   }

@@ -21,11 +21,11 @@ layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 layout(set = 0, binding = 2) uniform PRECISION sampler2D kernel_in;
 layout(set = 0, binding = 3) uniform PRECISION sampler2D bias_in;
 
-layout(set = 0, binding = 4) uniform PRECISION restrict OutSizes {
-  ivec4 out_sizes;
+layout(set = 0, binding = 4) uniform PRECISION restrict OutLimits {
+  ivec3 out_limits;
 };
 
-layout(set = 0, binding = 5) uniform PRECISION restrict InExtents {
+layout(set = 0, binding = 5) uniform PRECISION restrict InSizes {
   ivec4 in_sizes;
 };
 
@@ -54,7 +54,7 @@ layout(constant_id = 3) const int packed_dim = C_DIM;
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
-  if (pos_out_of_bounds(pos, out_sizes, packed_dim)) {
+  if (any(greaterThanEqual(pos, out_limits))) {
     return;
   }
 

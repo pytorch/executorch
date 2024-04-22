@@ -94,6 +94,13 @@ class vTensorStorage final {
 };
 
 class vTensor final {
+  struct TextureLimits {
+    // Alignment is required to conform with Vulkan specification; a 3 or 4
+    // component vector with components of size N must have base alignment of
+    // 4N.
+    alignas(16) api::utils::ivec3 limits;
+  };
+
  public:
   explicit vTensor(
       api::Context* context,
@@ -115,10 +122,17 @@ class vTensor final {
 
   std::vector<int64_t> sizes_;
   std::vector<int64_t> gpu_sizes_;
+  TextureLimits texture_limits_;
 
-  // A Vulkan uniform buffer containing the tensor sizes in WHCN that can be
-  // passed into a shader.
+  // A Vulkan uniform buffer containing the (W, H, C, N) tensor sizes that can
+  // be passed into a shader.
   api::UniformParamsBuffer sizes_uniform_;
+
+  // A Vulkan uniform buffer containing the texture limits derived from the
+  // tensor's current size information that can be passed into a shader. Note
+  // that the texture limits may be different from the texture's extents if the
+  // tensor has been resized with `virtual_resize()`.
+  api::UniformParamsBuffer texture_limits_uniform_;
 
   vTensorStorage storage_;
 
@@ -194,11 +208,17 @@ class vTensor final {
 
   /*
    * Get the binding information for the uniform buffer object containing the
-   * tensor sizes to use in a compute shader.
+   * tensor sizes to use in a compute shader. Note that the GPU buffer will be
+   * allocated the first time this function is called.
    */
-  inline const api::BufferBindInfo sizes_ubo() {
-    return api::BufferBindInfo(sizes_uniform_.buffer());
-  }
+  const api::BufferBindInfo sizes_ubo();
+
+  /*
+   * Get the binding information for the uniform buffer object containing the
+   * texture limits to use in a compute shader. Note that the GPU buffer will be
+   * allocated the first time this function is called.
+   */
+  const api::BufferBindInfo texture_limits_ubo();
 
   inline size_t numel() const {
     return api::utils::multiply_integers(sizes());

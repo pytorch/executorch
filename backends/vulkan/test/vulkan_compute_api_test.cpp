@@ -287,8 +287,8 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
   vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
-  // Allocations will be made for uniform buffers containing tensor metadata
-  EXPECT_TRUE(get_vma_allocation_count() == 3);
+  // No allocations made so far
+  EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   std::vector<float> data_a(a.gpu_numel());
   std::fill(data_a.begin(), data_a.end(), 2.5f);
@@ -303,8 +303,8 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   api::MemoryAllocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
-  // One additional allocation for each tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 6);
+  // One allocation for each tensor
+  EXPECT_TRUE(get_vma_allocation_count() == 3);
 
   fill_vtensor(a, data_a);
   fill_vtensor(b, data_b);
@@ -332,8 +332,8 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   vTensor d = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
   vTensor e = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
-  // Allocations will be made for uniform buffers containing tensor metadata
-  EXPECT_TRUE(get_vma_allocation_count() == 5);
+  // No allocations made so far
+  EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   // a and d can share the same memory allocation
   api::MemoryAllocation a_d_mem = allocate_memory_for(a);
@@ -347,8 +347,8 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   api::MemoryAllocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
-  // 3 additional allocations should be made
-  EXPECT_TRUE(get_vma_allocation_count() == 8);
+  // 3 allocations should be made
+  EXPECT_TRUE(get_vma_allocation_count() == 3);
 
   // Specify input data
   std::vector<float> data_a(a.gpu_numel());
@@ -407,12 +407,12 @@ TEST_F(VulkanComputeAPITest, resource_destructor_non_owning_memory) {
     vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
     memory = allocate_memory_for(a);
-    EXPECT_TRUE(get_vma_allocation_count() == 2);
+    EXPECT_TRUE(get_vma_allocation_count() == 1);
     a.image().bind_allocation(memory);
   }
 
   // Check that the memory is still allocated
-  EXPECT_TRUE(get_vma_allocation_count() == 2);
+  EXPECT_TRUE(get_vma_allocation_count() == 1);
 }
 
 TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
@@ -421,8 +421,8 @@ TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
   std::vector<int64_t> sizes = {4, 4, 1};
   vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
-  // Allocation for uniform containing tensor metadata
-  EXPECT_TRUE(get_vma_allocation_count() == 1);
+  // No allocations yet
+  EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   std::vector<float> data_a(a.gpu_numel());
   std::fill(data_a.begin(), data_a.end(), 2.5f);

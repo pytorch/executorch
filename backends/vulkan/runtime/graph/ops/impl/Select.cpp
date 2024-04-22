@@ -114,14 +114,15 @@ void add_select_int_node(
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
       // Parameter buffers
-      {t_out->sizes_ubo(),
+      {t_out->texture_limits_ubo(),
+       t_out->sizes_ubo(),
        // TODO: num_batches and num_texel_per_batch are provided by
        // t_out->sizes. Can change the following to reduce params
        // created.
        graph.create_params_buffer(api::utils::make_ivec4(
            {index, num_batches, num_texel_per_batch, 0}))},
       // Specialization Constants
-      {SV(t_out->gpu_memory_layout_int())}));
+      {}));
 }
 
 void select_int(ComputeGraph& graph, const std::vector<ValueRef>& args) {
