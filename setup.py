@@ -364,7 +364,7 @@ class CustomBuild(build):
             # useful error information to users.
             "-DEXECUTORCH_ENABLE_LOGGING=ON",
             "-DEXECUTORCH_LOG_LEVEL=Info",
-            "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.13",
+            "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15",
         ]
 
         build_args = [f"-j{self.parallel}"]
