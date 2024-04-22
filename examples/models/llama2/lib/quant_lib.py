@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# This is for PT2E quantization. For source-transformation quantize, please modify source_transformation/quantize.py
+
 import logging
 from dataclasses import dataclass
 from typing import List, Optional
@@ -134,3 +136,49 @@ def get_pt2e_quantizers(
         dynamic_quantizer.set_global(operator_config_dynamic)
         quantizers.append(dynamic_quantizer)
     return quantizers
+
+
+def get_qnn_quantizer(args):
+    try:
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.quantizer.quantizer`
+        from executorch.backends.qualcomm.quantizer.quantizer import (
+            get_16a4w_qnn_ptq_config,
+            get_default_16bit_qnn_ptq_config,
+            QnnQuantizer,
+            QuantDtype,
+        )
+
+    except ImportError:
+        raise ImportError(
+            "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
+        )
+
+    backend, quant_config = args.pt2e_quantize.split("_")
+    assert (
+        backend == "qnn"
+    ), f"The quantization config is for backend {backend} instead of qnn."
+    qnn_quantizer = QnnQuantizer()
+    # more custom quantization are supported including 16a4w etc. default to 8bit quantized
+    custom_annotations = ()
+    if quant_config == "8a8w":
+        quant_dtype = QuantDtype.use_8a8w
+        pass
+    elif quant_config == "16a16w":
+        quant_dtype = QuantDtype.use_16a16w
+        qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
+        qnn_quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
+    elif quant_config == "16a4w":
+        quant_dtype = QuantDtype.use_16a4w
+        qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
+        qnn_quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config())
+        qnn_quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
+    else:
+        raise AssertionError(
+            f"No support for quant type {quant_config}. Support 8a8w, 16a16w and 16a4w."
+        )
+
+    assert (
+        args.quantization_mode is None
+    ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
+    qnn_quantizer.add_custom_quant_annotations(custom_annotations)
+    return qnn_quantizer, quant_dtype
