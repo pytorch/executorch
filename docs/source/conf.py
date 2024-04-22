@@ -81,7 +81,7 @@ et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
 # if not set will fail back to main
 # the version varible is used in layout.html: https://github.com/pytorch/executorch/blob/main/docs/source/_templates/layout.html#L29
 if et_version_docs:
-    f et_version_docs.startswith("refs/tags/v"):
+    if et_version_docs.startswith("refs/tags/v"):
         version = ".".join(
             et_version_docs.split("/")[-1].split("-")[0].lstrip("v").split(".")[:2]
         )
