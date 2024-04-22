@@ -21,7 +21,8 @@ void record_nchw_to_image_op(
     api::VulkanBuffer& src_buffer,
     vTensor& v_dst) {
   api::PipelineBarrier pipeline_barrier{};
-  api::SpecVarList specialization_constants = {};
+  api::SpecVarList specialization_constants = {
+      SV(v_dst.gpu_memory_layout_int())};
 
   context->submit_compute_job(
       get_nchw_to_image_shader(v_dst),
@@ -35,8 +36,7 @@ void record_nchw_to_image_op(
           api::PipelineStage::COMPUTE,
           api::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.gpu_sizes_ubo(),
-      v_dst.cpu_sizes_ubo());
+      v_dst.sizes_ubo());
 }
 
 void record_image_to_nchw_op(
@@ -44,7 +44,8 @@ void record_image_to_nchw_op(
     vTensor& v_src,
     api::VulkanBuffer& dst_buffer) {
   api::PipelineBarrier pipeline_barrier{};
-  api::SpecVarList specialization_constants = {};
+  api::SpecVarList specialization_constants = {
+      SV(v_src.gpu_memory_layout_int())};
 
   context->submit_compute_job(
       get_image_to_nchw_shader(v_src),
@@ -55,8 +56,7 @@ void record_image_to_nchw_op(
       VK_NULL_HANDLE,
       v_src.image(pipeline_barrier, api::PipelineStage::COMPUTE),
       dst_buffer,
-      v_src.gpu_sizes_ubo(),
-      v_src.cpu_sizes_ubo());
+      v_src.sizes_ubo());
 }
 
 void record_conv2d_prepack_weights_op(
@@ -96,7 +96,7 @@ void record_conv2d_prepack_weights_op(
           api::PipelineStage::COMPUTE,
           api::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.gpu_sizes_ubo(),
+      v_dst.sizes_ubo(),
       original_sizes_ubo.buffer(),
       padded_sizes_ubo.buffer());
 }
@@ -125,7 +125,7 @@ void record_binary_op(
           api::MemoryAccessType::WRITE),
       v_in1.image(pipeline_barrier, api::PipelineStage::COMPUTE),
       v_in2.image(pipeline_barrier, api::PipelineStage::COMPUTE),
-      v_dst.extents_ubo());
+      v_dst.sizes_ubo());
 }
 
 void execute_and_check_add(

@@ -14,9 +14,6 @@
 #define VEC4_T ${texel_type(DTYPE)}
 #define SCALAR_T ${texel_component_type(DTYPE)}
 
-#define to_tensor_idx to_tensor_idx_${PACKING}
-#define get_packed_stride get_packed_stride_${PACKING}
-
 #include "indexing_utils.h"
 
 $if DTYPE == "half":
@@ -26,29 +23,27 @@ layout(std430) buffer;
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[2][DTYPE]} image_out;
 layout(set = 0, binding = 1) buffer  PRECISION restrict readonly Buffer {
-  BUF_T data[];
-}
-buffer_in;
+  BUF_T buffer_in[];
+};
 
 // Corresponds to {1,4,3,9} in the example below.
-layout(set = 0, binding = 2) uniform PRECISION restrict GpuSizes {
-  ivec4 data;
-}
-gpu_sizes;
+layout(set = 0, binding = 2) uniform PRECISION restrict Sizes {
+  ivec4 sizes;
+};
 
 // Corresponds to {3,3,1,11} in the example below.
 layout(set = 0, binding = 3) uniform PRECISION restrict OriginalSizes {
-  ivec4 data;
-}
-original_sizes;
+  ivec4 original_sizes;
+};
 
 // Corresponds to {1,12} in the example below.
 layout(set = 0, binding = 4) uniform PRECISION restrict PaddedSizes {
-  ivec2 data;
-}
-padded_sizes;
+  ivec2 padded_sizes;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+
+layout(constant_id = 3) const int packed_dim = C_DIM;
 
 /*
  * Computes special prepacking for a depthwise convolution. Each shader invocation
@@ -77,26 +72,24 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  */
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 idx = to_tensor_idx(pos, gpu_sizes.data);
+  const ivec4 idx = to_tensor_idx(pos, sizes, packed_dim);
 
-  if (any(greaterThanEqual(idx, gpu_sizes.data))) {
+  if (any(greaterThanEqual(idx, sizes))) {
     return;
   }
 
   // As in usual staging shaders, map from GPU texel position to normal CPU
   // buffer indices: (9,3) -> (4,3,9)
-  const int base_index = to_buffer_i(idx, gpu_sizes.data);
-  const ivec4 p0 =
-      base_index + ivec4(0, 1, 2, 3) * get_packed_stride(gpu_sizes.data);
+  const ivec4 p0 = get_texel_nchw_buffer_ixs(idx, sizes, packed_dim);
 
   // Re-map the normal CPU buffer indices to special indices, through a series
   // of mappings: reshape is a no-op to the underlying indices, so we only map
   // for pad and permute.
-  const int Np = padded_sizes.data.x;
-  const int N = original_sizes.data.w;
-  const int C = original_sizes.data.z;
-  const int H = original_sizes.data.y;
-  const int W = original_sizes.data.x;
+  const int Np = padded_sizes.x;
+  const int N = original_sizes.w;
+  const int C = original_sizes.z;
+  const int H = original_sizes.y;
+  const int W = original_sizes.x;
 
   // Undo step 3 permute: (4,3,1,9) -> (3,4,1,9)
   const ivec4 p1 = swap_adj_dims(p0, 4, (Np / 4), (C * H * W));
@@ -106,12 +99,19 @@ void main() {
   const ivec4 n = p1 / (C * H * W);
   const ivec4 mask = ivec4(greaterThanEqual(n, ivec4(N)));
 
-  SCALAR_T val_x = mix(SCALAR_T(buffer_in.data[p1.x]), 0, mask.x);
-  SCALAR_T val_y = mix(SCALAR_T(buffer_in.data[p1.y]), 0, mask.y);
-  SCALAR_T val_z = mix(SCALAR_T(buffer_in.data[p1.z]), 0, mask.z);
-  SCALAR_T val_w = mix(SCALAR_T(buffer_in.data[p1.w]), 0, mask.w);
-
-  VEC4_T texel = VEC4_T(val_x, val_y, val_z, val_w);
+  VEC4_T texel = VEC4_T(0);
+  if (mask.x == 0) {
+    texel.x = SCALAR_T(buffer_in[p1.x]);
+  }
+  if (mask.y == 0) {
+    texel.y = SCALAR_T(buffer_in[p1.y]);
+  }
+  if (mask.z == 0) {
+    texel.z = SCALAR_T(buffer_in[p1.z]);
+  }
+  if (mask.w == 0) {
+    texel.w = SCALAR_T(buffer_in[p1.w]);
+  }
 
   imageStore(image_out, pos.xy, texel);
 }

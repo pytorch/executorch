@@ -111,14 +111,17 @@ void add_select_int_node(
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
+      // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
-      {t_out->gpu_sizes_ubo(),
+      // Parameter buffers
+      {t_out->sizes_ubo(),
        // TODO: num_batches and num_texel_per_batch are provided by
-       // t_out->gpu_sizes. Can change the following to reduce params
+       // t_out->sizes. Can change the following to reduce params
        // created.
-
        graph.create_params_buffer(api::utils::make_ivec4(
-           {index, num_batches, num_texel_per_batch, 0}))}));
+           {index, num_batches, num_texel_per_batch, 0}))},
+      // Specialization Constants
+      {SV(t_out->gpu_memory_layout_int())}));
 }
 
 void select_int(ComputeGraph& graph, const std::vector<ValueRef>& args) {

@@ -11,10 +11,6 @@ binary_op:
     DTYPE: float
     PACKING: C_packed
   generate_variant_forall:
-    PACKING:
-      - VALUE: C_packed
-      - VALUE: W_packed
-      - VALUE: H_packed
     DTYPE:
       - VALUE: half
       - VALUE: float

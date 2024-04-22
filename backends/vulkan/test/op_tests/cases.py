@@ -66,7 +66,7 @@ def get_pool2d_inputs():
     return test_suite
 
 
-def get_conv2d_inputs():
+def get_conv_inputs():
     test_suite = VkTestSuite(
         [
             (
@@ -123,6 +123,28 @@ def get_conv2d_inputs():
                 False,
                 [0, 0],
                 1,
+            ),
+            (
+                (1, 6, 7),
+                (6, 1, 3),
+                (6,),
+                [1],
+                [0],
+                [1],
+                False,
+                [0],
+                6,
+            ),
+            (
+                (1, 9, 11),
+                (9, 1, 3),
+                None,
+                [1],
+                [0],
+                [1],
+                False,
+                [0],
+                9,
             ),
         ]
     )
@@ -297,7 +319,7 @@ test_suites = {
     "aten.mul.Tensor": get_binary_elementwise_inputs(),
     "aten.mm.default": get_mm_inputs(),
     "aten.max_pool2d_with_indices.default": get_pool2d_inputs(),
-    "aten.convolution.default": get_conv2d_inputs(),
+    "aten.convolution.default": get_conv_inputs(),
     "aten.native_layer_norm.default": get_native_layer_norm_inputs(),
     "aten.full.default": get_full_inputs(),
     "aten.select.int": get_select_int_inputs(),
