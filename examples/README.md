@@ -68,4 +68,4 @@ The [`xtensa/`](./xtensa) directory hosts a demo that showcases the process of e
 
 ## Dependencies
 
-Various models and workflows listed in this directory have dependencies on some other packages. You need to follow the setup guide in [Setting up ExecuTorch from GitHub](https://pytorch.org/executorch/stable/getting-started-setup) to have appropriate packages installed.
+Various models and workflows listed in this directory have dependencies on some other packages. You need to follow the setup guide in [Setting up ExecuTorch from GitHub](https://pytorch.org/executorch/0.2/getting-started-setup) to have appropriate packages installed.

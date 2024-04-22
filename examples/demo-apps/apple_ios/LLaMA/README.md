@@ -7,7 +7,7 @@ This app demonstrates the use of the LLaMA chat app demonstrating local inferenc
 ## Prerequisites
 * [Xcode 15](https://developer.apple.com/xcode).
 * [iOS 17 SDK](https://developer.apple.com/ios).
-* Set up your ExecuTorch repo and environment if you haven’t done so by following the [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) to set up the repo and dev environment.
+* Set up your ExecuTorch repo and environment if you haven’t done so by following the [Setting up ExecuTorch](https://pytorch.org/executorch/0.2/getting-started-setup) to set up the repo and dev environment.
 
 ## Exporting models
 Please refer to the [ExecuTorch Llama2 docs](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md) to export the model.
