@@ -46,13 +46,9 @@ jobs:
         # ET_VERSION_DOCS will be pulled during the doc build to add to the version dropdown
         # on the website. See docs/source/conf.py for details
 
-        REF_TYPE=${{ github.ref_type }}
-        REF_NAME=${{ github.ref_name }}
-
-        echo "$REF_TYPE"
-        echo "$REF_NAME"
-
-        ET_VERSION_DOCS="${REF_NAME}"
+        GITHUB_REF=${{ github.ref }}
+        echo "$GITHUB_REF"
+        ET_VERSION_DOCS="${GITHUB_REF}"
         echo "$ET_VERSION_DOCS"
 
         set -eux
@@ -69,7 +65,6 @@ jobs:
         cd ..
 
         # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
-        GITHUB_REF=${{ github.ref }}
         echo "GitHub Ref: ${GITHUB_REF}"
         if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
           find docs/_build/html/ -name "*.html" -print0 | xargs -0 sed -i '/<head>/a \ \ <meta name="robots" content="noindex">';

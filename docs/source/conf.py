@@ -77,34 +77,26 @@ et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
 
 # The code below will cut version displayed in the dropdown like this:
 # tags like v0.1.0 = > 0.1
-# branch like release/0.1 => 0.1
 # main will remain main
 # if not set will fail back to main
 # the version varible is used in layout.html: https://github.com/pytorch/executorch/blob/main/docs/source/_templates/layout.html#L29
 if et_version_docs:
     # Check if starts with release/ and set the version to the number after slash
-    if et_version_docs.startswith("release/"):
-        version = et_version_docs.split("/")[-1]
-    else:
-        # Remove "v" prefix if present
-        if et_version_docs.startswith("v"):
-            et_version_docs = et_version_docs[1:]
-        # Split to major, minor, and patch
-        version_components = et_version_docs.split(".")
-
-        # Combine the major and minor version components:
-        if len(version_components) >= 2:
-            version = release = ".".join(version_components[:2])
-        else:
-            # If there are not enough components, use the full version
-            version = release = et_version_docs
-
+    if et_version_docs.startswith("refs/tags/v"):
+        version = '.'.join(et_version_docs.split('/')[-1].split('-')[0].lstrip('v').split('.')[:2])
+        print(f'Version: {version}')
+        release = version
+        html_title = " ".join((project, version, "documentation"))
+    elif et_version_docs.startswith("refs/heads/"):
+        version = et_version_docs.split('/')[-1]
+        print(f'Version: {version}')  # Debug line
+        release = version
     html_title = " ".join((project, version, "documentation"))
-# IF ET_VERSION_DOCS not set, set version to main.
-# This can be updated to nightly and so on.
 else:
     version = "main"
     release = "main"
+    html_title = " ".join((project, version, "documentation"))
+
 
 breathe_projects = {"ExecuTorch": "../build/xml/"}
 breathe_default_project = "ExecuTorch"
