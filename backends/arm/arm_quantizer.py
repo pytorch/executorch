@@ -27,6 +27,7 @@ from executorch.backends.arm.arm_quantizer_utils import (
     OperatorPatternType,
     propagate_annotation,
     QuantizationConfig,
+    remove_clone_ops,
 )
 from torch.ao.quantization.fake_quantize import (
     FakeQuantize,
@@ -369,6 +370,7 @@ class ArmQuantizer(Quantizer):
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
         """Transforms scalar values to tensor attributes"""
+        remove_clone_ops(model)
         return _convert_scalars_to_attrs(model)
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:

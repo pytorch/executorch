@@ -32,6 +32,37 @@ class TestSimpleClone(unittest.TestCase):
             x = x.clone()
             return x
 
+    class Clone2(torch.nn.Module):
+        sizes = [10, 15, 50, 100]
+        test_parameters = [(torch.ones(n),) for n in sizes]
+
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x: torch.Tensor):
+            x = torch.clone(x)
+            return x
+
+    class CloneThenAdd(torch.nn.Module):
+        test_parameters = (torch.ones(10), torch.ones(10))
+
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x: torch.Tensor, y: torch.Tensor):
+            x = x.clone()
+            return x + y
+
+    class AddThenClone(torch.nn.Module):
+        test_parameters = (torch.ones(10), torch.ones(10))
+
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x: torch.Tensor, y: torch.Tensor):
+            z = x + y
+            return z.clone()
+
     def _test_clone_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: torch.Tensor
     ):
@@ -57,13 +88,33 @@ class TestSimpleClone(unittest.TestCase):
     def _test_clone_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
+        (
+            ArmTester(
+                module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
+            )
+            .quantize()
+            .export()
+            # Clone operator is deleted in quantization and should therefore not show up
+            .check_count({"torch.ops.aten.clone.default": 0})
+            .to_edge()
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
+            .to_executorch()
+        )
+
+        # No output comparison since the the model becomes empty after removing the clone op.
+
+    def _test_clone_add_tosa_BI_pipeline(
+        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    ):
         tester = (
             ArmTester(
                 module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.clone.default": 1})
+            # Clone operator is deleted in quantization and should therefore not show up
+            .check_count({"torch.ops.aten.clone.default": 0})
             .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
@@ -86,10 +137,11 @@ class TestSimpleClone(unittest.TestCase):
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.clone.default": 1})
+            # Clone is deleted in quantization and should therefore not show up
+            .check_count({"torch.ops.aten.clone.default": 0})
             .to_edge()
             .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
             .to_executorch()
         )
 
@@ -97,17 +149,25 @@ class TestSimpleClone(unittest.TestCase):
     def test_clone_tosa_MI(self, test_tensor: torch.Tensor):
         self._test_clone_tosa_MI_pipeline(self.Clone(), (test_tensor,))
 
-    # Expected to fail since ArmQuantizer cannot quantize a Clone layer
-    # TODO MLETROCH-125
     @parameterized.expand(Clone.test_parameters)
-    @unittest.expectedFailure
     def test_clone_tosa_BI(self, test_tensor: torch.Tensor):
         self._test_clone_tosa_BI_pipeline(self.Clone(), (test_tensor,))
 
-    # Expected to fail since ArmQuantizer cannot quantize a Clone layer
-    # TODO MLETROCH-125
     @parameterized.expand(Clone.test_parameters)
-    @unittest.expectedFailure
+    def test_clone2_tosa_BI(self, test_tensor: torch.Tensor):
+        self._test_clone_tosa_BI_pipeline(self.Clone2(), (test_tensor,))
+
+    def test_clone_add_tosa_BI(self):
+        self._test_clone_add_tosa_BI_pipeline(
+            self.CloneThenAdd(), self.CloneThenAdd.test_parameters
+        )
+
+    def test_add_clone_tosa_BI(self):
+        self._test_clone_add_tosa_BI_pipeline(
+            self.AddThenClone(), self.AddThenClone.test_parameters
+        )
+
+    @parameterized.expand(Clone.test_parameters)
     @unittest.skipIf(
         not common.VELA_INSTALLED,
         "There is no point in running U55 tests if the Vela tool is not installed",

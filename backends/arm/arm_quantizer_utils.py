@@ -136,6 +136,18 @@ def get_input_act_qspec(quantization_config: Optional[QuantizationConfig]):
     return quantization_spec
 
 
+def remove_clone_ops(graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
+    for n in graph_module.graph.nodes:
+        if n.target not in {torch.clone, torch.ops.aten.clone.default}:
+            continue
+
+        to_be_removed = n
+        for user_n in list(n.users.keys()):
+            user_n.replace_input_with(n, n.args[0])
+        graph_module.graph.erase_node(to_be_removed)
+    graph_module.recompile()
+
+
 def get_output_act_qspec(quantization_config: Optional[QuantizationConfig]):
     if quantization_config is None:
         return None
