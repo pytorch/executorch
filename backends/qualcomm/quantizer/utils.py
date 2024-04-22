@@ -113,14 +113,14 @@ def get_default_8bit_qnn_ptq_config() -> QuantizationConfig:
 
 
 # 4 bits quantization only supports specific ops.
-def get_16a4w_qnn_ptq_config() -> QuantizationConfig:
+def get_16a4w_qnn_ptq_config(act_observer=MovingAverageMinMaxObserver) -> QuantizationConfig:
     extra_args: Dict[str, Any] = {"eps": 2**-20}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
         quant_max=torch.iinfo(torch.uint16).max,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(
@@ -150,14 +150,14 @@ def get_16a4w_qnn_ptq_config() -> QuantizationConfig:
     return quantization_config
 
 
-def get_default_16bit_qnn_ptq_config() -> QuantizationConfig:
+def get_default_16bit_qnn_ptq_config(act_observer=MovingAverageMinMaxObserver) -> QuantizationConfig:
     extra_args: Dict[str, Any] = {"eps": 2**-20}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
         quant_min=torch.iinfo(torch.uint16).min,
         quant_max=torch.iinfo(torch.uint16).max,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=act_observer.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(

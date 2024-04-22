@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from enum import IntEnum, unique
 
 QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
-QNN_uint16 = "uint16"
 
 # Below constants should be same as those in QNN headers.
 # Maybe someday we should expose these constants by pybind

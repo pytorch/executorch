@@ -139,7 +139,8 @@ Result<torch::executor::Tensor> Runner::run_model_step(
     Tensor& start_pos,
     std::vector<Tensor>& input_tensors) {
   token.mutable_data_ptr<int32_t>()[0] = input_token;
-  // inputs:[tokens, start_pos, atten_mask, kv_mask, k_cache, v_cache]
+  // inputs:[tokens, start_pos, kv_mask, k_cache, v_cache]
+  // input_tensors:[kv_mask, k_cache, v_cache]
   std::vector<EValue> inputs = {token, start_pos};
   inputs.insert(inputs.end(), input_tensors.begin(), input_tensors.end());
 

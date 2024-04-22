@@ -15,7 +15,7 @@ from .qnn_constants import OpSplit, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class Softmax(NodeVisitor):
+class Split(NodeVisitor):
     target = ["aten.split_with_sizes.default"]
 
     def __init__(self, *args) -> None:

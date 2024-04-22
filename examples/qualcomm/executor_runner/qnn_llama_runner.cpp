@@ -100,7 +100,7 @@ int main(int argc, char** argv) {
     if (input_files.size() == 0) {
       break;
     }
-    // inputs: [tokens, pos_ids, atten_mask, kv_mask, k_cache, v_cache]
+    // inputs: [tokens, pos_ids, kv_mask, *k_cache, *v_cache]
     // tokens are determined by command line arguments
     // pos_ids are infered inside runner
     std::vector<ManagedTensor> managed_inputs;
@@ -120,10 +120,6 @@ int main(int argc, char** argv) {
           tensor_meta->nbytes());
 
       inputs[input_index].resize(tensor_meta->nbytes());
-      if (input_index <= 2) {
-        fin.seekg(0, fin.beg);
-        fin.read(inputs[input_index].data(), file_size);
-      }
       fin.close();
 
       auto tensor_shape = tensor_meta->sizes();

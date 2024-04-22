@@ -12,6 +12,7 @@ import sys
 from functools import partial
 
 import torch
+from torch.ao.quantization.observer import MinMaxObserver
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
@@ -206,6 +207,7 @@ if __name__ == "__main__":
             shared_buffer=args.shared_buffer,
             metadata=instance.get_metadata(),
             direct_io=True,
+            act_observer=MinMaxObserver
         )
 
     if args.compile_only:

@@ -15,6 +15,7 @@ from typing import Callable, List, Optional
 import numpy as np
 
 import torch
+from torch.ao.quantization.observer import MovingAverageMinMaxObserver
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a4w_qnn_ptq_config,
@@ -184,6 +185,7 @@ def build_executorch_binary(
     direct_io=False,  # TODO: temporal workaround for llama
     shared_buffer=False,
     metadata=None,
+    act_observer=MovingAverageMinMaxObserver
 ):
     if quant_dtype is not None:
         quantizer = QnnQuantizer()
@@ -194,10 +196,10 @@ def build_executorch_binary(
             pass  # default setting
         elif quant_dtype == QuantDtype.use_16a16w:
             quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
+            quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config(act_observer=act_observer))
         elif quant_dtype == QuantDtype.use_16a4w:
             quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config())
+            quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config(act_observer=act_observer))
             quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
         else:
             raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
