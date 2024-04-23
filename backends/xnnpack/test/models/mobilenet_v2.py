@@ -7,9 +7,9 @@
 import unittest
 
 import torch
-import torchvision.models as models
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.backends.xnnpack.test.tester.tester import Quantize
+from torchvision import models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
 

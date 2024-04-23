@@ -8,8 +8,8 @@ import copy
 import unittest
 
 import torch
-from executorch.examples.models.llama2.export_llama_lib import SDPASimple
 from executorch.examples.models.llama2.llama_transformer import KVCache, SDPA
+from executorch.examples.models.llama2.source_transformation.sdpa import SDPASimple
 
 
 class SDPATest(unittest.TestCase):
