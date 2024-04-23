@@ -73,7 +73,7 @@ html_favicon = "_static/img/ExecuTorch-Logo-cropped.svg"
 
 # Get ET_VERSION_DOCS during the build.
 et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
-
+print(f"et_version_docs: {et_version_docs}")
 
 # The code below will cut version displayed in the dropdown like this:
 # By default, set to "main".
