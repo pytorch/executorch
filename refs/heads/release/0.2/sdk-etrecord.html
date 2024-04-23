@@ -455,7 +455,7 @@ the ExecuTorch program (returned by the call to <code class="docutils literal no
 they are interested in working with via our tooling.</p>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>Users should do a deepcopy of the output of to_edge() and pass in the deepcopy to the generate_etrecord API. This is needed because the subsequent call, to_executorch(), does an in-place mutation and will lose debug data in the process.</p>
+<p>Users should do a deepcopy of the output of <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and pass in the deepcopy to the <code class="docutils literal notranslate"><span class="pre">generate_etrecord</span></code> API. This is needed because the subsequent call, <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, does an in-place mutation and will lose debug data in the process.</p>
 </div>
 <dl class="py function">
 <dt class="sig sig-object py" id="executorch.sdk.etrecord._etrecord.generate_etrecord">
