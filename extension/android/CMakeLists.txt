@@ -68,6 +68,8 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   set_property(TARGET custom_ops PROPERTY IMPORTED_LOCATION ${CUSTOM_OPS_PATH})
   target_link_options_shared_lib(custom_ops)
 
+  target_link_options_shared_lib(quantized_ops_lib)
+
   if(TARGET pthreadpool)
     set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp ../../backends/xnnpack/threadpool/cpuinfo_utils.cpp)
   else()
@@ -83,7 +85,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   endif()
   target_include_directories(executorch_llama_jni PRIVATE ${_common_include_directories})
   target_link_libraries(executorch_llama_jni ${link_libraries} llama_runner
-                        custom_ops cpublas eigen_blas)
+                        custom_ops cpublas eigen_blas quantized_kernels quantized_ops_lib)
   target_compile_options(executorch_llama_jni PUBLIC ${_common_compile_options})
   if(EXECUTORCH_USE_TIKTOKEN)
     set(ABSL_ENABLE_INSTALL ON)
