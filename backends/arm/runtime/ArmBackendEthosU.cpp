@@ -129,64 +129,34 @@ class ArmBackend final : public PyTorchBackendInterface {
         return Error::InvalidProgram;
       }
 
-      // Special case implicitly permuted rank4 tensors
-      int permuted_input_shape = false;
-      if (tensor_in.dim() == 4) {
-        // special case for NHWC workaround in AOT; as the compilation has
-        // permuted to channel last in an undetectable way, we assume here
-        // that the application has similarly permuted any input tensors.
-        permuted_input_shape =
-            tensor_in.size(0) == handles.inputs->io[i].shape[0] &&
-            tensor_in.size(1) == handles.inputs->io[i].shape[3] &&
-            tensor_in.size(2) == handles.inputs->io[i].shape[1] &&
-            tensor_in.size(3) == handles.inputs->io[i].shape[2];
-        if (permuted_input_shape) {
-          ET_LOG(Info, "Tensor input %d will be permuted", i);
-        }
-        if (execution_handle->permuted_io_flag != permuted_input_shape) {
-          ET_LOG(Error, "Permute compile flag and permuted input don't agree");
-          return Error::InvalidProgram;
-        }
-      }
-      if (!permuted_input_shape) {
-        // Error check matching shapes in the general case
-        for (int j = 0; j < tensor_in.dim(); j++) {
-          if (tensor_in.size(j) != handles.inputs->io[i].shape[j]) {
-            ET_LOG(Error, "Tensor input %d mismatched shape", i);
-            ET_LOG(
-                Error,
-                "dimension %d mismatch, %d != %d",
-                i,
-                tensor_in.size(j),
-                handles.inputs->io[i].shape[j]);
-            return Error::InvalidProgram;
-          }
-        }
-      }
+      // Select a compatible copy routine including checking for input layouts
+      // which require permutation.
+      bool permuted_input_shape;
+      ET_CHECK_OK_OR_RETURN_ERROR(check_requires_permute(
+          i,
+          tensor_in,
+          &handles.inputs->io[i],
+          execution_handle->permuted_io_flag,
+          &permuted_input_shape));
+      bool both_char = tensor_in.scalar_type() == ScalarType::Char and
+          handles.inputs->io[i].elem_size == 1;
+      bool both_int = tensor_in.scalar_type() == ScalarType::Int and
+          handles.inputs->io[i].elem_size == 4;
 
-      // Direct copy when not permuted
-      if (tensor_in.scalar_type() == ScalarType::Int and
-              handles.inputs->io[i].elem_size == 4 or
-          tensor_in.scalar_type() == ScalarType::Char and
-              handles.inputs->io[i].elem_size == 1) {
-        if (permuted_input_shape && tensor_in.dim() == 4) {
-          // permuted copy CHW to HWC
-          char* input = scratch_addr;
-          char* output = tensor_in.mutable_data_ptr<char>();
-          int H = tensor_in.size(1);
-          int W = tensor_in.size(1);
-          for (int i = 0; i != H * W; ++i) {
-            output[i * 3 + 0] = input[i + 0 * W * H];
-            output[i * 3 + 1] = input[i + 1 * W * H];
-            output[i * 3 + 2] = input[i + 2 * W * H];
-          }
-        } else {
-          // Sizes match and elt size matches so memcpy
-          memcpy(
-              scratch_addr,
-              tensor_in.mutable_data_ptr<char>(),
-              tensor_in.nbytes());
-        }
+      // Select a compatible copy routine
+      if (both_char and permuted_input_shape) {
+        // permuted byte copy CHW to HWC
+        permute_CHW_to_HWC(
+            scratch_addr,
+            tensor_in.mutable_data_ptr<char>(),
+            tensor_in.size(2),
+            tensor_in.size(3));
+      } else if (both_char or both_int) {
+        // Sizes match and elt size matches so memcpy
+        memcpy(
+            scratch_addr,
+            tensor_in.mutable_data_ptr<char>(),
+            tensor_in.nbytes());
       } else {
         ET_LOG(Error, "No matching input copy routine");
         return Error::InvalidProgram;
@@ -242,6 +212,57 @@ class ArmBackend final : public PyTorchBackendInterface {
 
   void destroy(DelegateHandle* handle) const override {
     return;
+  }
+
+ private:
+  Error check_requires_permute(
+      int index,
+      const exec_aten::Tensor tensor_in,
+      VelaIO* input,
+      bool permuted_io_flag,
+      bool* is_permuted) const {
+    bool permuted_input_shape = false;
+    if (tensor_in.dim() == 4) {
+      // special case for NHWC workaround in AOT; as the compilation has
+      // permuted to channel last in an undetectable way, we assume here
+      // that the application has similarly permuted any input tensors.
+      permuted_input_shape = tensor_in.size(0) == input->shape[0] &&
+          tensor_in.size(1) == input->shape[3] &&
+          tensor_in.size(2) == input->shape[1] &&
+          tensor_in.size(3) == input->shape[2];
+      if (permuted_input_shape) {
+        ET_LOG(Info, "Tensor input %d will be permuted", index);
+      }
+      if (permuted_io_flag != permuted_input_shape) {
+        ET_LOG(Error, "Permute compile flag and permuted input don't agree");
+        return Error::InvalidProgram;
+      }
+    }
+    if (!permuted_input_shape) {
+      // Error check matching shapes in the general case
+      for (int i = 0; i < tensor_in.dim(); i++) {
+        if (tensor_in.size(i) != input->shape[i]) {
+          ET_LOG(Error, "Tensor input %d mismatched shape", index);
+          ET_LOG(
+              Error,
+              "dimension %d mismatch, %d != %d",
+              index,
+              tensor_in.size(i),
+              input->shape[i]);
+          return Error::InvalidProgram;
+        }
+      }
+    }
+    *is_permuted = permuted_input_shape;
+    return Error::Ok;
+  }
+
+  void permute_CHW_to_HWC(char* input, char* output, int H, int W) const {
+    for (int i = 0; i != H * W; ++i) {
+      output[i * 3 + 0] = input[i + 0 * W * H];
+      output[i * 3 + 1] = input[i + 1 * W * H];
+      output[i * 3 + 2] = input[i + 2 * W * H];
+    }
   }
 };
 
