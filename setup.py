@@ -364,6 +364,7 @@ class CustomBuild(build):
             # useful error information to users.
             "-DEXECUTORCH_ENABLE_LOGGING=ON",
             "-DEXECUTORCH_LOG_LEVEL=Info",
+            "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15",
         ]
 
         build_args = [f"-j{self.parallel}"]
@@ -375,6 +376,7 @@ class CustomBuild(build):
         if ShouldBuild.pybindings:
             cmake_args += [
                 "-DEXECUTORCH_BUILD_PYBIND=ON",
+                "-DEXECUTORCH_BUILD_QUANTIZED=ON",  # add quantized ops to pybindings.
             ]
             build_args += ["--target", "portable_lib"]
             if ShouldBuild.xnnpack:
@@ -444,7 +446,7 @@ def get_ext_modules() -> list[Extension]:
             # portable kernels, and a selection of backends. This lets users
             # load and execute .pte files from python.
             BuiltExtension(
-                "portable_lib.*", "executorch.extension.pybindings.portable_lib"
+                "_portable_lib.*", "executorch.extension.pybindings._portable_lib"
             )
         )
     if ShouldBuild.llama_custom_ops:

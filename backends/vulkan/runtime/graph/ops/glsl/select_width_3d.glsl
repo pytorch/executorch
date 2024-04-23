@@ -19,28 +19,30 @@ layout(std430) buffer;
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 
-layout(set = 0, binding = 2) uniform PRECISION restrict OutSizes {
-  uvec4 data;
-}
-out_sizes;
+layout(set = 0, binding = 2) uniform PRECISION restrict OutLimits {
+  ivec3 out_limits;
+};
+
+layout(set = 0, binding = 3) uniform PRECISION restrict Sizes {
+  ivec4 sizes;
+};
 
 // index to select
-layout(set = 0, binding = 3) uniform PRECISION restrict IndexVal {
-  int data;
-}
-index;
+layout(set = 0, binding = 4) uniform PRECISION restrict IndexVal {
+  int index;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 idx = to_tensor_idx_C_packed(pos, out_sizes.data);
-  if (any(greaterThanEqual(idx, out_sizes.data))) {
+
+  if (any(greaterThanEqual(pos, out_limits))) {
     return;
   }
 
   // w
-  const int src_x = index.data;
+  const int src_x = index;
   // h
   const int src_y = pos.x;
   // c
@@ -52,7 +54,7 @@ void main() {
     ivec3 new_pos = ivec3(pos.x, pos.y * 4 + i, 0);
 
     // When the C-channel exceeds original block size, exit early
-    if (new_pos.y >= out_sizes.data.y) {
+    if (new_pos.y >= sizes.y) {
       return;
     }
 

@@ -93,9 +93,10 @@ struct Value final {
     payload.u.member_name = rhs.payload.u.member_name;           \
     break;
 
-#define CASE_MOVE_MOVEABLE_TYPE(type_tag, type, member_name)             \
+#define CASE_MOVE_MOVEABLE_TYPE(type_tag, type, member_name, dtor_name)  \
   case type_tag:                                                         \
     new (&payload.member_name) type(std::move(rhs.payload.member_name)); \
+    rhs.payload.member_name.~dtor_name();                                \
     break;
 
   Value(Value&& rhs) noexcept : tag(rhs.tag) {
@@ -105,20 +106,23 @@ struct Value final {
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::DOUBLE, as_double);
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::BOOL, as_bool);
       // Tensor and tensor adjacent types
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::TENSOR, vTensor, as_tensor);
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::STAGING, api::StorageBuffer, as_staging);
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::TENSORREF, TensorRef, as_tensorref);
+      CASE_MOVE_MOVEABLE_TYPE(TypeTag::TENSOR, vTensor, as_tensor, vTensor);
+      CASE_MOVE_MOVEABLE_TYPE(
+          TypeTag::STAGING, api::StorageBuffer, as_staging, StorageBuffer);
+      CASE_MOVE_MOVEABLE_TYPE(
+          TypeTag::TENSORREF, TensorRef, as_tensorref, TensorRef);
       // Scalar lists
       CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::INTLIST, std::vector<int64_t>, as_int_list);
+          TypeTag::INTLIST, std::vector<int64_t>, as_int_list, vector);
       CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::DOUBLELIST, std::vector<double>, as_double_list);
+          TypeTag::DOUBLELIST, std::vector<double>, as_double_list, vector);
       CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::BOOLLIST, std::vector<bool>, as_bool_list);
+          TypeTag::BOOLLIST, std::vector<bool>, as_bool_list, vector);
       // Special types
       CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::VALUELIST, std::vector<ValueRef>, as_value_list);
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::STRING, std::string, as_string);
+          TypeTag::VALUELIST, std::vector<ValueRef>, as_value_list, vector);
+      CASE_MOVE_MOVEABLE_TYPE(
+          TypeTag::STRING, std::string, as_string, basic_string);
 
       case TypeTag::NONE:
         clearToNone();

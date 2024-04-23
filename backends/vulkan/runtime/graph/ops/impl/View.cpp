@@ -21,7 +21,6 @@ void add_view_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
   std::string kernel_name = "view";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
-  add_memory_layout_suffix(kernel_name, *t_out);
 
   api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
@@ -31,11 +30,12 @@ void add_view_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
       VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
+      // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
-      {t_out->gpu_sizes_ubo(),
-       t_out->cpu_sizes_ubo(),
-       t_in->gpu_sizes_ubo(),
-       t_in->cpu_sizes_ubo()}));
+      // Parameter Buffers
+      {t_out->sizes_ubo(), t_in->sizes_ubo()},
+      // Specialization Constants
+      {SV(t_in->gpu_memory_layout_int())}));
 }
 
 void view(ComputeGraph& graph, const std::vector<ValueRef>& args) {

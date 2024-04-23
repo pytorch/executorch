@@ -562,6 +562,11 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs custom_ops)
   endif()
 
+  if(EXECUTORCH_BUILD_QUANTIZED)
+    target_link_options_shared_lib(quantized_ops_lib)
+    list(APPEND _dep_libs quantized_kernels quantized_ops_lib)
+  endif()
+
   # TODO(larryliu): Fix macOS 2 dylibs having 2 sets of static variables issue
   if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT AND NOT APPLE)
     list(APPEND _dep_libs custom_ops_aot_lib)
@@ -583,8 +588,11 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # pybind portable_lib
   pybind11_add_module(portable_lib extension/pybindings/pybindings.cpp)
+  # The actual output file needs a leading underscore so it can coexist with
+  # portable_lib.py in the same python package.
+  set_target_properties(portable_lib PROPERTIES OUTPUT_NAME "_portable_lib")
   target_compile_definitions(portable_lib
-                             PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=portable_lib)
+                             PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_portable_lib)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PUBLIC ${_dep_libs})

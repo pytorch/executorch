@@ -648,6 +648,54 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_conv1d(self):
+        class Conv1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(
+                    in_channels=6,
+                    out_channels=6,
+                    kernel_size=3,
+                    groups=6,
+                    bias=True,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv1d_module = Conv1dModule()
+        sample_inputs = (torch.randn(size=(1, 6, 7), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv1d_module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_conv1d_bias_false(self):
+        class Conv1dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv1d(
+                    in_channels=6,
+                    out_channels=6,
+                    kernel_size=3,
+                    groups=6,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv1d_module = Conv1dModule()
+        sample_inputs = (torch.randn(size=(1, 6, 7), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv1d_module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_native_layer_norm(self):
         class NativeLayerNormModule(torch.nn.Module):
             def __init__(self):

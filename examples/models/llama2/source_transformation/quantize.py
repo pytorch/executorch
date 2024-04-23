@@ -4,15 +4,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict, Optional
+from functools import partial
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from executorch.exir.passes._quant_patterns_and_replacements import (  # noqa
-    quantized_decomposed_lib,
-)
 
+from sentencepiece import SentencePieceProcessor
+
+from ..builder import DType
 
 try:
     # pyre-ignore[21]: Undefined import.
@@ -28,6 +30,105 @@ except:
     fsEmbedding = nn.Embedding
     fsStandardEmbedding = nn.Embedding
     fsLinear = nn.Linear
+
+
+def quantize(
+    model: torch.nn.Module,
+    qmode: str,
+    activation_dtype: Optional[DType],
+    checkpoint_path: Optional[Path] = None,
+    # following arguments only available when setting int4 or gptq quantization.
+    group_size: Optional[int] = 128,
+    # following arguments are only used for GPTQ
+    calibration_tasks: Optional[list] = None,
+    calibration_limit: Optional[int] = None,
+    calibration_seq_length: Optional[int] = None,
+    pad_calibration_inputs: bool = False,
+    percdamp: float = 0.01,
+    blocksize: int = 128,
+    tokenizer_path: Optional[Path] = None,
+    verbose: bool = False,
+) -> torch.nn.Module:
+    """
+    Quantizes a model by converting all weights to int8.
+    Args:
+        model: A model to quantize.
+        qmode: quantization mode, e.g. int8, 8da4w, 8da4w-gptq
+    Returns:
+        A quantized model.
+    """
+    if activation_dtype is not None:
+        torch_dtype = activation_dtype.to_torch_dtype()
+    else:
+        torch_dtype = torch.float16
+
+    assert checkpoint_path, "Need to specify a checkpoint"
+    # if checkpoint_path is None:
+    #     checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
+
+    if qmode == "int8":
+        # Add quantization mode options here: group size, bit width, etc.
+        return WeightOnlyInt8QuantHandler(model).quantized_model()
+    elif qmode == "8da4w":
+        # Check for required args
+        if group_size is None:
+            raise Exception("For 8da4w quantization, group size must be specified.")
+        from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+
+        model = Int8DynActInt4WeightQuantizer(
+            precision=torch_dtype, groupsize=group_size
+        ).quantize(model)
+        if verbose:
+            print("quantized model:", model)
+        return model
+    elif qmode == "8da4w-gptq":
+        # Check for required args
+        required_args: Optional[Any] = [
+            group_size,
+            calibration_limit,
+            calibration_seq_length,
+        ]
+        if any(arg is None for arg in required_args):
+            raise Exception(
+                "For 8da4w-gptq quantization, group size, calibration limit and calibration sequence length must be specified."
+            )
+        if calibration_tasks is None:
+            calibration_tasks = ["wikitext"]
+
+        from torchao.quantization.GPTQ import InputRecorder
+        from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
+
+        if tokenizer_path is None:
+            tokenizer_path = checkpoint_path.parent / "tokenizer.model"
+        assert tokenizer_path.is_file(), tokenizer_path
+        tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
+            model_file=str(tokenizer_path)
+        )
+
+        inputs = (
+            InputRecorder(
+                tokenizer,
+                calibration_seq_length,
+                None,  # input_prep_func
+                pad_calibration_inputs,
+                model.vocab_size,
+            )
+            .record_inputs(
+                calibration_tasks,
+                calibration_limit,
+            )
+            .get_inputs()
+        )
+
+        gptq_quantizer = Int8DynActInt4WeightGPTQQuantizer(
+            blocksize,
+            percdamp,
+            group_size,
+        )
+        model = gptq_quantizer.quantize(model, inputs)
+        return model
+    else:
+        raise Exception(f"Unrecognized quantize mode: {qmode}")
 
 
 def dynamically_quantize_per_channel(
@@ -443,3 +544,51 @@ class QuantizedGroupEmbedding(torch.nn.Module):
             return torch.ops.quantized_decomposed.embedding_4bit.dtype(
                 self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
             )
+
+
+############################ Source Transform Start #######################
+
+
+def get_quant_embedding_transform(args):
+    bitwidth, group_size = args.embedding_quantize.split(",")
+    if group_size == "none" or group_size == "None" or group_size == "0":
+        group_size = None
+    else:
+        group_size = int(group_size)
+    bitwidth = int(bitwidth)
+    return lambda model: EmbeddingQuantHandler(
+        model,
+        bitwidth=bitwidth,
+        group_size=group_size,
+        packed=(bitwidth == 4),
+    ).quantized_model()
+
+
+def get_quant_weight_transform(args, dtype_override, verbose):
+    # If these optional args are None, don't provide them to quantize()
+    quant_args_str = [
+        "group_size",
+        "calibration_tasks",
+        "calibration_limit",
+        "calibration_seq_length",
+    ]
+    arg_dict = vars(args)
+    quant_args = {
+        param: val
+        for param in quant_args_str
+        if (val := arg_dict.get(param)) is not None
+    }
+
+    return partial(
+        quantize,
+        **quant_args,
+        qmode=args.quantization_mode,
+        activation_dtype=dtype_override,
+        checkpoint_path=(Path(path) if (path := args.checkpoint) is not None else None),
+        tokenizer_path=(
+            Path(path) if (path := args.tokenizer_path) is not None else None
+        ),
+    )
+
+
+############################ Source Transform End #######################

@@ -7,8 +7,8 @@
 import unittest
 
 import torch
-import torchvision.models as models
 from executorch.backends.xnnpack.test.tester import Tester
+from torchvision import models
 
 
 class TestViT(unittest.TestCase):

@@ -9,11 +9,11 @@ import logging
 import unittest
 
 import torch
-import torchvision.models as models
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.xnnpack.test.tester.tester import Quantize
+from torchvision import models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
 

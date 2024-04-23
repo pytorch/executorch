@@ -175,8 +175,8 @@ if(ANDROID)
 endif()
 
 add_executable(llama_main ${_srcs})
-if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
-  target_link_options(llama_main PRIVATE "LINKER:--gc-sections")
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
 endif()
 
 target_include_directories(llama_main PUBLIC ${_common_include_directories})
