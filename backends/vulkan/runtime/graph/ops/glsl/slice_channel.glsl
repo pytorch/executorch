@@ -39,7 +39,6 @@ layout(constant_id = 3) const int packed_dim = C_DIM;
 
 void main() {
   const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
-
   const ivec4 idx = to_tensor_idx(out_pos, out_sizes, packed_dim);
 
   if (any(greaterThanEqual(idx, out_sizes))) {

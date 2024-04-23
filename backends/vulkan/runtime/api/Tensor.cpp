@@ -139,8 +139,10 @@ vTensor::vTensor(
       // Calculate sizes and strides
       sizes_(sizes.begin(), sizes.end()),
       gpu_sizes_{calc_gpu_sizes(sizes, memory_layout_, storage_type)},
-      // Utility Uniform Buffer that can be passed to shaders as arguments
-      sizes_uniform_(context, api::utils::make_whcn_ivec4(sizes_)),
+      texture_limits_{{0, 0, 0}},
+      // Utility Uniform Buffers that can be passed to shaders as arguments
+      sizes_uniform_(),
+      texture_limits_uniform_(),
       // Construct Tensor storage
       storage_(
           context,
@@ -149,6 +151,13 @@ vTensor::vTensor(
           gpu_sizes_,
           dtype_,
           allocate_memory) {
+  if (storage_type != api::kBuffer) {
+    texture_limits_.limits = api::utils::ivec3{
+        api::utils::safe_downcast<int32_t>(storage_.extents_.data[0]),
+        api::utils::safe_downcast<int32_t>(storage_.extents_.data[1]),
+        api::utils::safe_downcast<int32_t>(storage_.extents_.data[2])};
+  }
+
   if (dtype == api::kHalf) {
     VK_CHECK_COND(
         api::context()->adapter_ptr()->has_16bit_storage(),
@@ -185,6 +194,22 @@ api::VulkanBuffer& vTensor::buffer(
     const api::MemoryAccessFlags access) & {
   storage_.transition(pipeline_barrier, stage, access);
   return storage_.buffer_;
+}
+
+const api::BufferBindInfo vTensor::sizes_ubo() {
+  if (!sizes_uniform_.buffer()) {
+    sizes_uniform_ = api::UniformParamsBuffer(
+        storage_.context_, api::utils::make_whcn_ivec4(sizes_));
+  }
+  return api::BufferBindInfo(sizes_uniform_.buffer());
+}
+
+const api::BufferBindInfo vTensor::texture_limits_ubo() {
+  if (!texture_limits_uniform_.buffer()) {
+    texture_limits_uniform_ =
+        api::UniformParamsBuffer(storage_.context_, texture_limits_);
+  }
+  return api::BufferBindInfo(texture_limits_uniform_.buffer());
 }
 
 VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
@@ -224,7 +249,25 @@ void vTensor::bind_allocation(const api::MemoryAllocation& allocation) {
 void vTensor::update_size_metadata(const std::vector<int64_t>& new_sizes) {
   sizes_ = new_sizes;
   gpu_sizes_ = calc_gpu_sizes(sizes_, memory_layout_, storage_type());
-  sizes_uniform_.update(api::utils::make_whcn_ivec4(sizes_));
+
+  if (storage_type() != api::kBuffer) {
+    // Calculate the extents of the image texture that would have been required
+    // for a tensor of the new sizes.
+    api::utils::uvec3 virtual_extents =
+        create_image_extents(gpu_sizes_, storage_type(), memory_layout_);
+    // Update the texture limits to reflect the new virtual extents.
+    texture_limits_.limits = api::utils::ivec3{
+        api::utils::safe_downcast<int32_t>(virtual_extents.data[0]),
+        api::utils::safe_downcast<int32_t>(virtual_extents.data[1]),
+        api::utils::safe_downcast<int32_t>(virtual_extents.data[2])};
+  }
+
+  if (sizes_uniform_.buffer()) {
+    sizes_uniform_.update(api::utils::make_whcn_ivec4(sizes_));
+  }
+  if (texture_limits_uniform_.buffer()) {
+    texture_limits_uniform_.update(texture_limits_);
+  }
 }
 
 void vTensor::reallocate(const std::vector<int64_t>& new_sizes) {
@@ -236,6 +279,8 @@ void vTensor::reallocate(const std::vector<int64_t>& new_sizes) {
 }
 
 void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
+  // For texture storage check that the current texture is large enough for the
+  // new sizes of the tensor.
   if (storage_type() != api::kBuffer) {
     api::utils::uvec3 virtual_extents =
         create_image_extents(gpu_sizes_, storage_type(), memory_layout_);

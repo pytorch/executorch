@@ -77,6 +77,9 @@ target_link_libraries(mpsdelegate
   ${MPS_GRAPG_FRAMEWORK}
 )
 
+target_link_options_shared_lib(mpsdelegate)
+target_compile_options(mpsdelegate PUBLIC ${_common_compile_options})
+
 install(
   TARGETS mpsdelegate
   DESTINATION lib

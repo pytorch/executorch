@@ -88,9 +88,11 @@ void add_permute_node(
       global_size,
       local_size,
       {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
-      {t_out->sizes_ubo(), graph.create_params_buffer(params)},
+      {t_out->texture_limits_ubo(),
+       t_out->sizes_ubo(),
+       graph.create_params_buffer(params)},
       // Specialization Constants
-      {SV(t_out->gpu_memory_layout_int())},
+      {},
       // Resizing Logic
       nullptr,
       {}));

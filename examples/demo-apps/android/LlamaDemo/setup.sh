@@ -8,6 +8,7 @@
 set -eu
 
 CMAKE_OUT="${CMAKE_OUT:-cmake-out-android}"
+EXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN:-OFF}"
 # Note: Set up ANDROID_NDK and ANDROID_ABI
 cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
@@ -32,6 +33,10 @@ cmake examples/models/llama2 \
          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
          -DANDROID_ABI="$ANDROID_ABI" \
          -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
+         -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
+         -DEXECUTORCH_BUILD_CUSTOM=ON \
+         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+         -DEXECUTORCH_BUILD_XNNPACK=ON \
          -DCMAKE_BUILD_TYPE=Release \
          -B"${CMAKE_OUT}"/examples/models/llama2
 
@@ -42,6 +47,7 @@ cmake extension/android \
   -DANDROID_ABI="${ANDROID_ABI}" \
   -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
+  -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
   -DCMAKE_BUILD_TYPE=Release \
   -B"${CMAKE_OUT}"/extension/android
 
