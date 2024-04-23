@@ -56,6 +56,7 @@ import setuptools  # noqa: F401 # usort: skip
 from distutils import log
 from distutils.sysconfig import get_python_lib
 from pathlib import Path
+from typing import Optional
 
 from setuptools import Extension, setup
 from setuptools.command.build import build
@@ -87,6 +88,77 @@ class ShouldBuild:
     @property
     def llama_custom_ops(cls) -> bool:
         return cls._is_env_enabled("EXECUTORCH_BUILD_CUSTOM_OPS_AOT", default=True)
+
+
+class Version:
+    """Static properties that describe the version of the pip package."""
+
+    # Cached values returned by the properties.
+    __root_dir_attr: Optional[str] = None
+    __string_attr: Optional[str] = None
+    __git_hash_attr: Optional[str] = None
+
+    @classmethod
+    @property
+    def _root_dir(cls) -> str:
+        """The path to the root of the git repo."""
+        if cls.__root_dir_attr is None:
+            # This setup.py file lives in the root of the repo.
+            cls.__root_dir_attr = str(Path(__file__).parent.resolve())
+        return str(cls.__root_dir_attr)
+
+    @classmethod
+    @property
+    def git_hash(cls) -> Optional[str]:
+        """The current git hash, if known."""
+        if cls.__git_hash_attr is None:
+            import subprocess
+
+            try:
+                cls.__git_hash_attr = (
+                    subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"], cwd=cls._root_dir
+                    )
+                    .decode("ascii")
+                    .strip()
+                )
+            except subprocess.CalledProcessError:
+                cls.__git_hash_attr = ""  # Non-None but empty.
+        # A non-None but empty value indicates that we don't know it.
+        return cls.__git_hash_attr if cls.__git_hash_attr else None
+
+    @classmethod
+    @property
+    def string(cls) -> str:
+        """The version string."""
+        if cls.__string_attr is None:
+            # If set, BUILD_VERSION should override any local version
+            # information. CI will use this to manage, e.g., release vs. nightly
+            # versions.
+            version = os.getenv("BUILD_VERSION", "").strip()
+            if not version:
+                # Otherwise, read the version from a local file and add the git
+                # commit if available.
+                version = (
+                    open(os.path.join(cls._root_dir, "version.txt")).read().strip()
+                )
+                if cls.git_hash:
+                    version += "+" + cls.git_hash[:7]
+            cls.__string_attr = version
+        return cls.__string_attr
+
+    @classmethod
+    def write_to_python_file(cls, path: str) -> None:
+        """Creates a file similar to PyTorch core's `torch/version.py`."""
+        lines = [
+            "from typing import Optional",
+            '__all__ = ["__version__", "git_version"]',
+            f'__version__ = "{cls.string}"',
+            # A string or None.
+            f"git_version: Optional[str] = {repr(cls.git_hash)}",
+        ]
+        with open(path, "w") as fp:
+            fp.write("\n".join(lines) + "\n")
 
 
 class _BaseExtension(Extension):
@@ -273,6 +345,9 @@ class CustomBuildPy(build_py):
         # python packages, so be sure to copy the files into the `executorch`
         # package subdirectory.
         dst_root = os.path.join(self.build_lib, self.get_package_dir("executorch"))
+
+        # Create the version file.
+        Version.write_to_python_file(os.path.join(dst_root, "version.py"))
 
         # Manually copy files into the output package directory. These are
         # typically python "resource" files that will live alongside the python
@@ -481,6 +556,7 @@ def get_ext_modules() -> list[Extension]:
 
 
 setup(
+    version=Version.string,
     # TODO(dbort): Could use py_modules to restrict the set of modules we
     # package, and package_data to restrict the set up non-python files we
     # include. See also setuptools/discovery.py for custom finders.

@@ -11,10 +11,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "executorch"
-# TODO(dbort): Use setuptools-git-versioning or setuptools-scm to get the
-# version from the git branch state. For now, use a version that doesn't look
-# like a real release.
-version = "0.2.1.dev0+unknown"
+dynamic = [
+  # setup.py will set the version.
+  'version',
+]
 # Python dependencies required for development
 dependencies=[
   "expecttest",
