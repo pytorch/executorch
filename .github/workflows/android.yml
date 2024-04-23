@@ -10,7 +10,8 @@ on:
       - .ci/docker/**
       - .github/workflows/android.yml
       - install_requirements.sh
-      - examples/demo-apps/**
+      - examples/demo-apps/android/**
+      - extension/android/**
       - extension/module/**
   workflow_dispatch:
 
@@ -21,7 +22,7 @@ concurrency:
 jobs:
   test-demo-android:
     name: test-demo-android
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
         include:
@@ -33,6 +34,7 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: android-apps
       script: |
         set -eux
 
@@ -45,3 +47,45 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Build Android demo app
         bash build/test_android_ci.sh
+
+        mkdir -p artifacts-to-be-uploaded
+        mkdir -p artifacts-to-be-uploaded/arm64-v8a/
+        mkdir -p artifacts-to-be-uploaded/x86_64/
+        # Copy the jar to S3
+        cp extension/android/build/libs/executorch.jar artifacts-to-be-uploaded/
+        # Copy the app and its test suite to S3
+        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk artifacts-to-be-uploaded/
+        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk artifacts-to-be-uploaded/
+        # Also copy the libraries
+        cp cmake-out-android-arm64-v8a/lib/*.a artifacts-to-be-uploaded/arm64-v8a/
+        cp cmake-out-android-arm64-v8a/extension/android/*.so artifacts-to-be-uploaded/arm64-v8a/
+        cp cmake-out-android-x86_64/lib/*.a artifacts-to-be-uploaded/x86_64/
+        cp cmake-out-android-x86_64/extension/android/*.so artifacts-to-be-uploaded/x86_64/
+
+  # Upload the app and its test suite to S3 so that they can be downloaded by the test job
+  upload-artifacts:
+    needs: test-demo-android
+    runs-on: linux.2xlarge
+    steps:
+      - name: Download the artifacts
+        uses: actions/download-artifact@v3
+        with:
+          # The name here needs to match the name of the upload-artifact parameter
+          name: android-apps
+          path: ${{ runner.temp }}/artifacts/
+
+      - name: Verify the artifacts
+        shell: bash
+        working-directory: ${{ runner.temp }}/artifacts/
+        run: |
+          ls -lah ./
+
+      - name: Upload the artifacts to S3
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifact
+          retention-days: 14
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/artifacts/
