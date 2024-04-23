@@ -15,9 +15,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-#include <executorch/backends/vulkan/runtime/graph/Logging.h>
-#include <iostream>
-
 namespace vkcompute {
 
 void add_unsqueeze_node(

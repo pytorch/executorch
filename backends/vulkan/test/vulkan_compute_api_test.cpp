@@ -287,7 +287,7 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
   vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
-  // No allocations made yet
+  // No allocations made so far
   EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   std::vector<float> data_a(a.gpu_numel());
@@ -332,7 +332,7 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   vTensor d = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
   vTensor e = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
-  // No allocations made yet
+  // No allocations made so far
   EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   // a and d can share the same memory allocation
@@ -347,7 +347,7 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   api::MemoryAllocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
-  // Only 3 allocations should be made
+  // 3 allocations should be made
   EXPECT_TRUE(get_vma_allocation_count() == 3);
 
   // Specify input data
@@ -421,7 +421,7 @@ TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
   std::vector<int64_t> sizes = {4, 4, 1};
   vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
-  // No allocations made yet
+  // No allocations yet
   EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   std::vector<float> data_a(a.gpu_numel());
@@ -711,9 +711,9 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       api::kFloat,
       /*shared_object_idx = */ 4);
 
-  // +4: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for each staging shader
+  // +2: t.sizes_ubo() for each staging shader
   // +2: staging buffer for each input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 6);
+  EXPECT_TRUE(get_vma_allocation_count() == 4);
 
   ValueRef c = graph.add_tensor(
       size_big,
@@ -728,10 +728,10 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       api::kFloat,
       /*shared_object_idx = */ 2);
 
-  // +3: out.gpu_sizes_ubo(), alpha UBO, broadcast UBO for arithmetic shader
-  // +2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() uniform buffer for staging shader
+  // +2: alpha UBO, broadcast UBO for arithmetic shader
+  // +1: t.sizes_ubo() uniform buffer for staging shader
   // +1: staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 12);
+  EXPECT_TRUE(get_vma_allocation_count() == 9);
 
   ValueRef e = graph.add_tensor(
       size_big,
@@ -746,15 +746,15 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   out.staging = graph.set_output_tensor(out.value);
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
-  // +2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for staging shader
+  // +1: t.sizes_ubo() for staging shader
   // +1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 17);
+  EXPECT_TRUE(get_vma_allocation_count() == 13);
 
   graph.prepare();
   graph.encode_execute();
 
   // +3: shared memory allocations for tensors
-  EXPECT_TRUE(get_vma_allocation_count() == 20);
+  EXPECT_TRUE(get_vma_allocation_count() == 16);
 
   // Run graph
 
@@ -911,11 +911,11 @@ void run_from_gpu_test(
 
   {
     api::PipelineBarrier pipeline_barrier{};
-    api::SpecVarList specialization_constants = {};
+    api::SpecVarList specialization_constants = {vten.gpu_memory_layout_int()};
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        vten.virtual_extents(),
+        vten.extents(),
         {4, 4, 4},
         specialization_constants,
         VK_NULL_HANDLE,
@@ -923,8 +923,7 @@ void run_from_gpu_test(
             pipeline_barrier,
             api::PipelineStage::COMPUTE,
             api::MemoryAccessType::WRITE),
-        vten.gpu_sizes_ubo()->buffer(),
-        vten.cpu_sizes_ubo()->buffer());
+        vten.sizes_ubo());
   }
 
   api::StorageBuffer staging_buffer(api::context(), dtype, vten.gpu_numel());

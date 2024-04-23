@@ -21,30 +21,26 @@ layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 layout(set = 0, binding = 2) uniform PRECISION sampler2D kernel_in;
 layout(set = 0, binding = 3) uniform PRECISION sampler2D bias_in;
 
-layout(set = 0, binding = 4) uniform PRECISION restrict OutExtents {
-  uvec4 data;
-}
-out_extents;
+layout(set = 0, binding = 4) uniform PRECISION restrict OutLimits {
+  ivec3 out_limits;
+};
 
-layout(set = 0, binding = 5) uniform PRECISION restrict InExtents {
-  uvec4 data;
-}
-in_extents;
+layout(set = 0, binding = 5) uniform PRECISION restrict InSizes {
+  ivec4 data;
+};
 
 layout(set = 0, binding = 6) uniform PRECISION restrict Params {
   ivec2 kernel_size;
   ivec2 stride;
   ivec2 padding;
   ivec2 dilation;
-}
-params;
+};
 
 // If fields are separated, SwiftShader cannot identify in_group_size.
 layout(set = 0, binding = 7) uniform PRECISION restrict ExtraParams {
   ivec2 overlay_region;
   int in_group_size;
-}
-extra_params;
+};
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -73,7 +69,7 @@ void main() {
 
   // If the top left position is out of bounds, then this invocation will have
   // no work to do.
-  if (any(greaterThanEqual(pos[0], out_extents.data.xyz))) {
+  if (any(greaterThanEqual(pos[0], out_limits))) {
     return;
   }
 
@@ -82,7 +78,7 @@ void main() {
   // the top-left element is in a region added by padding.
   ivec2 ipos[${TILE_SIZE * TILE_SIZE}];
   for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
-    ipos[i] = pos[i].xy * params.stride - params.padding;
+    ipos[i] = pos[i].xy * stride - padding;
   }
 
   vec4 sum[${TILE_SIZE * TILE_SIZE}];
@@ -92,7 +88,7 @@ void main() {
   }
 
   // Since the kernel is 1x1, we only have to loop over the depth dimension.
-  for (int z = 0, z4 = 0; z < extra_params.in_group_size; z += 4, ++z4) {
+  for (int z = 0, z4 = 0; z < in_group_size; z += 4, ++z4) {
     // During prepacking, the weight tensor has been permuted so that the
     // channel (IC) dim is along the x-axis, and the batch (OC) dim is along
     // the z-axis.
@@ -148,7 +144,7 @@ void main() {
   }
 
   for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
-    if (all(lessThan(pos[i], out_extents.data.xyz))) {
+    if (all(lessThan(pos[i], out_limits))) {
       imageStore(image_out, pos[i], sum[i]);
     }
   }

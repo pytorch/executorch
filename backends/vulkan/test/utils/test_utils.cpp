@@ -21,13 +21,14 @@ void record_nchw_to_image_op(
     api::VulkanBuffer& src_buffer,
     vTensor& v_dst) {
   api::PipelineBarrier pipeline_barrier{};
-  api::SpecVarList specialization_constants = {};
+  api::SpecVarList specialization_constants = {
+      SV(v_dst.gpu_memory_layout_int())};
 
   context->submit_compute_job(
       get_nchw_to_image_shader(v_dst),
       pipeline_barrier,
-      v_dst.virtual_extents(),
-      adaptive_work_group_size(v_dst.virtual_extents()),
+      v_dst.extents(),
+      adaptive_work_group_size(v_dst.extents()),
       specialization_constants,
       VK_NULL_HANDLE,
       v_dst.image(
@@ -35,8 +36,7 @@ void record_nchw_to_image_op(
           api::PipelineStage::COMPUTE,
           api::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.gpu_sizes_ubo()->buffer(),
-      v_dst.cpu_sizes_ubo()->buffer());
+      v_dst.sizes_ubo());
 }
 
 void record_image_to_nchw_op(
@@ -44,19 +44,19 @@ void record_image_to_nchw_op(
     vTensor& v_src,
     api::VulkanBuffer& dst_buffer) {
   api::PipelineBarrier pipeline_barrier{};
-  api::SpecVarList specialization_constants = {};
+  api::SpecVarList specialization_constants = {
+      SV(v_src.gpu_memory_layout_int())};
 
   context->submit_compute_job(
       get_image_to_nchw_shader(v_src),
       pipeline_barrier,
-      v_src.virtual_extents(),
-      adaptive_work_group_size(v_src.virtual_extents()),
+      v_src.extents(),
+      adaptive_work_group_size(v_src.extents()),
       specialization_constants,
       VK_NULL_HANDLE,
       v_src.image(pipeline_barrier, api::PipelineStage::COMPUTE),
       dst_buffer,
-      v_src.gpu_sizes_ubo()->buffer(),
-      v_src.cpu_sizes_ubo()->buffer());
+      v_src.sizes_ubo());
 }
 
 void record_conv2d_prepack_weights_op(
@@ -87,8 +87,8 @@ void record_conv2d_prepack_weights_op(
   context->submit_compute_job(
       shader,
       pipeline_barrier,
-      v_dst.virtual_extents(),
-      adaptive_work_group_size(v_dst.virtual_extents()),
+      v_dst.extents(),
+      adaptive_work_group_size(v_dst.extents()),
       specialization_constants,
       VK_NULL_HANDLE,
       v_dst.image(
@@ -96,7 +96,7 @@ void record_conv2d_prepack_weights_op(
           api::PipelineStage::COMPUTE,
           api::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.gpu_sizes_ubo()->buffer(),
+      v_dst.sizes_ubo(),
       original_sizes_ubo.buffer(),
       padded_sizes_ubo.buffer());
 }
@@ -115,8 +115,8 @@ void record_binary_op(
   context->submit_compute_job(
       VK_KERNEL_FROM_STR(kernel_name),
       pipeline_barrier,
-      v_dst.virtual_extents(),
-      adaptive_work_group_size(v_dst.virtual_extents()),
+      v_dst.extents(),
+      adaptive_work_group_size(v_dst.extents()),
       specialization_constants,
       VK_NULL_HANDLE,
       v_dst.image(
@@ -125,7 +125,7 @@ void record_binary_op(
           api::MemoryAccessType::WRITE),
       v_in1.image(pipeline_barrier, api::PipelineStage::COMPUTE),
       v_in2.image(pipeline_barrier, api::PipelineStage::COMPUTE),
-      v_dst.extents_ubo()->buffer());
+      v_dst.sizes_ubo());
 }
 
 void execute_and_check_add(

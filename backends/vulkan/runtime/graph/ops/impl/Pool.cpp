@@ -94,11 +94,13 @@ void add_max_pool2d_node(
        {arg, api::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          t_out->extents_ubo(),
-          t_in->extents_ubo(),
+          t_out->texture_limits_ubo(),
+          t_in->sizes_ubo(),
           graph.create_params_buffer(kernel_params),
       },
-      // Resizing
+      // Specialization Constants
+      {},
+      // Resizing Logic
       resize_max_pool2d_node,
       {kernel_size, stride, padding, dilation, ceil_mode}));
 }

@@ -88,7 +88,10 @@ class ModelArgs:
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
     )
-    rope_freq_base: float = 10000.0  # The base frequency for RoPE
+    rope_theta: Optional[float] = (
+        None  # The official name to override self.rope_freq_base.
+    )
+    rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
     # Additional Model Metadata needed at runtime
     bos_idx: int = 1
     eos_idx: int = 3
@@ -98,6 +101,10 @@ class ModelArgs:
     def __post_init__(self):
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
+
+        # rope_theta overrides rope_freq_base since it's the official name.
+        if self.rope_theta is not None:
+            self.rope_freq_base = self.rope_theta
 
         if self.use_sdpa_with_kv_cache_op:
             assert self.use_kv_cache, "use_sdpa_with_kv_cache_op requires use_kv_cache"

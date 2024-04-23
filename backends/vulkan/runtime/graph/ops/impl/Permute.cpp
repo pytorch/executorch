@@ -10,8 +10,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
-#include <executorch/backends/vulkan/runtime/api/api.h>
-
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -82,7 +80,7 @@ void add_permute_node(
       {out_c_aligned, in_c_aligned},
   };
 
-  api::utils::uvec3 global_size = t_out->virtual_extents();
+  api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
@@ -91,7 +89,14 @@ void add_permute_node(
       global_size,
       local_size,
       {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
-      {t_out->gpu_sizes_ubo(), graph.create_params_buffer(params)}));
+      {t_out->texture_limits_ubo(),
+       t_out->sizes_ubo(),
+       graph.create_params_buffer(params)},
+      // Specialization Constants
+      {},
+      // Resizing Logic
+      nullptr,
+      {}));
 }
 
 void add_permute_node(

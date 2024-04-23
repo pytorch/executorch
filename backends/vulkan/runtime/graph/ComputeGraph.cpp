@@ -59,6 +59,7 @@ ComputeGraph::ComputeGraph(GraphConfig config)
           config_.contextConfig)},
       shared_objects_{},
       values_{},
+      param_ubos_{},
       prepack_nodes_{},
       execute_nodes_{},
       inputs_{},

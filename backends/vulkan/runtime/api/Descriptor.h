@@ -20,6 +20,20 @@
 namespace vkcompute {
 namespace api {
 
+/*
+ * Stores the binding information of a Vulkan Buffer so that the buffer can be
+ * bound at a later time. This struct should only be used if the buffer to be
+ * bound is guaranteed to be active at the time of binding.
+ */
+struct BufferBindInfo final {
+  VkBuffer handle;
+  VkDeviceSize offset;
+  VkDeviceSize range;
+
+  BufferBindInfo();
+  BufferBindInfo(const VulkanBuffer& buffer_p);
+};
+
 class DescriptorSet final {
  public:
   explicit DescriptorSet(VkDevice, VkDescriptorSet, ShaderLayout::Signature);
@@ -50,6 +64,7 @@ class DescriptorSet final {
   std::vector<ResourceBinding> bindings_;
 
  public:
+  DescriptorSet& bind(const uint32_t, const BufferBindInfo&);
   DescriptorSet& bind(const uint32_t, const VulkanBuffer&);
   DescriptorSet& bind(const uint32_t, const VulkanImage&);
 

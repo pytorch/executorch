@@ -42,7 +42,7 @@ add_compile_options("-Wall" "-Werror")
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options -Wno-deprecated-declarations -fPIC -DET_EVENT_TRACER_ENABLED)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -51,7 +51,7 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 # portable_ops_lib, etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
 target_include_directories(executorch INTERFACE ${_common_include_directories})
-target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
+target_compile_options(executorch INTERFACE ${_common_compile_options})
 
 find_package(
   gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party
@@ -73,7 +73,7 @@ generate_bindings_for_kernels(
   FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
 )
 gen_operators_lib(
-  "portable_ops_lib"
+  "mps_portable_ops_lib"
   KERNEL_LIBS portable_kernels
   DEPS executorch)
 
@@ -107,9 +107,9 @@ list(TRANSFORM _mps_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_executable(mps_executor_runner ${_mps_executor_runner__srcs})
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
-    set(FLATCC_LIB flatcc_d)
+  set(FLATCC_LIB flatccrt_d)
 else()
-    set(FLATCC_LIB flatcc)
+  set(FLATCC_LIB flatccrt)
 endif()
 
 target_link_libraries(mps_executor_runner bundled_program
@@ -117,7 +117,7 @@ target_link_libraries(mps_executor_runner bundled_program
                                           etdump
                                           ${FLATCC_LIB}
                                           mpsdelegate
-                                          portable_ops_lib
+                                          mps_portable_ops_lib
                                           ${mps_executor_runner_libs})
 target_compile_options(mps_executor_runner PUBLIC ${_common_compile_options})
 endif()
