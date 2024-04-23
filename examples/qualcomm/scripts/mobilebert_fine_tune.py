@@ -204,6 +204,8 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
             )
 
     model.load_state_dict(
+        # TODO: If possible, it's better to set weights_only to True
+        # https://pytorch.org/docs/stable/generated/torch.load.html
         torch.load(
             (
                 f"{artifacts_dir}/finetuned_mobilebert_epoch_{epochs}.model"

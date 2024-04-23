@@ -109,6 +109,8 @@ def SSD300VGG16(pretrained_weight_model):
     from model import SSD300
 
     model = SSD300(n_classes=21)
+    # TODO: If possible, it's better to set weights_only to True
+    # https://pytorch.org/docs/stable/generated/torch.load.html
     checkpoint = torch.load(
         pretrained_weight_model, map_location="cpu", weights_only=False
     )
