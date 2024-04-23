@@ -176,7 +176,8 @@ the checkpoint format to avoid generating faulty models.
 
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
-            from .quantize import WeightOnlyInt8QuantHandler
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.examples.models.source_transformation.quantize`
+            from ..source_transformation.quantize import WeightOnlyInt8QuantHandler
 
             simple_quantizer = WeightOnlyInt8QuantHandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
