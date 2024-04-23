@@ -465,7 +465,7 @@ models.</p>
 <p>This tutorial will show a full end-to-end flow of how to utilize the SDK.
 Specifically, it will:</p>
 <ol class="arabic simple">
-<li><p>Generate the artifacts consumed by the SDK (<a class="reference external" href="../sdk-etrecord">ETRecord</a>, <a class="reference external" href="../sdk-etdump.html">ETDump</a>).</p></li>
+<li><p>Generate the artifacts consumed by the SDK (<a class="reference external" href="../sdk-etrecord.html">ETRecord</a>, <a class="reference external" href="../sdk-etdump.html">ETDump</a>).</p></li>
 <li><p>Create an Inspector class consuming these artifacts.</p></li>
 <li><p>Utilize the Inspector class to analyze the model.</p></li>
 </ol>
@@ -481,7 +481,7 @@ graphs and metadata for linking runtime results (such as profiling) to
 the eager model. This is generated via <code class="docutils literal notranslate"><span class="pre">executorch.sdk.generate_etrecord</span></code>.</p>
 <p><code class="docutils literal notranslate"><span class="pre">executorch.sdk.generate_etrecord</span></code> takes in an output file path (str), the
 edge dialect model (<code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>), the ExecuTorch dialect model
-(<code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager</span></code>), and an optional dictionary of additional models</p>
+(<code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager</span></code>), and an optional dictionary of additional models.</p>
 <p>In this tutorial, an example model (shown below) is used to demonstrate.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">copy</span>
 
@@ -545,9 +545,9 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>Users should do a deepcopy of the output of to_edge() and pass in the
-deepcopy to the generate_etrecord API. This is needed because the
-subsequent call, to_executorch(), does an in-place mutation and will
+<p>Users should do a deepcopy of the output of <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and pass in the
+deepcopy to the <code class="docutils literal notranslate"><span class="pre">generate_etrecord</span></code> API. This is needed because the
+subsequent call, <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, does an in-place mutation and will
 lose debug data in the process.</p>
 </div>
 </div>
@@ -597,17 +597,9 @@ from executing a <a class="reference external" href="../sdk-bundled-io.html">Bun
     <a href="https://docs.python.org/3/library/io.html#io.BufferedWriter" title="io.BufferedWriter" class="sphx-glr-backref-module-io sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">f</span></a><span class="o">.</span><span class="n">write</span><span class="p">(</span><a href="https://docs.python.org/3/library/stdtypes.html#bytes" title="builtins.bytes" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">serialized_bundled_program</span></a><span class="p">)</span>
 </pre></div>
 </div>
-<p>We provide 2 ways of executing the Bundled Model to generate the <code class="docutils literal notranslate"><span class="pre">ETDump</span></code>:</p>
-<p><strong>Option 1:</strong></p>
-<p>Use Buck (follow <a class="reference external" href="../getting-started-setup.html#building-a-runtime">these instructions</a> to set up buck):</p>
+<p>Use CMake (follow <a class="reference external" href="../runtime-build-and-cross-compilation.html#configure-the-cmake-build">these instructions</a> to set up cmake) to execute the Bundled Program to generate the <code class="docutils literal notranslate"><span class="pre">ETDump</span></code>:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">executorch</span>
-<span class="n">buck2</span> <span class="n">run</span> <span class="o">-</span><span class="n">c</span> <span class="n">executorch</span><span class="o">.</span><span class="n">event_tracer_enabled</span><span class="o">=</span><span class="n">true</span> <span class="n">examples</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">sdk_example_runner</span><span class="p">:</span><span class="n">sdk_example_runner</span> <span class="o">--</span> <span class="o">--</span><span class="n">bundled_program_path</span> <span class="o">&lt;</span><span class="n">bundled_program</span><span class="o">&gt;</span>
-</pre></div>
-</div>
-<p><strong>Option 2:</strong></p>
-<p>Use CMake (follow <a class="reference external" href="../runtime-build-and-cross-compilation.html#configure-the-cmake-build">these instructions</a> to set up cmake):</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">executorch</span>
-<span class="n">rm</span> <span class="o">-</span><span class="n">rf</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">mkdir</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cd</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cmake</span> <span class="o">-</span><span class="n">DBUCK2</span><span class="o">=</span><span class="n">buck2</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_SDK</span><span class="o">=</span><span class="mi">1</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER</span><span class="o">=</span><span class="mi">1</span> <span class="o">..</span>
+<span class="n">rm</span> <span class="o">-</span><span class="n">rf</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">mkdir</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cd</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cmake</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_SDK</span><span class="o">=</span><span class="mi">1</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER</span><span class="o">=</span><span class="mi">1</span> <span class="o">..</span>
 <span class="n">cd</span> <span class="o">..</span>
 <span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">-</span><span class="n">j8</span> <span class="o">-</span><span class="n">t</span> <span class="n">sdk_example_runner</span>
 <span class="o">./</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">sdk_example_runner</span> <span class="o">--</span><span class="n">bundled_program_path</span> <span class="o">&lt;</span><span class="n">bundled_program</span><span class="o">&gt;</span>
@@ -714,11 +706,11 @@ to analyze the model run results.</p>
 <h3>Links Mentioned<a class="headerlink" href="#links-mentioned" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><a class="reference external" href="../sdk-overview.html">ExecuTorch SDK</a></p></li>
-<li><p><a class="reference external" href="../sdk-etrecord">ETRecord</a></p></li>
+<li><p><a class="reference external" href="../sdk-etrecord.html">ETRecord</a></p></li>
 <li><p><a class="reference external" href="../sdk-etdump.html">ETDump</a></p></li>
 <li><p><a class="reference external" href="../sdk-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.092 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.061 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-sdk-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/00f28feeccb75cde665e2acd0ca1eb2e/sdk-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">sdk-integration-tutorial.py</span></code></a></p>
