@@ -120,9 +120,14 @@ if(ANDROID)
   list(APPEND link_libraries log)
 endif()
 
-target_compile_options(llama_main PUBLIC ${_common_compile_options}
-  -DET_USE_THREADPOOL)
-target_link_libraries(llama_main PUBLIC ${link_libraries})
+add_executable(llama_main ${_srcs})
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
+endif()
+
+target_include_directories(llama_main PUBLIC ${_common_include_directories})
+target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
+target_compile_options(llama_main PUBLIC ${_common_compile_options})
 
 if(APPLE)
   target_link_options_shared_lib(executorch)
