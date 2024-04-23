@@ -102,10 +102,18 @@ class ArmCompileSpecBuilder:
         return self
 
     def set_permute_memory_format(self, set_nhwc_permutation: bool = True):
+        """
+        Permute to channel last in compiler and runtime. Compilation and
+        runtime will convert rank 4 inputs to channel last for each sub-graph.
+        """
         self.permute_nhwc = set_nhwc_permutation
         return self
 
     def set_quantize_io(self, quantize_io: bool = False):
+        """
+        Quantization of inputs and dequantization of outputs for cases where
+        whole graph is quantized and method signature is not of quantized type.
+        """
         self.quantize_io = quantize_io
         return self
 
