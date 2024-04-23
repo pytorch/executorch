@@ -456,6 +456,7 @@
 <div class="section" id="step-2-construct-list-methodtestsuite-to-hold-test-info">
 <h3>Step 2: Construct <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold test info<a class="headerlink" href="#step-2-construct-list-methodtestsuite-to-hold-test-info" title="Permalink to this heading">¶</a></h3>
 <p>In <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code>, we create two new classes, <code class="docutils literal notranslate"><span class="pre">MethodTestCase</span></code> and <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code>, to hold essential info for ExecuTorch program verification.</p>
+<p><code class="docutils literal notranslate"><span class="pre">MethodTestCase</span></code> represents a single testcase. Each <code class="docutils literal notranslate"><span class="pre">MethodTestCase</span></code> contains inputs and expected outputs for a single execution.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <code class="docutils literal notranslate"><span class="pre">MethodTestCase</span></code><div class="sd-summary-down docutils">
@@ -472,7 +473,7 @@
 <dd class="field-odd"><ul class="simple">
 <li><p class="sd-card-text"><strong>input</strong> – <p class="sd-card-text">All inputs required by eager_model with specific inference method for one-time execution.</p>
 <p class="sd-card-text">It is worth mentioning that, although both bundled program and ET runtime apis support setting input
-other than torch.tensor type, only the input in torch.tensor type will be actually updated in
+other than <cite>torch.tensor</cite> type, only the input in <cite>torch.tensor</cite> type will be actually updated in
 the method, and the rest of the inputs will just do a sanity check if they match the default value in method.</p>
 </p></li>
 <li><p class="sd-card-text"><strong>expected_output</strong> – Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.</p></li>
@@ -485,7 +486,8 @@ the method, and the rest of the inputs will just do a sanity check if they match
 </dd></dl>
 
 </div>
-</details><details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+</details><p><code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code> contains all testing info for single method, including a str representing method name, and a <code class="docutils literal notranslate"><span class="pre">List[MethodTestCase]</span></code> for all testcases:</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code><div class="sd-summary-down docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
@@ -515,7 +517,8 @@ the method, and the rest of the inputs will just do a sanity check if they match
 </div>
 <div class="section" id="step-3-generate-bundledprogram">
 <h3>Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><a class="headerlink" href="#step-3-generate-bundledprogram" title="Permalink to this heading">¶</a></h3>
-<p>We provide <code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> API under <code class="docutils literal notranslate"><span class="pre">executorch/sdk/bundled_program/core.py</span></code> to generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by bundling the emitted ExecuTorch program with the <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code>:</p>
+<p>We provide <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> class under <code class="docutils literal notranslate"><span class="pre">executorch/sdk/bundled_program/core.py</span></code> to bundled the <code class="docutils literal notranslate"><span class="pre">ExecutorchProgram</span></code>-like variable, including
+<code class="docutils literal notranslate"><span class="pre">ExecutorchProgram</span></code>, <code class="docutils literal notranslate"><span class="pre">MultiMethodExecutorchProgram</span></code> or <code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager</span></code>, with the <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code>:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><div class="sd-summary-down docutils">
@@ -523,8 +526,22 @@ the method, and the rest of the inputs will just do a sanity check if they match
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.sdk.bundled_program.core.BundledProgram.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">executorch_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method_test_suites</span></span></em><span class="sig-paren">)</span></dt>
+<dd><p class="sd-card-text">Create BundledProgram by bundling the given program and method_test_suites together.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p class="sd-card-text"><strong>executorch_program</strong> – The program to be bundled.</p></li>
+<li><p class="sd-card-text"><strong>method_test_suites</strong> – The testcases for certain methods to be bundled.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
 </div>
-</details><p><code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> will do sannity check internally to see if the given <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> matches the given Program’s requirements. Specifically:</p>
+</details><p>Construtor of <code class="docutils literal notranslate"><span class="pre">BundledProgram</span> </code>will do sannity check internally to see if the given <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> matches the given Program’s requirements. Specifically:</p>
 <ol class="arabic simple">
 <li><p>The method_names of each <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code> in <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> for should be also in program. Please notice that it is no need to set testcases for every method in the Program.</p></li>
 <li><p>The metadata of each testcase should meet the requirement of the coresponding inference methods input.</p></li>
@@ -573,20 +590,20 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <div class="section" id="emit-example">
 <h3>Emit Example<a class="headerlink" href="#emit-example" title="Permalink to this heading">¶</a></h3>
 <p>Here is a flow highlighting how to generate a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> given a PyTorch model and the representative inputs we want to test it along with.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span>
-<span class="kn">import</span> <span class="nn">torch</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
+
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
 
 <span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
 <span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.serialize</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">,</span>
 <span class="p">)</span>
-
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span> <span class="nn">torch._export</span> <span class="kn">import</span> <span class="n">capture_pre_autograd_graph</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
 
-<span class="c1"># Step 1: ExecuTorch Program Export</span>
 
+<span class="c1"># Step 1: ExecuTorch Program Export</span>
 <span class="k">class</span> <span class="nc">SampleModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;An example model with multi-methods. Each method has multiple input and single output&quot;&quot;&quot;</span>
 
@@ -595,7 +612,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
         <span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">=</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">encode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="n">z</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">z</span><span class="p">)</span>
         <span class="n">y</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
@@ -603,74 +620,62 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
         <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">y</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">y</span>
 
-    <span class="k">def</span> <span class="nf">decode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-        <span class="n">y</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">q</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">y</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">y</span>
 
-<span class="c1"># Inference method names of SampleModel we want to bundle testcases to.</span>
+<span class="c1"># Inference method name of SampleModel we want to bundle testcases to.</span>
 <span class="c1"># Notices that we do not need to bundle testcases for every inference methods.</span>
-<span class="n">method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;encode&quot;</span><span class="p">,</span> <span class="s2">&quot;decode&quot;</span><span class="p">]</span>
+<span class="n">method_name</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">SampleModel</span><span class="p">()</span>
 
-<span class="n">capture_inputs</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="n">m_name</span><span class="p">:</span> <span class="p">(</span>
-        <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
-        <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
-    <span class="p">)</span>
-    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
-<span class="p">}</span>
+<span class="c1"># Inputs for graph capture.</span>
+<span class="n">capture_input</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
+<span class="p">)</span>
 
-<span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
-<span class="n">method_graphs</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="n">m_name</span><span class="p">:</span> <span class="n">export</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">),</span> <span class="n">capture_inputs</span><span class="p">[</span><span class="n">m_name</span><span class="p">])</span>
-    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
-<span class="p">}</span>
+<span class="c1"># Export method&#39;s FX Graph.</span>
+<span class="n">method_graph</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span>
+    <span class="n">capture_pre_autograd_graph</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">capture_input</span><span class="p">),</span>
+    <span class="n">capture_input</span><span class="p">,</span>
+<span class="p">)</span>
 
-<span class="c1"># Emit the traced methods into ET Program.</span>
-<span class="n">program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graphs</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span><span class="o">.</span><span class="n">executorch_program</span>
+
+<span class="c1"># Emit the traced method into ET Program.</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graph</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="c1"># Step 2: Construct MethodTestSuite for Each Method</span>
 
 <span class="c1"># Prepare the Test Inputs.</span>
 
-<span class="c1"># number of input sets to be verified</span>
+<span class="c1"># Number of input sets to be verified</span>
 <span class="n">n_input</span> <span class="o">=</span> <span class="mi">10</span>
 
-<span class="c1"># Input sets to be verified for each inference methods.</span>
-<span class="c1"># To simplify, here we create same inputs for all methods.</span>
-<span class="n">inputs</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="c1"># Inference method name corresponding to its test cases.</span>
-    <span class="n">m_name</span><span class="p">:</span> <span class="p">[</span>
-        <span class="c1"># Each list below is a individual input set.</span>
-        <span class="c1"># The number of inputs, dtype and size of each input follow Program&#39;s spec.</span>
-        <span class="p">[</span>
-            <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
-            <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
-        <span class="p">]</span>
-        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_input</span><span class="p">)</span>
+<span class="c1"># Input sets to be verified.</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="c1"># Each list below is a individual input set.</span>
+    <span class="c1"># The number of inputs, dtype and size of each input follow Program&#39;s spec.</span>
+    <span class="p">[</span>
+        <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
+        <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">),</span>
     <span class="p">]</span>
-    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
-<span class="p">}</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_input</span><span class="p">)</span>
+<span class="p">]</span>
 
 <span class="c1"># Generate Test Suites</span>
 <span class="n">method_test_suites</span> <span class="o">=</span> <span class="p">[</span>
     <span class="n">MethodTestSuite</span><span class="p">(</span>
-        <span class="n">method_name</span><span class="o">=</span><span class="n">m_name</span><span class="p">,</span>
+        <span class="n">method_name</span><span class="o">=</span><span class="n">method_name</span><span class="p">,</span>
         <span class="n">test_cases</span><span class="o">=</span><span class="p">[</span>
             <span class="n">MethodTestCase</span><span class="p">(</span>
                 <span class="n">inputs</span><span class="o">=</span><span class="nb">input</span><span class="p">,</span>
-                <span class="n">expected_outputs</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),</span>
+                <span class="n">expected_outputs</span><span class="o">=</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">method_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),</span> <span class="p">),</span>
             <span class="p">)</span>
-            <span class="k">for</span> <span class="nb">input</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="n">m_name</span><span class="p">]</span>
+            <span class="k">for</span> <span class="nb">input</span> <span class="ow">in</span> <span class="n">inputs</span>
         <span class="p">],</span>
-    <span class="p">)</span>
-    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+    <span class="p">),</span>
 <span class="p">]</span>
 
 <span class="c1"># Step 3: Generate BundledProgram</span>
-
-<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">BundledProgram</span><span class="p">(</span><span class="n">et_program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
 
 <span class="c1"># Step 4: Serialize BundledProgram to flatbuffer.</span>
 <span class="n">serialized_bundled_program</span> <span class="o">=</span> <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
@@ -820,10 +825,10 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <p>Here’s the example of the dtype of test input not meet model’s requirement:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
-
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
+
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
 
 
@@ -844,15 +849,16 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <span class="n">model</span> <span class="o">=</span> <span class="n">Module</span><span class="p">()</span>
 <span class="n">method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;forward&quot;</span><span class="p">]</span>
 
-<span class="n">inputs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">),</span> <span class="p">)</span>
 
 <span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
-<span class="n">method_graphs</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="n">m_name</span><span class="p">:</span> <span class="n">export</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">),</span> <span class="p">(</span><span class="n">inputs</span><span class="p">,))</span> <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
-<span class="p">}</span>
+<span class="n">method_graph</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span>
+    <span class="n">capture_pre_autograd_graph</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">),</span>
+    <span class="n">inputs</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="c1"># Emit the traced methods into ET Program.</span>
-<span class="n">program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graphs</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span><span class="o">.</span><span class="n">executorch_program</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graph</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="c1"># number of input sets to be verified</span>
 <span class="n">n_input</span> <span class="o">=</span> <span class="mi">10</span>
@@ -878,7 +884,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
         <span class="n">test_cases</span><span class="o">=</span><span class="p">[</span>
             <span class="n">MethodTestCase</span><span class="p">(</span>
                 <span class="n">inputs</span><span class="o">=</span><span class="nb">input</span><span class="p">,</span>
-                <span class="n">expected_outputs</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),</span>
+                <span class="n">expected_outputs</span><span class="o">=</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),),</span>
             <span class="p">)</span>
             <span class="k">for</span> <span class="nb">input</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="n">m_name</span><span class="p">]</span>
         <span class="p">],</span>
@@ -888,7 +894,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 
 <span class="c1"># Generate BundledProgram</span>
 
-<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">BundledProgram</span><span class="p">(</span><span class="n">et_program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
 </pre></div>
 </div>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
@@ -957,10 +963,10 @@ Raised Error<div class="sd-summary-down docutils">
 <p>Another common error would be the method name in any <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code> does not exist in Model. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error and show the non-exist method name:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
-
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
+
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
 
 
@@ -979,18 +985,18 @@ Raised Error<div class="sd-summary-down docutils">
 
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">Module</span><span class="p">()</span>
-
 <span class="n">method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;forward&quot;</span><span class="p">]</span>
 
-<span class="n">inputs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">),)</span>
 
 <span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
-<span class="n">method_graphs</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="n">m_name</span><span class="p">:</span> <span class="n">export</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">),</span> <span class="p">(</span><span class="n">inputs</span><span class="p">,))</span> <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
-<span class="p">}</span>
+<span class="n">method_graph</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span>
+    <span class="n">capture_pre_autograd_graph</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">inputs</span><span class="p">),</span>
+    <span class="n">inputs</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="c1"># Emit the traced methods into ET Program.</span>
-<span class="n">program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graphs</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span><span class="o">.</span><span class="n">executorch_program</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graph</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="c1"># number of input sets to be verified</span>
 <span class="n">n_input</span> <span class="o">=</span> <span class="mi">10</span>
@@ -1015,7 +1021,7 @@ Raised Error<div class="sd-summary-down docutils">
         <span class="n">test_cases</span><span class="o">=</span><span class="p">[</span>
             <span class="n">MethodTestCase</span><span class="p">(</span>
                 <span class="n">inputs</span><span class="o">=</span><span class="nb">input</span><span class="p">,</span>
-                <span class="n">expected_outputs</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),</span>
+                <span class="n">expected_outputs</span><span class="o">=</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),),</span>
             <span class="p">)</span>
             <span class="k">for</span> <span class="nb">input</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="n">m_name</span><span class="p">]</span>
         <span class="p">],</span>
@@ -1027,7 +1033,7 @@ Raised Error<div class="sd-summary-down docutils">
 <span class="n">method_test_suites</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">method_name</span> <span class="o">=</span> <span class="s2">&quot;MISSING_METHOD_NAME&quot;</span>
 
 <span class="c1"># Generate BundledProgram</span>
-<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">BundledProgram</span><span class="p">(</span><span class="n">et_program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
 
 </pre></div>
 </div>
