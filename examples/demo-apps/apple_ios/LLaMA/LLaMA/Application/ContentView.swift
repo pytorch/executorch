@@ -150,6 +150,7 @@ struct ContentView: View {
         }
       }
     }
+    .navigationViewStyle(StackNavigationViewStyle())
   }
 
   private func generate() {
