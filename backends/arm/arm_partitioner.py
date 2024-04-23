@@ -56,6 +56,7 @@ class TOSASupportedOperators(OperatorSupportBase):
         # Override partitioning based on pre partition passes
         if supported and "arm_partition" in node.meta:
             supported = supported & node.meta["arm_partition"]
+            node.meta.pop("arm_partition")
 
         return supported
 
