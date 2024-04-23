@@ -49,11 +49,16 @@ jobs:
         bash build/test_android_ci.sh
 
         mkdir -p artifacts-to-be-uploaded
+        mkdir -p artifacts-to-be-uploaded/arm64-v8a/
+        mkdir -p artifacts-to-be-uploaded/x86_64/
         # Copy the app and its test suite to S3
         cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk artifacts-to-be-uploaded/
         cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk artifacts-to-be-uploaded/
         # Also copy the share libraries
-        cp cmake-out-android/lib/*.a artifacts-to-be-uploaded/
+        cp cmake-out-android-arm64-v8a/lib/*.a artifacts-to-be-uploaded/arm64-v8a/
+        cp cmake-out-android-arm64-v8a/extension/android/*.so artifacts-to-be-uploaded/arm64-v8a/
+        cp cmake-out-android-x86_64/lib/*.a artifacts-to-be-uploaded/x86_64/
+        cp cmake-out-android-x86_64/extension/android/*.so artifacts-to-be-uploaded/x86_64/
 
   # Upload the app and its test suite to S3 so that they can be downloaded by the test job
   upload-artifacts:
