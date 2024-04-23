@@ -413,7 +413,8 @@ if(EXECUTORCH_BUILD_OPTIMIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
 
-if(EXECUTORCH_BUILD_QUANTIZED)
+if(EXECUTORCH_BUILD_QUANTIZED OR EXECUTORCH_BUILD_PYBIND)
+  set(EXECUTORCH_BUILD_QUANTIZED_OPS_AOT ON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
 endif()
 
@@ -541,6 +542,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       executorch
       extension_data_loader
       portable_ops_lib
+      quantized_ops_aot_lib
       util
       torch)
 

@@ -56,7 +56,8 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode" AND EXECUTORCH_BUILD_QUANTIZED_OPS_AOT)
   # Build a AOT library to register quantized ops into PyTorch. This is a hack.
   set(_quantized_sources
       ${_quantized_kernels__srcs}
-      ${EXECUTORCH_ROOT}/runtime/core/exec_aten/util/tensor_util_aten.cpp)
+      ${EXECUTORCH_ROOT}/runtime/core/exec_aten/util/tensor_util_aten.cpp
+      ${EXECUTORCH_ROOT}/kernels/portable/cpu/util/reduce_util.cpp)
   gen_custom_ops_aot_lib("quantized_ops_aot_lib" "${_quantized_sources}")
 endif()
 
