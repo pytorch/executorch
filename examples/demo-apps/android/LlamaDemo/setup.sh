@@ -34,6 +34,9 @@ cmake examples/models/llama2 \
          -DANDROID_ABI="$ANDROID_ABI" \
          -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
          -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
+         -DEXECUTORCH_BUILD_CUSTOM=ON \
+         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+         -DEXECUTORCH_BUILD_XNNPACK=ON \
          -DCMAKE_BUILD_TYPE=Release \
          -B"${CMAKE_OUT}"/examples/models/llama2
 
