@@ -1190,7 +1190,11 @@ class TestMPSUnitOpTesting(TestMPS):
         x = torch.arange(0, 12).resize(4, 3)
         rows = torch.tensor([[0, 0], [3, 3]])
         columns = torch.tensor([[0, 2], [0, 2]])
-        model_inputs = (x, rows, columns, )
+        model_inputs = (
+            x,
+            rows,
+            columns,
+        )
 
         self.lower_and_test_with_partitioner(
             module, model_inputs, func_name=inspect.stack()[0].function[5:]

@@ -3,10 +3,12 @@
 #  Provided subject to the LICENSE file in the top level directory.
 #
 
-from torch._export.exported_program import ExportedProgram
-import torch
-import time
 import logging
+import time
+
+import torch
+from torch._export.exported_program import ExportedProgram
+
 
 def assert_outputs_equal(model_output, ref_output):
     """
@@ -19,16 +21,19 @@ def assert_outputs_equal(model_output, ref_output):
     # Compare the result from executor and eager mode direclty
     if isinstance(ref_output, tuple) or isinstance(ref_output, list):
         # Multiple outputs executor always returns tuple, even if there is one output
-        assert len(ref_output) == len(model_output), "Length of outputs is not matching!"
+        assert len(ref_output) == len(
+            model_output
+        ), "Length of outputs is not matching!"
         for i in range(len(ref_output)):
-            assert(
-                torch.allclose(
-                    model_output[i], ref_output[i], atol=1e-03, rtol=1e-03
-                )
+            assert torch.allclose(
+                model_output[i], ref_output[i], atol=1e-03, rtol=1e-03
             )
     else:
         # If one output, eager returns tensor while executor tuple of size 1
-        assert torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03), "Outputs are not matching!"
+        assert torch.allclose(
+            model_output[0], ref_output, atol=1e-03, rtol=1e-03
+        ), "Outputs are not matching!"
+
 
 def bench_forward(func, *args):
     # warmup
@@ -41,17 +46,21 @@ def bench_forward(func, *args):
     end = time.time()
     return end - start
 
+
 def executorch_forward_pass(model, inputs):
     for _ in range(10):
         model.forward(inputs)
 
+
 def synchronize():
     torch.mps.synchronize()
+
 
 def pytorch_forward_pass(model, inputs):
     for _ in range(10):
         model(*inputs)
     synchronize()
+
 
 def get_mps_inputs(inputs):
     inputs_mps = []
@@ -60,19 +69,20 @@ def get_mps_inputs(inputs):
     inputs_mps = tuple(inputs_mps)
     return inputs_mps
 
+
 def get_executorch_model(executorch_program: ExportedProgram):
     try:
         from executorch.extension.pybindings.portable_lib import (  # @manual
             _load_for_executorch_from_buffer,
         )
-        return  _load_for_executorch_from_buffer(
-            executorch_program.buffer
-        )
+
+        return _load_for_executorch_from_buffer(executorch_program.buffer)
     except ImportError:
         logging.info(
             "ExecuTorch MPS delegate was built without pybind support (not possible to run forward pass within python)"
         )
         return None
+
 
 def bench_torch(executorch_program: ExportedProgram, model, inputs, model_name):
     model = model.to("mps")
@@ -86,7 +96,10 @@ def bench_torch(executorch_program: ExportedProgram, model, inputs, model_name):
         logging.info(f"Model name: {model_name}")
         logging.info(f"Pytorch MPS forward pass: {t_pytorch} seconds")
         logging.info(f"ExecuTorch MPS forward pass: {t_executorch} seconds")
-        logging.info(f"ExecuTorch speedup: {((t_pytorch - t_executorch) / t_pytorch) * 100}%")
+        logging.info(
+            f"ExecuTorch speedup: {((t_pytorch - t_executorch) / t_pytorch) * 100}%"
+        )
+
 
 def compare_outputs(executorch_program: ExportedProgram, model, inputs, model_name):
     inputs_copy = []
@@ -99,4 +112,6 @@ def compare_outputs(executorch_program: ExportedProgram, model, inputs, model_na
     if executorch_model is not None:
         executorch_results = executorch_model.forward(inputs_copy)
         assert_outputs_equal(executorch_results, pytorch_results)
-        logging.info(F"Results between ExecuTorch forward pass with MPS backend and PyTorch forward pass are matching!")
+        logging.info(
+            f"Results between ExecuTorch forward pass with MPS backend and PyTorch forward pass for {model_name} are matching!"
+        )

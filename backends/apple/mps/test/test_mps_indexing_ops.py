@@ -64,7 +64,9 @@ class TestMPSIndexingOps(TestMPS):
                 return x[:, [0, 1, 0], [0, 1, 0]]
 
         module = IndexGet()
-        model_inputs = (torch.tensor([[[1, 2], [3, 4], [5, 6]], [[7, 8], [9, 10], [11, 12]]]),)
+        model_inputs = (
+            torch.tensor([[[1, 2], [3, 4], [5, 6]], [[7, 8], [9, 10], [11, 12]]]),
+        )
 
         self.lower_and_test_with_partitioner(
             module, model_inputs, func_name=inspect.stack()[0].function[5:]
@@ -212,9 +214,12 @@ class TestMPSIndexingOps(TestMPS):
         input = torch.ones(1, 8, 128, 8)
         indices = torch.tensor([1])
         values = torch.randn(8, 1, 8)
-        model_inputs = (input, indices, values, )
+        model_inputs = (
+            input,
+            indices,
+            values,
+        )
 
         self.lower_and_test_with_partitioner(
             module, model_inputs, func_name=inspect.stack()[0].function[5:]
         )
-

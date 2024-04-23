@@ -10,6 +10,7 @@ import copy
 import logging
 
 import torch
+from examples.apple.mps.scripts.bench_utils import bench_torch, compare_outputs
 from executorch import exir
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
 from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
@@ -27,10 +28,6 @@ from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuit
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-from examples.apple.mps.scripts.bench_utils import (
-    bench_torch,
-    compare_outputs,
-)
 
 from ....models import MODEL_NAME_TO_MODEL
 from ....models.model_factory import EagerModelFactory
@@ -40,7 +37,28 @@ from ....portable.utils import export_to_edge, save_pte_program
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
-if __name__ == "__main__":
+
+def get_bundled_program(executorch_program, example_inputs, expected_output):
+    method_test_suites = [
+        MethodTestSuite(
+            method_name="forward",
+            test_cases=[
+                MethodTestCase(
+                    inputs=example_inputs, expected_outputs=[expected_output]
+                )
+            ],
+        )
+    ]
+    logging.info(f"Expected output: {expected_output}")
+
+    bundled_program = BundledProgram(executorch_program, method_test_suites)
+    bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
+        bundled_program
+    )
+    return bundled_program_buffer
+
+
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
@@ -111,10 +129,10 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    return args
 
-    if args.model_name not in MODEL_NAME_TO_MODEL:
-        raise RuntimeError(f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}.")
 
+def get_model_config(args):
     model_config = {}
     model_config["module_name"] = MODEL_NAME_TO_MODEL[args.model_name][0]
     model_config["model_class_name"] = MODEL_NAME_TO_MODEL[args.model_name][1]
@@ -125,10 +143,17 @@ if __name__ == "__main__":
         if args.params:
             model_config["params"] = args.params
         model_config["use_kv_cache"] = True
+    return model_config
 
-    model, example_inputs, _ = EagerModelFactory.create_model(
-        **model_config
-    )
+
+if __name__ == "__main__":
+    args = parse_args()
+
+    if args.model_name not in MODEL_NAME_TO_MODEL:
+        raise RuntimeError(f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}.")
+
+    model_config = get_model_config(args)
+    model, example_inputs, _ = EagerModelFactory.create_model(**model_config)
 
     model = model.eval()
     if args.check_correctness or args.bench_pytorch:
@@ -172,21 +197,9 @@ if __name__ == "__main__":
     model_name = f"{args.model_name}_mps"
 
     if args.bundled:
-        method_test_suites = [
-            MethodTestSuite(
-                method_name="forward",
-                test_cases=[
-                    MethodTestCase(
-                        inputs=example_inputs, expected_outputs=[model(*example_inputs)]
-                    )
-                ],
-            )
-        ]
-        logging.info(f"Expected output: {model(*example_inputs)}")
-
-        bundled_program = BundledProgram(executorch_program, method_test_suites)
-        bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
-            bundled_program
+        expected_output = model(*example_inputs)
+        bundled_program_buffer = get_bundled_program(
+            executorch_program, example_inputs, expected_output
         )
         model_name = f"{model_name}_bundled"
         extension = "fp16"

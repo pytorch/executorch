@@ -22,13 +22,11 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.tracer import Value
-from executorch.extension.pytree import tree_flatten
 from executorch.sdk import BundledProgram
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-from torch._export import capture_pre_autograd_graph
 from torch.export import export, ExportedProgram
 
 # Config for Capturing the weights, will be moved in the future
@@ -201,7 +199,7 @@ class TestMPS(unittest.TestCase):
         func_name: str,
         use_partitioner: bool = True,
         use_fp16: bool = False,
-        bundled_program = True,
+        bundled_program=True,
     ) -> ExirExportedProgram:
         """
         Helper testing function that takes a torch.nn.Module and lowers it to MPS with
