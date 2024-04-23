@@ -463,35 +463,17 @@
 <span class="w">  </span><span class="p">}</span>
 </pre></div>
 </div>
-<ol class="arabic" start="4">
-<li><p><em><strong>Compile</strong></em> your binary with the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> pre-processor flag to enable events to be traced and logged into ETDump inside the ExecuTorch runtime.</p>
-<p>i). <em><strong>Buck</strong></em></p>
-<p>In Buck, users simply depend on the etdump target which is:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">//</span><span class="n">executorch</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">etdump</span><span class="p">:</span><span class="n">etdump_flatcc</span>
-</pre></div>
-</div>
-<p>When compiling their binary through Buck, users can pass in this buck config to enable the pre-processor flag. For example, when compiling <code class="docutils literal notranslate"><span class="pre">sdk_example_runner</span></code> to enable ETDump generation, users compile using the following command:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">buck2</span> <span class="n">build</span> <span class="o">-</span><span class="n">c</span> <span class="n">executorch</span><span class="o">.</span><span class="n">event_tracer_enabled</span><span class="o">=</span><span class="n">true</span> <span class="n">examples</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">sdk_example_runner</span><span class="p">:</span><span class="n">sdk_example_runner</span>
-</pre></div>
-</div>
-<p>ii). <em><strong>CMake</strong></em></p>
-<p>In CMake, users add this to their compile flags:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span>
-</pre></div>
-</div>
-<p>This flag needs to be added to the ExecuTorch library and any operator library that the users are compiling into their binary. For reference, users can take a look at <code class="docutils literal notranslate"><span class="pre">examples/sdk/CMakeLists.txt</span></code>. The lines of of interest are:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">target_compile_options</span><span class="p">(</span><span class="n">executorch</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
-<span class="n">target_compile_options</span><span class="p">(</span><span class="n">portable_ops_lib</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
-</pre></div>
-</div>
-</li>
+<ol class="arabic simple" start="4">
+<li><p><em><strong>Compile</strong></em> your binary using CMake with the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> pre-processor flag to enable events to be traced and logged into ETDump inside the ExecuTorch runtime. This flag needs to be added to the ExecuTorch library and any operator library that you are compiling into your binary. For reference, you can take a look at <code class="docutils literal notranslate"><span class="pre">examples/sdk/CMakeLists.txt</span></code>. The lines of interest are:</p></li>
 </ol>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">target_compile_options</span><span class="p">(</span><span class="n">executorch</span> <span class="n">INTERFACE</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
+<span class="n">target_compile_options</span><span class="p">(</span><span class="n">portable_ops_lib</span> <span class="n">INTERFACE</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="using-an-etdump">
 <h2>Using an ETDump<a class="headerlink" href="#using-an-etdump" title="Permalink to this heading">¶</a></h2>
-<ol class="arabic simple">
-<li><p>Pass this ETDump into the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a> to access this data and  do post-run analysis.</p></li>
-</ol>
+<p>Pass this ETDump into the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a> to access this data and do post-run analysis.</p>
 </div>
 </div>
 
