@@ -242,7 +242,7 @@ def deserialize_torch_artifact(serialized: bytes):
         return {}
     buffer = io.BytesIO(serialized)
     buffer.seek(0)
-    return torch.load(buffer)
+    return torch.load(buffer, weights_only=False)
 
 
 def _sympy_int_to_int(val: sympy.Expr):

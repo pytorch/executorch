@@ -109,7 +109,9 @@ def SSD300VGG16(pretrained_weight_model):
     from model import SSD300
 
     model = SSD300(n_classes=21)
-    checkpoint = torch.load(pretrained_weight_model, map_location="cpu")
+    checkpoint = torch.load(
+        pretrained_weight_model, map_location="cpu", weights_only=False
+    )
     model.load_state_dict(checkpoint["model"].state_dict())
 
     return model.eval()

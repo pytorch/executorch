@@ -211,6 +211,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
                 else pretrained_weight
             ),
             map_location=torch.device("cpu"),
+            weights_only=False,
         ),
     )
 
