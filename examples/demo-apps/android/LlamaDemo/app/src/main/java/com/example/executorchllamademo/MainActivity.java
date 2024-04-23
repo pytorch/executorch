@@ -79,9 +79,9 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     if (loadResult != 0) {
       AlertDialog.Builder builder = new AlertDialog.Builder(this);
       builder.setTitle("Load failed: " + loadResult);
-      AlertDialog alert = builder.create();
       runOnUiThread(
           () -> {
+            AlertDialog alert = builder.create();
             alert.show();
           });
     }
