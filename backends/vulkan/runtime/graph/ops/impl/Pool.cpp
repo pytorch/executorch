@@ -76,7 +76,7 @@ void add_max_pool2d_node(
   std::string kernel_name("max_pool2d");
   add_dtype_suffix(kernel_name, *t_out);
 
-  KernelParams kernel_params = create_kernel_params(
+  Kernel2dParams kernel_params = create_kernel2d_params(
       graph,
       kernel_size,
       /*kernel_size_only = */ true,
