@@ -1013,11 +1013,14 @@ Error Method::execute_instruction() {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
       internal::EventTracerProfileScope event_tracer_scope =
           internal::EventTracerProfileScope(event_tracer_, "OPERATOR_CALL");
-      // TODO(T147221312): Also expose the temp allocator and tensor resizer
-      // via the context.
-      KernelRuntimeContext context(event_tracer_);
+      // TODO(T147221312): Also expose tensor resizer via the context.
+      // The temp_allocator passed can be null, but calling allocate_temp will
+      // fail
+      KernelRuntimeContext context(
+          event_tracer_, memory_manager_->temp_allocator());
       auto args = chain.argument_lists_[step_state_.instr_idx];
       chain.kernels_[step_state_.instr_idx](context, args.data());
+      // We reset the temp_allocator after the switch statement
       err = context.failure_state();
       if (err != Error::Ok) {
         // We know that instr_args_as_KernelCall is non-null because it was
