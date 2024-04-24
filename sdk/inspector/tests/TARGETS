@@ -9,6 +9,7 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/sdk:lib",
         "//executorch/sdk/debug_format:et_schema",
+        "//executorch/sdk/etdump:schema_flatcc",
         "//executorch/sdk/etrecord/tests:etrecord_test_library",
         "//executorch/sdk/inspector:inspector",
         "//executorch/sdk/inspector:lib",
