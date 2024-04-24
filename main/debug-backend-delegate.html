@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Quantization Overview &mdash; ExecuTorch main documentation</title>
+  <title>Debug Backend Delegate &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Overview of ExecuTorch’s Kernel Libraries" href="kernel-library-overview.html" />
-    <link rel="prev" title=".pte file format" href="pte-file-format.html" />
+    <link rel="next" title="Introduction to the ExecuTorch SDK" href="sdk-overview.html" />
+    <link rel="prev" title="Third-Party Dependency Management for Backend Delegates" href="backend-delegates-dependencies.html" />
 
 
   <!-- Google Tag Manager -->
@@ -324,8 +324,8 @@
 <li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
-<ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Quantization Overview</a></li>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
@@ -334,12 +334,12 @@
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
-<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Debug Backend Delegate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
@@ -392,13 +392,13 @@
       </li>
 
         
-      <li>Quantization Overview</li>
+      <li>Debug Backend Delegate</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/quantization-overview.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/debug-backend-delegate.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -430,16 +430,106 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="quantization-overview">
-<h1>Quantization Overview<a class="headerlink" href="#quantization-overview" title="Permalink to this heading">¶</a></h1>
-<p>Quantization is a process that reduces the precision of computations and lowers memory footprint in the model. To learn more, please visit the <a class="reference internal" href="concepts.html#quantization"><span class="std std-doc">ExecuTorch concepts page</span></a>. This is particularly useful for edge devices including wearables, embedded devices and microcontrollers, which typically have limited resources such as processing power, memory, and battery life. By using quantization, we can make our models more efficient and enable them to run effectively on these devices.</p>
-<p>In terms of flow, quantization happens early in the ExecuTorch stack:</p>
-<p><img alt="ExecuTorch Entry Points" src="_images/executorch-entry-points.png" /></p>
-<p>A more detailed workflow can be found in the <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">ExecuTorch tutorial</span></a>.</p>
-<p>Quantization is usually tied to execution backends that have quantized operators implemented. Thus each backend is opinionated about how the model should be quantized, expressed in a backend specific <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> class. <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> provides API for modeling users in terms of how they want their model to be quantized and also passes on the user intention to quantization workflow.</p>
-<p>Backend developers will need to implement their own <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> to express how different operators or operator patterns are quantized in their backend. This is accomplished via <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quantizer.html">Annotation API</a> provided by quantization workflow. Since <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> is also user facing, it will expose specific APIs for modeling users to configure how they want the model to be quantized. Each backend should provide their own API documentation for their <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code>.</p>
-<p>Modeling users will use the <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> specific to their target backend to quantize their model, e.g. <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>.</p>
-<p>For an example quantization flow with <code class="docutils literal notranslate"><span class="pre">XNPACKQuantizer</span></code>, more documentation and tutorials, please see <code class="docutils literal notranslate"><span class="pre">Performing</span> <span class="pre">Quantization</span></code> section in <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">ExecuTorch tutorial</span></a>.</p>
+  <div class="section" id="debug-backend-delegate">
+<h1>Debug Backend Delegate<a class="headerlink" href="#debug-backend-delegate" title="Permalink to this heading">¶</a></h1>
+<p>We provide a list of util functions to give users insights on what happened to the graph modules during the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> stage.</p>
+<div class="section" id="get-delegation-summary">
+<h2>Get delegation summary<a class="headerlink" href="#get-delegation-summary" title="Permalink to this heading">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">get_delegation_info()</span></code> method provides a summary of what happened to the model after the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> call:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.utils</span> <span class="kn">import</span> <span class="n">get_delegation_info</span>
+<span class="kn">from</span> <span class="nn">tabulate</span> <span class="kn">import</span> <span class="n">tabulate</span>
+
+<span class="c1"># ... After call to to_backend(), but before to_executorch()</span>
+<span class="n">graph_module</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
+<span class="n">delegation_info</span> <span class="o">=</span> <span class="n">get_delegation_info</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">delegation_info</span><span class="o">.</span><span class="n">get_summary</span><span class="p">())</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">delegation_info</span><span class="o">.</span><span class="n">get_operator_delegation_dataframe</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">tabulate</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="s2">&quot;keys&quot;</span><span class="p">,</span> <span class="n">tablefmt</span><span class="o">=</span><span class="s2">&quot;fancy_grid&quot;</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>Example printout:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Total</span>  <span class="n">delegated</span>  <span class="n">subgraphs</span><span class="p">:</span>  <span class="mi">86</span>
+<span class="n">Number</span>  <span class="n">of</span>  <span class="n">delegated</span>  <span class="n">nodes</span><span class="p">:</span>  <span class="mi">473</span>
+<span class="n">Number</span>  <span class="n">of</span>  <span class="n">non</span><span class="o">-</span><span class="n">delegated</span>  <span class="n">nodes</span><span class="p">:</span>  <span class="mi">430</span>
+</pre></div>
+</div>
+<table class="colwidths-auto docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p></p></th>
+<th class="head"><p>op_type</p></th>
+<th class="head"><p>occurrences_in_delegated_graphs</p></th>
+<th class="head"><p>occurrences_in_non_delegated_graphs</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>0</p></td>
+<td><p>aten__softmax_default</p></td>
+<td><p>12</p></td>
+<td><p>0</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>aten_add_tensor</p></td>
+<td><p>37</p></td>
+<td><p>0</p></td>
+</tr>
+<tr class="row-even"><td><p>2</p></td>
+<td><p>aten_addmm_default</p></td>
+<td><p>48</p></td>
+<td><p>0</p></td>
+</tr>
+<tr class="row-odd"><td><p>3</p></td>
+<td><p>aten_arange_start_step</p></td>
+<td><p>0</p></td>
+<td><p>25</p></td>
+</tr>
+<tr class="row-even"><td><p></p></td>
+<td><p>…</p></td>
+<td><p></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p>23</p></td>
+<td><p>aten_view_copy_default</p></td>
+<td><p>170</p></td>
+<td><p>48</p></td>
+</tr>
+<tr class="row-even"><td><p></p></td>
+<td><p>…</p></td>
+<td><p></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p>26</p></td>
+<td><p>Total</p></td>
+<td><p>473</p></td>
+<td><p>430</p></td>
+</tr>
+</tbody>
+</table>
+<p>From the table, the operator <code class="docutils literal notranslate"><span class="pre">aten_view_copy_default</span></code> appears 170 times in delegate graphs and 48 times in non-delegated graphs. Users can use information like this to debug.</p>
+</div>
+<div class="section" id="visualize-delegated-graph">
+<h2>Visualize delegated graph<a class="headerlink" href="#visualize-delegated-graph" title="Permalink to this heading">¶</a></h2>
+<p>To see a more detailed view, use the <code class="docutils literal notranslate"><span class="pre">print_delegated_graph()</span></code> method to display a printout of the whole graph:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.utils</span> <span class="kn">import</span> <span class="n">print_delegated_graph</span>
+<span class="n">graph_module</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">print_delegated_graph</span><span class="p">(</span><span class="n">graph_module</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>It will print the whole model as well as the subgraph consumed by the backend. The generic debug function provided by fx like <code class="docutils literal notranslate"><span class="pre">print_tabular()</span></code> or <code class="docutils literal notranslate"><span class="pre">print_readable()</span></code> will only show <code class="docutils literal notranslate"><span class="pre">call_delegate</span></code> but hide the the subgraph consumes by the backend, while this function exposes the contents inside the subgraph.</p>
+<p>In the example printout below, observe that <code class="docutils literal notranslate"><span class="pre">embedding</span></code> and <code class="docutils literal notranslate"><span class="pre">add</span></code> operators are delegated to <code class="docutils literal notranslate"><span class="pre">XNNPACK</span></code> while the <code class="docutils literal notranslate"><span class="pre">sub</span></code> operator is not.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">%</span><span class="n">aten_unsqueeze_copy_default_22</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">unsqueeze_copy</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_arange_start_step_23</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+  <span class="o">%</span><span class="n">aten_unsqueeze_copy_default_23</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">unsqueeze_copy</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_arange_start_step_24</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+  <span class="o">%</span><span class="n">lowered_module_0</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_attr</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">lowered_module_0</span><span class="p">]</span>
+    <span class="n">backend_id</span><span class="p">:</span> <span class="n">XnnpackBackend</span>
+    <span class="n">lowered</span> <span class="n">graph</span><span class="p">():</span>
+      <span class="o">%</span><span class="n">aten_embedding_default</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">aten_embedding_default</span><span class="p">]</span>
+      <span class="o">%</span><span class="n">aten_embedding_default_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">aten_embedding_default_1</span><span class="p">]</span>
+      <span class="o">%</span><span class="n">aten_add_tensor</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_embedding_default</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_embedding_default_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+      <span class="k">return</span> <span class="p">(</span><span class="n">aten_add_tensor</span><span class="p">,)</span>
+  <span class="o">%</span><span class="n">executorch_call_delegate</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">higher_order</span><span class="o">.</span><span class="n">executorch_call_delegate</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">lowered_module_0</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_embedding_default</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_embedding_default_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+  <span class="o">%</span><span class="n">aten_sub_tensor</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">sub</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_unsqueeze_copy_default</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_unsqueeze_copy_default_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+</pre></div>
+</div>
+</div>
 </div>
 
 
@@ -450,10 +540,10 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="kernel-library-overview.html" class="btn btn-neutral float-right" title="Overview of ExecuTorch’s Kernel Libraries" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="sdk-overview.html" class="btn btn-neutral float-right" title="Introduction to the ExecuTorch SDK" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="pte-file-format.html" class="btn btn-neutral" title=".pte file format" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="backend-delegates-dependencies.html" class="btn btn-neutral" title="Third-Party Dependency Management for Backend Delegates" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -487,7 +577,11 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Quantization Overview</a></li>
+<li><a class="reference internal" href="#">Debug Backend Delegate</a><ul>
+<li><a class="reference internal" href="#get-delegation-summary">Get delegation summary</a></li>
+<li><a class="reference internal" href="#visualize-delegated-graph">Visualize delegated graph</a></li>
+</ul>
+</li>
 </ul>
 
             </div>
