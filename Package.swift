@@ -9,7 +9,7 @@
 
 import PackageDescription
 
-let version = "0.1.0"
+let version = "0.2.0"
 let url = "https://ossci-ios.s3.amazonaws.com/executorch/"
 let debug = "_debug"
 let deliverables = [
