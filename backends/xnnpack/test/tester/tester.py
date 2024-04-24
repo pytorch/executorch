@@ -595,7 +595,7 @@ class Tester:
                 f"Output {i} does not match reference output.\n"
                 f"\tGiven atol: {atol}, rtol: {rtol}.\n"
                 f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}.\n"
+                f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
                 f"\t-- Model vs. Reference --\n"
                 f"\t Numel: {model.numel()}, {ref.numel()}\n"
                 f"\tMedian: {model.median()}, {ref.median()}\n"

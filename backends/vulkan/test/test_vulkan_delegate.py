@@ -653,10 +653,13 @@ class TestBackends(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.conv = torch.nn.Conv1d(
-                    in_channels=6,
-                    out_channels=6,
-                    kernel_size=3,
-                    groups=6,
+                    in_channels=20,
+                    out_channels=10,
+                    kernel_size=6,
+                    stride=5,
+                    padding=5,
+                    dilation=3,
+                    groups=5,
                     bias=True,
                 )
 
@@ -664,7 +667,7 @@ class TestBackends(unittest.TestCase):
                 return self.conv(x)
 
         conv1d_module = Conv1dModule()
-        sample_inputs = (torch.randn(size=(1, 6, 7), dtype=torch.float32),)
+        sample_inputs = (torch.randn(size=(3, 20, 30), dtype=torch.float32),)
 
         self.lower_module_and_test_output(
             conv1d_module,

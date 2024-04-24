@@ -55,6 +55,7 @@ def define_common_targets():
             exported_deps = [
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/platform:platform",
+                "//executorch/runtime/core:memory_allocator",
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 # TODO(T147221312): This will eventually depend on exec_aten
                 # once KernelRuntimeContext support tensor resizing, which is
