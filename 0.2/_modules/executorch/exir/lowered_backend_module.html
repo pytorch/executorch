@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>executorch.exir.lowered_backend_module &mdash; ExecuTorch  documentation</title>
+  <title>executorch.exir.lowered_backend_module &mdash; ExecuTorch 0.2 documentation</title>
   
 
   
@@ -284,6 +284,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../build-run-vulkan.html">Building and Running ExecuTorch with the Vulkan Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
@@ -332,6 +333,7 @@
 <p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
 </ul>
@@ -879,17 +881,17 @@
     <span class="n">new_state_dict</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">new_constants</span> <span class="o">=</span> <span class="p">{}</span>
 
-    <span class="n">placeholder_nodes</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span> <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span>
-    <span class="p">]</span>
-    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">placeholder_nodes</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">old_signature</span><span class="o">.</span><span class="n">input_specs</span><span class="p">)</span>
-    <span class="n">input_node_to_sig</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">placeholder_nodes</span><span class="p">,</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">input_specs</span><span class="p">))</span>
+    <span class="n">input_tensor_node_to_sig</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">input_spec</span><span class="o">.</span><span class="n">arg</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">input_spec</span>
+        <span class="k">for</span> <span class="n">input_spec</span> <span class="ow">in</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">input_specs</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">input_spec</span><span class="o">.</span><span class="n">arg</span><span class="p">,</span> <span class="n">TensorArgument</span><span class="p">)</span>
+    <span class="p">}</span>
 
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
         <span class="n">is_tagged</span> <span class="o">=</span> <span class="n">tag</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span>
         <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
 
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">input_node_to_sig</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">input_tensor_node_to_sig</span><span class="p">:</span>
                 <span class="k">assert</span> <span class="n">tag</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="n">InputSpec</span><span class="p">(</span>
@@ -900,7 +902,7 @@
                 <span class="p">)</span>
                 <span class="k">continue</span>
 
-            <span class="n">orig_input_spec</span> <span class="o">=</span> <span class="n">input_node_to_sig</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
+            <span class="n">orig_input_spec</span> <span class="o">=</span> <span class="n">input_tensor_node_to_sig</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
 
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">orig_input_spec</span><span class="o">.</span><span class="n">arg</span><span class="p">,</span> <span class="n">TensorArgument</span><span class="p">):</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">orig_input_spec</span><span class="p">)</span>
