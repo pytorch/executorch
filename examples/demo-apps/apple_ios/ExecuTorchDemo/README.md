@@ -40,36 +40,45 @@ pip --version
 
 ### 3. Getting Started Tutorial
 
-Before proceeding, follow the [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup)
-tutorial to configure the basic environment. Feel free to skip building anything
-just yet. Make sure you have all the required dependencies installed, including
-the following tools:
+Follow the [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup)
+tutorial to configure the basic environment:
 
-- Buck2 (as `/tmp/buck2`)
-- Cmake (`cmake` reachable at `$PATH`)
-- FlatBuffers Compiler (`flatc` reachable at `$PATH` or as `$FLATC_EXECUTABLE`
-  enironment variable)
+```bash
+git clone -b release/0.2 https://github.com/pytorch/executorch.git
+cd executorch
+git submodule update --init
+
+python3 -m venv .venv && source .venv/bin/activate
+
+./install_requirements.sh --pybind coreml mps xnnpack
+```
 
 ### 4. Backend Dependencies
 
-Also, follow the corresponding sections from [Core ML](build-run-coreml.md) and
-[MPS](build-run-mps.md) tutorials to install additional dependencies for those
-backends. Feel free to skip building anything just yet.
+Also, follow the corresponding sections from [Core ML](https://pytorch.org/executorch/stable/build-run-coreml) and
+[MPS](https://pytorch.org/executorch/stable/build-run-mps) tutorials to install additional dependencies for those
+backends:
+
+```bash
+./backends/apple/coreml/scripts/install_requirements.sh
+
+./backends/apple/mps/install_requirements.sh
+```
 
 ## Models and Labels
 
-Now let's move on to exporting and bundling the MobileNet v3 model.
+Now, let's move on to exporting and bundling the MobileNet v3 model.
 
 ### 1. Export Model
 
-Export the MobileNet v3 model with Core ML, MPS and XNNPACK delegates, and move
+Export the MobileNet v3 model with Core ML, MPS and XNNPACK backends, and move
 the exported model to a specific location where the Demo App will pick them up:
 
 ```bash
 python3 -m examples.portable.scripts.export --model_name="mv3"
-python3 -m examples.xnnpack.aot_compiler --delegate --model_name="mv3"
 python3 -m examples.apple.coreml.scripts.export --model_name="mv3"
 python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3"
+python3 -m examples.xnnpack.aot_compiler --delegate --model_name="mv3"
 
 mkdir -p examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
 mv mv3*.pte examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
@@ -82,27 +91,6 @@ Download the MobileNet model labels required for image classification:
 ```bash
 curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
   -o examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/imagenet_classes.txt
-```
-
-## Build Runtime and Backends
-
-Next, we will build the necessary
-[frameworks](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle)
-for ExecuTorch and move them over for app linking.
-
-### 1. Build Frameworks
-
-```bash
-./build/build_apple_frameworks.sh --Release --coreml --mps --xnnpack
-```
-
-### 2. Move Frameworks for App Linking
-
-Make sure to have all the `.xcframework` bundles generated at the previous step
-at a specific location where the Demo App will pick them up:
-
-```bash
-mv cmake-out examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks
 ```
 
 ## Final Steps
