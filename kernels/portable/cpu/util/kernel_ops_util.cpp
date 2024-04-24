@@ -46,16 +46,6 @@ bool param_array_is_valid(
 
 } // namespace
 
-int64_t val_at(IntArrayRef array, size_t i, int64_t default_value) {
-  if (array.size() == 1) {
-    return array[0];
-  } else if (array.size() > 1) {
-    return array[i];
-  } else {
-    return default_value;
-  }
-}
-
 bool int_array_all_ge(IntArrayRef array, int64_t val) {
   for (size_t i = 0; i < array.size(); ++i) {
     if (array[i] < val) {
