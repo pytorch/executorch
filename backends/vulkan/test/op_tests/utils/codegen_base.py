@@ -25,7 +25,8 @@ OPT_BOOL = "::std::optional<bool>"
 OPT_INT64 = "::std::optional<int64_t>"
 OPT_DEVICE = "::std::optional<at::Device>"
 OPT_LAYOUT = "::std::optional<at::Layout>"
-OPT_SCALARTYPE = "::std::optional<at::ScalarType>"
+OPT_MEMORY_FORMAT = "::std::optional<at::MemoryFormat>"
+OPT_SCALAR_TYPE = "::std::optional<at::ScalarType>"
 TWO_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor>"
 THREE_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor,at::Tensor>"
 
@@ -149,10 +150,11 @@ class TestSuiteGen:
             else:
                 ret_str += f"{str(data)};"
         elif (
-            cpp_type == OPT_SCALARTYPE
+            cpp_type == OPT_SCALAR_TYPE
             or cpp_type == OPT_LAYOUT
             or cpp_type == OPT_DEVICE
             or cpp_type == OPT_BOOL
+            or cpp_type == OPT_MEMORY_FORMAT
         ):
             ret_str += "std::nullopt;"
         else:
