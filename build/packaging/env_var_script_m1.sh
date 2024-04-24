@@ -21,8 +21,7 @@ CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_XNNPACK=ON"
 
 # When building for macOS, link additional backends into the pybindings runtime.
 
-# TODO(dbort): Core ML requires features only available in macOS 10.15, but the
+# TODO(dbort): Make these build properly in the CI environment.
 # build machine uses an older version.
 # CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_COREML=ON"
-
-CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_MPS=ON"
+# CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_MPS=ON"

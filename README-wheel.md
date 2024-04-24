@@ -4,6 +4,20 @@ standard on-device iOS and Android mobile deployments. One of the main goals for
 ExecuTorch is to enable wider customization and deployment capabilities of the
 PyTorch programs.
 
+The `executorch` pip package is in alpha.
+* Required python version: `==3.10`
+* Compatible systems: Linux x86_64, macOS aarch64
+
+The prebuilt `executorch.extension.pybindings.portable_lib` module included in
+this package provides a way to run ExecuTorch `.pte` files, with some
+restrictions:
+* Only [core ATen
+  operators](https://pytorch.org/executorch/stable/ir-ops-set-definition.html)
+  are linked into the prebuilt module
+* Only the [XNNPACK backend
+  delegate](https://pytorch.org/executorch/main/native-delegates-executorch-xnnpack-delegate.html)
+  is linked into the prebuilt module
+
 Please visit the [ExecuTorch website](https://pytorch.org/executorch/) for
 tutorials and documentation. Here are some starting points:
 * [Getting
