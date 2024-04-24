@@ -28,7 +28,8 @@ void check_args(
 
   int64_t in_dim = in.dim();
   VK_CHECK_COND(
-      in_dim == repeats.size(), "Input tensor dim size must match argument");
+      in_dim <= repeats.size(),
+      "Input tensor dim size must be not greater than the repeat argument's size");
 
   VK_CHECK_COND(
       dim_at<Dim4D::Width>(in.sizes()) * dim_at<Dim4D::Width>(repeats) ==
@@ -98,7 +99,6 @@ void add_repeat_channel_node(
   };
 
   auto shader = VK_KERNEL_FROM_STR(kernel_name);
-  // std::cout << "out tile size: " << shader.out_tile_size << std::endl;
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
@@ -110,7 +110,7 @@ void add_repeat_channel_node(
       // Parameter buffers
       {graph.create_params_buffer(repeat_channel_args)},
       // Specialization Constants
-      {}));
+      {SV(t_out->gpu_memory_layout_int())}));
 }
 
 void add_repeat_node(

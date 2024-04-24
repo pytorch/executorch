@@ -415,6 +415,9 @@ def get_repeat_inputs():
             ((S1, S2, S2, S2), [1, 3, 1, 3]),
             ((S1, S2, S2, S2), [3, 3, 3, 3]),
             ((S1, S2, S2, S2), [3, 3, 1, 1]),
+            # Expanding cases
+            ((2, 3), [3, 1, 4]),
+            ((2, 3), [3, 3, 2, 4]),
         ]
     )
     test_suite.layouts = [
