@@ -21,8 +21,7 @@ build_cmake_quantized_aot_lib() {
   (rm -rf ${CMAKE_OUTPUT_DIR} \
     && mkdir ${CMAKE_OUTPUT_DIR} \
     && cd ${CMAKE_OUTPUT_DIR} \
-    && retry cmake -DBUCK2=buck2 \
-      -DCMAKE_BUILD_TYPE=Release \
+    && retry cmake -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DEXECUTORCH_BUILD_QUANTIZED_OPS_AOT=ON \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
