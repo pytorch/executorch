@@ -49,6 +49,7 @@ def define_common_targets():
             "bits_types.h",
         ],
         visibility = [
+            "//executorch/extension/...",
             "//executorch/runtime/core/exec_aten/util/...",
             "//executorch/kernels/...",
         ],
