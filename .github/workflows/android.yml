@@ -48,10 +48,6 @@ jobs:
         # Build Android demo app
         bash build/test_android_ci.sh
 
-        # Strip libraries for uploda
-        strip cmake-out-android-arm64-v8a/lib/*.a cmake-out-android-arm64-v8a/extension/android/*.so
-        strip cmake-out-android-x86_64/lib/*.a cmake-out-android-x86_64/extension/android/*.so
-
         mkdir -p artifacts-to-be-uploaded
         mkdir -p artifacts-to-be-uploaded/arm64-v8a/
         mkdir -p artifacts-to-be-uploaded/x86_64/
