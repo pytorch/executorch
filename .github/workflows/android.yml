@@ -53,9 +53,8 @@ jobs:
         mkdir -p artifacts-to-be-uploaded/x86_64/
         # Copy the jar to S3
         cp extension/android/build/libs/executorch.jar artifacts-to-be-uploaded/
-        # Copy the app and its test suite to S3
+        # Copy the app to S3
         cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk artifacts-to-be-uploaded/
-        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk artifacts-to-be-uploaded/
         # Also copy the libraries
         cp cmake-out-android-arm64-v8a/lib/*.a artifacts-to-be-uploaded/arm64-v8a/
         cp cmake-out-android-arm64-v8a/extension/android/*.so artifacts-to-be-uploaded/arm64-v8a/
