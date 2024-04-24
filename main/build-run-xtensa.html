@@ -591,8 +591,7 @@ In order to run the CMake build, you need the path to the following:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
 rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out
 <span class="c1"># prebuild and install executorch library</span>
-cmake<span class="w"> </span>-DBUCK2<span class="o">=</span>buck2<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/cadence/cadence.cmake<span class="w"> </span><span class="se">\</span>
+cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/cadence/cadence.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
