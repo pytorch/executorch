@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#pragma once
+
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
