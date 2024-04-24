@@ -6,8 +6,10 @@
 # Utiliy functions for TOSA quantized lowerings
 
 import math
+from typing import NamedTuple
 
 import serializer.tosa_serializer as ts
+import torch.fx
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp, TosaSerializerTensor
@@ -17,7 +19,14 @@ dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 dq_q_ops = [q_op, dq_op]
 
 
-def is_quant_node(node):
+class QuantArgs(NamedTuple):
+    scale: float
+    zp: int
+    qmin: int
+    qmax: int
+
+
+def is_quant_node(node: torch.fx.Node):
     consumer_node = list(node.users)[0]
     input = node.all_input_nodes[0]
 
@@ -41,10 +50,22 @@ def is_quant_arg(arg):
     return consumer_node.target == q_op
 
 
-def get_quant_node_args(node):
+def get_quant_node_args(node: torch.fx.Node):
+    """
+    Get the quantization parameters from a quant node.
+
+    Args:
+        node: The quant node.
+    Returns:
+        QuantArgs: scale, zp, qmin, qmax
+    """
     quant_args = [TosaArg(arg) for arg in node.args]
-    # Return the scale and zp
-    return quant_args[1].number, quant_args[2].number
+    return QuantArgs(
+        quant_args[1].number,
+        quant_args[2].number,
+        quant_args[3].number,
+        quant_args[4].number,
+    )
 
 
 # Check if scale32 mode is used for given output element type
