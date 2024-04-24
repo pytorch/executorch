@@ -21,6 +21,8 @@ using api::utils::ivec3;
 using api::utils::uvec2;
 using api::utils::uvec4;
 
+namespace {
+
 void check_args(
     const vTensor& in,
     const std::vector<int64_t>& permute_dims,
@@ -38,6 +40,8 @@ void check_args(
       out_dim == permute_dims.size(),
       "Output tensor dim size must match argument");
 }
+
+} // namespace
 
 void add_permute_node(
     ComputeGraph& graph,
