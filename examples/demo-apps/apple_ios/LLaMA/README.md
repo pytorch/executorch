@@ -2,8 +2,6 @@
 
 This app demonstrates the use of the LLaMA chat app demonstrating local inference use case with ExecuTorch.
 
-<img src="../_static/img/llama_ios_app.png" alt="iOS LLaMA App" /><br>
-
 ## Prerequisites
 * [Xcode 15](https://developer.apple.com/xcode)
 * [iOS 17 SDK](https://developer.apple.com/ios)
