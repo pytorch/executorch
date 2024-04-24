@@ -187,6 +187,7 @@ Topics in this section will help you get started with ExecuTorch.
    native-delegates-executorch-vulkan-delegate
    backend-delegates-integration
    backend-delegates-dependencies
+   debug-backend-delegate
 
 .. toctree::
    :glob:
