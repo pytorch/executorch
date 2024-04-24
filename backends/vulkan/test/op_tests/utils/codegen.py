@@ -21,7 +21,8 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     OPT_DEVICE,
     OPT_INT64,
     OPT_LAYOUT,
-    OPT_SCALARTYPE,
+    OPT_MEMORY_FORMAT,
+    OPT_SCALAR_TYPE,
     TestSuite,
     TestSuiteGen,
     THREE_TENSOR_TUPLE,
@@ -250,10 +251,11 @@ class ComputeGraphGen:
         elif ref.src_cpp_type == DOUBLE:
             ret_str += f"add_scalar<double>({ref.src_cpp_name}); \n"
         elif (
-            ref.src_cpp_type == OPT_SCALARTYPE
+            ref.src_cpp_type == OPT_SCALAR_TYPE
             or ref.src_cpp_type == OPT_LAYOUT
             or ref.src_cpp_type == OPT_DEVICE
             or ref.src_cpp_type == OPT_BOOL
+            or ref.src_cpp_type == OPT_MEMORY_FORMAT
         ):
             ret_str += "add_none(); \n"
         elif ref.src_cpp_type == TWO_TENSOR_TUPLE:
