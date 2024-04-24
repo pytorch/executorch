@@ -236,6 +236,7 @@ def get_permute_inputs():
             ((9, 2), [1, 0]),
         ]
     )
+
     test_suite.layouts = ["api::kChannelsPacked"]
     return test_suite
 
@@ -334,6 +335,32 @@ def get_slice_inputs():
     return test_suite
 
 
+def get_unsqueeze_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((2, 3, 4), 0),
+            ((1, 1, 1), 0),
+            ((1, 1, 1), 1),
+            ((1, 1, 1), 2),
+            ((1, 1, 1), 3),
+            ((9, 9, 9), 0),
+            ((9, 9, 9), 1),
+            ((9, 9, 9), 2),
+            ((9, 9, 9), 3),
+            ((9, 9), 0),
+            ((9, 9), 1),
+            ((9, 9), 2),
+            ((9,), 0),
+            ((9,), 1),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -350,4 +377,5 @@ test_suites = {
     "aten.permute_copy.default": get_permute_inputs(),
     "aten.view_copy.default": get_view_inputs(),
     "aten.slice_copy.Tensor": get_slice_inputs(),
+    "aten.unsqueeze_copy.default": get_unsqueeze_inputs(),
 }
