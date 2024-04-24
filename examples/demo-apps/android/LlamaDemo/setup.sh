@@ -16,6 +16,7 @@ cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
   -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+  -DEXECUTORCH_BUILD_XNNPACK=ON \
   -DCMAKE_BUILD_TYPE=Release \
   -B"${CMAKE_OUT}"
 
@@ -30,6 +31,7 @@ cmake examples/models/llama2 \
          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
          -DANDROID_ABI="$ANDROID_ABI" \
          -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
+         -DEXECUTORCH_BUILD_XNNPACK=ON \
          -DCMAKE_BUILD_TYPE=Release \
          -B"${CMAKE_OUT}"/examples/models/llama2
 
