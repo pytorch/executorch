@@ -377,6 +377,51 @@ def get_clone_inputs():
             ((XS,),),
         ]
     )
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
+def get_repeat_inputs():
+    test_suite = VkTestSuite(
+        [
+            # Repeat channels only (most challenging case)
+            ((3, XS, S), [2, 1, 1]),
+            ((7, XS, S), [4, 1, 1]),
+            ((1, 7, XS, S), [1, 4, 1, 1]),
+            ((3, 7, XS, S), [1, 4, 1, 1]),
+            # Repat channels with other dims
+            ((1, 7, XS, S), [1, 4, 1, 3]),
+            ((3, 7, XS, S), [1, 4, 1, 3]),
+            ((3, 7, XS, S), [1, 4, 3, 1]),
+            ((3, 7, XS, S), [1, 4, 3, 3]),
+            # Repeat Batch
+            ((3, 7, XS, S), [3, 4, 3, 3]),
+            ((3, 7, XS, S), [3, 1, 3, 3]),
+            # More other cases
+            ((3, 7, 1, 1), [1, 4, 1, 1]),
+            ((2, 3), [1, 4]),
+            ((2, 3), [4, 1]),
+            ((2, 3), [4, 4]),
+            ((S1, S2, S2), [1, 3, 1]),
+            ((S1, S2, S2), [1, 3, 3]),
+            ((S1, S2, S2), [3, 3, 1]),
+            ((S1, S2, S2), [3, 3, 3]),
+            ((S1, S2, S2, S2), [1, 1, 3, 1]),
+            ((S1, S2, S2, S2), [1, 1, 1, 3]),
+            ((S1, S2, S2, S2), [1, 1, 3, 3]),
+            ((S1, S2, S2, S2), [1, 3, 1, 3]),
+            ((S1, S2, S2, S2), [3, 3, 3, 3]),
+            ((S1, S2, S2, S2), [3, 3, 1, 1]),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.dtypes = ["at::kFloat"]
     return test_suite
 
 
@@ -398,4 +443,5 @@ test_suites = {
     "aten.slice_copy.Tensor": get_slice_inputs(),
     "aten.unsqueeze_copy.default": get_unsqueeze_inputs(),
     "aten.clone.default": get_clone_inputs(),
+    "aten.repeat.default": get_repeat_inputs(),
 }
