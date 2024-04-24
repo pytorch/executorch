@@ -95,7 +95,7 @@ For more information, see [Setting Up ExecuTorch](../getting-started-setup.md).
 
 ## Running a Large Language Model Locally
 
-This example uses Karpathy’s [NanoGPT](https://github.com/karpathy/nanoGPT), which is a minimal implementation of
+This example uses Karpathy’s [nanoGPT](https://github.com/karpathy/nanoGPT), which is a minimal implementation of
 GPT-2 124M. This guide is applicable to other language models, as ExecuTorch is model-invariant.
 
 There are two steps to running a model with ExecuTorch:
@@ -113,7 +113,7 @@ ExecuTorch runtime.
 
 Exporting takes a PyTorch model and converts it into a format that can run efficiently on consumer devices.
 
-For this example, you will need the NanoGPT model and the corresponding tokenizer vocabulary.
+For this example, you will need the nanoGPT model and the corresponding tokenizer vocabulary.
 
 ::::{tab-set}
 :::{tab-item} curl
@@ -426,12 +426,12 @@ specific hardware (delegation), and because it is doing all of the calculations 
 While ExecuTorch provides a portable, cross-platform implementation for all
 operators, it also provides specialized backends for a number of different
 targets. These include, but are not limited to, x86 and ARM CPU acceleration via
-the XNNPACK backend, Apple acceleration via the CoreML backend and Metal
+the XNNPACK backend, Apple acceleration via the Core ML backend and Metal
 Performance Shader (MPS) backend, and GPU acceleration via the Vulkan backend.
 
 Because optimizations are specific to a given backend, each pte file is specific
 to the backend(s) targeted at export. To support multiple devices, such as
-XNNPACK acceleration for Android and CoreML for iOS, export a separate PTE file
+XNNPACK acceleration for Android and Core ML for iOS, export a separate PTE file
 for each backend.
 
 To delegate to a backend at export time, ExecuTorch provides the `to_backend()`
@@ -442,12 +442,12 @@ computation graph that can be accelerated by the target backend，and
 acceleration and optimization. Any portions of the computation graph not
 delegated will be executed by the ExecuTorch operator implementations.
 
-To delegate the exported model to the specific backend, we need to import its
-partitioner as well as edge compile config from ExecuTorch Codebase first, then
+To delegate the exported model to a specific backend, we need to import its
+partitioner as well as edge compile config from ExecuTorch codebase first, then
 call `to_backend` with an instance of partitioner on the `EdgeProgramManager`
 object `to_edge` function created.
 
-Here's an example of how to delegate NanoGPT to XNNPACK (if you're deploying to an Android Phone for instance):
+Here's an example of how to delegate nanoGPT to XNNPACK (if you're deploying to an Android phone for instance):
 
 ```python
 # export_nanogpt.py
@@ -466,7 +466,7 @@ from torch._export import capture_pre_autograd_graph
 
 from model import GPT
 
-# Load the NanoGPT model.
+# Load the nanoGPT model.
 model = GPT.from_pretrained('gpt2')
 
 # Create example inputs. This is used in the export process to provide
@@ -590,7 +590,7 @@ I'm not sure if you've heard of the "Curse of the Dragon" or not, but it's a ver
 The delegated model should be noticeably faster compared to the non-delegated model.
 
 For more information regarding backend delegateion, see the ExecuTorch guides
-for the [XNNPACK Backend](../tutorial-xnnpack-delegate-lowering.md) and [CoreML
+for the [XNNPACK Backend](../tutorial-xnnpack-delegate-lowering.md) and [Core ML
 Backend](../build-run-coreml.md).
 
 ## Quantization
@@ -701,7 +701,7 @@ df = delegation_info.get_operator_delegation_dataframe()
 print(tabulate(df, headers="keys", tablefmt="fancy_grid"))
 ```
 
-For NanoGPT targeting the XNNPACK backend, you might see the following:
+For nanoGPT targeting the XNNPACK backend, you might see the following:
 ```
 Total  delegated  subgraphs:  86
 Number  of  delegated  nodes:  473
@@ -709,7 +709,7 @@ Number  of  non-delegated  nodes:  430
 ```
 
 
-|    |  op_type                                 |  occurrences_in_delegated_graphs  |  occurrences_in_non_delegated_graphs  |
+|    |  op_type                                 |  # in_delegated_graphs  |  # in_non_delegated_graphs  |
 |----|---------------------------------|------- |-----|
 |  0  |  aten__softmax_default  |  12  |  0  |
 |  1  |  aten_add_tensor  |  37  |  0  |
@@ -731,7 +731,7 @@ print(print_delegated_graph(graph_module))
 This may generate a large amount of output for large models. Consider using "Control+F" or "Command+F" to locate the operator you’re interested in
 (e.g. “aten_view_copy_default”). Observe which instances are not under lowered graphs.
 
-In the fragment of the output for NanoGPT below, observe that embedding and add operators are delegated to XNNPACK while the sub operator is not.
+In the fragment of the output for nanoGPT below, observe that embedding and add operators are delegated to XNNPACK while the sub operator is not.
 
 ```
 %aten_unsqueeze_copy_default_22 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.unsqueeze_copy.default](args = (%aten_arange_start_step_23, -2), kwargs = {})
