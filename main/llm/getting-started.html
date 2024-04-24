@@ -532,7 +532,7 @@ See the pyenv-virtualenv installation guide above on how to add this to your .ba
 </div>
 <div class="section" id="running-a-large-language-model-locally">
 <h2>Running a Large Language Model Locally<a class="headerlink" href="#running-a-large-language-model-locally" title="Permalink to this heading">¶</a></h2>
-<p>This example uses Karpathy’s <a class="reference external" href="https://github.com/karpathy/nanoGPT">NanoGPT</a>, which is a minimal implementation of
+<p>This example uses Karpathy’s <a class="reference external" href="https://github.com/karpathy/nanoGPT">nanoGPT</a>, which is a minimal implementation of
 GPT-2 124M. This guide is applicable to other language models, as ExecuTorch is model-invariant.</p>
 <p>There are two steps to running a model with ExecuTorch:</p>
 <ol class="arabic simple">
@@ -546,7 +546,7 @@ ExecuTorch runtime.</p>
 <div class="section" id="step-1-exporting-to-executorch">
 <h3>Step 1. Exporting to ExecuTorch<a class="headerlink" href="#step-1-exporting-to-executorch" title="Permalink to this heading">¶</a></h3>
 <p>Exporting takes a PyTorch model and converts it into a format that can run efficiently on consumer devices.</p>
-<p>For this example, you will need the NanoGPT model and the corresponding tokenizer vocabulary.</p>
+<p>For this example, you will need the nanoGPT model and the corresponding tokenizer vocabulary.</p>
 <div class="sd-tab-set docutils">
 <input checked="checked" id="sd-tab-item-2" name="sd-tab-set-1" type="radio">
 </input><label class="sd-tab-label" for="sd-tab-item-2">
@@ -835,11 +835,11 @@ specific hardware (delegation), and because it is doing all of the calculations 
 <p>While ExecuTorch provides a portable, cross-platform implementation for all
 operators, it also provides specialized backends for a number of different
 targets. These include, but are not limited to, x86 and ARM CPU acceleration via
-the XNNPACK backend, Apple acceleration via the CoreML backend and Metal
+the XNNPACK backend, Apple acceleration via the Core ML backend and Metal
 Performance Shader (MPS) backend, and GPU acceleration via the Vulkan backend.</p>
 <p>Because optimizations are specific to a given backend, each pte file is specific
 to the backend(s) targeted at export. To support multiple devices, such as
-XNNPACK acceleration for Android and CoreML for iOS, export a separate PTE file
+XNNPACK acceleration for Android and Core ML for iOS, export a separate PTE file
 for each backend.</p>
 <p>To delegate to a backend at export time, ExecuTorch provides the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code>
 function in the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> object, which takes a backend-specific
@@ -848,11 +848,11 @@ computation graph that can be accelerated by the target backend，and
 <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> function will delegate matched part to given backend for
 acceleration and optimization. Any portions of the computation graph not
 delegated will be executed by the ExecuTorch operator implementations.</p>
-<p>To delegate the exported model to the specific backend, we need to import its
-partitioner as well as edge compile config from ExecuTorch Codebase first, then
+<p>To delegate the exported model to a specific backend, we need to import its
+partitioner as well as edge compile config from ExecuTorch codebase first, then
 call <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> with an instance of partitioner on the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>
 object <code class="docutils literal notranslate"><span class="pre">to_edge</span></code> function created.</p>
-<p>Here’s an example of how to delegate NanoGPT to XNNPACK (if you’re deploying to an Android Phone for instance):</p>
+<p>Here’s an example of how to delegate nanoGPT to XNNPACK (if you’re deploying to an Android phone for instance):</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
 
 <span class="c1"># Load partitioner for Xnnpack backend</span>
@@ -869,7 +869,7 @@ object <code class="docutils literal notranslate"><span class="pre">to_edge</spa
 
 <span class="kn">from</span> <span class="nn">model</span> <span class="kn">import</span> <span class="n">GPT</span>
 
-<span class="c1"># Load the NanoGPT model.</span>
+<span class="c1"># Load the nanoGPT model.</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s1">&#39;gpt2&#39;</span><span class="p">)</span>
 
 <span class="c1"># Create example inputs. This is used in the export process to provide</span>
@@ -981,7 +981,7 @@ I&#39;m not sure if you&#39;ve heard of the &quot;Curse of the Dragon&quot; or n
 </div>
 <p>The delegated model should be noticeably faster compared to the non-delegated model.</p>
 <p>For more information regarding backend delegateion, see the ExecuTorch guides
-for the <a class="reference internal" href="../tutorial-xnnpack-delegate-lowering.html"><span class="doc std std-doc">XNNPACK Backend</span></a> and <a class="reference internal" href="../build-run-coreml.html"><span class="doc std std-doc">CoreML
+for the <a class="reference internal" href="../tutorial-xnnpack-delegate-lowering.html"><span class="doc std std-doc">XNNPACK Backend</span></a> and <a class="reference internal" href="../build-run-coreml.html"><span class="doc std std-doc">Core ML
 Backend</span></a>.</p>
 </div>
 <div class="section" id="quantization">
@@ -1079,7 +1079,7 @@ structure the model in a way that is compatible with the target backend.</p>
 <span class="nb">print</span><span class="p">(</span><span class="n">tabulate</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="s2">&quot;keys&quot;</span><span class="p">,</span> <span class="n">tablefmt</span><span class="o">=</span><span class="s2">&quot;fancy_grid&quot;</span><span class="p">))</span>
 </pre></div>
 </div>
-<p>For NanoGPT targeting the XNNPACK backend, you might see the following:</p>
+<p>For nanoGPT targeting the XNNPACK backend, you might see the following:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Total</span>  <span class="n">delegated</span>  <span class="n">subgraphs</span><span class="p">:</span>  <span class="mi">86</span>
 <span class="n">Number</span>  <span class="n">of</span>  <span class="n">delegated</span>  <span class="n">nodes</span><span class="p">:</span>  <span class="mi">473</span>
 <span class="n">Number</span>  <span class="n">of</span>  <span class="n">non</span><span class="o">-</span><span class="n">delegated</span>  <span class="n">nodes</span><span class="p">:</span>  <span class="mi">430</span>
@@ -1089,8 +1089,8 @@ structure the model in a way that is compatible with the target backend.</p>
 <thead>
 <tr class="row-odd"><th class="head"><p></p></th>
 <th class="head"><p>op_type</p></th>
-<th class="head"><p>occurrences_in_delegated_graphs</p></th>
-<th class="head"><p>occurrences_in_non_delegated_graphs</p></th>
+<th class="head"><p># in_delegated_graphs</p></th>
+<th class="head"><p># in_non_delegated_graphs</p></th>
 </tr>
 </thead>
 <tbody>
@@ -1145,7 +1145,7 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 </div>
 <p>This may generate a large amount of output for large models. Consider using “Control+F” or “Command+F” to locate the operator you’re interested in
 (e.g. “aten_view_copy_default”). Observe which instances are not under lowered graphs.</p>
-<p>In the fragment of the output for NanoGPT below, observe that embedding and add operators are delegated to XNNPACK while the sub operator is not.</p>
+<p>In the fragment of the output for nanoGPT below, observe that embedding and add operators are delegated to XNNPACK while the sub operator is not.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">%</span><span class="n">aten_unsqueeze_copy_default_22</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">unsqueeze_copy</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_arange_start_step_23</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
   <span class="o">%</span><span class="n">aten_unsqueeze_copy_default_23</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">unsqueeze_copy</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_arange_start_step_24</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
   <span class="o">%</span><span class="n">lowered_module_0</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_attr</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">lowered_module_0</span><span class="p">]</span>
