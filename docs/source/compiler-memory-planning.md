@@ -9,7 +9,7 @@ MemoryPlanning is the very last action taken before taking an `ExportedProgram` 
 Concretely, there are three passes related to memory planning:
 * `SpecPropPass` computes a TensorSpec for each tensor in the graph (inputs, intermediates or outputs). The most important field of the tensor spec is a symbolic expression of the shapes of the tensor, where the initial set of symbols comes from the dimensions of input tensors, intermediate tensor shapes’ symbolic expression is propagated via tensor operations. The dimensions can be marked as either dynamic or static by users and when the dims are dynamic, users are required to annotate the dim with a ValueRange.
 
-* `SymShapEvalPass` evaluates the symbolic expressions to concrete integers with their upper bounds. There are two ways to doing the upper bound specialization:
+* `SymShapeEvalPass` evaluates the symbolic expressions to concrete integers with their upper bounds. There are two ways to doing the upper bound specialization:
 HintBasedSymShapeEval (to be deprecated) is the old way of evaluating the upper bound. It doesn’t look at the ValueRange of the symbols but uses the shapes of example inputs to replace all the symbols. We call it “hint based“ because the example inputs’ shapes are just hints of what the input shapes might be at run time and are used for tracing only. ValueRangeBasedSymShapeEval is the recommended way of doing UpperBoundMemory planning. It will actually look at the ValueRange of the symbols and do an inference over the ranges to get a real upper bound.
 
 * `MemoryPlanningPass` does the actual memory planning given all tensors get a TensorSpec with concrete integer shapes.
@@ -18,9 +18,9 @@ HintBasedSymShapeEval (to be deprecated) is the old way of evaluating the upper 
 
 ExecuTorch provides two options for memory planning algorithms out of the box, but users can define their own if the provided options are inappropriate or insufficient for their use case.
 
-* The naive algorithm simply concatenates all the tensors together in a linear memory without considering any memory re-use. It serves as an upper bound for total memory consumption and serves as a baseline.
+* The naive algorithm simply concatenates all the tensors together in a linear memory block without considering memory re-use. It serves as an upper bound for total memory consumption and serves as a baseline.
 
-* The Greedy algorithm tries to re-use the already allocated memory and choose based on the best-fit criteria. Specifically:
+* The Greedy algorithm tries to re-use the already allocated memory based on the best-fit criteria. Specifically:
 When there isn’t an allocated memory whose lifetime doesn’t overlap with the current tensor that we try to do memory planning for, we allocate a new memory buffer with the same size and lifetime as the current tensor. When there is one or more allocated memory buffer, whose lifetime overlaps with the current tensor, we pick the buffer that has the closest size with current tensor so as to reduce memory fragmentation. Finally, we allocate these memory buffers linearly in memory.
 
 
@@ -48,7 +48,7 @@ Users can write custom memory plans to take advantage of multiple memory locatio
 
 ```python
 class CustomPoolMemoryPlanningPass(MemoryPlanningPass):
-    def call(self, graph_module: GraphModule) -> PassResult:
+    def run(self, graph_module: GraphModule, graph_signature: Optional[ExportGraphSignature]) -> PassResult:
         for subgm in graph_module.modules():
             if not isinstance(subgm, GraphModule):
                 continue
@@ -68,7 +68,7 @@ class CustomPoolMemoryPlanningPass(MemoryPlanningPass):
                 elif node.target == torch.ops.aten.mul.out:
                     node.meta["spec"].mem_id = 1
 
-        return super().call(graph_module)
+        return super().run(graph_module, graph_signature)
 ```
 
 Then later when lowering to ExecuTorch you can use your custom plan in the following way:
@@ -83,4 +83,4 @@ program = edge_program.to_executorch(
         )
 ```
 
-Users attempting to write a custom memory planning algorithm should start by looking at [the greedy algorithm's implementation](https://github.com/pytorch/executorch/blob/d62c41ca86435e5316e7ed292b6d68aff27a2fb7/exir/memory_planning.py#L459C1-L459C12)
+Users attempting to write a custom memory planning algorithm should start by looking at [the greedy algorithm's implementation](https://github.com/pytorch/executorch/blob/d62c41ca86435e5316e7ed292b6d68aff27a2fb7/exir/memory_planning.py#L459C1-L459C12).
