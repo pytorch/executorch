@@ -15,7 +15,37 @@ dynamic = [
   # setup.py will set the version.
   'version',
 ]
-# Python dependencies required for development
+description = "On-device AI across mobile, embedded and edge for PyTorch"
+readme = "README-wheel.md"
+authors = [
+  {name="PyTorch Team", email="packages@pytorch.org"},
+]
+license = {file = "LICENSE"}
+keywords = ["pytorch", "machine learning"]
+# PyPI package information.
+classifiers = [
+    # How mature is this project? Common values are
+    #   3 - Alpha
+    #   4 - Beta
+    #   5 - Production/Stable
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    # Update this as we support more versions of python.
+    "Programming Language :: Python :: 3.10",
+]
+
+# Python dependencies required for use.
 dependencies=[
   "expecttest",
   "flatbuffers",
@@ -31,6 +61,13 @@ dependencies=[
   "sympy",
   "tabulate",
 ]
+
+[project.urls]
+# The keys are arbitrary but will be visible on PyPI.
+Homepage = "https://pytorch.org/executorch/"
+Repository = "https://github.com/pytorch/executorch"
+Issues = "https://github.com/pytorch/executorch/issues"
+Changelog = "https://github.com/pytorch/executorch/releases"
 
 # Tell setuptools to generate commandline wrappers for tools that we install
 # under data/bin in the pip package. This will put these commands on the user's
