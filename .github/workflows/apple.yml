@@ -129,7 +129,7 @@ jobs:
           # NB: The name here needs to match the upload-artifact name from build-frameworks-ios job
           name: executorch-frameworks-ios
           path: ${{ runner.temp }}/frameworks-ios/
-      - name: Only push to S3 when running the workflow manually from protected branch
+      - name: Only push to S3 when running the workflow manually from protected branches
         if: ${{ github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/nightly' || startsWith(github.ref, 'refs/heads/release')) }}
         shell: bash
         run: |
