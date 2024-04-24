@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 #  Copyright (c) 2024 Apple Inc. All rights reserved.
 #  Provided subject to the LICENSE file in the top level directory.
@@ -61,3 +60,5 @@ cmake \
 cmake --build cmake-out/examples/apple/mps -j9 --config "$MODE"
 
 echo "Build succeeded!"
+
+./cmake-out/examples/apple/mps/mps_executor_runner --model_path mps_logical_not.pte --bundled_program
