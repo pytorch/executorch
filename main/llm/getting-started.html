@@ -284,7 +284,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#quantization">Quantization</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#profiling-and-debugging">Profiling and Debugging</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#custom-kernels">Custom Kernels</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#how-to-build-mobile-apps">How to build Mobile Apps</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-build-mobile-apps">How to Build Mobile Apps</a></li>
 </ul>
 </li>
 </ul>
@@ -528,7 +528,7 @@ See the pyenv-virtualenv installation guide above on how to add this to your .ba
 </div>
 </div>
 </div>
-<p>For more information, see <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup.html">Setting Up ExecuTorch</a>.</p>
+<p>For more information, see <a class="reference internal" href="../getting-started-setup.html"><span class="doc std std-doc">Setting Up ExecuTorch</span></a>.</p>
 </div>
 <div class="section" id="running-a-large-language-model-locally">
 <h2>Running a Large Language Model Locally<a class="headerlink" href="#running-a-large-language-model-locally" title="Permalink to this heading">¶</a></h2>
@@ -616,7 +616,7 @@ file which can be loaded by a desktop or mobile application at runtime.</p>
 </pre></div>
 </div>
 <p>To export, run the script with <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">export_nanogpt.py</span></code> (or python3, as appropriate for your environment). It will generate a <code class="docutils literal notranslate"><span class="pre">nanogpt.pte</span></code> file in the current directory.</p>
-<p>For more information, see <a class="reference external" href="https://pytorch.org/executorch/main/tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch</a> and
+<p>For more information, see <a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Exporting to ExecuTorch</span></a> and
 <a class="reference external" href="https://pytorch.org/docs/stable/export.html">torch.export</a>.</p>
 </div>
 <div class="section" id="step-2-invoking-the-runtime">
@@ -760,8 +760,8 @@ penalties for repeated tokens, and biases to prioritize or de-prioritize specifi
 <span class="n">curl</span> <span class="o">-</span><span class="n">O</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">llm_manual</span><span class="o">/</span><span class="n">managed_tensor</span><span class="o">.</span><span class="n">h</span>
 </pre></div>
 </div>
-<p>To learn more, see <a class="reference external" href="https://pytorch.org/executorch/main/running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++</a>
-and the <a class="reference external" href="https://pytorch.org/executorch/main/executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a>.</p>
+<p>To learn more, see <a class="reference internal" href="../running-a-model-cpp-tutorial.html"><span class="doc std std-doc">Running an ExecuTorch Model in C++</span></a>
+and the <a class="reference internal" href="../executorch-runtime-api-reference.html"><span class="doc std std-doc">ExecuTorch Runtime API Reference</span></a>.</p>
 </div>
 <div class="section" id="building-and-running">
 <h3>Building and Running<a class="headerlink" href="#building-and-running" title="Permalink to this heading">¶</a></h3>
@@ -942,11 +942,9 @@ target_link_libraries(
     xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
 </pre></div>
 </div>
-<p>Keep the rest of the code the same. For more details refer to
-<a class="reference external" href="https://pytorch.org/executorch/main/llm/getting-started.html#step-1-exporting-to-executorch">Exporting to ExecuTorch</a>
-and
-<a class="reference external" href="https://pytorch.org/executorch/main/llm/getting-started.html#step-2-invoking-the-runtime">Invoking the Runtime</a>
-for more details</p>
+<p>Keep the rest of the code the same. For more details refer to <a class="reference internal" href="#step-1-exporting-to-executorch"><span class="std std-doc">Exporting
+to ExecuTorch</span></a> and <a class="reference internal" href="#step-2-invoking-the-runtime"><span class="std std-doc">Invoking the
+Runtime</span></a> for more details</p>
 <p>At this point, the working directory should contain the following files:</p>
 <ul class="simple">
 <li><p>CMakeLists.txt</p></li>
@@ -983,10 +981,8 @@ I&#39;m not sure if you&#39;ve heard of the &quot;Curse of the Dragon&quot; or n
 </div>
 <p>The delegated model should be noticeably faster compared to the non-delegated model.</p>
 <p>For more information regarding backend delegateion, see the ExecuTorch guides
-for the
-<a class="reference external" href="https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html">XNNPACK Backend</a>
-and
-<a class="reference external" href="https://pytorch.org/executorch/stable/build-run-coreml.html">CoreML Backend</a>.</p>
+for the <a class="reference internal" href="../tutorial-xnnpack-delegate-lowering.html"><span class="doc std std-doc">XNNPACK Backend</span></a> and <a class="reference internal" href="../build-run-coreml.html"><span class="doc std std-doc">CoreML
+Backend</span></a>.</p>
 </div>
 <div class="section" id="quantization">
 <h2>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h2>
@@ -1061,7 +1057,7 @@ optimize the model for CPU execution via the XNNPACK backend.</p>
     <span class="n">xnnpack_backend</span><span class="p">)</span> <span class="c1"># Provides the XNNPACK CPU acceleration backend</span>
 </pre></div>
 </div>
-<p>For more information, see <a class="reference external" href="https://pytorch.org/executorch/stable/quantization-overview.html">Quantization in ExecuTorch</a>.</p>
+<p>For more information, see <a class="reference internal" href="../quantization-overview.html"><span class="doc std std-doc">Quantization in ExecuTorch</span></a>.</p>
 </div>
 <div class="section" id="profiling-and-debugging">
 <h2>Profiling and Debugging<a class="headerlink" href="#profiling-and-debugging" title="Permalink to this heading">¶</a></h2>
@@ -1171,7 +1167,7 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 <h4>Prerequisites<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h4>
 <div class="section" id="etrecord-generation-optional">
 <h5>ETRecord generation (Optional)<a class="headerlink" href="#etrecord-generation-optional" title="Permalink to this heading">¶</a></h5>
-<p>An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see <a class="reference external" href="https://pytorch.org/executorch/main/sdk-etrecord.html">https://pytorch.org/executorch/main/sdk-etrecord.html</a></p>
+<p>An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see <a class="reference internal" href="../sdk-etrecord.html"><span class="doc std std-doc">the ETRecord docs</span></a>.</p>
 <p>In your export script, after calling <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, call <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> with the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and the <code class="docutils literal notranslate"><span class="pre">ExecuTorchProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>. Make sure to copy the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>, as the call to <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> mutates the graph in-place.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">copy</span>
 <span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">generate_etrecord</span>
@@ -1189,7 +1185,7 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 </div>
 <div class="section" id="etdump-generation">
 <h5>ETDump generation<a class="headerlink" href="#etdump-generation" title="Permalink to this heading">¶</a></h5>
-<p>An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see <a class="reference external" href="https://pytorch.org/executorch/main/sdk-etdump.html">https://pytorch.org/executorch/main/sdk-etdump.html</a></p>
+<p>An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see <a class="reference internal" href="../sdk-etdump.html"><span class="doc std std-doc">the ETDump docs</span></a>.</p>
 <p>Include the ETDump header in your code.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// main.cpp</span>
 
@@ -1253,7 +1249,7 @@ model runs in a single trace, if desired.</p>
 <p>This prints the performance data in a tabular format in “inspector_out.txt”, with each row being a profiling event. Top rows look like this:
 <img alt="" src="../_images/llm_manual_print_data_tabular.png" />
 <a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a></p>
-<p>To learn more about the Inspector and the rich functionality it provides, see the <a class="reference external" href="https://pytorch.org/executorch/main/sdk-inspector.html">Inspector API Reference</a>.</p>
+<p>To learn more about the Inspector and the rich functionality it provides, see the <a class="reference internal" href="../sdk-inspector.html"><span class="doc std std-doc">Inspector API Reference</span></a>.</p>
 </div>
 </div>
 </div>
@@ -1324,7 +1320,7 @@ This is needed to make PyTorch aware of the custom operator at the time of expor
 </div>
 <p>Once loaded, you can use the custom operator in PyTorch code.</p>
 <p>For more information, see <a class="reference external" href="https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html">PyTorch Custom Operators</a> and
-and <a class="reference external" href="https://pytorch.org/executorch/stable/kernel-library-custom-aten-kernel.html">ExecuTorch Kernel Registration</a>.</p>
+and <a class="reference internal" href="../kernel-library-custom-aten-kernel.html"><span class="doc std std-doc">ExecuTorch Kernel Registration</span></a>.</p>
 </div>
 <div class="section" id="using-a-custom-operator-in-a-model">
 <h3>Using a Custom Operator in a Model<a class="headerlink" href="#using-a-custom-operator-in-a-model" title="Permalink to this heading">¶</a></h3>
@@ -1346,10 +1342,12 @@ all instances of <code class="docutils literal notranslate"><span class="pre">to
 </div>
 </div>
 <div class="section" id="how-to-build-mobile-apps">
-<h2>How to build Mobile Apps<a class="headerlink" href="#how-to-build-mobile-apps" title="Permalink to this heading">¶</a></h2>
-<p>You can execute an LLM using ExecuTorch on iOS and Android.</p>
-<p><strong>For iOS see the <a class="reference external" href="https://pytorch.org/executorch/main/llm/llama-demo-ios.html">iLLaMA App</a>.</strong></p>
-<p><strong>For Android, see the <a class="reference external" href="https://pytorch.org/executorch/main/llm/llama-demo-android.html">Android Sample App</a>.</strong></p>
+<h2>How to Build Mobile Apps<a class="headerlink" href="#how-to-build-mobile-apps" title="Permalink to this heading">¶</a></h2>
+<p>See the instructions for building and running LLMs using ExecuTorch on iOS and Android.</p>
+<ul class="simple">
+<li><p><strong><a class="reference internal" href="llama-demo-ios.html"><span class="doc std std-doc">iOS ExecuTorch LLaMA Demo App</span></a></strong></p></li>
+<li><p><strong><a class="reference internal" href="llama-demo-android.html"><span class="doc std std-doc">Android ExecuTorch LLaMA Demo App</span></a></strong></p></li>
+</ul>
 </div>
 </div>
 
@@ -1428,7 +1426,7 @@ all instances of <code class="docutils literal notranslate"><span class="pre">to
 <li><a class="reference internal" href="#using-a-custom-operator-in-a-model">Using a Custom Operator in a Model</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#how-to-build-mobile-apps">How to build Mobile Apps</a></li>
+<li><a class="reference internal" href="#how-to-build-mobile-apps">How to Build Mobile Apps</a></li>
 </ul>
 </li>
 </ul>
