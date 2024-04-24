@@ -16,6 +16,7 @@ name = "executorch"
 # like a real release.
 version = "0.2.1.dev0+unknown"
 # Python dependencies required for development
+requires-python = ">=3.10"
 dependencies=[
   "expecttest",
   "flatbuffers",
