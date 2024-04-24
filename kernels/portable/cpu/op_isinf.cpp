@@ -14,8 +14,13 @@ namespace torch {
 namespace executor {
 namespace native {
 
+namespace {
+bool isinf(double x) {
+  return ::std::isinf(x);
+}
+}
 Tensor& isinf_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realhb_to_bool(std::isinf, ctx, in, out);
+  return internal::unary_ufunc_realhb_to_bool(isinf, ctx, in, out);
 }
 
 } // namespace native
