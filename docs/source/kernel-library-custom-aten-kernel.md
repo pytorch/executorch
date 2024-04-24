@@ -86,10 +86,88 @@ ATen operator with a dtype/dim order specialized kernel (works for `Double` dtyp
       kernel_name: torch::executor::add_out
 
 ```
+### Custom Ops C++ API
+
+For a custom kernel that implements a custom operator, we provides 2 ways to register it into ExecuTorch runtime:
+1. Using `EXECUTORCH_LIBRARY` and `WRAP_TO_ATEN` C++ macros.
+2. Using `functions.yaml` and codegen'd C++ libraries.
+
+The first option requires C++17 and doesn't have selective build support yet, but it's faster than the second option where we have to go through yaml authoring and build system tweaking.
+
+The first option is particularly suitable for fast prototyping but can also be used in production.
+
+Similar to `TORCH_LIBRARY`, `EXECUTORCH_LIBRARY` takes the operator name and the C++ function name and register them into ExecuTorch runtime.
+
+#### Prepare custom kernel implementation
+
+Define your custom operator schema for both functional variant (used in AOT compilation) and out variant (used in ExecuTorch runtime). The schema needs to follow PyTorch ATen convention (see native_functions.yaml). For example:
+
+```yaml
+custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -> Tensor
+custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -> Tensor(a!)
+```
+
+Then write your custom kernel according to the schema using ExecuTorch types, along with APIs to register to ExecuTorch runtime:
+
+
+```c++
+// custom_linear.h/custom_linear.cpp
+#include <executorch/runtime/kernel/kernel_includes.h>
+Tensor& custom_linear_out(const Tensor& weight, const Tensor& input, optional<Tensor> bias, Tensor& out) {
+   // calculation
+   return out;
+}
+```
+#### Use a C++ macro to register it into PyTorch & ExecuTorch
+
+Append the following line in the example above:
+```c++
+// custom_linear.h/custom_linear.cpp
+// opset namespace myop
+EXECUTORCH_LIBRARY(myop, "custom_linear.out", custom_linear_out);
+```
+
+Now we need to write some wrapper for this op to show up in PyTorch, but don’t worry we don’t need to rewrite the kernel. Create a separate .cpp for this purpose:
+
+```c++
+// custom_linear_pytorch.cpp
+#include "custom_linear.h"
+#include <torch/library.h>
+
+at::Tensor custom_linear(const at::Tensor& weight, const at::Tensor& input, std::optional<at::Tensor> bias) {
+    // initialize out
+    at::Tensor out = at::empty({weight.size(1), input.size(1)});
+    // wrap kernel in custom_linear.cpp into ATen kernel
+    WRAP_TO_ATEN(custom_linear_out, 3)(weight, input, bias, out);
+    return out;
+}
+// standard API to register ops into PyTorch
+TORCH_LIBRARY(myop, m) {
+    m.def("custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -> Tensor", custom_linear);
+    m.def("custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -> Tensor(a!)", WRAP_TO_ATEN(custom_linear_out, 3));
+}
+```
+
+#### Compile and link the custom kernel
+
+Link it into ExecuTorch runtime: In our `CMakeLists.txt`` that builds the binary/application, we just need to add custom_linear.h/cpp into the binary target. We can build a dynamically loaded library (.so or .dylib) and link it as well.
+
+Link it into PyTorch runtime: We need to package custom_linear.h, custom_linear.cpp and custom_linear_pytorch.cpp into a dynamically loaded library (.so or .dylib) and load it into our python environment. One way of doing this is:
+
+```python
+import torch
+torch.ops.load_library("libcustom_linear.so/dylib")
+
+# Now we have access to the custom op, backed by kernel implemented in custom_linear.cpp.
+op = torch.ops.myop.custom_linear.default
+```
+
 
 ### Custom Ops Yaml Entry
 
-For custom ops (the ones that are not part of the out variants of core ATen opset) we need to specify the operator schema as well as a `kernel` section. So instead of `op` we use `func` with the operator schema. As an example, here’s a yaml entry for a custom op:
+As mentioned above, this option provides more support in terms of selective build and features such as merging operator libraries.
+
+First we need to specify the operator schema as well as a `kernel` section. So instead of `op` we use `func` with the operator schema. As an example, here’s a yaml entry for a custom op:
 ```yaml
 - func: allclose.out(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
@@ -158,6 +236,30 @@ gen_operators_lib("generated_lib" KERNEL_LIBS ${_kernel_lib} DEPS executorch)
 target_link_libraries(executorch_binary generated_lib)
 
 ```
+
+We also provide the ability to merge two yaml files, given a precedence. `merge_yaml(FUNCTIONS_YAML functions_yaml FALLBACK_YAML fallback_yaml OUTPUT_DIR out_dir)` merges functions_yaml and fallback_yaml into a single yaml, if there's duplicate entries in functions_yaml and fallback_yaml, this macro will always take the one in functions_yaml.
+
+Example:
+
+```yaml
+# functions.yaml
+- op: add.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_add_out
+```
+
+And out fallback:
+
+```yaml
+# fallback.yaml
+- op: add.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::add_out
+```
+
+The merged yaml will have the entry in functions.yaml.
 
 #### Buck2
 
