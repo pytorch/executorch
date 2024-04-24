@@ -24,7 +24,7 @@ void increment_coordinate_permuted(
     size_t* const coordinate,
     IntArrayRef dims) {
   for (int i = dims.size() - 1; i >= 0; i--) {
-    size_t d = dims[i] >= 0 ? dims[i] : dims[i] + tensor.dim();
+    size_t d = dims[i];
     coordinate[d]++;
     if (coordinate[d] == tensor.size(d)) {
       coordinate[d] = 0;
@@ -57,6 +57,11 @@ Tensor& permute_copy_out(
       out);
 
   const auto in_type = out.scalar_type();
+  std::array<int64_t, kTensorDimensionLimit> positiveDims;
+  for (int i = 0; i < dims.size(); ++i) {
+    positiveDims[i] = dims[i] >= 0 ? dims[i] : dims[i] + in.dim();
+  }
+  IntArrayRef positiveDimsRef(positiveDims.data(), dims.size());
   // in and out must be the same dtype
   ET_SWITCH_ALL_TYPES(in_type, ctx, "permute_copy.out", CTYPE, [&] {
     const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
@@ -66,7 +71,7 @@ Tensor& permute_copy_out(
 
     for (size_t i = 0; i < out.numel(); ++i) {
       out_data[i] = in_data[coordinateToIndex(in, in_coord)];
-      increment_coordinate_permuted(in, in_coord, dims);
+      increment_coordinate_permuted(in, in_coord, positiveDimsRef);
     }
   });
 
