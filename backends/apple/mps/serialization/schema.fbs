@@ -24,6 +24,13 @@ enum MPSDataType : short {
   mps_data_type_complex_float32 = 11,
 }
 
+// ops like index.Tensor and index.put are currentely implemented as
+// Metal kernels for unsupported MPSGraph cases.
+enum OpType : short {
+  mps_graph,
+  metal_kernel
+}
+
 // Helper classes to define the number of input and output tensors for a node.
 // Not meant to be used directly.
 
@@ -143,6 +150,20 @@ table MPSEmbedding {
   padding_idx:int;
   scale_grad_by_freq:bool;
   sparse:bool;
+}
+
+table MPSIndexTensor {
+  input1_id:int;
+  indices_id:[int];
+  output_id:int;
+}
+
+table MPSIndexPut {
+  input1_id:int;
+  indices_id:[int];
+  values_shape:[int];
+  values_id:int;
+  output_id:int;
 }
 
 // Shape ops.
@@ -350,6 +371,7 @@ union MPSNodeUnion {
     MPSIsnan: _MPSNode1x1,
     MPSIsinf: _MPSNode1x1,
     MPSRound: _MPSNode1x1,
+    MPSLogicalNot: _MPSNode1x1,
 
     // Linear algebra ops
     MPSMatMul: _MPSNode2x1,
@@ -366,6 +388,8 @@ union MPSNodeUnion {
     // Indexing ops
     MPSIndexSelect,
     MPSEmbedding,
+    MPSIndexTensor,
+    MPSIndexPut,
 
     // Reduce ops
     MPSMean,
@@ -438,6 +462,8 @@ table MPSGraph {
   input_ids:[int];
   output_ids:[int];
   constant_ids:[int];
+
+  graph_type:OpType;
 }
 
 root_type MPSGraph;
