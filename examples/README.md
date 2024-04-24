@@ -9,6 +9,7 @@ ExecuTorch's extensive support spans from simple modules like "Add" to comprehen
 ## Directory structure
 ```
 examples
+├── llm_manual                        # A storage place for the files that [LLM Maunal](https://pytorch.org/executorch/main/llm/getting-started.html) needs
 ├── models                            # Contains a set of popular and representative PyTorch models
 ├── portable                          # Contains end-to-end demos for ExecuTorch in portable mode
 ├── selective_build                   # Contains demos of selective build for optimizing the binary size of the ExecuTorch runtime
@@ -20,7 +21,7 @@ examples
 |   └── mps                           # Contains end-to-end demos of MPS backend
 ├── arm                               # Contains demos of the Arm TOSA and Ethos-U NPU flows
 ├── qualcomm                          # Contains demos of Qualcomm QNN backend
-├── xtensa                            # Contains demos of exporting and running a simple model on Xtensa Hifi4 DSP
+├── cadence                           # Contains demos of exporting and running a simple model on Xtensa DSPs
 ├── third-party                       # Third-party libraries required for working on the demos
 └── README.md                         # This file
 ```
@@ -30,9 +31,9 @@ examples
 
 A user's journey may commence by exploring the demos located in the [`portable/`](./portable) directory. Here, you will gain insights into the fundamental end-to-end workflow to generate a binary file from a ML model in [portable mode](../docs/source/concepts.md##portable-mode-lean-mode) and run it on the ExecuTorch runtime.
 
-## Demo of Llama2
+## Demo of Llama 2 and Llama 3
 
-[This page](./models/llama2/README.md) demonstrates how to run a Llama 2 7B model on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
+[This page](./models/llama2/README.md) demonstrates how to run Llama 2 7B and Llama 3 8B models on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
 
 ## Demo of Selective Build
 
