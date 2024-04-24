@@ -435,10 +435,19 @@
 <div class="section" id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference external" href="https://developer.apple.com/xcode">Xcode 15</a>.</p></li>
-<li><p><a class="reference external" href="https://developer.apple.com/ios">iOS 17 SDK</a>.</p></li>
-<li><p>Set up your ExecuTorch repo and environment if you haven’t done so by following the <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting up ExecuTorch</a> to set up the repo and dev environment.</p></li>
+<li><p><a class="reference external" href="https://developer.apple.com/xcode">Xcode 15</a></p></li>
+<li><p><a class="reference external" href="https://developer.apple.com/ios">iOS 17 SDK</a></p></li>
+<li><p>Set up your ExecuTorch repo and environment if you haven’t done so by following the <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting up ExecuTorch</a> to set up the repo and dev environment:</p></li>
 </ul>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>-b<span class="w"> </span>release/0.2<span class="w"> </span>https://github.com/pytorch/executorch.git
+<span class="nb">cd</span><span class="w"> </span>executorch
+git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
+
+python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+
+./install_requirements.sh
+</pre></div>
+</div>
 </div>
 <div class="section" id="exporting-models">
 <h2>Exporting models<a class="headerlink" href="#exporting-models" title="Permalink to this heading">¶</a></h2>
@@ -449,11 +458,12 @@
 <ol class="arabic simple">
 <li><p>Open the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/LLaMA.xcodeproj">project</a> in Xcode.</p></li>
 <li><p>Run the app (cmd+R).</p></li>
-<li><p>In app UI pick a model and tokenizer to use, type a prompt and tap the arrow buton as on the <a class="reference download internal" download="" href="../_downloads/ce106e0d60e98c1996ce66a0e7cce48c/llama_ios_app.mp4"><span class="xref download myst">video</span></a>.</p></li>
+<li><p>In app UI pick a model and tokenizer to use, type a prompt and tap the arrow buton</p></li>
 </ol>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>ExecuTorch runtime is distributed as a Swift package providing some .xcframework as prebuilt binary targets. Xcode will dowload and cache the package on the first run, which will take some time.</p>
+<p>ExecuTorch runtime is distributed as a Swift package providing some .xcframework as prebuilt binary targets.
+Xcode will dowload and cache the package on the first run, which will take some time.</p>
 </div>
 </div>
 <div class="section" id="copy-the-model-to-simulator">
@@ -470,6 +480,10 @@
 <li><p>Navigate to the Files tab and drag&amp;drop the model and tokenizer files onto the iLLaMA folder.</p></li>
 <li><p>Wait until the files are copied.</p></li>
 </ol>
+<p>Click the image below to see it in action!</p>
+<a href="https://pytorch.org/executorch/main/_static/img/llama_ios_app.mp4">
+  <img src="https://pytorch.org/executorch/main/_static/img/llama_ios_app.png" width="600" alt="iOS app running a LlaMA model">
+</a>
 </div>
 <div class="section" id="reporting-issues">
 <h2>Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permalink to this heading">¶</a></h2>
