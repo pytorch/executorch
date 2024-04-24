@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>executorch.sdk.bundled_program.config &mdash; ExecuTorch  documentation</title>
+  <title>executorch.sdk.bundled_program.config &mdash; ExecuTorch 0.2 documentation</title>
   
 
   
@@ -284,6 +284,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../build-run-vulkan.html">Building and Running ExecuTorch with the Vulkan Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
@@ -332,6 +333,7 @@
 <p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
 </ul>
@@ -487,7 +489,7 @@
 <span class="sd">            input: All inputs required by eager_model with specific inference method for one-time execution.</span>
 
 <span class="sd">                    It is worth mentioning that, although both bundled program and ET runtime apis support setting input</span>
-<span class="sd">                    other than torch.tensor type, only the input in torch.tensor type will be actually updated in</span>
+<span class="sd">                    other than `torch.tensor` type, only the input in `torch.tensor` type will be actually updated in</span>
 <span class="sd">                    the method, and the rest of the inputs will just do a sanity check if they match the default value in method.</span>
 
 <span class="sd">            expected_output: Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.</span>
