@@ -102,7 +102,7 @@ class MPSPartitioner(Partitioner):
     def tag_nodes(self, partitions: List[Partition]) -> None:
         for partition in partitions:
             crt_partition_counter = 0
-            for node in sorted(partition.nodes):
+            for node in partition.nodes:
                 delegation_tag = f"mps_{partition.id}"
                 if self.use_metal_kernel(node):
                     logging.warning(f"[WARNING] Using Metal kernel for op {node.name}!")
