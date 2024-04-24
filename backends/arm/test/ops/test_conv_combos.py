@@ -12,6 +12,7 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from parameterized import parameterized
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -126,6 +127,32 @@ class ComboConvBatchnormRelu(torch.nn.Module):
         return x
 
 
+class ComboConvRelu6(torch.nn.Module):
+    edge_op_list = [
+        "executorch_exir_dialects_edge__ops_aten_convolution_default",
+        "executorch_exir_dialects_edge__ops_aten_hardtanh_default",
+    ]
+
+    test_data = [
+        (20 * torch.randn(1, 3, 256, 256),),
+        (5 * torch.randn(1, 3, 256, 256),),
+        (torch.randn(1, 3, 256, 256),),
+        (-5 * torch.randn(1, 3, 256, 256),),
+    ]
+
+    def __init__(self):
+        super().__init__()
+        self.conv2d = torch.nn.Conv2d(
+            in_channels=3, out_channels=3, kernel_size=3, stride=1, groups=1
+        )
+        self.relu6 = torch.nn.ReLU6()
+
+    def forward(self, x):
+        x = self.conv2d(x)
+        x = self.relu6(x)
+        return x
+
+
 class TestConvCombos(unittest.TestCase):
     def _test_conv_combo_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
@@ -222,15 +249,9 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConvBatchnormRelu()
         self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
 
-    # TODO(MLETORCH-85): Investigate numerical issue. This diff is present in legacy
-    # testcase as well (and also not tested). For now, just increase the
-    # tolerance, such that we don't skip the test entirely (i.e. we maintain
-    # functionality).
     def test_conv_batchnorm_relu_tosa_BI(self):
         model = ComboConvBatchnormRelu()
-        self._test_conv_combo_tosa_BI_pipeline(
-            model, model.get_inputs(), atol=1.0, rtol=1.0
-        )
+        self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
     @unittest.skipIf(
         not common.VELA_INSTALLED,
@@ -240,6 +261,31 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConvBatchnormRelu()
         self._test_conv_combo_u55_BI_pipeline(model, model.get_inputs())
 
+    ##################
+    ## Conv + ReLU6 ##
+    ##################
+    @parameterized.expand(ComboConvRelu6.test_data)
+    def test_conv_relu6_tosa_MI(self, test_data: torch.Tensor):
+        model = ComboConvRelu6()
+        test_data = (test_data,)
+        self._test_conv_combo_tosa_MI_pipeline(model, test_data)
+
+    @parameterized.expand(ComboConvRelu6.test_data)
+    def test_conv_relu6_tosa_BI(self, test_data: torch.Tensor):
+        model = ComboConvRelu6()
+        test_data = (test_data,)
+        self._test_conv_combo_tosa_BI_pipeline(model, test_data)
+
+    @parameterized.expand(ComboConvRelu6.test_data)
+    @unittest.skipIf(
+        not common.VELA_INSTALLED,
+        "There is no point in running U55 tests if the Vela tool is not installed",
+    )
+    def test_conv_relu6_u55_BI(self, test_data: torch.Tensor):
+        model = ComboConvRelu6()
+        test_data = (test_data,)
+        self._test_conv_combo_u55_BI_pipeline(model, test_data)
+
     ###############################
     ## Block bottleneck residual ##
     ###############################
@@ -247,14 +293,9 @@ class TestConvCombos(unittest.TestCase):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_tosa_MI_pipeline(model, model.get_inputs())
 
-    # TODO(MLETORCH-85): Investigate numerical issue. This diff was present in legacy
-    # testcase as well. For now, just increase the tolerance, such that
-    # we don't skip the test entirely (i.e. we maintain functionality).
     def test_block_bottleneck_residual_tosa_BI(self):
         model = ComboBlockBottleneckResidual()
-        self._test_conv_combo_tosa_BI_pipeline(
-            model, model.get_inputs(), atol=1.0, rtol=1.0
-        )
+        self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
     @unittest.skipIf(
         not common.VELA_INSTALLED,

@@ -74,16 +74,8 @@ Since weight packing creates an extra copy of the weights inside XNNPACK, We fre
 When executing the XNNPACK subgraphs, we prepare the tensor inputs and outputs and feed them to the XNNPACK runtime graph. After executing the runtime graph, the output pointers are filled with the computed tensors.
 
 #### **Profiling**
-We have enabled basic profiling for XNNPACK delegate that can be enabled with the following compiler flag `-DENABLE_XNNPACK_PROFILING`. After running the model it will produce basic per-op and total timings. We provide an example of the profiling below. The timings listed are the average across runs, and the units are in microseconds.
+We have enabled basic profiling for XNNPACK delegate that can be enabled with the following compiler flag `-DENABLE_XNNPACK_PROFILING`. With ExecuTorch's SDK integration, you can also now use the SDK tools to profile the model. You can follow the steps in [Using the ExecuTorch SDK to Profile a Model](./tutorials/sdk-integration-tutorial) on how to profile ExecuTorch models and use SDK's Inspector API to view XNNPACK's internal profiling information.
 
-```
-Fully Connected (NC, F32) GEMM: 109.510002
-Total Time: 109.510002
-```
-
-::::{note}
-Profiling is a work in progress, and is planned to be integrated with [SDK Tools](sdk-delegate-integration.md) and Tensorboard.
-::::
 
 [comment]: <> (TODO: Refactor quantizer to a more official quantization doc)
 ## Quantization

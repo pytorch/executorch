@@ -80,7 +80,7 @@ class Conv2dVisitor(NodeVisitor):
         )
 
         input_zp = (
-            get_quant_node_args(node.all_input_nodes[0])[1] if is_quant_node else 0
+            get_quant_node_args(node.all_input_nodes[0]).zp if is_quant_node else 0
         )
 
         attr.ConvAttribute(
