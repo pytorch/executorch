@@ -122,28 +122,47 @@ class TensorImpl {
    * this method more compatible with at::Tensor, and more consistent with the
    * rest of the methods on this class and in ETensor.
    */
-  ssize_t size(ssize_t dim) const;
+  ssize_t size(ssize_t dim) const {
+    ET_CHECK_MSG(
+        dim < dim_ && dim >= 0,
+        "Dimension out of range (expected to be in range of [0, %zd], but got %zd",
+        dim_ - 1,
+        dim);
+    return sizes_[dim];
+  }
 
   /// Returns the tensor's number of dimensions.
-  ssize_t dim() const;
+  ssize_t dim() const {
+    return dim_;
+  }
 
   /// Returns the number of elements in the tensor.
-  ssize_t numel() const;
+  ssize_t numel() const {
+    return numel_;
+  }
 
   /// Returns the type of the elements in the tensor (int32, float, bool, etc).
-  ScalarType scalar_type() const;
+  ScalarType scalar_type() const {
+    return type_;
+  }
 
   /// Returns the size in bytes of one element of the tensor.
   ssize_t element_size() const;
 
   /// Returns the sizes of the tensor at each dimension.
-  const ArrayRef<SizesType> sizes() const;
+  const ArrayRef<SizesType> sizes() const {
+    return ArrayRef<SizesType>{sizes_, static_cast<size_t>(dim_)};
+  }
 
   /// Returns the order the dimensions are laid out in memory.
-  const ArrayRef<DimOrderType> dim_order() const;
+  const ArrayRef<DimOrderType> dim_order() const {
+    return ArrayRef<DimOrderType>{dim_order_, static_cast<size_t>(dim_)};
+  }
 
   /// Returns the strides of the tensor at each dimension.
-  const ArrayRef<StridesType> strides() const;
+  const ArrayRef<StridesType> strides() const {
+    return ArrayRef<StridesType>{strides_, static_cast<size_t>(dim_)};
+  }
 
   /// Returns a pointer of type T to the constant underlying data blob.
   template <typename T>
@@ -152,7 +171,9 @@ class TensorImpl {
   }
 
   /// Returns a pointer to the constant underlying data blob.
-  const void* data() const;
+  const void* data() const {
+    return data_;
+  }
 
   /// Returns a pointer of type T to the mutable underlying data blob.
   template <typename T>
@@ -161,10 +182,14 @@ class TensorImpl {
   }
 
   /// Returns a pointer to the mutable underlying data blob.
-  void* mutable_data() const;
+  void* mutable_data() const {
+    return data_;
+  }
 
   /// Sets the underlying data blob to the passed in pointer.
-  void set_data(void* ptr);
+  void set_data(void* ptr) {
+    data_ = ptr;
+  }
 
   /*
    * DEPRECATED: Use torch::executor::resize_tensor() or

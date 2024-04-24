@@ -55,54 +55,9 @@ size_t TensorImpl::nbytes() const {
   return numel_ * elementSize(type_);
 }
 
-ssize_t TensorImpl::size(ssize_t dim) const {
-  ET_CHECK_MSG(
-      dim < dim_ && dim >= 0,
-      "Dimension out of range (expected to be in range of [0, %zd], but got %zd",
-      dim_ - 1,
-      dim);
-  return sizes_[dim];
-}
-
-ssize_t TensorImpl::dim() const {
-  return dim_;
-}
-
-ssize_t TensorImpl::numel() const {
-  return numel_;
-}
-
-ScalarType TensorImpl::scalar_type() const {
-  return type_;
-}
-
 // Return the size of one element of the tensor
 ssize_t TensorImpl::element_size() const {
   return elementSize(type_);
-}
-
-const ArrayRef<TensorImpl::SizesType> TensorImpl::sizes() const {
-  return ArrayRef<SizesType>{sizes_, static_cast<size_t>(dim_)};
-}
-
-const ArrayRef<TensorImpl::DimOrderType> TensorImpl::dim_order() const {
-  return ArrayRef<DimOrderType>{dim_order_, static_cast<size_t>(dim_)};
-}
-
-const ArrayRef<TensorImpl::StridesType> TensorImpl::strides() const {
-  return ArrayRef<StridesType>{strides_, static_cast<size_t>(dim_)};
-}
-
-const void* TensorImpl::data() const {
-  return data_;
-}
-
-void* TensorImpl::mutable_data() const {
-  return data_;
-}
-
-void TensorImpl::set_data(void* ptr) {
-  data_ = ptr;
 }
 
 Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
