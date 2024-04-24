@@ -662,7 +662,8 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             quantizers = []
         except ImportError:
             raise ImportError(
-                "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
+                "Please install the Qualcomm backend follwing "
+                "https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
             )
 
         backend, quant_config = args.pt2e_quantize.split("_")
