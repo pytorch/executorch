@@ -60,6 +60,7 @@ dependencies=[
   "ruamel.yaml",
   "sympy",
   "tabulate",
+  "torch==2.3",
 ]
 
 [project.urls]
