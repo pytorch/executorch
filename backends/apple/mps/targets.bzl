@@ -22,6 +22,7 @@ def define_common_targets(is_xplat = False, platforms = []):
             "-Wno-unused-const-variable",
             "-Wno-unused-variable",
             "-fno-objc-arc",
+            "-std=c++17",
         ],
         "deps": [
             "//executorch/runtime/core:core",

@@ -17,6 +17,7 @@ MPSGraphBuilder::MPSGraphBuilder(const void* buffer_pointer, std::unordered_map<
   _targetTensors = [NSMutableArray new];
 
   _mpsGraphExecutable = nil;
+  _metal_kernel = false;
 }
 
 Error
@@ -32,8 +33,34 @@ MPSGraphBuilder::compileModel() {
     mpsgraph::MPSGraphIdentifier());
 
   _flatBufferGraph = mpsgraph::GetMPSGraph(_buffer_pointer);
-  _idToMPSGraphTensor.resize(_flatBufferGraph->mps_values()->size(), nullptr);
+  switch (_flatBufferGraph->graph_type()) {
+    case mpsgraph::OpType::metal_kernel:
+    {
+      _metal_kernel = true;
+      err = compileMetalKernel();
+      break;
+    }
+    case mpsgraph::OpType::mps_graph:
+    {
+      err = compileMPSGraph();
+      break;
+    }
+    default:
+      ET_CHECK_OR_RETURN_ERROR(
+      false,
+      DelegateInvalidCompatibility,
+      "Received an invalid operation type: expected MPSGraph or metal kernel, but got: %s",
+      EnumNameOpType(_flatBufferGraph->graph_type()));
+  }
 
+  return err;
+}
+
+Error
+MPSGraphBuilder::compileMPSGraph() {
+  Error err = Error::Ok;
+
+  _idToMPSGraphTensor.resize(_flatBufferGraph->mps_values()->size(), nullptr);
   // Add the placeholder nodes to the graph.
   for (auto in_id : *_flatBufferGraph->input_ids()) {
     err = mpsGraphRankedPlaceholder(in_id);
@@ -66,6 +93,30 @@ MPSGraphBuilder::compileModel() {
       "Failed to deserialize the model");
 
     [_targetTensors addObject: _idToMPSGraphTensor[out_id]];
+  }
+
+  return err;
+}
+
+Error
+MPSGraphBuilder::compileMetalKernel() {
+  Error err = Error::Ok;
+
+  ET_CHECK_OR_RETURN_ERROR(
+    _flatBufferGraph->mps_nodes()->size() == 1,
+    DelegateInvalidCompatibility,
+    "Currently supporting dispatching a single Metal kernel.");
+  ET_CHECK_OR_RETURN_ERROR(
+    _flatBufferGraph->constant_ids()->size() == 0,
+    DelegateInvalidCompatibility,
+    "Currently not supporting dispatching Metal kernels with constants.");
+
+  // Compile the corresponding Metal kernel
+  for (auto node : *_flatBufferGraph->mps_nodes()) {
+    err = compileMetalKernel(node);
+    if (err != Error::Ok) {
+      return err;
+    }
   }
 
   return err;

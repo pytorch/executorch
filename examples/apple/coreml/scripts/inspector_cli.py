@@ -7,7 +7,7 @@
 import argparse
 import json
 
-from typing import Any, Dict, Final, List, Tuple
+from typing import Any, Dict, Final, List, Tuple, Union
 
 from executorch.sdk import Inspector
 from executorch.sdk.inspector._inspector_utils import compare_results
@@ -32,6 +32,12 @@ def parse_coreml_delegate_metadata(delegate_metadatas: List[str]) -> Dict[str, A
 
     except ValueError:
         return {}
+
+
+def convert_coreml_delegate_time(
+    event_name: Union[str, int], input_time: Union[int, float]
+) -> Union[int, float]:
+    return input_time / (1000 * 1000)
 
 
 def main() -> None:
@@ -60,6 +66,7 @@ def main() -> None:
         etrecord=args.etrecord_path,
         debug_buffer_path=args.debug_buffer_path,
         delegate_metadata_parser=parse_coreml_delegate_metadata,
+        delegate_time_scale_converter=convert_coreml_delegate_time,
     )
     inspector.print_data_tabular(include_delegate_debug_data=True)
     if args.compare_results:

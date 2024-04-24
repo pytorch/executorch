@@ -63,7 +63,7 @@ class MemoryAllocator {
   /**
    * Allocates `size` bytes of memory.
    *
-   * @param[in] size Number of memory chunks to allocate.
+   * @param[in] size Number of bytes to allocate.
    * @param[in] alignment Minimum alignment for the returned pointer. Must be a
    *     power of 2.
    *

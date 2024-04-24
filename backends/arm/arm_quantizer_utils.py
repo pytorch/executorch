@@ -780,11 +780,11 @@ def _annotate_add(
         if _is_annotated([add_node]):
             continue
 
+        input_act0 = add_node.args[0]
         input_act_qspec = get_input_act_qspec(quantization_config)
-        output_act_qspec = get_output_act_qspec(quantization_config)
+        shared_with_input0_qspec = SharedQuantizationSpec((input_act0, add_node))
 
         input_qspec_map = {}
-        input_act0 = add_node.args[0]
         if isinstance(input_act0, Node):
             if _is_input_large_scalar(input_act0, gm):
                 continue
@@ -798,11 +798,14 @@ def _annotate_add(
                 continue
             if _is_input_non_float_tensor(input_act1):
                 continue
-            input_qspec_map[input_act1] = input_act_qspec
+            if input_act0 is not input_act1:
+                input_qspec_map[input_act1] = shared_with_input0_qspec
+            else:
+                input_qspec_map[input_act1] = input_act_qspec
 
         add_node.meta["quantization_annotation"] = QuantizationAnnotation(
             input_qspec_map=input_qspec_map,
-            output_qspec=output_act_qspec,
+            output_qspec=shared_with_input0_qspec,
             _annotated=True,
         )
     return annotated_partitions

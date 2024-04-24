@@ -51,6 +51,7 @@ def define_common_targets():
         visibility = [
             "//executorch/examples/...",
             "//bento/...",
+            "//bento_kernels/...",
         ],
         _is_external_target = True,
         deps = [] if runtime.is_oss else ["fbsource//third-party/pypi/sentencepiece:sentencepiece"],
