@@ -26,7 +26,7 @@ api::utils::ivec2 make_ivec2_kernel_size(
   }
 }
 
-KernelParams create_kernel_params(
+Kernel2dParams create_kernel2d_params(
     ComputeGraph& graph,
     const ValueRef weight,
     const bool kernel_size_only,

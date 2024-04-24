@@ -12,6 +12,8 @@ if(NOT DEFINED ET_PTE_FILE_PATH)
     "model is built into the binary.")
 endif()
 
+option(SEMIHOSTING "Enable semihosting" OFF)
+
 # Example ExecuTorch demo for bare metal Cortex-M based systems
 set(ET_DIR_PATH "../../.." CACHE PATH
   "Path to ExecuTorch dir")
@@ -105,3 +107,17 @@ target_include_directories(arm_executor_runner PRIVATE
   ${CMAKE_CURRENT_BINARY_DIR})
 
 add_dependencies(arm_executor_runner gen_model_header)
+
+
+if(SEMIHOSTING)
+target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
+endif()
+
+# Fixup compilation of retarget.c
+if(SEMIHOSTING)
+# Remove this when MLBEDSW-8910 is closed.
+set_source_files_properties(
+  ${ETHOS_SDK_PATH}/core_platform/targets/corstone-300/retarget.c
+  PROPERTIES HEADER_FILE_ONLY TRUE
+)
+endif()

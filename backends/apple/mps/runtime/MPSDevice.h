@@ -5,9 +5,18 @@
 
 #pragma once
 
+// Obj-C headers
 #include <Foundation/Foundation.h>
 #include <Metal/Metal.h>
+
+// Runtime headers
+#include <executorch/runtime/backend/interface.h>
+
+// MPS headers
 #include <MetalPerformanceShaders/MetalPerformanceShaders.h>
+
+#include <unordered_map>
+#include <vector>
 
 #define MB(x) (x * 1048576UL)
 
@@ -23,6 +32,11 @@ enum class MacOSVersion : uint32_t {
   MACOS_VER_13_2_PLUS,
   MACOS_VER_13_3_PLUS,
   MACOS_VER_14_0_PLUS,
+};
+
+enum class LibraryType : uint32_t {
+  INDEXING_KERNELS = 0,
+  MAX = INDEXING_KERNELS,
 };
 
 class MPSDevice {
@@ -53,9 +67,18 @@ class MPSDevice {
 
   ~MPSDevice();
 
+  /**
+   * Compile a PSO for a given library type.
+   * Once compiled, the library and PSOs are cached.
+   */
+  Error compilePSO(LibraryType libraryType, const char* kernelName);
+  Error compileLibrary(LibraryType);
+
  private:
   static MPSDevice* _device;
   id<MTLDevice> _mtl_device;
+  std::unordered_map<LibraryType, id<MTLLibrary>> _m_library_cache;
+  std::unordered_map<std::string, id<MTLComputePipelineState>> _m_pso_cache;
   MPSDevice();
 };
 

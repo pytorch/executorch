@@ -166,6 +166,7 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
     _DEFINE_MPS_NODE(Isnan);
     _DEFINE_MPS_NODE(Isinf);
     _DEFINE_MPS_NODE(Round);
+    _DEFINE_MPS_NODE(LogicalNot);
     // Clamp ops
     _DEFINE_MPS_NODE(Clamp);
     _DEFINE_MPS_NODE(Where);
@@ -178,6 +179,8 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
     //Indexing ops
     _DEFINE_MPS_NODE(IndexSelect);
     _DEFINE_MPS_NODE(Embedding);
+    _DEFINE_MPS_NODE(IndexTensor);
+    _DEFINE_MPS_NODE(IndexPut);
     // Reduce ops
     _DEFINE_MPS_NODE(Mean);
     // Shape ops
@@ -221,6 +224,11 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
         "[ERROR] Unhandled node type: %s!",
         mpsgraph::EnumNameMPSNodeUnion(nodePtr->mpsnode_union_type()));
   }
+}
+
+Error
+MPSGraphBuilder::compileMetalKernel(NodePtr nodePtr) {
+  return addNodeToMPSGraph(nodePtr);
 }
 
 #undef _DEFINE_MPS_NODE
