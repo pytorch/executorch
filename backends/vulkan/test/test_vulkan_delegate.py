@@ -732,3 +732,69 @@ class TestBackends(unittest.TestCase):
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
+
+    def test_vulkan_backend_reshape(self):
+        class ReshapeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.reshape(x, [-1, x.size(-1)])
+
+        sample_inputs = (torch.randn(size=(5, 3, 4), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            ReshapeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_view(self):
+        class ViewModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x.view([-1, x.size(-1)])
+
+        sample_inputs = (torch.randn(size=(3, 2, 3, 4), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            ViewModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_unsqueeze(self):
+        class UnsqueezeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = torch.unsqueeze(x, 1)
+                x = torch.unsqueeze(x, 0)
+                return x
+
+        sample_inputs = (torch.randn(size=(3,), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            UnsqueezeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_select(self):
+        class SelectModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x[0][3]
+
+        sample_inputs = (torch.randn(size=(3, 6, 2, 7), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            SelectModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
