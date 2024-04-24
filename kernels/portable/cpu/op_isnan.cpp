@@ -15,8 +15,8 @@ namespace executor {
 namespace native {
 
 Tensor& isnan_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  // Lambda is syntactic sugar needed to workaround compilation on some older non-compatible distros
-  // where isnan is not defined for double, but either for float or for long double
+  // Lambda is syntactic sugar needed to workaround compilation on some older
+  // non-compatible distros where isnan is returning int rather than bool
   return internal::unary_ufunc_realhb_to_bool(
       [](double x) -> bool { return std::isnan(x); }, ctx, in, out);
 }
