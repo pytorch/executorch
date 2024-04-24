@@ -100,6 +100,18 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
     ```
 
+### Option C: Download and export Llama3 8B model
+
+You can export and run the original Llama3 8B model.
+
+1. Llama3 pretrained parameters can be downloaded from [Meta's official llama3 repository](https://github.com/meta-llama/llama3/).
+
+2. Export model and generate `.pte` file
+    ```
+    python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_id":128001}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
+    ```
+
+    Due to the larger vocabulary size of Llama3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` to further reduce the model size.
 
 ## (Optional) Finetuning
 
