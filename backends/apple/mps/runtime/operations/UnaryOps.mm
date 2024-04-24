@@ -92,6 +92,7 @@ REGISTER_UNARY_OP(Atanh, atanh)
 REGISTER_UNARY_OP(Isnan, isNaN)
 REGISTER_UNARY_OP(Isinf, isInfinite)
 REGISTER_UNARY_OP(Round, round)
+REGISTER_UNARY_OP(LogicalNot, not)
 
 
 Error

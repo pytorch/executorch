@@ -109,6 +109,7 @@ private:
   _DEFINE_MPS_OP(Isnan);
   _DEFINE_MPS_OP(Isinf);
   _DEFINE_MPS_OP(Round);
+  _DEFINE_MPS_OP(LogicalNot);
   _DEFINE_MPS_OP(NormCdf);
   // Clamp ops
   _DEFINE_MPS_OP(Clamp);
@@ -120,6 +121,8 @@ private:
   // Indexing ops
   _DEFINE_MPS_OP(IndexSelect);
   _DEFINE_MPS_OP(Embedding);
+  _DEFINE_MPS_OP(IndexTensor);
+  _DEFINE_MPS_OP(IndexPut);
   // Linear algebra ops
   _DEFINE_MPS_OP(MatMul);
   _DEFINE_MPS_OP(Addmm);
@@ -153,6 +156,7 @@ private:
 
   // Helper functions
   Error addNodeToMPSGraph(NodePtr nodePtr);
+  Error compileMetalKernel(NodePtr nodePtr);
   MPSShape *getMPSShape(int32_t id);
   MPSShape *getMPSShape(const flatbuffers::Vector<int32_t> *shape);
   int64_t numel(const flatbuffers::Vector<int32_t> *shape);
@@ -161,6 +165,8 @@ private:
   MPSGraphTensor *getMPSGraphTensor(int32_t id);
   NSData *getConstantData(int32_t id);
   std::pair<float, float> getMinMaxValues(NodePtr nodePtr);
+  Error compileMPSGraph();
+  Error compileMetalKernel();
 
   // Each MPSGraph op result in at least MPSGraphTensor being
   // produced, which will be stored in this structure. Other ops
@@ -172,6 +178,7 @@ private:
   // FlatBuffer raw bytes of the serialized MPS model.
   const void *_buffer_pointer;
 
+  bool _metal_kernel;
   MPSGraph *_mpsGraph;
   MPSGraphExecutable *_mpsGraphExecutable;
   NSMutableDictionary<MPSGraphTensor *, MPSGraphShapedType *> *_feeds;
