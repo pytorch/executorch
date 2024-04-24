@@ -33,11 +33,7 @@ from torchgen.api.types import CppSignatureGroup
 
 from torchgen.gen import generate_static_dispatch_backend_call, translate_args
 
-from torchgen.gen_aoti_c_shim import (
-    gen_aoti_c_shim,
-    gen_static_dispatch_backend_call_signature,
-    get_backend_index_for_aoti,
-)
+from torchgen.gen_aoti_c_shim import gen_static_dispatch_backend_call_signature
 from torchgen.model import NativeFunction, Variant
 
 ##################################

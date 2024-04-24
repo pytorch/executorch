@@ -20,13 +20,11 @@ layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict 
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 
 layout(set = 0, binding = 2) uniform PRECISION restrict RepeatArgs {
-  // With input of size (n, c_i, h, w) and repeat r
+  // With input_size (n, c_i, h, w) and repeat r
   // out_size == (n, c_i * r, h, w)
   ivec4 out_sizes;
   ivec4 in_sizes;
 };
-
-
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -58,4 +56,3 @@ void main() {
 
   imageStore(image_out, out_pos, v);
 }
-

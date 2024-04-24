@@ -220,8 +220,8 @@ class vTensor final {
    */
   const api::BufferBindInfo texture_limits_ubo();
 
-  inline const vTensor::TextureLimits texture_limits() const {
-    return texture_limits_;
+  inline const api::utils::ivec3 texture_limits() const {
+    return texture_limits_.limits;
   }
 
   inline size_t numel() const {

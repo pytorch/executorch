@@ -8,17 +8,12 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
-#include <executorch/backends/vulkan/runtime/api/api.h>
-#include <executorch/backends/vulkan/runtime/graph/Logging.h>
-
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Copy.h>
-
-#include <iostream>
 
 namespace vkcompute {
 
@@ -137,12 +132,12 @@ void add_repeat_node(
   // After expanding a dimension, we will update the "running_range" since we
   // will need to copy the "expanded" area.
 
-  api::utils::ivec3 running_range = t_in->texture_limits().limits;
+  api::utils::ivec3 running_range = t_in->texture_limits();
 
   const std::vector<int64_t>& in_sizes = t_in->sizes();
 
-  // We use channel packing, repeating the channel dimension is the most
-  // complicated and time-consuming, since we need to reason over misaligned
+  // Since we use channel packing, repeating the channel dimension is the most
+  // complicated and time-consuming, as we need to reason over misaligned
   // channels. Hence we expand it first to minimize cost. Also, in this first
   // dimension, we copy over the input texure to the output. In subsequent
   // dimensions, we read and write from the same tensor.
@@ -159,12 +154,12 @@ void add_repeat_node(
     add_repeat_channel_node(graph, in, channel_repeat, out, running_range);
   }
 
+  // TODO: refactor width, height, and batch into a common helper function.
   // Width
   if (int64_t width_repeat = dim_at<Dim4D::Width>(repeats); width_repeat > 1) {
     api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
-    // api::utils::ivec3 range = t_in->texture_limits().limits;
 
-    for (int i = 1; i < width_repeat; i++) {
+    for (int i = 1; i < width_repeat; ++i) {
       api::utils::ivec3 dst_offset = api::utils::make_ivec3(
           {i * dim_at<Dim4D::Width>(in_sizes), 0, 0}, false);
 
@@ -180,7 +175,7 @@ void add_repeat_node(
       height_repeat > 1) {
     api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
 
-    for (int i = 1; i < height_repeat; i++) {
+    for (int i = 1; i < height_repeat; ++i) {
       api::utils::ivec3 dst_offset = api::utils::make_ivec3(
           {0, i * dim_at<Dim4D::Height>(in_sizes), 0}, false);
 
@@ -195,7 +190,7 @@ void add_repeat_node(
   if (int64_t batch_repeat = dim_at<Dim4D::Batch>(repeats); batch_repeat > 1) {
     api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
 
-    for (int i = 1; i < batch_repeat; i++) {
+    for (int i = 1; i < batch_repeat; ++i) {
       api::utils::ivec3 dst_offset =
           api::utils::make_ivec3({0, 0, i * running_range.data[2]}, false);
 
