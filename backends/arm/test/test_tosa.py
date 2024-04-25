@@ -13,10 +13,17 @@ import unittest
 import executorch.exir as exir
 from executorch.backends.arm.arm_backend import generate_tosa_compile_spec
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
+
+## For quantization
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    ArmQuantizer,
+    get_symmetric_quantization_config,
+)
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.exir import EdgeCompileConfig
-
+from executorch.exir.program import to_edge
 from torch._export import capture_pre_autograd_graph
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.export import export
 
 # Config for Capturing the weights, will be moved in the future
@@ -25,15 +32,6 @@ _EDGE_COMPILE_CONFIG: EdgeCompileConfig = exir.EdgeCompileConfig(
     _check_ir_validity=False,
     _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
 )
-
-## For quantization
-from executorch.backends.arm.arm_quantizer import (
-    ArmQuantizer,
-    get_symmetric_quantization_config,
-)
-from executorch.exir import EdgeCompileConfig
-from executorch.exir.program import to_edge
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class TestBasicNN(unittest.TestCase):
