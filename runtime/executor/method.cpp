@@ -786,7 +786,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
       input_idx,
       inputs_size());
 
-  const auto& e = get_input(input_idx);
+  const auto& e = get_value(get_input_index(input_idx));
   ET_CHECK_OR_RETURN_ERROR(
       e.isTensor() || e.isScalar(),
       InvalidArgument,
@@ -946,7 +946,7 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       output_idx,
       outputs_size());
 
-  auto& output = mutable_output(output_idx);
+  auto& output = mutable_value(get_output_index(output_idx));
   ET_CHECK_OR_RETURN_ERROR(
       output.isTensor(),
       InvalidArgument,
