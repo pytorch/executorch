@@ -558,10 +558,6 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs xnnpack_backend XNNPACK)
   endif()
 
-  if(EXECUTORCH_BUILD_CUSTOM)
-    list(APPEND _dep_libs custom_ops)
-  endif()
-
   if(EXECUTORCH_BUILD_QUANTIZED)
     target_link_options_shared_lib(quantized_ops_lib)
     list(APPEND _dep_libs quantized_kernels quantized_ops_lib)
@@ -570,6 +566,13 @@ if(EXECUTORCH_BUILD_PYBIND)
   # TODO(larryliu): Fix macOS 2 dylibs having 2 sets of static variables issue
   if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT AND NOT APPLE)
     list(APPEND _dep_libs custom_ops_aot_lib)
+  endif()
+  # TODO(laryliu): Fix linux duplicate registation problem. In GH CI worker
+  # libcustom_ops.a doesn't dedup with the one indirectly linked from
+  # libcustom_ops_aot_lib.a
+  if(EXECUTORCH_BUILD_CUSTOM AND APPLE)
+    target_link_options_shared_lib(custom_ops)
+    list(APPEND _dep_libs custom_ops)
   endif()
   # compile options for pybind
 
