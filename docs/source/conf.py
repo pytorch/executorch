@@ -86,6 +86,8 @@ if et_version_docs:
         version = ".".join(
             et_version_docs.split("/")[-1].split("-")[0].lstrip("v").split(".")[:2]
         )
+    elif et_version_docs.startswith("refs/heads/release/"):
+        version = et_version_docs.split("/")[-1]
 print(f"Version: {version}")
 html_title = " ".join((project, version, "documentation"))
 
