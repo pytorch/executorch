@@ -312,6 +312,9 @@ class Event:
     _instruction_id: Optional[int] = None
 
     _delegate_metadata_parser: Optional[Callable[[List[str]], Dict[str, Any]]] = None
+    _delegate_time_scale_converter: Optional[
+        Callable[[Union[int, str], Union[int, float]], Union[int, float]]
+    ] = None
 
     @cached_property
     def delegate_debug_metadatas(self) -> Union[List[str], Dict[str, Any]]:
@@ -391,6 +394,9 @@ class Event:
         delegate_metadata_parser: Optional[
             Callable[[List[str]], Dict[str, Any]]
         ] = None,
+        delegate_time_scale_converter: Optional[
+            Callable[[Union[int, str], Union[int, float]], Union[int, float]]
+        ] = None,
     ) -> "Event":
         """
         Given an EventSignature and a list of Events with that signature,
@@ -411,6 +417,7 @@ class Event:
             name="",
             _instruction_id=signature.instruction_id,
             _delegate_metadata_parser=delegate_metadata_parser,
+            _delegate_time_scale_converter=delegate_time_scale_converter,
         )
 
         # Populate fields from profile events
@@ -476,14 +483,35 @@ class Event:
                         f"Expected exactly one profile event per InstructionEvent when generating Inspector Event, but got {len(profile_events)}"
                     )
 
-                # Scale factor should only be applied to non-delegated ops
-                scale_factor_updated = 1 if ret_event.is_delegated_op else scale_factor
-
                 profile_event = profile_events[0]
-                data.append(
-                    float(profile_event.end_time - profile_event.start_time)
-                    / scale_factor_updated
-                )
+
+                # Scale factor should only be applied to non-delegated ops
+                if (
+                    ret_event.is_delegated_op
+                    and ret_event._delegate_time_scale_converter is not None
+                ):
+                    scaled_time = ret_event._delegate_time_scale_converter(
+                        ret_event.name,
+                        profile_event.end_time,
+                        # pyre-ignore
+                    ) - ret_event._delegate_time_scale_converter(
+                        ret_event.name, profile_event.start_time
+                    )
+                # If it's not a delegated op then we can just use the raw time values
+                # and then scale them according to the scale factor that was passed in.
+                elif not ret_event.is_delegated_op:
+                    scaled_time = (
+                        float(profile_event.end_time - profile_event.start_time)
+                        / scale_factor
+                    )
+                # If there was no scale factor passed in just take a difference of the
+                # end and start times.
+                else:
+                    scaled_time = float(
+                        profile_event.end_time - profile_event.start_time
+                    )
+
+                data.append(scaled_time)
                 delegate_debug_metadatas.append(
                     profile_event.delegate_debug_metadata
                     if profile_event.delegate_debug_metadata
@@ -646,6 +674,9 @@ class EventBlock:
         delegate_metadata_parser: Optional[
             Callable[[List[str]], Dict[str, Any]]
         ] = None,
+        delegate_time_scale_converter: Optional[
+            Callable[[Union[int, str], Union[int, float]], Union[int, float]]
+        ] = None,
     ) -> List["EventBlock"]:
         """
         Given an etdump, generate a list of EventBlocks corresponding to the
@@ -743,6 +774,7 @@ class EventBlock:
                     scale_factor,
                     output_buffer,
                     delegate_metadata_parser,
+                    delegate_time_scale_converter,
                 )
                 for signature, instruction_events in run_group.items()
             ]
@@ -875,6 +907,9 @@ class Inspector:
         delegate_metadata_parser: Optional[
             Callable[[List[str]], Dict[str, Any]]
         ] = None,
+        delegate_time_scale_converter: Optional[
+            Callable[[Union[int, str], Union[int, float]], Union[int, float]]
+        ] = None,
         enable_module_hierarchy: bool = False,
     ) -> None:
         r"""
@@ -930,6 +965,7 @@ class Inspector:
             self._target_time_scale,
             output_buffer,
             delegate_metadata_parser=delegate_metadata_parser,
+            delegate_time_scale_converter=delegate_time_scale_converter,
         )
 
         # Connect ETRecord to EventBlocks

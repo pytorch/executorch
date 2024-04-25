@@ -58,7 +58,13 @@ add_compile_definitions(
 add_link_options(
     -mcpu=${GCC_CPU}
     -mthumb
-    --specs=nosys.specs)
+)
+
+if(SEMIHOSTING)
+    add_link_options(--specs=rdimon.specs)
+else()
+    add_link_options(--specs=nosys.specs)
+endif()
 
 # Set floating point unit
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "\\+fp")

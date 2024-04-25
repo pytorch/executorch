@@ -31,8 +31,8 @@ def build_avg_pool_2d_common(
     output_zp = 0
 
     if is_quant_node:
-        _, input_zp = get_quant_node_args(node.args[0])
-        _, output_zp = get_quant_node_args(list(node.users)[0])
+        input_zp = get_quant_node_args(node.args[0]).zp
+        output_zp = get_quant_node_args(list(node.users)[0]).zp
 
     attr = ts.TosaSerializerAttribute()
     attr.PoolAttribute(

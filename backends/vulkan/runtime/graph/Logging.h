@@ -34,6 +34,14 @@ inline std::ostream& operator<<(std::ostream& os, const api::utils::uvec4& v) {
   return api::utils::operator<<(os, v);
 }
 
+inline std::ostream& operator<<(std::ostream& os, const api::utils::ivec3& v) {
+  return api::utils::operator<<(os, v);
+}
+
+inline std::ostream& operator<<(std::ostream& os, const api::utils::ivec4& v) {
+  return api::utils::operator<<(os, v);
+}
+
 template <typename T>
 inline std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
   os << "[";

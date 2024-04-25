@@ -136,6 +136,17 @@ def get_conv_inputs():
                 6,
             ),
             (
+                (2, 20, 30),
+                (10, 4, 6),
+                (10,),
+                [5],
+                [5],
+                [3],
+                False,
+                [0],
+                5,
+            ),
+            (
                 (1, 9, 11),
                 (9, 1, 3),
                 None,
@@ -145,6 +156,17 @@ def get_conv_inputs():
                 False,
                 [0],
                 9,
+            ),
+            (
+                (5, 15, 30),
+                (20, 3, 3),
+                None,
+                [3],
+                [5],
+                [7],
+                False,
+                [0],
+                5,
             ),
         ]
     )
@@ -214,6 +236,7 @@ def get_permute_inputs():
             ((9, 2), [1, 0]),
         ]
     )
+
     test_suite.layouts = ["api::kChannelsPacked"]
     return test_suite
 
@@ -312,6 +335,99 @@ def get_slice_inputs():
     return test_suite
 
 
+def get_unsqueeze_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((2, 3, 4), 0),
+            ((1, 1, 1), 0),
+            ((1, 1, 1), 1),
+            ((1, 1, 1), 2),
+            ((1, 1, 1), 3),
+            ((9, 9, 9), 0),
+            ((9, 9, 9), 1),
+            ((9, 9, 9), 2),
+            ((9, 9, 9), 3),
+            ((9, 9), 0),
+            ((9, 9), 1),
+            ((9, 9), 2),
+            ((9,), 0),
+            ((9,), 1),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
+def get_clone_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((S2, S1, S2, S1),),
+            ((S2, S1, S2),),
+            ((S2, S1),),
+            ((S2,),),
+            ((XS, S1, XS, S1),),
+            ((XS, S1, XS),),
+            ((S1, XS, S1),),
+            ((XS, S1),),
+            ((S1, XS),),
+            ((S1,),),
+            ((XS,),),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
+def get_repeat_inputs():
+    test_suite = VkTestSuite(
+        [
+            # Repeat channels only (most challenging case)
+            ((3, XS, S), [2, 1, 1]),
+            ((7, XS, S), [4, 1, 1]),
+            ((1, 7, XS, S), [1, 4, 1, 1]),
+            ((3, 7, XS, S), [1, 4, 1, 1]),
+            # Repat channels with other dims
+            ((1, 7, XS, S), [1, 4, 1, 3]),
+            ((3, 7, XS, S), [1, 4, 1, 3]),
+            ((3, 7, XS, S), [1, 4, 3, 1]),
+            ((3, 7, XS, S), [1, 4, 3, 3]),
+            # Repeat Batch
+            ((3, 7, XS, S), [3, 4, 3, 3]),
+            ((3, 7, XS, S), [3, 1, 3, 3]),
+            # More other cases
+            ((3, 7, 1, 1), [1, 4, 1, 1]),
+            ((2, 3), [1, 4]),
+            ((2, 3), [4, 1]),
+            ((2, 3), [4, 4]),
+            ((S1, S2, S2), [1, 3, 1]),
+            ((S1, S2, S2), [1, 3, 3]),
+            ((S1, S2, S2), [3, 3, 1]),
+            ((S1, S2, S2), [3, 3, 3]),
+            ((S1, S2, S2, S2), [1, 1, 3, 1]),
+            ((S1, S2, S2, S2), [1, 1, 1, 3]),
+            ((S1, S2, S2, S2), [1, 1, 3, 3]),
+            ((S1, S2, S2, S2), [1, 3, 1, 3]),
+            ((S1, S2, S2, S2), [3, 3, 3, 3]),
+            ((S1, S2, S2, S2), [3, 3, 1, 1]),
+            # Expanding cases
+            ((2, 3), [3, 1, 4]),
+            ((2, 3), [3, 3, 2, 4]),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.dtypes = ["at::kFloat"]
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -328,4 +444,7 @@ test_suites = {
     "aten.permute_copy.default": get_permute_inputs(),
     "aten.view_copy.default": get_view_inputs(),
     "aten.slice_copy.Tensor": get_slice_inputs(),
+    "aten.unsqueeze_copy.default": get_unsqueeze_inputs(),
+    "aten.clone.default": get_clone_inputs(),
+    "aten.repeat.default": get_repeat_inputs(),
 }

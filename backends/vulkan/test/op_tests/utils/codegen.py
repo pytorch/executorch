@@ -21,7 +21,8 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     OPT_DEVICE,
     OPT_INT64,
     OPT_LAYOUT,
-    OPT_SCALARTYPE,
+    OPT_MEMORY_FORMAT,
+    OPT_SCALAR_TYPE,
     TestSuite,
     TestSuiteGen,
     THREE_TENSOR_TUPLE,
@@ -30,8 +31,10 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
 from torchgen.api import cpp
 from torchgen.api.types import CppSignatureGroup
 
-from torchgen.gen import generate_static_dispatch_backend_call
-from torchgen.model import NativeFunction
+from torchgen.gen import generate_static_dispatch_backend_call, translate_args
+
+from torchgen.gen_aoti_c_shim import gen_static_dispatch_backend_call_signature
+from torchgen.model import NativeFunction, Variant
 
 ##################################
 ## Custom Test Suite Definition ##
@@ -182,10 +185,23 @@ class ComputeGraphGen:
         func_call = generate_static_dispatch_backend_call(
             self.f_sig, self.f, TestSuiteGen.backend_key
         )[7:].replace("::cpu", "")
+
+        return func_call
+
+    def create_aten_method_call(self) -> str:
+        # For functions with only Method variant, we fallback to the function
+        # declared in MethodOperators.h. The method is declared as
+        # at::_ops::{name}::call(*), and ATEN_FN is a handly macro.
+        cpp_sig = gen_static_dispatch_backend_call_signature(self.f_sig, self.f)
+        exprs = translate_args(self.f_sig, cpp_sig)
+        func_call = f"ATEN_FN({self.f_sig.name()})({exprs});"
         return func_call
 
     def create_out_src(self) -> str:
-        return f"{self.out.cpp_type} out = " + self.create_aten_fn_call()
+        if Variant.function in self.f.variants:
+            return f"{self.out.cpp_type} out = " + self.create_aten_fn_call() + "\n"
+        else:
+            return f"{self.out.cpp_type} out = " + self.create_aten_method_call() + "\n"
 
     ## Graph code generation utils
 
@@ -250,10 +266,11 @@ class ComputeGraphGen:
         elif ref.src_cpp_type == DOUBLE:
             ret_str += f"add_scalar<double>({ref.src_cpp_name}); \n"
         elif (
-            ref.src_cpp_type == OPT_SCALARTYPE
+            ref.src_cpp_type == OPT_SCALAR_TYPE
             or ref.src_cpp_type == OPT_LAYOUT
             or ref.src_cpp_type == OPT_DEVICE
             or ref.src_cpp_type == OPT_BOOL
+            or ref.src_cpp_type == OPT_MEMORY_FORMAT
         ):
             ret_str += "add_none(); \n"
         elif ref.src_cpp_type == TWO_TENSOR_TUPLE:
@@ -351,7 +368,6 @@ class ComputeGraphGen:
 
     def gen_graph_build_code(self) -> str:
         graph_build = self.create_out_src()
-
         for aten_arg in self.args:
             graph_build += self.create_value_for(self.refs[aten_arg.name])
 

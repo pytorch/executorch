@@ -50,11 +50,13 @@ def process_placeholder(
             weight_node = weight_node_permuted.all_input_nodes[0]
 
             if input_node.target == exir_ops.edge.aten.view_copy.default:
-                input_node_scale, _ = get_quant_node_args(input_node.all_input_nodes[0])
+                input_node_scale = get_quant_node_args(
+                    input_node.all_input_nodes[0]
+                ).scale
             else:
-                input_node_scale, _ = get_quant_node_args(input_node)
+                input_node_scale = get_quant_node_args(input_node).scale
 
-            weight_node_scale, _ = get_quant_node_args(weight_node)
+            weight_node_scale = get_quant_node_args(weight_node).scale
 
             bias_values_quantized = (
                 (parameter_values / (input_node_scale * weight_node_scale))
@@ -81,8 +83,8 @@ def process_placeholder(
                 bias_node,
             ) = consumer_node.all_input_nodes
 
-            input_node_scale, _ = get_quant_node_args(input_node)
-            weight_node_scale, _ = get_quant_node_args(weight_node)
+            input_node_scale = get_quant_node_args(input_node).scale
+            weight_node_scale = get_quant_node_args(weight_node).scale
 
             bias_scales = input_node_scale * weight_node_scale
             parameter_values_quantized = (

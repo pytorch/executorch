@@ -653,10 +653,13 @@ class TestBackends(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.conv = torch.nn.Conv1d(
-                    in_channels=6,
-                    out_channels=6,
-                    kernel_size=3,
-                    groups=6,
+                    in_channels=20,
+                    out_channels=10,
+                    kernel_size=6,
+                    stride=5,
+                    padding=5,
+                    dilation=3,
+                    groups=5,
                     bias=True,
                 )
 
@@ -664,7 +667,7 @@ class TestBackends(unittest.TestCase):
                 return self.conv(x)
 
         conv1d_module = Conv1dModule()
-        sample_inputs = (torch.randn(size=(1, 6, 7), dtype=torch.float32),)
+        sample_inputs = (torch.randn(size=(3, 20, 30), dtype=torch.float32),)
 
         self.lower_module_and_test_output(
             conv1d_module,
@@ -726,6 +729,72 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(
             FullModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_reshape(self):
+        class ReshapeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.reshape(x, [-1, x.size(-1)])
+
+        sample_inputs = (torch.randn(size=(5, 3, 4), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            ReshapeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_view(self):
+        class ViewModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x.view([-1, x.size(-1)])
+
+        sample_inputs = (torch.randn(size=(3, 2, 3, 4), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            ViewModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_unsqueeze(self):
+        class UnsqueezeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = torch.unsqueeze(x, 1)
+                x = torch.unsqueeze(x, 0)
+                return x
+
+        sample_inputs = (torch.randn(size=(3,), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            UnsqueezeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_select(self):
+        class SelectModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x[0][3]
+
+        sample_inputs = (torch.randn(size=(3, 6, 2, 7), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            SelectModule(),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
