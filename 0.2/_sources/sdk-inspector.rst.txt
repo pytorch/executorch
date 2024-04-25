@@ -56,6 +56,7 @@ print_data_tabular
     inspector.print_data_tabular()
 
 .. image:: _static/img/print_data_tabular.png
+Note that the unit of delegate profiling events is "cycles". We're working on providing a way to set different units in the future.
 
 
 find_total_for_module

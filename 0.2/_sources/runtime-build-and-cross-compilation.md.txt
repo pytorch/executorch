@@ -60,7 +60,7 @@ cd executorch
 #
 # NOTE: If your `buck2` binary is not on the PATH, you can change this line to
 # say something like `-DBUCK2=/tmp/buck2` to point directly to the tool.
-(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DBUCK2=buck2 ..)
+(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
 ```
 
 Once this is done, you don't need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.

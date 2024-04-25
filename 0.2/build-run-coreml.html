@@ -341,6 +341,7 @@
 <li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
@@ -433,7 +434,7 @@
               
   <div class="section" id="building-and-running-executorch-with-core-ml-backend">
 <h1>Building and Running ExecuTorch with Core ML Backend<a class="headerlink" href="#building-and-running-executorch-with-core-ml-backend" title="Permalink to this heading">¶</a></h1>
-<p>Core ML delegate uses Core ML APIs to enable running neural networks via Apple’s hardware acceleration. For more about coreml you can read <a class="reference external" href="https://developer.apple.com/documentation/coreml">here</a>. In this tutorial, we will walk through the steps of lowering a PyTorch model to Core ML delegate</p>
+<p>Core ML delegate uses Core ML APIs to enable running neural networks via Apple’s hardware acceleration. For more about Core ML you can read <a class="reference external" href="https://developer.apple.com/documentation/coreml">here</a>. In this tutorial, we will walk through the steps of lowering a PyTorch model to Core ML delegate</p>
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
 <div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
 <div class="sd-col sd-d-flex-row docutils">
@@ -470,8 +471,8 @@ Tutorials we recommend you complete before this:</div>
 <div class="section" id="hardware">
 <h3>Hardware:<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
-<li><p>A <a class="reference external" href="https://www.apple.com/mac/%5D">mac</a> system for building.</p></li>
-<li><p>A <a class="reference external" href="https://www.apple.com/mac/%5D">mac</a> or <a class="reference external" href="https://www.apple.com/iphone/">iPhone</a> or <a class="reference external" href="https://www.apple.com/ipad/">iPad</a> or <a class="reference external" href="https://www.apple.com/tv-home/">Apple TV</a> device for running the model.</p></li>
+<li><p>A <a class="reference external" href="https://www.apple.com/mac/">mac</a> system for building.</p></li>
+<li><p>A <a class="reference external" href="https://www.apple.com/mac/">mac</a> or <a class="reference external" href="https://www.apple.com/iphone/">iPhone</a> or <a class="reference external" href="https://www.apple.com/ipad/">iPad</a> or <a class="reference external" href="https://www.apple.com/tv-home/">Apple TV</a> device for running the model.</p></li>
 </ul>
 </div>
 <div class="section" id="software">
@@ -579,7 +580,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.s
 <p><strong>Running the Core ML delegated Program in the Demo iOS App</strong>:</p>
 <ol class="arabic simple">
 <li><p>Please follow the <a class="reference internal" href="demo-apps-ios.html#models-and-labels"><span class="std std-doc">Export Model</span></a> step of the tutorial to bundle the exported <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> program. You only need to do the Core ML part.</p></li>
-<li><p>Complete the <a class="reference internal" href="demo-apps-ios.html#build-runtime-and-backends"><span class="std std-doc">Build Runtime and Backends</span></a> section of the tutorial. When building the frameworks you only need the <code class="docutils literal notranslate"><span class="pre">coreml</span></code> option.</p></li>
+<li><p>Complete the <span class="xref myst">Build Runtime and Backends</span> section of the tutorial. When building the frameworks you only need the <code class="docutils literal notranslate"><span class="pre">coreml</span></code> option.</p></li>
 <li><p>Complete the <a class="reference internal" href="demo-apps-ios.html#final-steps"><span class="std std-doc">Final Steps</span></a> section of the tutorial to build and run the demo app.</p></li>
 </ol>
 <p><br><strong>Running the Core ML delegated Program in your App</strong></p>
