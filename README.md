@@ -2,7 +2,7 @@
 
 ## Adding docs for a new release
 
-The documentation build in this repository is automated. The documentation build job runs on every PR.
+The documentation build in this repository is automated. The documentation "build" job runs on every PR.
 The "upload" to gh-pages job runs on tags and the "main" branch. 
 
 For any release tag, such as "v1.1.1" or "v1.1.1-rc1", a GH action generates documentation and uploads
