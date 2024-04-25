@@ -11,7 +11,7 @@ For instance, "v0.1.0-rc1" would be shortened to "0.1". Similarly, for the final
 the docs will be uploaded to the 0.1 directory. This allows you to preview your documentation prior to
 the official release.
 
-When the first release candidate tag directory for a new release branch is uploaded to the gh-pages branch,
+When the first release candidate tag directory for a new release is uploaded to the gh-pages branch,
 you will need to manually update the `versions.html` file as follows: 
 
 ```
@@ -19,7 +19,7 @@ you will need to manually update the `versions.html` file as follows:
   <a class="reference internal" href="0.1/">main (unstable)</a>
 </li>
 <li class="toctree-l1">
-  <a class="reference internal" href="0.1/">v0.2.0 (release candidate)</a> - replace `v0.2.0` with your new tag
+  <a class="reference internal" href="0.1/">v0.2.0 (release candidate)</a> # replace `v0.2.0` with your new tag
 </li>
 <li class="toctree-l1">
   <a class="reference internal" href="0.1/">v0.1.0 (stable)</a>
