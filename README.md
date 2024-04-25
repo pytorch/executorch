@@ -2,17 +2,17 @@
 
 ## Adding docs for a new release
 
-Official docs for a release are built and pushed when a final tag
-is created via GitHub. When -rc tags are built, you should see a directory
-named after the tag with the -rc suffix and the prefix "v"
-truncated. For example, v0.1.0-rc1 would become just 0.1. This way
-you can preview your documentation before the release.
+The documentation build in this repository is automated. The documentation build job runs on every PR.
+The "upload" to gh-pages job runs on tags and the "main" branch. 
 
-After the final tag is created, an action will move all the docs from
-`tags/vx.x.x` tag to a directory named after your release version.
+For any release tag, such as "v1.1.1" or "v1.1.1-rc1", a GH action generates documentation and uploads
+it to gh-pages. A directory is created, named after the tag, with the "-rc" suffix and the "v" prefix removed.
+For instance, "v0.1.0-rc1" would be shortened to "0.1". Similarly, for the final release tag, such as v0.1.0,
+the docs will be uploaded to the 0.1 directory. This allows you to preview your documentation prior to
+the official release.
 
-When the first -rc tag dir for a new release branch is pushed to the gh-pages
-branch, you will need to manually update versions.html as follows:
+When the first release candidate tag directory for a new release branch is uploaded to the gh-pages branch,
+you will need to manually update the `versions.html` file as follows: 
 
 ```
 <li class="toctree-l1">
@@ -26,6 +26,8 @@ branch, you will need to manually update versions.html as follows:
 </li>
 ... 
 ```
+This adds that new tag to the website dropdown so that the release candidate documentation is available
+for the users to preview.
 
 ### Updating `stable` versions
 
@@ -43,7 +45,7 @@ git commit -m "Update stable to ${NEW_VERSION}"
 git push -u origin
 ```
 
-### Adding version to dropdown
+### Updating the stable version to dropdown
 
 In addition to updating stable, you need to update the dropdown to include
 the latest version of docs.
