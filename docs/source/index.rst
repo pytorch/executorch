@@ -4,12 +4,16 @@ Welcome to the ExecuTorch Documentation
 =======================================
 
 .. important::
-   This is a preview version of ExecuTorch and should be used for testing
-   and evaluation purposes only. It is not recommended for use in production
-   settings. We welcome any feedback, suggestions, and bug reports from the
-   community to help us improve the technology. Please use the `PyTorch
-   Forums <https://discuss.pytorch.org/c/executorch>`__ for discussion and
-   feedback about ExecuTorch using the **ExecuTorch** category, and our `GitHub
+   This is an alpha release; the ExecuTorch APIs and the ``.pte`` binary format
+   may change in incompatible ways before stabilizing in a future beta release.
+   When deploying models, we currently recommend using a version of the runtime
+   built from the same git revision that was used to generate the ``.pte`` file.
+   Once the format has stabilized, this will no longer be necessary.
+
+   We welcome any feedback, suggestions, and bug reports from the community
+   to help us improve the technology. Please use the `PyTorch Forums
+   <https://discuss.pytorch.org/c/executorch>`__ for discussion and feedback
+   about ExecuTorch using the **ExecuTorch** category, and our `GitHub
    repository <https://github.com/pytorch/executorch/issues>`__ for bug
    reporting.
 
