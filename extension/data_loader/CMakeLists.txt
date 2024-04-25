@@ -25,6 +25,6 @@ target_compile_options(extension_data_loader PUBLIC ${_common_compile_options})
 # Install libraries
 install(
   TARGETS extension_data_loader
-  DESTINATION ${CMAKE_BINARY_DIR}/lib
+  DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories})
