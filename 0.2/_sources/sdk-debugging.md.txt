@@ -20,7 +20,7 @@ For a real example reflecting the steps below, please refer to [sdk_example_runn
     Span<uint8_t> buffer((uint8_t*)debug_buffer, debug_buffer_size);
     etdump_gen.set_debug_buffer(buffer);
     etdump_gen.set_event_tracer_debug_level(
-        EventTracerDebugLogLevel::kIntermediateOutputs);
+        EventTracerDebugLogLevel::kProgramOutputs);
     ```
 
     - Intermediate outputs of executed (non-delegated) operations (will include the program level outputs too)
@@ -28,7 +28,7 @@ For a real example reflecting the steps below, please refer to [sdk_example_runn
     Span<uint8_t> buffer((uint8_t*)debug_buffer, debug_buffer_size);
     etdump_gen.set_debug_buffer(buffer);
     etdump_gen.set_event_tracer_debug_level(
-        EventTracerDebugLogLevel::kProgramOutputs);
+        EventTracerDebugLogLevel::kIntermediateOutputs);
     ```
 3. Build the runtime with the pre-processor flag that enables tracking of debug events. Instructions are in the [ETDump documentation](./sdk-etdump.md).
 4. Run your model and dump out the ETDump buffer as described [here](./sdk-etdump.md). (Do so similarly for the debug buffer if configured above)

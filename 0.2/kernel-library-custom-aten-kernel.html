@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Kernel Registration &mdash; ExecuTorch 0.2 documentation</title>
+  <title>Kernel Registration &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -338,6 +338,7 @@
 <li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
@@ -501,9 +502,78 @@
 </pre></div>
 </div>
 </div>
+<div class="section" id="custom-ops-c-api">
+<h3>Custom Ops C++ API<a class="headerlink" href="#custom-ops-c-api" title="Permalink to this heading">¶</a></h3>
+<p>For a custom kernel that implements a custom operator, we provides 2 ways to register it into ExecuTorch runtime:</p>
+<ol class="arabic simple">
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_LIBRARY</span></code> and <code class="docutils literal notranslate"><span class="pre">WRAP_TO_ATEN</span></code> C++ macros.</p></li>
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">functions.yaml</span></code> and codegen’d C++ libraries.</p></li>
+</ol>
+<p>The first option requires C++17 and doesn’t have selective build support yet, but it’s faster than the second option where we have to go through yaml authoring and build system tweaking.</p>
+<p>The first option is particularly suitable for fast prototyping but can also be used in production.</p>
+<p>Similar to <code class="docutils literal notranslate"><span class="pre">TORCH_LIBRARY</span></code>, <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_LIBRARY</span></code> takes the operator name and the C++ function name and register them into ExecuTorch runtime.</p>
+<div class="section" id="prepare-custom-kernel-implementation">
+<h4>Prepare custom kernel implementation<a class="headerlink" href="#prepare-custom-kernel-implementation" title="Permalink to this heading">¶</a></h4>
+<p>Define your custom operator schema for both functional variant (used in AOT compilation) and out variant (used in ExecuTorch runtime). The schema needs to follow PyTorch ATen convention (see native_functions.yaml). For example:</p>
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="l l-Scalar l-Scalar-Plain">custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -&gt; Tensor</span>
+<span class="l l-Scalar l-Scalar-Plain">custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -&gt; Tensor(a!)</span>
+</pre></div>
+</div>
+<p>Then write your custom kernel according to the schema using ExecuTorch types, along with APIs to register to ExecuTorch runtime:</p>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="c1">// custom_linear.h/custom_linear.cpp</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/kernel/kernel_includes.h&gt;</span>
+<span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="nf">custom_linear_out</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">weight</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">optional</span><span class="o">&lt;</span><span class="n">Tensor</span><span class="o">&gt;</span><span class="w"> </span><span class="n">bias</span><span class="p">,</span><span class="w"> </span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">out</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">   </span><span class="c1">// calculation</span>
+<span class="w">   </span><span class="k">return</span><span class="w"> </span><span class="n">out</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="use-a-c-macro-to-register-it-into-pytorch-executorch">
+<h4>Use a C++ macro to register it into PyTorch &amp; ExecuTorch<a class="headerlink" href="#use-a-c-macro-to-register-it-into-pytorch-executorch" title="Permalink to this heading">¶</a></h4>
+<p>Append the following line in the example above:</p>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="c1">// custom_linear.h/custom_linear.cpp</span>
+<span class="c1">// opset namespace myop</span>
+<span class="n">EXECUTORCH_LIBRARY</span><span class="p">(</span><span class="n">myop</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;custom_linear.out&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">custom_linear_out</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Now we need to write some wrapper for this op to show up in PyTorch, but don’t worry we don’t need to rewrite the kernel. Create a separate .cpp for this purpose:</p>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="c1">// custom_linear_pytorch.cpp</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;custom_linear.h&quot;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;torch/library.h&gt;</span>
+
+<span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="w"> </span><span class="nf">custom_linear</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">weight</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">optional</span><span class="o">&lt;</span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="o">&gt;</span><span class="w"> </span><span class="n">bias</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// initialize out</span>
+<span class="w">    </span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="w"> </span><span class="n">out</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">at</span><span class="o">::</span><span class="n">empty</span><span class="p">({</span><span class="n">weight</span><span class="p">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span><span class="w"> </span><span class="n">input</span><span class="p">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">)});</span>
+<span class="w">    </span><span class="c1">// wrap kernel in custom_linear.cpp into ATen kernel</span>
+<span class="w">    </span><span class="n">WRAP_TO_ATEN</span><span class="p">(</span><span class="n">custom_linear_out</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">)(</span><span class="n">weight</span><span class="p">,</span><span class="w"> </span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">bias</span><span class="p">,</span><span class="w"> </span><span class="n">out</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">out</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="c1">// standard API to register ops into PyTorch</span>
+<span class="n">TORCH_LIBRARY</span><span class="p">(</span><span class="n">myop</span><span class="p">,</span><span class="w"> </span><span class="n">m</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">m</span><span class="p">.</span><span class="n">def</span><span class="p">(</span><span class="s">&quot;custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -&gt; Tensor&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">custom_linear</span><span class="p">);</span>
+<span class="w">    </span><span class="n">m</span><span class="p">.</span><span class="n">def</span><span class="p">(</span><span class="s">&quot;custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -&gt; Tensor(a!)&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">WRAP_TO_ATEN</span><span class="p">(</span><span class="n">custom_linear_out</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">));</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="compile-and-link-the-custom-kernel">
+<h4>Compile and link the custom kernel<a class="headerlink" href="#compile-and-link-the-custom-kernel" title="Permalink to this heading">¶</a></h4>
+<p>Link it into ExecuTorch runtime: In our `CMakeLists.txt`` that builds the binary/application, we just need to add custom_linear.h/cpp into the binary target. We can build a dynamically loaded library (.so or .dylib) and link it as well.</p>
+<p>Link it into PyTorch runtime: We need to package custom_linear.h, custom_linear.cpp and custom_linear_pytorch.cpp into a dynamically loaded library (.so or .dylib) and load it into our python environment. One way of doing this is:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">load_library</span><span class="p">(</span><span class="s2">&quot;libcustom_linear.so/dylib&quot;</span><span class="p">)</span>
+
+<span class="c1"># Now we have access to the custom op, backed by kernel implemented in custom_linear.cpp.</span>
+<span class="n">op</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">myop</span><span class="o">.</span><span class="n">custom_linear</span><span class="o">.</span><span class="n">default</span>
+</pre></div>
+</div>
+</div>
+</div>
 <div class="section" id="custom-ops-yaml-entry">
 <h3>Custom Ops Yaml Entry<a class="headerlink" href="#custom-ops-yaml-entry" title="Permalink to this heading">¶</a></h3>
-<p>For custom ops (the ones that are not part of the out variants of core ATen opset) we need to specify the operator schema as well as a <code class="docutils literal notranslate"><span class="pre">kernel</span></code> section. So instead of <code class="docutils literal notranslate"><span class="pre">op</span></code> we use <code class="docutils literal notranslate"><span class="pre">func</span></code> with the operator schema. As an example, here’s a yaml entry for a custom op:</p>
+<p>As mentioned above, this option provides more support in terms of selective build and features such as merging operator libraries.</p>
+<p>First we need to specify the operator schema as well as a <code class="docutils literal notranslate"><span class="pre">kernel</span></code> section. So instead of <code class="docutils literal notranslate"><span class="pre">op</span></code> we use <code class="docutils literal notranslate"><span class="pre">func</span></code> with the operator schema. As an example, here’s a yaml entry for a custom op:</p>
 <div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">func</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">allclose.out(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False, *, Tensor(a!) out) -&gt; Tensor(a!)</span>
 <span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
@@ -569,6 +639,24 @@
 <span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">executorch_binary</span><span class="w"> </span><span class="s">generated_lib</span><span class="p">)</span>
 </pre></div>
 </div>
+<p>We also provide the ability to merge two yaml files, given a precedence. <code class="docutils literal notranslate"><span class="pre">merge_yaml(FUNCTIONS_YAML</span> <span class="pre">functions_yaml</span> <span class="pre">FALLBACK_YAML</span> <span class="pre">fallback_yaml</span> <span class="pre">OUTPUT_DIR</span> <span class="pre">out_dir)</span></code> merges functions_yaml and fallback_yaml into a single yaml, if there’s duplicate entries in functions_yaml and fallback_yaml, this macro will always take the one in functions_yaml.</p>
+<p>Example:</p>
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="c1"># functions.yaml</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">op</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add.out</span>
+<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::opt_add_out</span>
+</pre></div>
+</div>
+<p>And out fallback:</p>
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="c1"># fallback.yaml</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">op</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add.out</span>
+<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::add_out</span>
+</pre></div>
+</div>
+<p>The merged yaml will have the entry in functions.yaml.</p>
 </div>
 <div class="section" id="buck2">
 <h4>Buck2<a class="headerlink" href="#buck2" title="Permalink to this heading">¶</a></h4>
@@ -669,6 +757,12 @@
 </li>
 <li><a class="reference internal" href="#apis">APIs</a><ul>
 <li><a class="reference internal" href="#yaml-entry-for-core-aten-op-out-variant">Yaml Entry for Core ATen Op Out Variant</a></li>
+<li><a class="reference internal" href="#custom-ops-c-api">Custom Ops C++ API</a><ul>
+<li><a class="reference internal" href="#prepare-custom-kernel-implementation">Prepare custom kernel implementation</a></li>
+<li><a class="reference internal" href="#use-a-c-macro-to-register-it-into-pytorch-executorch">Use a C++ macro to register it into PyTorch &amp; ExecuTorch</a></li>
+<li><a class="reference internal" href="#compile-and-link-the-custom-kernel">Compile and link the custom kernel</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#custom-ops-yaml-entry">Custom Ops Yaml Entry</a><ul>
 <li><a class="reference internal" href="#out-variants-only">Out variants only</a></li>
 <li><a class="reference internal" href="#can-only-return-tensor-or">Can only return <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> or <code class="docutils literal notranslate"><span class="pre">()</span></code></a></li>

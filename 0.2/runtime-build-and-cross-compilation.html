@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building with CMake &mdash; ExecuTorch 0.2 documentation</title>
+  <title>Building with CMake &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -338,6 +338,7 @@
 <li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
@@ -499,7 +500,7 @@ dependencies may have changed.</p>
 <span class="c1">#</span>
 <span class="c1"># NOTE: If your `buck2` binary is not on the PATH, you can change this line to</span>
 <span class="c1"># say something like `-DBUCK2=/tmp/buck2` to point directly to the tool.</span>
-<span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>-DBUCK2<span class="o">=</span>buck2<span class="w"> </span>..<span class="o">)</span>
+<span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
 </pre></div>
 </div>
 <p>Once this is done, you don’t need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.</p>

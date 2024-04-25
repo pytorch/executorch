@@ -1,6 +1,6 @@
 # Building and Running ExecuTorch with Core ML Backend
 
-Core ML delegate uses Core ML APIs to enable running neural networks via Apple's hardware acceleration. For more about coreml you can read [here](https://developer.apple.com/documentation/coreml). In this tutorial, we will walk through the steps of lowering a PyTorch model to Core ML delegate
+Core ML delegate uses Core ML APIs to enable running neural networks via Apple's hardware acceleration. For more about Core ML you can read [here](https://developer.apple.com/documentation/coreml). In this tutorial, we will walk through the steps of lowering a PyTorch model to Core ML delegate
 
 
 ::::{grid} 2
@@ -24,8 +24,8 @@ Core ML delegate uses Core ML APIs to enable running neural networks via Apple's
 In order to be able to successfully build and run the ExecuTorch's Core ML backend you'll need the following hardware and software components.
 
 ### Hardware:
-- A [mac](https://www.apple.com/mac/]) system for building.
-- A [mac](https://www.apple.com/mac/]) or [iPhone](https://www.apple.com/iphone/) or [iPad](https://www.apple.com/ipad/) or [Apple TV](https://www.apple.com/tv-home/) device for running the model.
+- A [mac](https://www.apple.com/mac/) system for building.
+- A [mac](https://www.apple.com/mac/) or [iPhone](https://www.apple.com/iphone/) or [iPad](https://www.apple.com/ipad/) or [Apple TV](https://www.apple.com/tv-home/) device for running the model.
 
 ### Software:
 
@@ -100,7 +100,7 @@ python3 -m examples.apple.coreml.scripts.export --model_name mv3 --generate_etre
 # Builds `coreml_executor_runner`.
 ./examples/apple/coreml/scripts/build_executor_runner.sh
 ```
-3. Run and generate an [ETDump](./sdk-etdump.md). 
+3. Run and generate an [ETDump](./sdk-etdump.md).
 ```bash
 cd executorch
 
