@@ -398,6 +398,14 @@ class CustomBuild(build):
         if "CMAKE_ARGS" in os.environ:
             cmake_args += [item for item in os.environ["CMAKE_ARGS"].split(" ") if item]
 
+        # Allow adding extra build args through the environment. Used by some
+        # tests and demos to expand the set of targets included in the pip
+        # package.
+        if "CMAKE_BUILD_ARGS" in os.environ:
+            build_args += [
+                item for item in os.environ["CMAKE_BUILD_ARGS"].split(" ") if item
+            ]
+
         # Put the cmake cache under the temp directory, like
         # "pip-out/temp.<plat>/cmake-out".
         cmake_cache_dir = os.path.join(repo_root, self.build_temp, "cmake-out")
