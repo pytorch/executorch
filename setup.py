@@ -389,6 +389,7 @@ class CustomBuild(build):
 
         if ShouldBuild.llama_custom_ops:
             cmake_args += [
+                "-DEXECUTORCH_BUILD_CUSTOM=ON",  # add llama sdpa ops to pybindings.
                 "-DEXECUTORCH_BUILD_CUSTOM_OPS_AOT=ON",
             ]
             build_args += ["--target", "custom_ops_aot_lib"]
