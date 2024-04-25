@@ -11,7 +11,8 @@ you can preview your documentation before the release.
 After the final tag is created, an action will move all the docs from
 `release/xx` branch to a directory named after your release version.
 
-When an -rc tag dir is pushed to the gh-pages branch, update versions.html as follows:
+When the first -rc tag dir for a new release branch is pushed to the gh-pages
+branch, you will need to manually update versions.html as follows:
 
 ```
 <li class="toctree-l1">
@@ -33,11 +34,12 @@ On the day of the release, you need to update the symlink to the
 release version. For example:
 
 ```
+NEW_VERSION=0.1   # substitute the correct version number here
 git checkout gh-pages
 rm stable # remove the existing symlink. **Do not** edit!
-ln -s 0.1 stable   # substitute the correct version number here
+ln -s "${NEW_VERSION}" stable
 git add stable
-git commit -m "Update stable to 0.1"
+git commit -m "Update stable to ${NEW_VERSION}"
 git push -u origin
 ```
 
@@ -54,7 +56,7 @@ In `versions.txt`, add this line in the list
   <a class="reference internal" href="0.1/">main (unstable)</a>
 </li>
 <li class="toctree-l1">
-  <a class="reference internal" href="0.1/">v0.2.0 (stable)</a>
+  <a class="reference internal" href="0.2/">v0.2.0 (stable)</a>
 </li>
 <li class="toctree-l1">
   <a class="reference internal" href="0.1/">v0.1.0</a>
@@ -88,11 +90,10 @@ find $1 -name "*.html" -print0 | xargs -0 sed -i '/<head>/a \ \ <meta name="robo
 
 1. Checkout the `gh-pages` branch.
 1. Create a new branch out of `gh-pages`.
-1. Save the above script into a file called `add_noindex_tags.sh`.
+1. Save the above script into a file called `/tmp/add_noindex_tags.sh`.
 1. Run against the old documentation directory. For example:
    ```
-   chmod +x add_noindex_tags.sh
-   ./add_noindex_tags.sh 0.1
+   bash /tmp/add_noindex_tags.sh 0.1
    ```
 1. Add your changes:
    ```
