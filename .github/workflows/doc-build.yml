@@ -62,7 +62,7 @@ jobs:
         # Build docset:
         cd docs
         doxygen source/Doxyfile
-        make html
+        ET_VERSION_DOCS=$ET_VERSION_DOCS make html
         cd ..
 
         # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
