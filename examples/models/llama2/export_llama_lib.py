@@ -218,7 +218,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--dtype-override",
         default="fp32",
         type=str,
-        choices=["fp32"],
+        choices=["fp32", "fp16"],
         help="Override the dtype of the model (default is the checkpoint dtype). Options: fp32",
     )
 
