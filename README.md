@@ -9,7 +9,7 @@ truncated. For example, v0.1.0-rc1 would become just 0.1. This way
 you can preview your documentation before the release.
 
 After the final tag is created, an action will move all the docs from
-`release/xx` branch to a directory named after your release version.
+`tags/vx.x.x` tag to a directory named after your release version.
 
 When the first -rc tag dir for a new release branch is pushed to the gh-pages
 branch, you will need to manually update versions.html as follows:
@@ -48,8 +48,8 @@ git push -u origin
 In addition to updating stable, you need to update the dropdown to include
 the latest version of docs.
 
-In `versions.txt`, add this line in the list
-(substituting the correct version number here):
+In `versions.html`, rename (release candidate) to (stable), and remove the
+old (stable). Here is an example: 
 
 ```
 <li class="toctree-l1">
