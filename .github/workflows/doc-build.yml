@@ -49,7 +49,7 @@ jobs:
 
         GITHUB_REF=${{ github.ref }}
         echo "$GITHUB_REF"
-        export ET_VERSION_DOCS="${GITHUB_REF}"
+        export ET_VERSION_DOCS="refs/heads/release/0.2"
         echo "$ET_VERSION_DOCS"
 
         set -eux

@@ -82,12 +82,14 @@ print(f"et_version_docs: {et_version_docs}")
 # the version varible is used in layout.html: https://github.com/pytorch/executorch/blob/main/docs/source/_templates/layout.html#L29
 version = release = "main"
 if et_version_docs:
+    print(f"et_version_docs: {et_version_docs}")
     if et_version_docs.startswith("refs/tags/v"):
         version = ".".join(
             et_version_docs.split("/")[-1].split("-")[0].lstrip("v").split(".")[:2]
         )
     elif et_version_docs.startswith("refs/heads/release/"):
         version = et_version_docs.split("/")[-1]
+        print(f"version: {version}")
 print(f"Version: {version}")
 html_title = " ".join((project, version, "documentation"))
 
