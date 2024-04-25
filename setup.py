@@ -365,6 +365,11 @@ class CustomBuild(build):
             "-DEXECUTORCH_ENABLE_LOGGING=ON",
             "-DEXECUTORCH_LOG_LEVEL=Info",
             "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15",
+            # The separate host project is only required when cross-compiling,
+            # and it can cause build race conditions (libflatcc.a errors) when
+            # enabled. TODO(dbort): Remove this override once this option is
+            # managed by cmake itself.
+            "-DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF",
         ]
 
         build_args = [f"-j{self.parallel}"]
