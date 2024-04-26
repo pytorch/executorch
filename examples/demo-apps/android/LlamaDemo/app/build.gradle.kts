@@ -76,3 +76,12 @@ tasks.register("setup") {
     }
   }
 }
+
+tasks.register("setupQnn") {
+  doFirst {
+    exec {
+      commandLine("sh", "examples/demo-apps/android/LlamaDemo/setup-with-qnn.sh")
+      workingDir("../../../../../")
+    }
+  }
+}
