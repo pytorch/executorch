@@ -14,7 +14,6 @@ Overall, Llama models are powerful and versatile language models that can be use
 
 Please note that the models are subject to the [acceptable use policy](https://github.com/facebookresearch/llama/blob/main/USE_POLICY.md) and the provided [responsible use guide](https://ai.meta.com/static-resource/responsible-use-guide/).
 
-
 # Results
 
 Since 7B Llama2 model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
@@ -305,3 +304,7 @@ pip uninstall executorch
 rm -rf cmake-out
 ```
 - If you encounter `pthread` related issues during link time, add `pthread` in `target_link_libraries` in `CMakeLists.txt`
+
+# Disclaimer
+
+The ExecuTorch Repository Content is provided without any guarantees about performance or compatibility. In particular, ExecuTorch makes available model architectures written in Python for PyTorch that may not perform in the same manner or meet the same standards as the original versions of those models. When using the Executorch Repository Content, including any model architectures, you are solely responsible for determining the appropriateness of using or redistributing the ExecuTorch Repository Content and assume any risks associated with your use of the ExecuTorch Repository Content or any models, outputs, or results, both alone and in combination with any other technologies. Additionally, you may have other legal obligations that govern your use of other content, such as the terms of service for third-party models, weights, data, or other technologies, and you are solely responsible for complying with all such obligations.
