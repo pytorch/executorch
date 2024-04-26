@@ -70,7 +70,7 @@ void main() {
   const ivec4 w = p0 % W;
 
   // Map modified tensor_idx to modifed buffer_i
-  // Zero modified tensor idx that are out of bounds
+  // Zero out if modified tensor idx is out of bounds
   const ivec4 buf_i = n * C*H*W + h * W + w;
   const bvec4 mask = bvec4(lessThan(n, ivec4(N)));
 
@@ -84,7 +84,7 @@ void main() {
   if (mask.z) {
     texel.z = SCALAR_T(buffer_in[buf_i.z]);
   }
-  if (mask.w ) {
+  if (mask.w) {
     texel.w = SCALAR_T(buffer_in[buf_i.w]);
   }
 
