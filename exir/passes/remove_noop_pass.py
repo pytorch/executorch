@@ -110,6 +110,8 @@ class RemoveToCopyPass(ExportPass):
             if (
                 orig_tensor.dtype == node.meta["val"].dtype
                 and orig_tensor.device == node.meta["val"].device
+                and orig_tensor.shape == node.meta["val"].shape
+                and orig_tensor.stride() == node.meta["val"].stride()
             ):
                 node.replace_all_uses_with(node.args[0])
 
