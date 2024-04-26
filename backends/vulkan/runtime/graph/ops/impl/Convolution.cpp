@@ -173,14 +173,12 @@ std::vector<int64_t> get_final_sizes(
       api::utils::align_up(api::utils::val_at(-4, original_sizes), INT64_C(4));
   int64_t channels_padded =
       api::utils::align_up(api::utils::val_at(-3, original_sizes), INT64_C(4));
-  int64_t channels = api::utils::val_at(-3, original_sizes);
   int64_t height = api::utils::val_at(-2, original_sizes);
   int64_t width = api::utils::val_at(-1, original_sizes);
 
   switch (method) {
     case Conv2dMethod::Depthwise:
-      return std::vector<int64_t>{
-          4, batch_padded * channels / 4, height * width};
+      return std::vector<int64_t>{4, batch_padded / 4, height * width};
     case Conv2dMethod::Pointwise:
     case Conv2dMethod::SlidingWindow:
       return std::vector<int64_t>{
@@ -188,24 +186,6 @@ std::vector<int64_t> get_final_sizes(
     case Conv2dMethod::Transposed:
       return std::vector<int64_t>{
           4, channels_padded * height / 4, batch_padded * width};
-  }
-}
-
-std::vector<int64_t> get_padded_sizes(
-    const std::vector<int64_t>& original_sizes,
-    const Conv2dMethod method) {
-  int64_t batch_padded =
-      api::utils::align_up(api::utils::val_at(-4, original_sizes), INT64_C(4));
-  int64_t channels_padded =
-      api::utils::align_up(api::utils::val_at(-3, original_sizes), INT64_C(4));
-
-  switch (method) {
-    case Conv2dMethod::Depthwise:
-      return std::vector<int64_t>{-1, batch_padded};
-    case Conv2dMethod::Pointwise:
-    case Conv2dMethod::SlidingWindow:
-    case Conv2dMethod::Transposed:
-      return std::vector<int64_t>{batch_padded, channels_padded};
   }
 }
 
@@ -229,8 +209,6 @@ ValueRef prepack_weights(
   api::ShaderInfo shader =
       get_conv2d_shader(graph, *t, /*prepack_weights = */ true, method, vref);
 
-  const auto& padded_sizes = get_padded_sizes(original_sizes, method);
-
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
@@ -240,9 +218,7 @@ ValueRef prepack_weights(
       v,
       {t->sizes_ubo(),
        graph.create_params_buffer(
-           api::utils::make_ivec4(original_sizes, /*reverse = */ true)),
-       graph.create_params_buffer(
-           api::utils::make_ivec2(padded_sizes, /*reverse = */ true))},
+           api::utils::make_ivec4(original_sizes, /*reverse = */ true))},
       // Specialization constants
       {SV(t->gpu_memory_layout_int())}));
 
