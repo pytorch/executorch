@@ -45,9 +45,15 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in functions.yaml
-gen_selected_ops("" "${EXECUTORCH_SELECT_OPS_LIST}" "")
+gen_selected_ops(
+  LIB_NAME "arm_portable_ops_lib"
+  OPS_SCHEMA_YAML ""
+  ROOT_OPS "${EXECUTORCH_SELECT_OPS_LIST}"
+  INCLUDE_ALL_OPS "")
 generate_bindings_for_kernels(
+  LIB_NAME "arm_portable_ops_lib"
   FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml)
-gen_operators_lib("arm_portable_ops_lib"
+gen_operators_lib(
+  LIB_NAME "arm_portable_ops_lib"
   KERNEL_LIBS portable_kernels
   DEPS executorch)

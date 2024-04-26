@@ -22,7 +22,7 @@ def define_common_targets():
             "quantized_decomposed::mixed_linear.out",
             "quantized_decomposed::mixed_mm.out",
             "quantized_decomposed::quantize_per_channel.out",
-            "quantized_decomposed::quantize_per_tensor.out",
+            "quantized_decomposed::qupantize_per_tensor.out",
             "quantized_decomposed::quantize_per_tensor.Tensor_out",
         ],
         define_static_targets = True,

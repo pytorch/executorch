@@ -39,9 +39,8 @@ set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 find_package(executorch CONFIG REQUIRED)
-find_package(
-  gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../third-party
-)
+find_package(gflags REQUIRED PATHS
+             ${CMAKE_CURRENT_BINARY_DIR}/../../third-party)
 
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
@@ -63,10 +62,8 @@ option(EXECUTORCH_SELECT_ALL_OPS
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
-set(
-  EXECUTORCH_SRCS_FILE
-  "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
-)
+set(EXECUTORCH_SRCS_FILE
+    "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake")
 
 extract_sources(${EXECUTORCH_SRCS_FILE})
 
@@ -96,17 +93,22 @@ else()
 endif()
 
 gen_selected_ops(
+  LIB_NAME
+  "select_build_lib"
+  OPS_SCHEMA_YAML
   "${_custom_ops_yaml}"
+  ROOT_OPS
   "${EXECUTORCH_SELECT_OPS_LIST}"
+  INCLUDE_ALL_OPS
   "${EXECUTORCH_SELECT_ALL_OPS}")
 
 generate_bindings_for_kernels(
-  FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
-  CUSTOM_OPS_YAML "${_custom_ops_yaml}")
-gen_operators_lib(
-  "select_build_lib"
-  KERNEL_LIBS ${_kernel_lib}
-  DEPS executorch)
+  LIB_NAME "select_build_lib" FUNCTIONS_YAML
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml CUSTOM_OPS_YAML
+  "${_custom_ops_yaml}")
+
+gen_operators_lib(LIB_NAME "select_build_lib" KERNEL_LIBS ${_kernel_lib} DEPS
+                  executorch)
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
@@ -118,9 +120,8 @@ add_executable(selective_build_test ${_executor_runner__srcs})
 if(CMAKE_BUILD_TYPE EQUAL "Release")
   target_link_options(selective_build_test PRIVATE "LINKER:--gc-sections")
 endif()
-target_link_libraries(
-  selective_build_test PRIVATE executorch gflags select_build_lib
-)
+target_link_libraries(selective_build_test PRIVATE executorch gflags
+                                                   select_build_lib)
 target_link_options_shared_lib(select_build_lib)
 target_link_options_shared_lib(executorch)
 target_compile_options(selective_build_test PUBLIC ${_common_compile_options})

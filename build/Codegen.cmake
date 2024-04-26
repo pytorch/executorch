@@ -9,8 +9,16 @@
 
 # Selective build. See codegen/tools/gen_oplist.py for how to use these
 # arguments.
-function(gen_selected_ops ops_schema_yaml root_ops include_all_ops)
-  set(_oplist_yaml ${CMAKE_CURRENT_BINARY_DIR}/selected_operators.yaml)
+function(gen_selected_ops)
+  set(arg_names LIB_NAME OPS_SCHEMA_YAML ROOT_OPS INCLUDE_ALL_OPS)
+  cmake_parse_arguments(GEN "" "" "${arg_names}" ${ARGN})
+
+  message(STATUS "Generating operator lib:")
+  message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
+  message(STATUS "  OPS_SCHEMA_YAML: ${GEN_KERNEL_LIBS}")
+  message(STATUS "  DEPS: ${GEN_DEPS}")
+
+  set(_oplist_yaml ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml)
   file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
 
   set(_gen_oplist_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_oplist
@@ -41,37 +49,41 @@ endfunction()
 #
 # Invoked as
 # generate_bindings_for_kernels(
+#   LIB_NAME lib_name
 #   FUNCTIONS_YAML functions_yaml
 #   CUSTOM_OPS_YAML custom_ops_yaml
 # )
 function(generate_bindings_for_kernels)
-  set(arg_names FUNCTIONS_YAML CUSTOM_OPS_YAML)
+  set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML)
   cmake_parse_arguments(GEN "" "${arg_names}" "" ${ARGN})
 
   message(STATUS "Generating kernel bindings:")
+  message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  FUNCTIONS_YAML: ${GEN_FUNCTIONS_YAML}")
   message(STATUS "  CUSTOM_OPS_YAML: ${GEN_CUSTOM_OPS_YAML}")
 
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
   file(GLOB_RECURSE _torchgen_srcs "${TORCH_ROOT}/torchgen/*.py")
+
+  set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   # By default selective build output is selected_operators.yaml
-  set(_oplist_yaml ${CMAKE_CURRENT_BINARY_DIR}/selected_operators.yaml)
+  set(_oplist_yaml ${_out_dir}/selected_operators.yaml)
 
   # Command to codegen C++ wrappers to register custom ops to both PyTorch and
   # Executorch runtime.
   set(_gen_command
       "${PYTHON_EXECUTABLE}" -m torchgen.gen_executorch
       --source-path=${EXECUTORCH_ROOT}/codegen
-      --install-dir=${CMAKE_CURRENT_BINARY_DIR}
+      --install-dir=${_out_dir}
       --tags-path=${TORCH_ROOT}/aten/src/ATen/native/tags.yaml
       --aten-yaml-path=${TORCH_ROOT}/aten/src/ATen/native/native_functions.yaml
       --op-selection-yaml-path=${_oplist_yaml})
 
   set(_gen_command_sources
-      ${CMAKE_CURRENT_BINARY_DIR}/RegisterCodegenUnboxedKernelsEverything.cpp
-      ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
-      ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h)
+      ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+      ${_out_dir}/Functions.h
+      ${_out_dir}/NativeFunctions.h)
 
   if(GEN_FUNCTIONS_YAML)
     list(APPEND _gen_command --functions-yaml-path=${GEN_FUNCTIONS_YAML})
@@ -81,9 +93,9 @@ function(generate_bindings_for_kernels)
     list(
       APPEND
       _gen_command_sources
-      ${CMAKE_CURRENT_BINARY_DIR}/RegisterCPUCustomOps.cpp
-      ${CMAKE_CURRENT_BINARY_DIR}/RegisterSchema.cpp
-      ${CMAKE_CURRENT_BINARY_DIR}/CustomOpsNativeFunctions.h)
+      ${_out_dir}/RegisterCPUCustomOps.cpp
+      ${_out_dir}/RegisterSchema.cpp
+      ${_out_dir}/CustomOpsNativeFunctions.h)
   endif()
 
   add_custom_command(
@@ -100,48 +112,56 @@ function(generate_bindings_for_kernels)
 endfunction()
 
 # Generate an AOT lib for registering custom ops into PyTorch
-function(gen_custom_ops_aot_lib lib_name kernel_sources)
+function(gen_custom_ops_aot_lib)
+  set(multi_arg_names LIB_NAME KERNEL_SOURCES)
+  message(STATUS "Generating custom ops aot lib:")
+  message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
+  message(STATUS "  KERNEL_SOURCES: ${GEN_KERNEL_SOURCES}")
+
+  set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   add_library(
-    ${lib_name} SHARED
-    ${CMAKE_CURRENT_BINARY_DIR}/RegisterCPUCustomOps.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/RegisterSchema.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/CustomOpsNativeFunctions.h ${kernel_sources})
+    ${GEN_LIB_NAME} SHARED
+    ${_out_dir}/RegisterCPUCustomOps.cpp
+    ${_out_dir}/RegisterSchema.cpp
+    ${_out_dir}/CustomOpsNativeFunctions.h ${GEN_KERNEL_SOURCES})
   # Find `Torch`.
   find_package(Torch REQUIRED)
   # This lib uses ATen lib, so we explicitly enable rtti and exceptions.
-  target_compile_options(${lib_name} PRIVATE -frtti -fexceptions)
-  target_compile_definitions(${lib_name} PRIVATE USE_ATEN_LIB=1)
+  target_compile_options(${GEN_LIB_NAME} PRIVATE -frtti -fexceptions)
+  target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
-  target_link_libraries(${lib_name} PRIVATE torch executorch)
+  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch executorch)
 
   include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
-  target_link_options_shared_lib(${lib_name})
+  target_link_options_shared_lib(${GEN_LIB_NAME})
 endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
-function(gen_operators_lib lib_name)
-  set(multi_arg_names KERNEL_LIBS DEPS)
+function(gen_operators_lib)
+  set(multi_arg_names LIB_NAME KERNEL_LIBS DEPS)
   cmake_parse_arguments(GEN "" "" "${multi_arg_names}" ${ARGN})
 
   message(STATUS "Generating operator lib:")
-  message(STATUS "  LIB_NAME: ${lib_name}")
+  message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  KERNEL_LIBS: ${GEN_KERNEL_LIBS}")
   message(STATUS "  DEPS: ${GEN_DEPS}")
 
-  add_library(${lib_name})
+  set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+
+  add_library(${GEN_LIB_NAME})
   target_sources(
-    ${lib_name}
+    ${GEN_LIB_NAME}
     PRIVATE
-      ${CMAKE_CURRENT_BINARY_DIR}/RegisterCodegenUnboxedKernelsEverything.cpp
-      ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
-      ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h)
-  target_link_libraries(${lib_name} PRIVATE ${GEN_DEPS})
+      ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+      ${_out_dir}/Functions.h
+      ${_out_dir}/NativeFunctions.h)
+  target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
   if(GEN_KERNEL_LIBS)
-    target_link_libraries(${lib_name} PUBLIC ${GEN_KERNEL_LIBS})
+    target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
   endif()
 
-  target_link_options_shared_lib(${lib_name})
+  target_link_options_shared_lib(${GEN_LIB_NAME})
 endfunction()
 
 # Merge two kernel yaml files, prioritizing functions from FUNCTIONS_YAML

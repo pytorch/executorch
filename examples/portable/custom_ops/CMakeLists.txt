@@ -106,7 +106,8 @@ add_library(custom_kernels ${kernel_sources})
 target_link_libraries(custom_kernels PRIVATE executorch)
 target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
 
-gen_operators_lib("custom_ops_lib" KERNEL_LIBS custom_kernels DEPS executorch)
+gen_operators_lib(LIB_NAME "custom_ops_lib" KERNEL_LIBS custom_kernels DEPS
+                  executorch)
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
