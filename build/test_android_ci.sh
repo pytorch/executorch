@@ -21,8 +21,8 @@ export_model() {
 build_android_native_library() {
   pushd examples/demo-apps/android/LlamaDemo
   CMAKE_OUT="cmake-out-android-$1" ANDROID_NDK=/opt/ndk ANDROID_ABI="$1" ./gradlew setup
-  cp "cmake-out-android-$1"/extension/android/*.so build_aar/jni/$1/
   popd
+  cp "cmake-out-android-$1"/extension/android/*.so build_aar/jni/$1/
 }
 
 build_android_demo_app() {
