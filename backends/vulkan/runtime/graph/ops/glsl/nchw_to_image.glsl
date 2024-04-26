@@ -42,24 +42,17 @@ void main() {
     return;
   }
 
-  const ivec4 buf_indices = get_texel_nchw_buffer_ixs(idx, sizes, packed_dim);
+  const ivec4 buf_i = get_texel_nchw_buffer_ixs(idx, sizes, packed_dim);
 
   const int packed_dim_size = sizes[packed_dim];
   int packed_idx = idx[packed_dim];
 
-  VEC4_T texel = VEC4_T(0);
-  if (packed_idx < packed_dim_size) {
-    texel.x = SCALAR_T(buffer_in[buf_indices.x]);
-  }
-  if (packed_idx + 1 < packed_dim_size) {
-    texel.y = SCALAR_T(buffer_in[buf_indices.y]);
-  }
-  if (packed_idx + 2 < packed_dim_size) {
-    texel.z = SCALAR_T(buffer_in[buf_indices.z]);
-  }
-  if (packed_idx + 3 < packed_dim_size) {
-    texel.w = SCALAR_T(buffer_in[buf_indices.w]);
-  }
+  VEC4_T texel = VEC4_T(
+    mix(0, SCALAR_T(buffer_in[buf_i.x]), packed_idx < packed_dim_size),
+    mix(0, SCALAR_T(buffer_in[buf_i.y]), packed_idx + 1 < packed_dim_size),
+    mix(0, SCALAR_T(buffer_in[buf_i.z]), packed_idx + 2 < packed_dim_size),
+    mix(0, SCALAR_T(buffer_in[buf_i.w]), packed_idx + 3 < packed_dim_size)
+  );
 
   imageStore(image_out, ${get_pos[NDIM]("pos")}, texel);
 }

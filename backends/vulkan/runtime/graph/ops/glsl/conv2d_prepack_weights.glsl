@@ -76,21 +76,14 @@ void main() {
   // Map modified tensor_idx to modified buffer_i
   // Zero out if modified tensor idx is out of bounds
   const ivec4 buf_i = n * C*H*W + c * H*W + h * W + w;
-  const bvec4 mask = bvec4(ivec4(lessThan(n, ivec4(N))) & ivec4(lessThan(c, ivec4(C))));
+  const ivec4 mask = ivec4(lessThan(n, ivec4(N))) & ivec4(lessThan(c, ivec4(C)));
 
-  VEC4_T texel = VEC4_T(0);
-  if (mask.x) {
-    texel.x = SCALAR_T(buffer_in[buf_i.x]);
-  }
-  if (mask.y) {
-    texel.y = SCALAR_T(buffer_in[buf_i.y]);
-  }
-  if (mask.z) {
-    texel.z = SCALAR_T(buffer_in[buf_i.z]);
-  }
-  if (mask.w) {
-    texel.w = SCALAR_T(buffer_in[buf_i.w]);
-  }
+  VEC4_T texel = VEC4_T(
+    mix(0, SCALAR_T(buffer_in[buf_i.x]), mask.x),
+    mix(0, SCALAR_T(buffer_in[buf_i.y]), mask.y),
+    mix(0, SCALAR_T(buffer_in[buf_i.z]), mask.z),
+    mix(0, SCALAR_T(buffer_in[buf_i.w]), mask.w)
+  );
 
   imageStore(image_out, pos.xy, texel);
 }
