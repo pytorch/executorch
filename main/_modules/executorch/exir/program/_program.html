@@ -5,12 +5,11 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
-  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>executorch.exir.program._program &mdash; ExecuTorch main documentation</title>
+  <title>executorch.exir.program._program &mdash; ExecuTorch 0.2 documentation</title>
   
 
   
@@ -237,7 +236,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>0.2 &#x25BC</a>
     </div>
     
 
@@ -453,7 +452,6 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.passes</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">base_post_op_replace_passes</span><span class="p">,</span>
     <span class="n">base_pre_op_replace_passes</span><span class="p">,</span>
-    <span class="n">dead_code_elimination_pass</span><span class="p">,</span>
     <span class="n">EdgeToBackendOpsPass</span><span class="p">,</span>
     <span class="n">MemoryFormatOpsPass</span><span class="p">,</span>
     <span class="n">OpReplacePass</span><span class="p">,</span>
@@ -461,14 +459,8 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.insert_write_back_for_buffers_pass</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">insert_write_back_for_buffers_pass</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.normalize_view_copy_base_pass</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">NormalizeViewCopyBasePass</span><span class="p">,</span>
-<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_graph_asserts_pass</span> <span class="kn">import</span> <span class="n">RemoveGraphAssertsPass</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_mixed_type_operators</span> <span class="kn">import</span> <span class="n">RemoveMixedTypeOperators</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes.replace_view_copy_with_view_pass</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">ReplaceViewCopyWithViewPass</span><span class="p">,</span>
-<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.spec_prop_pass</span> <span class="kn">import</span> <span class="n">SpecPropPass</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.print_program</span> <span class="kn">import</span> <span class="n">pretty_print</span><span class="p">,</span> <span class="n">print_program</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.schema</span> <span class="kn">import</span> <span class="n">Program</span>
@@ -484,6 +476,7 @@
     <span class="n">unsafe_remove_auto_functionalized_pass</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">torch.export.exported_program</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_get_updated_range_constraints</span><span class="p">,</span>
     <span class="n">ConstantArgument</span><span class="p">,</span>
     <span class="n">ExportGraphSignature</span><span class="p">,</span>
     <span class="n">InputKind</span><span class="p">,</span>
@@ -497,39 +490,6 @@
 <span class="kn">from</span> <span class="nn">torch.utils</span> <span class="kn">import</span> <span class="n">_pytree</span> <span class="k">as</span> <span class="n">pytree</span>
 
 <span class="n">Val</span> <span class="o">=</span> <span class="n">Any</span>
-
-
-<span class="k">def</span> <span class="nf">_get_updated_range_constraints</span><span class="p">(</span><span class="n">gm</span><span class="p">):</span>
-    <span class="k">def</span> <span class="nf">get_shape_env</span><span class="p">(</span><span class="n">gm</span><span class="p">):</span>
-        <span class="n">vals</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span>
-            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;val&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="p">]</span>
-        <span class="kn">from</span> <span class="nn">torch._guards</span> <span class="kn">import</span> <span class="n">detect_fake_mode</span>  <span class="c1"># type: ignore[21]</span>
-
-        <span class="n">fake_mode</span> <span class="o">=</span> <span class="n">detect_fake_mode</span><span class="p">(</span><span class="n">vals</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">fake_mode</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="k">return</span> <span class="n">fake_mode</span><span class="o">.</span><span class="n">shape_env</span>
-        <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">vals</span><span class="p">:</span>
-            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">SymInt</span><span class="p">):</span>
-                <span class="k">return</span> <span class="n">v</span><span class="o">.</span><span class="n">node</span><span class="o">.</span><span class="n">shape_env</span>
-
-    <span class="n">shape_env</span> <span class="o">=</span> <span class="n">get_shape_env</span><span class="p">(</span><span class="n">gm</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">shape_env</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">{}</span>
-    <span class="n">range_constraints</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
-        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">shape_env</span><span class="o">.</span><span class="n">var_to_range</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-        <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">shape_env</span><span class="o">.</span><span class="n">replacements</span>
-    <span class="p">}</span>
-    <span class="c1"># Only when we have an unbacked symint, and it&#39;s used as constructor inputs,</span>
-    <span class="c1"># runtime_var_to_range will make a difference compated to var_to_range.</span>
-    <span class="c1"># e.g. [2, oo) -&gt; [0, oo)</span>
-    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">shape_env</span><span class="o">.</span><span class="n">var_to_range</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">shape_env</span><span class="o">.</span><span class="n">replacements</span><span class="p">:</span>
-            <span class="n">range_constraints</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
-    <span class="k">return</span> <span class="n">range_constraints</span>
 
 
 <span class="k">def</span> <span class="nf">_get_updated_graph_signature</span><span class="p">(</span>
@@ -1051,25 +1011,8 @@
     <span class="k">return</span> <span class="n">new_ep</span>
 
 
-<span class="k">def</span> <span class="nf">pre_memory_planning_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">ExecutorchBackendConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
-    <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">remove_view_copy</span><span class="p">:</span>
-        <span class="c1"># pyre-ignore</span>
-        <span class="k">return</span> <span class="p">[</span>
-            <span class="n">NormalizeViewCopyBasePass</span><span class="p">(),</span>
-            <span class="n">dead_code_elimination_pass</span><span class="p">,</span>
-            <span class="n">ReplaceViewCopyWithViewPass</span><span class="p">(),</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">to_out_var_pass</span><span class="p">,</span>
-        <span class="p">]</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="c1"># pyre-ignore</span>
-        <span class="k">return</span> <span class="p">[</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">to_out_var_pass</span><span class="p">,</span>
-        <span class="p">]</span>
-
-
 <span class="k">def</span> <span class="nf">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">ExecutorchBackendConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
+    <span class="c1"># pyre-ignore</span>
     <span class="n">passes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
         <span class="o">*</span><span class="n">config</span><span class="o">.</span><span class="n">passes</span><span class="p">,</span>
         <span class="n">SpecPropPass</span><span class="p">(),</span>
@@ -1078,8 +1021,9 @@
         <span class="c1"># there exists an unbacked symint operation.</span>
         <span class="n">EdgeToBackendOpsPass</span><span class="p">(),</span>
         <span class="n">RemoveGraphAssertsPass</span><span class="p">(),</span>
-    <span class="p">]</span> <span class="o">+</span> <span class="n">pre_memory_planning_passes</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
-
+        <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span>
+        <span class="n">config</span><span class="o">.</span><span class="n">to_out_var_pass</span><span class="p">,</span>
+    <span class="p">]</span>
     <span class="k">return</span> <span class="n">passes</span>
 
 
@@ -1172,7 +1116,7 @@
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
-        <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
+        <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">],</span>
         <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
@@ -1182,8 +1126,6 @@
 <span class="sd">        Constructs an EdgeProgramManager from an existing set of exported programs in edge dialect.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">edge_programs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
-            <span class="n">edge_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">edge_programs</span><span class="p">}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
@@ -1194,7 +1136,7 @@
                 <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in aten dialect.&quot;</span><span class="p">)</span>
                 <span class="k">raise</span> <span class="n">e</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="n">edge_programs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span> <span class="o">=</span> <span class="n">edge_programs</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span> <span class="o">=</span> <span class="n">constant_methods</span>
 
     <span class="nd">@property</span>
