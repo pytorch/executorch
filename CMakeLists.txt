@@ -120,6 +120,9 @@ endif()
 # disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
     "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
+endif()
 
 option(OPTIMIZE_SIZE "Build executorch runtime optimizing for binary size" OFF)
 if(OPTIMIZE_SIZE)
