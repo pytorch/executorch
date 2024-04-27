@@ -365,6 +365,11 @@ class CustomBuild(build):
             "-DEXECUTORCH_ENABLE_LOGGING=ON",
             "-DEXECUTORCH_LOG_LEVEL=Info",
             "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15",
+            # The separate host project is only required when cross-compiling,
+            # and it can cause build race conditions (libflatcc.a errors) when
+            # enabled. TODO(dbort): Remove this override once this option is
+            # managed by cmake itself.
+            "-DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF",
         ]
 
         build_args = [f"-j{self.parallel}"]
@@ -389,6 +394,7 @@ class CustomBuild(build):
 
         if ShouldBuild.llama_custom_ops:
             cmake_args += [
+                "-DEXECUTORCH_BUILD_CUSTOM=ON",  # add llama sdpa ops to pybindings.
                 "-DEXECUTORCH_BUILD_CUSTOM_OPS_AOT=ON",
             ]
             build_args += ["--target", "custom_ops_aot_lib"]
@@ -397,6 +403,14 @@ class CustomBuild(build):
         # package.
         if "CMAKE_ARGS" in os.environ:
             cmake_args += [item for item in os.environ["CMAKE_ARGS"].split(" ") if item]
+
+        # Allow adding extra build args through the environment. Used by some
+        # tests and demos to expand the set of targets included in the pip
+        # package.
+        if "CMAKE_BUILD_ARGS" in os.environ:
+            build_args += [
+                item for item in os.environ["CMAKE_BUILD_ARGS"].split(" ") if item
+            ]
 
         # Put the cmake cache under the temp directory, like
         # "pip-out/temp.<plat>/cmake-out".

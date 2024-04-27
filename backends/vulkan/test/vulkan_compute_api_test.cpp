@@ -901,9 +901,23 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_node) {
   ValueRef src_offset_ref = graph.add_scalar_list<int64_t>({1, 1, 1});
 
   // dst_offset is (n=1, c=8, h=2, w=0) in nchw coordinate
+  // Argument is {x, y, z}.
+  // x = 0 since w = 0
+  // y = 2 since h = 2
+  // z = c / 4 + 2 since
+  //   1. there c/4 planes per batch, n=1 means we are on the first batch;
+  //   2. +2 because c = 8, with channel packing it means two texels.
   ValueRef dst_offset_ref = graph.add_scalar_list<int64_t>({0, 2, c / 4 + 2});
 
   // range is (n=1, c=8, h=2, w=4)
+  // Argument is {x, y, z}.
+  // x = 4 since w = 4
+  // y = 2 since h = 2
+  // z = 2 since we are only copying 8 channels, hence 2 texel. n = 1 can be a
+  // bit misleading here, since it gives the impression that we are copying the
+  // entire channel. However, remember when we copy, we are trying to
+  // dst[dst_offset:dst_offset + range] = src[src_offset:src_offset + range],
+  // range must be non zero.
   ValueRef range_ref = graph.add_scalar_list<int64_t>({4, 2, 2});
 
   auto copyFn = VK_GET_OP_FN("etvk.copy_offset");
@@ -915,7 +929,7 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_node) {
   graph.prepare();
   graph.encode_execute();
 
-  fill_vtensor(graph, a, 0.0f, true);
+  fill_vtensor(graph, a, 0.0f, /*iota = */ true);
 
   graph.execute();
 
@@ -1020,6 +1034,7 @@ TEST(
 
   std::vector<int64_t> size = {n, c, h, w};
 
+  IOValueRef zero = graph.add_input_tensor(size, api::kFloat, memory_layout);
   IOValueRef a = graph.add_input_tensor(size, api::kFloat, memory_layout);
   IOValueRef b = graph.add_input_tensor(size, api::kFloat, memory_layout);
 
@@ -1027,6 +1042,16 @@ TEST(
   out.value = graph.add_tensor(size, api::kFloat, memory_layout);
 
   auto copyFn = VK_GET_OP_FN("etvk.copy_channel_offset");
+
+  // Make sure entire out tensor is zeroed. The zero tensor will be filled with
+  // zero later.
+  copyFn(
+      graph,
+      {zero.value,
+       graph.add_scalar<int64_t>(c),
+       graph.add_scalar<int64_t>(0),
+       graph.add_scalar<int64_t>(0),
+       out.value});
 
   int64_t a_src_offset = 0;
   int64_t a_dst_offset = 2;
@@ -1061,8 +1086,10 @@ TEST(
 
   float a_value = 1.0f;
   float b_value = 2.0f;
+  float zero_value = 0.0f;
   fill_vtensor(graph, a, a_value);
   fill_vtensor(graph, b, b_value);
+  fill_vtensor(graph, zero, zero_value);
 
   graph.execute();
 
@@ -1087,6 +1114,30 @@ TEST(
         for (int w_idx = 0; w_idx < w; w_idx++) {
           auto dst_idx = get_buf_idx(graph, out, {n_idx, c_idx, h_idx, w_idx});
           EXPECT_TRUE(data_out[dst_idx] == b_value);
+        }
+      }
+    }
+  }
+
+  // Also verify that data before a_dst_offset and after b_dst_offset + b_range
+  // are untouched.
+  for (int n_idx = 0; n_idx < n; n_idx++) {
+    for (int c_idx = 0; c_idx < a_dst_offset; c_idx++) {
+      for (int h_idx = 0; h_idx < h; h_idx++) {
+        for (int w_idx = 0; w_idx < w; w_idx++) {
+          auto dst_idx = get_buf_idx(graph, out, {n_idx, c_idx, h_idx, w_idx});
+          EXPECT_TRUE(data_out[dst_idx] == zero_value);
+        }
+      }
+    }
+  }
+
+  for (int n_idx = 0; n_idx < n; n_idx++) {
+    for (int c_idx = b_dst_offset + b_range + 1; c_idx < c; c_idx++) {
+      for (int h_idx = 0; h_idx < h; h_idx++) {
+        for (int w_idx = 0; w_idx < w; w_idx++) {
+          auto dst_idx = get_buf_idx(graph, out, {n_idx, c_idx, h_idx, w_idx});
+          EXPECT_TRUE(data_out[dst_idx] == zero_value);
         }
       }
     }

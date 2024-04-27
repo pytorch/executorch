@@ -194,8 +194,8 @@ class TestEmit(unittest.TestCase):
                 self, x: torch.Tensor
             ) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor]]:
                 return (
-                    torch.Tensor(1),
-                    torch.Tensor(2),
+                    torch.tensor(1),
+                    torch.tensor(2),
                     [torch.sin(x).max(), torch.cos(x).max()],
                 )
 

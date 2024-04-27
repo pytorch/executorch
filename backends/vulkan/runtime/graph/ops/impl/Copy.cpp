@@ -67,9 +67,7 @@ void add_copy_offset_node(
           {in, api::MemoryAccessType::READ},
       },
       // Parameter buffers
-      {t_out->texture_limits_ubo(),
-       t_in->texture_limits_ubo(),
-       graph.create_params_buffer(offset_params)},
+      {graph.create_params_buffer(offset_params)},
       // Specialization Constants
       {}));
 }
@@ -86,7 +84,7 @@ void add_copy_channel_offset_node(
 
   // Likely need to prepad these numbers.
   std::vector<int64_t> in_sizes = t_in->sizes();
-  std::vector<int64_t> out_sizes = t_in->sizes();
+  std::vector<int64_t> out_sizes = t_out->sizes();
 
   VK_CHECK_COND(check_memory_layout_is(*t_in, api::kChannelsPacked));
   VK_CHECK_COND(check_memory_layout_is(*t_out, api::kChannelsPacked));
@@ -98,7 +96,7 @@ void add_copy_channel_offset_node(
 
   VK_CHECK_COND(
       dim_at<Dim4D::Channel>(in_sizes) >= src_channel_offset + channel_range,
-      "Source channel and range should be less than or equal to input tensor's channel size");
+      "Source channel plus range should be less than or equal to input tensor's channel size");
   VK_CHECK_COND(
       dim_at<Dim4D::Channel>(out_sizes) >= dst_channel_offset + channel_range,
       "Source channel and range should be less than or equal to input tensor's channel size");
@@ -115,15 +113,17 @@ void add_copy_channel_offset_node(
 
   int32_t out_channels = dim_at<Dim4D::Channel>(out_sizes);
 
+  // Copy one batch at a time.
   for (int batch_idx = 0; batch_idx < dim_at<Dim4D::Batch>(in_sizes);
        batch_idx++) {
     // Mapping the tensor NCHW coordinates into texture XYZ coordinates
     int32_t dst_first_z = dst_channel_offset / 4;
     int32_t dst_last_z = (dst_channel_offset + channel_range - 1) / 4;
 
-    // We copy the entire width and height dimension. For the batch dimension,
-    // the global_size variable specify the range. The shader combines it with
-    // the dst_offset to get the actual coordinate.
+    // We copy the entire width and height dimension. For the channel dimension,
+    // we use the z-dimension of the global_size to specify the texture range.
+    // The shader combines the global invocation id and the dst_offset to get
+    // the actual coordinate.
 
     ivec3 dst_offset{
         0, 0, dst_first_z + batch_idx * api::utils::div_up(out_channels, 4)};
@@ -134,19 +134,6 @@ void add_copy_channel_offset_node(
         api::utils::safe_downcast<uint32_t>(dst_last_z - dst_first_z + 1)};
 
     uvec3 local_size = adaptive_work_group_size(global_size);
-
-    /*
-    std::cout << "shader channel offset. "
-      << " batch_idx=" << batch_idx
-      << " channel_range=" << channel_range
-      << " src_channel_offset=" << src_channel_offset
-      << " dst_channel_offset=" << dst_channel_offset
-      << " in_size=" << in_sizes
-      << " out_size=" << out_sizes
-      << " dst_offset=" << dst_offset
-      << " global_size=" << global_size
-      << std::endl;
-    */
 
     const struct Block final {
       api::utils::ivec4 out_sizes;
@@ -170,6 +157,7 @@ void add_copy_channel_offset_node(
         api::utils::make_ivec3(global_size),
         0,
         dst_offset,
+        0,
     };
 
     auto shader = VK_KERNEL_FROM_STR(kernel_name);
@@ -186,9 +174,7 @@ void add_copy_channel_offset_node(
             {in, api::MemoryAccessType::READ},
         },
         // Parameter buffers
-        {t_out->texture_limits_ubo(),
-         t_in->texture_limits_ubo(),
-         graph.create_params_buffer(channel_offset_params)},
+        {graph.create_params_buffer(channel_offset_params)},
         // Specialization Constants
         {}));
   }
@@ -234,7 +220,6 @@ void copy_channel_offset(
 }
 
 REGISTER_OPERATORS {
-  // VK_REGISTER_OP(aten.clone.default, add_test_node);
   VK_REGISTER_OP(etvk.copy_offset, copy_offset);
   VK_REGISTER_OP(etvk.copy_channel_offset, copy_channel_offset);
 }

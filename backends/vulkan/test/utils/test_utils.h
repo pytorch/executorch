@@ -154,9 +154,6 @@ check_staging_buffer(api::StorageBuffer& staging, float val, int numel = -1) {
   }
 }
 
-// tensor_coor is in a nchw-coordinate.
-// inline void get_buf_idx(vTensor& vten, const std::vector<int64>& tensor_coor)
-// {
 inline int64_t get_buf_idx(
     ComputeGraph& graph,
     IOValueRef ref,
@@ -165,7 +162,6 @@ inline int64_t get_buf_idx(
 
   const std::vector<int64_t>& sizes = vten_ptr->sizes();
 
-  int64_t n = dim_at<Dim4D::Batch>(sizes);
   int64_t c = dim_at<Dim4D::Channel>(sizes);
   int64_t h = dim_at<Dim4D::Height>(sizes);
   int64_t w = dim_at<Dim4D::Width>(sizes);

@@ -20,15 +20,7 @@ layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict 
 layout(set = 0, binding = 1) uniform PRECISION sampler3D existing_out;
 layout(set = 0, binding = 2) uniform PRECISION sampler3D image_in;
 
-layout(set = 0, binding = 3) uniform PRECISION restrict OutLimits {
-  ivec3 out_limits;
-};
-
-layout(set = 0, binding = 4) uniform PRECISION restrict InLimits {
-  ivec3 in_limits;
-};
-
-layout(set = 0, binding = 5) uniform PRECISION restrict CopyArgs {
+layout(set = 0, binding = 3) uniform PRECISION restrict CopyArgs {
   ivec4 out_sizes;
   ivec4 in_sizes;
   // Analogus to range variable in copy. It defines the # of channel being
@@ -49,8 +41,8 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 layout(constant_id = 3) const int packed_dim = C_DIM;
 
 void main() {
-  // pos is [0, range_i),
-  
+  // Note: Unlike other shaders, the range is often not equal to the destination
+  // texture extent.
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
   if (any(greaterThanEqual(pos, range))) {
     return;
@@ -69,14 +61,9 @@ void main() {
     in_whcn.z = out_whcn.z - dst_channel_offset + i;
 
     // Handle the partial update for begining of channel in an existing tensor.
-    // If the source channel index is below zero, we can skip.
-    if (in_whcn.z < 0) {
-      continue;
-    }
-
-    // Handle the partial update for end of channels. If the channel index
-    // exceeds the range, we skip updating the element.
-    if (in_whcn.z >= channel_range) {
+    // If the source channel index is below zero or exceeds the range, we skip
+    // updating the element to avoid overwriting existing data.
+    if ((in_whcn.z < 0) || (in_whcn.z >= channel_range)) {
       continue;
     }
 

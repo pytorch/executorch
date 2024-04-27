@@ -8,6 +8,7 @@ on:
       - release/*
     tags:
       - v[0-9]+.[0-9]+.[0-9]+
+      - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
@@ -48,7 +49,7 @@ jobs:
 
         GITHUB_REF=${{ github.ref }}
         echo "$GITHUB_REF"
-        ET_VERSION_DOCS="${GITHUB_REF}"
+        export ET_VERSION_DOCS="${GITHUB_REF}"
         echo "$ET_VERSION_DOCS"
 
         set -eux
