@@ -96,10 +96,23 @@ void add_copy_channel_offset_node(
 
   VK_CHECK_COND(
       dim_at<Dim4D::Channel>(in_sizes) >= src_channel_offset + channel_range,
-      "Source channel plus range should be less than or equal to input tensor's channel size");
+      "Src channel (",
+      src_channel_offset,
+      ") and range (",
+      channel_range,
+      ") should be less than or equal to input tensor's channel size (",
+      dim_at<Dim4D::Channel>(in_sizes),
+      ")");
+
   VK_CHECK_COND(
       dim_at<Dim4D::Channel>(out_sizes) >= dst_channel_offset + channel_range,
-      "Source channel and range should be less than or equal to input tensor's channel size");
+      "Dst channel (",
+      dst_channel_offset,
+      ") and range (",
+      channel_range,
+      ") should be less than or equal to input tensor's channel size (",
+      dim_at<Dim4D::Channel>(out_sizes),
+      ")");
 
   VK_CHECK_COND(channel_range >= 0, "Channel range must be non-negative");
   VK_CHECK_COND(
