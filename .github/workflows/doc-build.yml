@@ -94,11 +94,11 @@ jobs:
         # Get github.ref for the output doc folder. By default "main"
         # If matches a tag like refs/tags/v1.12.0-rc3 or
         # refs/tags/v1.12.0 convert to 1.12
-        GITHUB_REF=${{ github.ref }}
+        export GITHUB_REF=${{ github.ref }}
 
         # Convert refs/tags/v1.12.0rc3 into 1.12.
         # Adopted from https://github.com/pytorch/pytorch/blob/main/.github/workflows/_docs.yml#L150C11-L155C13
-        if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\\.[0-9]+)\\. ]]; then
+        if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+) ]]; then
           TARGET_FOLDER="${BASH_REMATCH[1]}"
         else
           TARGET_FOLDER="main"
