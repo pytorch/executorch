@@ -33,12 +33,6 @@ void add_cat_default_node(
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
   vTensorPtr t_out = graph.get_tensor(out);
 
-  /*
-  for (ValueRef input_ref : *input_list) {
-    vTensorPtr t_in = graph.get_tensor(input_ref);
-  }
-  */
-
   NchwDim nchw_dim = normalize_to_nchw_dim(*t_out, dim);
 
   // TODO: Find ways to factor out the similar code for width, height, and batch
