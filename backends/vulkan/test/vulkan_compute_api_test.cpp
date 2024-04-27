@@ -1133,7 +1133,7 @@ TEST(
   }
 
   for (int n_idx = 0; n_idx < n; n_idx++) {
-    for (int c_idx = b_dst_offset + b_range + 1; c_idx < c; c_idx++) {
+    for (int c_idx = b_dst_offset + b_range; c_idx < c; c_idx++) {
       for (int h_idx = 0; h_idx < h; h_idx++) {
         for (int w_idx = 0; w_idx < w; w_idx++) {
           auto dst_idx = get_buf_idx(graph, out, {n_idx, c_idx, h_idx, w_idx});
