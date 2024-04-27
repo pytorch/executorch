@@ -27,7 +27,6 @@ fi
 
 # Parse options.
 EXECUTORCH_BUILD_PYBIND=OFF
-CMAKE_ARGS=""
 
 for arg in "$@"; do
   case $arg in
@@ -110,4 +109,5 @@ $PIP_EXECUTABLE install --extra-index-url "${TORCH_NIGHTLY_URL}" \
 
 EXECUTORCH_BUILD_PYBIND="${EXECUTORCH_BUILD_PYBIND}" \
     CMAKE_ARGS="${CMAKE_ARGS}" \
+    CMAKE_BUILD_ARGS="${CMAKE_BUILD_ARGS}" \
     $PIP_EXECUTABLE install . --no-build-isolation -v

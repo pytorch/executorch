@@ -20,7 +20,15 @@ namespace executor {
  * the first element will be returned regardless of what i is requested to
  * simulate broadcasting.
  */
-int64_t val_at(IntArrayRef array, size_t i, int64_t default_value = 1);
+inline int64_t val_at(IntArrayRef array, size_t i, int64_t default_value = 1) {
+  if (array.size() == 1) {
+    return array[0];
+  } else if (array.size() > 1) {
+    return array[i];
+  } else {
+    return default_value;
+  }
+}
 
 /**
  * Checks that all elements of an IntArray are greater than or equal to `val`.

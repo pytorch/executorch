@@ -24,13 +24,12 @@ void quantized_linear_out(
     const Tensor& src,
     const Tensor& weight,
     const Tensor& bias,
-    double src_scale,
     int64_t src_zero_point,
-    double weight_scale,
-    int64_t weight_zero_point,
+    const Tensor& weight_zero_point,
     const Tensor& out_multiplier,
     const Tensor& out_shift,
     int64_t out_zero_point,
+    const exec_aten::optional<Tensor>& offset,
     Tensor& out) {
   // input comes in shape [leading_dims, in_dim]
   // weight comes in shape [out_dim, in_dim]
@@ -58,7 +57,7 @@ void quantized_linear_out(
       in_dim, // vec_offset of p_mat2.
       out_dim, // out_offset, i.e., offset of next output element written
       1, // out_stride, i.e., stride to go to next output row
-      -weight_zero_point, // mat1_zero_bias
+      -weight_zero_point.const_data_ptr<int32_t>()[0], // mat1_zero_bias
       -src_zero_point, // mat2_zero_bias
       out_multiplier.const_data_ptr<int32_t>(), // out_multiplier
       out_shift.const_data_ptr<int32_t>(), // out_shift

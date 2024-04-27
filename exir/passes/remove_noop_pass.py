@@ -90,3 +90,32 @@ class RemoveNoopPass(ExportPass):
         graph_module.graph.eliminate_dead_code()
 
         return PassResult(graph_module, True)
+
+
+class RemoveToCopyPass(ExportPass):
+    """
+    Removes _to_copy that pass through arguments.
+    """
+
+    def call(self, graph_module: GraphModule) -> PassResult:
+        for node in graph_module.graph.nodes:
+            if node.op != "call_function":
+                continue
+
+            if node.target not in (torch.ops.aten._to_copy.default,):
+                continue
+
+            orig_tensor = node.args[0].meta["val"]
+
+            if (
+                orig_tensor.dtype == node.meta["val"].dtype
+                and orig_tensor.device == node.meta["val"].device
+                and orig_tensor.shape == node.meta["val"].shape
+                and orig_tensor.stride() == node.meta["val"].stride()
+            ):
+                node.replace_all_uses_with(node.args[0])
+
+        graph_module.graph.eliminate_dead_code()
+        graph_module.graph.lint()
+
+        return PassResult(graph_module, True)

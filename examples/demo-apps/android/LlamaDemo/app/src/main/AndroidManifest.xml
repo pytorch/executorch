@@ -21,7 +21,7 @@
         android:extractNativeLibs="true"
         tools:targetApi="34">
 
-        <uses-native-library android:name="libexecutorch.so"
+        <uses-native-library android:name="libcdsprpc.so"
             android:required="false"/>
 
         <activity

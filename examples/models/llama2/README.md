@@ -33,21 +33,22 @@ We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/l
 
 Note that groupsize less than 128 was not enabled, since such model were still too large. This is because our current efforts have focused on enabling FP32 and support for FP16 is under way. What this implies for model size is that 1) embedding table is in FP32 and 2) quantized weights scales are FP32.
 
+## Enablement
+
+We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-apps) efficiently on select devices including the iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S22 and S24, and OnePlus 12.
+
+For Llama 3 8B, we have verified so far on iPhone 15 Pro Max and OnePlus 12 (with 16GB RAM).
+
 ## Performance
 
-Performance was measured on Samsung Galaxy S22, S24, One Plus 12 and iPhone 15 max Pro. Measurement performance is in terms of tokens/second.
+Llama2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
 
 |Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------| ---------------------- | ---------------
-|Galaxy S22*  | 8.15 tokens/second | 8.3 tokens/second |
-|Galaxy S24* | 10.66 tokens/second | 11.26 tokens/second |
-|One plus 12* | 11.55 tokens/second | 11.6 tokens/second |
-|Galaxy S22** | 5.5 tokens/second | 5.9 tokens/second |
-|iPhone 15 pro** | ~6 tokens/second | ~6 tokens/second |
+|Galaxy S22  | 8.15 tokens/second | 8.3 tokens/second |
+|Galaxy S24 | 10.66 tokens/second | 11.26 tokens/second |
+|OnePlus 12 | 11.55 tokens/second | 11.6 tokens/second |
 
-*: Measured via adb binary based [workflow](#step-5-run-benchmark-on)
-
-**: Measured via app based [workflow](#step-6-build-mobile-apps)
 
 # Instructions
 
@@ -111,8 +112,10 @@ You can export and run the original Llama3 8B model.
 
 2. Export model and generate `.pte` file
     ```
-    python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -d=fp32 -X -qmode 8da4w -kv --use_sdpa_with_kv_cache --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte" group_size 128 --metadata '{"get_bos_id":128000, "get_eos_id":128001}' --embedding-quantize 4,32
+    python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_id":128001}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
     ```
+
+    Due to the larger vocabulary size of Llama3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` to further reduce the model size.
 
 ## (Optional) Finetuning
 

@@ -150,8 +150,7 @@ In order to run the CMake build, you need the path to the following:
 cd executorch
 rm -rf cmake-out
 # prebuild and install executorch library
-cmake -DBUCK2=buck2 \
-    -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/examples/cadence/cadence.cmake \
+cmake -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/examples/cadence/cadence.cmake \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DCMAKE_BUILD_TYPE=Debug \
     -DPYTHON_EXECUTABLE=python3 \
