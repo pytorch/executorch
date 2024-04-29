@@ -17,6 +17,7 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     CppTestFileGen,
     DOUBLE,
     INT,
+    MEMORY_FORMAT,
     OPT_AT_TENSOR,
     OPT_BOOL,
     OPT_DEVICE,
@@ -231,7 +232,7 @@ class ComputeGraphGen:
         # at::_ops::{name}::call(*), and ATEN_FN is a handly macro.
         cpp_sig = gen_static_dispatch_backend_call_signature(self.f_sig, self.f)
         exprs = translate_args(self.f_sig, cpp_sig)
-        func_call = f"ATEN_FN({self.f_sig.name()})({exprs});"
+        func_call = f"ATEN_FN({self.f_sig.func.name})({exprs});"
         return func_call
 
     def create_out_src(self) -> str:
@@ -342,6 +343,7 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             or ref.src_cpp_type == OPT_DEVICE
             or ref.src_cpp_type == OPT_BOOL
             or ref.src_cpp_type == OPT_MEMORY_FORMAT
+            or ref.src_cpp_type == MEMORY_FORMAT
         ):
             ret_str += "add_none(); \n"
         elif ref.src_cpp_type == TWO_TENSOR_TUPLE:

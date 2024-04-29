@@ -22,6 +22,7 @@ AT_TENSOR_LIST = "at::TensorList"
 BOOL = "bool"
 DOUBLE = "double"
 INT = "int64_t"
+MEMORY_FORMAT = "at::MemoryFormat"
 OPT_AT_TENSOR = "::std::optional<at::Tensor>"
 OPT_BOOL = "::std::optional<bool>"
 OPT_INT64 = "::std::optional<int64_t>"
@@ -174,6 +175,8 @@ class TestSuiteGen:
             or cpp_type == OPT_MEMORY_FORMAT
         ):
             ret_str += "std::nullopt;"
+        elif cpp_type == MEMORY_FORMAT:
+            ret_str += "at::MemoryFormat::Contiguous;"
         else:
             raise RuntimeError(f"Unsupported cpp type {cpp_type}")
         return ret_str + "\n"
@@ -266,6 +269,10 @@ at::Tensor make_seq_tensor(
   // "values" will go out of scope.
   return at::from_blob(values.data(), sizes, at::kFloat).toType(dtype).detach().clone();
 }}
+
+
+// torchgen assumes the "at" namespace is used for function default arguments.
+using at::MemoryFormat;
 
 {test_suites_cpp}
 """

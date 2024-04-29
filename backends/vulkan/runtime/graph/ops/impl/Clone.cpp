@@ -42,6 +42,20 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   return add_clone_node(graph, args[0], args[2]);
 }
 
+void contiguous(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  // The vulkan delegate does not support changing memory format.
+  return add_clone_node(graph, args[0], args[2]);
+}
+
+void _to_copy(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  // All arguments are ignored for the time being.
+  // _to_copy(Tensor self, *, ScalarType? dtype=None, Layout? layout=None,
+  //    Device? device=None, bool? pin_memory=None, bool non_blocking=False,
+  //    MemoryFormat? memory_format=None) -> Tensor
+
+  return add_clone_node(graph, args[0], args[7]);
+}
+
 // Clone node is not the most efficient implementation for the aten.clone
 // operation. A more efficient implementation can be achieved during vulkan
 // export with the use of shared object. This clone node is introduced to enable
@@ -50,6 +64,8 @@ void clone(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.clone.default, clone);
+  VK_REGISTER_OP(aten.contiguous.default, contiguous);
+  VK_REGISTER_OP(aten._to_copy.default, _to_copy);
 }
 
 } // namespace vkcompute

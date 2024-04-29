@@ -555,6 +555,25 @@ def get_split_tensor_inputs():
     return test_suite
 
 
+def get_t_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((1, S1),),
+            ((S1, 1),),
+            ((S2, S2),),
+            ((S2, S1),),
+            ((S1, S2),),
+            ((S1,),),
+            ((1,),),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -573,8 +592,11 @@ test_suites = {
     "aten.slice_copy.Tensor": get_slice_inputs(),
     "aten.unsqueeze_copy.default": get_unsqueeze_inputs(),
     "aten.clone.default": get_clone_inputs(),
+    "aten.contiguous.default": get_clone_inputs(),
+    "aten._to_copy.default": get_clone_inputs(),
     "aten.repeat.default": get_repeat_inputs(),
     "aten.cat.default": get_cat_inputs(),
     "aten.split_with_sizes.default": get_split_with_sizes_inputs(),
     "aten.split.Tensor": get_split_tensor_inputs(),
+    "aten.t.default": get_t_inputs(),
 }
