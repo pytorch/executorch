@@ -6,7 +6,8 @@ The documentation build in this repository is automated. The documentation "buil
 The "upload" to gh-pages job runs on tags and the "main" branch. 
 
 For any release tag, such as "v1.1.1" or "v1.1.1-rc1", a GH action generates documentation and uploads
-it to gh-pages. A directory is created, named after the tag, with the "-rc" suffix and the "v" prefix removed.
+it to gh-pages. A directory is created, named after the tag, with the "-rc" suffix, the "v" prefix, and
+the number component removed.
 For instance, "v0.1.0-rc1" would be shortened to "0.1". Similarly, for the final release tag, such as v0.1.0,
 the docs will be uploaded to the 0.1 directory. This allows you to preview your documentation prior to
 the official release.
@@ -36,14 +37,17 @@ On the day of the release, you need to update the symlink to the
 release version. For example:
 
 ```
+git checkout gh-pages # checkout the gh-pages branch
+git checkout -b update-symlink-<NEW_VERSION> # create a branch from the gh-pages 
 NEW_VERSION=0.1   # substitute the correct version number here
 git checkout gh-pages
 rm stable # remove the existing symlink. **Do not** edit!
 ln -s "${NEW_VERSION}" stable
 git add stable
 git commit -m "Update stable to ${NEW_VERSION}"
-git push -u origin
+git push --set-upstream origin update-symlink-<NEW_VERSION> # push the new branch.
 ```
+Go to the GitHub UI and create a PR with your changes against the `gh-pages` branch.
 
 ### Updating the stable version in dropdown
 
