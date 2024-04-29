@@ -56,6 +56,12 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.select_copy.int,
             exir_ops.edge.aten.unsqueeze_copy.default,
             exir_ops.edge.aten.view_copy.default,
+            # Copy-releated operators
+            exir_ops.edge.aten.clone.default,
+            exir_ops.edge.aten.cat.default,
+            exir_ops.edge.aten.split_with_sizes_copy.default,
+            exir_ops.edge.aten.split.Tensor,
+            exir_ops.edge.aten.slice_copy.Tensor,
             # Other
             operator.getitem,
             exir_ops.edge.aten.full.default,
