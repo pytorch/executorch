@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
@@ -151,6 +152,26 @@ check_staging_buffer(api::StorageBuffer& staging, float val, int numel = -1) {
   for (size_t i = 0; i < data.size(); ++i) {
     CHECK_VALUE(data, i, val);
   }
+}
+
+inline int64_t get_buf_idx(
+    ComputeGraph& graph,
+    IOValueRef ref,
+    const std::vector<int64_t>& tensor_coor) {
+  vTensorPtr vten_ptr = graph.get_tensor(ref.value);
+
+  const std::vector<int64_t>& sizes = vten_ptr->sizes();
+
+  int64_t c = dim_at<Dim4D::Channel>(sizes);
+  int64_t h = dim_at<Dim4D::Height>(sizes);
+  int64_t w = dim_at<Dim4D::Width>(sizes);
+
+  int64_t ni = dim_at<Dim4D::Batch>(tensor_coor);
+  int64_t ci = dim_at<Dim4D::Channel>(tensor_coor);
+  int64_t hi = dim_at<Dim4D::Height>(tensor_coor);
+  int64_t wi = dim_at<Dim4D::Width>(tensor_coor);
+
+  return (ni * c * h * w + ci * h * w + hi * w + wi);
 }
 
 //
