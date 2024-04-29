@@ -48,6 +48,8 @@ git commit -m "Update stable to ${NEW_VERSION}"
 git push --set-upstream origin update-symlink-<NEW_VERSION> # push the new branch.
 ```
 Go to the GitHub UI and create a PR with your changes against the `gh-pages` branch.
+Here is the [sample PR](https://github.com/pytorch/executorch/pull/3395). Merge a PR
+like that on the day of the release when all binaries are built and published.
 
 ### Updating the stable version in dropdown
 
