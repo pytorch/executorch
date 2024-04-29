@@ -46,6 +46,7 @@ void view(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.view_copy.default, view);
+  VK_REGISTER_OP(aten.reshape.default, view);
 }
 
 } // namespace vkcompute

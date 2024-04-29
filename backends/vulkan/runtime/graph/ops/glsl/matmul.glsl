@@ -8,6 +8,10 @@
 
 #version 450 core
 
+// To convince the SPIR-V compiler to unroll the loops optimally, need this
+// macro
+#define FOUR 4
+
 #define PRECISION ${PRECISION}
 
 #include "indexing_utils.h"
@@ -20,8 +24,8 @@ layout(set = 0, binding = 3) uniform PRECISION restrict OutLimits {
   ivec3 out_limits;
 };
 
-layout(set = 0, binding = 4) uniform PRECISION restrict InSizes {
-  ivec4 in_sizes;
+layout(set = 0, binding = 4) uniform PRECISION restrict StepSize {
+  int step_size;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -33,58 +37,47 @@ void main() {
     return;
   }
 
-  vec4 texel = vec4(0);
-
-  ivec3 mat1_pos = ivec3(0, pos.y, pos.z);
-
-  $if MAT2_PACKING == "H_packed":
-    ivec3 mat2_pos = ivec3(pos.x * 4, 0, pos.z);
-  $else:
-    ivec3 mat2_pos = ivec3(pos.x, 0, pos.z);
-
-  $if MAT1_PACKING == "W_packed":
-    int K = divup4(in_sizes[0]);
-    for (int i = 0; i < K; ++i) {
-      $if MAT2_PACKING == "H_packed":
-        vec4 mat1_tex = texelFetch(im_mat1, mat1_pos, 0);
-        vec4 sums = vec4(
-            dot(mat1_tex, texelFetch(im_mat2, mat2_pos, 0)),
-            dot(mat1_tex, texelFetch(im_mat2, mat2_pos + ivec3(1, 0, 0), 0)),
-            dot(mat1_tex, texelFetch(im_mat2, mat2_pos + ivec3(2, 0, 0), 0)),
-            dot(mat1_tex, texelFetch(im_mat2, mat2_pos + ivec3(3, 0, 0), 0)));
-
-        texel += sums;
-
-        mat1_pos.x++;
-        mat2_pos.y++;
-      $elif MAT2_PACKING == "W_packed":
-        vec4 mat1_tex = texelFetch(im_mat1, mat1_pos, 0);
-        texel = fma(mat1_tex.xxxx, texelFetch(im_mat2, mat2_pos, 0), texel);
-        mat2_pos.y++;
-        texel = fma(mat1_tex.yyyy, texelFetch(im_mat2, mat2_pos, 0), texel);
-        mat2_pos.y++;
-        texel = fma(mat1_tex.zzzz, texelFetch(im_mat2, mat2_pos, 0), texel);
-        mat2_pos.y++;
-        texel = fma(mat1_tex.wwww, texelFetch(im_mat2, mat2_pos, 0), texel);
-        mat2_pos.y++;
-
-        mat1_pos.x++;
-      $else:
-        $raise Exception("Unsupported value for MAT2_PACKING")
+  // we avoid mat4 and vec4 usage here as they compile to much less efficient
+  // SPIR-V
+  float results[FOUR][FOUR];
+  for (int i = 0; i < FOUR; i++) {
+    for (int j = 0; j < FOUR; j++) {
+      results[i][j] = 0;
     }
-  $elif MAT1_PACKING == "C_packed" and MAT2_PACKING == "C_packed":
-    int K = in_sizes[0];
-    for (int i = 0; i < K; ++i) {
-      texel = fma(
-          texelFetch(im_mat1, mat1_pos, 0),
-          texelFetch(im_mat2, mat2_pos, 0),
-          texel);
+  }
 
-      mat1_pos.x++;
-      mat2_pos.y++;
+  for (int j = 0; j < step_size; j++) {
+    // we may potentially read out of bounds, but (0, 0, 0, 0) will be sampled
+    // safely read and cache 4x4 tile of im_mat1 (4 adjacent rows)
+    vec4 im_mat1_partial_rows[FOUR];
+    vec4 im_mat2_partial_cols[FOUR];
+
+    for (int k = 0; k < FOUR; k++) {
+      const int pos_y_offset = (FOUR * pos.y) + k;
+      const ivec3 pos_rd = ivec3(j, pos_y_offset, pos.z);
+      im_mat1_partial_rows[k] = texelFetch(im_mat1, pos_rd, 0);
     }
-  $else:
-    $raise Exception("Unsupported value combo for MAT1_PACKING and MAT2_PACKING")
-
-  imageStore(im_out, pos, texel);
+    // read and cache 4x4 tile of im_mat2 (4 adjacent columns)
+    for (int k = 0; k < FOUR; k++) {
+      const int pos_x_offset = (FOUR * pos.x) + k;
+      const ivec3 pos_rd = ivec3(pos_x_offset, j, pos.z);
+      im_mat2_partial_cols[k] = texelFetch(im_mat2, pos_rd, 0);
+    }
+    // perform partial dot products and add partial result to results
+    for (int idx_r = 0; idx_r < FOUR; idx_r++) {
+      for (int idx_c = 0; idx_c < FOUR; idx_c++) {
+        results[idx_r][idx_c] +=
+            dot(im_mat1_partial_rows[idx_r], im_mat2_partial_cols[idx_c]);
+      }
+    }
+  }
+  // results is in transposed order w.r.t. the desired output
+  for (int idx_c = 0; idx_c < FOUR; idx_c++) {
+    for (int idx_r = 0; idx_r < FOUR; idx_r++) {
+      const ivec3 out_pos =
+          ivec3(idx_r + FOUR * pos.x, idx_c + FOUR * pos.y, pos.z);
+      imageStore(
+          im_out, out_pos, vec4(results[idx_c][idx_r], 0.0, 0.0, 0.0));
+    }
+  }
 }

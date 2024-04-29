@@ -51,7 +51,6 @@ def get_mm_inputs():
     # ATen matmul doesn't support half
     test_suite.dtypes = ["at::kFloat"]
     test_suite.layouts = [
-        "api::kWidthPacked",
         "api::kChannelsPacked",
     ]
     return test_suite
