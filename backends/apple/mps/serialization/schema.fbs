@@ -166,6 +166,14 @@ table MPSIndexPut {
   output_id:int;
 }
 
+table MPSScatter {
+  input1_id:int;
+  output_id:int;
+  dim:long;
+  idx_id:int;
+  src_id:int;
+}
+
 // Shape ops.
 table MPSPermute {
   input1_id:int;
@@ -390,6 +398,7 @@ union MPSNodeUnion {
     MPSEmbedding,
     MPSIndexTensor,
     MPSIndexPut,
+    MPSScatter,
 
     // Reduce ops
     MPSMean,

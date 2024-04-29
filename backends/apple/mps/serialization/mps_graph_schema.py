@@ -464,6 +464,13 @@ class MPSIndexPut(MPSNode1x1):
     values_id: int = -1
 
 
+@dataclass
+class MPSScatter(MPSNode1x1):
+    dim: int = 0
+    idx_id: int = -1
+    src_id: int = -1
+
+
 ##
 ## Shape ops
 ##
@@ -712,6 +719,7 @@ MPSNodeUnion = Union[
     MPSEmbedding,
     MPSIndexTensor,
     MPSIndexPut,
+    MPSScatter,
     # Shape ops
     MPSPermute,
     MPSView,
