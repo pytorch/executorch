@@ -172,10 +172,24 @@ with open(save_path, "wb") as f:
 # Use CMake (follow `these instructions <../runtime-build-and-cross-compilation.html#configure-the-cmake-build>`__ to set up cmake) to execute the Bundled Program to generate the ``ETDump``::
 #
 #       cd executorch
-#       rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
-#       cd ..
-#       cmake --build cmake-out -j8 -t sdk_example_runner
-#       ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path <bundled_program>
+#       rm -rf cmake-out
+#       cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
+#           -DCMAKE_BUILD_TYPE=Release \
+#           -DEXECUTORCH_BUILD_SDK=ON \
+#           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+#           -Bcmake-out .
+#       cmake --build cmake-out -j9 --target install --config Release
+#
+#       local example_dir=examples/sdk
+#       local build_dir=cmake-out/${example_dir}
+#       CMAKE_PREFIX_PATH="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
+#       rm -rf ${build_dir}
+#       cmake -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+#           -DCMAKE_BUILD_TYPE=Release \
+#           -B${build_dir} \
+#           ${example_dir}
+#       cmake --build ${build_dir} -j9 --config Release
+#       ${build_dir}/sdk_example_runner --bundled_program_path="bundled_program.bp"
 
 ######################################################################
 # Creating an Inspector
