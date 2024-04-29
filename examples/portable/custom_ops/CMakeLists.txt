@@ -73,9 +73,13 @@ include(${EXECUTORCH_SRCS_FILE})
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime).
 if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1)
-  gen_selected_ops("custom_ops_lib" "" "my_ops::mul3.out" "")
+  gen_selected_ops(
+    LIB_NAME "custom_ops_lib"
+    ROOT_OPS "my_ops::mul3.out")
 elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
-  gen_selected_ops("custom_ops_lib" "" "my_ops::mul4.out" "")
+  gen_selected_ops(
+    LIB_NAME "custom_ops_lib"
+    ROOT_OPS "my_ops::mul4.out")
 endif()
 # Expect gen_selected_ops output file to be selected_operators.yaml
 generate_bindings_for_kernels(LIB_NAME "custom_ops_lib" CUSTOM_OPS_YAML
@@ -86,11 +90,16 @@ message("Generated files ${gen_command_sources}")
 
 # C++ library to register custom ops into PyTorch.
 if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
+  gen_selected_ops(
+    LIB_NAME "custom_ops_aot_lib"
+    ROOT_OPS "my_ops::mul4.out")
+  generate_bindings_for_kernels(LIB_NAME "custom_ops_aot_lib" CUSTOM_OPS_YAML
+    ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml)
   set(custom_ops_kernel_sources
       ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2.cpp # register my_ops::mul4
       ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp # register my_ops::mul4.out
   )
-  gen_custom_ops_aot_lib("custom_ops_aot_lib" "${custom_ops_kernel_sources}")
+  gen_custom_ops_aot_lib(LIB_NAME "custom_ops_aot_lib" KERNEL_SOURCES "${custom_ops_kernel_sources}")
   target_include_directories(custom_ops_aot_lib
                              PUBLIC ${_common_include_directories})
 endif()

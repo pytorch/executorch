@@ -109,6 +109,7 @@ endfunction()
 # Generate an AOT lib for registering custom ops into PyTorch
 function(gen_custom_ops_aot_lib)
   set(multi_arg_names LIB_NAME KERNEL_SOURCES)
+  cmake_parse_arguments(GEN "" "${multi_arg_names}" "" ${ARGN})
   message(STATUS "Generating custom ops aot lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
   message(STATUS "  KERNEL_SOURCES: ${GEN_KERNEL_SOURCES}")
