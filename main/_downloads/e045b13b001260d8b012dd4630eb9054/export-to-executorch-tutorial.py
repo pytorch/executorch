@@ -44,11 +44,15 @@ Exporting to ExecuTorch Tutorial
 #
 # The first step of lowering to ExecuTorch is to export the given model (any
 # callable or ``torch.nn.Module``) to a graph representation. This is done via
-# ``torch.export``, which takes in an ``torch.nn.Module``, a tuple of
+# the two-stage APIs, ``torch._export.capture_pre_autograd_graph``, and
+# ``torch.export``.
+#
+# Both APIs take in a model (any callable or ``torch.nn.Module``), a tuple of
 # positional arguments, optionally a dictionary of keyword arguments (not shown
 # in the example), and a list of dynamic shapes (covered later).
 
 import torch
+from torch._export import capture_pre_autograd_graph
 from torch.export import export, ExportedProgram
 
 
@@ -66,20 +70,40 @@ class SimpleConv(torch.nn.Module):
 
 
 example_args = (torch.randn(1, 3, 256, 256),)
-aten_dialect: ExportedProgram = export(SimpleConv(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
+print("Pre-Autograd ATen Dialect Graph")
+print(pre_autograd_aten_dialect)
+
+aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
+print("ATen Dialect Graph")
 print(aten_dialect)
 
 ######################################################################
-# The output of ``torch.export.export`` is a fully flattened graph (meaning the
-# graph does not contain any module hierarchy, except in the case of control
-# flow operators). Additionally, the graph is purely functional, meaning it does
-# not contain operations with side effects such as mutations or aliasing.
+# The output of ``torch._export.capture_pre_autograd_graph`` is a fully
+# flattened graph (meaning the graph does not contain any module hierarchy,
+# except in the case of control flow operators). Furthermore, the captured graph
+# contains only ATen operators (~3000 ops) which are Autograd safe, for example, safe
+# for eager mode training.
+#
+# The output of ``torch.export`` further compiles the graph to a lower and
+# cleaner representation. Specifically, it has the following:
+#
+# - The graph is purely functional, meaning it does not contain operations with
+#   side effects such as mutations or aliasing.
+# - The graph contains only a small defined
+#   `Core ATen IR <https://pytorch.org/docs/stable/torch.compiler_ir.html#core-aten-ir>`__
+#   operator set (~180 ops), along with registered custom operators.
+# - The nodes in the graph contain metadata captured during tracing, such as a
+#   stacktrace from user's code.
 #
 # More specifications about the result of ``torch.export`` can be found
-# `here <https://pytorch.org/docs/main/export.html>`__ .
+# `here <https://pytorch.org/docs/2.1/export.html>`__ .
 #
-# The graph returned by ``torch.export`` only contains functional ATen operators
-# (~2000 ops), which we will call the ``ATen Dialect``.
+# Since the result of ``torch.export`` is a graph containing the Core ATen
+# operators, we will call this the ``ATen Dialect``, and since
+# ``torch._export.capture_pre_autograd_graph`` returns a graph containing the
+# set of ATen operators which are Autograd safe, we will call it the
+# ``Pre-Autograd ATen Dialect``.
 
 ######################################################################
 # Expressing Dynamism
@@ -100,8 +124,10 @@ class Basic(torch.nn.Module):
         return x + y
 
 
+f = Basic()
 example_args = (torch.randn(3, 3), torch.randn(3, 3))
-aten_dialect: ExportedProgram = export(Basic(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(f, example_args)
+aten_dialect: ExportedProgram = export(f, example_args)
 
 # Works correctly
 print(aten_dialect.module()(torch.ones(3, 3), torch.ones(3, 3)))
@@ -127,12 +153,15 @@ class Basic(torch.nn.Module):
         return x + y
 
 
+f = Basic()
 example_args = (torch.randn(3, 3), torch.randn(3, 3))
 dim1_x = Dim("dim1_x", min=1, max=10)
 dynamic_shapes = {"x": {1: dim1_x}, "y": {1: dim1_x}}
-aten_dialect: ExportedProgram = export(
-    Basic(), example_args, dynamic_shapes=dynamic_shapes
+pre_autograd_aten_dialect = capture_pre_autograd_graph(
+    f, example_args, dynamic_shapes=dynamic_shapes
 )
+aten_dialect: ExportedProgram = export(f, example_args, dynamic_shapes=dynamic_shapes)
+print("ATen Dialect Graph")
 print(aten_dialect)
 
 ######################################################################
@@ -169,7 +198,7 @@ except Exception:
 # As our goal is to capture the entire computational graph from a PyTorch
 # program, we might ultimately run into untraceable parts of programs. To
 # address these issues, the
-# `torch.export documentation <https://pytorch.org/docs/main/export.html#limitations-of-torch-export>`__,
+# `torch.export documentation <https://pytorch.org/docs/2.1/export.html#limitations-of-torch-export>`__,
 # or the
 # `torch.export tutorial <https://pytorch.org/tutorials/intermediate/torch_export_tutorial.html>`__
 # would be the best place to look.
@@ -178,12 +207,10 @@ except Exception:
 # Performing Quantization
 # -----------------------
 #
-# To quantize a model, we first need to capture the graph with
-# ``torch._export.capture_pre_autograd_graph``, perform quantization, and then
-# call ``torch.export``. ``torch._export.capture_pre_autograd_graph`` returns a
-# graph which contains ATen operators which are Autograd safe, meaning they are
-# safe for eager-mode training, which is needed for quantization. We will call
-# the graph at this level, the ``Pre-Autograd ATen Dialect`` graph.
+# To quantize a model, we can do so between the call to
+# ``torch._export.capture_pre_autograd_graph`` and ``torch.export``, in the
+# ``Pre-Autograd ATen Dialect``. This is because quantization must operate at a
+# level which is safe for eager mode training.
 #
 # Compared to
 # `FX Graph Mode Quantization <https://pytorch.org/tutorials/prototype/fx_graph_mode_ptq_static.html>`__,
@@ -192,8 +219,6 @@ except Exception:
 # ``prepare_pt2e`` takes a backend-specific ``Quantizer`` as an argument, which
 # will annotate the nodes in the graph with information needed to quantize the
 # model properly for a specific backend.
-
-from torch._export import capture_pre_autograd_graph
 
 example_args = (torch.randn(1, 3, 256, 256),)
 pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
@@ -243,7 +268,13 @@ print(aten_dialect)
 from executorch.exir import EdgeProgramManager, to_edge
 
 example_args = (torch.randn(1, 3, 256, 256),)
-aten_dialect: ExportedProgram = export(SimpleConv(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
+print("Pre-Autograd ATen Dialect Graph")
+print(pre_autograd_aten_dialect)
+
+aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
+print("ATen Dialect Graph")
+print(aten_dialect)
 
 edge_program: EdgeProgramManager = to_edge(aten_dialect)
 print("Edge Dialect Graph")
@@ -267,10 +298,16 @@ class Decode(torch.nn.Module):
 
 
 encode_args = (torch.randn(1, 10),)
-aten_encode: ExportedProgram = export(Encode(), encode_args)
+aten_encode: ExportedProgram = export(
+    capture_pre_autograd_graph(Encode(), encode_args),
+    encode_args,
+)
 
 decode_args = (torch.randn(1, 5),)
-aten_decode: ExportedProgram = export(Decode(), decode_args)
+aten_decode: ExportedProgram = export(
+    capture_pre_autograd_graph(Decode(), decode_args),
+    decode_args,
+)
 
 edge_program: EdgeProgramManager = to_edge(
     {"encode": aten_encode, "decode": aten_decode}
@@ -291,7 +328,8 @@ for method in edge_program.methods:
 # rather than the ``torch.ops.aten`` namespace.
 
 example_args = (torch.randn(1, 3, 256, 256),)
-aten_dialect: ExportedProgram = export(SimpleConv(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
+aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
 edge_program: EdgeProgramManager = to_edge(aten_dialect)
 print("Edge Dialect Graph")
 print(edge_program.exported_program())
@@ -315,9 +353,7 @@ print("Transformed Edge Dialect Graph")
 print(transformed_edge_program.exported_program())
 
 ######################################################################
-# Note: if you see error like ``torch._export.verifier.SpecViolationError:
-# Operator torch._ops.aten._native_batch_norm_legit_functional.default is not
-# Aten Canonical``,
+# Note: if you see error like `torch._export.verifier.SpecViolationError: Operator torch._ops.aten._native_batch_norm_legit_functional.default is not Aten Canonical`,
 # please file an issue in https://github.com/pytorch/executorch/issues and we're happy to help!
 
 
@@ -329,7 +365,7 @@ print(transformed_edge_program.exported_program())
 # backend through the ``to_backend`` API.  An in-depth documentation on the
 # specifics of backend delegation, including how to delegate to a backend and
 # how to implement a backend, can be found
-# `here <../compiler-delegate-and-partitioner.html>`__.
+# `here <../compiler-delegate-and-partitioner.html>`__
 #
 # There are three ways for using this API:
 #
@@ -357,7 +393,8 @@ class LowerableModule(torch.nn.Module):
 
 # Export and lower the module to Edge Dialect
 example_args = (torch.ones(1),)
-aten_dialect: ExportedProgram = export(LowerableModule(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(LowerableModule(), example_args)
+aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
 edge_program: EdgeProgramManager = to_edge(aten_dialect)
 to_be_lowered_module = edge_program.exported_program()
 
@@ -423,7 +460,8 @@ class ComposedModule(torch.nn.Module):
 
 
 example_args = (torch.ones(1),)
-aten_dialect: ExportedProgram = export(ComposedModule(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(ComposedModule(), example_args)
+aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
 edge_program: EdgeProgramManager = to_edge(aten_dialect)
 exported_program = edge_program.exported_program()
 print("Edge Dialect graph")
@@ -461,7 +499,8 @@ class Foo(torch.nn.Module):
 
 
 example_args = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-aten_dialect: ExportedProgram = export(Foo(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(Foo(), example_args)
+aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
 edge_program: EdgeProgramManager = to_edge(aten_dialect)
 exported_program = edge_program.exported_program()
 print("Edge Dialect graph")
@@ -495,7 +534,8 @@ class Foo(torch.nn.Module):
 
 
 example_args = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-aten_dialect: ExportedProgram = export(Foo(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(Foo(), example_args)
+aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
 edge_program: EdgeProgramManager = to_edge(aten_dialect)
 exported_program = edge_program.exported_program()
 delegated_program = edge_program.to_backend(AddMulPartitionerDemo())
