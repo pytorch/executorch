@@ -112,13 +112,15 @@ function(gen_custom_ops_aot_lib)
   cmake_parse_arguments(GEN "" "${multi_arg_names}" "" ${ARGN})
   message(STATUS "Generating custom ops aot lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
-  message(STATUS "  KERNEL_SOURCES: ${GEN_KERNEL_SOURCES}")
+  foreach(SOURCE IN LISTS GEN_KERNEL_SOURCES)
+    message(STATUS "  KERNEL_SOURCE: ${SOURCE}")
+  endforeach()
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   add_library(
     ${GEN_LIB_NAME} SHARED
     ${_out_dir}/RegisterCPUCustomOps.cpp ${_out_dir}/RegisterSchema.cpp
-    ${_out_dir}/CustomOpsNativeFunctions.h ${GEN_KERNEL_SOURCES})
+    ${_out_dir}/CustomOpsNativeFunctions.h "${GEN_KERNEL_SOURCES}")
   # Find `Torch`.
   find_package(Torch REQUIRED)
   # This lib uses ATen lib, so we explicitly enable rtti and exceptions.

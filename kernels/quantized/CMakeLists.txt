@@ -66,7 +66,7 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode" AND EXECUTORCH_BUILD_QUANTIZED_OPS_AOT)
       ${_quantized_kernels__srcs}
       ${EXECUTORCH_ROOT}/runtime/core/exec_aten/util/tensor_util_aten.cpp)
   gen_custom_ops_aot_lib(LIB_NAME "quantized_ops_aot_lib" KERNEL_SOURCES
-                         "${_quantized_sources}")
+                         ${_quantized_sources})
 endif()
 
 add_library(quantized_kernels ${_quantized_kernels__srcs})
