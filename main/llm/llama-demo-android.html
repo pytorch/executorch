@@ -5,6 +5,7 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
+  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -473,6 +474,14 @@ adb<span class="w"> </span>push<span class="w"> </span>tokenizer.bin<span class=
 <code class="docutils literal notranslate"><span class="pre">~/Library/Android/sdk/ndk/XX.Y.ZZZZZ</span></code> for macOS, and contains NOTICE and README.md.
 We use <code class="docutils literal notranslate"><span class="pre">&lt;path_to_android_ndk&gt;/build/cmake/android.toolchain.cmake</span></code> for CMake to cross-compile.</p>
 <ol class="arabic simple" start="3">
+<li><p>(Optional) If you need to use tiktoken as the tokenizer (for LLaMA3), set
+<code class="docutils literal notranslate"><span class="pre">EXECUTORCH_USE_TIKTOKEN=ON</span></code> and later CMake will use it as the tokenizer.
+If you need to run other models like LLaMA2, skip this skip.</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">EXECUTORCH_USE_TIKTOKEN</span><span class="o">=</span>ON<span class="w"> </span><span class="c1"># Only for LLaMA3</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="4">
 <li><p>Run the following command set up the required JNI library:</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">pushd</span><span class="w"> </span>examples/demo-apps/android/LlamaDemo
