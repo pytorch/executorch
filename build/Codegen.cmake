@@ -21,6 +21,8 @@ function(gen_selected_ops)
 
   set(_oplist_yaml
       ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
+
   file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
 
   set(_gen_oplist_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_oplist
@@ -39,7 +41,7 @@ function(gen_selected_ops)
 
   message("Command - ${_gen_oplist_command}")
   add_custom_command(
-    COMMENT "Generating selected_operators.yaml for custom ops"
+    COMMENT "Generating selected_operators.yaml for ${GEN_LIB_NAME}"
     OUTPUT ${_oplist_yaml}
     COMMAND ${_gen_oplist_command}
     DEPENDS ${ops_schema_yaml} ${_codegen_tools_srcs}

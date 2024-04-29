@@ -41,13 +41,13 @@ endif()
 list(TRANSFORM _quantized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in quantized.yaml
+set(_yaml_file ${CMAKE_CURRENT_LIST_DIR}/quantized.yaml)
 gen_selected_ops(
   LIB_NAME "quantized_ops_lib"
-  OPS_SCHEMA_YAML "${CMAKE_CURRENT_LIST_DIR}/quantized.yaml")
+  OPS_SCHEMA_YAML "${_yaml_file}")
 
 # Expect gen_selected_ops output file to be selected_operators.yaml
-generate_bindings_for_kernels(LIB_NAME "quantized_ops_lib" CUSTOM_OPS_YAML
-                              ${CMAKE_CURRENT_SOURCE_DIR}/quantized.yaml)
+generate_bindings_for_kernels(LIB_NAME "quantized_ops_lib" CUSTOM_OPS_YAML "${_yaml_file}")
 message("Generated files ${gen_command_sources}")
 
 # Not targeting Xcode, because the custom command generating
@@ -58,12 +58,12 @@ message("Generated files ${gen_command_sources}")
 if(NOT CMAKE_GENERATOR STREQUAL "Xcode" AND EXECUTORCH_BUILD_QUANTIZED_OPS_AOT)
   gen_selected_ops(
     LIB_NAME "quantized_aot_ops_lib"
-    OPS_SCHEMA_YAML ${CMAKE_CURRENT_SOURCE_DIR}/quantized.yaml)
+    OPS_SCHEMA_YAML "${_yaml_file}")
   # Expect gen_selected_ops output file to be
   # quantized_aot_ops_lib/selected_operators.yaml
   generate_bindings_for_kernels(
     LIB_NAME "quantized_aot_ops_lib"
-    CUSTOM_OPS_YAML ${CMAKE_CURRENT_SOURCE_DIR}/quantized.yaml)
+    CUSTOM_OPS_YAML "${_yaml_file}")
   # Build a AOT library to register quantized ops into PyTorch. This is a hack.
   set(_quantized_sources
       ${_quantized_kernels__srcs}
