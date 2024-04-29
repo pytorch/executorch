@@ -209,12 +209,54 @@ void add_matmul_node(
   }
 }
 
+void add_addmm_node(
+    ComputeGraph& graph,
+    const ValueRef self,
+    const ValueRef mat1,
+    const ValueRef mat2,
+    const ValueRef beta,
+    const ValueRef alpha,
+    const ValueRef out) {
+  // mat1 @ mat2
+  ValueRef arg1 = prepack_if_tensor_ref(graph, mat1, api::kChannelsPacked);
+  int64_t arg1_dim = graph.get_tensor(arg1)->sizes().size();
+  std::vector<int64_t> out_sizes = graph.get_tensor(out)->sizes();
+  std::vector<int64_t> mm_out_sizes(arg1_dim);
+  for (int i = 0; i < arg1_dim - 1; ++i) {
+    mm_out_sizes.at(i) = out_sizes.at(i);
+  }
+  mm_out_sizes.at(arg1_dim - 1) = out_sizes.at(out_sizes.size() - 1);
+  ValueRef mm_out =
+      graph.add_tensor(mm_out_sizes, api::kFloat, api::kChannelsPacked);
+  add_matmul_node(graph, mat1, mat2, mm_out);
+
+  // We create a dummy zero tensor and use `aten.add.Tensor` to compute `beta *
+  // self` through add(dummy, self, beta)
+  ValueRef self_vref = prepack_if_tensor_ref(graph, self, api::kChannelsPacked);
+  std::vector<int64_t> self_sizes = graph.get_tensor(self_vref)->sizes();
+  ValueRef beta_self = graph.add_tensor(
+      self_sizes, api::kFloat, graph.memory_layout_of(self_vref));
+  ValueRef dummy_vref =
+      graph.add_tensor({1}, api::kFloat, graph.memory_layout_of(self_vref));
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {dummy_vref, self_vref, beta, beta_self});
+
+  // beta * self + alpha * mat1 @ mat2
+  addFn(graph, {beta_self, mm_out, alpha, out});
+}
+
+void addmm(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_addmm_node(
+      graph, args[0], args[1], args[2], args[3], args[4], args[5]);
+}
+
 void matmul(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   return add_matmul_node(graph, args[0], args[1], args[2]);
 }
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.mm.default, matmul);
+  VK_REGISTER_OP(aten.addmm.default, addmm);
 }
 
 } // namespace vkcompute

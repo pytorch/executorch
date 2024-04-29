@@ -427,7 +427,11 @@ class TestBackends(unittest.TestCase):
         model = SimpleModel()
         sample_inputs = (torch.rand(size=(2, 10), dtype=torch.float32),)
 
-        self.lower_module_and_test_output(model, sample_inputs)
+        self.lower_module_and_test_output(
+            model,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
 
     def test_vulkan_backend_partial_dynamic_shapes(self):
         class SimpleModel(torch.nn.Module):
@@ -461,7 +465,11 @@ class TestBackends(unittest.TestCase):
         ]
 
         self.lower_module_and_test_output(
-            model, sample_inputs, dynamic_shapes=dynamic_shapes, test_inputs=test_inputs
+            model,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
     def test_vulkan_backend_matmul(self):

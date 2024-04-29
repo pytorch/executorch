@@ -56,6 +56,23 @@ def get_mm_inputs():
     return test_suite
 
 
+def get_addmm_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M1, M2), (M1, M2), (M2, M2)),
+            ((M1, M2), (M1, M2), (M2, M2), 1.0, 1.0),
+            ((M1, L), (M1, L), (L, L), 2.0, 3.0),
+            # ((M2), (M1, M2), (M2, M2)), // broadcasting
+        ]
+    )
+    # ATen matmul doesn't support half
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
 def get_pool2d_inputs():
     test_suite = VkTestSuite(
         [
@@ -478,6 +495,7 @@ test_suites = {
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
     "aten.div.Tensor": get_binary_elementwise_inputs(),
     "aten.mul.Tensor": get_binary_elementwise_inputs(),
+    "aten.addmm.default": get_addmm_inputs(),
     "aten.mm.default": get_mm_inputs(),
     "aten.max_pool2d_with_indices.default": get_pool2d_inputs(),
     "aten.convolution.default": get_conv_inputs(),
