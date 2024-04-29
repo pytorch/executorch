@@ -69,6 +69,21 @@ void resize_matmul_node(
   out->virtual_resize(new_out_sizes);
 }
 
+void resize_bmm_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
+
+  vTensorPtr self_arg = graph->get_tensor(extra_args[0]);
+  vTensorPtr mat1_arg = graph->get_tensor(extra_args[1]);
+
+  std::vector<int64_t> new_out_sizes(3);
+  new_out_sizes.at(0) = self_arg->sizes().at(0);
+  new_out_sizes.at(1) = self_arg->sizes().at(1);
+  new_out_sizes.at(2) = self_arg->sizes().at(2);
+}
+
 ValueRef reshape_to_2d(ComputeGraph& graph, const ValueRef in) {
   std::vector<int64_t> in_sizes = graph.get_tensor(in)->sizes();
   std::int64_t input_dim = in_sizes.size();
@@ -245,9 +260,108 @@ void add_addmm_node(
   addFn(graph, {beta_self, mm_out, alpha, out});
 }
 
+void add_bmm_node(
+    ComputeGraph& graph,
+    const ValueRef self,
+    const ValueRef mat2,
+    const ValueRef out) {
+  ValueRef self_arg;
+  if (graph.val_is_tref(self)) {
+    self_arg = prepack_if_tensor_ref(graph, self, api::kWidthPacked);
+  } else {
+    self_arg = pack_inputs_using_width_packing(graph, self);
+  }
+
+  ValueRef arg2;
+  if (graph.val_is_tref(mat2)) {
+    arg2 = prepack_if_tensor_ref(graph, mat2, api::kHeightPacked);
+  } else {
+    arg2 = pack_weights_using_height_packing(graph, mat2);
+  }
+
+  // In the shader, each batch is computed in separate invocation.
+  // The result is stored in the .x position of the texel.
+  // As the tensor by default is channel packed, the shader is effectively
+  // producing 3 all-zeros layer. We workaround this issue by creating
+  // a vTensor that is 4 times the batch size.
+  // At the end of the computation, we run a "slice" with a step-size of 4
+  // to get back the original shape.
+
+  std::vector<int64_t> self_sizes = graph.get_tensor(self_arg)->sizes();
+  int64_t input_batch = self_sizes.at(0);
+  int64_t input_height = self_sizes.at(1);
+  int64_t input_width = self_sizes.at(2);
+
+  std::vector<int64_t> weight_sizes = graph.get_tensor(arg2)->sizes();
+  int64_t weight_width = weight_sizes.at(2);
+
+  // Step size is the input's w dimension / 4.
+  int64_t mm_step_size = api::utils::div_up(input_width, INT64_C(4));
+
+  // Create variables for the slice operator. Although `slice` is applied at the
+  // end, we call `graph.add_*` early to avoid `values_in_use_ != 0` error when
+  // calling `ComputeGraph::get_*()`, https://fburl.com/code/m6oi7irq.
+  int64_t dim_sliced = 0;
+  int64_t start = 0;
+  int64_t step = 4;
+  int64_t end = input_batch * step;
+  ValueRef dim_sliced_ref = graph.add_scalar(dim_sliced);
+  ValueRef start_ref = graph.add_scalar(start);
+  ValueRef step_ref = graph.add_scalar(step);
+  ValueRef end_ref = graph.add_scalar(end);
+
+  std::vector<int64_t> out_packed_sizes = {
+      input_batch * 4, input_height, weight_width};
+  ValueRef out_packed =
+      graph.add_tensor(out_packed_sizes, api::kFloat, api::kChannelsPacked);
+  vTensorPtr t_out_packed = graph.get_tensor(out_packed);
+
+  api::utils::uvec3 global_size = {
+      static_cast<unsigned int>(
+          api::utils::div_up(out_packed_sizes.at(2), INT64_C(4))),
+      static_cast<unsigned int>(
+          api::utils::div_up(out_packed_sizes.at(1), INT64_C(4))),
+      static_cast<unsigned int>(out_packed_sizes.at(0))};
+  api::utils::uvec3 local_size = {8, 8, 1};
+
+  std::string kernel_name("matmul");
+  kernel_name.reserve(kShaderNameReserve);
+
+  add_dtype_suffix(kernel_name, *t_out_packed);
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_size,
+      local_size,
+      // Inputs and Outputs
+      {{out_packed, api::MemoryAccessType::WRITE},
+       {{self_arg, arg2}, api::MemoryAccessType::READ}},
+      // Shader params buffers
+      {
+          t_out_packed->texture_limits_ubo(),
+          graph.create_params_buffer(mm_step_size),
+      },
+      // Specialization Constants
+      {},
+      // Resizing Logic
+      resize_bmm_node,
+      {self_arg, arg2}));
+
+  // After computing the multiplication, we need to slice 4 on the batch
+  // dimension to get the channel packed layout.
+  auto sliceFn = VK_GET_OP_FN("aten.slice_copy.Tensor");
+  sliceFn(
+      graph, {out_packed, dim_sliced_ref, start_ref, end_ref, step_ref, out});
+}
+
 void addmm(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   return add_addmm_node(
       graph, args[0], args[1], args[2], args[3], args[4], args[5]);
+}
+
+void bmm(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_bmm_node(graph, args[0], args[1], args[2]);
 }
 
 void matmul(ComputeGraph& graph, const std::vector<ValueRef>& args) {
@@ -255,8 +369,9 @@ void matmul(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(aten.mm.default, matmul);
   VK_REGISTER_OP(aten.addmm.default, addmm);
+  VK_REGISTER_OP(aten.bmm.default, bmm);
+  VK_REGISTER_OP(aten.mm.default, matmul);
 }
 
 } // namespace vkcompute
