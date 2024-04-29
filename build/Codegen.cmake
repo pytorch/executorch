@@ -15,22 +15,25 @@ function(gen_selected_ops)
 
   message(STATUS "Generating operator lib:")
   message(STATUS "  LIB_NAME: ${GEN_LIB_NAME}")
-  message(STATUS "  OPS_SCHEMA_YAML: ${GEN_KERNEL_LIBS}")
-  message(STATUS "  DEPS: ${GEN_DEPS}")
+  message(STATUS "  OPS_SCHEMA_YAML: ${GEN_OPS_SCHEMA_YAML}")
+  message(STATUS "  ROOT_OPS: ${GEN_ROOT_OPS}")
+  message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
 
-  set(_oplist_yaml ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml)
+  set(_oplist_yaml
+      ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml)
   file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
 
   set(_gen_oplist_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_oplist
                           --output_path=${_oplist_yaml})
 
-  if(ops_schema_yaml)
-    list(APPEND _gen_oplist_command --ops_schema_yaml_path="${ops_schema_yaml}")
+  if(GEN_OPS_SCHEMA_YAML)
+    list(APPEND _gen_oplist_command
+         --ops_schema_yaml_path="${GEN_OPS_SCHEMA_YAML}")
   endif()
-  if(root_ops)
-    list(APPEND _gen_oplist_command --root_ops="${root_ops}")
+  if(GEN_ROOT_OPS)
+    list(APPEND _gen_oplist_command --root_ops="${GEN_ROOT_OPS}")
   endif()
-  if(include_all_ops)
+  if(GEN_INCLUDE_ALL_OPS)
     list(APPEND _gen_oplist_command --include_all_operators)
   endif()
 
@@ -47,12 +50,8 @@ endfunction()
 # Codegen for registering kernels. Kernels are defined in functions_yaml and
 # custom_ops_yaml.
 #
-# Invoked as
-# generate_bindings_for_kernels(
-#   LIB_NAME lib_name
-#   FUNCTIONS_YAML functions_yaml
-#   CUSTOM_OPS_YAML custom_ops_yaml
-# )
+# Invoked as generate_bindings_for_kernels( LIB_NAME lib_name FUNCTIONS_YAML
+# functions_yaml CUSTOM_OPS_YAML custom_ops_yaml )
 function(generate_bindings_for_kernels)
   set(arg_names LIB_NAME FUNCTIONS_YAML CUSTOM_OPS_YAML)
   cmake_parse_arguments(GEN "" "${arg_names}" "" ${ARGN})
@@ -74,28 +73,22 @@ function(generate_bindings_for_kernels)
   # Executorch runtime.
   set(_gen_command
       "${PYTHON_EXECUTABLE}" -m torchgen.gen_executorch
-      --source-path=${EXECUTORCH_ROOT}/codegen
-      --install-dir=${_out_dir}
+      --source-path=${EXECUTORCH_ROOT}/codegen --install-dir=${_out_dir}
       --tags-path=${TORCH_ROOT}/aten/src/ATen/native/tags.yaml
       --aten-yaml-path=${TORCH_ROOT}/aten/src/ATen/native/native_functions.yaml
       --op-selection-yaml-path=${_oplist_yaml})
 
   set(_gen_command_sources
       ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-      ${_out_dir}/Functions.h
-      ${_out_dir}/NativeFunctions.h)
+      ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
 
   if(GEN_FUNCTIONS_YAML)
     list(APPEND _gen_command --functions-yaml-path=${GEN_FUNCTIONS_YAML})
   endif()
   if(GEN_CUSTOM_OPS_YAML)
     list(APPEND _gen_command --custom-ops-yaml-path=${GEN_CUSTOM_OPS_YAML})
-    list(
-      APPEND
-      _gen_command_sources
-      ${_out_dir}/RegisterCPUCustomOps.cpp
-      ${_out_dir}/RegisterSchema.cpp
-      ${_out_dir}/CustomOpsNativeFunctions.h)
+    list(APPEND _gen_command_sources ${_out_dir}/RegisterCPUCustomOps.cpp
+         ${_out_dir}/RegisterSchema.cpp ${_out_dir}/CustomOpsNativeFunctions.h)
   endif()
 
   add_custom_command(
@@ -121,8 +114,7 @@ function(gen_custom_ops_aot_lib)
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   add_library(
     ${GEN_LIB_NAME} SHARED
-    ${_out_dir}/RegisterCPUCustomOps.cpp
-    ${_out_dir}/RegisterSchema.cpp
+    ${_out_dir}/RegisterCPUCustomOps.cpp ${_out_dir}/RegisterSchema.cpp
     ${_out_dir}/CustomOpsNativeFunctions.h ${GEN_KERNEL_SOURCES})
   # Find `Torch`.
   find_package(Torch REQUIRED)
@@ -152,10 +144,8 @@ function(gen_operators_lib)
   add_library(${GEN_LIB_NAME})
   target_sources(
     ${GEN_LIB_NAME}
-    PRIVATE
-      ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-      ${_out_dir}/Functions.h
-      ${_out_dir}/NativeFunctions.h)
+    PRIVATE ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
+            ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
   target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
   if(GEN_KERNEL_LIBS)
     target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
@@ -164,9 +154,9 @@ function(gen_operators_lib)
   target_link_options_shared_lib(${GEN_LIB_NAME})
 endfunction()
 
-# Merge two kernel yaml files, prioritizing functions from FUNCTIONS_YAML
-# and taking functions from FALLBACK_YAML when no implementation is found.
-# This corresponds to the merge_yaml buck implementation in codegen/tools.
+# Merge two kernel yaml files, prioritizing functions from FUNCTIONS_YAML and
+# taking functions from FALLBACK_YAML when no implementation is found. This
+# corresponds to the merge_yaml buck implementation in codegen/tools.
 function(merge_yaml)
   set(arg_names FUNCTIONS_YAML FALLBACK_YAML OUTPUT_DIR)
   cmake_parse_arguments(GEN "" "${arg_names}" "" ${ARGN})
@@ -174,8 +164,7 @@ function(merge_yaml)
   set(_gen_command
       "${PYTHON_EXECUTABLE}" -m codegen.tools.merge_yaml
       --functions_yaml_path=${GEN_FUNCTIONS_YAML}
-      --fallback_yaml_path=${GEN_FALLBACK_YAML}
-      --output_dir=${GEN_OUTPUT_DIR})
+      --fallback_yaml_path=${GEN_FALLBACK_YAML} --output_dir=${GEN_OUTPUT_DIR})
 
   add_custom_command(
     COMMENT "Merging kernel yaml files"
