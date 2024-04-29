@@ -176,7 +176,8 @@ with open(save_path, "wb") as f:
 #       cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
 #           -DCMAKE_BUILD_TYPE=Release \
 #           -DEXECUTORCH_BUILD_SDK=ON \
-#           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \-Bcmake-out .
+#           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+#           -Bcmake-out .
 #       cmake --build cmake-out -j9 --target install --config Release
 #
 #       local example_dir=examples/sdk
