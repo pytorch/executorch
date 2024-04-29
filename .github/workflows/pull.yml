@@ -239,6 +239,70 @@ jobs:
         # see if we can import the module successfully
         python -c "from executorch.extension.pybindings import portable_lib; print('success!')"
 
+  test-binary-size-linux-gcc:
+    name: test-binary-size-linux-gcc
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-gcc9
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # build module for executorch.extension.pybindings.portable_lib
+        bash test/build_size_test.sh
+        strip cmake-out/test/size_test
+        output=$(ls -la cmake-out/test/size_test)
+        arr=($output)
+        size=${arr[4]}
+        # threshold=48120 on devserver with gcc11.4
+        # todo(lfq): update once binary size is below 50kb.
+        threshold="51504"
+        if [[ "$size" -le "$threshold" ]]; then
+          echo "Success $size <= $threshold"
+        else
+          echo "Fail $size > $threshold"
+          exit 1
+        fi
+
+  test-binary-size-linux:
+    name: test-binary-size-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # build module for executorch.extension.pybindings.portable_lib
+        bash test/build_size_test.sh
+        strip cmake-out/test/size_test
+        output=$(ls -la cmake-out/test/size_test)
+        arr=($output)
+        size=${arr[4]}
+        # threshold=48120 on devserver with gcc11.4
+        # todo(lfq): update once binary size is below 50kb.
+        threshold="51768"
+        if [[ "$size" -le "$threshold" ]]; then
+          echo "Success $size <= $threshold"
+        else
+          echo "Fail $size > $threshold"
+          exit 1
+        fi
+
   unittest:
     uses: ./.github/workflows/_unittest.yml
     with:
