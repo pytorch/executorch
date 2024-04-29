@@ -37,7 +37,7 @@ Note that groupsize less than 128 was not enabled, since such model were still t
 
 We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-apps) efficiently on select devices including the iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S22 and S24, and OnePlus 12.
 
-For Llama 3 8B, we have verified so far on iPhone 15 Pro Max and OnePlus 12 (with 16GB RAM).
+For Llama 3 8B, we have verified so far on iPhone 15 Pro Max, Samsung Galaxy S24+ and OnePlus 12 (with 16GB RAM).
 
 ## Performance
 
