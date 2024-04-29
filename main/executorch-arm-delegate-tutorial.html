@@ -5,11 +5,12 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
+  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building and Running ExecuTorch with ARM Ethos-U Backend &mdash; ExecuTorch 0.2 documentation</title>
+  <title>Building and Running ExecuTorch with ARM Ethos-U Backend &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -238,7 +239,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>0.2 &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
     </div>
     
 
@@ -593,6 +594,11 @@ git<span class="w"> </span>clone<span class="w"> </span>https://review.mlplatfor
 git<span class="w"> </span>reset<span class="w"> </span>--hard<span class="w"> </span>204210b1074071532627da9dc69950d058a809f4
 git<span class="w"> </span>am<span class="w"> </span>-3<span class="w"> </span>&lt;path_to&gt;/executorch/examples/arm/ethos-u-setup/core_platform/patches/*.patch
 <span class="nb">cd</span><span class="w"> </span>../..<span class="w"> </span><span class="c1"># To the top-level development dir</span>
+
+<span class="c1"># Let&#39;s now patch the vela compiler</span>
+<span class="nb">cd</span><span class="w"> </span>ethos-u-vela
+git<span class="w"> </span>reset<span class="w"> </span>--hard<span class="w"> </span>00a15db3e1a188b25065d095152d701f4394cdc5
+git<span class="w"> </span>am<span class="w"> </span>-3<span class="w"> </span>&lt;path_to&gt;/executorch/examples/arm/ethos-u-setup/ethos-u-vela/patches/*.patch
 </pre></div>
 </div>
 </div>
@@ -600,14 +606,14 @@ git<span class="w"> </span>am<span class="w"> </span>-3<span class="w"> </span>&
 <div class="section" id="install-the-vela-compiler">
 <h3>Install the Vela Compiler<a class="headerlink" href="#install-the-vela-compiler" title="Permalink to this heading">¶</a></h3>
 <p>Once the patching is done, let’s finish the setup by installing the Vela compiler.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>ethos-u-vela
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># still in the ethos-u-vela directory</span>
 pip<span class="w"> </span>install<span class="w"> </span>.
 </pre></div>
 </div>
 </div>
 <div class="section" id="install-the-tosa-reference-model">
 <h3>Install the TOSA reference model<a class="headerlink" href="#install-the-tosa-reference-model" title="Permalink to this heading">¶</a></h3>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://review.mlplatform.org/tosa/reference_model<span class="w"> </span>-b<span class="w"> </span>v0.80
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://review.mlplatform.org/tosa/reference_model<span class="w"> </span>-b<span class="w"> </span>v0.80.0
 <span class="nb">cd</span><span class="w"> </span>reference_model
 git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init<span class="w"> </span>--recursive
 mkdir<span class="w"> </span>-p<span class="w"> </span>build
@@ -650,9 +656,7 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 <div class="section" id="softmaxmodule">
 <h4>SoftmaxModule<a class="headerlink" href="#softmaxmodule" title="Permalink to this heading">¶</a></h4>
 <p>This is a very simple PyTorch module with just one <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Softmax.html#torch.nn.Softmax">Softmax</a> operator.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-
-<span class="k">class</span> <span class="nc">SoftmaxModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">SoftmaxModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">softmax</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Softmax</span><span class="p">()</span>
@@ -699,8 +703,8 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 <p>In the ExecuTorch AoT pipeline, one of the options is to select a backend. ExecuTorch offers a variety of different backends. Selecting backend is optional, it is typically done to target a particular mode of acceleration or hardware for a given model compute requirements. Without any backends, ExecuTorch runtime will fallback to using, available by default, a highly portable set of operators.</p>
 <p>It’s expected that on platforms with dedicated acceleration like the Ethos-U55, that the non-delegated flow is used for two primary cases:</p>
 <ol class="arabic simple">
-<li><p>When the network is designed to be very small and best suited to run on the Cortex-M alone.</p></li>
-<li><p>When the network has a mix of operations that can target the NPU and those that can’t, e.g. the Ethos-U55 supports integer operations and so floating point softmax will fall back to execute on the CPU.</p></li>
+<li><p>When the network is designed to be very small and best suited to run on the Cortex-M alone</p></li>
+<li><p>When the network has a mix of operations that can target the NPU and those that can’t, e.g. the Ethos-U55 supports integer operations and so floating point softmax will fall back to execute on the CPU</p></li>
 </ol>
 <p>In this flow, without any backend delegates, to illustrate the portability of the ExecuTorch runtime, as well as of the operator library we will skip specifying the backend during the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> generation.</p>
 <p>Following script will serve as a helper utility to help us generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This is available in the <code class="docutils literal notranslate"><span class="pre">examples/arm</span></code> directory.</p>
@@ -713,11 +717,7 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 <h3>Delegated Workflow<a class="headerlink" href="#delegated-workflow" title="Permalink to this heading">¶</a></h3>
 <p>Working with Arm, we introduced a new Arm backend delegate for ExecuTorch. This backend is under active development and has a limited set of features available as of writing this.</p>
 <p>By including a following step during the ExecuTorch AoT export pipeline to generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, we can enable this backend delegate.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.backends.arm.arm_backend</span> <span class="kn">import</span> <span class="n">generate_ethosu_compile_spec</span>
-
-<span class="n">graph_module_edge</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>
-    <span class="n">ArmPartitioner</span><span class="p">(</span><span class="n">generate_ethosu_compile_spec</span><span class="p">(</span><span class="s2">&quot;ethos-u55-128&quot;</span><span class="p">)))</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">graph_module_edge</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="n">ArmPartitioner</span><span class="p">())</span>
 </pre></div>
 </div>
 <p>Similar to the non-delegate flow, the same script will server as a helper utility to help us generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. Notice the <code class="docutils literal notranslate"><span class="pre">--delegate</span></code> option to enable the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> call.</p>
@@ -755,7 +755,6 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Empty and already created</span>
 <span class="nb">cd</span><span class="w"> </span>&lt;executorch_source_root_dir&gt;
 
-<span class="c1"># Use provided cmake toolchain for bare-metal builds</span>
 <span class="nv">toolchain_cmake</span><span class="o">=</span>&lt;executorch_source_root_dir&gt;/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
 
 cmake<span class="w">                                                 </span><span class="se">\</span>
@@ -765,13 +764,12 @@ cmake<span class="w">                                                 </span><sp
 <span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w">                        </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span>ON<span class="w">                    </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_ARM_BAREMETAL<span class="o">=</span>ON<span class="w">               </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL<span class="o">=</span>ON<span class="w">       </span><span class="se">\</span>
 <span class="w">    </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w">               </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">toolchain_cmake</span><span class="si">}</span><span class="s2">&quot;</span><span class="w">       </span><span class="se">\</span>
 <span class="w">    </span>-B&lt;executorch_build_dir&gt;<span class="w">                          </span><span class="se">\</span>
 <span class="w">    </span>&lt;executorch_source_root_dir&gt;
 
-cmake<span class="w"> </span>--build<span class="w"> </span>&lt;executorch_build_dir&gt;<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
+cmake<span class="w"> </span>--build<span class="w"> </span>&lt;executorch_build_dir&gt;<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release<span class="w"> </span><span class="nv">VERBOSE</span><span class="o">=</span><span class="m">1</span>
 
 cmake<span class="w">                                                 </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>&lt;executorch_build_dir&gt;<span class="w">     </span><span class="se">\</span>
@@ -791,20 +789,17 @@ cmake<span class="w"> </span>--build<span class="w"> </span>&lt;executorch_build
 <h3>Building the executor_runner Bare-Metal Application<a class="headerlink" href="#building-the-executor-runner-bare-metal-application" title="Permalink to this heading">¶</a></h3>
 <p>The SDK dir is the same one prepared <a class="reference internal" href="#setup-the-arm-ethos-u-software-development"><span class="std std-doc">earlier</span></a>. And, we will be passing the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file (any one of them) generated above.</p>
 <p>Note, you have to generate a new <code class="docutils literal notranslate"><span class="pre">executor-runner</span></code> binary if you want to change the model or the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This constraint is from the constrained bare-metal runtime environment we have for Corstone-300 platform.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>&lt;executorch_source_root_dir&gt;
-<span class="nb">cd</span><span class="w"> </span>examples/arm/executor_runner
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>&lt;ethos-u-sdk-dir&gt;/core_platform/
 
 cmake<span class="w">                                                    </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">toolchain_cmake</span><span class="si">}</span><span class="s2">&quot;</span><span class="w">          </span><span class="se">\</span>
-<span class="w">    </span>-DTARGET_CPU<span class="o">=</span>cortex-m55<span class="w">                              </span><span class="se">\</span>
-<span class="w">    </span>-B<span class="w"> </span>build<span class="w">                                             </span><span class="se">\</span>
-<span class="w">    </span>-DETHOS_SDK_PATH:PATH<span class="o">=</span>&lt;ethos-u_clone_directory&gt;<span class="w">      </span><span class="se">\</span>
+<span class="w">    </span>-B<span class="w"> </span>build<span class="w"> </span>targets/corstone-300<span class="w">                        </span><span class="se">\</span>
 <span class="w">    </span>-DET_DIR_PATH:PATH<span class="o">=</span>&lt;executorch_source_root_dir&gt;<span class="w">      </span><span class="se">\</span>
 <span class="w">    </span>-DET_BUILD_DIR_PATH:PATH<span class="o">=</span>&lt;executorch_build_dir&gt;<span class="w">      </span><span class="se">\</span>
 <span class="w">    </span>-DET_PTE_FILE_PATH:PATH<span class="o">=</span>&lt;path_to_pte_file_of_choice&gt;<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span><span class="k">$(</span>which<span class="w"> </span>python3<span class="k">)</span>
 
-cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"> </span>--<span class="w"> </span>arm_executor_runner
+cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"> </span>--<span class="w"> </span>executor_runner
 </pre></div>
 </div>
 </div>
@@ -812,9 +807,9 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"
 <div class="section" id="running-on-corstone-300-fvp-platform">
 <h2>Running on Corstone-300 FVP Platform<a class="headerlink" href="#running-on-corstone-300-fvp-platform" title="Permalink to this heading">¶</a></h2>
 <p>Once the elf is prepared, regardless of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file variant is used to generate the bare metal elf, you can run in with following command,</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">ethos_u_build_dir</span><span class="o">=</span>examples/arm/executor_runner/
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">ethos_u_build_dir</span><span class="o">=</span>&lt;ethos-u-sdk-dir&gt;/core_platform/build/
 
-<span class="nv">elf</span><span class="o">=</span><span class="k">$(</span>find<span class="w"> </span><span class="si">${</span><span class="nv">ethos_u_build_dir</span><span class="si">}</span><span class="w"> </span>-name<span class="w"> </span><span class="s2">&quot;arm_executor_runner&quot;</span><span class="k">)</span>
+<span class="nv">elf</span><span class="o">=</span><span class="k">$(</span>find<span class="w"> </span><span class="si">${</span><span class="nv">ethos_u_build_dir</span><span class="si">}</span><span class="w"> </span>-name<span class="w"> </span><span class="s2">&quot;executor_runner.elf&quot;</span><span class="k">)</span>
 
 FVP_Corstone_SSE-300_Ethos-U55<span class="w">                          </span><span class="se">\</span>
 <span class="w">    </span>-C<span class="w"> </span>ethosu.num_macs<span class="o">=</span><span class="m">128</span><span class="w">                              </span><span class="se">\</span>
@@ -887,8 +882,8 @@ FVP_Corstone_SSE-300_Ethos-U55<span class="w">                          </span><
 <p>Through this tutorial we’ve learnt how to use the ExecuTorch software to both export a standard model from PyTorch and to run it on the compact and fully functioned ExecuTorch runtime, enabling a smooth path for offloading models from PyTorch to Arm based platforms.</p>
 <p>To recap, there are two major flows:</p>
 <ul class="simple">
-<li><p>A direct flow which offloads work onto the Cortex-M using libraries built into ExecuTorch.</p></li>
-<li><p>A delegated flow which partitions the graph into sections for Cortex-M and sections which can be offloaded and accelerated on the Ethos-U hardware.</p></li>
+<li><p>A direct flow which offloads work onto the Cortex-M using libraries built into ExecuTorch</p></li>
+<li><p>A delegated flow which partitions the graph into sections for Cortex-M and sections which can be offloaded and accelerated on the Ethos-U hardware</p></li>
 </ul>
 <p>Both of these flows continue to evolve, enabling more use-cases and better performance.</p>
 </div>

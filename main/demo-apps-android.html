@@ -5,11 +5,12 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
+  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building an ExecuTorch Android Demo App &mdash; ExecuTorch 0.2 documentation</title>
+  <title>Building an ExecuTorch Android Demo App &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -238,7 +239,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>0.2 &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
     </div>
     
 
@@ -476,7 +477,8 @@ Prerequisites</div>
 <div class="section" id="xnnpack-delegation">
 <h4>XNNPACK Delegation<a class="headerlink" href="#xnnpack-delegation" title="Permalink to this heading">¶</a></h4>
 <p>For delegating DeepLab v3 to XNNPACK backend, please do the following to export the model:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.xnnpack.aot_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;dl3&quot;</span><span class="w"> </span>--delegate
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">FLATC_EXECUTABLE</span><span class="o">=</span><span class="k">$(</span>realpath<span class="w"> </span>third-party/flatbuffers/cmake-android-out/flatc<span class="k">)</span>
+python3<span class="w"> </span>-m<span class="w"> </span>examples.xnnpack.aot_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;dl3&quot;</span><span class="w"> </span>--delegate
 mkdir<span class="w"> </span>-p<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 cp<span class="w"> </span>dl3_xnnpack_fp32.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 </pre></div>

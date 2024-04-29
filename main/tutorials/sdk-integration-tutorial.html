@@ -5,11 +5,12 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
+  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Using the ExecuTorch SDK to Profile a Model &mdash; ExecuTorch 0.2 documentation</title>
+  <title>Using the ExecuTorch SDK to Profile a Model &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -238,7 +239,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>0.2 &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
     </div>
     
 
@@ -598,11 +599,25 @@ from executing a <a class="reference external" href="../sdk-bundled-io.html">Bun
 </pre></div>
 </div>
 <p>Use CMake (follow <a class="reference external" href="../runtime-build-and-cross-compilation.html#configure-the-cmake-build">these instructions</a> to set up cmake) to execute the Bundled Program to generate the <code class="docutils literal notranslate"><span class="pre">ETDump</span></code>:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">executorch</span>
-<span class="n">rm</span> <span class="o">-</span><span class="n">rf</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">mkdir</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cd</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cmake</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_SDK</span><span class="o">=</span><span class="mi">1</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER</span><span class="o">=</span><span class="mi">1</span> <span class="o">..</span>
-<span class="n">cd</span> <span class="o">..</span>
-<span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">-</span><span class="n">j8</span> <span class="o">-</span><span class="n">t</span> <span class="n">sdk_example_runner</span>
-<span class="o">./</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">sdk_example_runner</span> <span class="o">--</span><span class="n">bundled_program_path</span> <span class="o">&lt;</span><span class="n">bundled_program</span><span class="o">&gt;</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>cd executorch
+rm -rf cmake-out
+cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_SDK=ON \
+    -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+    -Bcmake-out .
+cmake --build cmake-out -j9 --target install --config Release
+
+local example_dir=examples/sdk
+local build_dir=cmake-out/${example_dir}
+CMAKE_PREFIX_PATH=&quot;${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags&quot;
+rm -rf ${build_dir}
+cmake -DCMAKE_PREFIX_PATH=&quot;$CMAKE_PREFIX_PATH&quot; \
+    -DCMAKE_BUILD_TYPE=Release \
+    -B${build_dir} \
+    ${example_dir}
+cmake --build ${build_dir} -j9 --config Release
+${build_dir}/sdk_example_runner --bundled_program_path=&quot;bundled_program.bp&quot;
 </pre></div>
 </div>
 </div>
@@ -710,7 +725,7 @@ to analyze the model run results.</p>
 <li><p><a class="reference external" href="../sdk-etdump.html">ETDump</a></p></li>
 <li><p><a class="reference external" href="../sdk-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.225 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.105 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-sdk-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/00f28feeccb75cde665e2acd0ca1eb2e/sdk-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">sdk-integration-tutorial.py</span></code></a></p>
