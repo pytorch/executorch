@@ -106,7 +106,7 @@ void add_split_with_sizes_default_node(
   add_split_with_sizes_default_node(graph, in, split_sizes, dim, out);
 }
 
-void split_with_sizes_default(
+void split_with_sizes_copy_default(
     ComputeGraph& graph,
     const std::vector<ValueRef>& args) {
   add_split_with_sizes_default_node(graph, args[0], args[1], args[2], args[3]);
@@ -134,7 +134,8 @@ void split_tensor(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(aten.split_with_sizes.default, split_with_sizes_default);
+  VK_REGISTER_OP(
+      aten.split_with_sizes_copy.default, split_with_sizes_copy_default);
   VK_REGISTER_OP(aten.split.Tensor, split_tensor);
 }
 

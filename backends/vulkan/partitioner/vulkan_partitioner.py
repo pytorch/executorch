@@ -27,6 +27,8 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 
 class VulkanSupportedOperators(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+        if node.op == "call_function":
+            print("AAA=>", node.target)
         supported = node.op == "call_function" and node.target in [
             # Binary arithmetic operators
             exir_ops.edge.aten.add.Tensor,
@@ -56,6 +58,12 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.select_copy.int,
             exir_ops.edge.aten.unsqueeze_copy.default,
             exir_ops.edge.aten.view_copy.default,
+            # Copy-releated operators
+            exir_ops.edge.aten.clone.default,
+            exir_ops.edge.aten.cat.default,
+            exir_ops.edge.aten.split_with_sizes_copy.default,
+            exir_ops.edge.aten.split.Tensor,
+            exir_ops.edge.aten.slice_copy.Tensor,
             # Other
             operator.getitem,
             exir_ops.edge.aten.full.default,

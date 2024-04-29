@@ -133,7 +133,7 @@ class VkGraphBuilder:
             new_id = self.create_tensor_value(spec, constant_id)
             self.node_to_value_ids[node] = new_id
             return new_id
-        elif isinstance(spec, tuple):
+        elif isinstance(spec, tuple) or isinstance(spec, list):
             # Create a Value for each element in the tuple, wrap Values in a
             # ValueList, and map the Node to the ValueList id.
             new_id = self.create_value_list_value(spec)
