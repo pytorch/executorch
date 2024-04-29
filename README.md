@@ -45,7 +45,7 @@ git commit -m "Update stable to ${NEW_VERSION}"
 git push -u origin
 ```
 
-### Updating the stable version to dropdown
+### Updating the stable version in dropdown
 
 In addition to updating stable, you need to update the dropdown to include
 the latest version of docs.
