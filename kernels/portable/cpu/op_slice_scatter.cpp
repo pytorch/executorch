@@ -74,28 +74,27 @@ Tensor& slice_scatter_out(
   ScalarType in_type = input.scalar_type();
   ScalarType src_type = src.scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in_type, ctx, "slice_scatter.out", CTYPE, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, src_type, ctx, "slice_scatter.out", CTYPE_SRC, [&]() {
-              CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-              const CTYPE_SRC* src_data = src.const_data_ptr<CTYPE_SRC>();
+  ET_SWITCH_REALHB_TYPES(in_type, ctx, "slice_scatter.out", CTYPE, [&]() {
+    ET_SWITCH_REALHB_TYPES(
+        src_type, ctx, "slice_scatter.out", CTYPE_SRC, [&]() {
+          CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+          const CTYPE_SRC* src_data = src.const_data_ptr<CTYPE_SRC>();
 
-              size_t src_offset = 0;
+          size_t src_offset = 0;
 
-              for (int i = 0; i < leading_dims; i++) {
-                size_t out_offset = (i * dim_length + start) * trailing_dims;
-                for (int j = 0; j < num_values; j++) {
-                  for (size_t k = 0; k < trailing_dims; ++k) {
-                    out_data[out_offset + k] =
-                        convert<CTYPE, CTYPE_SRC>(src_data[src_offset + k]);
-                  }
-                  src_offset += trailing_dims;
-                  out_offset += step * trailing_dims;
-                }
+          for (int i = 0; i < leading_dims; i++) {
+            size_t out_offset = (i * dim_length + start) * trailing_dims;
+            for (int j = 0; j < num_values; j++) {
+              for (size_t k = 0; k < trailing_dims; ++k) {
+                out_data[out_offset + k] =
+                    convert<CTYPE, CTYPE_SRC>(src_data[src_offset + k]);
               }
-            });
-      });
+              src_offset += trailing_dims;
+              out_offset += step * trailing_dims;
+            }
+          }
+        });
+  });
 
   return out;
 }
