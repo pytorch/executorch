@@ -428,6 +428,52 @@ def get_repeat_inputs():
     return test_suite
 
 
+def get_cat_inputs():
+    # TensorList must be specified as list of tuples
+    test_suite = VkTestSuite(
+        [
+            # Cat on Height
+            ([(S1, S1, 3, 5), (S1, S1, 4, 5)], 2),
+            ([(S1, 3, 5), (S1, 4, 5)], 1),
+            ([(3, 5), (4, 5)], 0),
+            ([(3, 5), (4, 5), (1, 5)], 0),
+            (
+                [
+                    (3, 5),
+                ],
+                0,
+            ),
+            # Cat on Width
+            ([(S1, S1, 5, 3), (S1, S1, 5, 4)], 3),
+            ([(S1, 5, 3), (S1, 5, 4)], 2),
+            ([(5, 3), (5, 4)], 1),
+            ([(5, 3), (5, 4), (5, 1)], 1),
+            (
+                [
+                    (5, 4),
+                ],
+                1,
+            ),
+            ([(5,), (6,)], 0),
+            # Cat on Batch
+            ([(S, S1, 5, 4), (S1, S1, 5, 4)], 0),
+            ([(S, XS, 5, 4), (S1, XS, 5, 4)], 0),
+            ([(S, S2, 5, 4), (S1, S2, 5, 4)], 0),
+            # Cat on Channel
+            ([(S, 5, 4), (S1, 5, 4), (S2, 5, 4)], 0),
+            ([(XS, 5, 4), (XS, 5, 4), (S2, 5, 4)], 0),
+            ([(XS, S, 5, 4), (XS, S1, 5, 4), (XS, S2, 5, 4)], 1),
+            ([(XS, XS, 5, 4), (XS, XS, 5, 4), (XS, S2, 5, 4)], 1),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.dtypes = ["at::kFloat"]
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -447,4 +493,5 @@ test_suites = {
     "aten.unsqueeze_copy.default": get_unsqueeze_inputs(),
     "aten.clone.default": get_clone_inputs(),
     "aten.repeat.default": get_repeat_inputs(),
+    "aten.cat.default": get_cat_inputs(),
 }
