@@ -6,7 +6,7 @@
 
 import operator
 from types import NoneType
-from typing import cast, List, Optional, Tuple, Union
+from typing import cast, List, Optional, Union
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
