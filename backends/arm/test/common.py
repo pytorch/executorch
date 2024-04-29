@@ -21,16 +21,17 @@ def get_tosa_compile_spec(permute_memory_to_nhwc=False, custom_path=None):
         ArmCompileSpecBuilder()
         .tosa_compile_spec()
         .set_permute_memory_format(permute_memory_to_nhwc)
-        .dump_intermediate_tosa(intermediate_path)
+        .dump_intermediate_artifacts_to(intermediate_path)
         .build()
     )
     return compile_spec
 
 
-def get_u55_compile_spec(permute_memory_to_nhwc=False):
+def get_u55_compile_spec(permute_memory_to_nhwc=False, custom_path=None):
     """
     Default compile spec for Ethos-U55 tests.
     """
+    artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u55_")
     compile_spec = (
         ArmCompileSpecBuilder()
         .ethosu_compile_spec(
@@ -40,6 +41,7 @@ def get_u55_compile_spec(permute_memory_to_nhwc=False):
             extra_flags=None,
         )
         .set_permute_memory_format(permute_memory_to_nhwc)
+        .dump_intermediate_artifacts_to(artifact_path)
         .build()
     )
     return compile_spec

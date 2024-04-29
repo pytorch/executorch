@@ -33,98 +33,117 @@ from executorch.backends.arm.test.tosautil.tosa_test_utils import (
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.backends.xnnpack.test.tester.tester import (
     Export,
-    Partition,
+    Partition as PartitionSuperclass,
     Quantize,
+    Serialize,
     ToEdge,
 )
 
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import ExportedProgram
+from torch.fx.node import Node
 
 
-def _get_input_params(
-    program: ExportedProgram, is_quantized: bool
-) -> Tuple[str, Union[List[QuantizationParams], List[None]]]:
+def _get_input_names(program: ExportedProgram) -> list[str]:
     """
-    Get name and optionally quantization parameters for the inputs to this
-    model.
+    Get a list[str] with the names of the inputs to this model.
 
     Args:
-        program (ExportedProgram): The program to get input parameters from
+        program (ExportedProgram): The program to get input names from.
     Returns:
-        Tuple[str, Optional[QuantizationParams]]: A tuple containing the
-            input node names and their quantization parameters.
+        A list of strings with the names of the model input.
     """
     input_names = []
+
     # E.g. bias and weights are 'placeholders' as well. This is used to
     # get only the use inputs.
     usr_inputs = program.graph_signature.user_inputs
     for node in program.graph.nodes:
         if node.op == "placeholder" and node.name in usr_inputs:
             input_names.append(node.name)
-            continue
 
-    if is_quantized:
-        quant_params = []
-        for node in program.graph.nodes:
-            if (
-                node.target
-                == torch.ops.quantized_decomposed.quantize_per_tensor.default
-                and node.args[0].name in input_names
-            ):
-                qp = QuantizationParams(
-                    node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
-                )
-                quant_params.append(qp)
-                if len(quant_params) == len(
-                    input_names
-                ):  # break early if we have all the inputs quantized parameters
-                    break
-        assert len(quant_params) != 0, "Quantization paramerters not found"
-        return (input_names, quant_params)
-    else:
-        return (input_names, len(input_names) * [None])  # return a list of None's
+    return input_names
 
 
-def _get_output_param(
-    program: ExportedProgram, is_quantized: bool
-) -> Tuple[str, Union[QuantizationParams, None]]:
+def _get_input_quantization_params(
+    program: ExportedProgram, input_names: list[str]
+) -> list[QuantizationParams]:
     """
-    Get name and optionally quantization parameters for the inputs to this
-    model.
+    Get input QuantizationParams in a program, maximum one per input to the program.
+    Args:
+        program (ExportedProgram): The program to get input quantization parameters from.
+    Returns:
+        list[QuantizationParams]: The found quantization parameters.
+    Raises:
+        RuntimeError if no quantization parameters are found.
+    """
+
+    quant_params = []
+    num_inputs = len(input_names)
+    for node in program.graph.nodes:
+        if (
+            node.target == torch.ops.quantized_decomposed.quantize_per_tensor.default
+            and node.args[0].name in input_names
+        ):
+            qp = QuantizationParams(
+                node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
+            )
+            quant_params.append(qp)
+            if (
+                len(quant_params) == num_inputs
+            ):  # break early if we have all the inputs quantized parameters
+                break
+    if len(quant_params) == 0:
+        raise RuntimeError("No Quantization parameters not found in exported model.")
+    return quant_params
+
+
+def _get_output_node(program: ExportedProgram) -> Node:
+    """
+    Get output node to this model.
 
     Args:
-        program (ExportedProgram): The program to get output parameters from.
+        program (ExportedProgram): The program to get output node from.
     Returns:
-        Tuple[str, Optional[QuantizationParams]]: A tuple containing the
-            output node name and its quantization parameters.
+        The node that is the output of 'program'.
     """
-    output_node = None
+
     for node in program.graph.nodes:
         if node.op == "output":
-            output_node = node
-            break
-
-    if is_quantized:
-        quant_params = None
-        for node in program.graph.nodes:
-            if (
-                node.target
-                == torch.ops.quantized_decomposed.dequantize_per_tensor.default
-                and node == output_node.args[0][0]
-            ):
-                quant_params = QuantizationParams(
-                    node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
-                )
-                break  # break early, there's only one output node
-        assert quant_params is not None, "Quantization paramerters not found"
-        return (output_node.name, quant_params)
-    else:
-        return (output_node.name, None)
+            return node
+    raise RuntimeError("No output node found.")
 
 
-class Partition(Partition):
+def _get_output_quantization_params(
+    program: ExportedProgram, output_node: Node
+) -> QuantizationParams:
+    """
+    Get output QuantizationParams from a program.
+    Args:
+        program (ExportedProgram): The program to get output quantization parameters from.
+    Returns:
+        QuantizationParams: The found quantization parameters.
+    Raises:
+        RuntimeError if no output quantization parameters are found.
+    """
+
+    quant_params = None
+    for node in program.graph.nodes:
+        if (
+            node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default
+            and node == output_node.args[0][0]
+        ):
+            quant_params = QuantizationParams(
+                node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
+            )
+            break  # break early, there's only one output node
+    if quant_params is None:
+        raise RuntimeError("No Quantization parameters not found in exported model.")
+    return quant_params
+
+
+class Partition(PartitionSuperclass):
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
         from pprint import pformat
@@ -204,6 +223,19 @@ class ArmTester(Tester):
             partition_stage = Partition(arm_partitioner)
         return super().partition(partition_stage)
 
+    def serialize(self, serialize_stage: Optional[Serialize] = None):
+        if serialize_stage is None:
+            serialize_stage = Serialize()
+        assert (
+            get_intermediate_path(self.compile_spec) is not None
+        ), "Can't dump serialized file when compile specs do not contain an artifact path."
+
+        return (
+            super()
+            .serialize(serialize_stage)
+            .dump_artifact(get_intermediate_path(self.compile_spec) + "/program.pte")
+        )
+
     def run_method_and_compare_outputs(
         self,
         stage: Optional[str] = None,
@@ -235,12 +267,18 @@ class ArmTester(Tester):
         stage = stage or self.cur
 
         export_stage = self.stages[self.stage_name(Export)]
+        exported_program = export_stage.artifact
+        input_names = _get_input_names(exported_program)
+        output_node = _get_output_node(exported_program)
+        output_name = output_node.name
+        is_quantized = self.stages[self.stage_name(Quantize)] is not None
 
-        is_quantized = self.stages["Quantize"] is not None
-        (input_names, qp_input) = _get_input_params(export_stage.artifact, is_quantized)
-        (output_name, qp_output) = _get_output_param(
-            export_stage.artifact, is_quantized
-        )
+        if is_quantized:
+            qp_input = _get_input_quantization_params(exported_program, input_names)
+            qp_output = _get_output_quantization_params(exported_program, output_node)
+        else:
+            qp_input = [None] * len(input_names)
+            qp_output = None
 
         self.qp_input = qp_input
         self.qp_output = qp_output
