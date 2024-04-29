@@ -39,7 +39,7 @@ if(EXECUTORCH_BUILD_OPTIMIZED)
     ${CMAKE_CURRENT_BINARY_DIR})
 
   gen_selected_ops(LIB_NAME "optimized_native_cpu_ops_lib"
-                   OPS_SCHEMA_YAML"${CMAKE_CURRENT_BINARY_DIR}/merged.yaml")
+                   OPS_SCHEMA_YAML "${CMAKE_CURRENT_BINARY_DIR}/merged.yaml")
 
   generate_bindings_for_kernels(
     LIB_NAME "optimized_native_cpu_ops_lib" FUNCTIONS_YAML
