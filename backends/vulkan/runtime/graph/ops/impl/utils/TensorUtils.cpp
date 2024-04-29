@@ -8,8 +8,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
-
 namespace vkcompute {
 
 //

@@ -12,6 +12,27 @@
 
 namespace vkcompute {
 
+// A canonical way to represent dimensions as enum. Motivation behind a
+// canonical enum is that in the user tensor, it is using a "big-endian"-ish
+// mechanism to reference a dimension in a nchw-tensor, leading to tensor of
+// different dimension have different mapping from dim to the underlying texture
+// dimension. For instasnce, for a 2d (height x width) tensors, dim 0 refers to
+// height and dim 1 refers to width; for a 4d (batch x channel x height x width)
+// tensor, dim 0 refers to batch and dim 1 refers to channel. Using this
+// canonical enum allows us to bring clarity in code.
+
+enum NchwDim : uint32_t {
+  DimWidth = 1u,
+  DimHeight = 2u,
+  DimChannel = 3u,
+  DimBatch = 4u,
+};
+
+// Convert a dim provided by user into canonical enum.
+inline NchwDim normalize_to_nchw_dim(const vTensor& v_in, int32_t dim) {
+  return static_cast<NchwDim>(v_in.dim() - dim);
+}
+
 /*
  * Maps a semantic dimension name to an integer that
  * corresponds to its innermost ordering in a 4D tensor in
@@ -20,10 +41,10 @@ namespace vkcompute {
  * corresponds to 2, and so on.
  */
 struct Dim4D {
-  static constexpr uint32_t Width = 1u;
-  static constexpr uint32_t Height = 2u;
-  static constexpr uint32_t Channel = 3u;
-  static constexpr uint32_t Batch = 4u;
+  static constexpr uint32_t Width = DimWidth;
+  static constexpr uint32_t Height = DimHeight;
+  static constexpr uint32_t Channel = DimChannel;
+  static constexpr uint32_t Batch = DimBatch;
 };
 
 /*
@@ -65,34 +86,20 @@ uint32_t dim_at(const std::vector<int64_t>& sizes) {
   return dims < N ? 1 : api::utils::safe_downcast<uint32_t>(sizes[dims - N]);
 }
 
+inline uint32_t dim_at(const std::vector<int64_t>& sizes, NchwDim nchw_dim) {
+  const uint32_t dims = sizes.size();
+  return dims < nchw_dim
+      ? 1
+      : api::utils::safe_downcast<uint32_t>(sizes[dims - nchw_dim]);
+}
+
 template <uint32_t N>
 uint32_t dim_at(const vTensor& v_in) {
   return dim_at<N>(v_in.sizes());
 }
 
-// A canonical way to represent dimensions as enum. Intended to use the same
-// value as Dim4D for potential future refactoring.
-
-enum NchwDim {
-  DimWidth = 1,
-  DimHeight = 2,
-  DimChannel = 3,
-  DimBatch = 4,
-};
-
-/* This function return a NchwDim
- * given a Tensor and a user provided dim. The reason for this normalization is
- * that in the user tensor coordinate, it is using a "big-endian" mechanism when
- * referring to a nchw dimension, in that dim=0 refers to the batch dimension in
- * a 4d tensor but dim=0 reference to height in a 2d tensor. Despite in a common
- * texture representation of channel packing, a 2d tensor has exactly the same
- * layout as a 4d with the batch and channel size equals to 1. This function
- * returns a canonical dimension to simplify dimension reasoning in the code.
- *
- */
-
-inline NchwDim normalize_to_nchw_dim(const vTensor& v_in, int32_t dim) {
-  return static_cast<NchwDim>(v_in.dim() - dim);
+inline uint32_t dim_at(const vTensor& v_in, NchwDim nchw_dim) {
+  return dim_at(v_in.sizes(), nchw_dim);
 }
 
 inline std::ostream& operator<<(std::ostream& os, NchwDim nchw_dim) {

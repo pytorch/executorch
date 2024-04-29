@@ -24,6 +24,7 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     OPT_LAYOUT,
     OPT_MEMORY_FORMAT,
     OPT_SCALAR_TYPE,
+    TENSOR_VECTOR,
     TestSuite,
     TestSuiteGen,
     THREE_TENSOR_TUPLE,
@@ -73,6 +74,26 @@ class ValueRef:
     is_out: bool = False
     requires_prepack: bool = False
     supports_prepack: bool = False
+    # When is_dynamic_size is true, the underlying object size is not known
+    # during code-gen. Example is the out value for aten.split where the out
+    # value is a vector<Tensor>. In these cases, we need to use an additional
+    # vector or at::TensorList to track these values.
+    is_dynamic_size: bool = False
+
+    @property
+    def io_value_list_name(self):
+        assert self.is_dynamic_size
+        return f"{self.name}_io_value_list"
+
+    @property
+    def value_list_name(self):
+        assert self.is_dynamic_size
+        return f"{self.name}_value_list"
+
+    @property
+    def vk_out(self):
+        assert self.is_out
+        return f"vk_{self.name}"
 
 
 ValueRefList = Union[ValueRef, List[ValueRef]]
@@ -177,6 +198,18 @@ class ComputeGraphGen:
                     is_out=False,
                 ),
             ]
+        elif ret_type == TENSOR_VECTOR:
+            self.refs["out"] = ValueRef(
+                name="out_ref",
+                src_cpp_name="out",
+                src_cpp_type=ret_type,
+                is_out=True,
+                is_dynamic_size=True,
+            )
+        else:
+            raise NotImplementedError(
+                f"ret_type: {ret_type} not supported for out value"
+            )
 
     ## ATen code generation
 
@@ -267,6 +300,21 @@ class ComputeGraphGen:
             ret_str += "}\n"
             ret_str += f"ValueRef {ref.name} = {self.graph}{self.dot}add_value_list(std::move({ref.name}_value_refs));\n"
             return ret_str
+        elif ref.src_cpp_type == TENSOR_VECTOR:
+            ret_str = f"""
+std::vector<IOValueRef> {ref.io_value_list_name};
+std::vector<ValueRef> {ref.value_list_name};
+for (int i=0; i<out.size(); i++) {{
+    const at::Tensor& cur = out[i];
+    IOValueRef io_value_ref;
+    io_value_ref.value = {self.graph}{self.dot}add_tensor(
+        cur.sizes().vec(), from_at_scalartype(cur.scalar_type()));
+    {ref.io_value_list_name}.emplace_back(io_value_ref);
+    {ref.value_list_name}.emplace_back(io_value_ref.value);
+}}
+ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_list_name}));
+"""
+            return ret_str
 
         ret_str = f"{cpp_type} {ref.name} = {self.graph}{self.dot}"
         if ref.src_cpp_type == AT_TENSOR and not prepack:
@@ -331,6 +379,15 @@ class ComputeGraphGen:
             for r in ref[:-1]:
                 ret_str += self.set_output(r)
             return ret_str
+        elif ref.src_cpp_type == TENSOR_VECTOR:
+            assert ref.is_out
+            ret_str = f"""
+for (int i=0; i<out.size(); i++) {{
+    {ref.io_value_list_name}[i].staging = {self.graph}{self.dot}set_output_tensor(
+        {ref.io_value_list_name}[i].value);
+}}
+"""
+            return ret_str
 
         assert ref.src_cpp_type == AT_TENSOR and ref.is_out
         ret_str = f"ValueRef {ref.name}_staging = {self.graph}{self.dot}"
@@ -387,7 +444,17 @@ class ComputeGraphGen:
             for r in ref[:-1]:
                 ret_str += self.declare_vk_out_for(r)
             return ret_str
+        elif ref.src_cpp_type == TENSOR_VECTOR:
+            assert ref.is_out
+            ret_str = f"""
+std::vector<at::Tensor> {ref.vk_out};
+for (int i=0; i<out.size(); i++) {{
+    {ref.vk_out}.emplace_back(at::empty_like(out[i]).contiguous());
+}}
+"""
+            return ret_str
 
+        assert ref.src_cpp_type == AT_TENSOR and ref.is_out
         ret_str = f"at::Tensor vk_{ref.name} = at::empty_like({ref.src_cpp_name})"
         ret_str += ".contiguous();\n"
         return ret_str
@@ -397,6 +464,17 @@ class ComputeGraphGen:
             ret_str = ""
             for r in ref[:-1]:
                 ret_str += self.copy_from_staging(r)
+            return ret_str
+        elif ref.src_cpp_type == TENSOR_VECTOR:
+            assert ref.is_out
+            ret_str = f"""
+for (int i=0; i<out.size(); i++) {{
+    {self.graph}{self.dot}copy_from_staging(
+        {ref.io_value_list_name}[i].staging,
+        {ref.vk_out}[i].mutable_data_ptr(),
+        {ref.vk_out}[i].numel());
+}}
+"""
             return ret_str
 
         assert ref.src_cpp_type == AT_TENSOR and ref.is_out
@@ -412,6 +490,14 @@ class ComputeGraphGen:
             ret_str = ""
             for r in ref[:-1]:
                 ret_str += self.check_graph_out(r)
+            return ret_str
+        elif ref.src_cpp_type == TENSOR_VECTOR:
+            assert ref.is_out
+            ret_str = f"""
+for (int i=0; i<out.size(); i++) {{
+    EXPECT_TRUE(check_close(out[i], {ref.vk_out}[i], rtol, atol));
+}}
+"""
             return ret_str
 
         return f"EXPECT_TRUE(check_close({ref.src_cpp_name}, vk_{ref.name}, rtol, atol));\n"
