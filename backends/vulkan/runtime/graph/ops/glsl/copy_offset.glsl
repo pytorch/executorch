@@ -10,26 +10,12 @@
 
 #define PRECISION ${PRECISION}
 
-#define VEC4_T ${texel_type(DTYPE)}
-
 layout(std430) buffer;
-
-#include "indexing_utils.h"
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 
-layout(set = 0, binding = 2) uniform PRECISION restrict OutLimits {
-  ivec3 out_limits;
-};
-
-layout(set = 0, binding = 3) uniform PRECISION restrict InLimits {
-  ivec3 in_limits;
-};
-
-
-
-layout(set = 0, binding = 4) uniform PRECISION restrict CopyArgs {
+layout(set = 0, binding = 2) uniform PRECISION restrict CopyArgs {
   ivec3 range;
   int unused0;
   ivec3 src_offset;
