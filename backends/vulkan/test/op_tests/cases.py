@@ -575,6 +575,6 @@ test_suites = {
     "aten.clone.default": get_clone_inputs(),
     "aten.repeat.default": get_repeat_inputs(),
     "aten.cat.default": get_cat_inputs(),
-    "aten.split_with_sizes.default": get_split_with_sizes_inputs(),
+    "aten.split_with_sizes_copy.default": get_split_with_sizes_inputs(),
     "aten.split.Tensor": get_split_tensor_inputs(),
 }
