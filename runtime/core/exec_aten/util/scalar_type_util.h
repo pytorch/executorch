@@ -344,17 +344,16 @@ inline size_t elementSize(exec_aten::ScalarType t) {
 #undef CASE_ELEMENTSIZE_CASE
 }
 
-inline bool isIntegralType(exec_aten::ScalarType t, bool includeBool) {
-  bool isIntegral =
+inline constexpr bool isIntegralType(
+    exec_aten::ScalarType t,
+    bool includeBool) {
+  return (includeBool && t == exec_aten::ScalarType::Bool) ||
       (t == exec_aten::ScalarType::Byte || t == exec_aten::ScalarType::Char ||
        t == exec_aten::ScalarType::Int || t == exec_aten::ScalarType::Long ||
        t == exec_aten::ScalarType::Short);
-
-  return includeBool ? isIntegral || (t == exec_aten::ScalarType::Bool)
-                     : isIntegral;
 }
 
-inline bool isFloatingType(exec_aten::ScalarType t) {
+inline constexpr bool isFloatingType(exec_aten::ScalarType t) {
   return (
       t == exec_aten::ScalarType::Double || t == exec_aten::ScalarType::Float ||
       t == exec_aten::ScalarType::Half || t == exec_aten::ScalarType::BFloat16);
@@ -380,7 +379,7 @@ inline bool isRealHBType(exec_aten::ScalarType t) {
   return (isRealHType(t) || t == exec_aten::ScalarType::Bool);
 }
 
-inline bool isComplexType(exec_aten::ScalarType t) {
+inline constexpr bool isComplexType(exec_aten::ScalarType t) {
   return (
       t == exec_aten::ScalarType::ComplexHalf ||
       t == exec_aten::ScalarType::ComplexFloat ||
@@ -512,28 +511,26 @@ inline exec_aten::ScalarType toComplexType(exec_aten::ScalarType t) {
 /**
  * Encodes type casting rules that are consistent with ATen behaviour.
  */
-inline bool canCast(
+inline constexpr bool canCast(
     const exec_aten::ScalarType from,
     const exec_aten::ScalarType to) {
   // Disallow complex -> non-complex
-  if (torch::executor::isComplexType(from) &&
-      !torch::executor::isComplexType(to)) {
-    return false;
-  }
-  // Disallow float -> integral
-  if (torch::executor::isFloatingType(from) &&
-      torch::executor::isIntegralType(to, /*includeBool*/ false)) {
-    return false;
-  }
-
-  // Treat bool as a special category. Disallow non-bool -> bool
-  if (from != exec_aten::ScalarType::Bool &&
-      to == exec_aten::ScalarType::Bool) {
-    return false;
-  }
-
-  return true;
+  return !(torch::executor::isComplexType(from) &&
+           !torch::executor::isComplexType(to)) &&
+      // Disallow float -> integral
+      !(torch::executor::isFloatingType(from) &&
+        torch::executor::isIntegralType(to, /*includeBool*/ false)) &&
+      // Treat bool as a special category. Disallow non-bool -> bool
+      !(from != exec_aten::ScalarType::Bool &&
+        to == exec_aten::ScalarType::Bool);
 }
+
+template <typename T1, typename T2>
+struct can_cast : std::integral_constant<
+                      bool,
+                      canCast(
+                          CppTypeToScalarType<T1>::value,
+                          CppTypeToScalarType<T2>::value)> {};
 
 /**
  * When casting from floating point to integral type, if the floating value is
