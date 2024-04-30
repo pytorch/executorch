@@ -44,7 +44,7 @@ function(gen_selected_ops)
     COMMENT "Generating selected_operators.yaml for ${GEN_LIB_NAME}"
     OUTPUT ${_oplist_yaml}
     COMMAND ${_gen_oplist_command}
-    DEPENDS ${ops_schema_yaml} ${_codegen_tools_srcs}
+    DEPENDS ${GEN_OPS_SCHEMA_YAML} ${_codegen_tools_srcs}
     WORKING_DIRECTORY ${EXECUTORCH_ROOT})
 
 endfunction()
@@ -164,6 +164,10 @@ endfunction()
 function(merge_yaml)
   set(arg_names FUNCTIONS_YAML FALLBACK_YAML OUTPUT_DIR)
   cmake_parse_arguments(GEN "" "${arg_names}" "" ${ARGN})
+  message(STATUS "Merging kernel yaml files:")
+  message(STATUS "  FUNCTIONS_YAML: ${GEN_FUNCTIONS_YAML}")
+  message(STATUS "  FALLBACK_YAML: ${GEN_FALLBACK_YAML}")
+  message(STATUS "  OUTPUT_DIR: ${GEN_OUTPUT_DIR}")
 
   set(_gen_command
       "${PYTHON_EXECUTABLE}" -m codegen.tools.merge_yaml
@@ -174,5 +178,6 @@ function(merge_yaml)
     COMMENT "Merging kernel yaml files"
     OUTPUT ${GEN_OUTPUT_DIR}/merged.yaml
     COMMAND ${_gen_command}
+    DEPENDS ${GEN_FUNCTIONS_YAML} ${GEN_FALLBACK_YAML}
     WORKING_DIRECTORY ${EXECUTORCH_ROOT})
 endfunction()
