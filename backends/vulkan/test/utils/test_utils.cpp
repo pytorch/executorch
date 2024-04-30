@@ -64,7 +64,6 @@ void record_conv2d_prepack_weights_op(
     api::VulkanBuffer& src_buffer,
     vTensor& v_dst,
     const std::vector<int64_t>& original_sizes,
-    const std::vector<int64_t>& padded_sizes,
     const bool transposed) {
   api::PipelineBarrier pipeline_barrier{};
 
@@ -80,8 +79,6 @@ void record_conv2d_prepack_weights_op(
 
   api::UniformParamsBuffer original_sizes_ubo(
       context, api::utils::make_ivec4(original_sizes, /*reverse = */ true));
-  api::UniformParamsBuffer padded_sizes_ubo(
-      context, api::utils::make_ivec2(padded_sizes, /*reverse = */ true));
 
   api::SpecVarList specialization_constants = {};
   context->submit_compute_job(
@@ -97,8 +94,7 @@ void record_conv2d_prepack_weights_op(
           api::MemoryAccessType::WRITE),
       src_buffer,
       v_dst.sizes_ubo(),
-      original_sizes_ubo.buffer(),
-      padded_sizes_ubo.buffer());
+      original_sizes_ubo.buffer());
 }
 
 void record_binary_op(
