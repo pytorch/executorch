@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/api/api.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
@@ -35,7 +37,9 @@ void add_view_node(ComputeGraph& graph, ValueRef in, ValueRef out) {
       // Parameter Buffers
       {t_out->sizes_ubo(), t_in->sizes_ubo()},
       // Specialization Constants
-      {SV(t_in->gpu_memory_layout_int())}));
+      {
+          SV(t_in->gpu_memory_layout_int()), SV(t_out->gpu_memory_layout_int())
+      }));
 }
 
 void view(ComputeGraph& graph, const std::vector<ValueRef>& args) {

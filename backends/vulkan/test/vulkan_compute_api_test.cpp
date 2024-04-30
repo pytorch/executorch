@@ -8,6 +8,9 @@
 
 #include <gtest/gtest.h>
 
+#include <utility>
+#include <vector>
+
 #include <c10/util/Half.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
@@ -19,6 +22,8 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
+
+using namespace vkcompute::api;
 
 //
 // Compute API Tests
@@ -1140,6 +1145,58 @@ TEST(
           EXPECT_TRUE(data_out[dst_idx] == zero_value);
         }
       }
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_view_change_packing) {
+  std::vector<std::pair<api::GPUMemoryLayout, api::GPUMemoryLayout>>
+      layout_pairs = {
+          {kWidthPacked, kChannelsPacked},
+          {kWidthPacked, kHeightPacked},
+          {kWidthPacked, kWidthPacked},
+          {kHeightPacked, kChannelsPacked},
+          {kHeightPacked, kHeightPacked},
+          {kHeightPacked, kHeightPacked},
+          {kChannelsPacked, kChannelsPacked},
+          {kChannelsPacked, kHeightPacked},
+          {kChannelsPacked, kHeightPacked},
+      };
+
+  int64_t n = 3;
+  int64_t c = 2;
+  int64_t h = 2;
+  int64_t w = 5;
+  std::vector<int64_t> size = {n, c, h, w};
+
+  for (auto layout_pair : layout_pairs) {
+    GraphConfig config;
+    ComputeGraph graph(config);
+
+    IOValueRef in =
+        graph.add_input_tensor(size, api::kFloat, layout_pair.first);
+
+    IOValueRef out = {};
+    out.value = graph.add_tensor(size, api::kFloat, layout_pair.second);
+
+    auto viewFn = VK_GET_OP_FN("aten.view_copy.default");
+    viewFn(graph, {in.value, graph.add_none(), out.value});
+
+    out.staging = graph.set_output_tensor(out.value);
+
+    graph.prepare();
+    graph.encode_execute();
+
+    fill_vtensor(graph, in, 0.0, true);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // The extracted data is a flattened nchw buffer. Hence, should expect the
+    // all elements inside the out array to match the index.
+    for (int i = 0; i < graph.get_tensor(out.value)->numel(); i++) {
+      CHECK_VALUE(data_out, i, i);
     }
   }
 }
