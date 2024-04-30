@@ -1633,7 +1633,6 @@ void test_conv2d(
       staging_buffer_in.buffer(),
       vten,
       original_sizes,
-      padded_sizes,
       transposed);
   record_image_to_nchw_op(api::context(), vten, staging_buffer_out.buffer());
 
