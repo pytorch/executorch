@@ -189,7 +189,7 @@ class Export(Stage):
     ) -> None:
         self.exported_program = export(
             artifact, inputs, dynamic_shapes=self.dynamic_shapes
-        )
+        ).run_decompositions()
 
     @property
     def artifact(self) -> ExportedProgram:
