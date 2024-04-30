@@ -25,8 +25,9 @@ try:
 
     # pyre-ignore[21]: Undefined import.
     from fairseq2.nn.projection import Linear as fsLinear
+
+    print("Using fairseq2 modules.")
 except:
-    print("Could not import fairseq2 modules.")
     fsEmbedding = nn.Embedding
     fsStandardEmbedding = nn.Embedding
     fsLinear = nn.Linear
