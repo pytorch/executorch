@@ -87,7 +87,6 @@ void record_conv2d_prepack_weights_op(
     api::VulkanBuffer& src_buffer,
     vTensor& v_dst,
     const std::vector<int64_t>& original_sizes,
-    const std::vector<int64_t>& padded_sizes,
     const bool transposed);
 
 void record_binary_op(
