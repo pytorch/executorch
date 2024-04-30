@@ -95,8 +95,7 @@ class TestAdd(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_compare_outputs()
         )
 
     def test_qs8_add(self):

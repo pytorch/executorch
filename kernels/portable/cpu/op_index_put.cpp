@@ -48,7 +48,7 @@ Tensor& index_put_out(
     ET_KERNEL_CHECK(
         ctx, tensor_is_broadcastable_to(values, out), InvalidArgument, out);
 
-    ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "index_put.out", CTYPE, [&]() {
+    ET_SWITCH_REALHB_TYPES(in_type, ctx, "index_put.out", CTYPE, [&]() {
       apply_binary_elementwise_fn<CTYPE, CTYPE, CTYPE>(
           [accumulate](const CTYPE val_in, const CTYPE val) {
             return accumulate ? val_in + val : val;
@@ -115,7 +115,7 @@ Tensor& index_put_out(
     x_numel *= x_sizes[i];
   }
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "index_put.out", CTYPE, [&]() {
+  ET_SWITCH_REALHB_TYPES(in_type, ctx, "index_put.out", CTYPE, [&]() {
     const CTYPE* const values_data = values.const_data_ptr<CTYPE>();
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
