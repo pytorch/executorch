@@ -7,7 +7,7 @@
 import copy
 import io
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Set, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Union
 
 import torch
 import torch._export
@@ -1009,7 +1009,9 @@ class ExecutorchProgramManager:
         """
         return self._execution_programs[method_name]
 
-    def dump_executorch_program(self, verbose: bool = False) -> None:
+    def dump_executorch_program(
+        self, verbose: bool = False, out: Optional[TextIO] = None
+    ) -> None:
         """
         Prints the ExecuTorch binary in a human readable format.
 
@@ -1017,11 +1019,15 @@ class ExecutorchProgramManager:
             verbose (bool):
                 If False prints the binary in a condensed format.
                 If True prints the binary 1-1 with the specification in the schema.
+            out:
+                If None, prints to stdout.
+                If non-None, writes the string to that stream object. It can be
+                    a file object, a StringIO object, or any other TextIO subclass.
         """
         if verbose:
-            pretty_print(self._emitter_output.program)
+            pretty_print(self._emitter_output.program, out=out)
         else:
-            print_program(self._emitter_output.program)
+            print_program(self._emitter_output.program, out=out)
 
     @property
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
