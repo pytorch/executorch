@@ -20,7 +20,7 @@ dependencies=[
   "expecttest",
   "flatbuffers",
   "hypothesis",
-  "numpy",
+  "numpy>=1.25.2",
   "packaging",
   "pandas",
   "parameterized",
