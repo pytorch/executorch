@@ -578,12 +578,20 @@ use <cite>write_to_file</cite> which won’t incur additional copies.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="executorch.exir.ExecutorchProgramManager.dump_executorch_program">
-<span class="sig-name descname"><span class="pre">dump_executorch_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#ExecutorchProgramManager.dump_executorch_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.exir.ExecutorchProgramManager.dump_executorch_program" title="Permalink to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">dump_executorch_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">out</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#ExecutorchProgramManager.dump_executorch_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.exir.ExecutorchProgramManager.dump_executorch_program" title="Permalink to this definition">¶</a></dt>
 <dd><p>Prints the ExecuTorch binary in a human readable format.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.12)"><em>bool</em></a>) – If False prints the binary in a condensed format.
-If True prints the binary 1-1 with the specification in the schema.</p>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.12)"><em>bool</em></a>) – If False prints the binary in a condensed format.
+If True prints the binary 1-1 with the specification in the schema.</p></li>
+<li><p><strong>out</strong> – <p>If None, prints to stdout.
+If non-None, writes the string to that stream object. It can be</p>
+<blockquote>
+<div><p>a file object, a StringIO object, or any other TextIO subclass.</p>
+</div></blockquote>
+</p></li>
+</ul>
 </dd>
 </dl>
 </dd></dl>
