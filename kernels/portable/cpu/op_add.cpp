@@ -150,23 +150,23 @@ Tensor& add_scalar_out(
   ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
       ET_SWITCH_REALB_TYPES(common_type, ctx, name, CTYPE_IN, [&]() {
-        ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-          CTYPE_B b_val;
-          utils::extract_scalar(b, &b_val);
-          CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-          CTYPE_IN alpha_val;
-          utils::extract_scalar(alpha, &alpha_val);
+        // common_type == out_type, checked above.
+        using CTYPE_OUT = CTYPE_IN;
+        CTYPE_B b_val;
+        utils::extract_scalar(b, &b_val);
+        CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+        CTYPE_IN alpha_val;
+        utils::extract_scalar(alpha, &alpha_val);
 
-          apply_unary_map_fn(
-              [b_casted, alpha_val](const CTYPE_A val_a) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN value = a_casted + alpha_val * b_casted;
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a.const_data_ptr<CTYPE_A>(),
-              out.mutable_data_ptr<CTYPE_OUT>(),
-              out.numel());
-        });
+        apply_unary_map_fn(
+            [b_casted, alpha_val](const CTYPE_A val_a) {
+              CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+              CTYPE_IN value = a_casted + alpha_val * b_casted;
+              return static_cast<CTYPE_OUT>(value);
+            },
+            a.const_data_ptr<CTYPE_A>(),
+            out.mutable_data_ptr<CTYPE_OUT>(),
+            out.numel());
       });
     });
   });
