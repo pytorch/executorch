@@ -55,11 +55,11 @@ message("Generated files ${gen_command_sources}")
 # dependency of the other(s). This is not allowed by the Xcode "new build
 # system".
 if(NOT CMAKE_GENERATOR STREQUAL "Xcode" AND EXECUTORCH_BUILD_QUANTIZED_OPS_AOT)
-  gen_selected_ops(LIB_NAME "quantized_aot_ops_lib" OPS_SCHEMA_YAML
+  gen_selected_ops(LIB_NAME "quantized_ops_aot_lib" OPS_SCHEMA_YAML
                    "${_yaml_file}")
   # Expect gen_selected_ops output file to be
   # quantized_aot_ops_lib/selected_operators.yaml
-  generate_bindings_for_kernels(LIB_NAME "quantized_aot_ops_lib"
+  generate_bindings_for_kernels(LIB_NAME "quantized_ops_aot_lib"
                                 CUSTOM_OPS_YAML "${_yaml_file}")
   # Build a AOT library to register quantized ops into PyTorch. This is a hack.
   set(_quantized_sources
