@@ -27,16 +27,15 @@ endif()
 
 set(_common_compile_options -Wno-deprecated-declarations)
 
-# Note for apple platform we can rely on Accelerate framework
-# Will come back to this
+# Note for apple platform we can rely on Accelerate framework Will come back to
+# this
 include(${CMAKE_CURRENT_LIST_DIR}/External/EigenBLAS.cmake)
 list(APPEND _common_compile_options -DET_BUILD_WITH_BLAS)
 
-# For us to set CPU_CAPABILITY_AVX2 we need to detect architecture
-# plus processor. The way aten has implemented this is slightly
-# different. We probably need to figure out how to detect compiler
-# flag that suggest we are compiling for avx2
-# for now punting this to come back
+# For us to set CPU_CAPABILITY_AVX2 we need to detect architecture plus
+# processor. The way aten has implemented this is slightly different. We
+# probably need to figure out how to detect compiler flag that suggest we are
+# compiling for avx2 for now punting this to come back
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
@@ -53,10 +52,10 @@ target_compile_options(cpublas PUBLIC ${_common_compile_options})
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in optimized.yaml
 set(_yaml "${CMAKE_CURRENT_LIST_DIR}/optimized-oss.yaml")
-gen_selected_ops("${_yaml}" "" "")
+gen_selected_ops(LIB_NAME "optimized_ops_lib" OPS_SCHEMA_YAML "${_yaml}")
 
-generate_bindings_for_kernels(
-  FUNCTIONS_YAML ${CMAKE_CURRENT_SOURCE_DIR}/optimized-oss.yaml)
+generate_bindings_for_kernels(LIB_NAME "optimized_ops_lib" FUNCTIONS_YAML
+                              ${CMAKE_CURRENT_SOURCE_DIR}/optimized-oss.yaml)
 message("Generated files ${gen_command_sources}")
 
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
@@ -66,10 +65,8 @@ target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _optimized_kernels_srcs
 #
 # optimized_ops_lib: Register optimized ops kernels into Executorch runtime
-gen_operators_lib(
-  "optimized_ops_lib"
-  KERNEL_LIBS optimized_kernels
-  DEPS executorch)
+gen_operators_lib(LIB_NAME "optimized_ops_lib" KERNEL_LIBS optimized_kernels
+                  DEPS executorch)
 
 install(TARGETS cpublas optimized_kernels optimized_ops_lib DESTINATION lib)
 
