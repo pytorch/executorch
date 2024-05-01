@@ -34,82 +34,18 @@
 
 #pragma once
 
-#include <cstdint>
-#include <type_traits>
-#include <utility>
-
 namespace torch {
 namespace executor {
-
-//===----------------------------------------------------------------------===//
-//     Features from C++20
-//===----------------------------------------------------------------------===//
-
-template <typename T>
-struct remove_cvref {
-  using type =
-      typename std::remove_cv<typename std::remove_reference<T>::type>::type;
-};
-
-template <typename T>
-using remove_cvref_t = typename remove_cvref<T>::type;
-
+namespace internal {
 template <typename Fn>
-class FunctionRef;
+struct FunctionRefImpl;
 
 template <typename Ret, typename... Params>
-class FunctionRef<Ret(Params...)> {
-  union Storage {
-    Ret (*function)(Params...);
-  } storage_;
-
- public:
-  FunctionRef() = default;
-  explicit FunctionRef(std::nullptr_t) {}
-
-  /**
-   * Case 1: A plain function pointer.
-   * Instead of storing an opaque pointer to underlying callable object,
-   * store a function pointer directly.
-   * Note that in the future a variant which coerces compatible function
-   * pointers could be implemented by erasing the storage type.
-   */
-  /* implicit */ FunctionRef(Ret (*ptr)(Params...)) {
-    storage_.function = ptr;
-  }
-
-  /**
-   * Case 2: Implicit conversion from lambda to FunctionRef.
-   * A common use pattern is like:
-   * void foo(FunctionRef<...>) {...}
-   * foo([](...){...})
-   * Here constructors for non const lvalue reference or function pointer
-   * would not work because they do not cover implicit conversion from rvalue
-   * lambda.
-   * We need to define a constructor for capturing temporary callables and
-   * always try to convert the lambda to a function pointer behind the scene.
-   */
-  template <
-      typename Function,
-      // This is not the copy-constructor.
-      typename std::enable_if<
-          !std::is_same<Function, FunctionRef>::value,
-          int32_t>::type = 0,
-      // Function is convertible to pointer of (Params...) -> Ret.
-      typename std::enable_if<
-          std::is_convertible<Function, Ret (*)(Params...)>::value,
-          int32_t>::type = 0>
-  /* implicit */ FunctionRef(const Function& function)
-      : FunctionRef(static_cast<Ret (*)(Params...)>(function)) {}
-
-  Ret operator()(Params... params) const {
-    return storage_.function(std::forward<Params>(params)...);
-  }
-
-  explicit operator bool() const {
-    return storage_.function;
-  }
+struct FunctionRefImpl<Ret(Params...)> {
+  using type = Ret (*)(Params...);
 };
-
+} // namespace internal
+template <typename Fn>
+using FunctionRef = typename internal::FunctionRefImpl<Fn>::type;
 } // namespace executor
 } // namespace torch
