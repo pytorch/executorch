@@ -431,7 +431,11 @@ class TestBackends(unittest.TestCase):
         model = SimpleModel()
         sample_inputs = (torch.rand(size=(2, 10), dtype=torch.float32),)
 
-        self.lower_module_and_test_output(model, sample_inputs)
+        self.lower_module_and_test_output(
+            model,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
 
     def test_vulkan_backend_partial_dynamic_shapes(self):
         class SimpleModel(torch.nn.Module):
@@ -465,7 +469,11 @@ class TestBackends(unittest.TestCase):
         ]
 
         self.lower_module_and_test_output(
-            model, sample_inputs, dynamic_shapes=dynamic_shapes, test_inputs=test_inputs
+            model,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
     def test_vulkan_backend_matmul(self):
@@ -480,7 +488,48 @@ class TestBackends(unittest.TestCase):
         module = MatMulModule()
         sample_inputs = (torch.ones(size=(31, 63), dtype=torch.float32),)
 
-        self.lower_module_and_test_output(module, sample_inputs)
+        self.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_bmm(self):
+        class BMMModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.randn(size=(4, 4, 5), dtype=torch.float32)
+
+            def forward(self, x):
+                return torch.bmm(x, self.weight)
+
+        module = BMMModule()
+        sample_inputs = (torch.randn(size=(4, 3, 4), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_baddbmm(self):
+        class BaddbmmModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.m = torch.randn(3, 3, 5)
+                self.weight = torch.randn(size=(3, 4, 5), dtype=torch.float32)
+
+            def forward(self, x):
+                return torch.baddbmm(self.m, x, self.weight, beta=1.0, alpha=2.0)
+
+        module = BaddbmmModule()
+        sample_inputs = (torch.randn(size=(3, 3, 4), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
 
     def test_vulkan_backend_sum_dim_list(self):
         class SumModule(torch.nn.Module):
