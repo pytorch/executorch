@@ -16,7 +16,7 @@ namespace native {
 namespace internal {
 
 Tensor& unary_ufunc_realhb_to_bool(
-    bool(*)(double) fn,
+    bool (*)(double) fn,
     RuntimeContext& ctx,
     const Tensor& in,
     Tensor& out) {

@@ -16,7 +16,7 @@ namespace native {
 namespace internal {
 
 Tensor& unary_ufunc_realh(
-    double(*)(double) fn,
+    double (*)(double) fn,
     RuntimeContext& ctx,
     const Tensor& in,
     Tensor& out) {

@@ -60,7 +60,7 @@ namespace internal {
  * the input tensor element-wise.
  */
 Tensor& unary_ufunc_realh(
-    double(*fn)(double),
+    double (*fn)(double),
     RuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
@@ -72,7 +72,7 @@ Tensor& unary_ufunc_realh(
  * operation which is applied to the input tensor element-wise.
  */
 Tensor& unary_ufunc_realhb_to_bool(
-    bool(*fn)(double),
+    bool (*fn)(double),
     RuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
@@ -84,7 +84,7 @@ Tensor& unary_ufunc_realhb_to_bool(
  * operation which is applied to the input tensor element-wise.
  */
 Tensor& unary_ufunc_realhb_to_floath(
-    double(*fn)(double),
+    double (*fn)(double),
     RuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
@@ -96,7 +96,7 @@ Tensor& unary_ufunc_realhb_to_floath(
  * binary logical operation which is applied to the input tensors element-wise.
  */
 Tensor& binary_ufunc_realb_realb_to_realb_logical(
-    bool(*fn)(bool, bool),
+    bool (*fn)(bool, bool),
     RuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,

@@ -35,7 +35,7 @@ struct Chain;
 template <typename T>
 class Span;
 class KernelRuntimeContext;
-using OpFunction = void(*)(KernelRuntimeContext&, EValue**);
+using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
 /// A list of pointers into the master values table that together compose the
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;
