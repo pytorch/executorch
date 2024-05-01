@@ -38,6 +38,7 @@ class OpWhereOutTest : public OperatorTest {
       return;
     }
     TensorFactory<ScalarType::Bool> tf_condition;
+    TensorFactory<ScalarType::Byte> tf_condition_byte;
     TensorFactory<DTYPE_A> tf_a;
     TensorFactory<DTYPE_B> tf_b;
     TensorFactory<DTYPE_OUT> tf_out;
@@ -48,19 +49,30 @@ class OpWhereOutTest : public OperatorTest {
     Tensor out = tf_out.zeros(sizes);
 
     // clang-format off
+    std::vector<uint8_t> condition_data = {
+      false, true, false, true, true, false,
+      false, true, false, true, true, false
+    };
+    const auto a_tensor = tf_a.make(sizes, /*data=*/{  1,  2,  3,  4,  5,  6,  6,  5,  4,  3,  2,  1});
+    const auto b_tensor = tf_b.make(sizes, /*data=*/{  6,  5,  4,  3,  2,  1,  1,  2,  3,  4,  5,  6});
+    // clang-format on
     op_where_self_out(
-        tf_condition.make(condition_sizes, /*data=*/{false, true, false, true, true, false,
-                                                     false, true, false, true, true, false}),
-        tf_a.make(sizes, /*data=*/{  1,  2,  3,  4,  5,  6,  6,  5,  4,  3,  2,  1}),
-        tf_b.make(sizes, /*data=*/{  6,  5,  4,  3,  2,  1,  1,  2,  3,  4,  5,  6}),
+        tf_condition.make(condition_sizes, /*data=*/condition_data),
+        a_tensor,
+        b_tensor,
         out);
 
+    auto expectedOut =
+        tf_out.make(sizes, /*data=*/{6, 2, 4, 4, 5, 1, 1, 5, 3, 3, 2, 6});
     // Check that it matches the expected output.
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf_out.make(
-            sizes, /*data=*/{  6,  2,  4,  4,  5,  1,  1,  5,  3,  3,  2,  6}));
-    // clang-format on
+    EXPECT_TENSOR_CLOSE(out, expectedOut);
+
+    op_where_self_out(
+        tf_condition_byte.make(condition_sizes, condition_data),
+        a_tensor,
+        b_tensor,
+        out);
+    EXPECT_TENSOR_CLOSE(out, expectedOut);
   }
 
   template <ScalarType DTYPE_A, ScalarType DTYPE_B>
