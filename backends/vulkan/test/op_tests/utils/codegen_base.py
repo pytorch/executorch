@@ -31,6 +31,7 @@ OPT_MEMORY_FORMAT = "::std::optional<at::MemoryFormat>"
 OPT_SCALAR_TYPE = "::std::optional<at::ScalarType>"
 TWO_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor>"
 THREE_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor,at::Tensor>"
+TENSOR_VECTOR = "::std::vector<at::Tensor>"
 
 ###########################
 ## Test Suite definition ##

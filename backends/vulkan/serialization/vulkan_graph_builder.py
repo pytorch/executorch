@@ -133,9 +133,9 @@ class VkGraphBuilder:
             new_id = self.create_tensor_value(spec, constant_id)
             self.node_to_value_ids[node] = new_id
             return new_id
-        elif isinstance(spec, tuple):
-            # Create a Value for each element in the tuple, wrap Values in a
-            # ValueList, and map the Node to the ValueList id.
+        elif isinstance(spec, list) or isinstance(spec, tuple):
+            # pyre-ignore[6]: pyre having hard time to infer Node type inside
+            # the container.
             new_id = self.create_value_list_value(spec)
             self.node_to_value_ids[node] = new_id
             return new_id
@@ -202,7 +202,7 @@ class VkGraphBuilder:
             )
         return new_id
 
-    def create_value_list_value(self, arg: List[Node] | tuple) -> int:
+    def create_value_list_value(self, arg: tuple | list) -> int:
         self.values.append(
             vk_graph_schema.VkValue(
                 vk_graph_schema.ValueList(
@@ -242,7 +242,6 @@ class VkGraphBuilder:
             # pyre-ignore[6]
             return self.create_scalar_list_value(arg)
         elif isinstance(arg, list) and isinstance(arg[0], Node):
-            # pyre-ignore[6]
             return self.create_value_list_value(arg)
         elif isinstance(arg, str):
             return self.create_string_value(arg)

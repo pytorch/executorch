@@ -4,6 +4,7 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 # Aten ops with portable kernel
 MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB = [
     "//executorch/kernels/portable:generated_lib",
+    "//executorch/kernels/quantized:generated_lib",
 ]
 
 PORTABLE_MODULE_DEPS = [
