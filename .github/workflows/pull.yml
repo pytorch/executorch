@@ -208,7 +208,7 @@ jobs:
 
         BUILD_TOOL=${{ matrix.build-tool }}
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_quantized_aot_lib.sh
+        PYTHON_EXECUTABLE=python bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" mv2
 
   test-pybind-build-linux:
     name: test-pybind-build-linux
