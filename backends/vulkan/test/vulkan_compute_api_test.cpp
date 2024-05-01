@@ -827,6 +827,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 }
 
 TEST(VulkanComputeGraphTest, test_large_graph) {
+  auto build_start_time = std::chrono::system_clock::now();
   GraphConfig config;
   ComputeGraph graph(config);
 
@@ -836,6 +837,9 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
 
   std::vector<int64_t> size_big = {input_c, input_h, input_w};
   std::vector<int64_t> size_small = {input_c, input_h, 1};
+
+  std::vector<int64_t> size_big_alt = {input_c / 2, input_h / 2, input_w / 2};
+  std::vector<int64_t> size_small_alt = {input_c / 2, input_h / 2, 1};
 
   // Build graph
 
@@ -862,11 +866,33 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
   graph.prepare();
   graph.encode_execute();
 
+  auto build_end_time = std::chrono::system_clock::now();
+
+  auto build_time = std::chrono::duration_cast<std::chrono::microseconds>(
+      build_end_time - build_start_time);
+
+  std::stringstream ss;
   for (int i = 0; i < 10; i++) {
+    auto resize_start_time = std::chrono::system_clock::now();
+    if (i % 2 == 0) {
+      graph.resize_input(0, size_big_alt);
+      graph.resize_input(1, size_small_alt);
+    } else {
+      graph.resize_input(0, size_big);
+      graph.resize_input(1, size_small);
+    }
+    graph.propagate_resize();
+    auto resize_end_time = std::chrono::system_clock::now();
+
+    auto resize_time = std::chrono::duration_cast<std::chrono::microseconds>(
+        resize_end_time - resize_start_time);
+
     float val_a = 1.0f;
     float val_b = 2.0f;
 
     float val_e = val_a + val_b * (2 * n + 1);
+
+    auto inference_start_time = std::chrono::system_clock::now();
 
     fill_vtensor(graph, a, val_a);
     fill_vtensor(graph, b, val_b);
@@ -875,10 +901,23 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
 
     EXTRACT_TENSOR(out);
 
+    auto inference_end_time = std::chrono::system_clock::now();
+
+    auto inference_time = std::chrono::duration_cast<std::chrono::microseconds>(
+        inference_end_time - inference_start_time);
+
     for (int i = 0; i < graph.get_tensor(out.value)->numel(); i++) {
       CHECK_VALUE(data_out, i, val_e);
     }
+
+    ss << "[          ] Resize:    " << std::setw(10) << std::right
+       << resize_time.count() << " us" << std::endl;
+    ss << "[          ] Inference: " << std::setw(10) << std::right
+       << inference_time.count() << " us" << std::endl;
   }
+  ss << "[          ] Model Load:" << std::setw(10) << std::right
+     << build_time.count() << " us" << std::endl;
+  std::cout << ss.str();
 }
 
 TEST(VulkanComputeGraphTest, test_etvk_copy_offset_node) {
