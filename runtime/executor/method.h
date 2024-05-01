@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/function_ref.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -32,8 +33,6 @@ class Program;
 // Forward declare internal types.
 class BackendDelegate;
 struct Chain;
-template <typename Fn>
-class FunctionRef;
 template <typename T>
 class Span;
 class KernelRuntimeContext;
