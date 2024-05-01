@@ -268,7 +268,6 @@ jobs:
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_PYBIND=ON \
-        EXECUTORCH_BUILD_XNNPACK=ON \
         EXECUTORCH_BUILD_ARM_BAREMETAL=ON \
         .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
 
