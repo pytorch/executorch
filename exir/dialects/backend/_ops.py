@@ -46,7 +46,7 @@ class BackendOpOverload(EdgeOpOverload):
 
     LoweredModule l_of_m = to_backend(g_of_m.to_edge(), ...)
     Module main(l_of_m)
-    exir.capture(main)
+    export(main, inputs)
 
     """
 
