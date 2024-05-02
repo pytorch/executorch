@@ -344,17 +344,16 @@ inline size_t elementSize(exec_aten::ScalarType t) {
 #undef CASE_ELEMENTSIZE_CASE
 }
 
-inline bool isIntegralType(exec_aten::ScalarType t, bool includeBool) {
-  bool isIntegral =
+inline constexpr bool isIntegralType(
+    exec_aten::ScalarType t,
+    bool includeBool) {
+  return (includeBool && t == exec_aten::ScalarType::Bool) ||
       (t == exec_aten::ScalarType::Byte || t == exec_aten::ScalarType::Char ||
        t == exec_aten::ScalarType::Int || t == exec_aten::ScalarType::Long ||
        t == exec_aten::ScalarType::Short);
-
-  return includeBool ? isIntegral || (t == exec_aten::ScalarType::Bool)
-                     : isIntegral;
 }
 
-inline bool isFloatingType(exec_aten::ScalarType t) {
+inline constexpr bool isFloatingType(exec_aten::ScalarType t) {
   return (
       t == exec_aten::ScalarType::Double || t == exec_aten::ScalarType::Float ||
       t == exec_aten::ScalarType::Half || t == exec_aten::ScalarType::BFloat16);
@@ -380,21 +379,26 @@ inline bool isRealHBType(exec_aten::ScalarType t) {
   return (isRealHType(t) || t == exec_aten::ScalarType::Bool);
 }
 
-inline bool isComplexType(exec_aten::ScalarType t) {
+inline constexpr bool isComplexType(exec_aten::ScalarType t) {
   return (
       t == exec_aten::ScalarType::ComplexHalf ||
       t == exec_aten::ScalarType::ComplexFloat ||
       t == exec_aten::ScalarType::ComplexDouble);
 }
 
-inline bool isBitsType(exec_aten::ScalarType t) {
+constexpr bool isBitsType(exec_aten::ScalarType t) {
   return t == exec_aten::ScalarType::Bits1x8 ||
       t == exec_aten::ScalarType::Bits2x4 ||
       t == exec_aten::ScalarType::Bits4x2 ||
       t == exec_aten::ScalarType::Bits8 || t == exec_aten::ScalarType::Bits16;
 }
 
-inline bool isQIntType(exec_aten::ScalarType t) {
+template <typename T>
+struct is_bits_type
+    : std::integral_constant<bool, isBitsType(CppTypeToScalarType<T>::value)> {
+};
+
+constexpr bool isQIntType(exec_aten::ScalarType t) {
   // Don't forget to extend this when adding new QInt types
   return t == exec_aten::ScalarType::QInt8 ||
       t == exec_aten::ScalarType::QUInt8 ||
@@ -402,6 +406,11 @@ inline bool isQIntType(exec_aten::ScalarType t) {
       t == exec_aten::ScalarType::QUInt4x2 ||
       t == exec_aten::ScalarType::QUInt2x4;
 }
+
+template <typename T>
+struct is_qint_type
+    : std::integral_constant<bool, isQIntType(CppTypeToScalarType<T>::value)> {
+};
 
 inline exec_aten::ScalarType toQIntType(exec_aten::ScalarType t) {
   switch (t) {
@@ -502,28 +511,26 @@ inline exec_aten::ScalarType toComplexType(exec_aten::ScalarType t) {
 /**
  * Encodes type casting rules that are consistent with ATen behaviour.
  */
-inline bool canCast(
+inline constexpr bool canCast(
     const exec_aten::ScalarType from,
     const exec_aten::ScalarType to) {
   // Disallow complex -> non-complex
-  if (torch::executor::isComplexType(from) &&
-      !torch::executor::isComplexType(to)) {
-    return false;
-  }
-  // Disallow float -> integral
-  if (torch::executor::isFloatingType(from) &&
-      torch::executor::isIntegralType(to, /*includeBool*/ false)) {
-    return false;
-  }
-
-  // Treat bool as a special category. Disallow non-bool -> bool
-  if (from != exec_aten::ScalarType::Bool &&
-      to == exec_aten::ScalarType::Bool) {
-    return false;
-  }
-
-  return true;
+  return !(torch::executor::isComplexType(from) &&
+           !torch::executor::isComplexType(to)) &&
+      // Disallow float -> integral
+      !(torch::executor::isFloatingType(from) &&
+        torch::executor::isIntegralType(to, /*includeBool*/ false)) &&
+      // Treat bool as a special category. Disallow non-bool -> bool
+      !(from != exec_aten::ScalarType::Bool &&
+        to == exec_aten::ScalarType::Bool);
 }
+
+template <typename T1, typename T2>
+struct can_cast : std::integral_constant<
+                      bool,
+                      canCast(
+                          CppTypeToScalarType<T1>::value,
+                          CppTypeToScalarType<T2>::value)> {};
 
 /**
  * When casting from floating point to integral type, if the floating value is
@@ -549,6 +556,225 @@ template <
 To convert(From val) {
   return static_cast<To>(val);
 }
+
+namespace internal {
+template <typename T1, typename T2>
+struct promote_types_lookup;
+
+template <typename T1>
+struct promote_types_lookup<T1, T1> {
+  using type = T1;
+};
+
+using U1 = typename ScalarTypeToCppType<exec_aten::ScalarType::Byte>::type;
+using I1 = typename ScalarTypeToCppType<exec_aten::ScalarType::Char>::type;
+using I2 = typename ScalarTypeToCppType<exec_aten::ScalarType::Short>::type;
+using I4 = typename ScalarTypeToCppType<exec_aten::ScalarType::Int>::type;
+using I8 = typename ScalarTypeToCppType<exec_aten::ScalarType::Long>::type;
+using F2 = typename ScalarTypeToCppType<exec_aten::ScalarType::Half>::type;
+using F4 = typename ScalarTypeToCppType<exec_aten::ScalarType::Float>::type;
+using F8 = typename ScalarTypeToCppType<exec_aten::ScalarType::Double>::type;
+using C2 =
+    typename ScalarTypeToCppType<exec_aten::ScalarType::ComplexHalf>::type;
+using C4 =
+    typename ScalarTypeToCppType<exec_aten::ScalarType::ComplexFloat>::type;
+using C8 =
+    typename ScalarTypeToCppType<exec_aten::ScalarType::ComplexDouble>::type;
+using B1 = typename ScalarTypeToCppType<exec_aten::ScalarType::Bool>::type;
+
+#define TABLE_ENTRY(key1, key2, value)      \
+  template <>                               \
+  struct promote_types_lookup<key1, key2> { \
+    using type = value;                     \
+  }
+
+/* promote_types_lookup is a compile-time-accessible version of the
+ * table in promoteTypes below; we cannot make promoteTypes constexpr
+ * and use it directly because we are on C++11 and thus don't have
+ * C++17 relaxed constexpr. The below series of entries is generated
+ * by genScalarTypeTable.py. */
+TABLE_ENTRY(U1, U1, U1);
+TABLE_ENTRY(U1, I1, I2);
+TABLE_ENTRY(U1, I2, I2);
+TABLE_ENTRY(U1, I4, I4);
+TABLE_ENTRY(U1, I8, I8);
+TABLE_ENTRY(U1, F2, F2);
+TABLE_ENTRY(U1, F4, F4);
+TABLE_ENTRY(U1, F8, F8);
+TABLE_ENTRY(U1, C2, C2);
+TABLE_ENTRY(U1, C4, C4);
+TABLE_ENTRY(U1, C8, C8);
+TABLE_ENTRY(U1, B1, U1);
+TABLE_ENTRY(I1, U1, I2);
+TABLE_ENTRY(I1, I1, I1);
+TABLE_ENTRY(I1, I2, I2);
+TABLE_ENTRY(I1, I4, I4);
+TABLE_ENTRY(I1, I8, I8);
+TABLE_ENTRY(I1, F2, F2);
+TABLE_ENTRY(I1, F4, F4);
+TABLE_ENTRY(I1, F8, F8);
+TABLE_ENTRY(I1, C2, C2);
+TABLE_ENTRY(I1, C4, C4);
+TABLE_ENTRY(I1, C8, C8);
+TABLE_ENTRY(I1, B1, I1);
+TABLE_ENTRY(I2, U1, I2);
+TABLE_ENTRY(I2, I1, I2);
+TABLE_ENTRY(I2, I2, I2);
+TABLE_ENTRY(I2, I4, I4);
+TABLE_ENTRY(I2, I8, I8);
+TABLE_ENTRY(I2, F2, F2);
+TABLE_ENTRY(I2, F4, F4);
+TABLE_ENTRY(I2, F8, F8);
+TABLE_ENTRY(I2, C2, C2);
+TABLE_ENTRY(I2, C4, C4);
+TABLE_ENTRY(I2, C8, C8);
+TABLE_ENTRY(I2, B1, I2);
+TABLE_ENTRY(I4, U1, I4);
+TABLE_ENTRY(I4, I1, I4);
+TABLE_ENTRY(I4, I2, I4);
+TABLE_ENTRY(I4, I4, I4);
+TABLE_ENTRY(I4, I8, I8);
+TABLE_ENTRY(I4, F2, F2);
+TABLE_ENTRY(I4, F4, F4);
+TABLE_ENTRY(I4, F8, F8);
+TABLE_ENTRY(I4, C2, C2);
+TABLE_ENTRY(I4, C4, C4);
+TABLE_ENTRY(I4, C8, C8);
+TABLE_ENTRY(I4, B1, I4);
+TABLE_ENTRY(I8, U1, I8);
+TABLE_ENTRY(I8, I1, I8);
+TABLE_ENTRY(I8, I2, I8);
+TABLE_ENTRY(I8, I4, I8);
+TABLE_ENTRY(I8, I8, I8);
+TABLE_ENTRY(I8, F2, F2);
+TABLE_ENTRY(I8, F4, F4);
+TABLE_ENTRY(I8, F8, F8);
+TABLE_ENTRY(I8, C2, C2);
+TABLE_ENTRY(I8, C4, C4);
+TABLE_ENTRY(I8, C8, C8);
+TABLE_ENTRY(I8, B1, I8);
+TABLE_ENTRY(F2, U1, F2);
+TABLE_ENTRY(F2, I1, F2);
+TABLE_ENTRY(F2, I2, F2);
+TABLE_ENTRY(F2, I4, F2);
+TABLE_ENTRY(F2, I8, F2);
+TABLE_ENTRY(F2, F2, F2);
+TABLE_ENTRY(F2, F4, F4);
+TABLE_ENTRY(F2, F8, F8);
+TABLE_ENTRY(F2, C2, C2);
+TABLE_ENTRY(F2, C4, C4);
+TABLE_ENTRY(F2, C8, C8);
+TABLE_ENTRY(F2, B1, F2);
+TABLE_ENTRY(F4, U1, F4);
+TABLE_ENTRY(F4, I1, F4);
+TABLE_ENTRY(F4, I2, F4);
+TABLE_ENTRY(F4, I4, F4);
+TABLE_ENTRY(F4, I8, F4);
+TABLE_ENTRY(F4, F2, F4);
+TABLE_ENTRY(F4, F4, F4);
+TABLE_ENTRY(F4, F8, F8);
+TABLE_ENTRY(F4, C2, C4);
+TABLE_ENTRY(F4, C4, C4);
+TABLE_ENTRY(F4, C8, C8);
+TABLE_ENTRY(F4, B1, F4);
+TABLE_ENTRY(F8, U1, F8);
+TABLE_ENTRY(F8, I1, F8);
+TABLE_ENTRY(F8, I2, F8);
+TABLE_ENTRY(F8, I4, F8);
+TABLE_ENTRY(F8, I8, F8);
+TABLE_ENTRY(F8, F2, F8);
+TABLE_ENTRY(F8, F4, F8);
+TABLE_ENTRY(F8, F8, F8);
+TABLE_ENTRY(F8, C2, C8);
+TABLE_ENTRY(F8, C4, C8);
+TABLE_ENTRY(F8, C8, C8);
+TABLE_ENTRY(F8, B1, F8);
+TABLE_ENTRY(C2, U1, C2);
+TABLE_ENTRY(C2, I1, C2);
+TABLE_ENTRY(C2, I2, C2);
+TABLE_ENTRY(C2, I4, C2);
+TABLE_ENTRY(C2, I8, C2);
+TABLE_ENTRY(C2, F2, C2);
+TABLE_ENTRY(C2, F4, C4);
+TABLE_ENTRY(C2, F8, C8);
+TABLE_ENTRY(C2, C2, C2);
+TABLE_ENTRY(C2, C4, C4);
+TABLE_ENTRY(C2, C8, C8);
+TABLE_ENTRY(C2, B1, C2);
+TABLE_ENTRY(C4, U1, C4);
+TABLE_ENTRY(C4, I1, C4);
+TABLE_ENTRY(C4, I2, C4);
+TABLE_ENTRY(C4, I4, C4);
+TABLE_ENTRY(C4, I8, C4);
+TABLE_ENTRY(C4, F2, C4);
+TABLE_ENTRY(C4, F4, C4);
+TABLE_ENTRY(C4, F8, C8);
+TABLE_ENTRY(C4, C2, C4);
+TABLE_ENTRY(C4, C4, C4);
+TABLE_ENTRY(C4, C8, C8);
+TABLE_ENTRY(C4, B1, C4);
+TABLE_ENTRY(C8, U1, C8);
+TABLE_ENTRY(C8, I1, C8);
+TABLE_ENTRY(C8, I2, C8);
+TABLE_ENTRY(C8, I4, C8);
+TABLE_ENTRY(C8, I8, C8);
+TABLE_ENTRY(C8, F2, C8);
+TABLE_ENTRY(C8, F4, C8);
+TABLE_ENTRY(C8, F8, C8);
+TABLE_ENTRY(C8, C2, C8);
+TABLE_ENTRY(C8, C4, C8);
+TABLE_ENTRY(C8, C8, C8);
+TABLE_ENTRY(C8, B1, C8);
+TABLE_ENTRY(B1, U1, U1);
+TABLE_ENTRY(B1, I1, I1);
+TABLE_ENTRY(B1, I2, I2);
+TABLE_ENTRY(B1, I4, I4);
+TABLE_ENTRY(B1, I8, I8);
+TABLE_ENTRY(B1, F2, F2);
+TABLE_ENTRY(B1, F4, F4);
+TABLE_ENTRY(B1, F8, F8);
+TABLE_ENTRY(B1, C2, C2);
+TABLE_ENTRY(B1, C4, C4);
+TABLE_ENTRY(B1, C8, C8);
+TABLE_ENTRY(B1, B1, B1);
+
+} // namespace internal
+
+template <typename T1, typename T2, bool half_to_float = false>
+struct promote_types {
+ private:
+  static_assert(
+      std::is_same<T1, T2>::value ||
+          (!is_qint_type<T1>::value && !is_qint_type<T2>::value),
+      "promote_types not valid for quantized dtypes");
+  static_assert(
+      std::is_same<T1, T2>::value ||
+          (!is_bits_type<T1>::value && !is_bits_type<T2>::value),
+      "promote_types not valid for bits dtypes");
+
+  static_assert(
+      !std::is_same<
+          T1,
+          typename ScalarTypeToCppType<exec_aten::ScalarType::BFloat16>::type>::
+              value &&
+          !std::is_same<
+              T2,
+              typename ScalarTypeToCppType<
+                  exec_aten::ScalarType::BFloat16>::type>::value,
+      "promote_types not valid for BFloat16");
+  using promoted_type_not_respecting_half_to_float =
+      typename internal::promote_types_lookup<T1, T2>::type;
+
+ public:
+  using type = typename std::conditional<
+      half_to_float &&
+          std::is_same<
+              promoted_type_not_respecting_half_to_float,
+              typename ScalarTypeToCppType<exec_aten::ScalarType::Half>::type>::
+              value,
+      typename ScalarTypeToCppType<exec_aten::ScalarType::Float>::type,
+      promoted_type_not_respecting_half_to_float>::type;
+};
 
 /**
  * Implements type promotion rules that are consistent with ATen behaviour,
@@ -589,6 +815,10 @@ inline exec_aten::ScalarType promoteTypes(
     ET_CHECK_MSG(false, "promoteTypes not valid for bits dtypes");
   }
 
+  ET_CHECK_MSG(
+      a != exec_aten::ScalarType::BFloat16 &&
+          b != exec_aten::ScalarType::BFloat16,
+      "promoteTypes not valid for BFloat16");
   // 12 types are handled by this function, see the constexpr definitions above
   const int NUM_PROMOTE_TYPES = 12;
 
