@@ -16,8 +16,8 @@
 namespace torch {
 namespace executor {
 namespace native {
-
 namespace {
+
 template <
     bool can_cast,
     typename CTYPE_A,
@@ -65,6 +65,7 @@ struct AddInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
     : public ReportCanCastBug<CTYPE_IN> {};
 
 } // namespace
+
 Tensor& add_out(
     RuntimeContext& ctx,
     const Tensor& a,
@@ -139,7 +140,8 @@ Tensor& add_scalar_out(
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
-  ET_KERNEL_CHECK(ctx, canCast(alpha_type, common_type), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
 
   if (common_type == ScalarType::Half) {
     common_type = ScalarType::Float;
@@ -149,25 +151,33 @@ Tensor& add_scalar_out(
 
   ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      ET_SWITCH_REALB_TYPES(common_type, ctx, name, CTYPE_IN, [&]() {
-        // common_type == out_type, checked above.
-        using CTYPE_OUT = CTYPE_IN;
-        CTYPE_B b_val;
-        utils::extract_scalar(b, &b_val);
-        CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-        CTYPE_IN alpha_val;
-        utils::extract_scalar(alpha, &alpha_val);
+      using CTYPE_IN = typename utils::promote_type_with_scalar_type<
+          CTYPE_A,
+          CTYPE_B,
+          /*half_to_float*/ true>::type;
+      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
 
-        apply_unary_map_fn(
-            [b_casted, alpha_val](const CTYPE_A val_a) {
-              CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-              CTYPE_IN value = a_casted + alpha_val * b_casted;
-              return static_cast<CTYPE_OUT>(value);
-            },
-            a.const_data_ptr<CTYPE_A>(),
-            out.mutable_data_ptr<CTYPE_OUT>(),
-            out.numel());
-      });
+      CTYPE_B b_val;
+      utils::extract_scalar(b, &b_val);
+      CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+
+      CTYPE_IN alpha_val;
+      utils::extract_scalar(alpha, &alpha_val);
+
+      using CTYPE_OUT = typename std::conditional<
+          std::is_same<CTYPE_A, internal::F2>::value,
+          internal::F2,
+          CTYPE_IN>::type;
+
+      apply_unary_map_fn(
+          [b_casted, alpha_val](const CTYPE_A val_a) {
+            CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+            CTYPE_IN value = a_casted + alpha_val * b_casted;
+            return static_cast<CTYPE_OUT>(value);
+          },
+          a.const_data_ptr<CTYPE_A>(),
+          out.mutable_data_ptr<CTYPE_OUT>(),
+          out.numel());
     });
   });
 
