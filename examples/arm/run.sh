@@ -54,12 +54,36 @@ function generate_pte_file() {
     pte_file=$(realpath ${model_filename})
     rm -f "${pte_file}"
 
-    SO_LIB=$(buck2 build //kernels/quantized:aot_lib --show-output | grep "buck-out" | cut -d" " -f2)
+    # We are using the aot_lib from build_quantization_aot_lib below
+    SO_LIB=$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.so)
 
     python3 -m examples.arm.aot_arm_compiler --model_name="${model}" ${delegate} --so_library="$SO_LIB" 1>&2
     [[ -f ${pte_file} ]] || { echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "${pte_file}"
 }
+
+# Build .so library to register quant ops with AoT flow
+function build_quantization_aot_lib()
+{
+    SITE_PACKAGES="$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+    CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
+
+    cd $et_root_dir
+    mkdir -p cmake-out-aot-lib
+    cmake -DBUCK2=${buck2} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_XNNPACK=OFF \
+        -DEXECUTORCH_BUILD_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_QUANTIZED_OPS_AOT=ON \
+        -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+        -DPYTHON_EXECUTABLE=python3 \
+	-Bcmake-out-aot-lib \
+        "${et_root_dir}"
+
+    n=$(nproc)
+    cmake --build cmake-out-aot-lib -j"$((n - 5))" -- quantized_ops_aot_lib
+}
+
 
 # build ExecuTorch Libraries
 function build_executorch() {
@@ -173,6 +197,7 @@ type ${buck2} 2>&1 > /dev/null \
 
 # build executorch libraries
 build_executorch
+build_quantization_aot_lib
 
 # the test models run, and whether to delegate
 test_model=( "softmax" "add" "add3" "mv2" )
