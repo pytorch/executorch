@@ -92,8 +92,7 @@ if(EXECUTORCH_USE_TIKTOKEN)
   # find RE2 for tokenizer
   set(ABSL_ENABLE_INSTALL ON)
   set(ABSL_PROPAGATE_CXX_STD ON)
-  set(_pic_flag
-    ${CMAKE_POSITION_INDEPENDENT_CODE})
+  set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
@@ -167,6 +166,19 @@ endif()
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
   target_link_options_shared_lib(qnn_executorch_backend)
+endif()
+
+# MPS backend
+if(TARGET mpsdelegate)
+  list(
+    APPEND
+    link_libraries
+    mpsdelegate
+    "-framework Foundation"
+    "-weak_framework MetalPerformanceShaders"
+    "-weak_framework MetalPerformanceShadersGraph"
+    "-weak_framework Metal")
+  target_link_options_shared_lib(mpsdelegate)
 endif()
 
 # This one is needed for cpuinfo where it uses android specific log lib
