@@ -105,9 +105,12 @@ $PIP_EXECUTABLE install --extra-index-url "${TORCH_NIGHTLY_URL}" \
 
 #
 # Install executorch pip package. This also makes `flatc` available on the path.
+# The --extra-index-url may be necessary if pyproject.toml has a dependency on a
+# pre-release or nightly version of a torch package.
 #
 
 EXECUTORCH_BUILD_PYBIND="${EXECUTORCH_BUILD_PYBIND}" \
     CMAKE_ARGS="${CMAKE_ARGS}" \
     CMAKE_BUILD_ARGS="${CMAKE_BUILD_ARGS}" \
-    $PIP_EXECUTABLE install . --no-build-isolation -v
+    $PIP_EXECUTABLE install . --no-build-isolation -v \
+        --extra-index-url "${TORCH_URL}"
