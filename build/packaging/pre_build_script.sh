@@ -17,7 +17,7 @@ readonly BUILD_DEPS=(
   # This list must match the build-system.requires list from pyproject.toml.
   "cmake"
   "pyyaml"
-  "setuptools"
+  "setuptools>=63"
   "tomli"
   "wheel"
   "zstd"
