@@ -213,6 +213,12 @@ function(resolve_buck2)
           PARENT_SCOPE)
     endif()
   endif()
+
+  # The buck2 daemon can get stuck. Killing it can help.
+  message(STATUS "Killing buck2 daemon")
+  execute_process(
+    COMMAND "${BUCK2} kill"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endfunction()
 
 # Sets the value of the PYTHON_EXECUTABLE variable to 'python' if in an active
