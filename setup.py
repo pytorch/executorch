@@ -85,11 +85,6 @@ class ShouldBuild:
 
     @classmethod
     @property
-    def xnnpack(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_XNNPACK", default=False)
-
-    @classmethod
-    @property
     def llama_custom_ops(cls) -> bool:
         return cls._is_env_enabled("EXECUTORCH_BUILD_CUSTOM_OPS_AOT", default=True)
 
@@ -384,13 +379,9 @@ class CustomBuild(build):
                 "-DEXECUTORCH_BUILD_QUANTIZED=ON",  # add quantized ops to pybindings.
             ]
             build_args += ["--target", "portable_lib"]
-            if ShouldBuild.xnnpack:
-                cmake_args += [
-                    "-DEXECUTORCH_BUILD_XNNPACK=ON",
-                ]
-                # No target needed; the cmake arg will link xnnpack
-                # into the portable_lib target.
-            # TODO(dbort): Add MPS/CoreML backends when building on macos.
+            # To link backends into the portable_lib target, callers should
+            # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
+            # environment variable.
 
         if ShouldBuild.llama_custom_ops:
             cmake_args += [
