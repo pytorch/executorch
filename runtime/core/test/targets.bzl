@@ -26,16 +26,6 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "function_ref_test",
-        srcs = [
-            "function_ref_test.cpp",
-        ],
-        deps = [
-            "//executorch/runtime/core:core",
-        ],
-    )
-
-    runtime.cxx_test(
         name = "event_tracer_test",
         srcs = [
             "event_tracer_test.cpp",
