@@ -32,12 +32,10 @@ class Program;
 // Forward declare internal types.
 class BackendDelegate;
 struct Chain;
-template <typename Fn>
-class FunctionRef;
 template <typename T>
 class Span;
 class KernelRuntimeContext;
-using OpFunction = FunctionRef<void(KernelRuntimeContext&, EValue**)>;
+using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
 /// A list of pointers into the master values table that together compose the
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;

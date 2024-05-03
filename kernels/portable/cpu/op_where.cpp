@@ -37,24 +37,24 @@ Tensor& where_out(
 
   constexpr auto name = "where.self_out";
 
-  ET_SWITCH_TWO_TYPES(Bool, Byte, cond_type, ctx, name, CTYPE_COND, [&]() {
-    ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
-      ET_SWITCH_REALHB_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-        ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-          apply_ternary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_COND, CTYPE_OUT>(
-              [](const CTYPE_A val_a,
-                 const CTYPE_B val_b,
-                 const CTYPE_COND val_c) {
-                CTYPE_OUT a_casted = static_cast<CTYPE_OUT>(val_a);
-                CTYPE_OUT b_casted = static_cast<CTYPE_OUT>(val_b);
-                return val_c ? a_casted : b_casted;
-              },
-              a,
-              b,
-              cond,
-              out);
-        });
-      });
+  ET_CHECK_MSG(
+      cond_type == ScalarType::Bool || cond_type == ScalarType::Byte,
+      "Unhandled dtype %s for where.self_out",
+      torch::executor::toString(cond_type));
+  ET_SWITCH_REALHB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
+    ET_SWITCH_REALHB_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
+      using CTYPE_OUT =
+          typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
+      apply_ternary_elementwise_fn<CTYPE_A, CTYPE_B, uint8_t, CTYPE_OUT>(
+          [](const CTYPE_A val_a, const CTYPE_B val_b, const uint8_t val_c) {
+            CTYPE_OUT a_casted = static_cast<CTYPE_OUT>(val_a);
+            CTYPE_OUT b_casted = static_cast<CTYPE_OUT>(val_b);
+            return val_c ? a_casted : b_casted;
+          },
+          a,
+          b,
+          cond,
+          out);
     });
   });
 

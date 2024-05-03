@@ -8,7 +8,7 @@
 #
 # This file should be formatted with
 # ~~~
-# cmake-format --first-comment-is-literal=True -i ATenVulkan.cmake
+# cmake-format -i ATenVulkan.cmake
 # ~~~
 # It should also be cmake-lint clean.
 #
@@ -20,12 +20,14 @@ if(ANDROID)
   endif()
 
   set(GLSLC_PATH
-      "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}/glslc")
+      "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}/glslc"
+  )
 else()
   find_program(
     GLSLC_PATH glslc
     PATHS ENV VULKAN_SDK "$ENV{VULKAN_SDK}/${CMAKE_HOST_SYSTEM_PROCESSOR}/bin"
-          "$ENV{VULKAN_SDK}/bin")
+          "$ENV{VULKAN_SDK}/bin"
+  )
 
   if(NOT GLSLC_PATH)
     message(FATAL_ERROR "USE_VULKAN glslc not found")
@@ -50,7 +52,8 @@ macro(VULKAN_SHADER_LIBRARY shaders_path library_name)
       ${shaders_path} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
       --glslc-path=${GLSLC_PATH} --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH}
       --env ${VULKAN_GEN_ARG_ENV}
-    RESULT_VARIABLE error_code)
+    RESULT_VARIABLE error_code
+  )
   set(ENV{PYTHONPATH} ${PYTHONPATH})
 
   set(generated_spv_cpp ${VULKAN_SHADERGEN_OUT_PATH}/spv.cpp)

@@ -6,7 +6,7 @@
 
 # Flatbuffer schema header lib. Please this file formatted by running:
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 
 if(NOT FLATC_EXECUTABLE)
@@ -26,7 +26,8 @@ function(generate_program_schema _schema_srcs _schema_name)
   foreach(fbs_file ${_schema_srcs})
     string(REGEX REPLACE "[.]fbs$" "_generated.h" generated "${fbs_file}")
     list(APPEND _schema_outputs
-         "${_program_schema__include_dir}/executorch/${generated}")
+         "${_program_schema__include_dir}/executorch/${generated}"
+    )
   endforeach()
 
   # Generate the headers from the .fbs files.
@@ -38,14 +39,16 @@ function(generate_program_schema _schema_srcs _schema_name)
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     DEPENDS ${FLATC_EXECUTABLE} ${_schema_srcs}
     COMMENT "Generating ${_schema_name} headers"
-    VERBATIM)
+    VERBATIM
+  )
 
   add_library(${_schema_name} INTERFACE ${_schema_outputs})
   set_target_properties(${_schema_name} PROPERTIES LINKER_LANGUAGE CXX)
   target_include_directories(
     ${_schema_name}
     INTERFACE ${_program_schema__include_dir}
-              ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
+              ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+  )
 endfunction()
 
 # Generate common schema

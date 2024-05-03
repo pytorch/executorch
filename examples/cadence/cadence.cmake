@@ -9,7 +9,8 @@ set(XTENSA_TOOLCHAIN_PATH $ENV{XTENSA_TOOLCHAIN})
 if(NOT EXISTS ${XTENSA_TOOLCHAIN_PATH})
   message(
     FATAL_ERROR
-      "Nothing found at XTENSA_TOOLCHAIN_PATH: '${XTENSA_TOOLCHAIN_PATH}'")
+      "Nothing found at XTENSA_TOOLCHAIN_PATH: '${XTENSA_TOOLCHAIN_PATH}'"
+  )
 endif()
 
 set(TOOLCHAIN_HOME ${XTENSA_TOOLCHAIN_PATH}/$ENV{TOOLCHAIN_VER}/XtensaTools)
@@ -29,7 +30,8 @@ list(APPEND TOOLCHAIN_C_FLAGS -fms-extensions)
 
 set(TOOLCHAIN_HAS_NEWLIB
     OFF
-    CACHE BOOL "True if toolchain supports newlib")
+    CACHE BOOL "True if toolchain supports newlib"
+)
 
 set(COMPILER xt-clang)
 # set(CC clang) set(C++ clang++)

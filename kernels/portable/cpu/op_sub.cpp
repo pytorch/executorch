@@ -16,8 +16,8 @@
 namespace torch {
 namespace executor {
 namespace native {
-
 namespace {
+
 template <
     bool can_cast,
     typename CTYPE_A,
@@ -149,25 +149,33 @@ Tensor& sub_scalar_out(
 
   ET_SWITCH_REALH_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_REAL_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES(common_type, ctx, name, CTYPE_IN, [&]() {
-        ET_SWITCH_REALH_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-          CTYPE_B b_val;
-          utils::extract_scalar(b, &b_val);
-          CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-          CTYPE_IN alpha_val;
-          utils::extract_scalar(alpha, &alpha_val);
+      using CTYPE_IN = typename utils::promote_type_with_scalar_type<
+          CTYPE_A,
+          CTYPE_B,
+          /*half_to_float*/ true>::type;
+      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
 
-          apply_unary_map_fn(
-              [b_casted, alpha_val](const CTYPE_A val_a) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN value = a_casted - alpha_val * b_casted;
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a.const_data_ptr<CTYPE_A>(),
-              out.mutable_data_ptr<CTYPE_OUT>(),
-              out.numel());
-        });
-      });
+      CTYPE_B b_val;
+      utils::extract_scalar(b, &b_val);
+      CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+
+      CTYPE_IN alpha_val;
+      utils::extract_scalar(alpha, &alpha_val);
+
+      using CTYPE_OUT = typename std::conditional<
+          std::is_same<CTYPE_A, internal::F2>::value,
+          internal::F2,
+          CTYPE_IN>::type;
+
+      apply_unary_map_fn(
+          [b_casted, alpha_val](const CTYPE_A val_a) {
+            CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+            CTYPE_IN value = a_casted - alpha_val * b_casted;
+            return static_cast<CTYPE_OUT>(value);
+          },
+          a.const_data_ptr<CTYPE_A>(),
+          out.mutable_data_ptr<CTYPE_OUT>(),
+          out.numel());
     });
   });
 
