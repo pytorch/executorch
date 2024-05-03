@@ -29,14 +29,14 @@ include(CMakeDependentOption)
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
+  "NOT EXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL" OFF
 )
 #
 # cpuinfo: build cpuinfo library. Disable on unsupported platforms
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
+  "NOT EXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL" OFF
 )
 
 if(NOT PYTHON_EXECUTABLE)

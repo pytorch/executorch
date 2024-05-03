@@ -19,7 +19,7 @@ cmake_install_executorch_sdk_lib() {
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_SDK=ON \
-          -DEXECUTORCH_BUILD_MPS=ON \
+          -DEXECUTORCH_BUILD_BACKEND_MPS=ON \
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .

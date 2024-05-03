@@ -14,8 +14,8 @@
 # it again until you pull from the upstream repo again.
 #
 # NOTE: Build options can be configured by passing arguments to cmake. For
-# example, to enable the EXECUTORCH_BUILD_XNNPACK option, change the cmake
-# command to 'cmake -DEXECUTORCH_BUILD_XNNPACK=ON ..'.
+# example, to enable the EXECUTORCH_BUILD_BACKEND_XNNPACK option, change the
+# cmake command to 'cmake -DEXECUTORCH_BUILD_BACKEND_XNNPACK=ON ..'.
 #[[
   (rm -rf cmake-out \
     && mkdir cmake-out \
@@ -143,17 +143,19 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
 
-option(EXECUTORCH_BUILD_ARM_BAREMETAL
+option(EXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL
        "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF
 )
 
-option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
+option(EXECUTORCH_BUILD_BACKEND_COREML "Build the Core ML backend" OFF)
 
-option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
+option(EXECUTORCH_BUILD_BACKEND_MPS "Build the MPS backend" OFF)
 
-option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
-       OFF
-)
+option(EXECUTORCH_BUILD_BACKEND_QNN "Build the Qualcomm backend" OFF)
+
+option(EXECUTORCH_BUILD_BACKEND_XNNPACK "Build the XNNPACK backend" OFF)
+
+option(EXECUTORCH_BUILD_BACKEND_VULKAN "Build the Vulkan backend" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF
@@ -167,30 +169,28 @@ option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
 
 option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
 
-option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
+option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
 
-option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
-
-option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
+option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
+       OFF
+)
 
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
 option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
+option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
+
 option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
 
 option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
-
-option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
-
-option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
 
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
+  "NOT EXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL" OFF
 )
 
 #
@@ -198,7 +198,7 @@ cmake_dependent_option(
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
+  "NOT EXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL" OFF
 )
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
@@ -542,27 +542,27 @@ if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
 endif()
 
-if(EXECUTORCH_BUILD_XNNPACK)
+if(EXECUTORCH_BUILD_BACKEND_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 endif()
 
-if(EXECUTORCH_BUILD_VULKAN)
+if(EXECUTORCH_BUILD_BACKEND_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
 
-if(EXECUTORCH_BUILD_QNN)
+if(EXECUTORCH_BUILD_BACKEND_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
 endif()
 
-if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+if(EXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
 endif()
 
-if(EXECUTORCH_BUILD_MPS)
+if(EXECUTORCH_BUILD_BACKEND_MPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
 endif()
 
-if(EXECUTORCH_BUILD_COREML)
+if(EXECUTORCH_BUILD_BACKEND_COREML)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
 endif()
 
@@ -594,15 +594,15 @@ if(EXECUTORCH_BUILD_PYBIND)
       torch
   )
 
-  if(EXECUTORCH_BUILD_COREML)
+  if(EXECUTORCH_BUILD_BACKEND_COREML)
     list(APPEND _dep_libs coremldelegate)
   endif()
 
-  if(EXECUTORCH_BUILD_MPS)
+  if(EXECUTORCH_BUILD_BACKEND_MPS)
     list(APPEND _dep_libs mpsdelegate)
   endif()
 
-  if(EXECUTORCH_BUILD_XNNPACK)
+  if(EXECUTORCH_BUILD_BACKEND_XNNPACK)
     # need to explicitly specify XNNPACK here otherwise uses XNNPACK symbols
     # from libtorch_cpu
     list(APPEND _dep_libs xnnpack_backend XNNPACK)

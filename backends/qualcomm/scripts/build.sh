@@ -69,7 +69,7 @@ if [ "$BUILD_AARCH64" = true ]; then
     # If we build debug type, we need to change flatcc to flatcc_d
     cmake .. \
         -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
-        -DEXECUTORCH_BUILD_QNN=ON \
+        -DEXECUTORCH_BUILD_BACKEND_QNN=ON \
         -DEXECUTORCH_BUILD_SDK=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
@@ -108,7 +108,7 @@ if [ "$BUILD_X86_64" = true ]; then
     cmake \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
-        -DEXECUTORCH_BUILD_QNN=ON \
+        -DEXECUTORCH_BUILD_BACKEND_QNN=ON \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -DBUCK2=$BUCK2 \
         -S $PRJ_ROOT \

@@ -522,7 +522,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
-option(EXECUTORCH_BUILD_XNNPACK "" ON) # Build with Xnnpack backend
+option(EXECUTORCH_BUILD_BACKEND_XNNPACK "" ON) # Build with Xnnpack backend
 
 # Include the executorch subdirectory.
 add_subdirectory(

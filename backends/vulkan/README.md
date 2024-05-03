@@ -134,7 +134,7 @@ and test on a local Android device. Android devices have built in support for
 Vulkan, and the Android NDK ships with a GLSL compiler, which is needed to
 compile the Vulkan Compute Library's GLSL compute shaders.
 
-The Vulkan Delegate libraries can be built by setting `-DEXECUTORCH_BUILD_VULKAN=ON`
+The Vulkan Delegate libraries can be built by setting `-DEXECUTORCH_BUILD_BACKEND_VULKAN=ON`
 when building with CMake.
 
 First, make sure that you have the Android NDK installed - Android NDK r25c is
@@ -161,7 +161,7 @@ Delegate:
   pp cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI=$ANDROID_ABI \
-    -DEXECUTORCH_BUILD_VULKAN=ON \
+    -DEXECUTORCH_BUILD_BACKEND_VULKAN=ON \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-android-out && \
   cmake --build cmake-android-out -j16 --target install)

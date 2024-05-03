@@ -43,15 +43,32 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_ANDROID_JNI           : "
                  "${EXECUTORCH_BUILD_ANDROID_JNI}"
   )
-  message(STATUS "  EXECUTORCH_BUILD_ARM_BAREMETAL         : "
-                 "${EXECUTORCH_BUILD_ARM_BAREMETAL}"
+  message(STATUS "  EXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL         : "
+                 "${EXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL}"
   )
   message(
     STATUS
-      "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}"
+      "  EXECUTORCH_BUILD_BACKEND_COREML        : ${EXECUTORCH_BUILD_BACKEND_COREML}"
   )
-  message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM        : "
-                 "${EXECUTORCH_BUILD_KERNELS_CUSTOM}"
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_BACKEND_MPS           : ${EXECUTORCH_BUILD_BACKEND_MPS}"
+  )
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_BACKEND_QNN           : ${EXECUTORCH_BUILD_BACKEND_QNN}"
+  )
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_BACKEND_XNNPACK       : ${EXECUTORCH_BUILD_BACKEND_XNNPACK}"
+  )
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_BACKEND_VULKAN        : ${EXECUTORCH_BUILD_BACKEND_VULKAN}"
+  )
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}"
   )
   message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
                  "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}"
@@ -80,15 +97,8 @@ function(executorch_print_configuration_summary)
   message(STATUS "  EXECUTORCH_BUILD_HOST_TARGETS          : "
                  "${EXECUTORCH_BUILD_HOST_TARGETS}"
   )
-  message(
-    STATUS "  EXECUTORCH_BUILD_MPS                   : ${EXECUTORCH_BUILD_MPS}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_PYBIND                : ${EXECUTORCH_BUILD_PYBIND}"
-  )
-  message(
-    STATUS "  EXECUTORCH_BUILD_QNN                   : ${EXECUTORCH_BUILD_QNN}"
+  message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM        : "
+                 "${EXECUTORCH_BUILD_KERNELS_CUSTOM}"
   )
   message(STATUS "  EXECUTORCH_BUILD_KERNELS_OPTIMIZED     : "
                  "${EXECUTORCH_BUILD_KERNELS_OPTIMIZED}"
@@ -97,27 +107,19 @@ function(executorch_print_configuration_summary)
                  "${EXECUTORCH_BUILD_KERNELS_QUANTIZED}"
   )
   message(
-    STATUS "  EXECUTORCH_BUILD_SDK                   : ${EXECUTORCH_BUILD_SDK}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_SIZE_TEST             : ${EXECUTORCH_BUILD_SIZE_TEST}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_XNNPACK               : ${EXECUTORCH_BUILD_XNNPACK}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_VULKAN                : ${EXECUTORCH_BUILD_VULKAN}"
-  )
-  message(
     STATUS
       "  EXECUTORCH_BUILD_PTHREADPOOL           : ${EXECUTORCH_BUILD_PTHREADPOOL}"
   )
   message(
     STATUS
-      "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}"
+      "  EXECUTORCH_BUILD_PYBIND                : ${EXECUTORCH_BUILD_PYBIND}"
+  )
+  message(
+    STATUS "  EXECUTORCH_BUILD_SDK                   : ${EXECUTORCH_BUILD_SDK}"
+  )
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_SIZE_TEST             : ${EXECUTORCH_BUILD_SIZE_TEST}"
   )
 
 endfunction()

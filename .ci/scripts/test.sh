@@ -85,7 +85,7 @@ build_cmake_xnn_executor_runner() {
     && mkdir ${CMAKE_OUTPUT_DIR} \
     && cd ${CMAKE_OUTPUT_DIR} \
     && retry cmake -DCMAKE_BUILD_TYPE=Release \
-      -DEXECUTORCH_BUILD_XNNPACK=ON \
+      -DEXECUTORCH_BUILD_BACKEND_XNNPACK=ON \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 

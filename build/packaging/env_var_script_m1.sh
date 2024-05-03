@@ -17,10 +17,10 @@ export CMAKE_ARGS="${CMAKE_ARGS:-}"
 
 # Link the XNNPACK backend into the pybindings runtime so that users can execute
 # ExecuTorch programs that delegate to it.
-CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_XNNPACK=ON"
+CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_BACKEND_XNNPACK=ON"
 
 # When building for macOS, link additional backends into the pybindings runtime.
 
 # TODO(dbort): Make these build properly in the CI environment.
-# CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_COREML=ON"
-# CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_MPS=ON"
+# CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_BACKEND_COREML=ON"
+# CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_BACKEND_MPS=ON"

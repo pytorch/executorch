@@ -26,7 +26,7 @@ sources.
 For the CMake setup, the delegate dir should be included by the
 top level `CMakeLists.txt` file using `add_subdirectory` CMake command, and
 should be built conditionally with an ExecuTorch build flag like
-`EXECUTORCH_BUILD_<DELEGATE_NAME>`, see `EXECUTORCH_BUILD_XNNPACK` for example.
+`EXECUTORCH_BUILD_BACKEND_<DELEGATE_NAME>`, see `EXECUTORCH_BUILD_BACKEND_XNNPACK` for example.
 For third-party dependencies, please refer to
 [this](./backend-delegates-dependencies.md).
 

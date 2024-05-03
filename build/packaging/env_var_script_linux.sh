@@ -17,4 +17,4 @@ export CMAKE_ARGS="${CMAKE_ARGS:-}"
 
 # Link the XNNPACK backend into the pybindings runtime so that users can execute
 # ExecuTorch programs that delegate to it.
-CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_XNNPACK=ON"
+CMAKE_ARGS="${CMAKE_ARGS} -DEXECUTORCH_BUILD_BACKEND_XNNPACK=ON"

@@ -55,7 +55,7 @@ list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 # TODO: Consider moving xnnpack/threadpool in a separate lib since it's now used
 # by custom ops too.
-if(NOT EXECUTORCH_BUILD_XNNPACK)
+if(NOT EXECUTORCH_BUILD_BACKEND_XNNPACK)
   list(
     APPEND
     _custom_ops__srcs

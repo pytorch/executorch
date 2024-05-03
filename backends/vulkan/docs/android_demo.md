@@ -96,7 +96,7 @@ binary using the Android NDK toolchain.
     -DANDROID_ABI=$ANDROID_ABI \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-    -DEXECUTORCH_BUILD_VULKAN=ON \
+    -DEXECUTORCH_BUILD_BACKEND_VULKAN=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-android-out && \
@@ -140,7 +140,7 @@ the Vulkan backend is built when building and installing ExecuTorch libraries:
 
 ```shell
 # Run from executorch root directory. You can also edit this in a code editor
-sed -i 's/-DEXECUTORCH_BUILD_XNNPACK=ON/-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON/g' examples/demo-apps/android/LlamaDemo/setup.sh
+sed -i 's/-DEXECUTORCH_BUILD_BACKEND_XNNPACK=ON/-DEXECUTORCH_BUILD_BACKEND_XNNPACK=ON -DEXECUTORCH_BUILD_BACKEND_VULKAN=ON/g' examples/demo-apps/android/LlamaDemo/setup.sh
 ```
 
 Then, Follow the instructions at [**Setting up the ExecuTorch LLaMA Android Demo App**](./llm/llama-demo-android.md)
