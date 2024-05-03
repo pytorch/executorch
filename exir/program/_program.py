@@ -654,6 +654,55 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
     return passes
 
 
+def _generate_edge_program(
+    name: str, config: EdgeCompileConfig, program: ExportedProgram
+) -> ExportedProgram:
+
+    if config._check_ir_validity:
+        try:
+            EXIRATenDialectVerifier()(program.graph_module)
+        except ExportError as e:
+            logging.info(f"Input program {name} is not in ATen dialect.")
+            raise e
+
+    pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
+
+    passes = []
+    passes.append(
+        ReplaceViewOpsWithViewCopyOpsPass()
+    )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
+    passes.extend(pre_op_replace_passes)
+    if config._use_edge_ops:
+        passes.append(OpReplacePass())
+
+    gm = program.graph_module
+    for p in passes:
+        gm_res = p(gm)
+        assert gm_res is not None
+        gm = gm_res.graph_module
+
+    edge_program = ExportedProgram(
+        root=gm,
+        graph=gm.graph,
+        graph_signature=_get_updated_graph_signature(program.graph_signature, gm),
+        state_dict=program.state_dict,
+        range_constraints=program.range_constraints,
+        module_call_graph=program.module_call_graph,
+        example_inputs=program.example_inputs,
+        verifier=EXIREdgeDialectVerifier(
+            check_edge_ops=config._use_edge_ops,
+            enable=config._check_ir_validity,
+            class_only=True,
+        ),
+        constants=program.constants,
+    )
+    # Lift the tensor constants created in ScalarToTensorPass
+    edge_program = lift_constant_tensor_pass(edge_program)
+    edge_program = _transform(edge_program, *post_op_replace_passes)
+
+    return edge_program
+
+
 def to_edge(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     constant_methods: Optional[Dict[str, Any]] = None,
@@ -681,52 +730,12 @@ def to_edge(
         aten_programs = programs
 
     edge_programs: Dict[str, ExportedProgram] = {}
+
     for name, program in aten_programs.items():
         # Decompose to Core ATen
         program = program.run_decompositions(_default_decomposition_table())
+        edge_programs[name] = _generate_edge_program(name, config, program)
 
-        if config._check_ir_validity:
-            try:
-                EXIRATenDialectVerifier()(program.graph_module)
-            except ExportError as e:
-                logging.info(f"Input program {name} is not in ATen dialect.")
-                raise e
-
-        pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
-
-        passes = []
-        passes.append(
-            ReplaceViewOpsWithViewCopyOpsPass()
-        )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
-        passes.extend(pre_op_replace_passes)
-        if config._use_edge_ops:
-            passes.append(OpReplacePass())
-
-        gm = program.graph_module
-        for p in passes:
-            gm_res = p(gm)
-            assert gm_res is not None
-            gm = gm_res.graph_module
-
-        edge_program = ExportedProgram(
-            root=gm,
-            graph=gm.graph,
-            graph_signature=_get_updated_graph_signature(program.graph_signature, gm),
-            state_dict=program.state_dict,
-            range_constraints=program.range_constraints,
-            module_call_graph=program.module_call_graph,
-            example_inputs=program.example_inputs,
-            verifier=EXIREdgeDialectVerifier(
-                check_edge_ops=config._use_edge_ops,
-                enable=config._check_ir_validity,
-                class_only=True,
-            ),
-            constants=program.constants,
-        )
-        # Lift the tensor constants created in ScalarToTensorPass
-        edge_program = lift_constant_tensor_pass(edge_program)
-        edge_program = _transform(edge_program, *post_op_replace_passes)
-        edge_programs[name] = edge_program
     return EdgeProgramManager(edge_programs, constant_methods, config)
 
 
