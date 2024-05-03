@@ -324,6 +324,7 @@ python_unittest(
     ],
     deps = [
         ":models",
+        "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir/passes:lib",
     ],
@@ -363,6 +364,8 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/exir:dim_order_utils",
         "//executorch/exir:lib",
+        "//executorch/extension/pybindings:aten_lib",  # @manual
+        "//executorch/extension/pybindings:portable_lib",  # @manual
     ],
 )
 
