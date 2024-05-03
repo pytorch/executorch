@@ -43,7 +43,7 @@ cmake -DBUCK2="$BUCK" \
           -DCMAKE_BUILD_TYPE="$MODE" \
           -DEXECUTORCH_BUILD_SDK=ON \
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
-          -DEXECUTORCH_BUILD_MPS=ON \
+          -DEXECUTORCH_BUILD_BACKEND_MPS=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
 cmake --build cmake-out -j9 --target install --config "$MODE"

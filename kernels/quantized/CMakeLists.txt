@@ -60,7 +60,7 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
    AND EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT
 )
   # Not targeting ARM_BAREMETAL as aot_lib depends on incompatible libraries
-  if(NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
+  if(NOT EXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL)
     set(_quantized_aot_ops
         "quantized_decomposed::add.out"
         "quantized_decomposed::choose_qparams.Tensor_out"

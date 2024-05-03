@@ -18,7 +18,7 @@ cmake_install_executorch_qnn_lib() {
   retry cmake -DBUCK2="$BUCK" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
-          -DEXECUTORCH_BUILD_QNN=ON \
+          -DEXECUTORCH_BUILD_BACKEND_QNN=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
   cmake --build cmake-out -j9 --target install --config Release

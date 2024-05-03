@@ -76,7 +76,7 @@ rm -rf cmake-android-out && mkdir cmake-android-out
 cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="${ANDROID_ABI}" \
-  -DEXECUTORCH_BUILD_XNNPACK=ON \
+  -DEXECUTORCH_BUILD_BACKEND_XNNPACK=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
   -Bcmake-android-out
@@ -84,7 +84,7 @@ cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
 cmake --build cmake-android-out -j16 --target install
 ```
 
-When we set `EXECUTORCH_BUILD_XNNPACK=ON`, we will build the target [`xnnpack_backend`](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt) which in turn is linked into libexecutorch_jni via [CMake](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt).
+When we set `EXECUTORCH_BUILD_BACKEND_XNNPACK=ON`, we will build the target [`xnnpack_backend`](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt) which in turn is linked into libexecutorch_jni via [CMake](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt).
 
 2. Build the Android extension:
 
@@ -115,8 +115,8 @@ rm -rf cmake-android-out && mkdir cmake-android-out && cd cmake-android-out
 cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DEXECUTORCH_BUILD_QNN=ON \
+    -DEXECUTORCH_BUILD_BACKEND_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_BACKEND_QNN=ON \
     -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
@@ -126,7 +126,7 @@ cmake --build cmake-android-out -j16 --target install
 ```
 Similar to the XNNPACK library, with this setup, we compile `libexecutorch_jni.so` but it adds an additional static library `qnn_executorch_backend` which wraps up Qualcomm HTP runtime library and registers the Qualcomm HTP backend. This is later exposed to Java app.
 
-`qnn_executorch_backend` is built when we turn on CMake option `EXECUTORCH_BUILD_QNN`. It will include the [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/CMakeLists.txt) from backends/qualcomm where we `add_library(qnn_executorch_backend STATIC)`.
+`qnn_executorch_backend` is built when we turn on CMake option `EXECUTORCH_BUILD_BACKEND_QNN`. It will include the [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/CMakeLists.txt) from backends/qualcomm where we `add_library(qnn_executorch_backend STATIC)`.
 
 2. Build the Android extension:
 

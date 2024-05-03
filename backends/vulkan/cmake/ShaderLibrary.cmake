@@ -12,7 +12,8 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-# The targets in this file will be built if EXECUTORCH_BUILD_VULKAN is ON
+# The targets in this file will be built if EXECUTORCH_BUILD_BACKEND_VULKAN is
+# ON
 
 if(ANDROID)
   if(NOT ANDROID_NDK)

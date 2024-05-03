@@ -76,7 +76,7 @@ cmake_install_executorch_libraries() {
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
+        -DEXECUTORCH_BUILD_BACKEND_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Debug
@@ -90,7 +90,7 @@ cmake_build_llama_runner() {
         -DCMAKE_BUILD_TYPE=Debug \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
+        -DEXECUTORCH_BUILD_BACKEND_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}

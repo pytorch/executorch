@@ -360,7 +360,7 @@ cmake                                                 \
     -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
     -DCMAKE_BUILD_TYPE=Release                        \
     -DEXECUTORCH_ENABLE_LOGGING=ON                    \
-    -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
+    -DEXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL=ON               \
     -DFLATC_EXECUTABLE="$(which flatc)"               \
     -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
     -B<executorch_build_dir>                          \

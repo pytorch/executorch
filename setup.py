@@ -455,7 +455,7 @@ class CustomBuild(build):
             ]
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
-            # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
+            # add entries like `-DEXECUTORCH_BUILD_BACKEND_XNNPACK=ON` to the CMAKE_ARGS
             # environment variable.
 
         if ShouldBuild.llama_custom_ops:

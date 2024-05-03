@@ -67,7 +67,7 @@ Make sure `buck2` is under a directory in `PATH`.
 cd $EXECUTORCH_ROOT
 mkdir build_x86_64
 cd build_x86_64
-cmake .. -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=${QNN_SDK_ROOT}
+cmake .. -DEXECUTORCH_BUILD_BACKEND_QNN=ON -DQNN_SDK_ROOT=${QNN_SDK_ROOT}
 cmake --build . -t "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j8
 
 # install Python APIs to correct import path
@@ -94,7 +94,7 @@ cd build_android
 # build executorch & qnn_executorch_backend
 cmake .. \
     -DCMAKE_INSTALL_PREFIX=$PWD \
-    -DEXECUTORCH_BUILD_QNN=ON \
+    -DEXECUTORCH_BUILD_BACKEND_QNN=ON \
     -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \

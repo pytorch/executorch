@@ -100,7 +100,7 @@ function build_executorch() {
         -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_ENABLE_LOGGING=ON                    \
-        -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
+        -DEXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL=ON               \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON                   \
         -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
         -DFLATC_EXECUTABLE="$(which flatc)"               \
@@ -117,7 +117,7 @@ function build_executorch() {
         -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_SELECT_OPS_LIST="aten::_softmax.out" \
-        -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
+        -DEXECUTORCH_BUILD_BACKEND_ARM_BAREMETAL=ON               \
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
         -B"${et_build_dir}"/examples/arm                  \
         "${et_root_dir}"/examples/arm
