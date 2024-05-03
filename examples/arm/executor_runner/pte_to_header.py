@@ -53,7 +53,7 @@ parser.add_argument(
     help="Section attribute for the data array",
     type=str,
     required=False,
-    default=".sram.data",
+    default="network_model_sec",
 )
 
 if __name__ == "__main__":

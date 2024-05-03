@@ -49,7 +49,7 @@ def quantize(model, example_inputs):
     return m
 
 
-# Two simple models
+# Simple example models
 class AddModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -133,8 +133,20 @@ if __name__ == "__main__":
         default=False,
         help="Produce a quantized model",
     )
+    parser.add_argument(
+        "-s",
+        "--so_library",
+        required=False,
+        default=None,
+        help="Provide path to so library. E.g., cmake-out/examples/portable/custom_ops/libcustom_ops_aot_lib.so",
+    )
 
     args = parser.parse_args()
+
+    # if we have custom ops, register them before processing the model
+    if args.so_library is not None:
+        logging.info(f"Loading custom ops from {args.so_library}")
+        torch.ops.load_library(args.so_library)
 
     # support models defined within this file or examples/models/ lists
     if (
@@ -188,7 +200,13 @@ if __name__ == "__main__":
 
     if args.delegate is True:
         edge = edge.to_backend(
-            ArmPartitioner(generate_ethosu_compile_spec("ethos-u55-128"))
+            ArmPartitioner(
+                generate_ethosu_compile_spec(
+                    "ethos-u55-128",
+                    permute_memory_to_nhwc=True,
+                    quantize_io=True,
+                )
+            )
         )
         logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
 
