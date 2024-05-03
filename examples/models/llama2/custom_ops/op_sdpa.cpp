@@ -157,7 +157,7 @@ static inline scalar_t* conditional_data_ptr(scalar_t* ptr, scalar_t* ptr2) {
 template <
     typename scalar_t,
     typename std::enable_if_t<
-        torch::executor::is_reduced_floating_point_v<scalar_t>,
+        torch::executor::is_reduced_floating_point<scalar_t>::value,
         int> = 0>
 static inline scalar_t* conditional_data_ptr(float* ptr, scalar_t* ptr2) {
   (void)ptr;
@@ -203,7 +203,7 @@ void cpu_flash_attention(
   */
 
   constexpr bool is_reduced_type =
-      torch::executor::is_reduced_floating_point_v<scalar_t>;
+      torch::executor::is_reduced_floating_point<scalar_t>::value;
 
   ET_CHECK_MSG(
       !is_reduced_type, "FlashAttention does not support reduced types.");

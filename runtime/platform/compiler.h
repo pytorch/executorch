@@ -39,7 +39,6 @@
  *   https://gcc.gnu.org/onlinedocs/gcc/Common-Function-Attributes.html
  */
 
-#define __ET_DEPRECATED [[deprecated]]
 #define __ET_NORETURN [[noreturn]]
 #define __ET_NOINLINE __attribute__((noinline))
 #define __ET_INLINE __attribute__((always_inline)) inline
@@ -58,12 +57,14 @@
 
 #if (__cplusplus) >= 201703L
 
+#define __ET_DEPRECATED [[deprecated]]
 #define __ET_FALLTHROUGH [[fallthrough]]
 #define __ET_NODISCARD [[nodiscard]]
 #define __ET_UNUSED [[maybe_unused]]
 
 #else
 
+#define __ET_DEPRECATED __attribute__((deprecated))
 #define __ET_FALLTHROUGH __attribute__((fallthrough))
 #define __ET_NODISCARD __attribute__((warn_unused_result))
 #define __ET_UNUSED __attribute__((unused))
