@@ -31,7 +31,7 @@ set(_common_compile_options -Wno-deprecated-declarations)
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
-if(EXECUTORCH_BUILD_OPTIMIZED)
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   # Merge optimized and portable definitions, taking optimized where available.
   merge_yaml(
     FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/optimized/optimized-oss.yaml

@@ -87,7 +87,7 @@ class ShouldBuild:
     @classmethod
     @property
     def llama_custom_ops(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_CUSTOM_OPS_AOT", default=True)
+        return cls._is_env_enabled("EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True)
 
 
 class Version:
@@ -451,7 +451,7 @@ class CustomBuild(build):
         if ShouldBuild.pybindings:
             cmake_args += [
                 "-DEXECUTORCH_BUILD_PYBIND=ON",
-                "-DEXECUTORCH_BUILD_QUANTIZED=ON",  # add quantized ops to pybindings.
+                "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
             ]
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
@@ -460,8 +460,8 @@ class CustomBuild(build):
 
         if ShouldBuild.llama_custom_ops:
             cmake_args += [
-                "-DEXECUTORCH_BUILD_CUSTOM=ON",  # add llama sdpa ops to pybindings.
-                "-DEXECUTORCH_BUILD_CUSTOM_OPS_AOT=ON",
+                "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON",  # add llama sdpa ops to pybindings.
+                "-DEXECUTORCH_BUILD_KERNELS_CUSTOM_AOT=ON",
             ]
             build_args += ["--target", "custom_ops_aot_lib"]
         # Allow adding extra cmake args through the environment. Used by some
