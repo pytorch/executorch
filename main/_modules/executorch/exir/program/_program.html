@@ -1083,6 +1083,55 @@
     <span class="k">return</span> <span class="n">passes</span>
 
 
+<span class="k">def</span> <span class="nf">_generate_edge_program</span><span class="p">(</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+
+    <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">EXIRATenDialectVerifier</span><span class="p">()(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ExportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in ATen dialect.&quot;</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">e</span>
+
+    <span class="n">pre_op_replace_passes</span><span class="p">,</span> <span class="n">post_op_replace_passes</span> <span class="o">=</span> <span class="n">_get_aten_to_edge_passes</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+
+    <span class="n">passes</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+        <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span><span class="p">()</span>
+    <span class="p">)</span>  <span class="c1"># TODO move inside aten_to_edge passes after all users are migrated off v1 capture</span>
+    <span class="n">passes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">pre_op_replace_passes</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">:</span>
+        <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">OpReplacePass</span><span class="p">())</span>
+
+    <span class="n">gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">passes</span><span class="p">:</span>
+        <span class="n">gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">gm</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">gm</span> <span class="o">=</span> <span class="n">gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+
+    <span class="n">edge_program</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
+        <span class="n">root</span><span class="o">=</span><span class="n">gm</span><span class="p">,</span>
+        <span class="n">graph</span><span class="o">=</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
+        <span class="n">graph_signature</span><span class="o">=</span><span class="n">_get_updated_graph_signature</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span> <span class="n">gm</span><span class="p">),</span>
+        <span class="n">state_dict</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+        <span class="n">range_constraints</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
+        <span class="n">module_call_graph</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
+        <span class="n">example_inputs</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
+        <span class="n">verifier</span><span class="o">=</span><span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
+            <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
+            <span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
+            <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">constants</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="c1"># Lift the tensor constants created in ScalarToTensorPass</span>
+    <span class="n">edge_program</span> <span class="o">=</span> <span class="n">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
+    <span class="n">edge_program</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span><span class="n">edge_program</span><span class="p">,</span> <span class="o">*</span><span class="n">post_op_replace_passes</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">edge_program</span>
+
+
 <div class="viewcode-block" id="to_edge"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.to_edge">[docs]</a><span class="k">def</span> <span class="nf">to_edge</span><span class="p">(</span>
     <span class="n">programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
     <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1110,52 +1159,12 @@
         <span class="n">aten_programs</span> <span class="o">=</span> <span class="n">programs</span>
 
     <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="c1"># Decompose to Core ATen</span>
         <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">_default_decomposition_table</span><span class="p">())</span>
+        <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_generate_edge_program</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">program</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="n">EXIRATenDialectVerifier</span><span class="p">()(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
-            <span class="k">except</span> <span class="n">ExportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in ATen dialect.&quot;</span><span class="p">)</span>
-                <span class="k">raise</span> <span class="n">e</span>
-
-        <span class="n">pre_op_replace_passes</span><span class="p">,</span> <span class="n">post_op_replace_passes</span> <span class="o">=</span> <span class="n">_get_aten_to_edge_passes</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
-
-        <span class="n">passes</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-            <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span><span class="p">()</span>
-        <span class="p">)</span>  <span class="c1"># TODO move inside aten_to_edge passes after all users are migrated off v1 capture</span>
-        <span class="n">passes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">pre_op_replace_passes</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">:</span>
-            <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">OpReplacePass</span><span class="p">())</span>
-
-        <span class="n">gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
-        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">passes</span><span class="p">:</span>
-            <span class="n">gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">gm</span><span class="p">)</span>
-            <span class="k">assert</span> <span class="n">gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="n">gm</span> <span class="o">=</span> <span class="n">gm_res</span><span class="o">.</span><span class="n">graph_module</span>
-
-        <span class="n">edge_program</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
-            <span class="n">root</span><span class="o">=</span><span class="n">gm</span><span class="p">,</span>
-            <span class="n">graph</span><span class="o">=</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
-            <span class="n">graph_signature</span><span class="o">=</span><span class="n">_get_updated_graph_signature</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span> <span class="n">gm</span><span class="p">),</span>
-            <span class="n">state_dict</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
-            <span class="n">range_constraints</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
-            <span class="n">module_call_graph</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
-            <span class="n">example_inputs</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
-            <span class="n">verifier</span><span class="o">=</span><span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
-                <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
-                <span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
-                <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-            <span class="p">),</span>
-            <span class="n">constants</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="c1"># Lift the tensor constants created in ScalarToTensorPass</span>
-        <span class="n">edge_program</span> <span class="o">=</span> <span class="n">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
-        <span class="n">edge_program</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span><span class="n">edge_program</span><span class="p">,</span> <span class="o">*</span><span class="n">post_op_replace_passes</span><span class="p">)</span>
-        <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">edge_program</span>
     <span class="k">return</span> <span class="n">EdgeProgramManager</span><span class="p">(</span><span class="n">edge_programs</span><span class="p">,</span> <span class="n">constant_methods</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span></div>
 
 
