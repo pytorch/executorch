@@ -27,7 +27,7 @@ if(NOT DEFINED QNN_SDK_ROOT)
     FATAL_ERROR
       "Please define QNN_SDK_ROOT, e.g. cmake <..> -DQNN_SDK_ROOT=<...>"
   )
-elseif(CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
+elseif(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   message(FATAL_ERROR "ios is not supported by Qualcomm AI Engine Direct")
 endif()
 
