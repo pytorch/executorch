@@ -881,7 +881,7 @@ inline exec_aten::ScalarType promoteTypes(
 #define ET_INTERNAL_SWITCH(TYPE, CONTEXT, NAME, ...) \
   [&] {                                              \
     const auto& _st = TYPE;                          \
-    constexpr const char* et_switch_name = NAME;     \
+    const char* et_switch_name = NAME;               \
     switch (_st) {                                   \
       __VA_ARGS__                                    \
       default:                                       \
