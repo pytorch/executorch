@@ -20,17 +20,20 @@ function(gen_selected_ops)
   message(STATUS "  INCLUDE_ALL_OPS: ${GEN_INCLUDE_ALL_OPS}")
 
   set(_oplist_yaml
-      ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml)
+      ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME}/selected_operators.yaml
+  )
   file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
 
   file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
 
   set(_gen_oplist_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_oplist
-                          --output_path=${_oplist_yaml})
+                          --output_path=${_oplist_yaml}
+  )
 
   if(GEN_OPS_SCHEMA_YAML)
     list(APPEND _gen_oplist_command
-         --ops_schema_yaml_path="${GEN_OPS_SCHEMA_YAML}")
+         --ops_schema_yaml_path="${GEN_OPS_SCHEMA_YAML}"
+    )
   endif()
   if(GEN_ROOT_OPS)
     list(APPEND _gen_oplist_command --root_ops="${GEN_ROOT_OPS}")
@@ -45,7 +48,8 @@ function(gen_selected_ops)
     OUTPUT ${_oplist_yaml}
     COMMAND ${_gen_oplist_command}
     DEPENDS ${GEN_OPS_SCHEMA_YAML} ${_codegen_tools_srcs}
-    WORKING_DIRECTORY ${EXECUTORCH_ROOT})
+    WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+  )
 
 endfunction()
 
@@ -78,11 +82,13 @@ function(generate_bindings_for_kernels)
       --source-path=${EXECUTORCH_ROOT}/codegen --install-dir=${_out_dir}
       --tags-path=${TORCH_ROOT}/aten/src/ATen/native/tags.yaml
       --aten-yaml-path=${TORCH_ROOT}/aten/src/ATen/native/native_functions.yaml
-      --op-selection-yaml-path=${_oplist_yaml})
+      --op-selection-yaml-path=${_oplist_yaml}
+  )
 
   set(_gen_command_sources
       ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-      ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
+      ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+  )
 
   if(GEN_FUNCTIONS_YAML)
     list(APPEND _gen_command --functions-yaml-path=${GEN_FUNCTIONS_YAML})
@@ -90,7 +96,8 @@ function(generate_bindings_for_kernels)
   if(GEN_CUSTOM_OPS_YAML)
     list(APPEND _gen_command --custom-ops-yaml-path=${GEN_CUSTOM_OPS_YAML})
     list(APPEND _gen_command_sources ${_out_dir}/RegisterCPUCustomOps.cpp
-         ${_out_dir}/RegisterSchema.cpp ${_out_dir}/CustomOpsNativeFunctions.h)
+         ${_out_dir}/RegisterSchema.cpp ${_out_dir}/CustomOpsNativeFunctions.h
+    )
   endif()
 
   add_custom_command(
@@ -99,11 +106,13 @@ function(generate_bindings_for_kernels)
     COMMAND ${_gen_command}
     DEPENDS ${_oplist_yaml} ${GEN_CUSTOM_OPS_YAML} ${GEN_FUNCTIONS_YAML}
             ${_codegen_templates} ${_torchgen_srcs}
-    WORKING_DIRECTORY ${EXECUTORCH_ROOT})
+    WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+  )
   # Make generated file list available in parent scope
   set(gen_command_sources
       ${_gen_command_sources}
-      PARENT_SCOPE)
+      PARENT_SCOPE
+  )
 endfunction()
 
 # Generate an AOT lib for registering custom ops into PyTorch
@@ -119,7 +128,8 @@ function(gen_custom_ops_aot_lib)
   add_library(
     ${GEN_LIB_NAME} SHARED
     ${_out_dir}/RegisterCPUCustomOps.cpp ${_out_dir}/RegisterSchema.cpp
-    ${_out_dir}/CustomOpsNativeFunctions.h "${GEN_KERNEL_SOURCES}")
+    ${_out_dir}/CustomOpsNativeFunctions.h "${GEN_KERNEL_SOURCES}"
+  )
   # Find `Torch`.
   find_package(Torch REQUIRED)
   # This lib uses ATen lib, so we explicitly enable rtti and exceptions.
@@ -149,7 +159,8 @@ function(gen_operators_lib)
   target_sources(
     ${GEN_LIB_NAME}
     PRIVATE ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-            ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
+            ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
+  )
   target_link_libraries(${GEN_LIB_NAME} PRIVATE ${GEN_DEPS})
   if(GEN_KERNEL_LIBS)
     target_link_libraries(${GEN_LIB_NAME} PUBLIC ${GEN_KERNEL_LIBS})
@@ -172,12 +183,14 @@ function(merge_yaml)
   set(_gen_command
       "${PYTHON_EXECUTABLE}" -m codegen.tools.merge_yaml
       --functions_yaml_path=${GEN_FUNCTIONS_YAML}
-      --fallback_yaml_path=${GEN_FALLBACK_YAML} --output_dir=${GEN_OUTPUT_DIR})
+      --fallback_yaml_path=${GEN_FALLBACK_YAML} --output_dir=${GEN_OUTPUT_DIR}
+  )
 
   add_custom_command(
     COMMENT "Merging kernel yaml files"
     OUTPUT ${GEN_OUTPUT_DIR}/merged.yaml
     COMMAND ${_gen_command}
     DEPENDS ${GEN_FUNCTIONS_YAML} ${GEN_FALLBACK_YAML}
-    WORKING_DIRECTORY ${EXECUTORCH_ROOT})
+    WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+  )
 endfunction()

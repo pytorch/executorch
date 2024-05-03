@@ -6,7 +6,7 @@
 
 # Please this file formatted by running:
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 
 cmake_minimum_required(VERSION 3.19)
@@ -27,4 +27,5 @@ install(
   TARGETS extension_data_loader
   DESTINATION lib
   INCLUDES
-  DESTINATION ${_common_include_directories})
+  DESTINATION ${_common_include_directories}
+)
