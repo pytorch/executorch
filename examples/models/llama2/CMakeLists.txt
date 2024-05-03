@@ -11,7 +11,7 @@
 #
 # This file should be formatted with
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 # It should also be cmake-lint clean.
 #
@@ -29,12 +29,15 @@ include(CMakeDependentOption)
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
+)
 #
 # cpuinfo: build cpuinfo library. Disable on unsupported platforms
 #
-cmake_dependent_option(EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
-                       "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
+  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
+)
 
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
@@ -111,7 +114,8 @@ if(EXECUTORCH_BUILD_OPTIMIZED)
     optimized_kernels
     portable_kernels
     cpublas
-    eigen_blas)
+    eigen_blas
+  )
   target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
@@ -135,10 +139,12 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   # These 2 source files are included in xnnpack_backend
   if(NOT TARGET xnnpack_backend)
     list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/threadpool.cpp
-         ${XNNPACK_ROOT}/threadpool/threadpool_guard.cpp)
+         ${XNNPACK_ROOT}/threadpool/threadpool_guard.cpp
+    )
   endif()
   list(APPEND _common_include_directories
-       ${XNNPACK_ROOT}/third-party/pthreadpool/include)
+       ${XNNPACK_ROOT}/third-party/pthreadpool/include
+  )
 endif()
 
 # Extra sources for cpuinfo
@@ -146,7 +152,8 @@ if(EXECUTORCH_BUILD_CPUINFO)
   list(APPEND link_libraries cpuinfo)
   list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/cpuinfo_utils.cpp)
   list(APPEND _common_include_directories
-       ${XNNPACK_ROOT}/third-party/cpuinfo/include)
+       ${XNNPACK_ROOT}/third-party/cpuinfo/include
+  )
 endif()
 
 # XNNPACK
@@ -177,7 +184,8 @@ if(TARGET mpsdelegate)
     "-framework Foundation"
     "-weak_framework MetalPerformanceShaders"
     "-weak_framework MetalPerformanceShadersGraph"
-    "-weak_framework Metal")
+    "-weak_framework Metal"
+  )
   target_link_options_shared_lib(mpsdelegate)
 endif()
 

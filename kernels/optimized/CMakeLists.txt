@@ -6,7 +6,7 @@
 
 # Kernel library for optimized kernels. Please this file formatted by running:
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 
 cmake_minimum_required(VERSION 3.19)
@@ -54,8 +54,10 @@ target_compile_options(cpublas PUBLIC ${_common_compile_options})
 set(_yaml "${CMAKE_CURRENT_LIST_DIR}/optimized-oss.yaml")
 gen_selected_ops(LIB_NAME "optimized_ops_lib" OPS_SCHEMA_YAML "${_yaml}")
 
-generate_bindings_for_kernels(LIB_NAME "optimized_ops_lib" FUNCTIONS_YAML
-                              ${CMAKE_CURRENT_SOURCE_DIR}/optimized-oss.yaml)
+generate_bindings_for_kernels(
+  LIB_NAME "optimized_ops_lib" FUNCTIONS_YAML
+  ${CMAKE_CURRENT_SOURCE_DIR}/optimized-oss.yaml
+)
 message("Generated files ${gen_command_sources}")
 
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
@@ -65,8 +67,9 @@ target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _optimized_kernels_srcs
 #
 # optimized_ops_lib: Register optimized ops kernels into Executorch runtime
-gen_operators_lib(LIB_NAME "optimized_ops_lib" KERNEL_LIBS optimized_kernels
-                  DEPS executorch)
+gen_operators_lib(
+  LIB_NAME "optimized_ops_lib" KERNEL_LIBS optimized_kernels DEPS executorch
+)
 
 install(TARGETS cpublas optimized_kernels optimized_ops_lib DESTINATION lib)
 

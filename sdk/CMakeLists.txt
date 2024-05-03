@@ -6,7 +6,7 @@
 
 # Please this file formatted by running:
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 
 cmake_minimum_required(VERSION 3.19)
@@ -44,16 +44,24 @@ set(_bundled_input_schema_names "bundled_program_schema.fbs" "scalar_type.fbs")
 
 foreach(schema_file ${_etdump_schema_names})
   list(APPEND _etdump_schema__srcs
-       "${CMAKE_CURRENT_SOURCE_DIR}/etdump/${schema_file}")
+       "${CMAKE_CURRENT_SOURCE_DIR}/etdump/${schema_file}"
+  )
 endforeach()
 
 foreach(schema_file ${_bundled_input_schema_names})
   list(APPEND _bundled_program_schema__srcs
-       "${CMAKE_CURRENT_SOURCE_DIR}/bundled_program/schema/${schema_file}")
+       "${CMAKE_CURRENT_SOURCE_DIR}/bundled_program/schema/${schema_file}"
+  )
 endforeach()
 
-set(FLATCC_TEST OFF CACHE BOOL "")
-set(FLATCC_REFLECTION OFF CACHE BOOL "")
+set(FLATCC_TEST
+    OFF
+    CACHE BOOL ""
+)
+set(FLATCC_REFLECTION
+    OFF
+    CACHE BOOL ""
+)
 set(_flatcc_source_dir ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc)
 add_subdirectory(${_flatcc_source_dir} ${CMAKE_BINARY_DIR}/third-party/flatcc)
 
@@ -72,7 +80,8 @@ set(_bundled_schema__include_dir "${CMAKE_BINARY_DIR}/sdk/bundled_program")
 # TODO(dbort): Only enable this when cross-compiling. It can cause build race
 # conditions (libflatcc.a errors) when enabled.
 option(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT
-  "Whether to build the flatcc commandline tool as a separate project" ON)
+       "Whether to build the flatcc commandline tool as a separate project" ON
+)
 
 if(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT)
   # Add the host project. We build this separately so that we can generate
@@ -101,10 +110,12 @@ set(_etdump_schema__outputs)
 foreach(fbs_file ${_etdump_schema_names})
   string(REGEX REPLACE "[.]fbs$" "_reader.h" generated "${fbs_file}")
   list(APPEND _etdump_schema__outputs
-       "${_program_schema__include_dir}/executorch/sdk/etdump/${generated}")
+       "${_program_schema__include_dir}/executorch/sdk/etdump/${generated}"
+  )
   string(REGEX REPLACE "[.]fbs$" "_builder.h" generated "${fbs_file}")
   list(APPEND _etdump_schema__outputs
-       "${_program_schema__include_dir}/executorch/sdk/etdump/${generated}")
+       "${_program_schema__include_dir}/executorch/sdk/etdump/${generated}"
+  )
 endforeach()
 
 # lint_cmake: -linelength
@@ -119,15 +130,17 @@ foreach(fbs_file ${_bundled_input_schema_names})
 endforeach()
 
 add_library(etdump_schema INTERFACE ${_etdump_schema__outputs})
-add_library(bundled_program_schema INTERFACE
-            ${_bundled_program_schema__outputs})
+add_library(
+  bundled_program_schema INTERFACE ${_bundled_program_schema__outputs}
+)
 
 # Ensure the host tool is built before the main project
 add_dependencies(etdump_schema flatcc_cli)
 
 file(MAKE_DIRECTORY ${_program_schema__include_dir}/executorch/sdk/etdump)
 file(MAKE_DIRECTORY
-     ${_program_schema__include_dir}/executorch/sdk/bundled_program)
+     ${_program_schema__include_dir}/executorch/sdk/bundled_program
+)
 
 if(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT)
   # If we cross-compiling, we need to use the version of the commandline tool
@@ -148,7 +161,8 @@ if(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT)
   # try to remove this hack, ideally by submitting an upstream PR that adds an
   # option to change the installation location.
   set(_etdump_schema_cleanup_paths ${_flatcc_source_dir}/bin/*
-                                   ${_flatcc_source_dir}/lib/*)
+                                   ${_flatcc_source_dir}/lib/*
+  )
 else()
   # If we're not cross-compiling we can use the plain commandline target, and we
   # don't need to delete any files.
@@ -169,15 +183,19 @@ add_custom_command(
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/sdk
   DEPENDS ${_etdump_schema_gen_dep}
   COMMENT "Generating etdump headers"
-  VERBATIM)
+  VERBATIM
+)
 
-add_library(etdump ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_flatcc.cpp
-                   ${CMAKE_CURRENT_SOURCE_DIR}/etdump/emitter.cpp)
+add_library(
+  etdump ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_flatcc.cpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/etdump/emitter.cpp
+)
 
 target_link_libraries(
   etdump
   PUBLIC etdump_schema flatccrt
-  PRIVATE executorch)
+  PRIVATE executorch
+)
 
 add_custom_command(
   OUTPUT ${_bundled_program_schema__outputs}
@@ -188,25 +206,30 @@ add_custom_command(
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/sdk
   DEPENDS ${FLATC_EXECUTABLE} ${_bundled_program_schema__srcs}
   COMMENT "Generating bundled_program headers"
-  VERBATIM)
+  VERBATIM
+)
 
 # add_library(bundled_program INTERFACE ${_bundled_program_schema__outputs})
-add_library(bundled_program
-            ${CMAKE_CURRENT_SOURCE_DIR}/bundled_program/bundled_program.cpp)
+add_library(
+  bundled_program
+  ${CMAKE_CURRENT_SOURCE_DIR}/bundled_program/bundled_program.cpp
+)
 target_link_libraries(bundled_program executorch bundled_program_schema)
 
 set_target_properties(bundled_program PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
   bundled_program PUBLIC ${_bundled_schema__include_dir}
-                         ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
+                         ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+)
 
 target_include_directories(
-  etdump PUBLIC ${_program_schema__include_dir}
-                ${_flatcc_source_dir}/include)
+  etdump PUBLIC ${_program_schema__include_dir} ${_flatcc_source_dir}/include
+)
 
 # Install libraries
 install(
   TARGETS bundled_program etdump flatccrt
   DESTINATION ${CMAKE_BINARY_DIR}/lib
   INCLUDES
-  DESTINATION ${_common_include_directories})
+  DESTINATION ${_common_include_directories}
+)
