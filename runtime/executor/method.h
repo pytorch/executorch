@@ -11,7 +11,6 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/function_ref.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -36,7 +35,7 @@ struct Chain;
 template <typename T>
 class Span;
 class KernelRuntimeContext;
-using OpFunction = FunctionRef<void(KernelRuntimeContext&, EValue**)>;
+using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
 /// A list of pointers into the master values table that together compose the
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;
