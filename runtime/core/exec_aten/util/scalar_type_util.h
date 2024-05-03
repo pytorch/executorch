@@ -386,6 +386,11 @@ inline constexpr bool isComplexType(exec_aten::ScalarType t) {
       t == exec_aten::ScalarType::ComplexDouble);
 }
 
+template <typename T>
+struct is_complex_type : std::integral_constant<
+                             bool,
+                             isComplexType(CppTypeToScalarType<T>::value)> {};
+
 constexpr bool isBitsType(exec_aten::ScalarType t) {
   return t == exec_aten::ScalarType::Bits1x8 ||
       t == exec_aten::ScalarType::Bits2x4 ||
@@ -558,6 +563,7 @@ To convert(From val) {
 }
 
 namespace internal {
+
 template <typename T1, typename T2>
 struct promote_types_lookup;
 
