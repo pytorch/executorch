@@ -149,9 +149,11 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
-option(EXECUTORCH_BUILD_CUSTOM "Build the custom kernels" OFF)
+option(EXECUTORCH_BUILD_KERNELS_CUSTOM "Build the custom kernels" OFF)
 
-option(EXECUTORCH_BUILD_CUSTOM_OPS_AOT "Build the custom ops lib for AOT" OFF)
+option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
+       OFF
+)
 
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF
@@ -171,9 +173,9 @@ option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
 option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
 
-option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
+option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
-option(EXECUTORCH_BUILD_QUANTIZED "Build the quantized kernels" OFF)
+option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
 option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
 
@@ -199,12 +201,12 @@ cmake_dependent_option(
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
 
-if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT)
-  set(EXECUTORCH_BUILD_CUSTOM ON)
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
+  set(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
 endif()
 
-if(EXECUTORCH_BUILD_CUSTOM)
-  set(EXECUTORCH_BUILD_OPTIMIZED ON)
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+  set(EXECUTORCH_BUILD_KERNELS_OPTIMIZED ON)
 endif()
 
 if(EXECUTORCH_BUILD_CPUINFO)
@@ -443,18 +445,18 @@ target_link_options_shared_lib(executorch)
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 
-if(EXECUTORCH_BUILD_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops
   )
 endif()
 
-if(EXECUTORCH_BUILD_OPTIMIZED)
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
 
-if(EXECUTORCH_BUILD_QUANTIZED)
+if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
 endif()
 
@@ -492,14 +494,14 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch gflags)
 
-  if(EXECUTORCH_BUILD_OPTIMIZED)
+  if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
   else()
     list(APPEND _executor_runner_libs portable_ops_lib)
   endif()
 
   # Generate lib to register quantized ops
-  if(EXECUTORCH_BUILD_QUANTIZED)
+  if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
@@ -606,19 +608,19 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs xnnpack_backend XNNPACK)
   endif()
 
-  if(EXECUTORCH_BUILD_QUANTIZED)
+  if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     target_link_options_shared_lib(quantized_ops_lib)
     list(APPEND _dep_libs quantized_kernels quantized_ops_lib)
   endif()
 
   # TODO(larryliu): Fix macOS 2 dylibs having 2 sets of static variables issue
-  if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT AND NOT APPLE)
+  if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT AND NOT APPLE)
     list(APPEND _dep_libs custom_ops_aot_lib)
   endif()
   # TODO(laryliu): Fix linux duplicate registation problem. In GH CI worker
   # libcustom_ops.a doesn't dedup with the one indirectly linked from
   # libcustom_ops_aot_lib.a
-  if(EXECUTORCH_BUILD_CUSTOM AND APPLE)
+  if(EXECUTORCH_BUILD_KERNELS_CUSTOM AND APPLE)
     target_link_options_shared_lib(custom_ops)
     list(APPEND _dep_libs custom_ops)
   endif()

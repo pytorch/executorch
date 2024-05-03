@@ -97,7 +97,7 @@ binary using the Android NDK toolchain.
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_VULKAN=ON \
-    -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-android-out && \
   cmake --build cmake-android-out -j16 --target install)

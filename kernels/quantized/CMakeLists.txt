@@ -10,7 +10,7 @@
 # ~~~
 cmake_minimum_required(VERSION 3.19)
 
-option(EXECUTORCH_BUILD_QUANTIZED_OPS_AOT
+option(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT
        "Build the optimized ops library for AOT export usage" OFF
 )
 
@@ -56,7 +56,9 @@ message("Generated files ${gen_command_sources}")
 # quantized_ops_aot_lib quantized_ops_lib but none of these is a common
 # dependency of the other(s). This is not allowed by the Xcode "new build
 # system".
-if(NOT CMAKE_GENERATOR STREQUAL "Xcode" AND EXECUTORCH_BUILD_QUANTIZED_OPS_AOT)
+if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
+   AND EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT
+)
   # Not targeting ARM_BAREMETAL as aot_lib depends on incompatible libraries
   if(NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
     set(_quantized_aot_ops

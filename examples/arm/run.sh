@@ -73,8 +73,8 @@ function build_quantization_aot_lib()
     cmake -DBUCK2=${buck2} \
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_XNNPACK=OFF \
-        -DEXECUTORCH_BUILD_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_QUANTIZED_OPS_AOT=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
         -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
         -DPYTHON_EXECUTABLE=python3 \
 	-Bcmake-out-aot-lib \
@@ -101,7 +101,7 @@ function build_executorch() {
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_ENABLE_LOGGING=ON                    \
         -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
-        -DEXECUTORCH_BUILD_QUANTIZED=ON                   \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON                   \
         -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
         -DFLATC_EXECUTABLE="$(which flatc)"               \
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
