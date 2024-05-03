@@ -130,7 +130,7 @@ target_link_options_shared_lib(vulkan_backend)
 
 # Executor Runner
 
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
+if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   set(VULKAN_RUNNER_SRCS ${_executor_runner__srcs})
   list(TRANSFORM VULKAN_RUNNER_SRCS PREPEND "${EXECUTORCH_ROOT}/")
 
