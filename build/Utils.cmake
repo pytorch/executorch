@@ -50,8 +50,8 @@ function(executorch_print_configuration_summary)
     STATUS
       "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}"
   )
-  message(STATUS "  EXECUTORCH_BUILD_CUSTOM                : "
-                 "${EXECUTORCH_BUILD_CUSTOM}"
+  message(STATUS "  EXECUTORCH_BUILD_KERNELS_CUSTOM        : "
+                 "${EXECUTORCH_BUILD_KERNELS_CUSTOM}"
   )
   message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
                  "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}"
@@ -90,11 +90,11 @@ function(executorch_print_configuration_summary)
   message(
     STATUS "  EXECUTORCH_BUILD_QNN                   : ${EXECUTORCH_BUILD_QNN}"
   )
-  message(STATUS "  EXECUTORCH_BUILD_OPTIMIZED             : "
-                 "${EXECUTORCH_BUILD_OPTIMIZED}"
+  message(STATUS "  EXECUTORCH_BUILD_KERNELS_OPTIMIZED     : "
+                 "${EXECUTORCH_BUILD_KERNELS_OPTIMIZED}"
   )
-  message(STATUS "  EXECUTORCH_BUILD_QUANTIZED             : "
-                 "${EXECUTORCH_BUILD_QUANTIZED}"
+  message(STATUS "  EXECUTORCH_BUILD_KERNELS_QUANTIZED     : "
+                 "${EXECUTORCH_BUILD_KERNELS_QUANTIZED}"
   )
   message(
     STATUS "  EXECUTORCH_BUILD_SDK                   : ${EXECUTORCH_BUILD_SDK}"

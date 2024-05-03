@@ -19,7 +19,7 @@ cmake_minimum_required(VERSION 3.19)
 project(llama_runner)
 
 # Duplicating options as root CMakeLists.txt
-option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
+option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
 option(EXECUTORCH_USE_TIKTOKEN "Use Tiktoken as a tokenizer" OFF)
 
@@ -85,7 +85,7 @@ if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
 endif()
 
 # custom ops library
-if(EXECUTORCH_BUILD_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   add_subdirectory(custom_ops)
 endif()
 
@@ -106,7 +106,7 @@ endif()
 set(link_libraries gflags)
 set(_srcs main.cpp)
 
-if(EXECUTORCH_BUILD_OPTIMIZED)
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   list(
     APPEND
     link_libraries
@@ -126,7 +126,7 @@ endif()
 target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-if(EXECUTORCH_BUILD_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()

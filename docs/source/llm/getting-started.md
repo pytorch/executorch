@@ -367,7 +367,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Set options for executorch build.
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
-option(EXECUTORCH_BUILD_OPTIMIZED "" ON)
+option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
 
 # Include the executorch subdirectory.
 add_subdirectory(
@@ -521,7 +521,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Set options for executorch build.
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
-option(EXECUTORCH_BUILD_OPTIMIZED "" ON)
+option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
 option(EXECUTORCH_BUILD_XNNPACK "" ON) # Build with Xnnpack backend
 
 # Include the executorch subdirectory.
