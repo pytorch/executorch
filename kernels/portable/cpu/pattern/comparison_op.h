@@ -129,24 +129,23 @@ Tensor& scalar_comparison_op_with_regular_promotion_out(
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, op_name, CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, op_name, CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(
-          Bool, common_type, ctx, op_name, CTYPE_IN, [&]() {
-            ET_SWITCH_REAL_TYPES_AND(
-                Bool, out_type, ctx, op_name, CTYPE_OUT, [&]() {
-                  CTYPE_B val_b = 0;
-                  utils::extract_scalar(b, &val_b);
-                  apply_unary_map_fn(
-                      [val_b](const CTYPE_A val_a) {
-                        CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                        CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                        bool value = OpFunc<CTYPE_IN>()(a_casted, b_casted);
-                        return static_cast<CTYPE_OUT>(value);
-                      },
-                      a.const_data_ptr<CTYPE_A>(),
-                      out.mutable_data_ptr<CTYPE_OUT>(),
-                      out.numel());
-                });
-          });
+      using CTYPE_IN =
+          typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
+      ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
+      ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, op_name, CTYPE_OUT, [&]() {
+        CTYPE_B val_b = 0;
+        utils::extract_scalar(b, &val_b);
+        apply_unary_map_fn(
+            [val_b](const CTYPE_A val_a) {
+              CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+              CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+              bool value = OpFunc<CTYPE_IN>()(a_casted, b_casted);
+              return static_cast<CTYPE_OUT>(value);
+            },
+            a.const_data_ptr<CTYPE_A>(),
+            out.mutable_data_ptr<CTYPE_OUT>(),
+            out.numel());
+      });
     });
   });
 
