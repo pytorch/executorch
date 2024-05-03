@@ -324,6 +324,7 @@ python_unittest(
     ],
     deps = [
         ":models",
+        "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir/passes:lib",
     ],
