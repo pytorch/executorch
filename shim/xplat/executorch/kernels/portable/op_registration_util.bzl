@@ -147,7 +147,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         link_whole = True,
     )
 
-def define_op_target(name, deps, android_deps, is_aten_op, _allow_third_party_deps = False, _aten_mode_deps = []):
+def define_op_target(name, deps, android_deps, is_aten_op, is_et_op = True, _allow_third_party_deps = False, _aten_mode_deps = []):
     """Possibly defines cxx_library targets for the named operator group.
 
     Args:
@@ -155,6 +155,7 @@ def define_op_target(name, deps, android_deps, is_aten_op, _allow_third_party_de
         deps: List of deps for the targets.
         android_deps: List of fbandroid_platform_deps for the target.
         is_aten_op: True if the operator overload group is ATen-compatible.
+        is_et_op: True if the operator overload group is ET-compatible.
         _allow_third_party_deps: If True, the op is allowed to depend on
             third-party deps outside of //executorch. Should only be used by
             targets under //executorch/kernels/optimized.
@@ -171,13 +172,14 @@ def define_op_target(name, deps, android_deps, is_aten_op, _allow_third_party_de
             _allow_third_party_deps = _allow_third_party_deps,
         )
 
-    # When building in ATen mode, ATen-compatible (non-custom) operators will
-    # use the implementations provided by ATen, so we should not build the
-    # versions defined here.
-    define_op_library(
-        name = name,
-        deps = deps,
-        android_deps = android_deps,
-        aten_target = False,
-        _allow_third_party_deps = _allow_third_party_deps,
-    )
+    if is_et_op:
+        # When building in ATen mode, ATen-compatible (non-custom) operators will
+        # use the implementations provided by ATen, so we should not build the
+        # versions defined here.
+        define_op_library(
+            name = name,
+            deps = deps,
+            android_deps = android_deps,
+            aten_target = False,
+            _allow_third_party_deps = _allow_third_party_deps,
+        )
