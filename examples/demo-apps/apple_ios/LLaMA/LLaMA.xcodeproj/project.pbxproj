@@ -875,31 +875,31 @@
 				OTHER_LDFLAGS = "";
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libportable_backend-Debug-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libportable_backend-ios-debug.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-Debug-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-ios-debug.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libquantized_backend-Debug-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libquantized_backend-ios-debug.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-Debug-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-ios-debug.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-Debug-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-ios-debug.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libmps_backend-Debug-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libmps_backend-ios-debug.a",
 				);
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libportable_backend-Debug-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libportable_backend-simulator-debug.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-Debug-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-simulator-debug.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libquantized_backend-Debug-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libquantized_backend-simulator-debug.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-Debug-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-simulator-debug.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-Debug-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-simulator-debug.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libmps_backend-Debug-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libmps_backend-simulator-debug.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
@@ -937,31 +937,31 @@
 				OTHER_LDFLAGS = "";
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libportable_backend-Release-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libportable_backend-ios-release.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-Release-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-ios-release.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libquantized_backend-Release-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libquantized_backend-ios-release.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-Release-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-ios-release.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-Release-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-ios-release.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libmps_backend-Release-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libmps_backend-ios-release.a",
 				);
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libportable_backend-Release-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libportable_backend-simulator-release.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-Release-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-simulator-release.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libquantized_backend-Release-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libquantized_backend-simulator-release.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-Release-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-simulator-release.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-Release-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-simulator-release.a",
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libmps_backend-Release-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libmps_backend-simulator-release.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
@@ -1008,11 +1008,11 @@
 				OTHER_LDFLAGS = "";
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libexecutorch-Debug-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-ios-debug.a",
 				);
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libexecutorch-Debug-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-simulator-debug.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama.LLaMARunner;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
@@ -1058,11 +1058,11 @@
 				OTHER_LDFLAGS = "";
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libexecutorch-Debug-0.a",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-ios-debug.a",
 				);
 				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
 					"-force_load",
-					"$(BUILT_PRODUCTS_DIR)/libexecutorch-Debug-1.a",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-simulator-debug.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama.LLaMARunner;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
