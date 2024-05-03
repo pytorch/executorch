@@ -7,9 +7,6 @@
 
 set -euo pipefail
 
-PLATFORMS=("ios" "simulator" "macos")
-PLATFORM_FLAGS=("OS64" "SIMULATORARM64" "MAC_ARM64")
-PLATFORM_TARGET=("17.0" "17.0" "10.15")
 SOURCE_ROOT_DIR=""
 OUTPUT="cmake-out"
 MODE="Release"
@@ -25,14 +22,52 @@ PORTABLE=OFF
 QUANTIZED=OFF
 XNNPACK=OFF
 HEADERS_PATH="include"
-EXECUTORCH_FRAMEWORK="executorch:libexecutorch.a,libexecutorch_no_prim_ops.a,libextension_apple.a,libextension_data_loader.a,libextension_module.a:$HEADERS_PATH"
-COREML_FRAMEWORK="coreml_backend:libcoremldelegate.a:"
-CUSTOM_FRAMEWORK="custom_backend:libcustom_ops.a:"
-MPS_FRAMEWORK="mps_backend:libmpsdelegate.a:"
-OPTIMIZED_FRAMEWORK="optimized_backend:liboptimized_kernels.a,liboptimized_ops_lib.a:"
-PORTABLE_FRAMEWORK="portable_backend:libportable_kernels.a,libportable_ops_lib.a:"
-QUANTIZED_FRAMEWORK="quantized_backend:libquantized_kernels.a,libquantized_ops_lib.a:"
-XNNPACK_FRAMEWORK="xnnpack_backend:libXNNPACK.a,libcpuinfo.a,libpthreadpool.a,libxnnpack_backend.a:"
+
+PLATFORMS=("ios" "simulator" "macos")
+PLATFORM_FLAGS=("OS64" "SIMULATORARM64" "MAC_ARM64")
+PLATFORM_TARGET=("17.0" "17.0" "10.15")
+
+FRAMEWORK_EXECUTORCH="executorch:\
+libexecutorch.a,\
+libexecutorch_no_prim_ops.a,\
+libextension_apple.a,\
+libextension_data_loader.a,\
+libextension_module.a,\
+:$HEADERS_PATH"
+
+FRAMEWORK_BACKEND_COREML="backend_coreml:\
+libcoremldelegate.a,\
+:"
+
+FRAMEWORK_BACKEND_MPS="backend_mps:\
+libmpsdelegate.a,\
+:"
+
+FRAMEWORK_BACKEND_XNNPACK="backend_xnnpack:\
+libXNNPACK.a,\
+libcpuinfo.a,\
+libpthreadpool.a,\
+libxnnpack_backend.a,\
+:"
+
+FRAMEWORK_KERNELS_CUSTOM="kernels_custom:\
+libcustom_ops.a,\
+:"
+
+FRAMEWORK_KERNELS_OPTIMIZED="kernels_optimized:\
+liboptimized_kernels.a,\
+liboptimized_ops_lib.a,\
+:"
+
+FRAMEWORK_KERNELS_PORTABLE="kernels_portable:\
+libportable_kernels.a,\
+libportable_ops_lib.a,\
+:"
+
+FRAMEWORK_KERNELS_QUANTIZED="kernels_quantized:\
+libquantized_kernels.a,\
+libquantized_ops_lib.a,\
+:"
 
 usage() {
   echo "Usage: $0 [SOURCE_ROOT_DIR] [OPTIONS]"
@@ -47,11 +82,11 @@ usage() {
   echo "  --python=FILE        Python executable path. Default: Path of python3 found in the current \$PATH"
   echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: Path of flatc found in the current \$PATH"
   echo "  --coreml             Include this flag to build the Core ML backend."
-  echo "  --custom             Include this flag to build the Custom backend."
+  echo "  --custom             Include this flag to build the Custom kernels."
   echo "  --mps                Include this flag to build the Metal Performance Shaders backend."
-  echo "  --optimized          Include this flag to build the Optimized backend."
-  echo "  --portable           Include this flag to build the Portable backend."
-  echo "  --quantized          Include this flag to build the Quantized backend."
+  echo "  --optimized          Include this flag to build the Optimized kernels."
+  echo "  --portable           Include this flag to build the Portable kernels."
+  echo "  --quantized          Include this flag to build the Quantized kernels."
   echo "  --xnnpack            Include this flag to build the XNNPACK backend."
   echo
   echo "Example:"
@@ -124,16 +159,16 @@ cmake_build() {
         -DBUCK2="$BUCK2" \
         -DPYTHON_EXECUTABLE="$PYTHON" \
         -DFLATC_EXECUTABLE="$FLATC" \
+        -DEXECUTORCH_BUILD_COREML=$COREML \
+        -DEXECUTORCH_BUILD_MPS=$MPS \
+        -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
         -DEXECUTORCH_BUILD_EXTENSION_APPLE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
-        -DEXECUTORCH_BUILD_COREML=$COREML \
         -DEXECUTORCH_BUILD_CUSTOM=$CUSTOM \
-        -DEXECUTORCH_BUILD_MPS=$MPS \
         -DEXECUTORCH_BUILD_OPTIMIZED=$OPTIMIZED \
         -DEXECUTORCH_BUILD_QUANTIZED=$QUANTIZED \
-        -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
+        -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
         ${platform_flag:+-DPLATFORM=$platform_flag} \
         ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
         --log-level=VERBOSE
@@ -174,14 +209,14 @@ append_framework_flag() {
   fi
 }
 
-append_framework_flag "ON" "$EXECUTORCH_FRAMEWORK"
-append_framework_flag "$COREML" "$COREML_FRAMEWORK"
-append_framework_flag "$CUSTOM" "$CUSTOM_FRAMEWORK"
-append_framework_flag "$MPS" "$MPS_FRAMEWORK"
-append_framework_flag "$OPTIMIZED" "$OPTIMIZED_FRAMEWORK"
-append_framework_flag "$PORTABLE" "$PORTABLE_FRAMEWORK"
-append_framework_flag "$QUANTIZED" "$QUANTIZED_FRAMEWORK"
-append_framework_flag "$XNNPACK" "$XNNPACK_FRAMEWORK"
+append_framework_flag "ON" "$FRAMEWORK_EXECUTORCH"
+append_framework_flag "$COREML" "$FRAMEWORK_BACKEND_COREML"
+append_framework_flag "$MPS" "$FRAMEWORK_BACKEND_MPS"
+append_framework_flag "$XNNPACK" "$FRAMEWORK_BACKEND_XNNPACK"
+append_framework_flag "$CUSTOM" "$FRAMEWORK_KERNELS_CUSTOM"
+append_framework_flag "$OPTIMIZED" "$FRAMEWORK_KERNELS_OPTIMIZED"
+append_framework_flag "$PORTABLE" "$FRAMEWORK_KERNELS_PORTABLE"
+append_framework_flag "$QUANTIZED" "$FRAMEWORK_KERNELS_QUANTIZED"
 
 "$SOURCE_ROOT_DIR"/build/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
 
