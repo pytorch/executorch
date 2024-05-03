@@ -36,44 +36,8 @@ Tensor& ne_scalar_out(
     const Tensor& a,
     const Scalar& b,
     Tensor& out) {
-  (void)ctx;
-  // Resize for dynamic shape
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      resize_tensor(out, a.sizes()) == Error::Ok,
-      InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
-
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = utils::get_scalar_dtype(b);
-  ScalarType common_type = promoteTypes(a_type, b_type);
-  ScalarType out_type = out.scalar_type();
-
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "ne.Scalar_out", CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "ne.Scalar_out", CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(
-          Bool, common_type, ctx, "ne.Scalar_out", CTYPE_IN, [&]() {
-            ET_SWITCH_REAL_TYPES_AND(
-                Bool, out_type, ctx, "ne.Scalar_out", CTYPE_OUT, [&]() {
-                  CTYPE_B val_b = 0;
-                  utils::extract_scalar(b, &val_b);
-                  apply_unary_map_fn(
-                      [val_b](const CTYPE_A val_a) {
-                        CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                        CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                        bool value = a_casted != b_casted;
-                        return static_cast<CTYPE_OUT>(value);
-                      },
-                      a.const_data_ptr<CTYPE_A>(),
-                      out.mutable_data_ptr<CTYPE_OUT>(),
-                      out.numel());
-                });
-          });
-    });
-  });
-
-  return out;
+  return scalar_comparison_op_with_regular_promotion_out<std::not_equal_to>(
+      ctx, a, b, out, "ne.Scalar_out");
 }
 
 } // namespace native
