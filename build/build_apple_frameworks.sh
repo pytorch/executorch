@@ -7,16 +7,16 @@
 
 set -euo pipefail
 
-PLATFORMS=("iphoneos" "iphonesimulator")
-PLATFORM_FLAGS=("OS" "SIMULATOR")
+PLATFORMS=("ios" "simulator" "macos")
+PLATFORM_FLAGS=("OS64" "SIMULATORARM64" "MAC_ARM64")
+PLATFORM_TARGET=("17.0" "17.0" "10.15")
 SOURCE_ROOT_DIR=""
 OUTPUT="cmake-out"
 MODE="Release"
 TOOLCHAIN=""
-BUCK2="buck2"
+BUCK2=$(which buck2)
 PYTHON=$(which python3)
-FLATC="flatc"
-IOS_DEPLOYMENT_TARGET="17.0"
+FLATC=$(which flatc)
 COREML=OFF
 CUSTOM=OFF
 MPS=OFF
@@ -42,10 +42,10 @@ usage() {
   echo "Options:"
   echo "  --output=DIR         Output directory. Default: 'cmake-out'"
   echo "  --Debug              Use Debug build mode. Default: 'Release'"
-  echo "  --toolchain=FILE     Cmake toolchain file. Default: '\$SOURCE_ROOT_DIR/third-party/pytorch/cmake/iOS.cmake'"
-  echo "  --buck2=FILE         Buck2 executable path. Default: '/tmp/buck2'"
+  echo "  --toolchain=FILE     Cmake toolchain file. Default: '\$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake'"
+  echo "  --buck2=FILE         Buck2 executable path. Default: Path of buck2 found in the current \$PATH"
   echo "  --python=FILE        Python executable path. Default: Path of python3 found in the current \$PATH"
-  echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: '\$SOURCE_ROOT_DIR/third-party/flatbuffers/cmake-out/flatc'"
+  echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: Path of flatc found in the current \$PATH"
   echo "  --coreml             Include this flag to build the Core ML backend."
   echo "  --custom             Include this flag to build the Custom backend."
   echo "  --mps                Include this flag to build the Metal Performance Shaders backend."
@@ -68,7 +68,6 @@ for arg in "$@"; do
       --buck2=*) BUCK2="${arg#*=}" ;;
       --python=*) PYTHON="${arg#*=}" ;;
       --flatc=*) FLATC="${arg#*=}" ;;
-      --ios-deployment-target=*) IOS_DEPLOYMENT_TARGET="${arg#*=}" ;;
       --coreml) COREML=ON ;;
       --custom) CUSTOM=ON ;;
       --mps) MPS=ON ;;
@@ -92,13 +91,9 @@ if [[ -z "$SOURCE_ROOT_DIR" ]]; then
 fi
 
 if [[ -z "$TOOLCHAIN" ]]; then
-    TOOLCHAIN="$SOURCE_ROOT_DIR/third-party/pytorch/cmake/iOS.cmake"
+    TOOLCHAIN="$SOURCE_ROOT_DIR/third-party/ios-cmake/ios.toolchain.cmake"
 fi
 [[ -f "$TOOLCHAIN" ]] || { echo >&2 "Toolchain file $TOOLCHAIN does not exist."; exit 1; }
-
-if [[ -z "$FLATC" ]]; then
-    FLATC="$SOURCE_ROOT_DIR/third-party/flatbuffers/cmake-out/flatc"
-fi
 
 check_command() {
   command -v "$1" >/dev/null 2>&1 || { echo >&2 "$1 is not installed"; exit 1; }
@@ -117,6 +112,7 @@ rm -rf "$OUTPUT" && mkdir -p "$OUTPUT" && cd "$OUTPUT" || exit 1
 cmake_build() {
     local platform=$1
     local platform_flag=$2
+    local platform_target=$3
     echo "Building for $platform with flag $platform_flag"
     mkdir "$platform" && cd "$platform" || exit 1
     cmake "$SOURCE_ROOT_DIR" -G Xcode \
@@ -132,20 +128,23 @@ cmake_build() {
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
-        -DIOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
         -DEXECUTORCH_BUILD_COREML=$COREML \
         -DEXECUTORCH_BUILD_CUSTOM=$CUSTOM \
         -DEXECUTORCH_BUILD_MPS=$MPS \
         -DEXECUTORCH_BUILD_OPTIMIZED=$OPTIMIZED \
         -DEXECUTORCH_BUILD_QUANTIZED=$QUANTIZED \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
-        ${platform_flag:+-DIOS_PLATFORM=$platform_flag}
-    cmake --build . --config $MODE
+        ${platform_flag:+-DPLATFORM=$platform_flag} \
+        ${platform_target:+-DDEPLOYMENT_TARGET=$platform_target} \
+        --log-level=VERBOSE
+    cmake --build . \
+        --config $MODE \
+        --verbose
     cd ..
 }
 
 for index in ${!PLATFORMS[*]}; do
-  cmake_build "${PLATFORMS[$index]}" "${PLATFORM_FLAGS[$index]}"
+  cmake_build "${PLATFORMS[$index]}" "${PLATFORM_FLAGS[$index]}" "${PLATFORM_TARGET[$index]}"
 done
 
 echo "Exporting headers"

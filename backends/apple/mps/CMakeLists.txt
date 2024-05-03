@@ -84,6 +84,7 @@ target_link_libraries(
 
 target_link_options_shared_lib(mpsdelegate)
 target_compile_options(mpsdelegate PUBLIC ${_common_compile_options})
+target_compile_options(mpsdelegate PRIVATE "-fno-objc-arc")
 
 install(
   TARGETS mpsdelegate

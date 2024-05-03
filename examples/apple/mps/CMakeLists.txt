@@ -60,7 +60,7 @@ find_package(
 )
 
 # ios can only build library but not binary
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
+if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   #
   # mps_executor_runner: Like executor_runner but with MPS, the binary will be
   # at ${CMAKE_BINARY_DIR}/examples/apple/executor_runner/mps
