@@ -32,7 +32,6 @@ def define_common_targets():
             "data_loader.h",
             "error.h",
             "freeable_buffer.h",
-            "function_ref.h",
             "result.h",
             "span.h",
         ],
