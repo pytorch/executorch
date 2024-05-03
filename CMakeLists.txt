@@ -36,7 +36,7 @@
 #
 # This file should be formatted with
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 # It should also be cmake-lint clean.
 #
@@ -71,7 +71,8 @@ else()
 endif()
 
 option(EXECUTORCH_ENABLE_LOGGING "Build with ET_LOG_ENABLED"
-       ${_default_release_disabled_options})
+       ${_default_release_disabled_options}
+)
 if(NOT EXECUTORCH_ENABLE_LOGGING)
   # Avoid pulling in the logging strings, which can be large. Note that this
   # will set the compiler flag for all targets in this directory, and for all
@@ -82,7 +83,8 @@ endif()
 # Configure log level. Must be one of debug, info, error, fatal.
 set(EXECUTORCH_LOG_LEVEL
     "Info"
-    CACHE STRING "Build with the given ET_MIN_LOG_LEVEL value")
+    CACHE STRING "Build with the given ET_MIN_LOG_LEVEL value"
+)
 string(TOLOWER "${EXECUTORCH_LOG_LEVEL}" LOG_LEVEL_LOWER)
 if(LOG_LEVEL_LOWER STREQUAL "debug")
   add_definitions(-DET_MIN_LOG_LEVEL=Debug)
@@ -96,12 +98,14 @@ else()
   message(
     SEND_ERROR
       "Unknown log level \"${EXECUTORCH_LOG_LEVEL}\". Expected one of Debug, "
-      + "Info, Error, or Fatal.")
+      + "Info, Error, or Fatal."
+  )
 endif()
 
 option(EXECUTORCH_ENABLE_PROGRAM_VERIFICATION
        "Build with ET_ENABLE_PROGRAM_VERIFICATION"
-       ${_default_release_disabled_options})
+       ${_default_release_disabled_options}
+)
 if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   # Avoid pulling in the flatbuffer data verification logic, which can add about
   # 20kB. Note that this will set the compiler flag for all targets in this
@@ -110,7 +114,8 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
 endif()
 
 option(EXECUTORCH_ENABLE_EVENT_TRACER "Build with ET_EVENT_TRACER_ENABLED=ON"
-       OFF)
+       OFF
+)
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
@@ -119,7 +124,8 @@ endif()
 # they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
 # disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
+    "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti"
+)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
@@ -138,7 +144,8 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
 
 option(EXECUTORCH_BUILD_ARM_BAREMETAL
-       "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF)
+       "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF
+)
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
@@ -147,12 +154,14 @@ option(EXECUTORCH_BUILD_CUSTOM "Build the custom kernels" OFF)
 option(EXECUTORCH_BUILD_CUSTOM_OPS_AOT "Build the custom ops lib for AOT" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
-       OFF)
+       OFF
+)
 
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
-       OFF)
+       OFF
+)
 
 option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
 
@@ -179,13 +188,16 @@ option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
+)
 
 #
 # cpuinfo: build cpuinfo library. Disable on unsupported platforms
 #
-cmake_dependent_option(EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
-                       "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
+  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
+)
 
 if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT)
   set(EXECUTORCH_BUILD_CUSTOM ON)
@@ -198,59 +210,74 @@ endif()
 if(EXECUTORCH_BUILD_CPUINFO)
   # --- cpuinfo
   set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
-      ${CMAKE_POSITION_INDEPENDENT_CODE})
+      ${CMAKE_POSITION_INDEPENDENT_CODE}
+  )
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
   set(CPUINFO_BUILD_TOOLS
       OFF
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   set(CPUINFO_BUILD_UNIT_TESTS
       OFF
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   set(CPUINFO_BUILD_MOCK_TESTS
       OFF
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   set(CPUINFO_BUILD_BENCHMARKS
       OFF
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   set(CPUINFO_LIBRARY_TYPE
       "static"
-      CACHE STRING "")
+      CACHE STRING ""
+  )
   set(CPUINFO_LOG_LEVEL
       "error"
-      CACHE STRING "")
+      CACHE STRING ""
+  )
   set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
   add_subdirectory("${CPUINFO_SOURCE_DIR}")
   set(CMAKE_POSITION_INDEPENDENT_CODE
-      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG})
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  )
 endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   # --- pthreadpool
   set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
-      ${CMAKE_POSITION_INDEPENDENT_CODE})
+      ${CMAKE_POSITION_INDEPENDENT_CODE}
+  )
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
   set(PTHREADPOOL_BUILD_TESTS
       OFF
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   set(PTHREADPOOL_BUILD_BENCHMARKS
       OFF
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   set(PTHREADPOOL_LIBRARY_TYPE
       "static"
-      CACHE STRING "")
+      CACHE STRING ""
+  )
   set(PTHREADPOOL_ALLOW_DEPRECATED_API
       ON
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   if(APPLE)
     set(PTHREADPOOL_SYNC_PRIMITIVE
-       "condvar"
-       CACHE STRING "")
+        "condvar"
+        CACHE STRING ""
+    )
   endif()
   add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
   set(CMAKE_POSITION_INDEPENDENT_CODE
-      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG})
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+  )
 endif()
 
 if(NOT PYTHON_EXECUTABLE)
@@ -319,14 +346,18 @@ endif()
 # libraries that it uses, like `gflags`. Disabling this can be helpful when
 # cross-compiling, but some required tools that would have been built need to be
 # provided directly (via, for example, FLATC_EXECUTABLE).
-cmake_dependent_option(EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets."
-                       ON "NOT CMAKE_TOOLCHAIN_IOS" OFF)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets." ON
+  "NOT CMAKE_TOOLCHAIN_IOS" OFF
+)
 
 #
 # flatc: Flatbuffer commandline tool to generate .h files from .fbs files
 #
-cmake_dependent_option(EXECUTORCH_BUILD_FLATC "Build the flatc executable." ON
-                       "NOT FLATC_EXECUTABLE;EXECUTORCH_BUILD_HOST_TARGETS" OFF)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_FLATC "Build the flatc executable." ON
+  "NOT FLATC_EXECUTABLE;EXECUTORCH_BUILD_HOST_TARGETS" OFF
+)
 
 if(EXECUTORCH_BUILD_FLATC)
   if(FLATC_EXECUTABLE)
@@ -339,19 +370,24 @@ if(EXECUTORCH_BUILD_FLATC)
   set(FLATC_EXECUTABLE flatc)
   set(FLATBUFFERS_BUILD_FLATC
       ON
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   set(FLATBUFFERS_BUILD_FLATHASH
       OFF
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   set(FLATBUFFERS_BUILD_FLATLIB
       OFF
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   set(FLATBUFFERS_BUILD_TESTS
       OFF
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   set(FLATBUFFERS_INSTALL
       OFF
-      CACHE BOOL "")
+      CACHE BOOL ""
+  )
   add_subdirectory(third-party/flatbuffers)
 endif()
 if(NOT FLATC_EXECUTABLE)
@@ -359,7 +395,8 @@ if(NOT FLATC_EXECUTABLE)
     FATAL_ERROR
       "FLATC_EXECUTABLE must be set when EXECUTORCH_BUILD_FLATC is disabled. "
       "Note that EXECUTORCH_BUILD_FLATC may be disabled implicitly when "
-      "cross-compiling or when EXECUTORCH_BUILD_HOST_TARGETS is disabled.")
+      "cross-compiling or when EXECUTORCH_BUILD_HOST_TARGETS is disabled."
+  )
 endif()
 
 #
@@ -381,11 +418,14 @@ find_library(DL_LIBRARY_EXISTS NAMES dl)
 if(DL_LIBRARY_EXISTS)
   target_link_libraries(executorch_no_prim_ops PRIVATE dl) # For dladdr()
 endif()
-target_include_directories(executorch_no_prim_ops PUBLIC ${_common_include_directories})
+target_include_directories(
+  executorch_no_prim_ops PUBLIC ${_common_include_directories}
+)
 target_compile_options(executorch_no_prim_ops PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
-  target_compile_definitions(executorch_no_prim_ops
-                             PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM})
+  target_compile_definitions(
+    executorch_no_prim_ops PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
+  )
 endif()
 
 add_library(executorch ${_executorch__srcs})
@@ -406,7 +446,8 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 if(EXECUTORCH_BUILD_CUSTOM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
   add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops)
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops
+  )
 endif()
 
 if(EXECUTORCH_BUILD_OPTIMIZED)
@@ -422,8 +463,10 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 #
 # gflags: Commandline flag host library.
 #
-cmake_dependent_option(EXECUTORCH_BUILD_GFLAGS "Build the gflags library." ON
-                       EXECUTORCH_BUILD_HOST_TARGETS OFF)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_GFLAGS "Build the gflags library." ON
+  EXECUTORCH_BUILD_HOST_TARGETS OFF
+)
 if(EXECUTORCH_BUILD_GFLAGS)
   add_subdirectory(third-party/gflags)
 endif()
@@ -434,7 +477,8 @@ install(
   TARGETS executorch executorch_no_prim_ops
   DESTINATION lib
   INCLUDES
-  DESTINATION ${_common_include_directories})
+  DESTINATION ${_common_include_directories}
+)
 install(FILES build/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
 
 #
@@ -442,7 +486,8 @@ install(FILES build/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" ON
-  EXECUTORCH_BUILD_HOST_TARGETS OFF)
+  EXECUTORCH_BUILD_HOST_TARGETS OFF
+)
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch gflags)
@@ -474,7 +519,8 @@ endif()
 if(EXECUTORCH_BUILD_SDK)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
       ON
-      CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE)
+      CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
+  )
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
 endif()
 
@@ -531,8 +577,9 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
   find_package(Torch CONFIG REQUIRED)
-  find_library(TORCH_PYTHON_LIBRARY torch_python
-               PATHS "${TORCH_INSTALL_PREFIX}/lib")
+  find_library(
+    TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib"
+  )
 
   set(_dep_libs
       ${TORCH_PYTHON_LIBRARY}
@@ -542,7 +589,8 @@ if(EXECUTORCH_BUILD_PYBIND)
       extension_data_loader
       portable_ops_lib
       util
-      torch)
+      torch
+  )
 
   if(EXECUTORCH_BUILD_COREML)
     list(APPEND _dep_libs coremldelegate)
@@ -582,15 +630,18 @@ if(EXECUTORCH_BUILD_PYBIND)
       -fexceptions
       # libtorch is built with the old ABI, so we need to do the same for any
       # .cpp files that include torch, c10, or ATen targets.
-      -D_GLIBCXX_USE_CXX11_ABI=0)
+      -D_GLIBCXX_USE_CXX11_ABI=0
+  )
   # util lib
   add_library(
     util
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/util/read_file.cpp)
-  target_include_directories(util PUBLIC ${_common_include_directories}
-                                         ${TORCH_INCLUDE_DIRS})
+    ${CMAKE_CURRENT_SOURCE_DIR}/util/read_file.cpp
+  )
+  target_include_directories(
+    util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
+  )
   target_compile_options(util PUBLIC ${_pybind_compile_options})
   target_link_libraries(util PRIVATE torch c10 executorch)
 
@@ -599,8 +650,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   # The actual output file needs a leading underscore so it can coexist with
   # portable_lib.py in the same python package.
   set_target_properties(portable_lib PROPERTIES OUTPUT_NAME "_portable_lib")
-  target_compile_definitions(portable_lib
-                             PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_portable_lib)
+  target_compile_definitions(
+    portable_lib PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=_portable_lib
+  )
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
   target_link_libraries(portable_lib PUBLIC ${_dep_libs})
@@ -620,11 +672,13 @@ if(EXECUTORCH_BUILD_PYBIND)
                  # `site-packages/executorch/extension/pybindings`, and that
                  # the torch libs are in `site-packages/torch/lib`.
                  BUILD_RPATH "@loader_path/../../../torch/lib"
-                 INSTALL_RPATH "@loader_path/../../../torch/lib")
+                 INSTALL_RPATH "@loader_path/../../../torch/lib"
+    )
   endif()
 
   install(TARGETS portable_lib
-          LIBRARY DESTINATION executorch/extension/pybindings)
+          LIBRARY DESTINATION executorch/extension/pybindings
+  )
 endif()
 
 # Print all summary
