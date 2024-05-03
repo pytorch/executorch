@@ -1,0 +1,33 @@
+From 4213b02079aa355490ee493cb5785191356e246f Mon Sep 17 00:00:00 2001
+From: Rob Elliott <robert.elliott@arm.com>
+Date: Tue, 12 Mar 2024 14:05:35 +0000
+Subject: [PATCH 2/2] move heap to DDR on Corstone-300
+
+Signed-off-by: Rob Elliott <robert.elliott@arm.com>
+---
+ targets/corstone-300/platform.ld | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/targets/corstone-300/platform.ld b/targets/corstone-300/platform.ld
+index 8de77c4..476a2f8 100644
+--- a/targets/corstone-300/platform.ld
++++ b/targets/corstone-300/platform.ld
+@@ -312,7 +312,7 @@ SECTIONS
+     . = . + __HEAP_SIZE;
+     . = ALIGN(8);
+     __HeapLimit = .;
+-  } > DTCM :null
++  } > DDR :null
+ 
+   .stack (ORIGIN(DTCM) + LENGTH(DTCM) - __STACK_SIZE) (COPY) :
+   {
+@@ -325,5 +325,5 @@ SECTIONS
+   PROVIDE(__stack = __StackTop);
+ 
+   /* Check if data + heap + stack exceeds DTCM limit */
+-  ASSERT(__StackLimit >= __HeapLimit, "region DTCM overflowed with stack")
++  ASSERT(__StackLimit >= __bss_end__, "region DTCM overflowed with stack")
+ }
+-- 
+2.34.1
+
