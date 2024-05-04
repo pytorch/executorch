@@ -306,41 +306,24 @@ class QuantParams:
 
     @classmethod
     def from_bias(
-        cls,
-        bias: torch.fx.Node,
-        weight_quantizer: Optional[QuantParams],
-        input_quantizer: Optional[QuantParams],
+        cls, tensor_node: torch.fx.Node, ep: ExportedProgram
     ) -> Optional[QuantParams]:
-        if weight_quantizer is None or input_quantizer is None:
-            check_or_raise(
-                weight_quantizer is None and input_quantizer is None,
-                "Weight and Input should both be quantized",
-            )
+        # source node for quant params
+        dq = tensor_node
+
+        if not is_dequant(dq):
             return None
 
-        if input_quantizer.is_dynamic:
-            # No need to quantize bias for dyanamic quantization
-            return None
+        src = dq
+
+        # is input of dq is q?
+        dq_input = dq.all_input_nodes[0]
+        if is_quant(dq_input):
+            src = dq_input
 
         check_or_raise(
-            not input_quantizer.per_channel,
-            "Input can not be quantized per channel",
+            src.all_input_nodes[0].op in ["get_attr", "placeholder"],
+            f"Expected input to quant -> dequant chain from bias to be static tensor, but instead got: {src.all_input_nodes[0]}",
         )
 
-        # Only per_tensor quantization is supported for input here
-        check_or_raise(
-            isinstance(input_quantizer.scale, float),
-            f"q_input scale should be float, but got {input_quantizer.scale}",
-        )
-        return cls(
-            per_channel=weight_quantizer.per_channel,
-            q_input=bias,
-            scale=weight_quantizer.scale * cast(float, input_quantizer.scale),
-            zp=weight_quantizer.zp * 0,
-            axis=0,  # not using weight_quantizer.axis because bias is always of shape [out_channels] i.e. 1D
-            dtype=torch.int32,
-            qmin=-(2**31),
-            qmax=(2**31) - 1,
-            is_output=False,
-            is_input=False,
-        )
+        return cls.from_q_dq_node(src, ep)

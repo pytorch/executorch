@@ -66,9 +66,7 @@ class LinearVisitor(NodeVisitor):
         # bias
         if len(node.args) > 2:
             bias_node = get_input_node(node, 2)
-            bias_quant_params = QuantParams.from_bias(
-                bias_node, weight_quant_params, input_quant_params
-            )
+            bias_quant_params = QuantParams.from_bias(bias_node, self._exported_program)
             self.define_tensor(
                 get_input_node(node, 2),
                 xnn_graph,
