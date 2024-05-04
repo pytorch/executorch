@@ -43,7 +43,7 @@ void add_slice_tensor_out_node(
 
   dim = normalize(dim, t_in->dim());
 
-  Dim4DType dim4d = normalize_to_dim4d(*t_in, dim);
+  DimIndex dim_index = normalize_to_dim_index(*t_in, dim);
 
   std::optional<int64_t> opt_start =
       graph.extract_optional_scalar<int64_t>(opt_start_ref);
@@ -60,7 +60,7 @@ void add_slice_tensor_out_node(
   VK_CHECK_COND((0 <= start) && (start < in_sizes[dim]));
   VK_CHECK_COND((0 <= end) && (end <= in_sizes[dim]));
 
-  if (dim4d == kChannel4D) {
+  if (dim_index == kChannel4D) {
     // slice by channel
     std::string kernel_name = "slice_channel";
     kernel_name.reserve(kShaderNameReserve);
@@ -92,13 +92,13 @@ void add_slice_tensor_out_node(
     // GPU's coordinate is in x, y, z
     int64_t gpu_dim = -1;
     int64_t stride = 1;
-    if (dim4d == kWidth4D) {
+    if (dim_index == kWidth4D) {
       gpu_dim = 0; // width: x dimension in gpu
       VK_CHECK_COND(out_sizes[dim] == (1 + (end - start - 1) / step));
-    } else if (dim4d == kHeight4D) {
+    } else if (dim_index == kHeight4D) {
       gpu_dim = 1; // height: y dimension
       VK_CHECK_COND(out_sizes[dim] == (1 + (end - start - 1) / step));
-    } else if (dim4d == kBatch4D) {
+    } else if (dim_index == kBatch4D) {
       gpu_dim = 2; // batch: z dimension
 
       // Due to channel packing, each batch value is span over stride planes

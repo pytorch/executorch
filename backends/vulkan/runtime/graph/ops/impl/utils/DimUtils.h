@@ -13,26 +13,26 @@
 namespace vkcompute {
 
 /*
- * Maps a semantic dimension name to an integer that
- * corresponds to its innermost ordering in a 4D tensor in
- * NCHW format. Width is the innermost dimension, so it
- * corresponds to 1, height is the next innermost, so it
- * corresponds to 2, and so on.
+ * Maps a semantic dimension name to an integer that corresponds to its
+ * innermost ordering in a 4D tensor in NCHW format. In a way, it is the
+ * "negative index" associated with a dim. For instance: in a NCHW tensor, Width
+ * is the innermost dimension, so it corresponds to 1, height is the next
+ * innermost, so it corresponds to 2, and so on.
  */
-enum Dim4DType : uint32_t {
-  DIM4D_WIDTH = 1u,
-  DIM4D_HEIGHT = 2u,
-  DIM4D_CHANNEL = 3u,
-  DIM4D_BATCH = 4u,
+enum DimIndex : uint32_t {
+  DIM_LAST = 1u,
+  DIM_2ND_LAST = 2u,
+  DIM_3RD_LAST = 3u,
+  DIM_4TH_LAST = 4u,
 };
 
-constexpr Dim4DType kWidth4D = Dim4DType::DIM4D_WIDTH;
-constexpr Dim4DType kHeight4D = Dim4DType::DIM4D_HEIGHT;
-constexpr Dim4DType kChannel4D = Dim4DType::DIM4D_CHANNEL;
-constexpr Dim4DType kBatch4D = Dim4DType::DIM4D_BATCH;
+constexpr DimIndex kWidth4D = DimIndex::DIM_LAST;
+constexpr DimIndex kHeight4D = DimIndex::DIM_2ND_LAST;
+constexpr DimIndex kChannel4D = DimIndex::DIM_3RD_LAST;
+constexpr DimIndex kBatch4D = DimIndex::DIM_4TH_LAST;
 
-inline Dim4DType normalize_to_dim4d(const vTensor& v_in, int32_t dim) {
-  return static_cast<Dim4DType>(v_in.dim() - dim);
+inline DimIndex normalize_to_dim_index(const vTensor& v_in, int32_t dim) {
+  return static_cast<DimIndex>(v_in.dim() - dim);
 }
 
 /*
@@ -74,11 +74,11 @@ uint32_t dim_at(const std::vector<int64_t>& sizes) {
   return dims < N ? 1 : api::utils::safe_downcast<uint32_t>(sizes[dims - N]);
 }
 
-inline uint32_t dim_at(const std::vector<int64_t>& sizes, Dim4DType dim4d) {
+inline uint32_t dim_at(const std::vector<int64_t>& sizes, DimIndex dim_index) {
   const uint32_t dims = sizes.size();
-  return dims < dim4d
+  return dims < dim_index
       ? 1
-      : api::utils::safe_downcast<uint32_t>(sizes[dims - dim4d]);
+      : api::utils::safe_downcast<uint32_t>(sizes[dims - dim_index]);
 }
 
 template <uint32_t N>
@@ -86,12 +86,12 @@ uint32_t dim_at(const vTensor& v_in) {
   return dim_at<N>(v_in.sizes());
 }
 
-inline uint32_t dim_at(const vTensor& v_in, Dim4DType dim4d) {
-  return dim_at(v_in.sizes(), dim4d);
+inline uint32_t dim_at(const vTensor& v_in, DimIndex dim_index) {
+  return dim_at(v_in.sizes(), dim_index);
 }
 
-inline std::ostream& operator<<(std::ostream& os, Dim4DType dim4d) {
-  switch (dim4d) {
+inline std::ostream& operator<<(std::ostream& os, DimIndex dim_index) {
+  switch (dim_index) {
     case kWidth4D:
       os << "kWidth4D";
       break;

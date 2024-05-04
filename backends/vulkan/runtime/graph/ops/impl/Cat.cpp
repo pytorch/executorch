@@ -31,10 +31,10 @@ void add_cat_default_node(
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
   vTensorPtr t_out = graph.get_tensor(out);
 
-  Dim4DType dim4d = normalize_to_dim4d(*t_out, dim);
+  DimIndex dim_index = normalize_to_dim_index(*t_out, dim);
 
   // TODO: Find ways to factor out the similar code for width, height, and batch
-  if (dim4d == kWidth4D) {
+  if (dim_index == kWidth4D) {
     api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
     api::utils::ivec3 dst_offset = api::utils::make_ivec3({0, 0, 0}, false);
 
@@ -46,7 +46,7 @@ void add_cat_default_node(
       dst_offset.data[0] += range.data[0];
     }
 
-  } else if (dim4d == kHeight4D) {
+  } else if (dim_index == kHeight4D) {
     api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
     api::utils::ivec3 dst_offset = api::utils::make_ivec3({0, 0, 0}, false);
 
@@ -57,7 +57,7 @@ void add_cat_default_node(
           graph, input_ref, range, src_offset, dst_offset, out);
       dst_offset.data[1] += range.data[1];
     }
-  } else if (dim4d == kBatch4D) {
+  } else if (dim_index == kBatch4D) {
     api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
     api::utils::ivec3 dst_offset = api::utils::make_ivec3({0, 0, 0}, false);
 
@@ -68,7 +68,7 @@ void add_cat_default_node(
           graph, input_ref, range, src_offset, dst_offset, out);
       dst_offset.data[2] += range.data[2];
     }
-  } else if (dim4d == kChannel4D) {
+  } else if (dim_index == kChannel4D) {
     int32_t src_offset = 0;
     int32_t dst_offset = 0;
 
@@ -80,7 +80,7 @@ void add_cat_default_node(
       dst_offset += range;
     }
   } else {
-    VK_THROW("Unexpected value of dim4d=", dim4d);
+    VK_THROW("Unexpected value of dim_index=", dim_index);
   }
 }
 
