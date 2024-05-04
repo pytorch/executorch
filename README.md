@@ -68,7 +68,7 @@ executorch
 ├── runtime                         #  Core cpp runtime
 |   ├── backend                     #  Backend delegate runtime APIs
 |   ├── core                        #  Core structures used across all levels of the runtime
-|   ├── executor                    #  Model loading, initalization, and execution.
+|   ├── executor                    #  Model loading, initialization, and execution.
 |   ├── kernel                      #  Kernel registration and management.
 |   ├── platform                    #  Layer between architecture specific code and user calls.
 ├── schema                          #  ExecuTorch program definition
