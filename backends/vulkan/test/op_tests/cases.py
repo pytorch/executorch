@@ -555,6 +555,18 @@ def get_split_tensor_inputs():
     return test_suite
 
 
+def get_unary_ops_inputs():
+    test_suite = VkTestSuite(
+        [
+            (M1,),
+            (M1, M2),
+            (S1, M1, M2),
+            (S1, S2, S2, M2),
+        ]
+    )
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -577,4 +589,5 @@ test_suites = {
     "aten.cat.default": get_cat_inputs(),
     "aten.split_with_sizes_copy.default": get_split_with_sizes_inputs(),
     "aten.split.Tensor": get_split_tensor_inputs(),
+    "aten.sqrt.default": get_unary_ops_inputs(),
 }
