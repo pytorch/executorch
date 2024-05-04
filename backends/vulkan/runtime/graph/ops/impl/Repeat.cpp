@@ -145,8 +145,8 @@ void add_repeat_node(
   if (int64_t channel_repeat = dim_at<kChannel4D>(repeats);
       channel_repeat == 1) {
     // If no repeat, short-cut to a direct copy
-    api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
-    api::utils::ivec3 dst_offset = api::utils::make_ivec3({0, 0, 0}, false);
+    api::utils::ivec3 src_offset{0, 0, 0};
+    api::utils::ivec3 dst_offset{0, 0, 0};
 
     add_copy_offset_node(graph, in, running_range, src_offset, dst_offset, out);
 
@@ -157,11 +157,10 @@ void add_repeat_node(
   // TODO: refactor width, height, and batch into a common helper function.
   // Width
   if (int64_t width_repeat = dim_at<kWidth4D>(repeats); width_repeat > 1) {
-    api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
+    api::utils::ivec3 src_offset{0, 0, 0};
 
     for (int i = 1; i < width_repeat; ++i) {
-      api::utils::ivec3 dst_offset =
-          api::utils::make_ivec3({i * dim_at<kWidth4D>(in_sizes), 0, 0}, false);
+      api::utils::ivec3 dst_offset{i * dim_at<kWidth4D>(in_sizes), 0, 0};
 
       add_copy_offset_node(
           graph, out, running_range, src_offset, dst_offset, out);
@@ -172,11 +171,10 @@ void add_repeat_node(
 
   // Height
   if (int64_t height_repeat = dim_at<kHeight4D>(repeats); height_repeat > 1) {
-    api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
+    api::utils::ivec3 src_offset{0, 0, 0};
 
     for (int i = 1; i < height_repeat; ++i) {
-      api::utils::ivec3 dst_offset = api::utils::make_ivec3(
-          {0, i * dim_at<kHeight4D>(in_sizes), 0}, false);
+      api::utils::ivec3 dst_offset = {0, i * dim_at<kHeight4D>(in_sizes), 0};
 
       add_copy_offset_node(
           graph, out, running_range, src_offset, dst_offset, out);
@@ -187,11 +185,10 @@ void add_repeat_node(
 
   // Batch
   if (int64_t batch_repeat = dim_at<kBatch4D>(repeats); batch_repeat > 1) {
-    api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
+    api::utils::ivec3 src_offset{0, 0, 0};
 
     for (int i = 1; i < batch_repeat; ++i) {
-      api::utils::ivec3 dst_offset =
-          api::utils::make_ivec3({0, 0, i * running_range.data[2]}, false);
+      api::utils::ivec3 dst_offset = {0, 0, i * running_range.data[2]};
 
       add_copy_offset_node(
           graph, out, running_range, src_offset, dst_offset, out);

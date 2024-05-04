@@ -139,8 +139,8 @@ void add_copy_channel_offset_node(
         0, 0, dst_first_z + batch_idx * api::utils::div_up(out_channels, 4)};
 
     uvec3 global_size{
-        dim_at<kWidth4D>(in_sizes),
-        dim_at<kHeight4D>(in_sizes),
+        api::utils::safe_downcast<uint32_t>(dim_at<kWidth4D>(in_sizes)),
+        api::utils::safe_downcast<uint32_t>(dim_at<kHeight4D>(in_sizes)),
         api::utils::safe_downcast<uint32_t>(dst_last_z - dst_first_z + 1)};
 
     uvec3 local_size = adaptive_work_group_size(global_size);

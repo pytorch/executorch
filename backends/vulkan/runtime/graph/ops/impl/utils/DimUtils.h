@@ -19,11 +19,11 @@ namespace vkcompute {
  * is the innermost dimension, so it corresponds to 1, height is the next
  * innermost, so it corresponds to 2, and so on.
  */
-enum DimIndex : uint32_t {
-  DIM_LAST = 1u,
-  DIM_2ND_LAST = 2u,
-  DIM_3RD_LAST = 3u,
-  DIM_4TH_LAST = 4u,
+enum DimIndex : int32_t {
+  DIM_LAST = -1,
+  DIM_2ND_LAST = -2,
+  DIM_3RD_LAST = -3,
+  DIM_4TH_LAST = -4,
 };
 
 constexpr DimIndex kWidth4D = DimIndex::DIM_LAST;
@@ -32,7 +32,7 @@ constexpr DimIndex kChannel4D = DimIndex::DIM_3RD_LAST;
 constexpr DimIndex kBatch4D = DimIndex::DIM_4TH_LAST;
 
 inline DimIndex normalize_to_dim_index(const vTensor& v_in, int32_t dim) {
-  return static_cast<DimIndex>(v_in.dim() - dim);
+  return static_cast<DimIndex>(dim - v_in.dim());
 }
 
 /*
@@ -68,25 +68,26 @@ struct DimTConv2DKernel {
  * then 1 will be returned. The structs above are intended to be used with
  * these functions.
  */
-template <uint32_t N>
-uint32_t dim_at(const std::vector<int64_t>& sizes) {
-  const uint32_t dims = sizes.size();
-  return dims < N ? 1 : api::utils::safe_downcast<uint32_t>(sizes[dims - N]);
-}
 
-inline uint32_t dim_at(const std::vector<int64_t>& sizes, DimIndex dim_index) {
+inline int32_t dim_at(const std::vector<int64_t>& sizes, DimIndex dim_index) {
   const uint32_t dims = sizes.size();
-  return dims < dim_index
+  // Recall that dim_index is a negative index.
+  return dims < -dim_index
       ? 1
-      : api::utils::safe_downcast<uint32_t>(sizes[dims - dim_index]);
+      : api::utils::safe_downcast<int32_t>(sizes[dims + dim_index]);
 }
 
-template <uint32_t N>
-uint32_t dim_at(const vTensor& v_in) {
-  return dim_at<N>(v_in.sizes());
+template <DimIndex DI>
+int32_t dim_at(const std::vector<int64_t>& sizes) {
+  return dim_at(sizes, DI);
 }
 
-inline uint32_t dim_at(const vTensor& v_in, DimIndex dim_index) {
+template <DimIndex DI>
+int32_t dim_at(const vTensor& v_in) {
+  return dim_at(v_in.sizes(), DI);
+}
+
+inline int32_t dim_at(const vTensor& v_in, DimIndex dim_index) {
   return dim_at(v_in.sizes(), dim_index);
 }
 
