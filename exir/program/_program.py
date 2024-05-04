@@ -761,14 +761,14 @@ class EdgeProgramManager:
 
         Constructs an EdgeProgramManager from an existing set of exported programs in edge dialect.
         """
-        config = compile_config or EdgeCompileConfig()
+        self.compile_config = compile_config or EdgeCompileConfig()
         if not isinstance(edge_programs, dict):
             edge_programs = {"forward": edge_programs}
         for name, program in edge_programs.items():
             try:
                 EXIREdgeDialectVerifier(
-                    check_edge_ops=config._use_edge_ops,
-                    enable=config._check_ir_validity,
+                    enable=self.compile_config._check_ir_validity,
+                    check_edge_ops=self.compile_config._use_edge_ops,
                 )(program.graph_module)
             except ExportError as e:
                 logging.info(f"Input program {name} is not in aten dialect.")
@@ -800,8 +800,7 @@ class EdgeProgramManager:
     def transform(
         self,
         passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
-        check_ir_validity: bool = True,
-        # We should also probably add check_edge_ops here as well
+        compile_config: Optional[EdgeCompileConfig] = None,
     ) -> "EdgeProgramManager":
         """
         Transforms the program according to the provided passes.
@@ -813,31 +812,38 @@ class EdgeProgramManager:
                 will be transformed with the provided passes. If it is a
                 dictionary, only method names specified in the dictionary will be
                 transformed with their corresponding passes.
+            compile_config: Compile config to use for veriy the correctness of model
+                graph after each pass. If not specified, the compile config of the
+                calling EdgeProgramManager will be used. It will be used in as compile
+                config of returned EdgeProgramManager.
 
         Returns:
             EdgeProgramManager: A copy of the calling EdgeProgramManager with the
             transformations applied.
         """
+        compile_config = compile_config or self.compile_config
         new_programs: Dict[str, ExportedProgram] = {}
         if isinstance(passes, dict):
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
                     new_programs[name] = _transform(program, *passes[name])
-                    EXIREdgeDialectVerifier(enable=check_ir_validity)(
-                        new_programs[name].graph_module
-                    )
+                    EXIREdgeDialectVerifier(
+                        enable=compile_config._check_ir_validity,
+                        check_edge_ops=compile_config._use_edge_ops,
+                    )(new_programs[name].graph_module)
                 else:
                     new_programs[name] = copy.deepcopy(program)
 
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
                 new_programs[name] = _transform(program, *passes)
-                EXIREdgeDialectVerifier(enable=check_ir_validity)(
-                    new_programs[name].graph_module
-                )
-        config = EdgeCompileConfig(_check_ir_validity=check_ir_validity)
+                EXIREdgeDialectVerifier(
+                    enable=compile_config._check_ir_validity,
+                    check_edge_ops=compile_config._use_edge_ops,
+                )(new_programs[name].graph_module)
+
         return EdgeProgramManager(
-            new_programs, copy.deepcopy(self._config_methods), config
+            new_programs, copy.deepcopy(self._config_methods), compile_config
         )
 
     def to_backend(
