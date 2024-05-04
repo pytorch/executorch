@@ -18,4 +18,3 @@ unary_op:
       OPERATOR: tanh(clamp(X, -15.0, 15.0))
     - NAME: sqrt
       OPERATOR: sqrt(X)
-
