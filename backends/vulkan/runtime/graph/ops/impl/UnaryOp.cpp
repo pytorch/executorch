@@ -103,6 +103,7 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
 DEFINE_ACTIVATION_FN(abs);
 DEFINE_ACTIVATION_FN(sigmoid);
 DEFINE_ACTIVATION_FN(tanh);
+DEFINE_ACTIVATION_FN(sqrt);
 DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
 DEFINE_RELU_FN(relu);
@@ -114,6 +115,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.relu.default, relu);
   VK_REGISTER_OP(aten.sigmoid.default, sigmoid);
   VK_REGISTER_OP(aten.tanh.default, tanh);
+  VK_REGISTER_OP(aten.sqrt.default, sqrt);
 }
 
 } // namespace vkcompute
