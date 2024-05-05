@@ -529,16 +529,22 @@ after it has been transformed to the ExecuTorch backend.</p>
 
 <dl class="py method">
 <dt class="sig sig-object py" id="executorch.exir.EdgeProgramManager.transform">
-<span class="sig-name descname"><span class="pre">transform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">passes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">check_ir_validity</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.transform"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.exir.EdgeProgramManager.transform" title="Permalink to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">transform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">passes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.transform"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.exir.EdgeProgramManager.transform" title="Permalink to this definition">¶</a></dt>
 <dd><p>Transforms the program according to the provided passes.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>passes</strong> – The passes can either be a list of passes, or a
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>passes</strong> – The passes can either be a list of passes, or a
 dictionary mapping method names to lists of passes. If it is
 just a list of passes, all methods in the given EdgeProgramManager
 will be transformed with the provided passes. If it is a
 dictionary, only method names specified in the dictionary will be
-transformed with their corresponding passes.</p>
+transformed with their corresponding passes.</p></li>
+<li><p><strong>compile_config</strong> – Compile config to use for veriy the correctness of model
+graph after each pass. If not specified, the compile config of the
+calling EdgeProgramManager will be used. It will be used in as compile
+config of returned EdgeProgramManager.</p></li>
+</ul>
 </dd>
 <dt class="field-even">Returns</dt>
 <dd class="field-even"><p>A copy of the calling EdgeProgramManager with the

@@ -1190,14 +1190,14 @@
 
 <span class="sd">        Constructs an EdgeProgramManager from an existing set of exported programs in edge dialect.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">edge_programs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
             <span class="n">edge_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">edge_programs</span><span class="p">}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
-                    <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
-                    <span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
+                    <span class="n">enable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
+                    <span class="n">check_edge_ops</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
                 <span class="p">)(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
             <span class="k">except</span> <span class="n">ExportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                 <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in aten dialect.&quot;</span><span class="p">)</span>
@@ -1229,8 +1229,7 @@
 <div class="viewcode-block" id="EdgeProgramManager.transform"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.transform">[docs]</a>    <span class="k">def</span> <span class="nf">transform</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">passes</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">PassType</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">PassType</span><span class="p">]]],</span>
-        <span class="n">check_ir_validity</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-        <span class="c1"># We should also probably add check_edge_ops here as well</span>
+        <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Transforms the program according to the provided passes.</span>
@@ -1242,31 +1241,38 @@
 <span class="sd">                will be transformed with the provided passes. If it is a</span>
 <span class="sd">                dictionary, only method names specified in the dictionary will be</span>
 <span class="sd">                transformed with their corresponding passes.</span>
+<span class="sd">            compile_config: Compile config to use for veriy the correctness of model</span>
+<span class="sd">                graph after each pass. If not specified, the compile config of the</span>
+<span class="sd">                calling EdgeProgramManager will be used. It will be used in as compile</span>
+<span class="sd">                config of returned EdgeProgramManager.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            EdgeProgramManager: A copy of the calling EdgeProgramManager with the</span>
 <span class="sd">            transformations applied.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">compile_config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span>
         <span class="n">new_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">passes</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">passes</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
                     <span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
-                    <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span><span class="n">enable</span><span class="o">=</span><span class="n">check_ir_validity</span><span class="p">)(</span>
-                        <span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">graph_module</span>
-                    <span class="p">)</span>
+                    <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
+                        <span class="n">enable</span><span class="o">=</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
+                        <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
+                    <span class="p">)(</span><span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
 
         <span class="k">else</span><span class="p">:</span>  <span class="c1"># apply passes to every method</span>
             <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">)</span>
-                <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span><span class="n">enable</span><span class="o">=</span><span class="n">check_ir_validity</span><span class="p">)(</span>
-                    <span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">graph_module</span>
-                <span class="p">)</span>
-        <span class="n">config</span> <span class="o">=</span> <span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="n">check_ir_validity</span><span class="p">)</span>
+                <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
+                    <span class="n">enable</span><span class="o">=</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
+                    <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
+                <span class="p">)(</span><span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+
         <span class="k">return</span> <span class="n">EdgeProgramManager</span><span class="p">(</span>
-            <span class="n">new_programs</span><span class="p">,</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">),</span> <span class="n">config</span>
+            <span class="n">new_programs</span><span class="p">,</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">),</span> <span class="n">compile_config</span>
         <span class="p">)</span></div>
 
 <div class="viewcode-block" id="EdgeProgramManager.to_backend"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.to_backend">[docs]</a>    <span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
