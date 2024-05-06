@@ -15,6 +15,10 @@ from executorch.backends.apple.coreml.partition.coreml_partitioner import (
 
 
 class TestCoreMLPartitioner(unittest.TestCase):
+
+    # TODO(T182928844): Delegate dim order op to backend.
+    edge_compile_config = executorch.exir.EdgeCompileConfig(_skip_dim_order=True)
+
     def test_add_sub_skip_mm(self):
         class Model(torch.nn.Module):
             def forward(self, a, x, b):
@@ -30,7 +34,10 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         example_inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
         exir_program_aten = torch.export.export(model, example_inputs)
-        edge_program_manager = executorch.exir.to_edge(exir_program_aten)
+
+        edge_program_manager = executorch.exir.to_edge(
+            exir_program_aten, compile_config=self.edge_compile_config
+        )
         delegated_program_manager = edge_program_manager.to_backend(
             CoreMLPartitioner(skip_ops_for_coreml_delegation=["aten.mm.default"])
         )
@@ -54,7 +61,9 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         example_inputs = (torch.randn(1, 3, 224, 224),)
         exir_program_aten = torch.export.export(model, example_inputs)
-        edge_program_manager = executorch.exir.to_edge(exir_program_aten)
+        edge_program_manager = executorch.exir.to_edge(
+            exir_program_aten, compile_config=self.edge_compile_config
+        )
         delegated_program_manager = edge_program_manager.to_backend(
             CoreMLPartitioner(
                 skip_ops_for_coreml_delegation=["aten.convolution.default"]

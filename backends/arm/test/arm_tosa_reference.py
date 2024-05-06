@@ -36,6 +36,7 @@ DEBUG_OUTPUT_PATH = tempfile.mkdtemp(prefix="arm_tosa_")
 # Config for Capturing the weights, will be moved in the future
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
+    _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
 )
 
 SUPPORTED_BI_TEST_LIST = [

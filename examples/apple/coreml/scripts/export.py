@@ -36,6 +36,7 @@ from models.model_factory import EagerModelFactory
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
+    _skip_dim_order=True,  # TODO(T182928844): enable dim_order in backend
 )
 
 

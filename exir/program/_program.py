@@ -550,9 +550,7 @@ def _get_aten_to_edge_passes(config: EdgeCompileConfig):
         [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
     )
 
-    post_op_replace_passes = (
-        [] if config._skip_dim_order else [MemoryFormatOpsPass()]
-    ) + base_post_op_replace_passes
+    post_op_replace_passes = base_post_op_replace_passes
 
     return pre_op_replace_passes, post_op_replace_passes
 
@@ -595,6 +593,10 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_gm_res = OpReplacePass()(new_gm)
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
+        if not config._skip_dim_order:
+            new_gm_res = MemoryFormatOpsPass()(new_gm)
+            assert new_gm_res is not None
+            new_gm = new_gm_res.graph_module
 
     for p in post_op_replace_passes:
         new_gm_res = p(new_gm)
@@ -674,6 +676,8 @@ def _generate_edge_program(
     passes.extend(pre_op_replace_passes)
     if config._use_edge_ops:
         passes.append(OpReplacePass())
+        if not config._skip_dim_order:
+            passes.append(MemoryFormatOpsPass())
 
     gm = program.graph_module
     for p in passes:

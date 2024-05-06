@@ -181,6 +181,9 @@ class ArmTester(Tester):
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
         if to_edge_stage is None:
             to_edge_stage = ToEdge(EdgeCompileConfig(_check_ir_validity=False))
+
+        # TODO(T182928844): Delegate dim order op to backend.
+        to_edge_stage.edge_compile_conf._skip_dim_order = True
         return super().to_edge(to_edge_stage)
 
     def partition(self, partition_stage: Optional[Partition] = None):

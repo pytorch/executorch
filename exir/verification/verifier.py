@@ -72,6 +72,7 @@ class EXIRATenDialectVerifier(EXIRATenDialectVerifierBase):
                 "boltnn_nimble",
                 "nimble",
                 "quantized",
+                "dim_order_ops",
             ) or op in (
                 torch.ops.aten.mkldnn_rnn_layer.default,
                 torch.ops.aten._upsample_bilinear2d_aa.default,

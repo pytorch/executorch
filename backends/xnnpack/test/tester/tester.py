@@ -474,7 +474,11 @@ class Tester:
         )
 
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
-        return self._run_stage(to_edge_stage or ToEdge())
+        # TODO(T182187531): Skip dim order for now. Support dim order and its op after alpha release.
+        if not to_edge_stage:
+            to_edge_stage = ToEdge()
+        to_edge_stage.edge_compile_conf._skip_dim_order = True
+        return self._run_stage(to_edge_stage)
 
     def run_passes(self, run_passes_stage: Optional[RunPasses] = None):
         return self._run_stage(run_passes_stage or RunPasses())
