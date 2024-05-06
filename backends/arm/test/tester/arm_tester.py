@@ -4,13 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Literal, Optional, Tuple
+
+import executorch.backends.xnnpack.test.tester.tester as tester
 
 import numpy as np
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
 
 import torch
 
@@ -31,18 +29,14 @@ from executorch.backends.arm.test.tosautil.tosa_test_utils import (
 )
 
 from executorch.backends.xnnpack.test.tester import Tester
-from executorch.backends.xnnpack.test.tester.tester import (
-    Export,
-    Partition as PartitionSuperclass,
-    Quantize,
-    Serialize,
-    ToEdge,
-)
-
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+
 from torch.export import ExportedProgram
 from torch.fx.node import Node
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def _get_input_names(program: ExportedProgram) -> list[str]:
@@ -143,7 +137,7 @@ def _get_output_quantization_params(
     return quant_params
 
 
-class Partition(PartitionSuperclass):
+class Partition(tester.Partition):
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
         from pprint import pformat
@@ -170,6 +164,61 @@ class Partition(PartitionSuperclass):
             print(to_print)
 
 
+class Serialize(tester.Serialize):
+
+    def run_artifact(self, inputs):
+        # TODO run .pte on corestone
+        return None
+
+
+class ToExecutorch(tester.ToExecutorch):
+    def __init__(
+        self,
+        input_names,
+        qp_input,
+        output_name,
+        qp_output,
+        tosa_test_util: TosaTestUtils,
+        dynamic_shapes: Optional[Tuple[Any]] = None,
+    ):
+        super().__init__(dynamic_shapes)
+        self.input_names = input_names
+        self.qp_input = qp_input
+        self.output_name = output_name
+        self.qp_output = qp_output
+        self.tosa_test_util = tosa_test_util
+
+    def run_artifact(self, inputs):
+        tosa_output = self.tosa_test_util.run_tosa_ref_model(
+            params_input=(self.input_names, self.qp_input),
+            param_output=(self.output_name, self.qp_output),
+            inputs=inputs,
+        )
+        return tosa_output
+
+
+class InitialModel(tester.Stage):
+    def __init__(self, model: torch.nn.Module):
+        self.model = model
+
+    def run(self, artifact, inputs=None) -> None:
+        pass
+
+    @property
+    def artifact(self) -> torch.nn.Module:
+        return self.model
+
+    @property
+    def graph_module(self) -> None:
+        return None
+
+    def artifact_str(self) -> str:
+        return str(self.model)
+
+    def run_artifact(self, inputs):
+        return self.model.forward(*inputs)
+
+
 class ArmTester(Tester):
     def __init__(
         self,
@@ -191,12 +240,19 @@ class ArmTester(Tester):
             self.tosa_test_util = TosaTestUtils(intermediate_path=intermediate_path)
 
         self.compile_spec = compile_spec
-
         super().__init__(model, example_inputs)
+        self.pipeline[self.stage_name(InitialModel)] = [
+            self.stage_name(tester.Quantize),
+            self.stage_name(tester.Export),
+        ]
 
-    def quantize(self, quantize_stage: Optional[Quantize] = None):
+        # Initial model needs to be set as a *possible* but not yet added Stage, therefore add None entry.
+        self.stages[self.stage_name(InitialModel)] = None
+        self._run_stage(InitialModel(self.original_module))
+
+    def quantize(self, quantize_stage: Optional[tester.Quantize] = None):
         if quantize_stage is None:
-            quantize_stage = Quantize(
+            quantize_stage = tester.Quantize(
                 ArmQuantizer(),
                 get_symmetric_quantization_config(is_per_channel=False),
             )
@@ -204,11 +260,11 @@ class ArmTester(Tester):
 
     def to_edge(
         self,
-        to_edge_stage: Optional[ToEdge] = None,
+        to_edge_stage: Optional[tester.ToEdge] = None,
         config: Optional[EdgeCompileConfig] = None,
     ):
         if to_edge_stage is None:
-            to_edge_stage = ToEdge(config)
+            to_edge_stage = tester.ToEdge(config)
         else:
             if config is not None:
                 to_edge_stage.edge_compile_conf = config
@@ -222,6 +278,28 @@ class ArmTester(Tester):
             arm_partitioner = ArmPartitioner(compile_spec=self.compile_spec)
             partition_stage = Partition(arm_partitioner)
         return super().partition(partition_stage)
+
+    def to_executorch(self, to_executorch_stage: Optional[ToExecutorch] | None = None):
+        if to_executorch_stage is None:
+            export_stage = self.stages[self.stage_name(tester.Export)]
+            exported_program = export_stage.artifact
+            input_names = _get_input_names(exported_program)
+            output_node = _get_output_node(exported_program)
+            output_name = output_node.name
+
+            is_quantized = self.stages[self.stage_name(tester.Quantize)] is not None
+            if is_quantized:
+                qp_input = _get_input_quantization_params(exported_program, input_names)
+                qp_output = _get_output_quantization_params(
+                    exported_program, output_node
+                )
+            else:
+                qp_input = [None] * len(input_names)
+                qp_output = None
+            to_executorch_stage = ToExecutorch(
+                input_names, qp_input, output_name, qp_output, self.tosa_test_util
+            )
+        return super().to_executorch(to_executorch_stage)
 
     def serialize(self, serialize_stage: Optional[Serialize] = None):
         if serialize_stage is None:
@@ -246,108 +324,77 @@ class ArmTester(Tester):
         qtol=0,
     ):
         """
-        This function runs the tosa_reference_model tool to get output data
-        needed for comparison with the torch reference data.
+        Compares the run_artifact output of 'stage' with the output of a reference stage.
+        If the model is quantized, the reference stage is the Quantize stage output.
+        Otherwise, the reference stage is the initial pytorch module.
+
+        Asserts that the outputs are equal (within tolerances).
+        Returns self to allow the function to be run in a test chain.
 
         Args:
-            stage: (Optional[str]): Allows you input a custom stage. Currently
-                not used.
-            inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom
-                input data.
-
-        Todo:
-            * A lot of the stuff in this method should be broken out into a
-              run_artifact() method on a ToExecutorch stage class.
+            stage: (Optional[str]): The name of the stage to compare.
+                The default is the latest run stage.
+            inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom input data.
+                The default is random data.
         """
         assert (
             self.tosa_test_util is not None
         ), "self.tosa_test_util is not initialized, cannot use run_method()"
+        assert (
+            self.stages[self.stage_name(tester.Export)] is not None
+        ), "To compare outputs, at least the Export stage needs to be run."
 
-        number_of_runs = 1 if inputs is not None else num_runs
         stage = stage or self.cur
+        test_stage = self.stages[stage]
 
-        export_stage = self.stages[self.stage_name(Export)]
-        exported_program = export_stage.artifact
-        input_names = _get_input_names(exported_program)
-        output_node = _get_output_node(exported_program)
-        output_name = output_node.name
-        is_quantized = self.stages[self.stage_name(Quantize)] is not None
-
-        if is_quantized:
-            qp_input = _get_input_quantization_params(exported_program, input_names)
+        if self.stages[self.stage_name(tester.Quantize)] is not None:
+            reference_stage = self.stages[self.stage_name(tester.Quantize)]
+            export_stage = self.stages[self.stage_name(tester.Export)]
+            exported_program = export_stage.artifact
+            output_node = _get_output_node(exported_program)
             qp_output = _get_output_quantization_params(exported_program, output_node)
-        else:
-            qp_input = [None] * len(input_names)
-            qp_output = None
-
-        self.qp_input = qp_input
-        self.qp_output = qp_output
-
-        # Calculate the reference output using the original module or the quant
-        # module.
-        quantization_scale = None
-        if is_quantized:
             quantization_scale = qp_output.scale
-            quantize_stage = self.stages[self.stage_name(Quantize)]
-            module_for_ref = quantize_stage.artifact
-            print(f"Comparing Stage {stage} with Stage {quantize_stage}")
         else:
-            module_for_ref = self.original_module
-            print(f"Comparing Stage {stage} with original module")
+            reference_stage = self.stages[self.stage_name(InitialModel)]
+            quantization_scale = None
 
-        # Loop inputs and compare TOSA ref model output with Torch reference
-        # for each loop iteration.
-        for run_iteration in range(number_of_runs):
-            inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
-            input_shapes = [generated_input.shape for generated_input in inputs_to_run]
+        print(f"Comparing Stage {test_stage} with Stage {reference_stage}")
+        is_nhwc = is_permute_memory(self.compile_spec)
+
+        # Loop inputs and compare reference stage with the compared stage.
+        for run_iteration in range(num_runs):
+            reference_input = inputs if inputs else next(self.generate_random_inputs())
+            if is_nhwc:
+                test_input = self.transpose_data_format(reference_input[0], "NHWC")
+            else:
+                test_input = reference_input
+
+            input_shapes = [
+                generated_input.shape for generated_input in reference_input
+            ]
             print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
-            # Get Torch reference data...
-            reference_output = self._calculate_reference_output(
-                module_for_ref, inputs_to_run
-            )
-
-            # ...now get TOSA ref model data
-            # Transpose input data which is on NCHW format to NHWC format,
-            is_nhwc = is_permute_memory(self.compile_spec)
-            if is_nhwc and len(inputs_to_run[0].shape) == 4:
-                NHWC_Order = (0, 2, 3, 1)
-                inputs_to_run = (np.transpose(inputs_to_run[0], NHWC_Order),)
-
-            # Run the TOSA ref model to get the output tensor, which will be
-            # compared to the torch output in compare_outputs()
-            tosa_output = self.tosa_test_util.run_tosa_ref_model(
-                params_input=(input_names, qp_input),
-                param_output=(output_name, qp_output),
-                inputs=inputs_to_run,
-            )
-
-            # Transpose back to NCHW format for comparison to torch output
-            if is_nhwc and len(tosa_output.shape) == 4:
-                NCHW_Order = (0, 3, 1, 2)
-                tosa_output = (np.transpose(tosa_output, NCHW_Order),)
-
-            stage_output = tosa_output
+            reference_output = reference_stage.run_artifact(reference_input)
+            test_output = test_stage.run_artifact(test_input)
+            if is_nhwc:
+                test_output = self.transpose_data_format(test_output, "NCHW")
 
             # Output from running artifact at stage
             self._compare_outputs(
-                reference_output, stage_output, quantization_scale, atol, rtol, qtol
+                reference_output, test_output, quantization_scale, atol, rtol, qtol
             )
 
         return self
 
-    @staticmethod
-    def _calculate_reference_output(
-        module: Union[torch.fx.GraphModule, torch.nn.Module], inputs
-    ) -> torch.Tensor:
-        """
-        Note: I'd prefer to use the base class method here, but since it use the
-        exported program, I can't. The partitioner stage clears the state_dict
-        of the exported program, which causes an issue when evaluating the
-        module.
-        """
-
-        return module.forward(*inputs)
+    def transpose_data_format(self, input, to: Literal["NHWC", "NCHW"]):
+        if len(input.shape) != 4:
+            return input
+        if to == "NCHW":
+            NCHW_Order = (0, 3, 1, 2)
+            return (np.transpose(input, NCHW_Order),)
+        if to == "NHWC":
+            NHWC_Order = (0, 2, 3, 1)
+            return (np.transpose(input, NHWC_Order),)
 
     def _compare_outputs(
         self,
@@ -367,8 +414,20 @@ class ArmTester(Tester):
             banner = "=" * 40 + "TOSA debug info" + "=" * 40
             logger.error(banner)
             path_to_tosa_files = self.tosa_test_util.get_tosa_artifact_path()
-            logger.error(f"{self.qp_input=}")
-            logger.error(f"{self.qp_output=}")
+
+            export_stage = self.stages.get(self.stage_name(tester.Export), None)
+            if export_stage is not None:
+                input_names = _get_input_names(export_stage.artifact)
+                output_node = _get_output_node(export_stage.artifact)
+                qp_input = _get_input_quantization_params(
+                    export_stage.artifact, input_names
+                )
+                qp_output = _get_output_quantization_params(
+                    export_stage.artifact, output_node
+                )
+                logger.error(f"{qp_input=}")
+                logger.error(f"{qp_output=}")
+
             logger.error(f"{path_to_tosa_files=}")
             import os
 
@@ -376,11 +435,9 @@ class ArmTester(Tester):
                 stage_output,
                 os.path.join(path_to_tosa_files, "torch_tosa_output.pt"),
             )
-
             torch.save(
                 reference_output,
                 os.path.join(path_to_tosa_files, "torch_ref_output.pt"),
             )
             logger.error(f"{atol=}, {rtol=}, {qtol=}")
-
             raise e
