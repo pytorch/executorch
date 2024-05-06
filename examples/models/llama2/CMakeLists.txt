@@ -11,7 +11,7 @@
 #
 # This file should be formatted with
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 # It should also be cmake-lint clean.
 #
@@ -19,7 +19,7 @@ cmake_minimum_required(VERSION 3.19)
 project(llama_runner)
 
 # Duplicating options as root CMakeLists.txt
-option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
+option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
 option(EXECUTORCH_USE_TIKTOKEN "Use Tiktoken as a tokenizer" OFF)
 
@@ -29,12 +29,15 @@ include(CMakeDependentOption)
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library." ON
-  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
+)
 #
 # cpuinfo: build cpuinfo library. Disable on unsupported platforms
 #
-cmake_dependent_option(EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
-                       "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+cmake_dependent_option(
+  EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
+  "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
+)
 
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
@@ -82,7 +85,7 @@ if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
 endif()
 
 # custom ops library
-if(EXECUTORCH_BUILD_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   add_subdirectory(custom_ops)
 endif()
 
@@ -92,8 +95,7 @@ if(EXECUTORCH_USE_TIKTOKEN)
   # find RE2 for tokenizer
   set(ABSL_ENABLE_INSTALL ON)
   set(ABSL_PROPAGATE_CXX_STD ON)
-  set(_pic_flag
-    ${CMAKE_POSITION_INDEPENDENT_CODE})
+  set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
@@ -104,7 +106,7 @@ endif()
 set(link_libraries gflags)
 set(_srcs main.cpp)
 
-if(EXECUTORCH_BUILD_OPTIMIZED)
+if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   list(
     APPEND
     link_libraries
@@ -112,7 +114,8 @@ if(EXECUTORCH_BUILD_OPTIMIZED)
     optimized_kernels
     portable_kernels
     cpublas
-    eigen_blas)
+    eigen_blas
+  )
   target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
@@ -123,7 +126,7 @@ endif()
 target_link_options_shared_lib(quantized_ops_lib)
 list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
-if(EXECUTORCH_BUILD_CUSTOM)
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
 endif()
@@ -136,10 +139,12 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   # These 2 source files are included in xnnpack_backend
   if(NOT TARGET xnnpack_backend)
     list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/threadpool.cpp
-         ${XNNPACK_ROOT}/threadpool/threadpool_guard.cpp)
+         ${XNNPACK_ROOT}/threadpool/threadpool_guard.cpp
+    )
   endif()
   list(APPEND _common_include_directories
-       ${XNNPACK_ROOT}/third-party/pthreadpool/include)
+       ${XNNPACK_ROOT}/third-party/pthreadpool/include
+  )
 endif()
 
 # Extra sources for cpuinfo
@@ -147,7 +152,8 @@ if(EXECUTORCH_BUILD_CPUINFO)
   list(APPEND link_libraries cpuinfo)
   list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/cpuinfo_utils.cpp)
   list(APPEND _common_include_directories
-       ${XNNPACK_ROOT}/third-party/cpuinfo/include)
+       ${XNNPACK_ROOT}/third-party/cpuinfo/include
+  )
 endif()
 
 # XNNPACK
@@ -167,6 +173,20 @@ endif()
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
   target_link_options_shared_lib(qnn_executorch_backend)
+endif()
+
+# MPS backend
+if(TARGET mpsdelegate)
+  list(
+    APPEND
+    link_libraries
+    mpsdelegate
+    "-framework Foundation"
+    "-weak_framework MetalPerformanceShaders"
+    "-weak_framework MetalPerformanceShadersGraph"
+    "-weak_framework Metal"
+  )
+  target_link_options_shared_lib(mpsdelegate)
 endif()
 
 # This one is needed for cpuinfo where it uses android specific log lib

@@ -157,8 +157,8 @@ def process_placeholder(
             buffer_values.shape, inputs[0].dtype, buffer_values, name=out
         )
     else:
-        # Cases for all the input tensors
-        if permute_memory_to_nhwc:
+        # Cases for all the input tensors of rank4
+        if permute_memory_to_nhwc and len(inputs[0].shape) == 4:
             NHWC_Order = [0, 2, 3, 1]
             input_shape = [inputs[0].shape[i] for i in NHWC_Order]
         else:

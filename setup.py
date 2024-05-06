@@ -45,6 +45,7 @@
 # other computer software, distribute, and sublicense such enhancements or
 # derivative works thereof, in binary and source code form.
 
+import contextlib
 import os
 import re
 import sys
@@ -56,6 +57,7 @@ import setuptools  # noqa: F401 # usort: skip
 from distutils import log
 from distutils.sysconfig import get_python_lib
 from pathlib import Path
+from typing import Optional
 
 from setuptools import Extension, setup
 from setuptools.command.build import build
@@ -85,13 +87,79 @@ class ShouldBuild:
 
     @classmethod
     @property
-    def xnnpack(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_XNNPACK", default=False)
+    def llama_custom_ops(cls) -> bool:
+        return cls._is_env_enabled("EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True)
+
+
+class Version:
+    """Static properties that describe the version of the pip package."""
+
+    # Cached values returned by the properties.
+    __root_dir_attr: Optional[str] = None
+    __string_attr: Optional[str] = None
+    __git_hash_attr: Optional[str] = None
 
     @classmethod
     @property
-    def llama_custom_ops(cls) -> bool:
-        return cls._is_env_enabled("EXECUTORCH_BUILD_CUSTOM_OPS_AOT", default=True)
+    def _root_dir(cls) -> str:
+        """The path to the root of the git repo."""
+        if cls.__root_dir_attr is None:
+            # This setup.py file lives in the root of the repo.
+            cls.__root_dir_attr = str(Path(__file__).parent.resolve())
+        return str(cls.__root_dir_attr)
+
+    @classmethod
+    @property
+    def git_hash(cls) -> Optional[str]:
+        """The current git hash, if known."""
+        if cls.__git_hash_attr is None:
+            import subprocess
+
+            try:
+                cls.__git_hash_attr = (
+                    subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"], cwd=cls._root_dir
+                    )
+                    .decode("ascii")
+                    .strip()
+                )
+            except subprocess.CalledProcessError:
+                cls.__git_hash_attr = ""  # Non-None but empty.
+        # A non-None but empty value indicates that we don't know it.
+        return cls.__git_hash_attr if cls.__git_hash_attr else None
+
+    @classmethod
+    @property
+    def string(cls) -> str:
+        """The version string."""
+        if cls.__string_attr is None:
+            # If set, BUILD_VERSION should override any local version
+            # information. CI will use this to manage, e.g., release vs. nightly
+            # versions.
+            version = os.getenv("BUILD_VERSION", "").strip()
+            if not version:
+                # Otherwise, read the version from a local file and add the git
+                # commit if available.
+                version = (
+                    open(os.path.join(cls._root_dir, "version.txt")).read().strip()
+                )
+                if cls.git_hash:
+                    version += "+" + cls.git_hash[:7]
+            cls.__string_attr = version
+        return cls.__string_attr
+
+    @classmethod
+    def write_to_python_file(cls, path: str) -> None:
+        """Creates a file similar to PyTorch core's `torch/version.py`."""
+        lines = [
+            "from typing import Optional",
+            '__all__ = ["__version__", "git_version"]',
+            f'__version__ = "{cls.string}"',
+            # A string or None.
+            f"git_version: Optional[str] = {repr(cls.git_hash)}",
+        ]
+        with open(path, "w") as fp:
+            fp.write("\n".join(lines) + "\n")
 
 
 class _BaseExtension(Extension):
@@ -279,6 +347,9 @@ class CustomBuildPy(build_py):
         # package subdirectory.
         dst_root = os.path.join(self.build_lib, self.get_package_dir("executorch"))
 
+        # Create the version file.
+        Version.write_to_python_file(os.path.join(dst_root, "version.py"))
+
         # Manually copy files into the output package directory. These are
         # typically python "resource" files that will live alongside the python
         # code that uses them.
@@ -310,6 +381,31 @@ class CustomBuildPy(build_py):
             # the mode. This ensures that the output file is read/write even if
             # the input file is read-only.
             self.copy_file(src, dst, preserve_mode=False)
+
+
+class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
+    """Removes HOME from the environment when running as root.
+
+    This script is sometimes run as root in docker containers. buck2 doesn't
+    allow running as root unless $HOME is owned by root or is not set.
+
+    TODO(pytorch/test-infra#5091): Remove this once the CI jobs stop running as
+    root.
+    """
+
+    def __init__(self):
+        self.saved_env = {}
+
+    def __enter__(self):
+        if os.geteuid() == 0 and "HOME" in os.environ:
+            log.info("temporarily unsetting HOME while running as root")
+            self.saved_env["HOME"] = os.environ.pop("HOME")
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        if "HOME" in self.saved_env:
+            log.info("restored HOME")
+            os.environ["HOME"] = self.saved_env["HOME"]
 
 
 # TODO(dbort): For editable wheels, may need to update get_source_files(),
@@ -381,21 +477,17 @@ class CustomBuild(build):
         if ShouldBuild.pybindings:
             cmake_args += [
                 "-DEXECUTORCH_BUILD_PYBIND=ON",
-                "-DEXECUTORCH_BUILD_QUANTIZED=ON",  # add quantized ops to pybindings.
+                "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
             ]
             build_args += ["--target", "portable_lib"]
-            if ShouldBuild.xnnpack:
-                cmake_args += [
-                    "-DEXECUTORCH_BUILD_XNNPACK=ON",
-                ]
-                # No target needed; the cmake arg will link xnnpack
-                # into the portable_lib target.
-            # TODO(dbort): Add MPS/CoreML backends when building on macos.
+            # To link backends into the portable_lib target, callers should
+            # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
+            # environment variable.
 
         if ShouldBuild.llama_custom_ops:
             cmake_args += [
-                "-DEXECUTORCH_BUILD_CUSTOM=ON",  # add llama sdpa ops to pybindings.
-                "-DEXECUTORCH_BUILD_CUSTOM_OPS_AOT=ON",
+                "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON",  # add llama sdpa ops to pybindings.
+                "-DEXECUTORCH_BUILD_KERNELS_CUSTOM_AOT=ON",
             ]
             build_args += ["--target", "custom_ops_aot_lib"]
         # Allow adding extra cmake args through the environment. Used by some
@@ -424,7 +516,13 @@ class CustomBuild(build):
         if not self.dry_run:
             # Dry run should log the command but not actually run it.
             (Path(cmake_cache_dir) / "CMakeCache.txt").unlink(missing_ok=True)
-        self.spawn(["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args])
+        with Buck2EnvironmentFixer():
+            # The context manager may patch the environment while running this
+            # cmake command, which happens to run buck2 to get some source
+            # lists.
+
+            # Generate the build system files.
+            self.spawn(["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args])
 
         # Build the system.
         self.spawn(["cmake", "--build", cmake_cache_dir, *build_args])
@@ -480,6 +578,7 @@ def get_ext_modules() -> list[Extension]:
 
 
 setup(
+    version=Version.string,
     # TODO(dbort): Could use py_modules to restrict the set of modules we
     # package, and package_data to restrict the set up non-python files we
     # include. See also setuptools/discovery.py for custom finders.

@@ -428,6 +428,145 @@ def get_repeat_inputs():
     return test_suite
 
 
+def get_cat_inputs():
+    # TensorList must be specified as list of tuples
+    test_suite = VkTestSuite(
+        [
+            # Cat on Height
+            ([(S1, S1, 3, 5), (S1, S1, 4, 5)], 2),
+            ([(S1, 3, 5), (S1, 4, 5)], 1),
+            ([(3, 5), (4, 5)], 0),
+            ([(3, 5), (4, 5), (1, 5)], 0),
+            (
+                [(3, 5)],
+                0,
+            ),
+            # Cat on Width
+            ([(S1, S1, 5, 3), (S1, S1, 5, 4)], 3),
+            ([(S1, 5, 3), (S1, 5, 4)], 2),
+            ([(5, 3), (5, 4)], 1),
+            ([(5, 3), (5, 4), (5, 1)], 1),
+            (
+                [(5, 4)],
+                1,
+            ),
+            ([(5,), (6,)], 0),
+            # Cat on Batch
+            ([(S, S1, 5, 4), (S1, S1, 5, 4)], 0),
+            ([(S, XS, 5, 4), (S1, XS, 5, 4)], 0),
+            ([(S, S2, 5, 4), (S1, S2, 5, 4)], 0),
+            # Cat on Channel
+            ([(S, 5, 4), (S1, 5, 4), (S2, 5, 4)], 0),
+            ([(XS, 5, 4), (XS, 5, 4), (S2, 5, 4)], 0),
+            ([(XS, S, 5, 4), (XS, S1, 5, 4), (XS, S2, 5, 4)], 1),
+            ([(XS, XS, 5, 4), (XS, XS, 5, 4), (XS, S2, 5, 4)], 1),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.dtypes = ["at::kFloat"]
+    return test_suite
+
+
+def get_split_with_sizes_inputs():
+    Test = namedtuple("VkSliceTest", ["self", "sizes", "dim"])
+    test_cases = [
+        # Split on Width
+        Test(self=(S1, 7, 10, 10), sizes=[1, 2, 3, 4], dim=3),
+        Test(self=(7, 10, 10), sizes=[1, 2, 3, 4], dim=2),
+        Test(self=(7, 10, 10), sizes=[1, 9], dim=2),
+        Test(self=(10, 10), sizes=[1, 9], dim=1),
+        Test(self=(10,), sizes=[1, 9], dim=0),
+        # Split on Height
+        Test(self=(S1, 7, 10, 10), sizes=[1, 2, 3, 4], dim=2),
+        Test(self=(7, 10, 10), sizes=[1, 2, 3, 4], dim=1),
+        Test(self=(7, 10, 10), sizes=[10], dim=1),
+        Test(self=(7, 6, 10), sizes=[1, 1, 1, 1, 1, 1], dim=1),
+        Test(self=(10, 10), sizes=[1, 2, 3, 4], dim=0),
+        # Split on Batch
+        Test(self=(10, 7, 10, 10), sizes=[3, 6, 1], dim=0),
+        Test(self=(10, 7, 10, 10), sizes=[10], dim=0),
+        # Split on Channel
+        Test(self=(7, 13, 4, 8), sizes=[3, 6, 1, 3], dim=1),
+        Test(self=(7, 13, 4, 8), sizes=[3, 3, 3, 3, 1], dim=1),
+        Test(self=(13, 4, 8), sizes=[3, 3, 3, 3, 1], dim=0),
+        Test(self=(13, 4, 8), sizes=[2, 9, 2], dim=0),
+        Test(self=(13, 4, 8), sizes=[13], dim=0),
+    ]
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.dtypes = ["at::kFloat"]
+    return test_suite
+
+
+def get_split_tensor_inputs():
+    test_suite = VkTestSuite(
+        [
+            # Split on Width
+            ((S1, 7, 10, 12), 12, 3),
+            ((S1, 7, 10, 12), 3, 3),
+            ((S1, 7, 10, 12), 1, 3),
+            ((7, 10, 12), 12, 2),
+            ((7, 10, 12), 3, 2),
+            ((7, 10, 12), 1, 2),
+            ((10, 12), 12, 1),
+            ((10, 12), 3, 1),
+            ((10, 12), 1, 1),
+            ((12,), 12, 0),
+            ((12,), 3, 0),
+            ((12,), 1, 0),
+            # Split on Height
+            ((S1, 7, 12, 8), 12, 2),
+            ((S1, 7, 12, 8), 3, 2),
+            ((S1, 7, 12, 8), 1, 2),
+            ((7, 12, 8), 12, 1),
+            ((7, 12, 8), 3, 1),
+            ((7, 12, 8), 1, 1),
+            ((12, 8), 12, 0),
+            ((12, 8), 3, 0),
+            ((12, 8), 1, 0),
+            # Split  on Batch
+            ((12, 7, 10, 10), 12, 0),
+            ((12, 7, 10, 10), 3, 0),
+            ((12, 7, 10, 10), 1, 0),
+            # Split  on Channel
+            ((7, 15, 10, 10), 15, 1),
+            ((7, 15, 10, 10), 5, 1),
+            ((7, 15, 10, 10), 3, 1),
+            ((7, 15, 10, 10), 1, 1),
+            ((15, 10, 10), 15, 0),
+            ((15, 10, 10), 5, 0),
+            ((15, 10, 10), 3, 0),
+            ((15, 10, 10), 1, 0),
+        ]
+    )
+
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.dtypes = ["at::kFloat"]
+    return test_suite
+
+
+def get_unary_ops_inputs():
+    test_suite = VkTestSuite(
+        [
+            (M1,),
+            (M1, M2),
+            (S1, M1, M2),
+            (S1, S2, S2, M2),
+        ]
+    )
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -447,4 +586,8 @@ test_suites = {
     "aten.unsqueeze_copy.default": get_unsqueeze_inputs(),
     "aten.clone.default": get_clone_inputs(),
     "aten.repeat.default": get_repeat_inputs(),
+    "aten.cat.default": get_cat_inputs(),
+    "aten.split_with_sizes_copy.default": get_split_with_sizes_inputs(),
+    "aten.split.Tensor": get_split_tensor_inputs(),
+    "aten.sqrt.default": get_unary_ops_inputs(),
 }

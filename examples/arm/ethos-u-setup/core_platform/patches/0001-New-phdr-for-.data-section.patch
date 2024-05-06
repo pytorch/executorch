@@ -1,7 +1,7 @@
-From efe17bf0ed88cc1f163dedb29e7e9feabd47c7d7 Mon Sep 17 00:00:00 2001
+From fc2ff3e005999ec185a1ae20c78c06a45651f5bc Mon Sep 17 00:00:00 2001
 From: Digant Desai <digantdesai@meta.com>
 Date: Mon, 2 Oct 2023 20:39:39 -0700
-Subject: [PATCH] New phdr for .data section
+Subject: [PATCH 1/2] New phdr for .data section
 
 ---
  targets/corstone-300/platform.ld | 3 ++-

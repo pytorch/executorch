@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Arm Limited and/or its affiliates.
+ * Copyright 2023-2024 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -49,7 +49,7 @@ typedef struct {
   size_t cmd_data_size;
   const char* weight_data;
   size_t weight_data_size;
-  const char* scratch_data;
+  char* scratch_data;
   size_t scratch_data_size;
   VelaIOs* inputs;
   VelaIOs* outputs;

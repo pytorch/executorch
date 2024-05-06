@@ -72,6 +72,13 @@ void conv2d_impl(
   exec_aten::SizesType w_coord[kTensorDimensionLimit];
   w_coord[0] = out_c;
 
+  const int64_t stride_y = val_at(stride, 0);
+  const int64_t padding_y = val_at(padding, 0, /*default_value=*/0);
+  const int64_t dilation_y = val_at(dilation, 0);
+  const int64_t stride_x = val_at(stride, 1);
+  const int64_t padding_x = val_at(padding, 1, /*default_value=*/0);
+  const int64_t dilation_x = val_at(dilation, 1);
+
   // Compute 2D output region
   for (size_t out_y = 0; out_y < out_H; ++out_y) {
     out_coord[2] = out_y;
@@ -87,9 +94,6 @@ void conv2d_impl(
         for (size_t w_y = 0; w_y < w_H; ++w_y) {
           w_coord[2] = w_y;
 
-          int64_t stride_y = val_at(stride, 0);
-          int64_t padding_y = val_at(padding, 0, /*default_value=*/0);
-          int64_t dilation_y = val_at(dilation, 0);
           size_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
           in_coord[2] = in_y;
           // Only proceed if input y coordinate is within bounds
@@ -97,9 +101,6 @@ void conv2d_impl(
             for (size_t w_x = 0; w_x < w_W; ++w_x) {
               w_coord[3] = w_x;
 
-              int64_t stride_x = val_at(stride, 1);
-              int64_t padding_x = val_at(padding, 1, /*default_value=*/0);
-              int64_t dilation_x = val_at(dilation, 1);
               size_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
               in_coord[3] = in_x;
 

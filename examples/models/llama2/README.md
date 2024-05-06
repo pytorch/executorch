@@ -37,7 +37,7 @@ Note that groupsize less than 128 was not enabled, since such model were still t
 
 We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-apps) efficiently on select devices including the iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S22 and S24, and OnePlus 12.
 
-For Llama 3 8B, we have verified so far on iPhone 15 Pro Max and OnePlus 12 (with 16GB RAM).
+For Llama 3 8B, we have verified so far on iPhone 15 Pro Max, Samsung Galaxy S24+ and OnePlus 12 (with 16GB RAM).
 
 ## Performance
 
@@ -161,9 +161,9 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DEXECUTORCH_BUILD_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_CUSTOM=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
         -Bcmake-out .
 
     cmake --build cmake-out -j16 --target install --config Release
@@ -174,10 +174,10 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
     cmake -DPYTHON_EXECUTABLE=python \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_CUSTOM=ON \
-        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DEXECUTORCH_BUILD_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -Bcmake-out/examples/models/llama2 \
         examples/models/llama2
 
@@ -215,7 +215,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DPYTHON_EXECUTABLE=python \
-    -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -Bcmake-out-android .
 
 cmake --build cmake-out-android -j16 --target install --config Release
@@ -229,7 +229,7 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DCMAKE_INSTALL_PREFIX=cmake-out-android \
     -DCMAKE_BUILD_TYPE=Release \
     -DPYTHON_EXECUTABLE=python \
-    -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -Bcmake-out-android/examples/models/llama2 \
     examples/models/llama2
 

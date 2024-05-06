@@ -336,7 +336,7 @@ class TestPasses(unittest.TestCase):
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
 
-        new_prog = edge_prog.transform([SpecPropPass()], check_ir_validity=False)
+        new_prog = edge_prog.transform([SpecPropPass()])
 
         new_gm_res = ToOutVarPass()(new_prog.exported_program().graph_module)
         self.assertIsNotNone(new_gm_res)
@@ -679,7 +679,7 @@ class TestPasses(unittest.TestCase):
             ),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
-        new_prog = prog.transform([EdgeToBackendOpsPass()], check_ir_validity=False)
+        new_prog = prog.transform([EdgeToBackendOpsPass()])
         self.assertIsNotNone(new_prog.exported_program().graph_module)
         converted_gm = new_prog.exported_program().graph_module
 
@@ -806,7 +806,7 @@ class TestPasses(unittest.TestCase):
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
 
-        new_prog = prog.transform([EdgeToBackendOpsPass()], check_ir_validity=False)
+        new_prog = prog.transform([EdgeToBackendOpsPass()])
         gm = new_prog.exported_program().graph_module
         gm.print_readable()
         *_, ones, out = gm.graph.nodes
@@ -814,7 +814,7 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(isinstance(ones.meta["val"].shape[0], torch.SymInt))
         self.assertTrue(len(ones.meta["val"].shape[0].node.expr.free_symbols) > 0)
 
-        new_prog = new_prog.transform([ExportPass()], check_ir_validity=False)
+        new_prog = new_prog.transform([ExportPass()])
         gm = new_prog.exported_program().graph_module
         gm.print_readable()
         *_, ones, out = gm.graph.nodes

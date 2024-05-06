@@ -434,19 +434,19 @@ def profile_framework_tax_table(
 
 def deserialize_profile_results_files(
     profile_results_path: str,
-    model_ff_path: str,
+    bundled_program_ff_path: str,
     time_scale: TimeScale = TimeScale.TIME_IN_NS,
 ):
     with open(profile_results_path, "rb") as prof_res_file, open(
-        model_ff_path, "rb"
+        bundled_program_ff_path, "rb"
     ) as model_ff_file:
         prof_res_buf = prof_res_file.read()
-        model_ff_buf = model_ff_file.read()
+        bundled_program_ff_buf = model_ff_file.read()
 
     prof_data, mem_allocations = deserialize_profile_results(prof_res_buf, time_scale)
     framework_tax_data = profile_aggregate_framework_tax(prof_data)
 
-    prof_tables = profile_table(prof_data, model_ff_buf)
+    prof_tables = profile_table(prof_data, bundled_program_ff_buf)
     for table in prof_tables:
         print(table)
 
