@@ -42,6 +42,7 @@ class TestExampleDelegate(unittest.TestCase):
         example_inputs = Conv2dModule.get_example_inputs()
         EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
             _check_ir_validity=False,
+            _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
         )
 
         m = model.eval()
@@ -77,6 +78,7 @@ class TestExampleDelegate(unittest.TestCase):
 
         EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
             _check_ir_validity=False,
+            _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
         )
 
         m = model.eval()
