@@ -150,8 +150,15 @@ at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
   c10::ScalarType dtype = execuTorchtoTorchScalarType(etensor.scalar_type());
   std::vector<int64_t> at_tensor_sizes(
       etensor.sizes().begin(), etensor.sizes().end());
+  std::vector<int64_t> at_tensor_strides(
+      etensor.strides().begin(), etensor.strides().end());
+
   at::Tensor t = at::from_blob(
-      etensor.mutable_data_ptr(), at_tensor_sizes, at::TensorOptions(dtype));
+      etensor.mutable_data_ptr(),
+      at_tensor_sizes,
+      at_tensor_strides,
+      at::TensorOptions(dtype));
+
   check_tensor_meta(t, etensor);
   return t;
 }
