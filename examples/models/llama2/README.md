@@ -119,7 +119,7 @@ You can export and run the original Llama3 8B model.
 
 ### Option D: Download models from Hugging Face and convert
 
-You can also download above models from [Hugging Face](https://huggingface.co/). Since ExecuTorch starts from a PyTorch model, a script like below can be used to convert the Hugging Face safetensors format to PyTorch's state dict. It leverages the utils provided by [TorchTune](https://github.com/pytorch/torchtune). 
+You can also download above models from [Hugging Face](https://huggingface.co/). Since ExecuTorch starts from a PyTorch model, a script like below can be used to convert the Hugging Face safetensors format to PyTorch's state dict. It leverages the utils provided by [TorchTune](https://github.com/pytorch/torchtune).
 
 ```Python
 from torchtune.utils import FullModelHFCheckpointer
