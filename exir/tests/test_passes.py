@@ -1048,9 +1048,9 @@ class TestPasses(unittest.TestCase):
         )
         prog = prog.transform([SymToTensorPass()])
 
-        FileCheck().check(
-            "executorch_exir_dialects_edge__ops_aten_scalar_tensor_default"
-        ).run(prog.exported_program().graph_module.code)
+        FileCheck().check("torch.ops.aten.scalar_tensor.default").run(
+            prog.exported_program().graph_module.code
+        )
         self.assertTrue(
             torch.allclose(
                 f(torch.ones(3, 2)), prog.exported_program().module()(torch.ones(3, 2))

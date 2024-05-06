@@ -12,6 +12,13 @@ from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_
 from torch.fx.node import Target
 
 
+DISALLOW_LIST = [
+    torch.ops.aten._assert_scalar.default,
+    torch.ops.aten._assert_async.msg,
+    torch.ops.aten.scalar_tensor.default,
+]
+
+
 def aten_to_edge(aten_op: torch._ops.OpOverload) -> EdgeOpOverload:
     # Assume qualified op name: aten::add.Tensor
     op_namespace, op_name, op_overload_name = (
@@ -27,7 +34,11 @@ def aten_to_edge(aten_op: torch._ops.OpOverload) -> EdgeOpOverload:
 
 def should_lower_to_edge(op: Target) -> bool:
     """Returns true if the given operator should be lowered to edge op."""
-    return isinstance(op, torch._ops.OpOverload) and op not in _EXECUTORCH_SYM_OPS
+    return (
+        isinstance(op, torch._ops.OpOverload)
+        and op not in _EXECUTORCH_SYM_OPS
+        and op not in DISALLOW_LIST
+    )
 
 
 class OpReplacePass(ExportPass):
