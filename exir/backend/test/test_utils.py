@@ -16,11 +16,11 @@ from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.backend.utils import (
     DelegationBreakdown,
+    format_delegated_graph,
     get_delegates,
     get_delegation_info,
     get_non_lowered_nodes,
     is_identical_graph,
-    print_delegated_graph,
 )
 
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
@@ -266,7 +266,7 @@ class TestUtils(unittest.TestCase):
 
         edge = to_edge(export(m, inputs)).to_backend(AddMulPartitionerDemo())
 
-        graph_str = print_delegated_graph(edge.exported_program().graph_module)
+        graph_str = format_delegated_graph(edge.exported_program().graph_module)
         self.assertIn(
             "BackendWithCompilerDemo",
             graph_str,

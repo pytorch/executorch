@@ -9,12 +9,11 @@ import unittest
 import torch
 import torchvision
 
-from executorch.backends.xnnpack.test.tester import Tester
-from executorch.backends.xnnpack.test.tester.tester import Quantize
+from executorch.backends.xnnpack.test.tester import Quantize, Tester
 
 
 class TestResNet18(unittest.TestCase):
-    inputs = (torch.ones(1, 3, 224, 224),)
+    inputs = (torch.randn(1, 3, 224, 224),)
     dynamic_shapes = (
         {
             2: torch.export.Dim("height", min=224, max=455),
@@ -57,7 +56,13 @@ class TestResNet18(unittest.TestCase):
     def test_fp32_resnet18(self):
         self._test_exported_resnet(Tester(torchvision.models.resnet18(), self.inputs))
 
+    @unittest.skip("T187799178: Debugging Numerical Issues with Calibration")
     def test_qs8_resnet18(self):
+        quantized_tester = Tester(torchvision.models.resnet18(), self.inputs).quantize()
+        self._test_exported_resnet(quantized_tester)
+
+    # TODO: Delete and only used calibrated test after T187799178
+    def test_qs8_resnet18_no_calibration(self):
         quantized_tester = Tester(torchvision.models.resnet18(), self.inputs).quantize(
             Quantize(calibrate=False)
         )
@@ -68,7 +73,14 @@ class TestResNet18(unittest.TestCase):
             Tester(self.DynamicResNet(), self.inputs, self.dynamic_shapes)
         )
 
+    @unittest.skip("T187799178: Debugging Numerical Issues with Calibration")
     def test_qs8_resnet18_dynamic(self):
+        self._test_exported_resnet(
+            Tester(self.DynamicResNet(), self.inputs, self.dynamic_shapes).quantize()
+        )
+
+    # TODO: Delete and only used calibrated test after T187799178
+    def test_qs8_resnet18_dynamic_no_calibration(self):
         self._test_exported_resnet(
             Tester(self.DynamicResNet(), self.inputs, self.dynamic_shapes).quantize(
                 Quantize(calibrate=False)

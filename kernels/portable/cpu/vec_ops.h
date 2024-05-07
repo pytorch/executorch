@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2024 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -98,7 +99,7 @@ inline void vec_quantized_matmul_int8(
     for (size_t j = 0; j < p; ++j) {
       T sum = 0;
       for (size_t k = 0; k < n; ++k) {
-        sum += x[i * n + k] * y[k * p + j] * s[k];
+        sum += x[i * n + k] * static_cast<U>(y[k * p + j]) * s[k];
       }
       z[i * p + j] = sum;
     }
@@ -130,7 +131,7 @@ inline void vec_quantized_matmul_transb_int8(
         T psum = 0;
         // the last group may have fewer than g elements
         for (size_t k2 = k; k2 < bounds_min(k + g, n); k2++) {
-          psum += x[i * n + k2] * y[j * n + k2];
+          psum += x[i * n + k2] * static_cast<U>(y[j * n + k2]);
         }
         sum += psum * s[j * n_over_g + k / g];
       }

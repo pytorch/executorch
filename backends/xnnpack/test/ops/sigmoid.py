@@ -36,7 +36,7 @@ class TestSigmoid(unittest.TestCase):
         )
 
     def test_fp16_sigmoid(self):
-        inputs = (torch.ones(4).to(torch.float16),)
+        inputs = (torch.randn(4).to(torch.float16),)
         self._test_sigmoid(inputs)
 
     def test_fp32_sigmoid(self):

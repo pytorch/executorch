@@ -68,3 +68,6 @@
 [submodule "examples/models/llama2/third-party/abseil-cpp"]
 	path = examples/models/llama2/third-party/abseil-cpp
 	url = https://github.com/abseil/abseil-cpp.git
+[submodule "third-party/ios-cmake"]
+	path = third-party/ios-cmake
+	url = https://github.com/leetal/ios-cmake

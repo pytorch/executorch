@@ -78,8 +78,8 @@ class TestCat(unittest.TestCase):
         Using Clamp2 because fp16 add is done in fp32 ATM. Need to fix that first.
         """
         inputs = (
-            torch.ones(1, 2, 3).to(torch.float16),
-            torch.ones(3, 2, 3).to(torch.float16),
+            torch.randn(1, 2, 3).to(torch.float16),
+            torch.randn(3, 2, 3).to(torch.float16),
         )
         self._test_cat(self.Cat2(), inputs)
 
@@ -88,9 +88,9 @@ class TestCat(unittest.TestCase):
         Using Clamp2 because fp16 add is done in fp32 ATM. Need to fix that first.
         """
         inputs = (
-            torch.ones(1, 2, 3).to(torch.float16),
-            torch.ones(3, 2, 3).to(torch.float16),
-            torch.ones(2, 2, 3).to(torch.float16),
+            torch.randn(1, 2, 3).to(torch.float16),
+            torch.randn(3, 2, 3).to(torch.float16),
+            torch.randn(2, 2, 3).to(torch.float16),
         )
         self._test_cat(self.Cat3(), inputs)
 
@@ -99,44 +99,44 @@ class TestCat(unittest.TestCase):
         Using Clamp2 because fp16 add is done in fp32 ATM. Need to fix that first.
         """
         inputs = (
-            torch.ones(1, 2, 3).to(torch.float16),
-            torch.ones(3, 2, 3).to(torch.float16),
-            torch.ones(2, 2, 3).to(torch.float16),
-            torch.ones(5, 2, 3).to(torch.float16),
+            torch.randn(1, 2, 3).to(torch.float16),
+            torch.randn(3, 2, 3).to(torch.float16),
+            torch.randn(2, 2, 3).to(torch.float16),
+            torch.randn(5, 2, 3).to(torch.float16),
         )
         self._test_cat(self.Cat4(), inputs)
 
     def test_fp32_cat2(self):
-        inputs = (torch.ones(1, 2, 3), torch.ones(3, 2, 3))
+        inputs = (torch.randn(1, 2, 3), torch.randn(3, 2, 3))
         self._test_cat(self.Cat2(), inputs)
 
     def test_fp32_cat3(self):
-        inputs = (torch.ones(1, 2, 3), torch.ones(3, 2, 3), torch.ones(2, 2, 3))
+        inputs = (torch.randn(1, 2, 3), torch.randn(3, 2, 3), torch.randn(2, 2, 3))
         self._test_cat(self.Cat3(), inputs)
 
     def test_fp32_cat4(self):
         inputs = (
-            torch.ones(1, 2, 3),
-            torch.ones(3, 2, 3),
-            torch.ones(2, 2, 3),
-            torch.ones(5, 2, 3),
+            torch.randn(1, 2, 3),
+            torch.randn(3, 2, 3),
+            torch.randn(2, 2, 3),
+            torch.randn(5, 2, 3),
         )
         self._test_cat(self.Cat4(), inputs)
 
     def test_qs8_cat2(self):
-        inputs = (torch.ones(1, 2, 3), torch.ones(3, 2, 3))
+        inputs = (torch.randn(1, 2, 3), torch.randn(3, 2, 3))
         self._test_cat(self.Cat2(), inputs, cat_num=2, quant=True)
 
     def test_qs8_cat3(self):
-        inputs = (torch.ones(1, 2, 3), torch.ones(3, 2, 3), torch.ones(2, 2, 3))
+        inputs = (torch.randn(1, 2, 3), torch.randn(3, 2, 3), torch.randn(2, 2, 3))
         self._test_cat(self.Cat3(), inputs, cat_num=3, quant=True)
 
     def test_qs8_cat4(self):
         inputs = (
-            torch.ones(1, 2, 3),
-            torch.ones(3, 2, 3),
-            torch.ones(2, 2, 3),
-            torch.ones(5, 2, 3),
+            torch.randn(1, 2, 3),
+            torch.randn(3, 2, 3),
+            torch.randn(2, 2, 3),
+            torch.randn(5, 2, 3),
         )
         self._test_cat(self.Cat4(), inputs, cat_num=4, quant=True)
 
@@ -145,11 +145,11 @@ class TestCat(unittest.TestCase):
         XNNPACK only supports concatenating up to 4 values, so it should not delegate here.
         """
         inputs = (
-            torch.ones(1, 2, 3),
-            torch.ones(3, 2, 3),
-            torch.ones(2, 2, 3),
-            torch.ones(5, 2, 3),
-            torch.ones(1, 2, 3),
+            torch.randn(1, 2, 3),
+            torch.randn(3, 2, 3),
+            torch.randn(2, 2, 3),
+            torch.randn(5, 2, 3),
+            torch.randn(1, 2, 3),
         )
         (
             Tester(self.Cat5(), inputs)
@@ -169,7 +169,7 @@ class TestCat(unittest.TestCase):
             return torch.cat([x, y], -1)
 
     def test_fp32_cat_negative_dim(self):
-        inputs = (torch.ones(3, 2, 3), torch.ones(3, 2, 1))
+        inputs = (torch.randn(3, 2, 3), torch.randn(3, 2, 1))
         self._test_cat(self.CatNegativeDim(), inputs)
 
     class CatNhwc(torch.nn.Module):

@@ -14,6 +14,7 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.exir import EdgeCompileConfig
 from parameterized import parameterized
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,10 @@ class TestSimpleAdd(unittest.TestCase):
         def forward(self, x, y):
             return x + y
 
+    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
+        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+    )
+
     def _test_add_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
@@ -62,7 +67,7 @@ class TestSimpleAdd(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 1})
             .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge()
+            .to_edge(config=self._edge_compile_config)
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -87,7 +92,7 @@ class TestSimpleAdd(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
+            .to_edge(config=self._edge_compile_config)
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -113,7 +118,7 @@ class TestSimpleAdd(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
+            .to_edge(config=self._edge_compile_config)
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()

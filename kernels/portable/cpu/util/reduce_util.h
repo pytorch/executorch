@@ -144,7 +144,7 @@ void apply_on_flat_ix_with_dim_mask_and_base(
 // Helper Functions
 //
 
-[[nodiscard]] bool check_dim_list_is_valid(
+__ET_NODISCARD bool check_dim_list_is_valid(
     const exec_aten::Tensor& in,
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list);
 

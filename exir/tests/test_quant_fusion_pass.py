@@ -59,9 +59,7 @@ class TestQuantFusionPass(unittest.TestCase):
         config = EdgeCompileConfig(_check_ir_validity=False)
         m = to_edge(export(m, example_inputs), compile_config=config)
         # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
-        m = m.transform(
-            [QuantFusionPass(_fix_node_meta_val=True)], check_ir_validity=False
-        )
+        m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
         # check that we are using functional variant of q/dq/add
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default"
@@ -100,9 +98,7 @@ class TestQuantFusionPass(unittest.TestCase):
         config = EdgeCompileConfig(_check_ir_validity=False)
         m = to_edge(export(m, example_inputs), compile_config=config)
         # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
-        m = m.transform(
-            [QuantFusionPass(_fix_node_meta_val=True)], check_ir_validity=False
-        )
+        m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
         # check that we are using functional variant of q/dq/add/reshape
         # make sure we only have two quant and one dequant since the q/dq around reshape
         # should be fused
@@ -157,9 +153,7 @@ class TestQuantFusionPass(unittest.TestCase):
         config = EdgeCompileConfig(_check_ir_validity=False)
         m = to_edge(export(m, example_inputs), compile_config=config)
         # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
-        m = m.transform(
-            [QuantFusionPass(_fix_node_meta_val=True)], check_ir_validity=False
-        )
+        m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
         # check that we are using functional variant of q/dq/add/slice
         # make sure we only have one quant and one dequant since the q/dq around slice
         # should be fused
@@ -206,7 +200,7 @@ class TestQuantFusionPass(unittest.TestCase):
         config = EdgeCompileConfig(_check_ir_validity=False)
         m = to_edge(export(m, example_inputs), compile_config=config)
         # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
-        m = m.transform([QuantFusionPass()], check_ir_validity=False)
+        m = m.transform([QuantFusionPass()])
         # check that we are using functional variant of q/dq/cat
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
@@ -301,9 +295,7 @@ class TestQuantFusionPass(unittest.TestCase):
             )
             m = to_edge(export(m, example_inputs), compile_config=compile_config)
             # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
-            m = m.transform(
-                [QuantFusionPass(_fix_node_meta_val=True)], check_ir_validity=False
-            )
+            m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
             # check that we are using functional variant of q/dq/cat
             FileCheck().check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_channel_default",
@@ -359,9 +351,7 @@ class TestQuantFusionPass(unittest.TestCase):
             )
             m = to_edge(export(m, example_inputs), compile_config=compile_config)
             # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
-            m = m.transform(
-                [QuantFusionPass(_fix_node_meta_val=True)], check_ir_validity=False
-            )
+            m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
             # check that we are using functional variant of q/dq/cat
             FileCheck().check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_channel_default",

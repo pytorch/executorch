@@ -959,7 +959,6 @@ INPUT                  = ../runtime/executor/memory_manager.h \
                          ../runtime/core/event_tracer_hooks.h \
                          ../runtime/core/event_tracer.h \
                          ../runtime/core/freeable_buffer.h \
-                         ../runtime/core/function_ref.h \
                          ../runtime/core/span.h \
                          ../runtime/core/tag.h \
                          ../runtime/core/tensor_shape_dynamism.h \

@@ -10,7 +10,7 @@
 // The module takes in a string as input and emits a string as output.
 
 #include <executorch/examples/models/llama2/runner/runner.h>
-#if defined(ET_USE_TIKTOKEN)
+#if ET_USE_TIKTOKEN
 #include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
 #else /* BPE */
 #include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
@@ -81,7 +81,7 @@ Error Runner::load() {
   append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
   // Load tokenizer
-#if defined(ET_USE_TIKTOKEN)
+#if ET_USE_TIKTOKEN
   tokenizer_ = std::make_unique<Tiktoken>(vocab_size_, bos_id_, eos_id_);
 #else
   tokenizer_ = std::make_unique<BPETokenizer>(vocab_size_, bos_id_, eos_id_);
