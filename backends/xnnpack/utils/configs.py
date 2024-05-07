@@ -16,9 +16,7 @@ from executorch.exir.pass_manager import PassType
 
 ### XNNPACK Configs ###
 def get_xnnpack_edge_compile_config() -> exir.EdgeCompileConfig:
-    return exir.EdgeCompileConfig(
-        _check_ir_validity=False,
-    )
+    return exir.EdgeCompileConfig(_check_ir_validity=False, _skip_dim_order=True)
 
 
 def get_transform_passes(additional_passes=None) -> List[PassType]:

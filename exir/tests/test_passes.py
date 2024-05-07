@@ -1139,7 +1139,7 @@ class TestPasses(unittest.TestCase):
 
         # Check there is a lifted tensor followed by a to_copy node
         FileCheck().check("_lifted_tensor_constant0").check(
-            "executorch_exir_dialects_edge__ops_aten__to_copy_default"
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
         ).run(exported_program.graph_module.code)
 
         new_ep = constant_prop_pass(exported_program)
@@ -1147,7 +1147,9 @@ class TestPasses(unittest.TestCase):
         # Check (_lifted_tensor_constant + to_copy) node is replaced by prop tensor
         FileCheck().check_not("_lifted_tensor_constant").check(
             "_prop_tensor_constant0"
-        ).check_not("executorch_exir_dialects_edge__ops_aten__to_copy_default").run(
+        ).check_not(
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
+        ).run(
             new_ep.graph_module.code
         )
 
