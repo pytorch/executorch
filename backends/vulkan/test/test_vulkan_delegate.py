@@ -996,3 +996,22 @@ class TestBackends(unittest.TestCase):
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
+
+    def test_vulkan_backend_softmax(self):
+        class SoftmaxModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = x.softmax(dim=0)
+                x = x.softmax(dim=1)
+                x = x.softmax(dim=2)
+                return x
+
+        sample_inputs = (torch.randn(size=(3, 2, 7), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            SoftmaxModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
