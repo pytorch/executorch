@@ -158,6 +158,7 @@ def define_common_targets(is_fbcode = False):
     codegen_function_header_wrapper("executorch/kernels/quantized", "quantized")
     codegen_function_header_wrapper("executorch/kernels/test/custom_kernel_example", "custom_kernel_example")
 
+    _common_op_test("op__to_dim_order_copy_test", ["aten", "portable"])
     _common_op_test("op_abs_test", ["aten", "portable"])
     _common_op_test("op_acos_test", ["aten", "portable"])
     _common_op_test("op_acosh_test", ["aten", "portable"])

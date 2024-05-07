@@ -54,8 +54,7 @@ def export_model(model, example_inputs):
 
     # Run a couple required passes for quant/dequant ops
     cadence_prog_manager = edge_prog_manager.transform(
-        [ReplacePT2QuantWithCadenceQuant(), ReplacePT2DequantWithCadenceDequant()],
-        check_ir_validity=False,
+        [ReplacePT2QuantWithCadenceQuant(), ReplacePT2DequantWithCadenceDequant()]
     )
 
     exec_prog = cadence_prog_manager.to_executorch()
