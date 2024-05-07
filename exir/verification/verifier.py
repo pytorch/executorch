@@ -10,6 +10,7 @@ import types
 from typing import Any, List, Optional, Tuple, Type
 
 import torch
+from executorch.exir.capture._config import EdgeCompileConfig
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
 from executorch.exir.lowered_backend_module import LoweredBackendModule
@@ -137,15 +138,17 @@ def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
 
 
 def EXIREdgeDialectVerifier(  # noqa: C901
-    check_edge_ops: bool = True,
-    enable: bool = True,
+    edge_compile_config: Optional[EdgeCompileConfig] = None,
     class_only: bool = False,
 ):
     class _EXIREdgeDialectVerifier(Verifier):
         dialect = "EDGE"
 
         def __init__(self) -> None:
-            self.check_edge_ops = check_edge_ops
+            _edge_compile_config = edge_compile_config or EdgeCompileConfig()
+
+            self.enable = _edge_compile_config._check_ir_validity
+            self.check_edge_ops = _edge_compile_config._use_edge_ops
             self.aten_op_verifier = EXIRATenDialectVerifier()
             self.check_valid_aten_op = self.aten_op_verifier.check_valid_op
 
@@ -166,7 +169,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             return super().allowed_op_types() + (EdgeOpOverload, types.FunctionType)
 
         def check_valid_edge_op(self, op):
-            if not enable:
+            if not self.enable:
                 return
             if op in [operator.getitem, torch.ops.aten.sym_size.int]:
                 return
@@ -183,7 +186,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 assert op.__name__ in ("alloc",)
 
         def check_additional(self, gm: GraphModule) -> None:
-            if not enable:
+            if not self.enable:
                 return
             if self.check_edge_ops:
                 _check_tensors_are_contiguous(gm)
@@ -197,7 +200,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 return False
 
         def __call__(self, ep_or_gm):
-            if not enable:
+            if not self.enable:
                 return
             gm = ep_or_gm
             if isinstance(gm, ExportedProgram):

@@ -614,8 +614,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         module_call_graph=new_ep.exported_program.module_call_graph,
         example_inputs=new_ep.exported_program.example_inputs,
         verifier=EXIREdgeDialectVerifier(
-            check_edge_ops=config._use_edge_ops,
-            enable=config._check_ir_validity,
+            edge_compile_config=config,
             class_only=True,
         ),
         constants=new_ep.exported_program.constants,
@@ -694,8 +693,7 @@ def _generate_edge_program(
         module_call_graph=program.module_call_graph,
         example_inputs=program.example_inputs,
         verifier=EXIREdgeDialectVerifier(
-            check_edge_ops=config._use_edge_ops,
-            enable=config._check_ir_validity,
+            edge_compile_config=config,
             class_only=True,
         ),
         constants=program.constants,
@@ -770,10 +768,9 @@ class EdgeProgramManager:
             edge_programs = {"forward": edge_programs}
         for name, program in edge_programs.items():
             try:
-                EXIREdgeDialectVerifier(
-                    enable=self.compile_config._check_ir_validity,
-                    check_edge_ops=self.compile_config._use_edge_ops,
-                )(program.graph_module)
+                EXIREdgeDialectVerifier(edge_compile_config=self.compile_config)(
+                    program.graph_module
+                )
             except ExportError as e:
                 logging.info(f"Input program {name} is not in aten dialect.")
                 raise e
@@ -831,20 +828,18 @@ class EdgeProgramManager:
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
                     new_programs[name] = _transform(program, *passes[name])
-                    EXIREdgeDialectVerifier(
-                        enable=compile_config._check_ir_validity,
-                        check_edge_ops=compile_config._use_edge_ops,
-                    )(new_programs[name].graph_module)
+                    EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
+                        new_programs[name].graph_module
+                    )
                 else:
                     new_programs[name] = copy.deepcopy(program)
 
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
                 new_programs[name] = _transform(program, *passes)
-                EXIREdgeDialectVerifier(
-                    enable=compile_config._check_ir_validity,
-                    check_edge_ops=compile_config._use_edge_ops,
-                )(new_programs[name].graph_module)
+                EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
+                    new_programs[name].graph_module
+                )
 
         return EdgeProgramManager(
             new_programs, copy.deepcopy(self._config_methods), compile_config
