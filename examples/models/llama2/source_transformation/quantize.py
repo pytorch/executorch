@@ -372,7 +372,9 @@ class WeightOnlyInt8Linear(torch.nn.Module):
         self.register_buffer("scales", torch.ones(out_features, dtype=torch.bfloat16))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return F.linear(input, self.weight.to(dtype=input.dtype)) * self.scales
+        if input.dim() == 3:
+            input = input.squeeze(0)
+        return torch.ops.aten._weight_int8pack_mm(input, self.weight, self.scales)
         # return F.linear(input, self.weight.to(dtype=input.dtype)) * se...
 
 

@@ -377,6 +377,9 @@ union MPSNodeUnion {
     MPSMatMul: _MPSNode2x1,
     MPSAddmm,
 
+    // Quantized linear algebra ops
+    MPSInt8PackedMM: _MPSNode3x1,
+
     // Constant ops
     MPSFull: _MPSFull,
     MPSFullLike: _MPSFull,

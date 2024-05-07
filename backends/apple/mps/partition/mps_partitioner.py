@@ -42,6 +42,7 @@ class MPSOperatorSupport(OperatorSupportBase):
         self.edge_program = edge_program
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+        
         if node.op != "call_function":
             return False
 

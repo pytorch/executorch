@@ -588,6 +588,7 @@ setup(
         # into core pip packages. Refactor out the necessary utils
         # or core models files into a separate package.
         "executorch/examples/models": "examples/models",
+        "executorch/examples/portable": "examples/portable",
         "executorch/exir": "exir",
         "executorch/extension": "extension",
         "executorch/schema": "schema",
