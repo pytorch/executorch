@@ -369,7 +369,7 @@ class WeightOnlyInt8Linear(torch.nn.Module):
         self.register_buffer(
             "weight", torch.empty((out_features, in_features), dtype=torch.int8)
         )
-        self.register_buffer("scales", torch.ones(out_features, dtype=torch.bfloat16))
+        self.register_buffer("scales", torch.ones(out_features))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         if input.dim() == 3:

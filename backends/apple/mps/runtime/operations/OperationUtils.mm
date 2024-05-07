@@ -215,6 +215,8 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
     _DEFINE_MPS_NODE(ConstantPadND);
     // Range ops
     _DEFINE_MPS_NODE(Arange);
+    // Quantized ops
+    _DEFINE_MPS_NODE(Int8PackedMM);
 
     case mpsgraph::MPSNodeUnion::NONE:
     default:

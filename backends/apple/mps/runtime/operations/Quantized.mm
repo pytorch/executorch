@@ -27,14 +27,14 @@ MPSGraphBuilder::mpsInt8PackedMMOp(NodePtr nodePtr) {
   MPSGraphTensor* BTensor = getMPSGraphTensor(graphNode->input2_id());
   MPSGraphTensor* scalesTensor = getMPSGraphTensor(graphNode->input3_id());
 
-    auto castB = castMPSTensor(_mpsGraph, BTensor, getMPSScalarType(A));
-    auto transposedB = [_mpsGraph transposeTensor:castB dimension:-1 withDimension:-2 name:@"int8packedmm/transposed"];
+  auto castB = castMPSTensor(_mpsGraph, BTensor, ATensor.dataType);
+  auto transposedB = [_mpsGraph transposeTensor:castB dimension:-1 withDimension:-2 name:@"int8packedmm/transposed"];
   auto mmTensor = [_mpsGraph matrixMultiplicationWithPrimaryTensor:ATensor
                                                                     secondaryTensor:transposedB
                                                                                name:@"int8packedmm/transposed*matmul"];
 
   _idToMPSGraphTensor[graphNode->output_id()] = [_mpsGraph multiplicationWithPrimaryTensor:mmTensor
-                                                               secondaryTensor:newCachedGraph->scalesTensor
+                                                               secondaryTensor:scalesTensor
                                                                           name:@"int8packedmm/transposed*matmul*scales"];
 
   return Error::Ok;
