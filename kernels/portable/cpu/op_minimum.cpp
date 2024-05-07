@@ -8,17 +8,13 @@
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
 namespace native {
 namespace {
-
-template <class T>
-const T& min(const T& a, const T& b) {
-  return (b < a) ? b : a;
-}
 
 template <
     bool can_cast,
@@ -40,7 +36,7 @@ struct MinimumInner<true, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT> {
         [](const CTYPE_A val_a, const CTYPE_B val_b) {
           CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
           CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-          CTYPE_IN value = min(a_casted, b_casted);
+          CTYPE_IN value = utils::min_override(a_casted, b_casted);
 
           return static_cast<CTYPE_OUT>(value);
         },
