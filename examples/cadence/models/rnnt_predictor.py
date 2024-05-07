@@ -10,11 +10,11 @@ import logging
 
 import torch
 
-from ..aot.meta_registrations import *  # noqa
+from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 
 from typing import Tuple
 
-from ..aot.export_example import export_model
+from executorch.backends.cadence.aot.export_example import export_model
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"

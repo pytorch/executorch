@@ -8,7 +8,7 @@
 add_library(
   cadence_kernels
   kernels.cpp
-  ${EXECUTORCH_ROOT}/examples/cadence/third-party/nnlib-hifi4/matmul_asym8uxasym8u_asym8u.cpp
+  ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/matmul_asym8uxasym8u_asym8u.cpp
 )
 
 target_include_directories(
