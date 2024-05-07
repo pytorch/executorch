@@ -171,7 +171,13 @@ def EXIREdgeDialectVerifier(  # noqa: C901
         def check_valid_edge_op(self, op):
             if not self.enable:
                 return
-            if op in [operator.getitem, torch.ops.aten.sym_size.int]:
+            if op in [
+                operator.getitem,
+                torch.ops.aten.sym_size.int,
+                torch.ops.aten.scalar_tensor.default,
+                torch.ops.aten._assert_async.msg,
+                torch.ops.aten._assert_scalar.default,
+            ]:
                 return
 
             if isinstance(op, OpOverload) and not isinstance(op, EdgeOpOverload):
