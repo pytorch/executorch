@@ -12,129 +12,28 @@ import numpy as np
 
 import torch
 
-from executorch.backends.arm.arm_backend import (
-    get_intermediate_path,
-    is_permute_memory,
-    is_tosa,
-)
+from executorch.backends.arm.arm_backend import get_intermediate_path, is_permute_memory
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
 
-from executorch.backends.arm.test.tosautil.tosa_test_utils import (
-    QuantizationParams,
-    TosaTestUtils,
+from executorch.backends.arm.test.runner_utils import (
+    _get_input_names,
+    _get_input_quantization_params,
+    _get_output_node,
+    _get_output_quantization_params,
+    dbg_tosa_fb_to_json,
+    RunnerUtil,
 )
 
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
-from torch.export import ExportedProgram
-from torch.fx.node import Node
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-def _get_input_names(program: ExportedProgram) -> list[str]:
-    """
-    Get a list[str] with the names of the inputs to this model.
-
-    Args:
-        program (ExportedProgram): The program to get input names from.
-    Returns:
-        A list of strings with the names of the model input.
-    """
-    input_names = []
-
-    # E.g. bias and weights are 'placeholders' as well. This is used to
-    # get only the use inputs.
-    usr_inputs = program.graph_signature.user_inputs
-    for node in program.graph.nodes:
-        if node.op == "placeholder" and node.name in usr_inputs:
-            input_names.append(node.name)
-
-    return input_names
-
-
-def _get_input_quantization_params(
-    program: ExportedProgram, input_names: list[str]
-) -> list[QuantizationParams]:
-    """
-    Get input QuantizationParams in a program, maximum one per input to the program.
-    Args:
-        program (ExportedProgram): The program to get input quantization parameters from.
-    Returns:
-        list[QuantizationParams]: The found quantization parameters.
-    Raises:
-        RuntimeError if no quantization parameters are found.
-    """
-
-    quant_params = []
-    num_inputs = len(input_names)
-    for node in program.graph.nodes:
-        if (
-            node.target == torch.ops.quantized_decomposed.quantize_per_tensor.default
-            and node.args[0].name in input_names
-        ):
-            qp = QuantizationParams(
-                node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
-            )
-            quant_params.append(qp)
-            if (
-                len(quant_params) == num_inputs
-            ):  # break early if we have all the inputs quantized parameters
-                break
-    if len(quant_params) == 0:
-        raise RuntimeError("No Quantization parameters not found in exported model.")
-    return quant_params
-
-
-def _get_output_node(program: ExportedProgram) -> Node:
-    """
-    Get output node to this model.
-
-    Args:
-        program (ExportedProgram): The program to get output node from.
-    Returns:
-        The node that is the output of 'program'.
-    """
-
-    for node in program.graph.nodes:
-        if node.op == "output":
-            return node
-    raise RuntimeError("No output node found.")
-
-
-def _get_output_quantization_params(
-    program: ExportedProgram, output_node: Node
-) -> QuantizationParams:
-    """
-    Get output QuantizationParams from a program.
-    Args:
-        program (ExportedProgram): The program to get output quantization parameters from.
-    Returns:
-        QuantizationParams: The found quantization parameters.
-    Raises:
-        RuntimeError if no output quantization parameters are found.
-    """
-
-    quant_params = None
-    for node in program.graph.nodes:
-        if (
-            node.target == torch.ops.quantized_decomposed.dequantize_per_tensor.default
-            and node == output_node.args[0][0]
-        ):
-            quant_params = QuantizationParams(
-                node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
-            )
-            break  # break early, there's only one output node
-    if quant_params is None:
-        raise RuntimeError("No Quantization parameters not found in exported model.")
-    return quant_params
 
 
 class Partition(tester.Partition):
@@ -147,7 +46,7 @@ class Partition(tester.Partition):
             if spec.key == "output_format":
                 if spec.value == b"tosa":
                     tosa_fb = self.graph_module.lowered_module_0.processed_bytes
-                    to_print = TosaTestUtils.dbg_tosa_fb_to_json(tosa_fb)
+                    to_print = dbg_tosa_fb_to_json(tosa_fb)
                     to_print = pformat(to_print, compact=True, indent=1)
                     to_print = f"\n TOSA deserialized: \n{to_print}"
                 elif spec.value == b"vela":
@@ -165,33 +64,31 @@ class Partition(tester.Partition):
 
 
 class Serialize(tester.Serialize):
+    def __init__(self, runner_util: RunnerUtil, timeout: int = 1):
+        super().__init__()
+        self.runner = runner_util
+        self.runner.set_timeout(timeout)
 
     def run_artifact(self, inputs):
-        # TODO run .pte on corestone
-        return None
+        return self.runner.run_corstone300(inputs)
+
+    def dump_artifact(self, path_to_dump: Optional[str]):
+        if not path_to_dump:
+            path_to_dump = self.path + "/program.pte"
+        super().dump_artifact(path_to_dump)
 
 
 class ToExecutorch(tester.ToExecutorch):
     def __init__(
         self,
-        input_names,
-        qp_input,
-        output_name,
-        qp_output,
-        tosa_test_util: TosaTestUtils,
+        tosa_test_util: RunnerUtil,
         dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         super().__init__(dynamic_shapes)
-        self.input_names = input_names
-        self.qp_input = qp_input
-        self.output_name = output_name
-        self.qp_output = qp_output
         self.tosa_test_util = tosa_test_util
 
     def run_artifact(self, inputs):
         tosa_output = self.tosa_test_util.run_tosa_ref_model(
-            params_input=(self.input_names, self.qp_input),
-            param_output=(self.output_name, self.qp_output),
             inputs=inputs,
         )
         return tosa_output
@@ -233,11 +130,9 @@ class ArmTester(Tester):
             compile_spec (List[CompileSpec]): The compile spec to use
         """
 
-        # Use the TosaTestUtils if you are using a TOSA backend
-        self.tosa_test_util = None
-        if is_tosa(compile_spec):
-            intermediate_path = get_intermediate_path(compile_spec)
-            self.tosa_test_util = TosaTestUtils(intermediate_path=intermediate_path)
+        # Initiate runner_util
+        intermediate_path = get_intermediate_path(compile_spec)
+        self.runner_util = RunnerUtil(intermediate_path=intermediate_path)
 
         self.compile_spec = compile_spec
         super().__init__(model, example_inputs)
@@ -281,29 +176,14 @@ class ArmTester(Tester):
 
     def to_executorch(self, to_executorch_stage: Optional[ToExecutorch] | None = None):
         if to_executorch_stage is None:
-            export_stage = self.stages[self.stage_name(tester.Export)]
-            exported_program = export_stage.artifact
-            input_names = _get_input_names(exported_program)
-            output_node = _get_output_node(exported_program)
-            output_name = output_node.name
-
-            is_quantized = self.stages[self.stage_name(tester.Quantize)] is not None
-            if is_quantized:
-                qp_input = _get_input_quantization_params(exported_program, input_names)
-                qp_output = _get_output_quantization_params(
-                    exported_program, output_node
-                )
-            else:
-                qp_input = [None] * len(input_names)
-                qp_output = None
-            to_executorch_stage = ToExecutorch(
-                input_names, qp_input, output_name, qp_output, self.tosa_test_util
-            )
+            to_executorch_stage = ToExecutorch(self.runner_util)
         return super().to_executorch(to_executorch_stage)
 
-    def serialize(self, serialize_stage: Optional[Serialize] = None):
+    def serialize(
+        self, serialize_stage: Optional[Serialize] = None, timeout: int = 120
+    ):
         if serialize_stage is None:
-            serialize_stage = Serialize()
+            serialize_stage = Serialize(self.runner_util, timeout=timeout)
         assert (
             get_intermediate_path(self.compile_spec) is not None
         ), "Can't dump serialized file when compile specs do not contain an artifact path."
@@ -316,8 +196,8 @@ class ArmTester(Tester):
 
     def run_method_and_compare_outputs(
         self,
-        stage: Optional[str] = None,
         inputs: Optional[Tuple[torch.Tensor]] = None,
+        stage: Optional[str] = None,
         num_runs=1,
         atol=1e-03,
         rtol=1e-03,
@@ -338,7 +218,7 @@ class ArmTester(Tester):
                 The default is random data.
         """
         assert (
-            self.tosa_test_util is not None
+            self.runner_util is not None
         ), "self.tosa_test_util is not initialized, cannot use run_method()"
         assert (
             self.stages[self.stage_name(tester.Export)] is not None
@@ -346,14 +226,14 @@ class ArmTester(Tester):
 
         stage = stage or self.cur
         test_stage = self.stages[stage]
+        is_quantized = self.stages[self.stage_name(tester.Quantize)] is not None
+        self.runner_util.init_run(
+            self.stages[self.stage_name(tester.Export)].artifact, is_quantized
+        )
 
-        if self.stages[self.stage_name(tester.Quantize)] is not None:
+        if is_quantized:
             reference_stage = self.stages[self.stage_name(tester.Quantize)]
-            export_stage = self.stages[self.stage_name(tester.Export)]
-            exported_program = export_stage.artifact
-            output_node = _get_output_node(exported_program)
-            qp_output = _get_output_quantization_params(exported_program, output_node)
-            quantization_scale = qp_output.scale
+            quantization_scale = self.runner_util.qp_output.scale
         else:
             reference_stage = self.stages[self.stage_name(InitialModel)]
             quantization_scale = None
@@ -379,7 +259,6 @@ class ArmTester(Tester):
             if is_nhwc:
                 test_output = self.transpose_data_format(test_output, "NCHW")
 
-            # Output from running artifact at stage
             self._compare_outputs(
                 reference_output, test_output, quantization_scale, atol, rtol, qtol
             )
@@ -413,7 +292,7 @@ class ArmTester(Tester):
             # Capture assertion error and print more info
             banner = "=" * 40 + "TOSA debug info" + "=" * 40
             logger.error(banner)
-            path_to_tosa_files = self.tosa_test_util.get_tosa_artifact_path()
+            path_to_tosa_files = self.runner_util.intermediate_path
 
             export_stage = self.stages.get(self.stage_name(tester.Export), None)
             if export_stage is not None:

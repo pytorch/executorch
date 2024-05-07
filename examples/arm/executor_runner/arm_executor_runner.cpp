@@ -6,7 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <errno.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <memory>
 #include <vector>
 
@@ -28,9 +30,9 @@
 #ifdef SEMIHOSTING
 // TODO: Verify the section attribute to match the linker script
 //       pending MLETORCH-39
-const size_t input_allocation_pool_size = 10 * 1024 * 1024;
+const size_t input_allocation_pool_size = 1 * 1024 * 1024;
 unsigned char __attribute__((
-    section(".pte_data"),
+    section("network_model_sec"),
     aligned(16))) input_allocation_pool[input_allocation_pool_size];
 // memory for the model will be allocated from the input_allocation_pool
 char* model_pte = nullptr;
@@ -44,12 +46,18 @@ using torch::executor::Error;
 using torch::executor::Result;
 
 #define METHOD_ALLOCATOR_POOL_SIZE (70 * 1024 * 1024)
-uint8_t* method_allocator_pool;
+unsigned char __attribute__((
+    section("network_model_sec"),
+    aligned(16))) method_allocation_pool[METHOD_ALLOCATOR_POOL_SIZE];
 
 void et_pal_init(void) {}
 
 __ET_NORETURN void et_pal_abort(void) {
+#ifndef SEMIHOSTING
   __builtin_trap();
+#else
+  _exit(-1);
+#endif
 }
 
 /**
@@ -78,7 +86,7 @@ Result<util::BufferCleanup> prepare_input_tensors(
   size_t num_allocated = 0;
 
   ET_CHECK_OR_RETURN_ERROR(
-      input_buffers.size() > 0 && num_inputs != input_buffers.size(),
+      input_buffers.size() > 0 && num_inputs == input_buffers.size(),
       InvalidArgument,
       "Wrong number of inputs allocated compared to method");
 
@@ -109,20 +117,46 @@ Result<util::BufferCleanup> prepare_input_tensors(
         "Could not allocate memory for input buffers.");
     inputs[num_allocated++] = data_ptr;
 
-    // Create the tensor and set it as the input.
-    Error err = util::internal::fill_and_set_input(
-        method, tensor_meta.get(), i, data_ptr);
-
+    Error err = Error::Ok;
     if (input_buffers.size() > 0) {
       auto [buffer, buffer_size] = input_buffers.at(i);
       if (buffer_size != tensor_meta->nbytes()) {
-        ET_LOG(Error, "input size and tensor size missmatch!");
+        ET_LOG(
+            Error,
+            "input size (%d) and tensor size (%d) missmatch!",
+            buffer_size,
+            tensor_meta->nbytes());
         err = Error::InvalidArgument;
       } else {
         ET_LOG(Info, "Copying read input to tensor.");
         std::memcpy(data_ptr, buffer, buffer_size);
       }
     }
+
+    TensorImpl impl = TensorImpl(
+        tensor_meta.get().scalar_type(),
+        tensor_meta.get().sizes().size(),
+        const_cast<TensorImpl::SizesType*>(tensor_meta.get().sizes().data()),
+        data_ptr,
+        const_cast<TensorImpl::DimOrderType*>(
+            tensor_meta.get().dim_order().data()));
+    Tensor t(&impl);
+
+    // If input_buffers.size <= 0, we don't have any input, fill t with 1's.
+    if (input_buffers.size() <= 0) {
+      for (size_t j = 0; j < t.numel(); j++) {
+        switch (t.scalar_type()) {
+          case ScalarType::Int:
+            t.mutable_data_ptr<int>()[j] = 1;
+            break;
+          case ScalarType::Float:
+            t.mutable_data_ptr<float>()[j] = 1.;
+            break;
+        }
+      }
+    }
+
+    err = method.set_input(t, i);
 
     if (err != Error::Ok) {
       ET_LOG(
@@ -136,13 +170,18 @@ Result<util::BufferCleanup> prepare_input_tensors(
 }
 
 #ifdef SEMIHOSTING
+
 std::pair<char*, size_t> read_binary_file(
     const char* filename,
     torch::executor::MemoryAllocator& allocator) {
   FILE* fp = fopen(filename, "rb");
   if (!fp) {
-    ET_LOG(Fatal, "Could not open file %s for reading, exiting!", filename);
-    exit(1);
+    ET_LOG(
+        Fatal,
+        "Could not open file %s (errno: %d) for reading, exiting!",
+        filename,
+        errno);
+    _exit(1);
   }
 
   fseek(fp, 0, SEEK_END);
@@ -175,7 +214,7 @@ int main(int argc, const char* argv[]) {
         Fatal,
         "app -m model.pte -i input.bin [-i input2.bin] -o output_basename");
     ET_LOG(Fatal, "Exiting!");
-    exit(1);
+    _exit(1);
   }
   ET_LOG(Info, "   %s", argv[0]);
   for (int i = 1; i < argc; i++) {
@@ -225,7 +264,6 @@ int main(int argc, const char* argv[]) {
   }
 #endif
   ET_LOG(Info, "Model in %p %c", model_pte, model_pte[0]);
-  method_allocator_pool = (uint8_t*)malloc(METHOD_ALLOCATOR_POOL_SIZE);
   auto loader = torch::executor::util::BufferDataLoader(model_pte, pte_size);
   ET_LOG(Info, "Model PTE file loaded. Size: %lu bytes.", pte_size);
   Result<torch::executor::Program> program =
@@ -260,9 +298,9 @@ int main(int argc, const char* argv[]) {
 
   torch::executor::MemoryAllocator method_allocator{
       torch::executor::MemoryAllocator(
-          METHOD_ALLOCATOR_POOL_SIZE, method_allocator_pool)};
+          METHOD_ALLOCATOR_POOL_SIZE, method_allocation_pool)};
 
-  std::vector<std::unique_ptr<uint8_t[]>> planned_buffers; // Owns the memory
+  std::vector<uint8_t*> planned_buffers; // Owns the memory
   std::vector<torch::executor::Span<uint8_t>>
       planned_spans; // Passed to the allocator
   size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
@@ -272,8 +310,11 @@ int main(int argc, const char* argv[]) {
         static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
     ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
 
-    planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
-    planned_spans.push_back({planned_buffers.back().get(), buffer_size});
+    /* Move to it's own allocator when MemoryPlanner is in place. */
+    uint8_t* buffer =
+        reinterpret_cast<uint8_t*>(method_allocator.allocate(buffer_size));
+    planned_buffers.push_back(buffer);
+    planned_spans.push_back({planned_buffers.back(), buffer_size});
   }
 
   torch::executor::HierarchicalAllocator planned_memory(
@@ -294,8 +335,10 @@ int main(int argc, const char* argv[]) {
   ET_LOG(Info, "Method loaded.");
 
   ET_LOG(Info, "Preparing inputs...");
+
   auto inputs =
       ::prepare_input_tensors(*method, method_allocator, input_buffers);
+
   if (!inputs.ok()) {
     ET_LOG(
         Info,
@@ -355,9 +398,8 @@ int main(int argc, const char* argv[]) {
 out:
   ET_LOG(Info, "Program complete, exiting.");
 #ifdef SEMIHOSTING
-  exit(0);
-#else
-  ET_LOG(Info, "\04");
+  _exit(0);
 #endif
+  ET_LOG(Info, "\04");
   return 0;
 }
