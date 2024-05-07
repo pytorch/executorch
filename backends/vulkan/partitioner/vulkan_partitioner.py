@@ -45,6 +45,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.sqrt.default,
             # Matrix multiplication operators
             exir_ops.edge.aten.mm.default,
+            exir_ops.edge.aten.bmm.default,
             # Pooling operators
             exir_ops.edge.aten.max_pool2d_with_indices.default,
             # Sum

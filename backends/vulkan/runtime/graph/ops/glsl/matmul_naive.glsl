@@ -72,17 +72,6 @@ void main() {
       $else:
         $raise Exception("Unsupported value for MAT2_PACKING")
     }
-  $elif MAT1_PACKING == "C_packed" and MAT2_PACKING == "C_packed":
-    int K = in_sizes[0];
-    for (int i = 0; i < K; ++i) {
-      texel = fma(
-          texelFetch(im_mat1, mat1_pos, 0),
-          texelFetch(im_mat2, mat2_pos, 0),
-          texel);
-
-      mat1_pos.x++;
-      mat2_pos.y++;
-    }
   $else:
     $raise Exception("Unsupported value combo for MAT1_PACKING and MAT2_PACKING")
 

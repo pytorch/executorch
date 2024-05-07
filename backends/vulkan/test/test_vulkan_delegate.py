@@ -526,6 +526,24 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(module, sample_inputs)
 
+    def test_vulkan_backend_bmm(self):
+        class BMMModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.randn(size=(4, 4, 5), dtype=torch.float32)
+
+            def forward(self, x):
+                return torch.bmm(x, self.weight)
+
+        module = BMMModule()
+        sample_inputs = (torch.randn(size=(4, 3, 4), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_sum_dim_list(self):
         class SumModule(torch.nn.Module):
             def __init__(self):
