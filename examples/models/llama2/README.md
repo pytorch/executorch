@@ -117,7 +117,7 @@ You can export and run the original Llama3 8B model.
 
     Due to the larger vocabulary size of Llama3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` to further reduce the model size.
 
-### Option D: Download models from Hugging Face and convert
+### Option D: Download models from Hugging Face and convert from safetensor format to state dict
 
 You can also download above models from [Hugging Face](https://huggingface.co/). Since ExecuTorch starts from a PyTorch model, a script like below can be used to convert the Hugging Face safetensors format to PyTorch's state dict. It leverages the utils provided by [TorchTune](https://github.com/pytorch/torchtune).
 
@@ -141,7 +141,7 @@ sd = checkpointer.load_checkpoint()
 sd = convert_weights.tune_to_meta(sd['model'])
 
 print("saving checkpoint")
-torch.save(sd, "/destination/dir/checkpoint.pth")
+torch.save(sd, "/the/destination/dir/checkpoint.pth")
 ```
 
 ## (Optional) Finetuning
