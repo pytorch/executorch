@@ -57,6 +57,23 @@ def get_mm_inputs():
     return test_suite
 
 
+def get_bmm_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((S, M1, L), (S, L, M2)),
+            ((M, S1, S2), (M, S2, M)),
+        ],
+    )
+    test_suite.prepacked_args = ["mat2"]
+    # ATen matmul doesn't support half
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = [
+        "api::kWidthPacked",
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
 def get_pool2d_inputs():
     test_suite = VkTestSuite(
         [
@@ -573,6 +590,7 @@ test_suites = {
     "aten.div.Tensor": get_binary_elementwise_inputs(),
     "aten.mul.Tensor": get_binary_elementwise_inputs(),
     "aten.mm.default": get_mm_inputs(),
+    "aten.bmm.default": get_bmm_inputs(),
     "aten.max_pool2d_with_indices.default": get_pool2d_inputs(),
     "aten.convolution.default": get_conv_inputs(),
     "aten.native_layer_norm.default": get_native_layer_norm_inputs(),
