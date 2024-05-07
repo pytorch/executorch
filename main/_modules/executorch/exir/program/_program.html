@@ -979,9 +979,7 @@
         <span class="p">[]</span> <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_skip_type_promotion</span> <span class="k">else</span> <span class="p">[</span><span class="n">RemoveMixedTypeOperators</span><span class="p">()]</span>
     <span class="p">)</span>
 
-    <span class="n">post_op_replace_passes</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="p">[]</span> <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_skip_dim_order</span> <span class="k">else</span> <span class="p">[</span><span class="n">MemoryFormatOpsPass</span><span class="p">()]</span>
-    <span class="p">)</span> <span class="o">+</span> <span class="n">base_post_op_replace_passes</span>
+    <span class="n">post_op_replace_passes</span> <span class="o">=</span> <span class="n">base_post_op_replace_passes</span>
 
     <span class="k">return</span> <span class="n">pre_op_replace_passes</span><span class="p">,</span> <span class="n">post_op_replace_passes</span>
 
@@ -1024,6 +1022,10 @@
         <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">OpReplacePass</span><span class="p">()(</span><span class="n">new_gm</span><span class="p">)</span>
         <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">config</span><span class="o">.</span><span class="n">_skip_dim_order</span><span class="p">:</span>
+            <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">MemoryFormatOpsPass</span><span class="p">()(</span><span class="n">new_gm</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
 
     <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">post_op_replace_passes</span><span class="p">:</span>
         <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
@@ -1041,8 +1043,7 @@
         <span class="n">module_call_graph</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
         <span class="n">example_inputs</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
         <span class="n">verifier</span><span class="o">=</span><span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
-            <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
-            <span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
+            <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
             <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">),</span>
         <span class="n">constants</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
@@ -1103,6 +1104,8 @@
     <span class="n">passes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">pre_op_replace_passes</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">:</span>
         <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">OpReplacePass</span><span class="p">())</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">config</span><span class="o">.</span><span class="n">_skip_dim_order</span><span class="p">:</span>
+            <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">MemoryFormatOpsPass</span><span class="p">())</span>
 
     <span class="n">gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
     <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">passes</span><span class="p">:</span>
@@ -1119,8 +1122,7 @@
         <span class="n">module_call_graph</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
         <span class="n">example_inputs</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
         <span class="n">verifier</span><span class="o">=</span><span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
-            <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
-            <span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
+            <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
             <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">),</span>
         <span class="n">constants</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
@@ -1195,10 +1197,9 @@
             <span class="n">edge_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">edge_programs</span><span class="p">}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
-                    <span class="n">enable</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
-                    <span class="n">check_edge_ops</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
-                <span class="p">)(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+                <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span><span class="n">edge_compile_config</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span><span class="p">)(</span>
+                    <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
+                <span class="p">)</span>
             <span class="k">except</span> <span class="n">ExportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                 <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in aten dialect.&quot;</span><span class="p">)</span>
                 <span class="k">raise</span> <span class="n">e</span>
@@ -1256,20 +1257,18 @@
             <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">passes</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
                     <span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
-                    <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
-                        <span class="n">enable</span><span class="o">=</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
-                        <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
-                    <span class="p">)(</span><span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+                    <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span><span class="n">edge_compile_config</span><span class="o">=</span><span class="n">compile_config</span><span class="p">)(</span>
+                        <span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">graph_module</span>
+                    <span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
 
         <span class="k">else</span><span class="p">:</span>  <span class="c1"># apply passes to every method</span>
             <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">)</span>
-                <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
-                    <span class="n">enable</span><span class="o">=</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
-                    <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">compile_config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
-                <span class="p">)(</span><span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+                <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span><span class="n">edge_compile_config</span><span class="o">=</span><span class="n">compile_config</span><span class="p">)(</span>
+                    <span class="n">new_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">graph_module</span>
+                <span class="p">)</span>
 
         <span class="k">return</span> <span class="n">EdgeProgramManager</span><span class="p">(</span>
             <span class="n">new_programs</span><span class="p">,</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">),</span> <span class="n">compile_config</span>
