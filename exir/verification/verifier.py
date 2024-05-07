@@ -79,7 +79,8 @@ class EXIRATenDialectVerifier(EXIRATenDialectVerifierBase):
                 torch.ops.aten._upsample_bilinear2d_aa.default,
                 torch.ops.aten.quantize_per_tensor.default,
                 torch.ops.aten.dequantize.self,
-                torch.ops.aten.max.default,
+                torch.ops.aten.max.default,  # TODO(T188268054)
+                torch.ops.aten.min.default,  # TODO(T188268054)
                 torch.ops.aten.full_like.default,  # TODO(T183507359)
             ):
                 return
