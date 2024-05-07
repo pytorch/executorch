@@ -24,6 +24,7 @@
 #include "pin_mux.h"
 
 #include <memory>
+// patternlint-disable executorch-cpp-nostdinc
 #include <vector>
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
