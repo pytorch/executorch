@@ -67,6 +67,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.repeat.default,
             # Softmax
             exir_ops.edge.aten._softmax.default,
+            exir_ops.edge.aten._log_softmax.default,
             # Other
             operator.getitem,
             exir_ops.edge.aten.full.default,

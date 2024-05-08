@@ -10,6 +10,10 @@
 
 #define PRECISION ${PRECISION}
 
+#define op1(X) ${OPERATOR1}
+
+#define op2(X, Y) ${OPERATOR2}
+
 #include "indexing_utils.h"
 #include "softmax.h"
 
@@ -94,7 +98,7 @@ void main() {
   // Calculate every final channel element.
   for (int c = 0; c < b_stride; c++) {
     const ivec3 dst_pos = ivec3(src_pos.x, src_pos.y, src_pos.z + c);
-    const vec4 numerator = exp(texelFetch(image_in, dst_pos, 0) - max_element);
-    imageStore(image_out, dst_pos, numerator / denominator);
+    const vec4 numerator = op1(texelFetch(image_in, dst_pos, 0) - max_element);
+    imageStore(image_out, dst_pos, op2(numerator, denominator));
   }
 }
