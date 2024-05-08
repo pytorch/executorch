@@ -147,8 +147,16 @@ class OpClampOutTest : public OperatorTest {
   // Test cases that are compatible with float and double.
   template <ScalarType DTYPE>
   void run_floating_point_test_cases() {
-    constexpr auto kInfinity =
-        std::numeric_limits<typename TensorFactory<DTYPE>::ctype>::infinity();
+    using ctype = typename TensorFactory<DTYPE>::ctype;
+    using opt_infinity_type = std::conditional_t<
+        std::is_same<ctype, exec_aten::Half>::value,
+        float,
+        ctype>;
+    constexpr auto kInfinity = std::numeric_limits<ctype>::infinity();
+    const auto kOptInfinity =
+        OptScalar(static_cast<opt_infinity_type>(kInfinity));
+    const auto kOptMinusInfinity =
+        OptScalar(static_cast<opt_infinity_type>(-kInfinity));
     std::vector<ClampTestCase<DTYPE>> test_cases = {
         {
             std::string(__func__) + ": Simple negative/positive clamp",
@@ -178,7 +186,7 @@ class OpClampOutTest : public OperatorTest {
             std::string(__func__) + ": Infinite min",
             {2, 2}, // sizes
             {-10.1, -1.1, 1.1, 10.1}, // input_data
-            OptScalar(-kInfinity), // min
+            kOptMinusInfinity, // min
             OptScalar(5.5), // max
             {-10.1, -1.1, 1.1, 5.5}, // expected_data
         },
@@ -187,7 +195,7 @@ class OpClampOutTest : public OperatorTest {
             {2, 2}, // sizes
             {-10.1, -1.1, 1.1, 10.1}, // input_data
             OptScalar(-5.5), // min
-            OptScalar(kInfinity), // max
+            kOptInfinity, // max
             {-5.5, -1.1, 1.1, 10.1}, // expected_data
         },
         {
@@ -283,6 +291,15 @@ TEST_F(OpClampOutTest, IntTensors) {
 TEST_F(OpClampOutTest, LongTensors) {
   run_unsigned_integer_test_cases<ScalarType::Long>();
   run_signed_integer_test_cases<ScalarType::Long>();
+}
+
+TEST_F(OpClampOutTest, HalfTensors) {
+  // Note that the integer test cases test the situation where the min/max value
+  // Scalars are integer types, demonstrating that floating point types can be
+  // clamped to integer values.
+  run_unsigned_integer_test_cases<ScalarType::Half>();
+  run_signed_integer_test_cases<ScalarType::Half>();
+  run_floating_point_test_cases<ScalarType::Half>();
 }
 
 TEST_F(OpClampOutTest, FloatTensors) {

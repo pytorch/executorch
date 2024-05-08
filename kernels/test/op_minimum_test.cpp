@@ -65,6 +65,10 @@ TEST_F(OpMinimumOutTest, LongTensors) {
   test_minimum_out_same_size<ScalarType::Long>();
 }
 
+TEST_F(OpMinimumOutTest, HalfTensors) {
+  test_minimum_out_same_size<ScalarType::Half>();
+}
+
 TEST_F(OpMinimumOutTest, FloatTensors) {
   test_minimum_out_same_size<ScalarType::Float>();
 }
