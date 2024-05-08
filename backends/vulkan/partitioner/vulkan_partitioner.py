@@ -65,6 +65,8 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.split.Tensor,
             exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.repeat.default,
+            # Softmax
+            exir_ops.edge.aten._softmax.default,
             # Other
             operator.getitem,
             exir_ops.edge.aten.full.default,

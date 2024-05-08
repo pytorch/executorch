@@ -592,6 +592,37 @@ def get_split_tensor_inputs():
     return test_suite
 
 
+def get_softmax_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((S1), 0, False),
+            ((S1), -1, False),
+            ((S, S1), 0, False),
+            ((S, S1), 1, False),
+            ((S, S1), -1, False),
+            ((S, S1), -2, False),
+            ((S, S1, S2), 0, False),
+            ((S, S1, S2), 1, False),
+            ((S, S1, S2), 2, False),
+            ((S, S1, S2), -1, False),
+            ((S, S1, S2), -2, False),
+            ((S, S1, S2), -3, False),
+            ((XS, S, S1, S2), 0, False),
+            ((XS, S, S1, S2), 1, False),
+            ((XS, S, S1, S2), 2, False),
+            ((XS, S, S1, S2), 3, False),
+            ((XS, S, S1, S2), -1, False),
+            ((XS, S, S1, S2), -2, False),
+            ((XS, S, S1, S2), -3, False),
+            ((XS, S, S1, S2), -4, False),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
 def get_unary_ops_inputs():
     test_suite = VkTestSuite(
         [
@@ -629,4 +660,5 @@ test_suites = {
     "aten.split_with_sizes_copy.default": get_split_with_sizes_inputs(),
     "aten.split.Tensor": get_split_tensor_inputs(),
     "aten.sqrt.default": get_unary_ops_inputs(),
+    "aten._softmax.default": get_softmax_inputs(),
 }
