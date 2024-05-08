@@ -31,7 +31,6 @@ _EXTERNAL_DEPS = {
     "flatccrt": "//third-party:flatccrt",
     # Codegen driver
     "gen-executorch": "//third-party:gen_executorch",
-    "gen-oplist-lib": "//third-party:gen_oplist_lib",
     # Commandline flags library
     "gflags": "//third-party:gflags",
     "gmock": "//third-party:gmock",

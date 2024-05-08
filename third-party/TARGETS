@@ -89,31 +89,6 @@ runtime.filegroup(
     _is_external_target = True,
 )
 
-runtime.python_library(
-    name = "gen_selected_mobile_ops_header",
-    srcs = subdir_glob([
-        ("pytorch/tools", "lite_interpreter/gen_selected_mobile_ops_header.py"),
-    ]),
-    base_module = "tools",
-    _is_external_target = True,
-)
-
-runtime.python_library(
-    name = "gen_oplist_lib",
-    srcs = subdir_glob([
-        ("pytorch/tools/code_analyzer", "gen_oplist.py"),
-        ("pytorch/tools/code_analyzer", "gen_op_registration_allowlist.py"),
-    ]),
-    base_module = "tools.code_analyzer",
-    visibility = ["PUBLIC"],
-    deps = [
-        ":gen_selected_mobile_ops_header",
-        ":torchgen",
-        ":pyyaml",
-    ],
-    _is_external_target = True,
-)
-
 runtime.cxx_library(
     name = "flatbuffers-api",
     public_include_directories = ["flatbuffers/include"],
