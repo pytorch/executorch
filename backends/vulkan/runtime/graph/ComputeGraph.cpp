@@ -56,7 +56,7 @@ ComputeGraph::ComputeGraph(GraphConfig config)
       execute_descriptor_counts_{},
       context_{new api::Context(
           api::runtime()->default_adapter_i(),
-          config_.contextConfig)},
+          config_.context_config)},
       shared_objects_{},
       values_{},
       param_ubos_{},
@@ -65,17 +65,17 @@ ComputeGraph::ComputeGraph(GraphConfig config)
       inputs_{},
       outputs_{} {
   // Ensure that descriptor counts are initialized to 0
-  prepack_descriptor_counts_.descriptorPoolMaxSets = 0;
-  prepack_descriptor_counts_.descriptorUniformBufferCount = 0;
-  prepack_descriptor_counts_.descriptorStorageBufferCount = 0;
-  prepack_descriptor_counts_.descriptorCombinedSamplerCount = 0;
-  prepack_descriptor_counts_.descriptorStorageImageCount = 0;
+  prepack_descriptor_counts_.descriptor_pool_max_sets = 0;
+  prepack_descriptor_counts_.descriptor_uniform_buffer_count = 0;
+  prepack_descriptor_counts_.descriptor_storage_buffer_count = 0;
+  prepack_descriptor_counts_.descriptor_combined_sampler_count = 0;
+  prepack_descriptor_counts_.descriptor_storage_image_count = 0;
 
-  execute_descriptor_counts_.descriptorPoolMaxSets = 0;
-  execute_descriptor_counts_.descriptorUniformBufferCount = 0;
-  execute_descriptor_counts_.descriptorStorageBufferCount = 0;
-  execute_descriptor_counts_.descriptorCombinedSamplerCount = 0;
-  execute_descriptor_counts_.descriptorStorageImageCount = 0;
+  execute_descriptor_counts_.descriptor_pool_max_sets = 0;
+  execute_descriptor_counts_.descriptor_uniform_buffer_count = 0;
+  execute_descriptor_counts_.descriptor_storage_buffer_count = 0;
+  execute_descriptor_counts_.descriptor_combined_sampler_count = 0;
+  execute_descriptor_counts_.descriptor_storage_image_count = 0;
 
   context_->set_cmd(/*reusable = */ true);
 }
@@ -95,20 +95,20 @@ void ComputeGraph::update_descriptor_counts(
   api::DescriptorPoolConfig* config =
       execute ? &execute_descriptor_counts_ : &prepack_descriptor_counts_;
 
-  config->descriptorPoolMaxSets += 1;
+  config->descriptor_pool_max_sets += 1;
   for (const VkDescriptorType arg_type : shader_info.kernel_layout) {
     switch (arg_type) {
       case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-        config->descriptorUniformBufferCount += 1;
+        config->descriptor_uniform_buffer_count += 1;
         break;
       case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-        config->descriptorStorageBufferCount += 1;
+        config->descriptor_storage_buffer_count += 1;
         break;
       case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-        config->descriptorCombinedSamplerCount += 1;
+        config->descriptor_combined_sampler_count += 1;
         break;
       case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-        config->descriptorStorageImageCount += 1;
+        config->descriptor_storage_image_count += 1;
         break;
       default:
         VK_THROW("Unsupported descriptor type!");
@@ -117,16 +117,16 @@ void ComputeGraph::update_descriptor_counts(
 }
 
 api::StorageType ComputeGraph::suggested_storage_type() {
-  if (config_.enableStorageTypeOverride) {
-    return config_.storageTypeOverride;
+  if (config_.enable_storage_type_override) {
+    return config_.storage_type_override;
   }
   return api::kTexture3D;
 }
 
 api::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
     const std::vector<int64_t>& sizes) {
-  if (config_.enableMemoryLayoutOverride) {
-    return config_.memoryLayoutOverride;
+  if (config_.enable_memory_layout_override) {
+    return config_.memory_layout_override;
   }
   if (sizes.size() < 3) {
     return api::kWidthPacked;
@@ -319,15 +319,15 @@ void ComputeGraph::prepare() {
       std::max(                               \
           execute_descriptor_counts_.field,   \
           prepack_descriptor_counts_.field) * \
-      config_.descriptorPoolSafetyFactor))
+      config_.descriptor_pool_safety_factor))
 
-  uint32_t max_sets = MERGE_FIELD(descriptorPoolMaxSets);
+  uint32_t max_sets = MERGE_FIELD(descriptor_pool_max_sets);
   api::DescriptorPoolConfig config{
       max_sets,
-      std::max(MERGE_FIELD(descriptorUniformBufferCount), max_sets),
-      std::max(MERGE_FIELD(descriptorStorageBufferCount), max_sets),
-      std::max(MERGE_FIELD(descriptorCombinedSamplerCount), max_sets),
-      std::max(MERGE_FIELD(descriptorStorageImageCount), max_sets),
+      std::max(MERGE_FIELD(descriptor_uniform_buffer_count), max_sets),
+      std::max(MERGE_FIELD(descriptor_storage_buffer_count), max_sets),
+      std::max(MERGE_FIELD(descriptor_combined_sampler_count), max_sets),
+      std::max(MERGE_FIELD(descriptor_storage_image_count), max_sets),
       1u,
   };
 

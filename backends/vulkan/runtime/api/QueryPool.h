@@ -22,8 +22,8 @@ namespace vkcompute {
 namespace api {
 
 struct QueryPoolConfig final {
-  uint32_t maxQueryCount;
-  uint32_t initialReserveSize;
+  uint32_t max_query_count;
+  uint32_t initial_reserve_size;
 };
 
 struct ShaderDuration final {
