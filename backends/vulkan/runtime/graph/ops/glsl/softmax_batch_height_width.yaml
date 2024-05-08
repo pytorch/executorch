@@ -6,6 +6,8 @@
 
 softmax_batch_height_width:
   parameter_names_with_default_values:
+    OPERATOR1: exp(X)
+    OPERATOR2: X / Y
     NDIM: 3
     DTYPE: float
   generate_variant_forall:
@@ -14,3 +16,6 @@ softmax_batch_height_width:
       - VALUE: float
   shader_variants:
     - NAME: softmax_batch_height_width
+    - NAME: log_softmax_batch_height_width
+      OPERATOR1: X
+      OPERATOR2: X - log(Y)
