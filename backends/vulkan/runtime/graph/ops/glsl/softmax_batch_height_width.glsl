@@ -10,6 +10,10 @@
 
 #define PRECISION ${PRECISION}
 
+#define op1(X) ${OPERATOR1}
+
+#define op2(X, Y) ${OPERATOR2}
+
 #include "indexing_utils.h"
 #include "softmax.h"
 
@@ -73,8 +77,8 @@ void main() {
   // Calculate every final element along the direction of input_dim_stride.
   cand_pos = pos;
   while (all(lessThan(cand_pos, extents.xyz))) {
-    const vec4 numerator = exp(texelFetch(image_in, cand_pos, 0) - max_element);
-    imageStore(image_out, cand_pos, numerator / denominator);
+    const vec4 numerator = op1(texelFetch(image_in, cand_pos, 0) - max_element);
+    imageStore(image_out, cand_pos, op2(numerator, denominator));
     cand_pos += input_dim_stride.xyz;
   }
 }

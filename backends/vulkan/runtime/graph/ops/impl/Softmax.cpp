@@ -33,7 +33,8 @@ void add_softmax_node(
     ComputeGraph& graph,
     ValueRef in,
     ValueRef dim,
-    ValueRef out) {
+    ValueRef out,
+    bool log_softmax) {
   ValueRef in_arg = prepack_if_tensor_ref(graph, in);
   vTensorPtr t_in = graph.get_tensor(in_arg);
   int64_t in_dim = t_in->dim();
@@ -50,6 +51,9 @@ void add_softmax_node(
       : "softmax_batch_height_width";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
+  if (log_softmax) {
+    kernel_name = "log_" + kernel_name;
+  }
 
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
@@ -74,12 +78,20 @@ void add_softmax_node(
 }
 
 void softmax(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  // bool half_to_float is unused
-  return add_softmax_node(graph, args[0], args[1], args[3]);
+  // args[1] bool half_to_float is unused
+  return add_softmax_node(
+      graph, args[0], args[1], args[3], /* log_softmax = */ false);
+}
+
+void log_softmax(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  // args[1] bool half_to_float is unused
+  return add_softmax_node(
+      graph, args[0], args[1], args[3], /* log_softmax = */ true);
 }
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten._softmax.default, softmax);
+  VK_REGISTER_OP(aten._log_softmax.default, log_softmax);
 }
 
 } // namespace vkcompute

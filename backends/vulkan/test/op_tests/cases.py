@@ -661,4 +661,5 @@ test_suites = {
     "aten.split.Tensor": get_split_tensor_inputs(),
     "aten.sqrt.default": get_unary_ops_inputs(),
     "aten._softmax.default": get_softmax_inputs(),
+    "aten._log_softmax.default": get_softmax_inputs(),
 }
