@@ -16,6 +16,8 @@
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
 
+#include <executorch/backends/vulkan/runtime/api/resource/Allocator.h>
+
 #include <array>
 #include <mutex>
 #include <ostream>
@@ -136,7 +138,7 @@ class Adapter final {
   ComputePipelineCache compute_pipeline_cache_;
   // Memory Management
   SamplerCache sampler_cache_;
-  MemoryAllocator vma_;
+  Allocator vma_;
 
  public:
   // Physical Device metadata
@@ -194,7 +196,7 @@ class Adapter final {
     return sampler_cache_;
   }
 
-  inline MemoryAllocator& vma() {
+  inline Allocator& vma() {
     return vma_;
   }
 
