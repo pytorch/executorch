@@ -266,7 +266,8 @@ class ComputePipelineCache final {
   };
 
  private:
-  std::vector<char> get_cache_data(const std::string& file_path);
+  std::vector<char> load_cache();
+  void save_cache();
 
   // Multiple threads could potentially be adding entries into the cache, so use
   // a mutex to manage access
@@ -275,6 +276,7 @@ class ComputePipelineCache final {
   VkDevice device_;
   VkPipelineCache pipeline_cache_;
   std::unordered_map<Key, Value, Hasher> cache_;
+  const std::string file_path_;
 
  public:
   VkPipeline retrieve(const Key&);

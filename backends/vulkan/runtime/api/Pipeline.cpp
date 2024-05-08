@@ -366,10 +366,11 @@ ComputePipelineCache::ComputePipelineCache(
     : cache_mutex_{},
       device_(device),
       pipeline_cache_{VK_NULL_HANDLE},
-      cache_{} {
+      cache_{},
+      file_path_(file_path) {
   VkPipelineCacheCreateInfo pipeline_cache_create_info{};
 
-  auto buffer = get_cache_data(file_path);
+  auto buffer = load_cache();
 
   pipeline_cache_create_info = {
       VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, // sType
@@ -381,26 +382,6 @@ ComputePipelineCache::ComputePipelineCache(
 
   VK_CHECK(vkCreatePipelineCache(
       device, &pipeline_cache_create_info, nullptr, &pipeline_cache_));
-}
-
-std::vector<char> ComputePipelineCache::get_cache_data(
-    const std::string& file_path) {
-  if (file_path.empty()) {
-    return {};
-  }
-
-  std::ifstream file(file_path, std::ios::binary | std::ios::ate);
-  if (file.fail()) {
-    VK_THROW("Failed to open pipeline cache file: " + file_path);
-  }
-  auto size = file.tellg();
-  file.seekg(0, std::ios::beg);
-
-  std::vector<char> buffer(size);
-  file.read(buffer.data(), size);
-  file.close();
-
-  return buffer;
 }
 
 ComputePipelineCache::ComputePipelineCache(
@@ -420,6 +401,9 @@ ComputePipelineCache::~ComputePipelineCache() {
   if (VK_NULL_HANDLE == pipeline_cache_) {
     return;
   }
+
+  save_cache();
+
   vkDestroyPipelineCache(device_, pipeline_cache_, nullptr);
   pipeline_cache_ = VK_NULL_HANDLE;
 }
@@ -442,6 +426,38 @@ VkPipeline ComputePipelineCache::retrieve(
 
 void ComputePipelineCache::purge() {
   cache_.clear();
+}
+
+std::vector<char> ComputePipelineCache::load_cache() {
+  // Return if path is not specified; this means the optimization is disabled
+  if (file_path_.empty()) {
+    return {};
+  }
+
+  // Return if file doesn't exist; this is expected on the first model-load
+  std::ifstream file(file_path_, std::ios::binary | std::ios::ate);
+  if (file.fail()) {
+    return {};
+  }
+
+  auto size = file.tellg();
+  file.seekg(0, std::ios::beg);
+
+  std::vector<char> buffer(size);
+  file.read(buffer.data(), size);
+
+  return buffer;
+}
+
+void ComputePipelineCache::save_cache() {
+  size_t size{};
+  vkGetPipelineCacheData(device_, pipeline_cache_, &size, nullptr);
+
+  std::vector<char> buffer(size);
+  vkGetPipelineCacheData(device_, pipeline_cache_, &size, buffer.data());
+
+  std::ofstream file(file_path_, std::ios::binary);
+  file.write(buffer.data(), buffer.size());
 }
 
 } // namespace api
