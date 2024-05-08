@@ -14,13 +14,15 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
 
-from executorch.backends.xnnpack.test.tester import Quantize, Tester
-from executorch.backends.xnnpack.test.tester.tester import Partition
-
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
 )
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
+    QuantizationConfig,
+)
+
+from executorch.backends.xnnpack.test.tester import Quantize, Tester
+from executorch.backends.xnnpack.test.tester.tester import Partition
 
 
 class TestLinear(unittest.TestCase):

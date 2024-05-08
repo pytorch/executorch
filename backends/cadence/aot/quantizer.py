@@ -19,7 +19,7 @@ from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
 from torch.ao.quantization.pt2e.graph_utils import find_sequential_partitions
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import (
     OperatorConfig,
     QuantizationAnnotation,
     QuantizationConfig,

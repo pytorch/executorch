@@ -16,6 +16,7 @@ runtime.python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:lib",
         "//executorch/exir/_serialize:lib",

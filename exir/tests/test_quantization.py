@@ -24,7 +24,7 @@ from torch.ao.quantization.quantize_pt2e import (
     prepare_pt2e,
 )
 
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
