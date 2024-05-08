@@ -15,14 +15,14 @@
 #include <executorch/backends/vulkan/runtime/api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/api/Command.h>
 #include <executorch/backends/vulkan/runtime/api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/api/Fence.h>
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
 #include <executorch/backends/vulkan/runtime/api/QueryPool.h>
 #include <executorch/backends/vulkan/runtime/api/Runtime.h>
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
 
-#include <executorch/backends/vulkan/runtime/api/resource/Buffer.h>
-#include <executorch/backends/vulkan/runtime/api/resource/Fence.h>
+#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
 
 namespace vkcompute {
 namespace api {

@@ -12,17 +12,9 @@
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Types.h>
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
+#include <executorch/backends/vulkan/runtime/api/Exception.h>
 
-#include <executorch/backends/vulkan/runtime/api/resource/vma_api.h>
-
-#include <mutex>
-#include <ostream>
 #include <stack>
-#include <unordered_map>
-
-std::ostream& operator<<(std::ostream& out, VmaTotalStatistics stats);
 
 namespace vkcompute {
 namespace api {
