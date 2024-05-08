@@ -582,8 +582,8 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
         api::StorageType default_storage_type;
         api::GPUMemoryLayout default_memory_layout;
         std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();
-        config.setStorageTypeOverride(default_storage_type);
-        config.setMemoryLayoutOverride(default_memory_layout);
+        config.set_storage_type_override(default_storage_type);
+        config.set_memory_layout_override(default_memory_layout);
         graph = new ComputeGraph(config);
 
         if (test_dtype == at::kHalf) {{

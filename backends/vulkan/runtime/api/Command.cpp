@@ -392,7 +392,7 @@ CommandPool::CommandPool(
   VK_CHECK(vkCreateCommandPool(device_, &create_info, nullptr, &pool_));
 
   // Pre-allocate some command buffers
-  allocate_new_batch(config_.cmdPoolInitialSize);
+  allocate_new_batch(config_.cmd_pool_initial_size);
 }
 
 CommandPool::~CommandPool() {
@@ -406,7 +406,7 @@ CommandBuffer CommandPool::get_new_cmd(bool reusable) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   // No-ops if there are command buffers available
-  allocate_new_batch(config_.cmdPoolBatchSize);
+  allocate_new_batch(config_.cmd_pool_batch_size);
 
   VkCommandBuffer handle = buffers_[in_use_];
 
