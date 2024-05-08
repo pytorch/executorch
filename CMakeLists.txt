@@ -169,6 +169,8 @@ option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
 
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
 
+option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
+
 option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
 option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
@@ -536,6 +538,11 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+endif()
+
+if(EXECUTORCH_BUILD_NEURON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/mediatek)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
