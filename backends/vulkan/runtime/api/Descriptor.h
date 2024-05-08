@@ -107,14 +107,14 @@ class DescriptorSetPile final {
 
 struct DescriptorPoolConfig final {
   // Overall Pool capacity
-  uint32_t descriptorPoolMaxSets;
+  uint32_t descriptor_pool_max_sets;
   // DescriptorCounts by type
-  uint32_t descriptorUniformBufferCount;
-  uint32_t descriptorStorageBufferCount;
-  uint32_t descriptorCombinedSamplerCount;
-  uint32_t descriptorStorageImageCount;
+  uint32_t descriptor_uniform_buffer_count;
+  uint32_t descriptor_storage_buffer_count;
+  uint32_t descriptor_combined_sampler_count;
+  uint32_t descriptor_storage_image_count;
   // Pile size for pre-allocating descriptor sets
-  uint32_t descriptorPileSizes;
+  uint32_t descriptor_pile_sizes;
 };
 
 class DescriptorPool final {

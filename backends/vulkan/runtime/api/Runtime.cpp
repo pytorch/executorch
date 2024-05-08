@@ -91,7 +91,7 @@ VkInstance create_instance(const RuntimeConfiguration& config) {
   std::vector<const char*> enabled_layers;
   std::vector<const char*> enabled_extensions;
 
-  if (config.enableValidationMessages) {
+  if (config.enable_validation_messages) {
     std::vector<const char*> requested_layers{
         // "VK_LAYER_LUNARG_api_dump",
         "VK_LAYER_KHRONOS_validation",
@@ -175,7 +175,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_report_callback_fn(
 VkDebugReportCallbackEXT create_debug_report_callback(
     VkInstance instance,
     const RuntimeConfiguration config) {
-  if (VK_NULL_HANDLE == instance || !config.enableValidationMessages) {
+  if (VK_NULL_HANDLE == instance || !config.enable_validation_messages) {
     return VkDebugReportCallbackEXT{};
   }
 
@@ -245,20 +245,20 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime() {
   }
 #endif /* USE_VULKAN_VOLK, USE_VULKAN_WRAPPER */
 
-  const bool enableValidationMessages =
+  const bool enable_validation_messages =
 #if defined(VULKAN_DEBUG)
       true;
 #else
       false;
 #endif /* VULKAN_DEBUG */
-  const bool initDefaultDevice = true;
-  const uint32_t numRequestedQueues = 1; // TODO: raise this value
+  const bool init_default_device = true;
+  const uint32_t num_requested_queues = 1; // TODO: raise this value
 
   const RuntimeConfiguration default_config{
-      enableValidationMessages,
-      initDefaultDevice,
+      enable_validation_messages,
+      init_default_device,
       AdapterSelector::First,
-      numRequestedQueues,
+      num_requested_queues,
   };
 
   try {
@@ -281,9 +281,9 @@ Runtime::Runtime(const RuntimeConfiguration config)
   // List of adapters will never exceed the number of physical devices
   adapters_.reserve(device_mappings_.size());
 
-  if (config.initDefaultDevice) {
+  if (config.init_default_device) {
     try {
-      switch (config.defaultSelector) {
+      switch (config.default_selector) {
         case AdapterSelector::First:
           default_adapter_i_ = create_adapter(select_first);
       }
@@ -350,8 +350,8 @@ uint32_t Runtime::create_adapter(const Selector& selector) {
   }
   // Otherwise, create an adapter for the selected physical device
   adapter_i = utils::safe_downcast<int32_t>(adapters_.size());
-  adapters_.emplace_back(
-      new Adapter(instance_, device_mapping.first, config_.numRequestedQueues));
+  adapters_.emplace_back(new Adapter(
+      instance_, device_mapping.first, config_.num_requested_queues));
   device_mapping.second = adapter_i;
 
   return adapter_i;
