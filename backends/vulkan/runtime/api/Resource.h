@@ -11,8 +11,8 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vma_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Allocator.h>
 #include <executorch/backends/vulkan/runtime/api/Types.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
 
