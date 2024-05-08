@@ -977,6 +977,12 @@ _ATEN_OPS = (
     op_target(
         name = "op_zeros",
     ),
+    op_target(
+        name = "op__to_dim_order_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
 )
 
 # Operators that are not listed in `functions.yaml` (i.e., operators listed in

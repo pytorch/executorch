@@ -40,17 +40,17 @@ target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
-target_include_directories(
-  aten_ops_cadence PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
-                          ${_common_include_directories})
+target_include_directories(aten_ops_cadence PUBLIC ${ROOT_DIR}/..
+                                                ${CMAKE_BINARY_DIR}
+                                                ${_common_include_directories})
 
 # Custom ops that are needed to run the test model.
 add_library(
-  custom_ops
-  "quantized_linear_out.cpp" "quantized_conv_out.cpp" "quantized_relu_out.cpp"
-  "quantized_layer_norm.cpp" "quantize_per_tensor.cpp"
-  "dequantize_per_tensor.cpp")
-target_include_directories(custom_ops PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
+  custom_ops "quantized_linear_out.cpp" "quantized_conv_out.cpp"
+  "quantized_relu_out.cpp" "quantized_layer_norm.cpp"
+  "quantize_per_tensor.cpp" "dequantize_per_tensor.cpp")
+target_include_directories(custom_ops PUBLIC ${ROOT_DIR}/..
+                                             ${CMAKE_BINARY_DIR}
                                              ${_common_include_directories})
 
 target_link_libraries(custom_ops PUBLIC executorch)
@@ -58,11 +58,17 @@ target_link_libraries(custom_ops PRIVATE cadence_kernels)
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in functions.yaml
-gen_selected_ops(LIB_NAME "cadence_ops_lib" OPS_SCHEMA_YAML
-                 "${CMAKE_CURRENT_LIST_DIR}/functions.yaml")
-generate_bindings_for_kernels(LIB_NAME "cadence_ops_lib" FUNCTIONS_YAML
-                              ${CMAKE_CURRENT_SOURCE_DIR}/functions.yaml)
+gen_selected_ops(
+  LIB_NAME "cadence_ops_lib" OPS_SCHEMA_YAML
+  "${CMAKE_CURRENT_LIST_DIR}/../../aot/functions.yaml" "" ""
+)
+generate_bindings_for_kernels(
+  LIB_NAME "cadence_ops_lib" OPS_SCHEMA_YAML
+  FUNCTIONS_YAML ${CMAKE_CURRENT_SOURCE_DIR}/../../aot/functions.yaml
+)
 message("Generated files ${gen_command_sources}")
 
-gen_operators_lib(LIB_NAME "cadence_ops_lib" KERNEL_LIBS custom_ops DEPS
-                  aten_ops_cadence)
+gen_operators_lib(
+  LIB_NAME "cadence_ops_lib"
+  KERNEL_LIBS custom_ops
+  DEPS aten_ops_cadence)

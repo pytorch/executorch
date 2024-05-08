@@ -97,6 +97,11 @@ say "Downloading Labels"
 curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
   -o "$APP_PATH/Resources/Models/MobileNet/imagenet_classes.txt"
 
+say "Building Frameworks"
+
+./build/build_apple_frameworks.sh --buck2="$(realpath $BUCK2)" --coreml --custom --mps --optimized --portable --quantized --xnnpack
+mv cmake-out "$APP_PATH/Frameworks"
+
 say "Creating Simulator"
 
 xcrun simctl create "$SIMULATOR_NAME" "iPhone 15"

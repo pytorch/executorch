@@ -11,13 +11,16 @@
 #
 # This file should be formatted with
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 # It should also be cmake-lint clean.
 #
 
 cmake_minimum_required(VERSION 3.19)
 project(size_test)
+
+# Use C++11 for size test.
+set(CMAKE_CXX_STANDARD 11)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
@@ -33,10 +36,7 @@ target_include_directories(executorch INTERFACE ${_common_include_directories})
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
-set(
-  EXECUTORCH_SRCS_FILE
-  "${CMAKE_CURRENT_BINARY_DIR}/../executorch_srcs.cmake"
-)
+set(EXECUTORCH_SRCS_FILE "${CMAKE_CURRENT_BINARY_DIR}/../executorch_srcs.cmake")
 
 extract_sources(${EXECUTORCH_SRCS_FILE})
 

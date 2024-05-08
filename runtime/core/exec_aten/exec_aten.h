@@ -82,6 +82,9 @@ using quint4x2 = c10::quint4x2;
 using quint2x4 = c10::quint2x4;
 using IntArrayRef = at::IntArrayRef;
 
+template <typename T>
+using OptionalArrayRef = c10::OptionalArrayRef<T>;
+
 #else // Use executor types
 
 using Tensor = torch::executor::Tensor;
@@ -117,6 +120,10 @@ using quint4x2 = torch::executor::quint4x2;
 using quint2x4 = torch::executor::quint2x4;
 
 using IntArrayRef = torch::executor::IntArrayRef;
+
+template <typename T>
+using OptionalArrayRef =
+    torch::executor::optional<torch::executor::ArrayRef<T>>;
 
 #endif // Use executor types
 

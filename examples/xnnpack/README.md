@@ -12,7 +12,6 @@ examples/xnnpack
 ├── quantization                      # Scripts to illustrate PyTorch 2 Export Quantization workflow with XNNPACKQuantizer
 │   └── example.py
 ├── aot_compiler.py                   # The main script to illustrate the full AOT (export, quantization, delegation) workflow with XNNPACK delegate
-├── xnn_executor_runner               # ExecuTorch runtime application for XNNPACK delegate examples
 └── README.md                         # This file
 ```
 
@@ -29,6 +28,40 @@ Once we have the model binary (pte) file, then let's run it with ExecuTorch runt
 
 ```bash
 buck2 run examples/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_fp32.pte
+```
+
+For cmake, you first configure your cmake with the following:
+
+```bash
+# cd to the root of executorch repo
+cd executorch
+
+# Get a clean cmake-out directory
+rm- -rf cmake-out
+mkdir cmake-out
+
+# Configure cmake
+cmake \
+    -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
+    -DPYTHON_EXECUTABLE=python \
+    -Bcmake-out .
+```
+
+Then you can build the runtime components with
+
+```bash
+cmake --build cmake-out -j9 --target install --config Release
+```
+
+Now finally you should be able to run this model with the following command
+
+```bash
+./cmake-out/backends/xnnpack/xnn_executor_runner --model_path ./mv2_xnnpack_fp32.pte
 ```
 
 ## Quantization

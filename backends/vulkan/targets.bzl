@@ -1,5 +1,8 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def get_vulkan_compiler_flags():
+    return ["-Wno-missing-prototypes", "-Wno-global-constructors"]
+
 def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
     gen_vulkan_spv_target = "//executorch/backends/vulkan:gen_vulkan_spv_bin"
     glslc_path = "//caffe2/fb/vulkan/dotslash:glslc"
@@ -36,6 +39,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
         srcs = [
             ":{}[{}.cpp]".format(genrule_name, name),
         ],
+        compiler_flags = get_vulkan_compiler_flags(),
         define_static_target = False,
         # Static initialization is used to register shaders to the global shader registry,
         # therefore link_whole must be True to make sure unused symbols are not discarded.
@@ -146,6 +150,7 @@ def define_common_targets(is_fbcode = False):
 
     runtime.cxx_library(
         name = "vulkan_compute_api",
+        compiler_flags = get_vulkan_compiler_flags(),
         srcs = native.glob([
             "runtime/api/*.cpp",
         ]),
@@ -165,6 +170,7 @@ def define_common_targets(is_fbcode = False):
         srcs = native.glob([
             "runtime/graph/**/*.cpp",
         ]),
+        compiler_flags = get_vulkan_compiler_flags(),
         exported_headers = native.glob([
             "runtime/graph/**/*.h",
         ]),
@@ -191,6 +197,7 @@ def define_common_targets(is_fbcode = False):
         srcs = native.glob([
             "runtime/*.cpp",
         ]),
+        compiler_flags = get_vulkan_compiler_flags(),
         headers = native.glob([
             "runtime/*.h",
         ]),

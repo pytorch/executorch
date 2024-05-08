@@ -47,38 +47,6 @@ class TorchBuilder:
         pass
 
     @register_test
-    class simple_clone(torch.nn.Module):
-        inputs = {
-            TosaProfile.BI: (torch.ones(10),),
-            TosaProfile.MI: (torch.ones(10),),
-        }
-
-        permute_memory_to_nhwc = False
-
-        def __init__(self):
-            super().__init__()
-
-        def forward(self, x):
-            x = x.clone()
-            return x
-
-    @register_test
-    class simple_view(torch.nn.Module):
-        inputs = {
-            TosaProfile.BI: (torch.ones(10),),
-            TosaProfile.MI: (torch.ones(10),),
-        }
-
-        permute_memory_to_nhwc = False
-
-        def __init__(self):
-            super().__init__()
-
-        def forward(self, x):
-            x = x.view(2, 5)
-            return x
-
-    @register_test
     class simple_add_broadcast(torch.nn.Module):
         inputs = {
             TosaProfile.BI_INT: (
@@ -129,27 +97,3 @@ class TorchBuilder:
 
         def forward(self, x, y):
             return torch.div(x, y)
-
-    @register_test
-    class simple_batch_norm(torch.nn.Module):
-        inputs = {
-            TosaProfile.BI: (
-                torch.ones(
-                    20,
-                    100,
-                    35,
-                    45,
-                ),
-            ),
-            TosaProfile.MI: (torch.ones(20, 100, 35, 45),),
-        }
-
-        permute_memory_to_nhwc = False
-
-        def __init__(self):
-            super().__init__()
-            self.batch_norm_2d = torch.nn.BatchNorm2d(100, affine=False)
-            self.eval()
-
-        def forward(self, x):
-            return self.batch_norm_2d(x)

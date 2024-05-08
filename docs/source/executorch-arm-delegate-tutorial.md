@@ -173,24 +173,19 @@ cd core_platform
 git reset --hard 204210b1074071532627da9dc69950d058a809f4
 git am -3 <path_to>/executorch/examples/arm/ethos-u-setup/core_platform/patches/*.patch
 cd ../.. # To the top-level development dir
-
-# Let's now patch the vela compiler
-cd ethos-u-vela
-git reset --hard 00a15db3e1a188b25065d095152d701f4394cdc5
-git am -3 <path_to>/executorch/examples/arm/ethos-u-setup/ethos-u-vela/patches/*.patch
 ```
 
 ### Install the Vela Compiler
 Once the patching is done, let's finish the setup by installing the Vela compiler.
 
 ```bash
-# still in the ethos-u-vela directory
+cd ethos-u-vela
 pip install .
 ```
 
 ### Install the TOSA reference model
 ```bash
-git clone https://review.mlplatform.org/tosa/reference_model -b v0.80.0
+git clone https://review.mlplatform.org/tosa/reference_model -b v0.80
 cd reference_model
 git submodule update --init --recursive
 mkdir -p build
@@ -237,6 +232,8 @@ We will use a couple of simple PyTorch Modules to explore the end-to-end flow. T
 This is a very simple PyTorch module with just one [Softmax](https://pytorch.org/docs/stable/generated/torch.nn.Softmax.html#torch.nn.Softmax) operator.
 
 ```python
+import torch
+
 class SoftmaxModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -286,8 +283,8 @@ We need to be aware of data types for running networks on the Ethos-U55 as it is
 In the ExecuTorch AoT pipeline, one of the options is to select a backend. ExecuTorch offers a variety of different backends. Selecting backend is optional, it is typically done to target a particular mode of acceleration or hardware for a given model compute requirements. Without any backends, ExecuTorch runtime will fallback to using, available by default, a highly portable set of operators.
 
 It's expected that on platforms with dedicated acceleration like the Ethos-U55, that the non-delegated flow is used for two primary cases:
-1. When the network is designed to be very small and best suited to run on the Cortex-M alone
-1. When the network has a mix of operations that can target the NPU and those that can't, e.g. the Ethos-U55 supports integer operations and so floating point softmax will fall back to execute on the CPU
+1. When the network is designed to be very small and best suited to run on the Cortex-M alone.
+2. When the network has a mix of operations that can target the NPU and those that can't, e.g. the Ethos-U55 supports integer operations and so floating point softmax will fall back to execute on the CPU.
 
 In this flow, without any backend delegates, to illustrate the portability of the ExecuTorch runtime, as well as of the operator library we will skip specifying the backend during the `.pte` generation.
 
@@ -305,7 +302,11 @@ Working with Arm, we introduced a new Arm backend delegate for ExecuTorch. This 
 By including a following step during the ExecuTorch AoT export pipeline to generate the `.pte` file, we can enable this backend delegate.
 
 ```python
-graph_module_edge.exported_program = to_backend(model.exported_program, ArmPartitioner())
+from executorch.backends.arm.arm_backend import generate_ethosu_compile_spec
+
+graph_module_edge.exported_program = to_backend(
+    model.exported_program,
+    ArmPartitioner(generate_ethosu_compile_spec("ethos-u55-128")))
 ```
 
 Similar to the non-delegate flow, the same script will server as a helper utility to help us generate the `.pte` file. Notice the `--delegate` option to enable the `to_backend` call.
@@ -352,6 +353,7 @@ To generate these libraries, use following commands,
 # Empty and already created
 cd <executorch_source_root_dir>
 
+# Use provided cmake toolchain for bare-metal builds
 toolchain_cmake=<executorch_source_root_dir>/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
 
 cmake                                                 \
@@ -361,12 +363,13 @@ cmake                                                 \
     -DCMAKE_BUILD_TYPE=Release                        \
     -DEXECUTORCH_ENABLE_LOGGING=ON                    \
     -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
+    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
     -DFLATC_EXECUTABLE="$(which flatc)"               \
     -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
     -B<executorch_build_dir>                          \
     <executorch_source_root_dir>
 
-cmake --build <executorch_build_dir> --target install --config Release VERBOSE=1
+cmake --build <executorch_build_dir> --target install --config Release
 
 cmake                                                 \
     -DCMAKE_INSTALL_PREFIX=<executorch_build_dir>     \
@@ -392,17 +395,20 @@ Note, you have to generate a new `executor-runner` binary if you want to change 
 
 ```bash
 
-cd <ethos-u-sdk-dir>/core_platform/
+cd <executorch_source_root_dir>
+cd examples/arm/executor_runner
 
 cmake                                                    \
     -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"          \
-    -B build targets/corstone-300                        \
+    -DTARGET_CPU=cortex-m55                              \
+    -B build                                             \
+    -DETHOS_SDK_PATH:PATH=<ethos-u_clone_directory>      \
     -DET_DIR_PATH:PATH=<executorch_source_root_dir>      \
     -DET_BUILD_DIR_PATH:PATH=<executorch_build_dir>      \
     -DET_PTE_FILE_PATH:PATH=<path_to_pte_file_of_choice> \
     -DPYTHON_EXECUTABLE=$(which python3)
 
-cmake --build build -- executor_runner
+cmake --build build -- arm_executor_runner
 ```
 
 ## Running on Corstone-300 FVP Platform
@@ -410,9 +416,9 @@ cmake --build build -- executor_runner
 Once the elf is prepared, regardless of the `.pte` file variant is used to generate the bare metal elf, you can run in with following command,
 
 ```bash
-ethos_u_build_dir=<ethos-u-sdk-dir>/core_platform/build/
+ethos_u_build_dir=examples/arm/executor_runner/
 
-elf=$(find ${ethos_u_build_dir} -name "executor_runner.elf")
+elf=$(find ${ethos_u_build_dir} -name "arm_executor_runner")
 
 FVP_Corstone_SSE-300_Ethos-U55                          \
     -C ethosu.num_macs=128                              \
@@ -488,8 +494,8 @@ Info: Simulation is stopping. Reason: CPU time has been exceeded.
 Through this tutorial we've learnt how to use the ExecuTorch software to both export a standard model from PyTorch and to run it on the compact and fully functioned ExecuTorch runtime, enabling a smooth path for offloading models from PyTorch to Arm based platforms.
 
 To recap, there are two major flows:
- * A direct flow which offloads work onto the Cortex-M using libraries built into ExecuTorch
- * A delegated flow which partitions the graph into sections for Cortex-M and sections which can be offloaded and accelerated on the Ethos-U hardware
+ * A direct flow which offloads work onto the Cortex-M using libraries built into ExecuTorch.
+ * A delegated flow which partitions the graph into sections for Cortex-M and sections which can be offloaded and accelerated on the Ethos-U hardware.
 
 Both of these flows continue to evolve, enabling more use-cases and better performance.
 

@@ -124,8 +124,7 @@ void add_copy_channel_offset_node(
   int32_t out_channels = dim_at<kChannel4D>(out_sizes);
 
   // Copy one batch at a time.
-  for (int batch_idx = 0; batch_idx < dim_at<kChannel4D>(in_sizes);
-       batch_idx++) {
+  for (int batch_idx = 0; batch_idx < dim_at<kBatch4D>(in_sizes); batch_idx++) {
     // Mapping the tensor NCHW coordinates into texture XYZ coordinates
     int32_t dst_first_z = dst_channel_offset / 4;
     int32_t dst_last_z = (dst_channel_offset + channel_range - 1) / 4;

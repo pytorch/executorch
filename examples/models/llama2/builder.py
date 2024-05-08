@@ -218,6 +218,7 @@ class LlamaEdgeManager:
         edge_config = EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_type_promotion=bool(self.dtype == DType.fp16),
+            _skip_dim_order=True,
         )
         return edge_config
 

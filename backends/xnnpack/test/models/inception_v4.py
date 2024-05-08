@@ -13,7 +13,7 @@ from timm.models import inception_v4
 
 class TestInceptionV4(unittest.TestCase):
     ic4 = inception_v4(pretrained=False).eval()
-    model_inputs = (torch.ones(3, 299, 299).unsqueeze(0),)
+    model_inputs = (torch.randn(3, 299, 299).unsqueeze(0),)
 
     all_operators = {
         "executorch_exir_dialects_edge__ops_aten_addmm_default",

@@ -42,6 +42,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.relu.default,
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.tanh.default,
+            exir_ops.edge.aten.sqrt.default,
             # Matrix multiplication operators
             exir_ops.edge.aten.mm.default,
             # Pooling operators
@@ -62,6 +63,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.split_with_sizes_copy.default,
             exir_ops.edge.aten.split.Tensor,
             exir_ops.edge.aten.slice_copy.Tensor,
+            exir_ops.edge.aten.repeat.default,
             # Other
             operator.getitem,
             exir_ops.edge.aten.full.default,

@@ -455,11 +455,27 @@ def get_cat_inputs():
             ([(S, S1, 5, 4), (S1, S1, 5, 4)], 0),
             ([(S, XS, 5, 4), (S1, XS, 5, 4)], 0),
             ([(S, S2, 5, 4), (S1, S2, 5, 4)], 0),
+            (
+                [
+                    (3, 1, 2, 5),
+                    (3, 1, 2, 5),
+                    (3, 1, 2, 5),
+                ],
+                0,
+            ),
             # Cat on Channel
             ([(S, 5, 4), (S1, 5, 4), (S2, 5, 4)], 0),
             ([(XS, 5, 4), (XS, 5, 4), (S2, 5, 4)], 0),
             ([(XS, S, 5, 4), (XS, S1, 5, 4), (XS, S2, 5, 4)], 1),
             ([(XS, XS, 5, 4), (XS, XS, 5, 4), (XS, S2, 5, 4)], 1),
+            (
+                [
+                    (XS, 1, 2, 5),
+                    (XS, 1, 2, 5),
+                    (XS, 1, 2, 5),
+                ],
+                1,
+            ),
         ]
     )
     test_suite.layouts = [
@@ -555,6 +571,18 @@ def get_split_tensor_inputs():
     return test_suite
 
 
+def get_unary_ops_inputs():
+    test_suite = VkTestSuite(
+        [
+            (M1,),
+            (M1, M2),
+            (S1, M1, M2),
+            (S1, S2, S2, M2),
+        ]
+    )
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -577,4 +605,5 @@ test_suites = {
     "aten.cat.default": get_cat_inputs(),
     "aten.split_with_sizes_copy.default": get_split_with_sizes_inputs(),
     "aten.split.Tensor": get_split_tensor_inputs(),
+    "aten.sqrt.default": get_unary_ops_inputs(),
 }

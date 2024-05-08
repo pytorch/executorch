@@ -57,7 +57,9 @@ class TestEmformerModel(unittest.TestCase):
             )
             return predict_inputs
 
-    @unittest.skip("T183426271")
+    @unittest.skip(
+        "T183426271: Emformer Predictor Takes too long to export + partition"
+    )
     def test_fp32_emformer_predictor(self):
         predictor = self.Predictor()
         (

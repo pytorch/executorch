@@ -14,7 +14,6 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/function_ref.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/platform.h>
 // Debug switch for operator registry
@@ -42,9 +41,7 @@ namespace executor {
 
 class KernelRuntimeContext; // Forward declaration
 using RuntimeContext = KernelRuntimeContext; // TODO(T147221312): Remove
-using OpFunction =
-    FunctionRef<void(KernelRuntimeContext&, EValue**)>; // TODO(T165139545):
-                                                        // Remove FunctionRef
+using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
 
 /**
  * Dtype and dim order metadata for a Tensor argument to an operator.

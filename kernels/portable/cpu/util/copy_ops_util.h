@@ -198,6 +198,12 @@ bool check_to_copy_args(
     exec_aten::optional<exec_aten::MemoryFormat> memory_format,
     Tensor& out);
 
+bool check__to_dim_order_copy_args(
+    const Tensor& input,
+    bool non_blocking,
+    exec_aten::OptionalArrayRef<int64_t> dim_order,
+    Tensor& out);
+
 bool check_unsqueeze_copy_args(
     const Tensor input,
     int64_t dim,
