@@ -17,8 +17,8 @@
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
 
-#include <executorch/backends/vulkan/runtime/api/resource/Buffer.h>
-#include <executorch/backends/vulkan/runtime/api/resource/Image.h>
+#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/memory/Image.h>
 
 namespace vkcompute {
 namespace api {
