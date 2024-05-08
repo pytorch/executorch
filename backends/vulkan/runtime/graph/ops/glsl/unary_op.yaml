@@ -16,3 +16,5 @@ unary_op:
       OPERATOR: 1 / (1 + exp(-1 * X))
     - NAME: tanh
       OPERATOR: tanh(clamp(X, -15.0, 15.0))
+    - NAME: sqrt
+      OPERATOR: sqrt(X)

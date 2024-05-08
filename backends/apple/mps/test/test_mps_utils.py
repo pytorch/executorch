@@ -30,8 +30,11 @@ from executorch.sdk.bundled_program.serialize import (
 from torch.export import export, ExportedProgram
 
 # Config for Capturing the weights, will be moved in the future
-_CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True, _unlift=True)
-_EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(_check_ir_validity=False)
+
+# TODO(T182928844): Delegate dim order op to backend.
+_EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
+    _check_ir_validity=False, _skip_dim_order=True
+)
 
 
 def _to_core_aten(
@@ -55,6 +58,7 @@ def _core_aten_to_edge(
     if not edge_compile_config:
         edge_compile_config = exir.EdgeCompileConfig(
             _check_ir_validity=False,  # quant ops currently break ir verification
+            _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
         )
     edge_manager: EdgeProgramManager = to_edge(
         core_aten_exir_ep, compile_config=edge_compile_config
@@ -221,7 +225,10 @@ class TestMPS(unittest.TestCase):
         edge_program = export_to_edge(
             model,
             sample_inputs,
-            edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            edge_compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+            ),
         )
 
         logging.info(
@@ -247,16 +254,17 @@ class TestMPS(unittest.TestCase):
                 MPSBackend.__name__, edge_program.exported_program(), compile_specs
             )
 
-            executorch_program = (
-                exir.capture(
+            executorch_program = to_edge(
+                export(
                     delegated_program,
                     sample_inputs,
-                    exir.CaptureConfig(enable_aot=True, _unlift=False),
-                )
-                .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-                .to_executorch(
-                    config=ExecutorchBackendConfig(extract_constant_segment=False)
-                )
+                ),
+                compile_config=exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                    _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+                ),
+            ).to_executorch(
+                config=ExecutorchBackendConfig(extract_constant_segment=False)
             )
 
         if bundled_program:

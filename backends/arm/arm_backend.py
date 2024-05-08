@@ -45,6 +45,7 @@ class ArmCompileSpecBuilder:
         self.output_format = None
         self.path_for_intermediates = None
         self.permute_nhwc = False
+        self.quantize_io = False
 
     def ethosu_compile_spec(
         self,
@@ -101,7 +102,19 @@ class ArmCompileSpecBuilder:
         return self
 
     def set_permute_memory_format(self, set_nhwc_permutation: bool = True):
+        """
+        Permute to channel last in compiler and runtime. Compilation and
+        runtime will convert rank 4 inputs to channel last for each sub-graph.
+        """
         self.permute_nhwc = set_nhwc_permutation
+        return self
+
+    def set_quantize_io(self, quantize_io: bool = False):
+        """
+        Quantization of inputs and dequantization of outputs for cases where
+        whole graph is quantized and method signature is not of quantized type.
+        """
+        self.quantize_io = quantize_io
         return self
 
     def build(self):
@@ -125,6 +138,9 @@ class ArmCompileSpecBuilder:
             self.compile_spec.append(
                 CompileSpec("permute_memory_format", "nhwc".encode())
             )
+
+        if self.quantize_io:
+            self.compile_spec.append(CompileSpec("quantize_io", "True".encode()))
 
         return self.compile_spec
 
@@ -153,6 +169,7 @@ def get_intermediate_path(compile_spec: List[CompileSpec]) -> str:
 def generate_ethosu_compile_spec(
     config: str,
     permute_memory_to_nhwc: Optional[bool] = None,
+    quantize_io: Optional[bool] = None,
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
     extra_flags: Optional[str] = None,
@@ -168,6 +185,7 @@ def generate_ethosu_compile_spec(
             config_ini=config_ini,
         )
         .set_permute_memory_format(permute_memory_to_nhwc)
+        .set_quantize_io(quantize_io)
         .build()
     )
 

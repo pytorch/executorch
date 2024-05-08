@@ -91,6 +91,7 @@ if __name__ == "__main__":
         example_inputs,
         edge_compile_config=EdgeCompileConfig(
             _check_ir_validity=False if args.quantize else True,
+            _skip_dim_order=True,  # TODO(T182187531): enable dim order in xnnpack
         ),
     )
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")

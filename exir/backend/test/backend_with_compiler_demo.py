@@ -42,7 +42,7 @@ class BackendWithCompilerDemo(BackendDetails):
     sin_module = SinModule()
     model_inputs = torch.ones(1, 1)
 
-    edgeir_m = exir.capture(sin_module, model_inputs).to_edge()
+    edgeir_m = to_edge(export(sin_module, model_inputs))
     compile_specs = []
     lowered_sin_module = to_backend(
         "BackendWithCompilerDemo", edgeir_m, compile_specs

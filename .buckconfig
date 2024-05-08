@@ -23,3 +23,14 @@
 
 [parser]
   target_platform_detector_spec = target:root//...->prelude//platforms:default target:shim//...->prelude//platforms:default
+
+# Limit the number of files that the buck daemon needs to monitor. If every
+# submodule is cloned recursively, some system can fail to build with "OS file
+# watch limit reached".
+[project]
+  ignore = \
+      .git, \
+      **/.git, \
+      third-party/pytorch/third_party, \
+      cmake-out, \
+      pip-out

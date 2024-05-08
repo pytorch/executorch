@@ -111,7 +111,7 @@ class TestMaxPool2d(unittest.TestCase):
 
         # Parameter order is kernel_size, stride, padding.
         for maxpool_params in [(4,), (4, 2), (4, 2, 2)]:
-            inputs = (torch.ones(1, 2, 8, 8),)
+            inputs = (torch.randn(1, 2, 8, 8),)
             (
                 Tester(MaxPool(maxpool_params), inputs)
                 .quantize()

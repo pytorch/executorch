@@ -336,7 +336,7 @@ class TestPasses(unittest.TestCase):
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
 
-        new_prog = edge_prog.transform([SpecPropPass()], check_ir_validity=False)
+        new_prog = edge_prog.transform([SpecPropPass()])
 
         new_gm_res = ToOutVarPass()(new_prog.exported_program().graph_module)
         self.assertIsNotNone(new_gm_res)
@@ -679,7 +679,7 @@ class TestPasses(unittest.TestCase):
             ),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
-        new_prog = prog.transform([EdgeToBackendOpsPass()], check_ir_validity=False)
+        new_prog = prog.transform([EdgeToBackendOpsPass()])
         self.assertIsNotNone(new_prog.exported_program().graph_module)
         converted_gm = new_prog.exported_program().graph_module
 
@@ -806,7 +806,7 @@ class TestPasses(unittest.TestCase):
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
 
-        new_prog = prog.transform([EdgeToBackendOpsPass()], check_ir_validity=False)
+        new_prog = prog.transform([EdgeToBackendOpsPass()])
         gm = new_prog.exported_program().graph_module
         gm.print_readable()
         *_, ones, out = gm.graph.nodes
@@ -814,7 +814,7 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(isinstance(ones.meta["val"].shape[0], torch.SymInt))
         self.assertTrue(len(ones.meta["val"].shape[0].node.expr.free_symbols) > 0)
 
-        new_prog = new_prog.transform([ExportPass()], check_ir_validity=False)
+        new_prog = new_prog.transform([ExportPass()])
         gm = new_prog.exported_program().graph_module
         gm.print_readable()
         *_, ones, out = gm.graph.nodes
@@ -1048,9 +1048,9 @@ class TestPasses(unittest.TestCase):
         )
         prog = prog.transform([SymToTensorPass()])
 
-        FileCheck().check(
-            "executorch_exir_dialects_edge__ops_aten_scalar_tensor_default"
-        ).run(prog.exported_program().graph_module.code)
+        FileCheck().check("torch.ops.aten.scalar_tensor.default").run(
+            prog.exported_program().graph_module.code
+        )
         self.assertTrue(
             torch.allclose(
                 f(torch.ones(3, 2)), prog.exported_program().module()(torch.ones(3, 2))
@@ -1139,7 +1139,7 @@ class TestPasses(unittest.TestCase):
 
         # Check there is a lifted tensor followed by a to_copy node
         FileCheck().check("_lifted_tensor_constant0").check(
-            "executorch_exir_dialects_edge__ops_aten__to_copy_default"
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
         ).run(exported_program.graph_module.code)
 
         new_ep = constant_prop_pass(exported_program)
@@ -1147,7 +1147,9 @@ class TestPasses(unittest.TestCase):
         # Check (_lifted_tensor_constant + to_copy) node is replaced by prop tensor
         FileCheck().check_not("_lifted_tensor_constant").check(
             "_prop_tensor_constant0"
-        ).check_not("executorch_exir_dialects_edge__ops_aten__to_copy_default").run(
+        ).check_not(
+            "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
+        ).run(
             new_ep.graph_module.code
         )
 

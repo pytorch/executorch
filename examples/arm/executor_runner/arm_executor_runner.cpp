@@ -31,8 +31,8 @@ using namespace std;
 using torch::executor::Error;
 using torch::executor::Result;
 
-__attribute__((section(".sram.data"), aligned(16))) uint8_t
-    method_allocator_pool[4 * 1024U];
+#define METHOD_ALLOCATOR_POOL_SIZE (70 * 1024 * 1024)
+uint8_t* method_allocator_pool;
 
 void et_pal_init(void) {}
 
@@ -56,6 +56,10 @@ void et_pal_emit_log_message(
 
 int main() {
   torch::executor::runtime_init();
+
+  ET_LOG(Info, "Model in %p %c", model_pte, model_pte[0]);
+
+  method_allocator_pool = (uint8_t*)malloc(METHOD_ALLOCATOR_POOL_SIZE);
 
   auto loader =
       torch::executor::util::BufferDataLoader(model_pte, sizeof(model_pte));
@@ -92,7 +96,7 @@ int main() {
 
   torch::executor::MemoryAllocator method_allocator{
       torch::executor::MemoryAllocator(
-          sizeof(method_allocator_pool), method_allocator_pool)};
+          METHOD_ALLOCATOR_POOL_SIZE, method_allocator_pool)};
 
   std::vector<std::unique_ptr<uint8_t[]>> planned_buffers; // Owns the memory
   std::vector<torch::executor::Span<uint8_t>>
@@ -170,5 +174,9 @@ int main() {
       }
     }
   }
+  ET_LOG(Info, "Program complete, exiting.");
+  // This is ascii END OF TRANSMISSION used by FVP
+  ET_LOG(Info, "\x04");
+
   return 0;
 }

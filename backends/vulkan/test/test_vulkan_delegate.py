@@ -15,7 +15,7 @@ import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
-from executorch.exir import EdgeProgramManager, to_edge
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from torch.export import Dim, export, ExportedProgram
 
 ctypes.CDLL("libvulkan.so.1")
@@ -28,8 +28,18 @@ from executorch.extension.pytree import tree_flatten
 
 
 class TestBackends(unittest.TestCase):
+    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
+        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+    )
+
     def assert_outputs_equal(
-        self, model_output, ref_output, atol=1e-03, rtol=1e-03, first_output_only=False
+        self,
+        model_output,
+        ref_output,
+        atol=1e-03,
+        rtol=1e-03,
+        first_output_only=False,
+        equal_nan=True,
     ):
         """
         Helper testing function that asserts that the model output and the reference output
@@ -44,19 +54,35 @@ class TestBackends(unittest.TestCase):
             self.assertTrue(len(ref_output) == len(model_output))
             if first_output_only:
                 self.assertTrue(
-                    torch.allclose(model_output[0], ref_output[0], atol=atol, rtol=rtol)
+                    torch.allclose(
+                        model_output[0],
+                        ref_output[0],
+                        atol=atol,
+                        rtol=rtol,
+                        equal_nan=equal_nan,
+                    )
                 )
             else:
                 for i in range(len(ref_output)):
                     self.assertTrue(
                         torch.allclose(
-                            model_output[i], ref_output[i], atol=atol, rtol=rtol
+                            model_output[i],
+                            ref_output[i],
+                            atol=atol,
+                            rtol=rtol,
+                            equal_nan=equal_nan,
                         )
                     )
         else:
             # If one output, eager returns tensor while executor tuple of size 1
             self.assertTrue(
-                torch.allclose(model_output[0], ref_output, atol=atol, rtol=rtol)
+                torch.allclose(
+                    model_output[0],
+                    ref_output,
+                    atol=atol,
+                    rtol=rtol,
+                    equal_nan=equal_nan,
+                )
             )
 
     def lower_module_and_test_output(
@@ -75,6 +101,13 @@ class TestBackends(unittest.TestCase):
         the given sample inputs. It then runs the lowered module and compares its
         outputs with the outputs of the eager module.
         """
+        program: ExportedProgram = export(
+            model, sample_inputs, dynamic_shapes=dynamic_shapes
+        )
+        edge_program: EdgeProgramManager = to_edge(
+            program, compile_config=self._edge_compile_config
+        )
+        edge_program = edge_program.to_backend(VulkanPartitioner())
 
         def run_test(memory_layout):
             compile_options = {
@@ -304,7 +337,7 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(pow_module, sample_inputs)
 
-    def lower_clamp_module_and_test_output(self, module):
+    def lower_unary_module_and_test_output(self, module):
         batch = Dim("batch", max=8)
         sample_inputs = (torch.randn(8, 16, 96, 92),)
 
@@ -314,6 +347,7 @@ class TestBackends(unittest.TestCase):
             (torch.randn(6, 5, 35, 89),),
             (torch.randn(7, 9, 32, 38),),
         ]
+
         self.lower_module_and_test_output(
             module,
             sample_inputs,
@@ -329,7 +363,7 @@ class TestBackends(unittest.TestCase):
             def forward(self, x):
                 return torch.clamp(x, min=-3.14)
 
-        self.lower_clamp_module_and_test_output(ClampModule())
+        self.lower_unary_module_and_test_output(ClampModule())
 
     def test_vulkan_backend_hardtanh(self):
         class HardTanHModule(torch.nn.Module):
@@ -340,7 +374,7 @@ class TestBackends(unittest.TestCase):
             def forward(self, x):
                 return self.tanh(x)
 
-        self.lower_clamp_module_and_test_output(HardTanHModule())
+        self.lower_unary_module_and_test_output(HardTanHModule())
 
     def test_vulkan_backend_relu(self):
         class ReLUModule(torch.nn.Module):
@@ -350,7 +384,17 @@ class TestBackends(unittest.TestCase):
             def forward(self, x):
                 return torch.relu(x)
 
-        self.lower_clamp_module_and_test_output(ReLUModule())
+        self.lower_unary_module_and_test_output(ReLUModule())
+
+    def test_vulkan_backend_sqrt(self):
+        class SqrtModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sqrt(x)
+
+        self.lower_unary_module_and_test_output(SqrtModule())
 
     def test_vulkan_backend_max_pool2d(self):
         class MaxPool2dModule(torch.nn.Module):
@@ -395,7 +439,7 @@ class TestBackends(unittest.TestCase):
             def forward(self, x):
                 return torch.abs(x)
 
-        self.lower_clamp_module_and_test_output(AbsModule())
+        self.lower_unary_module_and_test_output(AbsModule())
 
     def test_vulkan_backend_sigmoid(self):
         class SigmoidModule(torch.nn.Module):
@@ -405,7 +449,7 @@ class TestBackends(unittest.TestCase):
             def forward(self, x):
                 return torch.sigmoid(x)
 
-        self.lower_clamp_module_and_test_output(SigmoidModule())
+        self.lower_unary_module_and_test_output(SigmoidModule())
 
     def test_vulkan_backend_tanh(self):
         class TanhModule(torch.nn.Module):
@@ -415,7 +459,7 @@ class TestBackends(unittest.TestCase):
             def forward(self, x):
                 return torch.tanh(x)
 
-        self.lower_clamp_module_and_test_output(TanhModule())
+        self.lower_unary_module_and_test_output(TanhModule())
 
     def test_vulkan_backend_partial(self):
         class SimpleModel(torch.nn.Module):
@@ -898,6 +942,22 @@ class TestBackends(unittest.TestCase):
                 return torch.clone(x)
 
         sample_inputs = (torch.randn(size=(3, 14, 7, 3), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            TestModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_repeat(self):
+        class TestModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x.repeat([2, 3, 1, 2])
+
+        sample_inputs = (torch.randn(size=(3, 7, 5, 9), dtype=torch.float32),)
 
         self.lower_module_and_test_output(
             TestModule(),

@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+set -x
+
 # install llava from the submodule
 pip install --force-reinstall -e examples/third-party/LLaVA
 
@@ -19,4 +21,4 @@ pip install bitsandbytes -I
 # For example, torch version required from llava is older than ExecuTorch.
 # To make both work, recover ExecuTorch's original dependencies by rerunning
 # the install_requirements.sh.
-./install_requirements.sh
+bash -x ./install_requirements.sh

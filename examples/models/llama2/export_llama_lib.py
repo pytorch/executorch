@@ -374,7 +374,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
     quant_dtype = None
     if args.qnn and args.pt2e_quantize:
-        assert quantizers is None, "Should not enable both xnnpack and qnn"
+        assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
         qnn_quantizer, quant_dtype = get_qnn_quantizer(args)
         quantizers.append(qnn_quantizer)
 

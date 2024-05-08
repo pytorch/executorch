@@ -14,8 +14,10 @@ Set of simple utilities for translating between torch.memory_format and dim_orde
 
 
 def _get_contiguous_dim_order(ndim: int) -> List[int]:
-    if ndim <= 0:
-        raise AssertionError(f"Unsupported rank: {ndim}")
+    if ndim < 0:
+        raise AssertionError(
+            f"Unsupported rank for contiguous dim order. Only supports ndim greater than or equal to 0, but got {ndim}"
+        )
 
     return list(range(ndim))
 
@@ -24,7 +26,9 @@ def _get_channels_last_dim_order(ndim: int) -> List[int]:
     if ndim == 4:
         return [0, 2, 3, 1]
 
-    raise AssertionError(f"Unsupported rank: {ndim}")
+    raise AssertionError(
+        f"Unsupported rank for channels last dim order. Only support ndim equal to 4, but got {ndim}"
+    )
 
 
 def get_memory_format(dim_order: Optional[List[int]]) -> torch.memory_format:
