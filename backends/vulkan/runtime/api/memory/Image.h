@@ -12,16 +12,13 @@
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Types.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
 
-#include <executorch/backends/vulkan/runtime/api/resource/vma_api.h>
+#include <executorch/backends/vulkan/runtime/api/memory/vma_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/resource/Allocation.h>
+#include <executorch/backends/vulkan/runtime/api/memory/Allocation.h>
 
 #include <mutex>
-#include <ostream>
-#include <stack>
 #include <unordered_map>
 
 namespace vkcompute {
