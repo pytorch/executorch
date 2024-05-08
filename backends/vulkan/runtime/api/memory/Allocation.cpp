@@ -6,9 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/Adapter.h>
-
-#include <executorch/backends/vulkan/runtime/api/resource/Allocation.h>
+#include <executorch/backends/vulkan/runtime/api/memory/Allocation.h>
 
 #define PRINT_FIELD(struct, field) #field << ": " << struct.field << std::endl
 
