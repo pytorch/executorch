@@ -10,11 +10,11 @@ import os
 import sys
 from typing import Any, List
 
-from tools.code_analyzer import gen_oplist
+from tools_copy.code_analyzer import gen_oplist_copy_from_core
 
 
 def main(argv: List[Any]) -> None:
-    """This binary is a wrapper for //xplat/caffe2/tools/code_analyzer/gen_oplist.py.
+    """This binary is a wrapper for //executorch/codegen/tools/gen_oplist_copy_from_core.py.
     This is needed because we intend to error out for the case where `model_file_list_path`
     is empty or invalid, so that the ExecuTorch build will fail when no selective build target
     is provided as a dependency to ExecuTorch build.
@@ -68,7 +68,7 @@ def main(argv: List[Any]) -> None:
                 len(model_file_names) > 0
             ), "BUCK was not able to find any `et_operator_library` in the dependency graph of the current ExecuTorch "
             "build. Please refer to Selective Build wiki page to add at least one."
-    gen_oplist.main(argv)
+    gen_oplist_copy_from_core.main(argv)
 
 
 if __name__ == "__main__":
