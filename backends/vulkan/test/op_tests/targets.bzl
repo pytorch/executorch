@@ -15,9 +15,9 @@ def define_common_targets(is_fbcode = False):
         ],
         base_module = "executorch.backends.vulkan.test.op_tests",
         deps = [
-            "//caffe2/torchgen:torchgen",
             "fbsource//third-party/pypi/expecttest:expecttest",
         ],
+        external_deps = ["torchgen"],
     )
 
     runtime.python_binary(

@@ -59,9 +59,7 @@ def define_common_targets(is_fbcode = False):
             "runtime/api/gen_vulkan_spv.py",
         ],
         base_module = "",
-        deps = [
-            "//caffe2/torchgen:torchgen",
-        ],
+        external_deps = ["torchgen"],
     )
 
     runtime.python_binary(
