@@ -70,8 +70,8 @@ void add_permute_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  uint32_t out_channels = dim_at<Dim4D::Channel>(t_out->sizes());
-  uint32_t in_channels = dim_at<Dim4D::Channel>(t_in->sizes());
+  uint32_t out_channels = dim_at<kDim4DChannel>(t_out->sizes());
+  uint32_t in_channels = dim_at<kDim4DChannel>(t_in->sizes());
 
   uint32_t out_c_aligned = api::utils::align_up(out_channels, 4u);
   uint32_t in_c_aligned = api::utils::align_up(in_channels, 4u);
