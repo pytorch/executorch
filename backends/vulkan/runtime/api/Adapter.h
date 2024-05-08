@@ -16,7 +16,7 @@
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
 
-#include <executorch/backends/vulkan/runtime/api/resource/Allocator.h>
+#include <executorch/backends/vulkan/runtime/api/memory/Allocator.h>
 
 #include <array>
 #include <mutex>
