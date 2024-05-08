@@ -81,25 +81,24 @@ Tensor& minimum_out(
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
-  ScalarType common_type = promoteTypes(a_type, b_type);
+  ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "minimum.out", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "minimum.out", CTYPE_B, [&]() {
-      using CTYPE_IN =
-          typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
+  ET_SWITCH_REALHB_TYPES(a_type, ctx, "minimum.out", CTYPE_A, [&]() {
+    ET_SWITCH_REALHB_TYPES(b_type, ctx, "minimum.out", CTYPE_B, [&]() {
+      using CTYPE_IN = typename torch::executor::
+          promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
       ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-      ET_SWITCH_REAL_TYPES_AND(
-          Bool, out_type, ctx, "minimum.out", CTYPE_OUT, [&]() {
-            MinimumInner<
-                can_cast<CTYPE_IN, CTYPE_OUT>::value,
-                CTYPE_A,
-                CTYPE_B,
-                CTYPE_IN,
-                CTYPE_OUT>::run(a, b, out);
-          });
+      ET_SWITCH_REALHB_TYPES(out_type, ctx, "minimum.out", CTYPE_OUT, [&]() {
+        MinimumInner<
+            can_cast<CTYPE_IN, CTYPE_OUT>::value,
+            CTYPE_A,
+            CTYPE_B,
+            CTYPE_IN,
+            CTYPE_OUT>::run(a, b, out);
+      });
     });
   });
 
