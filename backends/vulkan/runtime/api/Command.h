@@ -130,8 +130,8 @@ class CommandBuffer final {
 };
 
 struct CommandPoolConfig final {
-  uint32_t cmdPoolInitialSize;
-  uint32_t cmdPoolBatchSize;
+  uint32_t cmd_pool_initial_size;
+  uint32_t cmd_pool_batch_size;
 };
 
 class CommandPool final {
