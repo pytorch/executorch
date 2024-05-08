@@ -12,8 +12,10 @@
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Resource.h>
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
+
+#include <executorch/backends/vulkan/runtime/api/resource/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/resource/Image.h>
 
 #include <mutex>
 #include <unordered_map>
