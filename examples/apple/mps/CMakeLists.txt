@@ -33,11 +33,6 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
-# Source root directory for pytorch.
-if(NOT TORCH_ROOT)
-  set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
-endif()
-
 add_compile_options("-Wall" "-Werror")
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)

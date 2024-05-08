@@ -54,8 +54,7 @@ done
 #
 
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
-# pip versions will have the required features. The NIGHTLY_VERSION value should
-# agree with the third-party/pytorch pinned submodule commit.
+# pip versions will have the required features.
 #
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
