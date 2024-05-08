@@ -55,6 +55,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             # Normalization
             exir_ops.edge.aten.native_layer_norm.default,
             # Shape-related operators
+            exir_ops.edge.aten.permute.default,
             exir_ops.edge.aten.select_copy.int,
             exir_ops.edge.aten.unsqueeze_copy.default,
             exir_ops.edge.aten.view_copy.default,
