@@ -92,23 +92,23 @@ void add_copy_channel_offset_node(
   VK_CHECK_COND(t_out->dim() >= 3, "Dst dim should be at least 3");
 
   VK_CHECK_COND(
-      dim_at<Dim4D::Channel>(in_sizes) >= src_channel_offset + channel_range,
+      dim_at<kChannel4D>(in_sizes) >= src_channel_offset + channel_range,
       "Src channel (",
       src_channel_offset,
       ") and range (",
       channel_range,
       ") should be less than or equal to input tensor's channel size (",
-      dim_at<Dim4D::Channel>(in_sizes),
+      dim_at<kChannel4D>(in_sizes),
       ")");
 
   VK_CHECK_COND(
-      dim_at<Dim4D::Channel>(out_sizes) >= dst_channel_offset + channel_range,
+      dim_at<kChannel4D>(out_sizes) >= dst_channel_offset + channel_range,
       "Dst channel (",
       dst_channel_offset,
       ") and range (",
       channel_range,
       ") should be less than or equal to input tensor's channel size (",
-      dim_at<Dim4D::Channel>(out_sizes),
+      dim_at<kChannel4D>(out_sizes),
       ")");
 
   VK_CHECK_COND(channel_range >= 0, "Channel range must be non-negative");
@@ -121,11 +121,10 @@ void add_copy_channel_offset_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  int32_t out_channels = dim_at<Dim4D::Channel>(out_sizes);
+  int32_t out_channels = dim_at<kChannel4D>(out_sizes);
 
   // Copy one batch at a time.
-  for (int batch_idx = 0; batch_idx < dim_at<Dim4D::Batch>(in_sizes);
-       batch_idx++) {
+  for (int batch_idx = 0; batch_idx < dim_at<kBatch4D>(in_sizes); batch_idx++) {
     // Mapping the tensor NCHW coordinates into texture XYZ coordinates
     int32_t dst_first_z = dst_channel_offset / 4;
     int32_t dst_last_z = (dst_channel_offset + channel_range - 1) / 4;
@@ -139,8 +138,8 @@ void add_copy_channel_offset_node(
         0, 0, dst_first_z + batch_idx * api::utils::div_up(out_channels, 4)};
 
     uvec3 global_size{
-        dim_at<Dim4D::Width>(in_sizes),
-        dim_at<Dim4D::Height>(in_sizes),
+        api::utils::safe_downcast<uint32_t>(dim_at<kWidth4D>(in_sizes)),
+        api::utils::safe_downcast<uint32_t>(dim_at<kHeight4D>(in_sizes)),
         api::utils::safe_downcast<uint32_t>(dst_last_z - dst_first_z + 1)};
 
     uvec3 local_size = adaptive_work_group_size(global_size);
