@@ -19,6 +19,60 @@ namespace native {
 
 using Tensor = exec_aten::Tensor;
 
+namespace {
+template <
+    bool can_cast,
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct FmodInner;
+
+template <
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct FmodInner<true, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT> {
+  static void
+  run(const Tensor& a, const Tensor& b, Tensor& out, bool& div_by_zero_error) {
+    apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+        // NOLINTNEXTLINE(facebook-hte-ConstantArgumentPassByValue)
+        [&div_by_zero_error](const CTYPE_A val_a, const CTYPE_B val_b) {
+          if (is_integral_type<CTYPE_IN, /*includeBool=*/true>::value) {
+            if (val_b == 0) {
+              div_by_zero_error = true;
+              return static_cast<CTYPE_OUT>(0);
+            }
+          }
+          CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+          CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+          CTYPE_IN value = std::fmod(a_casted, b_casted);
+
+          return static_cast<CTYPE_OUT>(value);
+        },
+        a,
+        b,
+        out);
+  }
+};
+
+struct ReportCanCastBug {
+  static void run(const Tensor&, const Tensor&, Tensor&, bool&) {
+    ET_DCHECK_MSG(false, "BUG: canCast should have been checked above");
+  }
+};
+
+template <
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct FmodInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
+    : public ReportCanCastBug {};
+
+} // namespace
+
 Tensor& fmod_Tensor_out(
     RuntimeContext& ctx,
     const Tensor& a,
@@ -44,35 +98,18 @@ Tensor& fmod_Tensor_out(
       Bool, a_type, ctx, "fmod.Tensor_out", CTYPE_A, [&]() {
         ET_SWITCH_REAL_TYPES_AND(
             Bool, b_type, ctx, "fmod.Tensor_out", CTYPE_B, [&]() {
+              using CTYPE_IN = typename torch::executor::
+                  promote_types<CTYPE_A, CTYPE_B>::type;
+              ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
               ET_SWITCH_REAL_TYPES(
-                  common_type, ctx, "fmod.Tensor_out", CTYPE_IN, [&]() {
-                    ET_SWITCH_REAL_TYPES(
-                        out_type, ctx, "fmod.Tensor_out", CTYPE_OUT, [&]() {
-                          apply_binary_elementwise_fn<
-                              CTYPE_A,
-                              CTYPE_B,
-                              CTYPE_OUT>(
-                              [common_type, &div_by_zero_error](
-                                  const CTYPE_A val_a, const CTYPE_B val_b) {
-                                if (isIntegralType(
-                                        common_type, /*includeBool=*/true)) {
-                                  if (val_b == 0) {
-                                    div_by_zero_error = true;
-                                    return static_cast<CTYPE_OUT>(0);
-                                  }
-                                }
-                                CTYPE_IN a_casted =
-                                    static_cast<CTYPE_IN>(val_a);
-                                CTYPE_IN b_casted =
-                                    static_cast<CTYPE_IN>(val_b);
-                                CTYPE_IN value = std::fmod(a_casted, b_casted);
-
-                                return static_cast<CTYPE_OUT>(value);
-                              },
-                              a,
-                              b,
-                              out);
-                        });
+                  out_type, ctx, "fmod.Tensor_out", CTYPE_OUT, [&]() {
+                    FmodInner<
+                        !std::is_same<CTYPE_IN, bool>::value &&
+                            can_cast<CTYPE_IN, CTYPE_OUT>::value,
+                        CTYPE_A,
+                        CTYPE_B,
+                        CTYPE_IN,
+                        CTYPE_OUT>::run(a, b, out, div_by_zero_error);
                   });
             });
       });
