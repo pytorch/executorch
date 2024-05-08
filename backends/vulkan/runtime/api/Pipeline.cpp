@@ -139,7 +139,7 @@ uint32_t SpecVar::val_size() const {
 }
 
 uint32_t SpecVar::val_offset() const {
-  return api::utils::safe_downcast<uint32_t>(offsetof(SpecVar, value));
+  return utils::safe_downcast<uint32_t>(offsetof(SpecVar, value));
 }
 
 bool operator==(const SpecVar& lhs, const SpecVar& rhs) {

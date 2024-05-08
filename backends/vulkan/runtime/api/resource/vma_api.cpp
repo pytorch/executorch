@@ -7,4 +7,4 @@
  */
 
 #define VMA_IMPLEMENTATION
-#include <executorch/backends/vulkan/runtime/api/Allocator.h>
+#include <executorch/backends/vulkan/runtime/api/resource/vma_api.h>

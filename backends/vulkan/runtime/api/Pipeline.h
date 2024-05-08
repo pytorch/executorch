@@ -12,8 +12,10 @@
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Resource.h>
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
+
+#include <executorch/backends/vulkan/runtime/api/resource/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/resource/Image.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -69,7 +71,7 @@ class SpecVarList final {
   }
 
   inline uint32_t size() const {
-    return api::utils::safe_downcast<uint32_t>(vars.size());
+    return utils::safe_downcast<uint32_t>(vars.size());
   }
 
   inline uint32_t data_nbytes() const {
