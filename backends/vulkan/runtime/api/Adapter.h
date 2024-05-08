@@ -99,7 +99,8 @@ class Adapter final {
   explicit Adapter(
       VkInstance instance,
       PhysicalDevice physical_device,
-      const uint32_t num_queues);
+      const uint32_t num_queues,
+      const std::string& pipeline_cache_file_path);
 
   Adapter(const Adapter&) = delete;
   Adapter& operator=(const Adapter&) = delete;

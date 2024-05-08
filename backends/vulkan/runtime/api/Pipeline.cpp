@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
 
+#include <fstream>
+
 namespace vkcompute {
 namespace api {
 
@@ -358,21 +360,47 @@ void PipelineLayoutCache::purge() {
 // ComputePipelineCache
 //
 
-ComputePipelineCache::ComputePipelineCache(VkDevice device)
+ComputePipelineCache::ComputePipelineCache(
+    VkDevice device,
+    const std::string& file_path)
     : cache_mutex_{},
       device_(device),
       pipeline_cache_{VK_NULL_HANDLE},
       cache_{} {
-  const VkPipelineCacheCreateInfo pipeline_cache_create_info{
+  VkPipelineCacheCreateInfo pipeline_cache_create_info{};
+
+  auto buffer = get_cache_data(file_path);
+
+  pipeline_cache_create_info = {
       VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, // sType
       nullptr, // pNext
       0u, // flags
-      0u, // initialDataSize
-      nullptr, // pInitialData
+      buffer.size(), // initialDataSize
+      buffer.data(), // pInitialData
   };
 
   VK_CHECK(vkCreatePipelineCache(
       device, &pipeline_cache_create_info, nullptr, &pipeline_cache_));
+}
+
+std::vector<char> ComputePipelineCache::get_cache_data(
+    const std::string& file_path) {
+  if (file_path.empty()) {
+    return {};
+  }
+
+  std::ifstream file(file_path, std::ios::binary | std::ios::ate);
+  if (file.fail()) {
+    VK_THROW("Failed to open pipeline cache file: " + file_path);
+  }
+  auto size = file.tellg();
+  file.seekg(0, std::ios::beg);
+
+  std::vector<char> buffer(size);
+  file.read(buffer.data(), size);
+  file.close();
+
+  return buffer;
 }
 
 ComputePipelineCache::ComputePipelineCache(

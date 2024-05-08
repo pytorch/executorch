@@ -39,6 +39,7 @@ struct RuntimeConfiguration final {
   bool init_default_device;
   AdapterSelector default_selector;
   uint32_t num_requested_queues;
+  std::string pipeline_cache_file_path;
 };
 
 class Runtime final {
