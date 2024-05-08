@@ -11,11 +11,6 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-# Source root directory for pytorch.
-if(NOT TORCH_ROOT)
-  set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
-endif()
-
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
