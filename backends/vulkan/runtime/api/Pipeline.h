@@ -216,7 +216,9 @@ class PipelineLayoutCache final {
 
 class ComputePipelineCache final {
  public:
-  explicit ComputePipelineCache(VkDevice device);
+  explicit ComputePipelineCache(
+      VkDevice device,
+      const std::string& cache_data_path);
 
   ComputePipelineCache(const ComputePipelineCache&) = delete;
   ComputePipelineCache& operator=(const ComputePipelineCache&) = delete;
@@ -266,6 +268,9 @@ class ComputePipelineCache final {
   };
 
  private:
+  std::vector<char> load_cache();
+  void save_cache();
+
   // Multiple threads could potentially be adding entries into the cache, so use
   // a mutex to manage access
   std::mutex cache_mutex_;
@@ -273,6 +278,7 @@ class ComputePipelineCache final {
   VkDevice device_;
   VkPipelineCache pipeline_cache_;
   std::unordered_map<Key, Value, Hasher> cache_;
+  const std::string cache_data_path_;
 
  public:
   VkPipeline retrieve(const Key&);
