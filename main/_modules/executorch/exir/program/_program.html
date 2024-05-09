@@ -841,7 +841,7 @@
         <span class="c1"># Existing user passes dont use run so Im just cheating here because they dont need to work on mutable buffers yet.</span>
         <span class="c1"># After exir.capture is gone I will clean up the memory planning infra to be consistent.</span>
         <span class="c1"># Frankly all of exir has big code quality issues because of the migrations that need to be addressed.</span>
-        <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>  <span class="c1"># pyre-ignore[19]</span>
+        <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>  <span class="c1"># pyre-ignore[29]</span>
         <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
         <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
         <span class="n">new_prog</span> <span class="o">=</span> <span class="n">ExirExportedProgram</span><span class="p">(</span>
@@ -1318,7 +1318,8 @@
         <span class="p">)</span></div>
 
 <div class="viewcode-block" id="EdgeProgramManager.to_executorch"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.to_executorch">[docs]</a>    <span class="k">def</span> <span class="nf">to_executorch</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExecutorchProgramManager&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Transforms the program to the ExecuTorch backend.</span>
@@ -1355,13 +1356,19 @@
                     <span class="c1"># TODO(who?)</span>
                     <span class="n">p</span><span class="o">.</span><span class="n">update_placeholder_tensor_specs</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
 
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="n">memory_planning_pass</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="n">name</span><span class="p">,</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span><span class="o">.</span><span class="n">memory_planning_pass</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">memory_planning_pass</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span>
             <span class="c1"># TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work</span>
-            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">&quot;run&quot;</span><span class="p">):</span>
-                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">run</span><span class="p">(</span>  <span class="c1"># pyre-ignore[16]</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">&quot;run&quot;</span><span class="p">):</span>
+                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">run</span><span class="p">(</span>  <span class="c1"># pyre-ignore[16]</span>
                     <span class="n">new_gm</span><span class="p">,</span> <span class="n">new_signature</span>
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>  <span class="c1"># pyre-ignore[19]</span>
+                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">memory_planning_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>  <span class="c1"># pyre-ignore[29]</span>
             <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
 
