@@ -148,42 +148,12 @@ class TestRemoveViewCopy(unittest.TestCase):
                 self.assertEqual(
                     node.meta["spec"].lifetime, node.args[0].meta["spec"].lifetime
                 )
-            elif node.name == "aten_mul_tensor":
-                # aten_mul_tensor's lifetime is extended through aten_view_copy_default_2 (memory.view) to idx 7
-                self.assertEqual(node.meta["spec"].lifetime, [4, 7])
-            elif node.name == "aten_view_copy_default_2":
-                # aten_view_copy_default_2 is a memory.view of aten_mul_tensor
-
-                # assert base is aten_mul_tensor
-                self.assertEqual(node.args[0].name, "aten_mul_tensor")
-
-                # assert base and self are not const, do not have storage,
-                # but do have mem_id and mem_offset
-                self.assertFalse(node.args[0].meta["spec"].const)
-                self.assertTrue(node.args[0].meta["spec"].storage is None)
-                self.assertTrue(node.args[0].meta["spec"].mem_id is not None)
-                self.assertTrue(node.args[0].meta["spec"].mem_offset is not None)
-
-                self.assertFalse(node.meta["spec"].const)
-                self.assertTrue(node.meta["spec"].storage is None)
-                self.assertTrue(node.meta["spec"].mem_id is not None)
-                self.assertTrue(node.meta["spec"].mem_offset is not None)
-
-                # assert self and base mem_id, mem_offset, and lifetime matches
-                self.assertEqual(
-                    node.meta["spec"].mem_id, node.args[0].meta["spec"].mem_id
-                )
-                self.assertEqual(
-                    node.meta["spec"].mem_offset, node.args[0].meta["spec"].mem_offset
-                )
-                self.assertEqual(
-                    node.meta["spec"].lifetime, node.args[0].meta["spec"].lifetime
-                )
 
         # Test evalues in execution plan
         plan = etpm.executorch_program.execution_plan[0]
         self.assertEqual(plan.operators[0].name, "executorch_prim::et_view")
         self.assertEqual(plan.operators[1].name, "aten::mul")
+        self.assertEqual(plan.operators[2].name, "aten::view_copy")
 
         instructions = plan.chains[0].instructions
         self.assertEqual(len(instructions), 4)
@@ -198,5 +168,5 @@ class TestRemoveViewCopy(unittest.TestCase):
             instructions[2].instr_args.op_index, 1  # pyre-ignore
         )  # aten:mul @ idx5
         self.assertEqual(
-            instructions[3].instr_args.op_index, 0  # pyre-ignore
-        )  # view @ idx6
+            instructions[3].instr_args.op_index, 2  # pyre-ignore
+        )  # aten:view_copy @ idx6
