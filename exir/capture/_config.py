@@ -55,7 +55,7 @@ class ExecutorchBackendConfig:
     # Whether to move delegate data blobs from the Program into separate
     # segments, rather than encoding those blobs in the flatbuffer data.
     # This makes it possible to free those blobs at runtime.
-    extract_delegate_segments: bool = False
+    extract_delegate_segments: bool = True
 
     # Whether to extract constants from the Program into separate segments,
     # rather than encoding those constants in the flatbuffer data.
