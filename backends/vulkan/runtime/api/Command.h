@@ -14,9 +14,11 @@
 
 #include <executorch/backends/vulkan/runtime/api/Descriptor.h>
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
-#include <executorch/backends/vulkan/runtime/api/Resource.h>
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
+
+#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/memory/Image.h>
 
 namespace vkcompute {
 namespace api {
@@ -92,32 +94,32 @@ class CommandBuffer final {
   void dispatch(const utils::uvec3&);
 
   void copy_buffer_to_buffer(
-      const api::VulkanBuffer&,
-      const api::VulkanBuffer&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&);
+      const VulkanBuffer&,
+      const VulkanBuffer&,
+      const utils::uvec3&,
+      const utils::uvec3&,
+      const utils::uvec3&);
 
   void copy_texture_to_texture(
-      const api::VulkanImage&,
-      const api::VulkanImage&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&);
+      const VulkanImage&,
+      const VulkanImage&,
+      const utils::uvec3&,
+      const utils::uvec3&,
+      const utils::uvec3&);
 
   void copy_texture_to_buffer(
-      const api::VulkanImage&,
-      const api::VulkanBuffer&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&);
+      const VulkanImage&,
+      const VulkanBuffer&,
+      const utils::uvec3&,
+      const utils::uvec3&,
+      const utils::uvec3&);
 
   void copy_buffer_to_texture(
-      const api::VulkanBuffer&,
-      const api::VulkanImage&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&);
+      const VulkanBuffer&,
+      const VulkanImage&,
+      const utils::uvec3&,
+      const utils::uvec3&,
+      const utils::uvec3&);
 
   void write_timestamp(VkQueryPool, const uint32_t) const;
   void reset_querypool(VkQueryPool, const uint32_t, const uint32_t) const;

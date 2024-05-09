@@ -495,7 +495,7 @@ class TestMisc(unittest.TestCase):
                 memory_planning_pass=CustomPoolMemoryPlanningPass(
                     memory_planning_algo=algo,
                     alignment=1,
-                )
+                ),
             )
         )
         graph_module = edge_program.exported_program().graph_module

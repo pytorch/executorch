@@ -293,9 +293,7 @@ class TestProgramManagers(unittest.TestCase):
         # two delegate blobs for forward and foo
         self.assertEqual(
             len(
-                delegate_manager.to_executorch(
-                    ExecutorchBackendConfig(extract_delegate_segments=True)
-                )
+                delegate_manager.to_executorch(ExecutorchBackendConfig())
                 ._emitter_output.program.execution_plan[0]
                 .delegates
             ),
@@ -303,9 +301,7 @@ class TestProgramManagers(unittest.TestCase):
         )
         self.assertEqual(
             len(
-                delegate_manager.to_executorch(
-                    ExecutorchBackendConfig(extract_delegate_segments=True)
-                )
+                delegate_manager.to_executorch(ExecutorchBackendConfig())
                 ._emitter_output.program.execution_plan[1]
                 .delegates
             ),
@@ -349,7 +345,11 @@ class TestProgramManagers(unittest.TestCase):
         # one delegate blob for forward
         self.assertEqual(
             len(
-                delegate_manager.to_executorch(ExecutorchBackendConfig())
+                delegate_manager.to_executorch(
+                    ExecutorchBackendConfig(
+                        extract_delegate_segments=False,
+                    )
+                )
                 ._emitter_output.program.execution_plan[0]  # foo
                 .delegates
             ),
@@ -357,7 +357,11 @@ class TestProgramManagers(unittest.TestCase):
         )
         self.assertEqual(
             len(
-                delegate_manager.to_executorch(ExecutorchBackendConfig())
+                delegate_manager.to_executorch(
+                    ExecutorchBackendConfig(
+                        extract_delegate_segments=False,
+                    )
+                )
                 ._emitter_output.program.execution_plan[1]  # forward
                 .delegates
             ),
