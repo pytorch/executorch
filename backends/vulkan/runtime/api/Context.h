@@ -26,10 +26,10 @@ namespace vkcompute {
 namespace api {
 
 struct ContextConfig final {
-  uint32_t cmdSubmitFrequency;
-  CommandPoolConfig cmdPoolConfig;
-  DescriptorPoolConfig descriptorPoolConfig;
-  QueryPoolConfig queryPoolConfig;
+  uint32_t cmd_submit_frequency;
+  CommandPoolConfig cmd_pool_config;
+  DescriptorPoolConfig descriptor_pool_config;
+  QueryPoolConfig query_pool_config;
 };
 
 //
@@ -485,7 +485,7 @@ inline bool Context::submit_copy(
 
   submit_count_++;
   if (fence_handle != VK_NULL_HANDLE ||
-      submit_count_ >= config_.cmdSubmitFrequency) {
+      submit_count_ >= config_.cmd_submit_frequency) {
     submit_cmd_to_gpu(fence_handle);
     return true;
   }
@@ -568,7 +568,7 @@ inline bool Context::submit_compute_job(
 
   submit_count_++;
   if (fence_handle != VK_NULL_HANDLE ||
-      submit_count_ >= config_.cmdSubmitFrequency) {
+      submit_count_ >= config_.cmd_submit_frequency) {
     submit_cmd_to_gpu(fence_handle);
     return true;
   }
