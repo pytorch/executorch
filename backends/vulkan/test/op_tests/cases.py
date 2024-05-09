@@ -57,6 +57,43 @@ def get_mm_inputs():
     return test_suite
 
 
+def get_bmm_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((S, M1, L), (S, L, M2)),
+            ((M, S1, S2), (M, S2, M)),
+        ],
+    )
+    test_suite.prepacked_args = ["mat2"]
+    # ATen matmul doesn't support half
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = [
+        "api::kWidthPacked",
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
+def get_addmm_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((1, S), (S1, S), (S, S), 1.0, 1.5),
+            ((S, 1), (S, S1), (S1, S1), 1.0, 1.0),
+            ((M1, M2), (M1, M2), (M2, M2)),
+            ((M1, M2), (M1, M2), (M2, M2), 4.2, 2.3),
+            ((M1, 1), (M1, L), (L, L), 2.0, 3.0),
+            ((M2), (M1, M2), (M2, M2)),
+        ]
+    )
+    # ATen matmul doesn't support half
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = [
+        "api::kWidthPacked",
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
 def get_pool2d_inputs():
     test_suite = VkTestSuite(
         [
@@ -455,11 +492,27 @@ def get_cat_inputs():
             ([(S, S1, 5, 4), (S1, S1, 5, 4)], 0),
             ([(S, XS, 5, 4), (S1, XS, 5, 4)], 0),
             ([(S, S2, 5, 4), (S1, S2, 5, 4)], 0),
+            (
+                [
+                    (3, 1, 2, 5),
+                    (3, 1, 2, 5),
+                    (3, 1, 2, 5),
+                ],
+                0,
+            ),
             # Cat on Channel
             ([(S, 5, 4), (S1, 5, 4), (S2, 5, 4)], 0),
             ([(XS, 5, 4), (XS, 5, 4), (S2, 5, 4)], 0),
             ([(XS, S, 5, 4), (XS, S1, 5, 4), (XS, S2, 5, 4)], 1),
             ([(XS, XS, 5, 4), (XS, XS, 5, 4), (XS, S2, 5, 4)], 1),
+            (
+                [
+                    (XS, 1, 2, 5),
+                    (XS, 1, 2, 5),
+                    (XS, 1, 2, 5),
+                ],
+                1,
+            ),
         ]
     )
     test_suite.layouts = [
@@ -555,6 +608,37 @@ def get_split_tensor_inputs():
     return test_suite
 
 
+def get_softmax_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((S1), 0, False),
+            ((S1), -1, False),
+            ((S, S1), 0, False),
+            ((S, S1), 1, False),
+            ((S, S1), -1, False),
+            ((S, S1), -2, False),
+            ((S, S1, S2), 0, False),
+            ((S, S1, S2), 1, False),
+            ((S, S1, S2), 2, False),
+            ((S, S1, S2), -1, False),
+            ((S, S1, S2), -2, False),
+            ((S, S1, S2), -3, False),
+            ((XS, S, S1, S2), 0, False),
+            ((XS, S, S1, S2), 1, False),
+            ((XS, S, S1, S2), 2, False),
+            ((XS, S, S1, S2), 3, False),
+            ((XS, S, S1, S2), -1, False),
+            ((XS, S, S1, S2), -2, False),
+            ((XS, S, S1, S2), -3, False),
+            ((XS, S, S1, S2), -4, False),
+        ]
+    )
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
 def get_unary_ops_inputs():
     test_suite = VkTestSuite(
         [
@@ -572,6 +656,8 @@ test_suites = {
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
     "aten.div.Tensor": get_binary_elementwise_inputs(),
     "aten.mul.Tensor": get_binary_elementwise_inputs(),
+    "aten.addmm.default": get_addmm_inputs(),
+    "aten.bmm.default": get_bmm_inputs(),
     "aten.mm.default": get_mm_inputs(),
     "aten.max_pool2d_with_indices.default": get_pool2d_inputs(),
     "aten.convolution.default": get_conv_inputs(),
@@ -590,4 +676,6 @@ test_suites = {
     "aten.split_with_sizes_copy.default": get_split_with_sizes_inputs(),
     "aten.split.Tensor": get_split_tensor_inputs(),
     "aten.sqrt.default": get_unary_ops_inputs(),
+    "aten._softmax.default": get_softmax_inputs(),
+    "aten._log_softmax.default": get_softmax_inputs(),
 }

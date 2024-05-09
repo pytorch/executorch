@@ -39,6 +39,15 @@ def _check_tensors_are_contiguous(gm: GraphModule) -> None:
                 )
 
 
+def _check_valid_dim_order_ops(op, use_dim_order) -> None:
+    if use_dim_order:
+        if op in (torch.ops.aten._to_copy.default,):
+            raise SpecViolationError(f"{op} should not be used in dim_order mode")
+    else:  # not using dim_order
+        if op.namespace in ("dim_order_ops",):
+            raise SpecViolationError(f"{op} should not be used in non-dim_order mode")
+
+
 class EXIRATenDialectVerifierBase(Verifier):
     dialect = "OLD_EXIR_ATEN_DISABLED"
 
@@ -79,7 +88,8 @@ class EXIRATenDialectVerifier(EXIRATenDialectVerifierBase):
                 torch.ops.aten._upsample_bilinear2d_aa.default,
                 torch.ops.aten.quantize_per_tensor.default,
                 torch.ops.aten.dequantize.self,
-                torch.ops.aten.max.default,
+                torch.ops.aten.max.default,  # TODO(T188268054)
+                torch.ops.aten.min.default,  # TODO(T188268054)
                 torch.ops.aten.full_like.default,  # TODO(T183507359)
             ):
                 return
@@ -149,6 +159,8 @@ def EXIREdgeDialectVerifier(  # noqa: C901
 
             self.enable = _edge_compile_config._check_ir_validity
             self.check_edge_ops = _edge_compile_config._use_edge_ops
+            self.use_dim_order = not _edge_compile_config._skip_dim_order
+
             self.aten_op_verifier = EXIRATenDialectVerifier()
             self.check_valid_aten_op = self.aten_op_verifier.check_valid_op
 
@@ -171,7 +183,13 @@ def EXIREdgeDialectVerifier(  # noqa: C901
         def check_valid_edge_op(self, op):
             if not self.enable:
                 return
-            if op in [operator.getitem, torch.ops.aten.sym_size.int]:
+            if op in [
+                operator.getitem,
+                torch.ops.aten.sym_size.int,
+                torch.ops.aten.scalar_tensor.default,
+                torch.ops.aten._assert_async.msg,
+                torch.ops.aten._assert_scalar.default,
+            ]:
                 return
 
             if isinstance(op, OpOverload) and not isinstance(op, EdgeOpOverload):
@@ -181,7 +199,9 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                     )
                 )
             if isinstance(op, EdgeOpOverload):
+                _check_valid_dim_order_ops(op._op, self.use_dim_order)
                 self.check_valid_aten_op(op._op)
+
             if isinstance(op, types.FunctionType):
                 assert op.__name__ in ("alloc",)
 
@@ -191,6 +211,31 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             if self.check_edge_ops:
                 _check_tensors_are_contiguous(gm)
                 _check_tensor_args_matching_op_allowed_dtype(gm)
+
+        def check_valid_op(self, op):
+            if isinstance(op, OpOverload):
+                # TODO These special ops should be removable easily.
+                if op.namespace in (
+                    "quantized_decomposed",
+                    "boltnn_nimble",
+                    "nimble",
+                    "quantized",
+                    "dim_order_ops",
+                ) or op in (
+                    torch.ops.aten.mkldnn_rnn_layer.default,
+                    torch.ops.aten._upsample_bilinear2d_aa.default,
+                    torch.ops.aten.quantize_per_tensor.default,
+                    torch.ops.aten.dequantize.self,
+                    torch.ops.aten.max.default,
+                    torch.ops.aten.full_like.default,  # TODO(T183507359)
+                ):
+                    return
+                if torch.Tag.core not in op.tags and torch.Tag.view_copy not in op.tags:
+                    # NOTE(qihan): whether view_copy operators are marked as canonical is still under
+                    #            discussion.
+                    raise SpecViolationError(
+                        f"Operator {op.__module__}.{op.__name__} is not Aten Canonical."
+                    )
 
         def is_valid(self, gm: GraphModule) -> bool:
             try:

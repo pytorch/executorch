@@ -4,20 +4,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-matmul:
+matmul_optimized:
   parameter_names_with_default_values:
     DTYPE: float
     NDIM: 3
-    MAT1_PACKING: W_packed
-    MAT2_PACKING: H_packed
+    PACKING: C_packed
+    IS_ADDMM: false
   generate_variant_forall:
     DTYPE:
       - VALUE: float
       - VALUE: half
   shader_variants:
-    - NAME: matmul_W_packed_H_packed
-    - NAME: matmul_W_packed_W_packed
-      MAT2_PACKING: W_packed
-    - NAME: matmul_C_packed_C_packed
-      MAT1_PACKING: C_packed
-      MAT2_PACKING: C_packed
+    - NAME: matmul_optimized
+    - NAME: addmm_optimized
+      IS_ADDMM: true

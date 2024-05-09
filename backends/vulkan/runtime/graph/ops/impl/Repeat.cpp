@@ -32,23 +32,23 @@ void check_args(
       "Input tensor dim size must be not greater than the repeat argument's size");
 
   VK_CHECK_COND(
-      dim_at<Dim4D::Width>(in.sizes()) * dim_at<Dim4D::Width>(repeats) ==
-          dim_at<Dim4D::Width>(out.sizes()),
+      dim_at<kWidth4D>(in.sizes()) * dim_at<kWidth4D>(repeats) ==
+          dim_at<kWidth4D>(out.sizes()),
       "Output's width doesn't match input's width * repeat count");
 
   VK_CHECK_COND(
-      dim_at<Dim4D::Height>(in.sizes()) * dim_at<Dim4D::Height>(repeats) ==
-          dim_at<Dim4D::Height>(out.sizes()),
+      dim_at<kHeight4D>(in.sizes()) * dim_at<kHeight4D>(repeats) ==
+          dim_at<kHeight4D>(out.sizes()),
       "Output's height doesn't match input's height * repeat count");
 
   VK_CHECK_COND(
-      dim_at<Dim4D::Channel>(in.sizes()) * dim_at<Dim4D::Channel>(repeats) ==
-          dim_at<Dim4D::Channel>(out.sizes()),
+      dim_at<kChannel4D>(in.sizes()) * dim_at<kChannel4D>(repeats) ==
+          dim_at<kChannel4D>(out.sizes()),
       "Output's channel doesn't match input's channel * repeat count");
 
   VK_CHECK_COND(
-      dim_at<Dim4D::Batch>(in.sizes()) * dim_at<Dim4D::Batch>(repeats) ==
-          dim_at<Dim4D::Batch>(out.sizes()),
+      dim_at<kBatch4D>(in.sizes()) * dim_at<kBatch4D>(repeats) ==
+          dim_at<kBatch4D>(out.sizes()),
       "Output's batch doesn't match input's batch * repeat count");
 }
 
@@ -70,13 +70,13 @@ void add_repeat_channel_node(
   const std::vector<int64_t>& in_sizes = t_in->sizes();
 
   int32_t in_width =
-      api::utils::safe_downcast<int32_t>(dim_at<Dim4D::Width>(in_sizes));
+      api::utils::safe_downcast<int32_t>(dim_at<kWidth4D>(in_sizes));
   int32_t in_height =
-      api::utils::safe_downcast<int32_t>(dim_at<Dim4D::Height>(in_sizes));
+      api::utils::safe_downcast<int32_t>(dim_at<kHeight4D>(in_sizes));
   int32_t in_channel =
-      api::utils::safe_downcast<int32_t>(dim_at<Dim4D::Channel>(in_sizes));
+      api::utils::safe_downcast<int32_t>(dim_at<kChannel4D>(in_sizes));
   int32_t in_batch =
-      api::utils::safe_downcast<int32_t>(dim_at<Dim4D::Batch>(in_sizes));
+      api::utils::safe_downcast<int32_t>(dim_at<kBatch4D>(in_sizes));
 
   int32_t out_channel = repeat_channel * in_channel;
 
@@ -142,11 +142,11 @@ void add_repeat_node(
   // dimension, we copy over the input texure to the output. In subsequent
   // dimensions, we read and write from the same tensor.
 
-  if (int64_t channel_repeat = dim_at<Dim4D::Channel>(repeats);
+  if (int64_t channel_repeat = dim_at<kChannel4D>(repeats);
       channel_repeat == 1) {
     // If no repeat, short-cut to a direct copy
-    api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
-    api::utils::ivec3 dst_offset = api::utils::make_ivec3({0, 0, 0}, false);
+    api::utils::ivec3 src_offset{0, 0, 0};
+    api::utils::ivec3 dst_offset{0, 0, 0};
 
     add_copy_offset_node(graph, in, running_range, src_offset, dst_offset, out);
 
@@ -156,12 +156,11 @@ void add_repeat_node(
 
   // TODO: refactor width, height, and batch into a common helper function.
   // Width
-  if (int64_t width_repeat = dim_at<Dim4D::Width>(repeats); width_repeat > 1) {
-    api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
+  if (int64_t width_repeat = dim_at<kWidth4D>(repeats); width_repeat > 1) {
+    api::utils::ivec3 src_offset{0, 0, 0};
 
     for (int i = 1; i < width_repeat; ++i) {
-      api::utils::ivec3 dst_offset = api::utils::make_ivec3(
-          {i * dim_at<Dim4D::Width>(in_sizes), 0, 0}, false);
+      api::utils::ivec3 dst_offset{i * dim_at<kWidth4D>(in_sizes), 0, 0};
 
       add_copy_offset_node(
           graph, out, running_range, src_offset, dst_offset, out);
@@ -171,13 +170,11 @@ void add_repeat_node(
   }
 
   // Height
-  if (int64_t height_repeat = dim_at<Dim4D::Height>(repeats);
-      height_repeat > 1) {
-    api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
+  if (int64_t height_repeat = dim_at<kHeight4D>(repeats); height_repeat > 1) {
+    api::utils::ivec3 src_offset{0, 0, 0};
 
     for (int i = 1; i < height_repeat; ++i) {
-      api::utils::ivec3 dst_offset = api::utils::make_ivec3(
-          {0, i * dim_at<Dim4D::Height>(in_sizes), 0}, false);
+      api::utils::ivec3 dst_offset = {0, i * dim_at<kHeight4D>(in_sizes), 0};
 
       add_copy_offset_node(
           graph, out, running_range, src_offset, dst_offset, out);
@@ -187,12 +184,11 @@ void add_repeat_node(
   }
 
   // Batch
-  if (int64_t batch_repeat = dim_at<Dim4D::Batch>(repeats); batch_repeat > 1) {
-    api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
+  if (int64_t batch_repeat = dim_at<kBatch4D>(repeats); batch_repeat > 1) {
+    api::utils::ivec3 src_offset{0, 0, 0};
 
     for (int i = 1; i < batch_repeat; ++i) {
-      api::utils::ivec3 dst_offset =
-          api::utils::make_ivec3({0, 0, i * running_range.data[2]}, false);
+      api::utils::ivec3 dst_offset = {0, 0, i * running_range.data[2]};
 
       add_copy_offset_node(
           graph, out, running_range, src_offset, dst_offset, out);

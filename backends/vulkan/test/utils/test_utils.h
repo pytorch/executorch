@@ -161,14 +161,14 @@ inline int64_t get_buf_idx(
 
   const std::vector<int64_t>& sizes = vten_ptr->sizes();
 
-  int64_t c = dim_at<Dim4D::Channel>(sizes);
-  int64_t h = dim_at<Dim4D::Height>(sizes);
-  int64_t w = dim_at<Dim4D::Width>(sizes);
+  int64_t c = dim_at<kChannel4D>(sizes);
+  int64_t h = dim_at<kHeight4D>(sizes);
+  int64_t w = dim_at<kWidth4D>(sizes);
 
-  int64_t ni = dim_at<Dim4D::Batch>(tensor_coor);
-  int64_t ci = dim_at<Dim4D::Channel>(tensor_coor);
-  int64_t hi = dim_at<Dim4D::Height>(tensor_coor);
-  int64_t wi = dim_at<Dim4D::Width>(tensor_coor);
+  int64_t ni = dim_at<kBatch4D>(tensor_coor);
+  int64_t ci = dim_at<kChannel4D>(tensor_coor);
+  int64_t hi = dim_at<kHeight4D>(tensor_coor);
+  int64_t wi = dim_at<kWidth4D>(tensor_coor);
 
   return (ni * c * h * w + ci * h * w + hi * w + wi);
 }

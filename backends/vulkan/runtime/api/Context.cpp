@@ -30,12 +30,12 @@ Context::Context(size_t adapter_i, const ContextConfig& config)
       device_(adapter_p_->device_handle()),
       queue_(adapter_p_->request_queue()),
       // Resource pools
-      command_pool_(device_, queue_.family_index, config_.cmdPoolConfig),
-      descriptor_pool_(device_, config_.descriptorPoolConfig),
+      command_pool_(device_, queue_.family_index, config_.cmd_pool_config),
+      descriptor_pool_(device_, config_.descriptor_pool_config),
       fences_(device_),
 // Diagnostics
 #ifdef USE_VULKAN_GPU_DIAGNOSTICS
-      querypool_(config_.queryPoolConfig, adapter_p_),
+      querypool_(config_.query_pool_config, adapter_p_),
 #endif /* USE_VULKAN_GPU_DIAGNOSTICS */
       // Command buffer submission
       cmd_mutex_{},
@@ -143,7 +143,7 @@ bool available() {
 Context* context() {
   static const std::unique_ptr<Context> context([]() -> Context* {
     try {
-      const uint32_t submit_frequency = 16u;
+      const uint32_t cmd_submit_frequency = 16u;
 
       const CommandPoolConfig cmd_config{
           32u, // cmdPoolInitialSize
@@ -165,10 +165,10 @@ Context* context() {
       };
 
       const ContextConfig config{
-          submit_frequency, // cmdSubmitFrequency
-          cmd_config, // cmdPoolConfig
-          descriptor_pool_config, // descriptorPoolConfig
-          query_pool_config, // queryPoolConfig
+          cmd_submit_frequency,
+          cmd_config,
+          descriptor_pool_config,
+          query_pool_config,
       };
 
       return new Context(runtime()->default_adapter_i(), config);

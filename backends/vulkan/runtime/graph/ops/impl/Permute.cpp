@@ -17,8 +17,9 @@
 
 namespace vkcompute {
 
+using api::utils::ivec2;
 using api::utils::ivec3;
-using api::utils::uvec2;
+using api::utils::ivec4;
 using api::utils::uvec4;
 
 namespace {
@@ -53,7 +54,7 @@ void add_permute_node(
 
   check_args(*t_in, permute_dims, *t_out);
 
-  uvec4 out_dims{0u, 1u, 2u, 3u};
+  ivec4 out_dims{0, 1, 2, 3};
 
   int64_t out_dim = t_out->dim();
   std::vector<bool> seen(out_dim);
@@ -63,22 +64,22 @@ void add_permute_node(
         !seen[permute_dim], "Argument dim ", permute_dim, "  is repeated");
     seen[permute_dim] = true;
 
-    out_dims.data[(4u - out_dim) + i] = permute_dim + (4u - out_dim);
+    out_dims.data[(4u - out_dim) + i] = permute_dim + (4 - out_dim);
   }
 
   std::string kernel_name = "permute";
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  uint32_t out_channels = dim_at<Dim4D::Channel>(t_out->sizes());
-  uint32_t in_channels = dim_at<Dim4D::Channel>(t_in->sizes());
+  int32_t out_channels = dim_at<kChannel4D>(t_out->sizes());
+  int32_t in_channels = dim_at<kChannel4D>(t_in->sizes());
 
-  uint32_t out_c_aligned = api::utils::align_up(out_channels, 4u);
-  uint32_t in_c_aligned = api::utils::align_up(in_channels, 4u);
+  int32_t out_c_aligned = api::utils::align_up(out_channels, 4);
+  int32_t in_c_aligned = api::utils::align_up(in_channels, 4);
 
   const struct Block final {
-    uvec4 out_ndims;
-    uvec2 ch_info;
+    ivec4 out_ndims;
+    ivec2 ch_info;
   } params{
       out_dims,
       {out_c_aligned, in_c_aligned},

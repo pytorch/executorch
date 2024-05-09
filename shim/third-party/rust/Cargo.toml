@@ -22,7 +22,7 @@ path = "top/main.rs"
 
 gazebo = {version = "0.8.1", features = ["str_pattern_extensions"]}
 fbinit = "0.1"
-sorted_vector_map = "0.1"
+sorted_vector_map = "0.2"
 watchman_client = "0.8.0"
 
 annotate-snippets = { version = "0.9.0", features = ["color"] }
@@ -50,6 +50,7 @@ bytesize = "1.1.0"
 chrono = "0.4.28"
 clap = { package = "clap", version = "4.5.4", features = ["derive", "env", "string"] }
 clap-3 = { package = "clap", version = "3.2.24", features = ["derive", "env", "regex", "unicode", "wrap_help"] }
+clap_complete = { package = "clap_complete", version = "4.5.1" }
 common-path = "1.0.0"
 compact_str = "0.6.1"
 constant_time_eq = "0.2.4"
