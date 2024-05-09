@@ -13,7 +13,7 @@ from torch import fx
 from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
 from torch.ao.quantization.pt2e.graph_utils import find_sequential_partitions
 from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import OperatorConfig
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer_utils import OperatorConfig
 
 
 def get_uint8_tensor_spec(observer_or_fake_quant_ctr):

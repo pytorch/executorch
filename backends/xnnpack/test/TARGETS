@@ -75,3 +75,19 @@ runtime.python_test(
         "//executorch/backends/xnnpack:xnnpack_preprocess",
     ],
 )
+
+runtime.python_test(
+    name = "test_xnnpack_quantizer",
+    srcs = [
+        "quantizer/test_xnnpack_quantizer.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/expecttest:expecttest",
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/quantizer:xnnpack_quantizer",
+    ],
+)

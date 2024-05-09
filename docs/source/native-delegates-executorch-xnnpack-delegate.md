@@ -84,7 +84,7 @@ The XNNPACK delegate can also be used as a backend to execute symmetrically quan
 ### Configuring the XNNPACKQuantizer
 
 ```python
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
   XNNPACKQuantizer,
   get_symmetric_quantization_config,
 )
