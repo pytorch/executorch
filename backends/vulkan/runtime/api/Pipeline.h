@@ -71,7 +71,7 @@ class SpecVarList final {
   }
 
   inline uint32_t size() const {
-    return api::utils::safe_downcast<uint32_t>(vars.size());
+    return utils::safe_downcast<uint32_t>(vars.size());
   }
 
   inline uint32_t data_nbytes() const {
