@@ -362,12 +362,12 @@ void PipelineLayoutCache::purge() {
 
 ComputePipelineCache::ComputePipelineCache(
     VkDevice device,
-    const std::string& file_path)
+    const std::string& cache_data_path)
     : cache_mutex_{},
       device_(device),
       pipeline_cache_{VK_NULL_HANDLE},
       cache_{},
-      file_path_(file_path) {
+      cache_data_path_(cache_data_path) {
   VkPipelineCacheCreateInfo pipeline_cache_create_info{};
 
   auto buffer = load_cache();
@@ -430,12 +430,12 @@ void ComputePipelineCache::purge() {
 
 std::vector<char> ComputePipelineCache::load_cache() {
   // Return if path is not specified; this means the optimization is disabled
-  if (file_path_.empty()) {
+  if (cache_data_path_.empty()) {
     return {};
   }
 
   // Return if file doesn't exist; this is expected on the first model-load
-  std::ifstream file(file_path_, std::ios::binary | std::ios::ate);
+  std::ifstream file(cache_data_path_, std::ios::binary | std::ios::ate);
   if (file.fail()) {
     return {};
   }
@@ -456,7 +456,7 @@ void ComputePipelineCache::save_cache() {
   std::vector<char> buffer(size);
   vkGetPipelineCacheData(device_, pipeline_cache_, &size, buffer.data());
 
-  std::ofstream file(file_path_, std::ios::binary);
+  std::ofstream file(cache_data_path_, std::ios::binary);
   file.write(buffer.data(), buffer.size());
 }
 

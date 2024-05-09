@@ -102,7 +102,7 @@ class Adapter final {
       VkInstance instance,
       PhysicalDevice physical_device,
       const uint32_t num_queues,
-      const std::string& pipeline_cache_file_path);
+      const std::string& cache_data_path);
 
   Adapter(const Adapter&) = delete;
   Adapter& operator=(const Adapter&) = delete;

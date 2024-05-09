@@ -253,14 +253,14 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime() {
 #endif /* VULKAN_DEBUG */
   const bool init_default_device = true;
   const uint32_t num_requested_queues = 1; // TODO: raise this value
-  const std::string pipeline_cache_file_path = ""; // TODO: expose to client
+  const std::string cache_data_path = ""; // TODO: expose to client
 
   const RuntimeConfiguration default_config{
       enable_validation_messages,
       init_default_device,
       AdapterSelector::First,
       num_requested_queues,
-      pipeline_cache_file_path,
+      cache_data_path,
   };
 
   try {
@@ -356,7 +356,7 @@ uint32_t Runtime::create_adapter(const Selector& selector) {
       instance_,
       device_mapping.first,
       config_.num_requested_queues,
-      config_.pipeline_cache_file_path));
+      config_.cache_data_path));
   device_mapping.second = adapter_i;
 
   return adapter_i;
