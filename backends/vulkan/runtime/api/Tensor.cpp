@@ -234,7 +234,7 @@ VkMemoryRequirements vTensor::get_memory_requirements() const {
   return {};
 }
 
-void vTensor::bind_allocation(const api::MemoryAllocation& allocation) {
+void vTensor::bind_allocation(const api::Allocation& allocation) {
   switch (storage_type()) {
     case api::kBuffer:
       storage_.buffer_.bind_allocation(allocation);
