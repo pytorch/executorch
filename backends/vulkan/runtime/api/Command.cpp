@@ -133,16 +133,14 @@ void CommandBuffer::insert_barrier(PipelineBarrier& pipeline_barrier) {
     if (!pipeline_barrier.buffer_barrier_handles.empty()) {
       pipeline_barrier.buffer_barrier_handles.clear();
     }
-    for (const api::BufferMemoryBarrier& memory_barrier :
-         pipeline_barrier.buffers) {
+    for (const BufferMemoryBarrier& memory_barrier : pipeline_barrier.buffers) {
       pipeline_barrier.buffer_barrier_handles.push_back(memory_barrier.handle);
     }
 
     if (!pipeline_barrier.image_barrier_handles.empty()) {
       pipeline_barrier.image_barrier_handles.clear();
     }
-    for (const api::ImageMemoryBarrier& memory_barrier :
-         pipeline_barrier.images) {
+    for (const ImageMemoryBarrier& memory_barrier : pipeline_barrier.images) {
       pipeline_barrier.image_barrier_handles.push_back(memory_barrier.handle);
     }
     vkCmdPipelineBarrier(
@@ -185,11 +183,11 @@ void CommandBuffer::dispatch(const utils::uvec3& global_workgroup_size) {
 }
 
 void CommandBuffer::copy_buffer_to_buffer(
-    const api::VulkanBuffer& source,
-    const api::VulkanBuffer& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const VulkanBuffer& source,
+    const VulkanBuffer& destination,
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   VK_CHECK_COND(
       state_ == CommandBuffer::State::BARRIERS_INSERTED,
       "Vulkan CommandBuffer: called copy_buffer_to_buffer() on a command buffer whose state "
@@ -208,11 +206,11 @@ void CommandBuffer::copy_buffer_to_buffer(
 }
 
 void CommandBuffer::copy_texture_to_texture(
-    const api::VulkanImage& source,
-    const api::VulkanImage& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const VulkanImage& source,
+    const VulkanImage& destination,
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   VK_CHECK_COND(
       state_ == CommandBuffer::State::BARRIERS_INSERTED,
       "Vulkan CommandBuffer: called copy_texture_to_texture() on a command buffer whose state "
@@ -253,11 +251,11 @@ void CommandBuffer::copy_texture_to_texture(
 }
 
 void CommandBuffer::copy_texture_to_buffer(
-    const api::VulkanImage& source,
-    const api::VulkanBuffer& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const VulkanImage& source,
+    const VulkanBuffer& destination,
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   VK_CHECK_COND(
       state_ == CommandBuffer::State::BARRIERS_INSERTED,
       "Vulkan CommandBuffer: called copy_texture_to_buffer() on a command buffer whose state "
@@ -291,11 +289,11 @@ void CommandBuffer::copy_texture_to_buffer(
 }
 
 void CommandBuffer::copy_buffer_to_texture(
-    const api::VulkanBuffer& source,
-    const api::VulkanImage& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const VulkanBuffer& source,
+    const VulkanImage& destination,
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   VK_CHECK_COND(
       state_ == CommandBuffer::State::BARRIERS_INSERTED,
       "Vulkan CommandBuffer: called copy_buffer_to_texture() on a command buffer whose state "
