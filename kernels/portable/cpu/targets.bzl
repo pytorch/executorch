@@ -560,6 +560,7 @@ _ATEN_OPS = (
         name = "op_maximum",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
             ":scalar_utils",
         ],
     ),
@@ -591,6 +592,7 @@ _ATEN_OPS = (
         name = "op_minimum",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
             ":scalar_utils",
         ],
     ),
