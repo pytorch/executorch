@@ -179,7 +179,7 @@ inline int64_t get_buf_idx(
 
 void submit_to_gpu();
 
-api::MemoryAllocation allocate_memory_for(const vTensor& vten);
+api::Allocation allocate_memory_for(const vTensor& vten);
 
 VmaTotalStatistics get_vma_stats();
 

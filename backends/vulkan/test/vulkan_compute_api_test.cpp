@@ -301,11 +301,11 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   std::fill(data_b.begin(), data_b.end(), 1.5f);
 
   // Allocate memory at the last possible opportunity
-  api::MemoryAllocation a_mem = allocate_memory_for(a);
+  api::Allocation a_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_mem);
-  api::MemoryAllocation b_mem = allocate_memory_for(b);
+  api::Allocation b_mem = allocate_memory_for(b);
   b.image().bind_allocation(b_mem);
-  api::MemoryAllocation c_mem = allocate_memory_for(c);
+  api::Allocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
   // One allocation for each tensor
@@ -341,15 +341,15 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   // a and d can share the same memory allocation
-  api::MemoryAllocation a_d_mem = allocate_memory_for(a);
+  api::Allocation a_d_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_d_mem);
   d.image().bind_allocation(a_d_mem);
   // b and e can share the same memory allocation
-  api::MemoryAllocation b_e_mem = allocate_memory_for(b);
+  api::Allocation b_e_mem = allocate_memory_for(b);
   b.image().bind_allocation(b_e_mem);
   e.image().bind_allocation(b_e_mem);
   // c must have its own memory allocation
-  api::MemoryAllocation c_mem = allocate_memory_for(c);
+  api::Allocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
   // 3 allocations should be made
@@ -394,7 +394,7 @@ TEST_F(VulkanComputeAPITest, resource_bind_twice_fails) {
   vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
   // Try to double bind a resource, which should fail
-  api::MemoryAllocation a_mem = allocate_memory_for(a);
+  api::Allocation a_mem = allocate_memory_for(a);
   EXPECT_THROW(a.image().bind_allocation(a_mem), api::Error);
 }
 
@@ -402,9 +402,9 @@ TEST_F(VulkanComputeAPITest, resource_destructor_non_owning_memory) {
   // Check that the destructor of a vTensor that does not own its memory
   // does not free the memory
 
-  api::MemoryAllocation memory;
+  api::Allocation memory;
 
-  // Default MemoryAllocation constructor should not allocate memory
+  // Default Allocation constructor should not allocate memory
   EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   std::vector<int64_t> sizes = {4, 4, 1};
@@ -464,11 +464,11 @@ TEST_F(
   vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
   vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
-  api::MemoryAllocation a_mem = allocate_memory_for(a);
+  api::Allocation a_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_mem);
-  api::MemoryAllocation b_mem = allocate_memory_for(b);
+  api::Allocation b_mem = allocate_memory_for(b);
   b.image().bind_allocation(b_mem);
-  api::MemoryAllocation c_mem = allocate_memory_for(c);
+  api::Allocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
   execute_and_check_add(a, b, c, 4.0f, 8.0f);

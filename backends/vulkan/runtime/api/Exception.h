@@ -9,13 +9,14 @@
 #pragma once
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
+#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+
+#include <executorch/backends/vulkan/runtime/api/StringUtil.h>
+
 #include <exception>
 #include <ostream>
 #include <string>
 #include <vector>
-
-#include <executorch/backends/vulkan/runtime/api/StringUtil.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
 #define VK_CHECK(function)                                                \
   do {                                                                    \
