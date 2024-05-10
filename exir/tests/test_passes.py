@@ -1630,10 +1630,11 @@ class TestPasses(unittest.TestCase):
         assert gm_res is not None
         gm = gm_res.graph_module
 
-        # Check before transformation
+        # Check after transformation
+        # Note: one view copy is not replaced, because it's the output of the graph
         FileCheck().check_count(
-            "torch.ops.aten.view_copy.default", 0, exactly=True
+            "torch.ops.aten.view_copy.default", 1, exactly=True
         ).run(gm.code)
-        FileCheck().check_count("executorch_exir_memory_view", 2, exactly=True).run(
+        FileCheck().check_count("executorch_exir_memory_view", 1, exactly=True).run(
             gm.code
         )

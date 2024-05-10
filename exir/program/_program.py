@@ -412,7 +412,7 @@ class ExirExportedProgram:
         # Existing user passes dont use run so Im just cheating here because they dont need to work on mutable buffers yet.
         # After exir.capture is gone I will clean up the memory planning infra to be consistent.
         # Frankly all of exir has big code quality issues because of the migrations that need to be addressed.
-        new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[19]
+        new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[29]
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
         new_prog = ExirExportedProgram(
@@ -889,7 +889,8 @@ class EdgeProgramManager:
         )
 
     def to_executorch(
-        self, config: Optional[ExecutorchBackendConfig] = None
+        self,
+        config: Optional[ExecutorchBackendConfig] = None,
     ) -> "ExecutorchProgramManager":
         """
         Transforms the program to the ExecuTorch backend.
@@ -926,13 +927,19 @@ class EdgeProgramManager:
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
 
+            if isinstance(config.memory_planning_pass, dict):
+                memory_planning_pass = config.memory_planning_pass.get(
+                    name, ExecutorchBackendConfig().memory_planning_pass
+                )
+            else:
+                memory_planning_pass = config.memory_planning_pass
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
-            if hasattr(config.memory_planning_pass, "run"):
-                new_gm_res = config.memory_planning_pass.run(  # pyre-ignore[16]
+            if hasattr(memory_planning_pass, "run"):
+                new_gm_res = memory_planning_pass.run(  # pyre-ignore[16]
                     new_gm, new_signature
                 )
             else:
-                new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[19]
+                new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
 
