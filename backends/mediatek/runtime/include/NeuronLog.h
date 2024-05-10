@@ -26,6 +26,9 @@ namespace neuron {
 #define LogError(tag, format, ...) \
   AndroidLog(ANDROID_LOG_ERROR, tag, format, ##__VA_ARGS__)
 
+#define LogWarn(tag, format, ...) \
+  AndroidLog(ANDROID_LOG_WARN, tag, format, ##__VA_ARGS__)
+
 #define LogInfo(tag, format, ...) \
   AndroidLog(ANDROID_LOG_INFO, tag, format, ##__VA_ARGS__)
 

@@ -28,11 +28,17 @@ Result<DelegateHandle*> NeuronBackend::init(BackendInitContext& context,
                                             FreeableBuffer* processed,
                                             ArrayRef<CompileSpec> compile_specs) const {
     NeuronDelegateSetting setting;
-    auto enable = -1;
-    if (enable != -1) {
-        setting.mImportForever = enable > 0 ? true : false;
+    for (auto& compile_spec : compile_specs) {
+        if (std::strcmp(compile_spec.key, kHighAddrKey) == 0) {
+            setting.mHighAddr = *static_cast<char*>(compile_spec.value.buffer);
+            LogInfo("NeuronBackend", "IsHighAddr Enable : %d", setting.mHighAddr);
+        } else if (std::strcmp(compile_spec.key, kImportForeverKey) == 0) {
+            setting.mImportForever = *static_cast<char*>(compile_spec.value.buffer);
+            LogInfo("NeuronBackend", "IsImportForever Enable : %d", setting.mImportForever);
+        } else {
+            LogWarn("NeuronBackend", "unknown compile spec: %s", compile_spec.key);
+        }
     }
-    LogInfo("NeuronBackend", "IsImportForever Enable : %d", setting.mImportForever);
     auto Payload = NeuronPayload(processed->data(), processed->size());
     LogInfo("NeuronBackend", "version %u, input %u, output %u, length %u, payload size: %zu",
                  Payload.Header.Version, Payload.Header.InputCount, Payload.Header.OutputCount, Payload.Header.DataLen, processed->size());

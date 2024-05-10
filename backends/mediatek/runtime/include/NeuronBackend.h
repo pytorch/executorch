@@ -43,13 +43,24 @@ class NeuronBackend final : public PyTorchBackendInterface {
   bool is_available() const override;
 };
 
-struct NeuronDelegateSetting {
-  bool mHighAddr = true;
+constexpr char kHighAddrKey[] = "HighAddr";
+constexpr char kImportForeverKey[] = "ImportForever";
 
-  bool mImportForever = true;
+struct NeuronDelegateSetting {
+  bool mHighAddr = false;
+
+  bool mImportForever = false;
 
   std::string ToRuntimeOption() {
-    return "";
+    if (mHighAddr && mImportForever) {
+      return "--apusys-config \"{ \\\"high_addr\\\": true, \\\"import_forever\\\": true }\"";
+    } else if (mHighAddr) {
+      return "--apusys-config \"{ \\\"high_addr\\\": true }\"";
+    } else if (mImportForever) {
+      return "--apusys-config \"{ \\\"import_forever\\\": true }\"";
+    } else {
+      return "";
+    }
   }
 };
 
