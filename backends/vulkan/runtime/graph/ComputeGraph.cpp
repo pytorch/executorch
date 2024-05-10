@@ -280,7 +280,12 @@ ValueRef ComputeGraph::set_output_tensor(
     api::ScalarType dtype = get_tensor(idx)->dtype();
     size_t gpu_numel = get_tensor(idx)->gpu_numel();
     ValueRef staging_idx = add_staging(dtype, gpu_numel);
-    add_tensor_to_staging_node(*this, idx, staging_idx);
+    // We only run this when the tensor is non-empty.  When the underlying
+    // tensor is empty (e.g. gpu_numel == 0), we do not allocate a VkImage to
+    // tensor, we will not be able to bind the node for execution.
+    if (gpu_numel > 0) {
+      add_tensor_to_staging_node(*this, idx, staging_idx);
+    }
     outputs_.push_back({idx, staging_idx});
     return staging_idx;
   }
