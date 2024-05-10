@@ -42,7 +42,7 @@ void main() {
 
   VEC4_T v = VEC4_T(texelFetch(image_in, pos, 0));
 
-  ivec3 param_pos = ivec3(pos.z % num_texel_per_batch  , 0, 0);
+  ivec3 param_pos = ivec3(pos.z % num_texel_per_batch, 0, 0);
 
   VEC4_T weight = VEC4_T(texelFetch(weight_in, param_pos, 0));
   VEC4_T bias = VEC4_T(texelFetch(bias_in, param_pos, 0));

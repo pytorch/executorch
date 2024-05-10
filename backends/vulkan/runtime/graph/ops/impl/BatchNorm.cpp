@@ -16,23 +16,24 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-#include <iostream>
-
 namespace vkcompute {
 
-ValueRef enforce_width_packing(ComputeGraph& graph, ValueRef arg) {
-  if (graph.memory_layout_of(arg) == api::kWidthPacked) {
-    return arg;
-  }
+ValueRef prepack_arg(
+    ComputeGraph& graph,
+    ValueRef arg_ref,
+    int64_t num_channels,
+    const std::string& debug_name) {
+  VK_CHECK_COND(
+      graph.val_is_tref(arg_ref),
+      "native_batch_norm requires ",
+      debug_name,
+      " to be a constant tensorref");
+  VK_CHECK_COND(graph.get_tref(arg_ref)->sizes[0] == num_channels);
 
-  std::vector<int64_t> sizes = graph.get_tensor(arg)->sizes();
-
-  ValueRef w_packed = graph.add_tensor(sizes, api::kFloat, api::kWidthPacked);
-
-  auto viewFn = VK_GET_OP_FN("aten.view_copy.default");
-  viewFn(graph, {arg, graph.add_none(), w_packed});
-
-  return w_packed;
+  // batch_norm's param are broadcasted on the channel dimension.
+  // In this implementation, we pack the weights along the x dimension, and
+  // in the shader, we lookup using the along the x.
+  return prepack_if_tensor_ref(graph, arg_ref, api::kWidthPacked);
 }
 
 void add_native_batch_norm_node(
@@ -44,43 +45,24 @@ void add_native_batch_norm_node(
     ValueRef var_ref,
     ValueRef eps_ref,
     ValueRef out_tuple_ref) {
-  std::cout << "AAAA" << std::endl;
+  std::vector<int64_t> in_sizes = graph.get_tensor(in_ref)->sizes();
+  std::vector<int64_t> out_sizes = graph.get_tensor(in_ref)->sizes();
 
-  if (graph.val_is_none(weight_ref)) {
-    VK_THROW("native_batch_norm requires weight to be non-None");
-  }
+  VK_CHECK_COND(in_sizes.size() == 4, "BatchNorm only support 4d tensor");
+  VK_CHECK_COND(out_sizes.size() == 4, "BatchNorm only support 4d tensor");
 
-  VK_CHECK_COND(
-      !graph.val_is_none(weight_ref),
-      "native_batch_norm requires weight to be non-None");
-  VK_CHECK_COND(
-      !graph.val_is_none(bias_ref),
-      "native_batch_norm requires bias to be non-None");
-  VK_CHECK_COND(
-      !graph.val_is_none(mean_ref),
-      "native_batch_norm requires mean to be non-None");
-  VK_CHECK_COND(
-      !graph.val_is_none(var_ref),
-      "native_batch_norm requires var to be non-None");
+  int64_t num_channels = dim_at<kChannel4D>(in_sizes);
 
-  // batch_norm's param are broadcasted on the channel dimension.
-  // In this implementation, we pack the weights along the x dimension, and
-  // in the shader, we lookup using the along the x.
-  ValueRef arg_weight =
-      prepack_if_tensor_ref(graph, weight_ref, api::kWidthPacked);
-  ValueRef arg_bias = prepack_if_tensor_ref(graph, bias_ref, api::kWidthPacked);
-  ValueRef arg_mean = prepack_if_tensor_ref(graph, mean_ref, api::kWidthPacked);
-  ValueRef arg_var = prepack_if_tensor_ref(graph, var_ref, api::kWidthPacked);
+  ValueRef arg_weight = prepack_arg(graph, weight_ref, num_channels, "weight");
+  ValueRef arg_bias = prepack_arg(graph, bias_ref, num_channels, "bias");
+  ValueRef arg_mean = prepack_arg(graph, mean_ref, num_channels, "mean");
+  ValueRef arg_var = prepack_arg(graph, var_ref, num_channels, "var");
   float epsilon = graph.extract_scalar<float>(eps_ref);
-
-  arg_weight = enforce_width_packing(graph, arg_weight);
-  arg_bias = enforce_width_packing(graph, arg_bias);
-
-  arg_mean = enforce_width_packing(graph, arg_mean);
-  arg_var = enforce_width_packing(graph, arg_var);
 
   vTensorPtr t_in = graph.get_tensor(in_ref);
 
+  // Only the first element of the return value is propagated. The remaining 2
+  // elements are zero-size dummy tensor.
   const auto out_tuple_val = graph.get_value_list(out_tuple_ref);
 
   ValueRef out_ref = out_tuple_val->at(0);
@@ -88,17 +70,9 @@ void add_native_batch_norm_node(
   VK_CHECK_COND(!graph.val_is_tref(out_ref), "Output should not be tref");
   vTensorPtr t_out = graph.get_tensor(out_ref);
 
-  VK_CHECK_COND(t_in->dim() == 4, "BatchNorm only support 4d tensor");
-  VK_CHECK_COND(t_out->dim() == 4, "BatchNorm only support 4d tensor");
-
-  int64_t num_channels = dim_at<kChannel4D>(t_in->sizes());
   VK_CHECK_COND(
       dim_at<kChannel4D>(t_out->sizes()) == num_channels,
       "out channel must match in channel");
-  VK_CHECK_COND(graph.get_tensor(arg_weight)->size(0) == num_channels);
-  VK_CHECK_COND(graph.get_tensor(arg_bias)->size(0) == num_channels);
-  VK_CHECK_COND(graph.get_tensor(arg_mean)->size(0) == num_channels);
-  VK_CHECK_COND(graph.get_tensor(arg_var)->size(0) == num_channels);
 
   std::string kernel_name = "batchnorm";
   add_dtype_suffix(kernel_name, *t_out);
@@ -106,8 +80,8 @@ void add_native_batch_norm_node(
   api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  int32_t num_texel_per_batch = static_cast<int32_t>(
-      std::ceil(static_cast<float>(dim_at<kChannel4D>(t_in->sizes())) / 4));
+  int32_t num_texel_per_batch =
+      api::utils::div_up((dim_at<kChannel4D>(t_in->sizes())), 4);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,

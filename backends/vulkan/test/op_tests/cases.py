@@ -656,73 +656,73 @@ def get_native_batch_norm_inputs():
         "VkSliceTest", ["self", "weight", "bias", "mean", "var", "momentum", "eps"]
     )
 
-    test_suite = VkTestSuite(
-        [
-            Test(
-                self=(1, 1, 2, 5),
-                weight=(1,),
-                bias=(1,),
-                mean=(1,),
-                var=(1,),
-                momentum=0.0,
-                eps=0.001,
-            ),
-            Test(
-                self=(S2, 1, 2, 5),
-                weight=(1,),
-                bias=(1,),
-                mean=(1,),
-                var=(1,),
-                momentum=0.0,
-                eps=0.001,
-            ),
-            Test(
-                self=(1, S2, 2, 5),
-                weight=(S2,),
-                bias=(S2,),
-                mean=(S2,),
-                var=(S2,),
-                momentum=0.0,
-                eps=0.001,
-            ),
-            Test(
-                self=(9, S1, 2, 5),
-                weight=(S1,),
-                bias=(S1,),
-                mean=(S1,),
-                var=(S1,),
-                momentum=0.0,
-                eps=0.01,
-            ),
-            Test(
-                self=(3, S1, 2, 5),
-                weight=(S1,),
-                bias=(S1,),
-                mean=(S1,),
-                var=(S1,),
-                momentum=0.0,
-                eps=0.001,
-            ),
-            Test(
-                self=(3, S2, 2, 5),
-                weight=(S2,),
-                bias=(S2,),
-                mean=(S2,),
-                var=(S2,),
-                momentum=0.0,
-                eps=0.001,
-            ),
-            Test(
-                self=(3, S2, 2, 5),
-                weight=(S2,),
-                bias=(S2,),
-                mean=(S2,),
-                var=(S2,),
-                momentum=0.0,
-                eps=0.000,
-            ),
-        ]
-    )
+    test_cases = [
+        Test(
+            self=(1, 1, 2, 5),
+            weight=(1,),
+            bias=(1,),
+            mean=(1,),
+            var=(1,),
+            momentum=0.0,
+            eps=0.001,
+        ),
+        Test(
+            self=(S2, 1, 2, 5),
+            weight=(1,),
+            bias=(1,),
+            mean=(1,),
+            var=(1,),
+            momentum=0.0,
+            eps=0.001,
+        ),
+        Test(
+            self=(1, S2, 2, 5),
+            weight=(S2,),
+            bias=(S2,),
+            mean=(S2,),
+            var=(S2,),
+            momentum=0.0,
+            eps=0.001,
+        ),
+        Test(
+            self=(9, S1, 2, 5),
+            weight=(S1,),
+            bias=(S1,),
+            mean=(S1,),
+            var=(S1,),
+            momentum=0.0,
+            eps=0.01,
+        ),
+        Test(
+            self=(3, S1, 2, 5),
+            weight=(S1,),
+            bias=(S1,),
+            mean=(S1,),
+            var=(S1,),
+            momentum=0.0,
+            eps=0.001,
+        ),
+        Test(
+            self=(3, S2, 2, 5),
+            weight=(S2,),
+            bias=(S2,),
+            mean=(S2,),
+            var=(S2,),
+            momentum=0.0,
+            eps=0.001,
+        ),
+        Test(
+            self=(3, S2, 2, 5),
+            weight=(S2,),
+            bias=(S2,),
+            mean=(S2,),
+            var=(S2,),
+            momentum=0.0,
+            eps=0.000,
+        ),
+    ]
+
+    test_suite = VkTestSuite(test_cases)
 
     return test_suite
 
