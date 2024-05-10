@@ -1,0 +1,10 @@
+batchnorm:
+  parameter_names_with_default_values:
+    DTYPE: float
+    NDIM: 3
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+  shader_variants:
+    - NAME: batchnorm
