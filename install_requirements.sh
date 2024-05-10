@@ -73,6 +73,7 @@ EXIR_REQUIREMENTS=(
 # pip packages needed for development.
 DEVEL_REQUIREMENTS=(
   cmake  # For building binary targets.
+  "pip>=23" # For building the pip package.
   pyyaml  # Imported by the kernel codegen tools.
   "setuptools>=63"  # For building the pip package.
   tomli  # Imported by extract_sources.py when using python < 3.11.
