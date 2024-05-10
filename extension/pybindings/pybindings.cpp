@@ -190,12 +190,13 @@ class Module final {
       for (size_t i = 0; i < output_storages->size(); ++i) {
         Error output_status = method->set_output_data_ptr(
             (*output_storages)[i].data(), (*output_storages)[i].size(), i);
-        if (output_status != Error::Ok) {
-          // This can error if the outputs are already pre-allocated. Ignore
-          // this error because it doesn't affect correctness, but log it.
+        // InvalidState can be the status if outputs are already memory planned.
+        // That's fine and we don't need to alert the user to that error.
+        if (output_status != Error::Ok &&
+            output_status != Error::InvalidState) {
           ET_LOG(
-              Info,
-              "Cannot set_output_data_ptr(): this likely means the outputs were MemoryPlanned inspect the error code to know for sure, but likely this is not an issue. 0x%" PRIx32,
+              Error,
+              "Cannot set_output_data_ptr(): 0x%" PRIx32,
               static_cast<uint32_t>(output_status));
         }
       }

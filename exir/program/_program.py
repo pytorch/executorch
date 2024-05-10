@@ -7,7 +7,7 @@
 import copy
 import io
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Set, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Union
 
 import torch
 import torch._export
@@ -412,7 +412,7 @@ class ExirExportedProgram:
         # Existing user passes dont use run so Im just cheating here because they dont need to work on mutable buffers yet.
         # After exir.capture is gone I will clean up the memory planning infra to be consistent.
         # Frankly all of exir has big code quality issues because of the migrations that need to be addressed.
-        new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[19]
+        new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[29]
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
         new_prog = ExirExportedProgram(
@@ -550,9 +550,7 @@ def _get_aten_to_edge_passes(config: EdgeCompileConfig):
         [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
     )
 
-    post_op_replace_passes = (
-        [] if config._skip_dim_order else [MemoryFormatOpsPass()]
-    ) + base_post_op_replace_passes
+    post_op_replace_passes = base_post_op_replace_passes
 
     return pre_op_replace_passes, post_op_replace_passes
 
@@ -595,6 +593,10 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_gm_res = OpReplacePass()(new_gm)
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
+        if not config._skip_dim_order:
+            new_gm_res = MemoryFormatOpsPass()(new_gm)
+            assert new_gm_res is not None
+            new_gm = new_gm_res.graph_module
 
     for p in post_op_replace_passes:
         new_gm_res = p(new_gm)
@@ -612,8 +614,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         module_call_graph=new_ep.exported_program.module_call_graph,
         example_inputs=new_ep.exported_program.example_inputs,
         verifier=EXIREdgeDialectVerifier(
-            check_edge_ops=config._use_edge_ops,
-            enable=config._check_ir_validity,
+            edge_compile_config=config,
             class_only=True,
         ),
         constants=new_ep.exported_program.constants,
@@ -654,6 +655,56 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
     return passes
 
 
+def _generate_edge_program(
+    name: str, config: EdgeCompileConfig, program: ExportedProgram
+) -> ExportedProgram:
+
+    if config._check_ir_validity:
+        try:
+            EXIRATenDialectVerifier()(program.graph_module)
+        except ExportError as e:
+            logging.info(f"Input program {name} is not in ATen dialect.")
+            raise e
+
+    pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
+
+    passes = []
+    passes.append(
+        ReplaceViewOpsWithViewCopyOpsPass()
+    )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
+    passes.extend(pre_op_replace_passes)
+    if config._use_edge_ops:
+        passes.append(OpReplacePass())
+        if not config._skip_dim_order:
+            passes.append(MemoryFormatOpsPass())
+
+    gm = program.graph_module
+    for p in passes:
+        gm_res = p(gm)
+        assert gm_res is not None
+        gm = gm_res.graph_module
+
+    edge_program = ExportedProgram(
+        root=gm,
+        graph=gm.graph,
+        graph_signature=_get_updated_graph_signature(program.graph_signature, gm),
+        state_dict=program.state_dict,
+        range_constraints=program.range_constraints,
+        module_call_graph=program.module_call_graph,
+        example_inputs=program.example_inputs,
+        verifier=EXIREdgeDialectVerifier(
+            edge_compile_config=config,
+            class_only=True,
+        ),
+        constants=program.constants,
+    )
+    # Lift the tensor constants created in ScalarToTensorPass
+    edge_program = lift_constant_tensor_pass(edge_program)
+    edge_program = _transform(edge_program, *post_op_replace_passes)
+
+    return edge_program
+
+
 def to_edge(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     constant_methods: Optional[Dict[str, Any]] = None,
@@ -681,52 +732,12 @@ def to_edge(
         aten_programs = programs
 
     edge_programs: Dict[str, ExportedProgram] = {}
+
     for name, program in aten_programs.items():
         # Decompose to Core ATen
         program = program.run_decompositions(_default_decomposition_table())
+        edge_programs[name] = _generate_edge_program(name, config, program)
 
-        if config._check_ir_validity:
-            try:
-                EXIRATenDialectVerifier()(program.graph_module)
-            except ExportError as e:
-                logging.info(f"Input program {name} is not in ATen dialect.")
-                raise e
-
-        pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
-
-        passes = []
-        passes.append(
-            ReplaceViewOpsWithViewCopyOpsPass()
-        )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
-        passes.extend(pre_op_replace_passes)
-        if config._use_edge_ops:
-            passes.append(OpReplacePass())
-
-        gm = program.graph_module
-        for p in passes:
-            gm_res = p(gm)
-            assert gm_res is not None
-            gm = gm_res.graph_module
-
-        edge_program = ExportedProgram(
-            root=gm,
-            graph=gm.graph,
-            graph_signature=_get_updated_graph_signature(program.graph_signature, gm),
-            state_dict=program.state_dict,
-            range_constraints=program.range_constraints,
-            module_call_graph=program.module_call_graph,
-            example_inputs=program.example_inputs,
-            verifier=EXIREdgeDialectVerifier(
-                check_edge_ops=config._use_edge_ops,
-                enable=config._check_ir_validity,
-                class_only=True,
-            ),
-            constants=program.constants,
-        )
-        # Lift the tensor constants created in ScalarToTensorPass
-        edge_program = lift_constant_tensor_pass(edge_program)
-        edge_program = _transform(edge_program, *post_op_replace_passes)
-        edge_programs[name] = edge_program
     return EdgeProgramManager(edge_programs, constant_methods, config)
 
 
@@ -752,15 +763,14 @@ class EdgeProgramManager:
 
         Constructs an EdgeProgramManager from an existing set of exported programs in edge dialect.
         """
-        config = compile_config or EdgeCompileConfig()
+        self.compile_config = compile_config or EdgeCompileConfig()
         if not isinstance(edge_programs, dict):
             edge_programs = {"forward": edge_programs}
         for name, program in edge_programs.items():
             try:
-                EXIREdgeDialectVerifier(
-                    check_edge_ops=config._use_edge_ops,
-                    enable=config._check_ir_validity,
-                )(program.graph_module)
+                EXIREdgeDialectVerifier(edge_compile_config=self.compile_config)(
+                    program.graph_module
+                )
             except ExportError as e:
                 logging.info(f"Input program {name} is not in aten dialect.")
                 raise e
@@ -791,8 +801,7 @@ class EdgeProgramManager:
     def transform(
         self,
         passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
-        check_ir_validity: bool = True,
-        # We should also probably add check_edge_ops here as well
+        compile_config: Optional[EdgeCompileConfig] = None,
     ) -> "EdgeProgramManager":
         """
         Transforms the program according to the provided passes.
@@ -804,17 +813,22 @@ class EdgeProgramManager:
                 will be transformed with the provided passes. If it is a
                 dictionary, only method names specified in the dictionary will be
                 transformed with their corresponding passes.
+            compile_config: Compile config to use for veriy the correctness of model
+                graph after each pass. If not specified, the compile config of the
+                calling EdgeProgramManager will be used. It will be used in as compile
+                config of returned EdgeProgramManager.
 
         Returns:
             EdgeProgramManager: A copy of the calling EdgeProgramManager with the
             transformations applied.
         """
+        compile_config = compile_config or self.compile_config
         new_programs: Dict[str, ExportedProgram] = {}
         if isinstance(passes, dict):
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
                     new_programs[name] = _transform(program, *passes[name])
-                    EXIREdgeDialectVerifier(enable=check_ir_validity)(
+                    EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
                         new_programs[name].graph_module
                     )
                 else:
@@ -823,12 +837,12 @@ class EdgeProgramManager:
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
                 new_programs[name] = _transform(program, *passes)
-                EXIREdgeDialectVerifier(enable=check_ir_validity)(
+                EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
                     new_programs[name].graph_module
                 )
-        config = EdgeCompileConfig(_check_ir_validity=check_ir_validity)
+
         return EdgeProgramManager(
-            new_programs, copy.deepcopy(self._config_methods), config
+            new_programs, copy.deepcopy(self._config_methods), compile_config
         )
 
     def to_backend(
@@ -875,7 +889,8 @@ class EdgeProgramManager:
         )
 
     def to_executorch(
-        self, config: Optional[ExecutorchBackendConfig] = None
+        self,
+        config: Optional[ExecutorchBackendConfig] = None,
     ) -> "ExecutorchProgramManager":
         """
         Transforms the program to the ExecuTorch backend.
@@ -912,13 +927,19 @@ class EdgeProgramManager:
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
 
+            if isinstance(config.memory_planning_pass, dict):
+                memory_planning_pass = config.memory_planning_pass.get(
+                    name, ExecutorchBackendConfig().memory_planning_pass
+                )
+            else:
+                memory_planning_pass = config.memory_planning_pass
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
-            if hasattr(config.memory_planning_pass, "run"):
-                new_gm_res = config.memory_planning_pass.run(  # pyre-ignore[16]
+            if hasattr(memory_planning_pass, "run"):
+                new_gm_res = memory_planning_pass.run(  # pyre-ignore[16]
                     new_gm, new_signature
                 )
             else:
-                new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[19]
+                new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
 
@@ -1009,7 +1030,9 @@ class ExecutorchProgramManager:
         """
         return self._execution_programs[method_name]
 
-    def dump_executorch_program(self, verbose: bool = False) -> None:
+    def dump_executorch_program(
+        self, verbose: bool = False, out: Optional[TextIO] = None
+    ) -> None:
         """
         Prints the ExecuTorch binary in a human readable format.
 
@@ -1017,11 +1040,15 @@ class ExecutorchProgramManager:
             verbose (bool):
                 If False prints the binary in a condensed format.
                 If True prints the binary 1-1 with the specification in the schema.
+            out:
+                If None, prints to stdout.
+                If non-None, writes the string to that stream object. It can be
+                    a file object, a StringIO object, or any other TextIO subclass.
         """
         if verbose:
-            pretty_print(self._emitter_output.program)
+            pretty_print(self._emitter_output.program, out=out)
         else:
-            print_program(self._emitter_output.program)
+            print_program(self._emitter_output.program, out=out)
 
     @property
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:

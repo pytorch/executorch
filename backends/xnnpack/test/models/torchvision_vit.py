@@ -7,14 +7,14 @@
 import unittest
 
 import torch
-import torchvision.models as models
 from executorch.backends.xnnpack.test.tester import Tester
+from torchvision import models
 
 
 class TestViT(unittest.TestCase):
     vit = models.vision_transformer.vit_b_16(weights="IMAGENET1K_V1")
     vit = vit.eval()
-    model_inputs = (torch.ones(1, 3, 224, 224),)
+    model_inputs = (torch.randn(1, 3, 224, 224),)
     dynamic_shapes = (
         {
             2: torch.export.Dim("height", min=224, max=455),

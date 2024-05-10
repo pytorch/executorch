@@ -16,6 +16,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNGraph,
     XNode,
 )
+from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_FLAG_KEEP_DIMS
 
 
 @register_node_visitor
@@ -67,7 +68,7 @@ class AveragePooling2d(NodeVisitor):
                 dilation_width=0,  # Unused
                 input_id=input_id,
                 output_id=output_id,
-                flags=0,
+                flags=XNN_FLAG_KEEP_DIMS,
             ),
             debug_handle=debug_handle,
         )

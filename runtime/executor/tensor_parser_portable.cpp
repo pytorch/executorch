@@ -39,8 +39,7 @@ Result<torch::executor::Tensor> parseTensor(
           // Types that do not yet have deserialization support.
           scalar_type != exec_aten::ScalarType::ComplexHalf &&
           scalar_type != exec_aten::ScalarType::ComplexFloat &&
-          scalar_type != exec_aten::ScalarType::ComplexDouble &&
-          scalar_type != exec_aten::ScalarType::BFloat16,
+          scalar_type != exec_aten::ScalarType::ComplexDouble,
       InvalidProgram,
       "Invalid or unsupported ScalarType %" PRId8,
       static_cast<int8_t>(scalar_type));

@@ -189,7 +189,7 @@ class Export(Stage):
     ) -> None:
         self.exported_program = export(
             artifact, inputs, dynamic_shapes=self.dynamic_shapes
-        )
+        ).run_decompositions()
 
     @property
     def artifact(self) -> ExportedProgram:
@@ -474,7 +474,11 @@ class Tester:
         )
 
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
-        return self._run_stage(to_edge_stage or ToEdge())
+        # TODO(T182187531): Skip dim order for now. Support dim order and its op after alpha release.
+        if not to_edge_stage:
+            to_edge_stage = ToEdge()
+        to_edge_stage.edge_compile_conf._skip_dim_order = True
+        return self._run_stage(to_edge_stage)
 
     def run_passes(self, run_passes_stage: Optional[RunPasses] = None):
         return self._run_stage(run_passes_stage or RunPasses())
@@ -595,7 +599,7 @@ class Tester:
                 f"Output {i} does not match reference output.\n"
                 f"\tGiven atol: {atol}, rtol: {rtol}.\n"
                 f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
-                f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}.\n"
+                f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}, mean abs error: {torch.mean(torch.abs(model-ref))}.\n"
                 f"\t-- Model vs. Reference --\n"
                 f"\t Numel: {model.numel()}, {ref.numel()}\n"
                 f"\tMedian: {model.median()}, {ref.median()}\n"

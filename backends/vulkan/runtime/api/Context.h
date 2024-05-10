@@ -15,21 +15,23 @@
 #include <executorch/backends/vulkan/runtime/api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/api/Command.h>
 #include <executorch/backends/vulkan/runtime/api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/api/Fence.h>
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
 #include <executorch/backends/vulkan/runtime/api/QueryPool.h>
-#include <executorch/backends/vulkan/runtime/api/Resource.h>
 #include <executorch/backends/vulkan/runtime/api/Runtime.h>
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
+
+#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
 
 namespace vkcompute {
 namespace api {
 
 struct ContextConfig final {
-  uint32_t cmdSubmitFrequency;
-  CommandPoolConfig cmdPoolConfig;
-  DescriptorPoolConfig descriptorPoolConfig;
-  QueryPoolConfig queryPoolConfig;
+  uint32_t cmd_submit_frequency;
+  CommandPoolConfig cmd_pool_config;
+  DescriptorPoolConfig descriptor_pool_config;
+  QueryPoolConfig query_pool_config;
 };
 
 //
@@ -194,9 +196,9 @@ class Context final {
       PipelineBarrier&,
       const S&,
       const D&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&,
+      const utils::uvec3&,
+      const utils::uvec3&,
+      const utils::uvec3&,
       VkFence fence_handle);
 
   template <typename... Arguments>
@@ -265,9 +267,9 @@ class UniformParamsBuffer final {
 };
 
 struct ParamsBindList final {
-  std::vector<api::BufferBindInfo> bind_infos;
+  std::vector<BufferBindInfo> bind_infos;
 
-  ParamsBindList(std::initializer_list<const api::BufferBindInfo> init_list);
+  ParamsBindList(std::initializer_list<const BufferBindInfo> init_list);
 };
 
 class StorageBuffer final {
@@ -374,18 +376,18 @@ inline void record_copy(
     CommandBuffer& cmd,
     const S& source,
     const D& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) = delete;
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) = delete;
 
 template <>
 inline void record_copy<VulkanBuffer, VulkanBuffer>(
     CommandBuffer& cmd,
     const VulkanBuffer& source,
     const VulkanBuffer& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   cmd.copy_buffer_to_buffer(
       source, destination, copy_range, src_offset, dst_offset);
 }
@@ -395,9 +397,9 @@ inline void record_copy<VulkanImage, VulkanImage>(
     CommandBuffer& cmd,
     const VulkanImage& source,
     const VulkanImage& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   cmd.copy_texture_to_texture(
       source, destination, copy_range, src_offset, dst_offset);
 }
@@ -407,9 +409,9 @@ inline void record_copy<VulkanImage, VulkanBuffer>(
     CommandBuffer& cmd,
     const VulkanImage& source,
     const VulkanBuffer& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   cmd.copy_texture_to_buffer(
       source, destination, copy_range, src_offset, dst_offset);
 }
@@ -419,9 +421,9 @@ inline void record_copy<VulkanBuffer, VulkanImage>(
     CommandBuffer& cmd,
     const VulkanBuffer& source,
     const VulkanImage& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   cmd.copy_buffer_to_texture(
       source, destination, copy_range, src_offset, dst_offset);
 }
@@ -438,9 +440,9 @@ inline bool Context::submit_copy(
     PipelineBarrier& pipeline_barrier,
     const S& source,
     const D& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset,
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset,
     VkFence fence_handle) {
   // If any of the provided arguments does not have memory associated with it,
   // then exit early as there is no work to be done. However, if a fence has
@@ -485,7 +487,7 @@ inline bool Context::submit_copy(
 
   submit_count_++;
   if (fence_handle != VK_NULL_HANDLE ||
-      submit_count_ >= config_.cmdSubmitFrequency) {
+      submit_count_ >= config_.cmd_submit_frequency) {
     submit_cmd_to_gpu(fence_handle);
     return true;
   }
@@ -568,7 +570,7 @@ inline bool Context::submit_compute_job(
 
   submit_count_++;
   if (fence_handle != VK_NULL_HANDLE ||
-      submit_count_ >= config_.cmdSubmitFrequency) {
+      submit_count_ >= config_.cmd_submit_frequency) {
     submit_cmd_to_gpu(fence_handle);
     return true;
   }

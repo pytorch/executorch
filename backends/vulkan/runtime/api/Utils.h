@@ -262,7 +262,18 @@ inline std::ostream& operator<<(std::ostream& os, const uvec3& v) {
   return os;
 }
 
+inline std::ostream& operator<<(std::ostream& os, const ivec3& v) {
+  os << "(" << v.data[0u] << ", " << v.data[1u] << ", " << v.data[2u] << ")";
+  return os;
+}
+
 inline std::ostream& operator<<(std::ostream& os, const uvec4& v) {
+  os << "(" << v.data[0u] << ", " << v.data[1u] << ", " << v.data[2u] << ", "
+     << v.data[3u] << ")";
+  return os;
+}
+
+inline std::ostream& operator<<(std::ostream& os, const ivec4& v) {
   os << "(" << v.data[0u] << ", " << v.data[1u] << ", " << v.data[2u] << ", "
      << v.data[3u] << ")";
   return os;
@@ -295,6 +306,25 @@ inline ivec2 make_ivec2(
     return {safe_downcast<int32_t>(ints[1]), safe_downcast<int32_t>(ints[0])};
   } else {
     return {safe_downcast<int32_t>(ints[0]), safe_downcast<int32_t>(ints[1])};
+  }
+}
+
+inline ivec3 make_ivec3(
+    const std::vector<int64_t>& ints,
+    bool reverse = false) {
+  VK_CHECK_COND(ints.size() == 3);
+  if (reverse) {
+    return {
+        safe_downcast<int32_t>(ints[2]),
+        safe_downcast<int32_t>(ints[1]),
+        safe_downcast<int32_t>(ints[0]),
+    };
+  } else {
+    return {
+        safe_downcast<int32_t>(ints[0]),
+        safe_downcast<int32_t>(ints[1]),
+        safe_downcast<int32_t>(ints[2]),
+    };
   }
 }
 
@@ -338,6 +368,13 @@ inline ivec3 make_ivec3(uvec3 ints) {
       safe_downcast<int32_t>(ints.data[2u])};
 }
 
+inline uvec3 make_uvec3(ivec3 ints) {
+  return {
+      safe_downcast<uint32_t>(ints.data[0u]),
+      safe_downcast<uint32_t>(ints.data[1u]),
+      safe_downcast<uint32_t>(ints.data[2u])};
+}
+
 /*
  * Given an vector of up to 4 uint64_t representing the sizes of a tensor,
  * constructs a uvec4 containing those elements in reverse order.
@@ -378,6 +415,23 @@ inline int64_t multiply_integers(const C& container) {
       container.end(),
       static_cast<int64_t>(1),
       std::multiplies<>());
+}
+
+/*
+ * Product of integer elements referred to by iterators; accumulates into the
+ * int64_t datatype. Taken from `multiply_integers` in <c10/util/accumulate.h>
+ */
+template <
+    typename Iter,
+    std::enable_if_t<
+        std::is_integral_v<typename std::iterator_traits<Iter>::value_type>,
+        int> = 0>
+inline int64_t multiply_integers(Iter begin, Iter end) {
+  // std::accumulate infers return type from `init` type, so if the `init` type
+  // is not large enough to hold the result, computation can overflow. We use
+  // `int64_t` here to avoid this.
+  return std::accumulate(
+      begin, end, static_cast<int64_t>(1), std::multiplies<>());
 }
 
 } // namespace utils

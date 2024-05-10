@@ -1,0 +1,21 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+softmax_channel:
+  parameter_names_with_default_values:
+    OPERATOR1: exp(X)
+    OPERATOR2: X / Y
+    NDIM: 3
+    DTYPE: float
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+  shader_variants:
+    - NAME: softmax_channel
+    - NAME: log_softmax_channel
+      OPERATOR1: X
+      OPERATOR2: X - log(Y)

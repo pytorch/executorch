@@ -786,7 +786,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
       input_idx,
       inputs_size());
 
-  const auto& e = get_input(input_idx);
+  const auto& e = get_value(get_input_index(input_idx));
   ET_CHECK_OR_RETURN_ERROR(
       e.isTensor() || e.isScalar(),
       InvalidArgument,
@@ -946,7 +946,7 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       output_idx,
       outputs_size());
 
-  auto& output = mutable_output(output_idx);
+  auto& output = mutable_value(get_output_index(output_idx));
   ET_CHECK_OR_RETURN_ERROR(
       output.isTensor(),
       InvalidArgument,
@@ -1013,11 +1013,14 @@ Error Method::execute_instruction() {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
       internal::EventTracerProfileScope event_tracer_scope =
           internal::EventTracerProfileScope(event_tracer_, "OPERATOR_CALL");
-      // TODO(T147221312): Also expose the temp allocator and tensor resizer
-      // via the context.
-      KernelRuntimeContext context(event_tracer_);
+      // TODO(T147221312): Also expose tensor resizer via the context.
+      // The temp_allocator passed can be null, but calling allocate_temp will
+      // fail
+      KernelRuntimeContext context(
+          event_tracer_, memory_manager_->temp_allocator());
       auto args = chain.argument_lists_[step_state_.instr_idx];
       chain.kernels_[step_state_.instr_idx](context, args.data());
+      // We reset the temp_allocator after the switch statement
       err = context.failure_state();
       if (err != Error::Ok) {
         // We know that instr_args_as_KernelCall is non-null because it was
@@ -1060,7 +1063,9 @@ Error Method::execute_instruction() {
           delegate_idx,
           n_delegate_,
           step_state_.instr_idx);
-      BackendExecutionContext backend_execution_context(event_tracer_);
+      BackendExecutionContext backend_execution_context(
+          /*event_tracer*/ event_tracer_,
+          /*temp_allocator*/ memory_manager_->temp_allocator());
       err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());

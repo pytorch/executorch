@@ -4,7 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List
+import re
+from typing import Any, List, Tuple
 
 from torchgen.api import cpp
 from torchgen.api.types import CppSignatureGroup
@@ -17,6 +18,7 @@ from torchgen.model import Argument, NativeFunction
 AT_INT_ARRAY_REF = "at::IntArrayRef"
 AT_SCALAR = "at::Scalar"
 AT_TENSOR = "at::Tensor"
+AT_TENSOR_LIST = "at::TensorList"
 BOOL = "bool"
 DOUBLE = "double"
 INT = "int64_t"
@@ -25,9 +27,11 @@ OPT_BOOL = "::std::optional<bool>"
 OPT_INT64 = "::std::optional<int64_t>"
 OPT_DEVICE = "::std::optional<at::Device>"
 OPT_LAYOUT = "::std::optional<at::Layout>"
-OPT_SCALARTYPE = "::std::optional<at::ScalarType>"
+OPT_MEMORY_FORMAT = "::std::optional<at::MemoryFormat>"
+OPT_SCALAR_TYPE = "::std::optional<at::ScalarType>"
 TWO_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor>"
 THREE_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor,at::Tensor>"
+TENSOR_VECTOR = "::std::vector<at::Tensor>"
 
 ###########################
 ## Test Suite definition ##
@@ -56,8 +60,8 @@ class GeneratedOpsTest_{op_name} : public ::testing::Test {{
 
 test_suite_template = """
 TEST_P(GeneratedOpsTest_{op_name}, {case_name}) {{
-    {create_ref_data}
-    {create_and_check_out}
+{create_ref_data}
+{create_and_check_out}
 }}
 """
 
@@ -96,6 +100,9 @@ class TestSuiteGen:
             self.f, method=False, fallback_binding=self.f.manual_cpp_binding
         ).most_faithful_signature()
 
+    def gen_case_name_tuple(self, t: Tuple) -> str:
+        return "x".join([str(e) for e in t])
+
     def gen_case_name(self, inputs: List[Any], prepack: bool = False) -> str:
         name_str = self.op_name
         if prepack:
@@ -103,13 +110,15 @@ class TestSuiteGen:
         for arg_sizes_or_val in inputs:
             name_str += "_"
             if isinstance(arg_sizes_or_val, tuple):
-                for size in arg_sizes_or_val:
-                    name_str += str(size) + "x"
-                name_str = name_str[:-1]
+                name_str += self.gen_case_name_tuple(arg_sizes_or_val)
             elif isinstance(arg_sizes_or_val, list):
+                lst = []
                 for size in arg_sizes_or_val:
-                    name_str += str(size) + "c"
-                name_str = name_str[:-1]
+                    if isinstance(size, tuple):
+                        lst.append(self.gen_case_name_tuple(size))
+                    else:
+                        lst.append(str(size))
+                name_str += "c".join(lst)
             else:
                 name_str += str(arg_sizes_or_val).replace(".", "p")
 
@@ -120,6 +129,15 @@ class TestSuiteGen:
     def create_input_data(self, arg: Argument, data: Any) -> str:  # noqa: C901
         ctype = cpp.argumenttype_type(arg.type, mutable=arg.is_write, binds=arg.name)
         cpp_type = ctype.cpp_type(strip_ref=True)
+
+        # Short cut exit for TENSORLIST, because it needs multiple lines of
+        # construction, deviates from the rest.
+        if cpp_type == AT_TENSOR_LIST:
+            ret_str = f"std::vector<{AT_TENSOR}> tensor_vec;\n"
+            for elem in data:
+                ret_str += f"tensor_vec.emplace_back({self.suite_def.data_gen}({init_list_str(elem)}, test_dtype));\n"
+            ret_str += f"{cpp_type} {arg.name} = tensor_vec;\n"
+            return ret_str + "\n"
 
         if cpp_type == AT_INT_ARRAY_REF:
             ret_str = f"std::vector<int64_t> {arg.name} = "
@@ -149,10 +167,11 @@ class TestSuiteGen:
             else:
                 ret_str += f"{str(data)};"
         elif (
-            cpp_type == OPT_SCALARTYPE
+            cpp_type == OPT_SCALAR_TYPE
             or cpp_type == OPT_LAYOUT
             or cpp_type == OPT_DEVICE
             or cpp_type == OPT_BOOL
+            or cpp_type == OPT_MEMORY_FORMAT
         ):
             ret_str += "std::nullopt;"
         else:
@@ -167,6 +186,7 @@ class TestSuiteGen:
             arg_data = get_or_return_default(arg, inputs, i)
             ref_code += self.create_input_data(arg, arg_data)
 
+        ref_code = re.sub(r"^", "    ", ref_code, flags=re.M)
         return ref_code
 
     def gen_create_and_check_out(self, prepack=False) -> str:
@@ -177,6 +197,7 @@ class TestSuiteGen:
             arg = binding.argument
             test_str += f"{arg.name}, "
         test_str = test_str[:-2] + ");"
+        test_str = re.sub(r"^", "    ", test_str, flags=re.M)
         return test_str
 
     def gen_parameterization(self) -> str:

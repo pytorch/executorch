@@ -53,7 +53,7 @@ class TestPow(unittest.TestCase):
         attempt to delegate other powers.
         """
 
-        inputs = (torch.ones(5),)
+        inputs = (torch.randn(5),)
         (
             Tester(self.Pow(3), inputs)
             .export()

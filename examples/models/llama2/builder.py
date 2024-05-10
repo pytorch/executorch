@@ -21,7 +21,7 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
 from executorch.exir import EdgeProgramManager
 from executorch.exir.backend.partitioner import Partitioner
 
-from executorch.exir.backend.utils import print_delegated_graph
+from executorch.exir.backend.utils import format_delegated_graph
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 
 from executorch.exir.passes import MemoryPlanningPass
@@ -218,6 +218,7 @@ class LlamaEdgeManager:
         edge_config = EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_type_promotion=bool(self.dtype == DType.fp16),
+            _skip_dim_order=True,
         )
         return edge_config
 
@@ -283,7 +284,7 @@ class LlamaEdgeManager:
                 dynamic_shapes=dynamic_shape,
                 edge_constant_methods=metadata,
                 edge_compile_config=edge_config,
-                verbose=True,
+                verbose=self.verbose,
             )
         return self
 
@@ -308,7 +309,7 @@ class LlamaEdgeManager:
                     self.edge_manager = self.edge_manager.to_backend(partitioner)
                     if self.verbose:
                         logging.info(
-                            print_delegated_graph(
+                            format_delegated_graph(
                                 self.edge_manager.exported_program().graph_module
                             )
                         )

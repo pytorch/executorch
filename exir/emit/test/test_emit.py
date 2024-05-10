@@ -194,8 +194,8 @@ class TestEmit(unittest.TestCase):
                 self, x: torch.Tensor
             ) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor]]:
                 return (
-                    torch.Tensor(1),
-                    torch.Tensor(2),
+                    torch.tensor(1),
+                    torch.tensor(2),
                     [torch.sin(x).max(), torch.cos(x).max()],
                 )
 
@@ -846,14 +846,22 @@ class TestEmit(unittest.TestCase):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 return x.to(dtype=torch.float32, memory_format=torch.channels_last)
 
-        # Failure expected when exporting model with illegal memory format (channels_last)
+        # Failure expected when exporting model with illegal memory format (channels_last) when not using dim_order
         model = SimpleLinear()
         inputs = (torch.ones(10, 5, 2, 1),)
         with self.assertRaises(InternalError):
             to_edge(
                 export(model, inputs),
-                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+                compile_config=exir.EdgeCompileConfig(
+                    _check_ir_validity=False, _skip_dim_order=True
+                ),
             ).to_executorch()
+
+        # Success if you use dim_order
+        to_edge(
+            export(model, inputs),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        ).to_executorch()
 
     def test_emit_multiple_entry_points(self) -> None:
         class SimpleLinear(torch.nn.Module):
@@ -1065,6 +1073,9 @@ class TestEmit(unittest.TestCase):
         self.check_tensor_buffer_loc(1, execution_plan.values, 0, 1, 48)
 
     def test_emit_prims(self) -> None:
+        tensor_output = torch.rand(1, 4)
+        tensor_list_output = [torch.rand(1, 4), torch.rand(1, 4)]
+
         class Simple(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -1078,6 +1089,12 @@ class TestEmit(unittest.TestCase):
             def get_str(self) -> str:
                 return "foo"
 
+            def get_tensor(self) -> torch.Tensor:
+                return tensor_output
+
+            def get_tensor_list(self) -> List[torch.Tensor]:
+                return tensor_list_output
+
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 return torch.nn.functional.sigmoid(self.linear(x))
 
@@ -1090,9 +1107,12 @@ class TestEmit(unittest.TestCase):
         getters = {}
         getters["get_ints"] = model.get_ints()
         getters["get_str"] = model.get_str()
-        print(getters["get_str"])
+        getters["get_tensor"] = model.get_tensor()
+        getters["get_tensor_list"] = model.get_tensor_list()
+
         merged_program = emit_program(exir_input, False, getters).program
-        self.assertEqual(len(merged_program.execution_plan), 3)
+
+        self.assertEqual(len(merged_program.execution_plan), 5)
 
         self.assertEqual(
             merged_program.execution_plan[0].name,
@@ -1106,6 +1126,15 @@ class TestEmit(unittest.TestCase):
             merged_program.execution_plan[2].name,
             "get_str",
         )
+        self.assertEqual(
+            merged_program.execution_plan[3].name,
+            "get_tensor",
+        )
+        self.assertEqual(
+            merged_program.execution_plan[4].name,
+            "get_tensor_list",
+        )
+
         # no instructions in a getter
         self.assertEqual(
             len(merged_program.execution_plan[1].chains[0].instructions),
@@ -1141,6 +1170,17 @@ class TestEmit(unittest.TestCase):
             merged_program.execution_plan[2].values[0].val.string_val,
             "foo",
         )
+        self.assertEqual(len(merged_program.execution_plan[3].outputs), 1)
+        self.assertEqual(len(merged_program.execution_plan[4].outputs), 2)
+
+        merged_program = to_edge(
+            export(model, inputs), constant_methods=getters
+        ).to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(merged_program.buffer)
+        torch.allclose(executorch_module.run_method("get_tensor", [])[0], tensor_output)
+        model_output = executorch_module.run_method("get_tensor_list", [])
+        for i in range(len(tensor_list_output)):
+            torch.allclose(model_output[i], tensor_list_output[i])
 
     def test_emit_debug_handle_map(self) -> None:
         mul_model = Mul()

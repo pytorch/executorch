@@ -9,14 +9,16 @@ from dataclasses import dataclass
 from typing import Any, Tuple
 
 import torch
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import to_edge
 
 from executorch.exir.dim_order_utils import (
     is_channel_last_dim_order,
     is_contiguous_dim_order,
 )
+
 from torch.export import export
 from torch.testing import FileCheck
+from torch.utils._pytree import tree_flatten
 
 
 @dataclass
@@ -24,6 +26,33 @@ class MemoryFormatTestSet:
     module: torch.nn.Module
     sample_input: Tuple[Any, ...]
     target_memory_format: torch.memory_format
+    is_aten_mode: bool
+
+
+class SimpleToCopyContiguousModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.to(dtype=torch.double, memory_format=torch.contiguous_format)
+
+
+class SimpleToCopyChannelsLastModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.to(dtype=torch.double, memory_format=torch.channels_last)
+
+
+class PropagateToCopyChannalsLastModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        t1 = x.to(dtype=torch.double, memory_format=torch.channels_last)
+        t2 = t1 + t1
+        return t1 * t2
 
 
 class TestMemoryFormatOpsPass(unittest.TestCase):
@@ -38,13 +67,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             edge_op_str
         ).run(before.graph_module.code)
 
-        # TODO(gasoonjia): make to_dim_copy pass verifier
-        epm = to_edge(
-            before,
-            compile_config=EdgeCompileConfig(
-                _check_ir_validity=False, _skip_dim_order=False
-            ),
-        )
+        epm = to_edge(before)
 
         # check op strings
         FileCheck().check_not(aten_op_str).check_count(
@@ -66,52 +89,73 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         else:
             raise RuntimeError("Unknown memory format")
 
-        # TODO - more
-        epm.to_executorch()
+        # check EdgeOp and the new BackendOp should behave the same in the runtime
+        executorch_prog = epm.to_executorch()
+
+        if test_set.is_aten_mode:
+            from executorch.extension.pybindings.aten_lib import (  # @manual
+                _load_for_executorch_from_buffer,
+            )
+        else:
+            from executorch.extension.pybindings.portable_lib import (  # @manual
+                _load_for_executorch_from_buffer,
+            )
+
+        executorch_module = _load_for_executorch_from_buffer(executorch_prog.buffer)
+        inputs_flattened = tree_flatten(test_set.sample_input)[0]
+        runtime_output = executorch_module.run_method(
+            "forward", tuple(inputs_flattened)
+        )[0]
+        self.assertTrue(torch.allclose(runtime_output, expected))
+        self.assertEqual(
+            is_channel_last_dim_order(runtime_output),
+            is_channel_last_dim_order(expected),
+        )
 
     def test_op_to_copy_replacement_2d(self) -> None:
-        class Module(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x.to(dtype=torch.double, memory_format=torch.contiguous_format)
-
         self.memory_format_test_runner(
             MemoryFormatTestSet(
-                module=Module().eval(),
+                module=SimpleToCopyContiguousModule().eval(),
                 sample_input=(torch.randn([3, 4, 5], dtype=torch.float32),),
                 target_memory_format=torch.contiguous_format,
+                is_aten_mode=False,
+            )
+        )
+
+    def test_op_to_copy_replacement_2d_aten(self) -> None:
+        self.memory_format_test_runner(
+            MemoryFormatTestSet(
+                module=SimpleToCopyContiguousModule().eval(),
+                sample_input=(torch.randn([3, 4, 5], dtype=torch.float32),),
+                target_memory_format=torch.contiguous_format,
+                is_aten_mode=True,
             )
         )
 
     def test_op_to_copy_replacement_4d(self) -> None:
-        class Module(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x.to(dtype=torch.double, memory_format=torch.contiguous_format)
-
         self.memory_format_test_runner(
             MemoryFormatTestSet(
-                module=Module().eval(),
+                module=SimpleToCopyContiguousModule().eval(),
                 sample_input=(torch.randn([3, 4, 5, 6], dtype=torch.float32),),
                 target_memory_format=torch.contiguous_format,
+                is_aten_mode=False,
+            )
+        )
+
+    def test_op_to_copy_replacement_4d_aten(self) -> None:
+        self.memory_format_test_runner(
+            MemoryFormatTestSet(
+                module=SimpleToCopyContiguousModule().eval(),
+                sample_input=(torch.randn([3, 4, 5, 6], dtype=torch.float32),),
+                target_memory_format=torch.contiguous_format,
+                is_aten_mode=True,
             )
         )
 
     def test_op_dim_order_update(self) -> None:
-        class Module(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return x.to(dtype=torch.double, memory_format=torch.channels_last)
-
         self.memory_format_test_runner(
             MemoryFormatTestSet(
-                module=Module().eval(),
+                module=SimpleToCopyChannelsLastModule().eval(),
                 sample_input=(
                     torch.rand_like(
                         torch.zeros([2, 2, 2, 2]),
@@ -120,22 +164,30 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                     ),
                 ),
                 target_memory_format=torch.channels_last,
+                is_aten_mode=False,
+            ),
+        )
+
+    def test_op_dim_order_update_aten(self) -> None:
+        self.memory_format_test_runner(
+            MemoryFormatTestSet(
+                module=SimpleToCopyChannelsLastModule().eval(),
+                sample_input=(
+                    torch.rand_like(
+                        torch.zeros([2, 2, 2, 2]),
+                        dtype=torch.float32,
+                        memory_format=torch.contiguous_format,
+                    ),
+                ),
+                target_memory_format=torch.channels_last,
+                is_aten_mode=True,
             ),
         )
 
     def test_op_dim_order_propagation(self) -> None:
-        class Module(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                t1 = x.to(dtype=torch.double, memory_format=torch.channels_last)
-                t2 = t1 + t1
-                return t1 * t2
-
         self.memory_format_test_runner(
             MemoryFormatTestSet(
-                module=Module().eval(),
+                module=PropagateToCopyChannalsLastModule().eval(),
                 sample_input=(
                     torch.rand_like(
                         torch.zeros([2, 2, 2, 2]),
@@ -144,5 +196,22 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                     ),
                 ),
                 target_memory_format=torch.channels_last,
+                is_aten_mode=False,
+            )
+        )
+
+    def test_op_dim_order_propagation_aten(self) -> None:
+        self.memory_format_test_runner(
+            MemoryFormatTestSet(
+                module=PropagateToCopyChannalsLastModule().eval(),
+                sample_input=(
+                    torch.rand_like(
+                        torch.zeros([2, 2, 2, 2]),
+                        dtype=torch.float32,
+                        memory_format=torch.contiguous_format,
+                    ),
+                ),
+                target_memory_format=torch.channels_last,
+                is_aten_mode=True,
             )
         )

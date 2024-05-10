@@ -169,3 +169,12 @@ ivec4 to_texture_elem_pos(ivec4 idx, ivec4 sizes, int packed_dim) {
       plane *                                                  \
           ((1 - y) * ((cur % (x * y * plane)) / (y * plane)) + \
            (x - 1) * ((cur % (y * plane)) / plane))
+
+// Return the x, y, z and index value the channel-packed 3D tensor from the {n,
+// c, h, w}-index.
+ivec4 get_channel_packed_pos_from_index(ivec4 nchw, ivec4 sizes) {
+  int aligned_c = alignup4(sizes.y);
+  int c_stride = aligned_c / 4;
+
+  return ivec4(nchw.w, nchw.z, nchw.x * c_stride + nchw.y / 4, nchw.y % 4);
+}

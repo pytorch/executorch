@@ -20,11 +20,6 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 endif()
 
-# Source root directory for pytorch.
-if(NOT TORCH_ROOT)
-  set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
-endif()
-
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
@@ -34,7 +29,8 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
 set(EXECUTORCH_SRCS_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/../../../../executorch_srcs.cmake")
+    "${CMAKE_CURRENT_BINARY_DIR}/../../../../executorch_srcs.cmake"
+)
 
 extract_sources(${EXECUTORCH_SRCS_FILE})
 
@@ -69,26 +65,34 @@ add_library(custom_ops ${_custom_ops__srcs})
 
 target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(
-  custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include")
+  custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include"
+)
 target_link_libraries(custom_ops PUBLIC ${custom_ops_libs})
 
-target_compile_options(custom_ops PUBLIC ${_common_compile_options}
-                                         -DET_USE_THREADPOOL)
+target_compile_options(
+  custom_ops PUBLIC ${_common_compile_options} -DET_USE_THREADPOOL
+)
 
 install(TARGETS custom_ops DESTINATION lib)
 
-if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT)
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   # Add a AOT library
   find_package(Torch CONFIG REQUIRED)
-  add_library(custom_ops_aot_lib SHARED
-              ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp)
-  target_include_directories(custom_ops_aot_lib
-                            PUBLIC "${_common_include_directories}")
+  add_library(
+    custom_ops_aot_lib SHARED ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
+  )
   target_include_directories(
-    custom_ops_aot_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include")
+    custom_ops_aot_lib PUBLIC "${_common_include_directories}"
+  )
+  target_include_directories(
+    custom_ops_aot_lib
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include"
+  )
   target_link_libraries(custom_ops_aot_lib PUBLIC custom_ops torch)
-  target_compile_options(custom_ops_aot_lib PUBLIC -Wno-deprecated-declarations
-                                                  -fPIC -frtti -fexceptions)
+  target_compile_options(
+    custom_ops_aot_lib PUBLIC -Wno-deprecated-declarations -fPIC -frtti
+                              -fexceptions
+  )
 
   install(TARGETS custom_ops_aot_lib DESTINATION lib)
 endif()

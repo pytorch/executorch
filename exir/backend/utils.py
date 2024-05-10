@@ -448,9 +448,16 @@ def get_delegation_info(
     )
 
 
-def print_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
+def print_delegated_graph(graph_module: torch.fx.GraphModule) -> None:
     """
-    Print the graph of including lowered_module (both backend id and original graph) together with the graph module. Example output:
+    Print the formatted graph string.
+    """
+    print(format_delegated_graph(graph_module))
+
+
+def format_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
+    """
+    Return the formatted graph string of including lowered_module (both backend id and original graph) together with the graph module. Example output:
     graph():
         %arg0_1 : [num_users=2] = placeholder[target=arg0_1]
         %arg1_1 : [num_users=2] = placeholder[target=arg1_1]

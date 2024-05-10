@@ -35,7 +35,7 @@ bool is_out_of_bounds(CTYPE_VAL val) {
       val_cast > std::numeric_limits<CTYPE_OUT>::max();
 }
 
-[[nodiscard]] bool check_bounds(
+__ET_NODISCARD bool check_bounds(
     const Scalar& val_scalar,
     const torch::executor::native::ScalarType& val_type,
     const torch::executor::native::ScalarType& out_type,
@@ -53,7 +53,7 @@ bool is_out_of_bounds(CTYPE_VAL val) {
         }
       });
     } else if (isFloatingType(out_type)) {
-      ET_SWITCH_FLOAT_TYPES(out_type, ctx, "clamp", CTYPE_OUT, [&]() {
+      ET_SWITCH_FLOATH_TYPES(out_type, ctx, "clamp", CTYPE_OUT, [&]() {
         if (std::isfinite(val) &&
             is_out_of_bounds<CTYPE_VAL, CTYPE_OUT, double>(val)) {
           ET_LOG(Error, "%s value out of bounds", val_name);
@@ -119,7 +119,7 @@ Tensor& clamp_out(
 
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES(out_type, ctx, "clamp", CTYPE_OUT, [&]() {
+  ET_SWITCH_REALH_TYPES(out_type, ctx, "clamp", CTYPE_OUT, [&]() {
     // Extract optional min value
     CTYPE_OUT min = 0;
     if (has_min) {
@@ -140,7 +140,7 @@ Tensor& clamp_out(
       });
     }
 
-    ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "clamp", CTYPE_IN, [&]() {
+    ET_SWITCH_REALHB_TYPES(in_type, ctx, "clamp", CTYPE_IN, [&]() {
       apply_unary_map_fn(
           [has_min, min, has_max, max](const CTYPE_IN val_in) {
             CTYPE_OUT val_out = static_cast<CTYPE_OUT>(val_in);
@@ -195,20 +195,20 @@ Tensor& clamp_tensor_out(
   ScalarType out_type = out.scalar_type();
 
   if (has_min) {
-    common_type = promoteTypes(common_type, min_type);
+    common_type = promoteTypes(common_type, min_type, /*half_to_float*/ true);
   }
   if (has_max) {
-    common_type = promoteTypes(common_type, max_type);
+    common_type = promoteTypes(common_type, max_type, /*half_to_float*/ true);
   }
 
   ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
   constexpr auto name = "clamp.Tensor_out";
 
-  ET_SWITCH_REALB_TYPES(in_type, ctx, name, CTYPE_IN, [&]() {
-    ET_SWITCH_REALB_TYPES(min_type, ctx, name, CTYPE_MIN, [&]() {
-      ET_SWITCH_REALB_TYPES(max_type, ctx, name, CTYPE_MAX, [&]() {
-        ET_SWITCH_REALB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
+  ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&]() {
+    ET_SWITCH_REALHB_TYPES(min_type, ctx, name, CTYPE_MIN, [&]() {
+      ET_SWITCH_REALHB_TYPES(max_type, ctx, name, CTYPE_MAX, [&]() {
+        ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
           apply_ternary_elementwise_fn<
               CTYPE_IN,
               CTYPE_MIN,

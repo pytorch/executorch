@@ -68,17 +68,16 @@ create_xcframework() {
     fi
 
     # For each directory, create a merged library using libtool.
-    for index in "${!directories[@]}"; do
-        dir="${directories[$index]}"
+    for dir in "${directories[@]}"; do
 
         if [ ! -d "${dir}" ]; then
             echo "Directory ${dir} does not exist"
             exit 1
         fi
 
-        local dir_basename
-        dir_basename=$(basename "${dir}")
-        local merged_lib="${output}/lib${target_library_name}-${dir_basename}-${index}.a"
+        local dir_suffix
+        dir_suffix=$(echo "$dir" | tr '[:upper:]' '[:lower:]' | sed 's/\//-/g')
+        local merged_lib="${output}/lib${target_library_name}-${dir_suffix}.a"
 
         # Remove the existing .a file if it exists.
         if [ -f "${merged_lib}" ]; then

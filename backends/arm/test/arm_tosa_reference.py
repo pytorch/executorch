@@ -36,6 +36,7 @@ DEBUG_OUTPUT_PATH = tempfile.mkdtemp(prefix="arm_tosa_")
 # Config for Capturing the weights, will be moved in the future
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
+    _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
 )
 
 SUPPORTED_BI_TEST_LIST = [
@@ -201,7 +202,9 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
 
     model_edge = model_edge.to_backend(ArmPartitioner(compile_spec))
     exec_prog = model_edge.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=False, extract_constant_segment=False
+        )
     )
 
     # Save ground truth results to file

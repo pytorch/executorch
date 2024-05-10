@@ -162,3 +162,56 @@ TEST(ScalarTypeUtilTest, promoteTypesTest) {
       promoteTypes(ScalarType::Char, ScalarType::Bool) == ScalarType::Char);
   ET_CHECK(promoteTypes(ScalarType::Bool, ScalarType::Int) == ScalarType::Int);
 }
+
+template <typename T1, typename T2>
+struct promote_types_is_valid
+    : std::integral_constant<
+          bool,
+          !std::is_same<T1, torch::executor::BFloat16>::value &&
+              !std::is_same<T2, torch::executor::BFloat16>::value &&
+              (std::is_same<T1, T2>::value ||
+               (!torch::executor::is_qint_type<T1>::value &&
+                !torch::executor::is_qint_type<T2>::value &&
+                !torch::executor::is_bits_type<T1>::value &&
+                !torch::executor::is_bits_type<T2>::value))> {};
+
+template <typename T1, bool half_to_float>
+struct CompileTimePromoteTypesTestCase {
+  static void testAll() {
+#define CALL_TEST_ONE(cpp_type, scalar_type) \
+  testOne<cpp_type, promote_types_is_valid<T1, cpp_type>::value>();
+    ET_FORALL_SCALAR_TYPES(CALL_TEST_ONE)
+#undef CALL_TEST_ONE
+  }
+
+  template <
+      typename T2,
+      bool valid,
+      typename std::enable_if<valid, bool>::type = true>
+  static void testOne() {
+    auto actual = torch::executor::CppTypeToScalarType<
+        typename torch::executor::promote_types<T1, T2, half_to_float>::type>::
+        value;
+    const auto scalarType1 = torch::executor::CppTypeToScalarType<T1>::value;
+    const auto scalarType2 = torch::executor::CppTypeToScalarType<T2>::value;
+    auto expected = promoteTypes(scalarType1, scalarType2, half_to_float);
+    EXPECT_EQ(actual, expected)
+        << "promoting " << (int)scalarType1 << " to " << (int)scalarType2;
+  }
+
+  template <
+      typename T2,
+      bool valid,
+      typename std::enable_if<!valid, bool>::type = true>
+  static void testOne() {
+    // Skip invalid case
+  }
+};
+
+TEST(ScalarTypeUtilTest, compileTypePromoteTypesTest) {
+#define INSTANTIATE_TYPE_TEST(cpp_type, scalar_type)           \
+  CompileTimePromoteTypesTestCase<cpp_type, false>::testAll(); \
+  CompileTimePromoteTypesTestCase<cpp_type, true>::testAll();
+
+  ET_FORALL_SCALAR_TYPES(INSTANTIATE_TYPE_TEST);
+}

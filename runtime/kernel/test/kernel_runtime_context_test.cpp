@@ -15,12 +15,25 @@
 using namespace ::testing;
 using torch::executor::Error;
 using torch::executor::KernelRuntimeContext;
+using torch::executor::MemoryAllocator;
+using torch::executor::Result;
 
 class KernelRuntimeContextTest : public ::testing::Test {
  public:
   void SetUp() override {
     torch::executor::runtime_init();
   }
+};
+
+class TestMemoryAllocator : public MemoryAllocator {
+ public:
+  TestMemoryAllocator(uint32_t size, uint8_t* base_address)
+      : MemoryAllocator(size, base_address), last_seen_alignment(0) {}
+  void* allocate(size_t size, size_t alignment) override {
+    last_seen_alignment = alignment;
+    return MemoryAllocator::allocate(size, alignment);
+  }
+  size_t last_seen_alignment;
 };
 
 TEST_F(KernelRuntimeContextTest, FailureStateDefaultsToOk) {
@@ -46,4 +59,44 @@ TEST_F(KernelRuntimeContextTest, FailureStateReflectsFailure) {
   // And can be cleared.
   context.fail(Error::Ok);
   EXPECT_EQ(context.failure_state(), Error::Ok);
+}
+
+TEST_F(KernelRuntimeContextTest, FailureNoMemoryAllocatorProvided) {
+  KernelRuntimeContext context;
+  Result<void*> allocated_memory = context.allocate_temp(4);
+  EXPECT_EQ(allocated_memory.error(), Error::NotFound);
+}
+
+TEST_F(KernelRuntimeContextTest, SuccessfulMemoryAllocation) {
+  constexpr size_t temp_memory_allocator_pool_size = 4;
+  auto temp_memory_allocator_pool =
+      std::make_unique<uint8_t[]>(temp_memory_allocator_pool_size);
+  MemoryAllocator temp_allocator(
+      temp_memory_allocator_pool_size, temp_memory_allocator_pool.get());
+  KernelRuntimeContext context(nullptr, &temp_allocator);
+  Result<void*> allocated_memory = context.allocate_temp(4);
+  EXPECT_EQ(allocated_memory.ok(), true);
+}
+
+TEST_F(KernelRuntimeContextTest, FailureMemoryAllocationInsufficientSpace) {
+  constexpr size_t temp_memory_allocator_pool_size = 4;
+  auto temp_memory_allocator_pool =
+      std::make_unique<uint8_t[]>(temp_memory_allocator_pool_size);
+  MemoryAllocator temp_allocator(
+      temp_memory_allocator_pool_size, temp_memory_allocator_pool.get());
+  KernelRuntimeContext context(nullptr, &temp_allocator);
+  Result<void*> allocated_memory = context.allocate_temp(8);
+  EXPECT_EQ(allocated_memory.error(), Error::MemoryAllocationFailed);
+}
+
+TEST_F(KernelRuntimeContextTest, MemoryAllocatorAlignmentPassed) {
+  constexpr size_t temp_memory_allocator_pool_size = 4;
+  auto temp_memory_allocator_pool =
+      std::make_unique<uint8_t[]>(temp_memory_allocator_pool_size);
+  TestMemoryAllocator temp_allocator(
+      temp_memory_allocator_pool_size, temp_memory_allocator_pool.get());
+  KernelRuntimeContext context(nullptr, &temp_allocator);
+  Result<void*> allocated_memory = context.allocate_temp(4, 2);
+  EXPECT_EQ(allocated_memory.ok(), true);
+  EXPECT_EQ(temp_allocator.last_seen_alignment, 2);
 }

@@ -23,6 +23,7 @@ from torch.export import export
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
 _EDGE_COMPILE_CONFIG: EdgeCompileConfig = exir.EdgeCompileConfig(
     _check_ir_validity=False,
+    _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
 )
 
 ## For quantization

@@ -1,0 +1,26 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+matmul_naive:
+  parameter_names_with_default_values:
+    DTYPE: float
+    NDIM: 3
+    MAT1_PACKING: W_packed
+    MAT2_PACKING: H_packed
+    IS_ADDMM: false
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: float
+      - VALUE: half
+  shader_variants:
+    - NAME: matmul_naive_W_packed_H_packed
+    - NAME: addmm_naive_W_packed_H_packed
+      IS_ADDMM: true
+    - NAME: matmul_naive_W_packed_W_packed
+      MAT2_PACKING: W_packed
+    - NAME: addmm_naive_W_packed_W_packed
+      MAT2_PACKING: W_packed
+      IS_ADDMM: true

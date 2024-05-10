@@ -16,6 +16,7 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     TestSuite,
     TestSuiteGen,
 )
+from torchgen import local
 
 from torchgen.gen import parse_native_yaml, ParsedYaml
 from torchgen.model import DispatchKey, NativeFunction
@@ -45,6 +46,9 @@ def process_test_suites(
         cpp_generator.add_suite(registry_name, f, op_test_suite)
 
 
+@local.parametrize(
+    use_const_ref_for_mutable_tensors=False, use_ilistref_for_tensor_lists=False
+)
 def generate_cpp(
     native_functions_yaml_path: str, tags_path: str, output_dir: str
 ) -> None:

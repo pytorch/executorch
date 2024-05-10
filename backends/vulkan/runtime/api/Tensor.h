@@ -220,6 +220,10 @@ class vTensor final {
    */
   const api::BufferBindInfo texture_limits_ubo();
 
+  inline const api::utils::ivec3 texture_limits() const {
+    return texture_limits_.limits;
+  }
+
   inline size_t numel() const {
     return api::utils::multiply_integers(sizes());
   }
@@ -255,7 +259,7 @@ class vTensor final {
   /*
    * Binds the underlying resource to the given memory allocation
    */
-  void bind_allocation(const api::MemoryAllocation& allocation);
+  void bind_allocation(const api::Allocation& allocation);
 
  private:
   /*

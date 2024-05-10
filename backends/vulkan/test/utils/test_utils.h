@@ -12,6 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
@@ -86,7 +87,6 @@ void record_conv2d_prepack_weights_op(
     api::VulkanBuffer& src_buffer,
     vTensor& v_dst,
     const std::vector<int64_t>& original_sizes,
-    const std::vector<int64_t>& padded_sizes,
     const bool transposed);
 
 void record_binary_op(
@@ -153,13 +153,33 @@ check_staging_buffer(api::StorageBuffer& staging, float val, int numel = -1) {
   }
 }
 
+inline int64_t get_buf_idx(
+    ComputeGraph& graph,
+    IOValueRef ref,
+    const std::vector<int64_t>& tensor_coor) {
+  vTensorPtr vten_ptr = graph.get_tensor(ref.value);
+
+  const std::vector<int64_t>& sizes = vten_ptr->sizes();
+
+  int64_t c = dim_at<kChannel4D>(sizes);
+  int64_t h = dim_at<kHeight4D>(sizes);
+  int64_t w = dim_at<kWidth4D>(sizes);
+
+  int64_t ni = dim_at<kBatch4D>(tensor_coor);
+  int64_t ci = dim_at<kChannel4D>(tensor_coor);
+  int64_t hi = dim_at<kHeight4D>(tensor_coor);
+  int64_t wi = dim_at<kWidth4D>(tensor_coor);
+
+  return (ni * c * h * w + ci * h * w + hi * w + wi);
+}
+
 //
 // Context Management
 //
 
 void submit_to_gpu();
 
-api::MemoryAllocation allocate_memory_for(const vTensor& vten);
+api::Allocation allocate_memory_for(const vTensor& vten);
 
 VmaTotalStatistics get_vma_stats();
 

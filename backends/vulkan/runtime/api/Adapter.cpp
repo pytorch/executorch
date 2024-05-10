@@ -70,10 +70,10 @@ PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
       handle, &queue_family_count, queue_families.data());
 
   // Find the total number of compute queues
-  for (const VkQueueFamilyProperties& properties : queue_families) {
+  for (const VkQueueFamilyProperties& p : queue_families) {
     // Check if this family has compute capability
-    if (properties.queueFlags & VK_QUEUE_COMPUTE_BIT) {
-      num_compute_queues += properties.queueCount;
+    if (p.queueFlags & VK_QUEUE_COMPUTE_BIT) {
+      num_compute_queues += p.queueCount;
     }
   }
 }
@@ -292,7 +292,8 @@ DeviceHandle::~DeviceHandle() {
 Adapter::Adapter(
     VkInstance instance,
     PhysicalDevice physical_device,
-    const uint32_t num_queues)
+    const uint32_t num_queues,
+    const std::string& cache_data_path)
     : queue_usage_mutex_{},
       physical_device_(std::move(physical_device)),
       queues_{},
@@ -307,7 +308,7 @@ Adapter::Adapter(
       shader_layout_cache_(device_.handle_),
       shader_cache_(device_.handle_),
       pipeline_layout_cache_(device_.handle_),
-      compute_pipeline_cache_(device_.handle_),
+      compute_pipeline_cache_(device_.handle_, cache_data_path),
       sampler_cache_(device_.handle_),
       vma_(instance_, physical_device_.handle, device_.handle_) {}
 

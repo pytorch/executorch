@@ -235,7 +235,7 @@ DescriptorPool::DescriptorPool(
       config_(config),
       mutex_{},
       piles_{} {
-  if (config.descriptorPoolMaxSets > 0) {
+  if (config.descriptor_pool_max_sets > 0) {
     init(config);
   }
 }
@@ -257,19 +257,19 @@ void DescriptorPool::init(const DescriptorPoolConfig& config) {
   std::vector<VkDescriptorPoolSize> type_sizes{
       {
           VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-          config_.descriptorUniformBufferCount,
+          config_.descriptor_uniform_buffer_count,
       },
       {
           VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-          config_.descriptorStorageBufferCount,
+          config_.descriptor_storage_buffer_count,
       },
       {
           VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-          config_.descriptorCombinedSamplerCount,
+          config_.descriptor_combined_sampler_count,
       },
       {
           VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-          config_.descriptorStorageBufferCount,
+          config_.descriptor_storage_buffer_count,
       },
   };
 
@@ -277,7 +277,7 @@ void DescriptorPool::init(const DescriptorPoolConfig& config) {
       VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, // sType
       nullptr, // pNext
       0u, // flags
-      config_.descriptorPoolMaxSets, // maxSets
+      config_.descriptor_pool_max_sets, // maxSets
       static_cast<uint32_t>(type_sizes.size()), // poolSizeCounts
       type_sizes.data(), // pPoolSizes
   };
@@ -297,7 +297,7 @@ DescriptorSet DescriptorPool::get_descriptor_set(
              .insert({
                  set_layout,
                  DescriptorSetPile(
-                     config_.descriptorPileSizes, set_layout, device_, pool_),
+                     config_.descriptor_pile_sizes, set_layout, device_, pool_),
              })
              .first;
   }

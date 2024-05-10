@@ -61,13 +61,13 @@ jobs:
         VERSION="latest"
         FRAMEWORKS=(
           "executorch"
-          "coreml_backend"
-          "custom_backend"
-          "mps_backend"
-          "optimized_backend"
-          "portable_backend"
-          "quantized_backend"
-          "xnnpack_backend"
+          "backend_coreml"
+          "backend_mps"
+          "backend_xnnpack"
+          "kernels_custom"
+          "kernels_optimized"
+          "kernels_portable"
+          "kernels_quantized"
         )
 
         .ci/scripts/setup-conda.sh

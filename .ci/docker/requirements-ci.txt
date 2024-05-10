@@ -6,7 +6,7 @@ sympy==1.12
 timm==0.6.13
 tomli==2.0.1
 torchsr==1.0.4
-transformers==4.36.0
+transformers==4.38.0
 zstd==1.5.5.1
 pytest==7.2.0
 pytest-cov==4.1.0

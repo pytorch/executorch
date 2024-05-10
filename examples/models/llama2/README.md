@@ -33,21 +33,22 @@ We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/l
 
 Note that groupsize less than 128 was not enabled, since such model were still too large. This is because our current efforts have focused on enabling FP32 and support for FP16 is under way. What this implies for model size is that 1) embedding table is in FP32 and 2) quantized weights scales are FP32.
 
+## Enablement
+
+We have verified running Llama 2 7B [mobile applications](#step-6-build-mobile-apps) efficiently on select devices including the iPhone 15 Pro, iPhone 15 Pro Max, Samsung Galaxy S22 and S24, and OnePlus 12.
+
+For Llama 3 8B, we have verified so far on iPhone 15 Pro Max, Samsung Galaxy S24+ and OnePlus 12 (with 16GB RAM).
+
 ## Performance
 
-Performance was measured on Samsung Galaxy S22, S24, One Plus 12 and iPhone 15 max Pro. Measurement performance is in terms of tokens/second.
+Llama2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
 
 |Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------| ---------------------- | ---------------
-|Galaxy S22*  | 8.15 tokens/second | 8.3 tokens/second |
-|Galaxy S24* | 10.66 tokens/second | 11.26 tokens/second |
-|One plus 12* | 11.55 tokens/second | 11.6 tokens/second |
-|Galaxy S22** | 5.5 tokens/second | 5.9 tokens/second |
-|iPhone 15 pro** | ~6 tokens/second | ~6 tokens/second |
+|Galaxy S22  | 8.15 tokens/second | 8.3 tokens/second |
+|Galaxy S24 | 10.66 tokens/second | 11.26 tokens/second |
+|OnePlus 12 | 11.55 tokens/second | 11.6 tokens/second |
 
-*: Measured via adb binary based [workflow](#step-5-run-benchmark-on)
-
-**: Measured via app based [workflow](#step-6-build-mobile-apps)
 
 # Instructions
 
@@ -111,8 +112,37 @@ You can export and run the original Llama3 8B model.
 
 2. Export model and generate `.pte` file
     ```
-    python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -d=fp32 -X -qmode 8da4w -kv --use_sdpa_with_kv_cache --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte" group_size 128 --metadata '{"get_bos_id":128000, "get_eos_id":128001}' --embedding-quantize 4,32
+    python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_id":128001}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
     ```
+
+    Due to the larger vocabulary size of Llama3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` to further reduce the model size.
+
+### Option D: Download models from Hugging Face and convert from safetensor format to state dict
+
+You can also download above models from [Hugging Face](https://huggingface.co/). Since ExecuTorch starts from a PyTorch model, a script like below can be used to convert the Hugging Face safetensors format to PyTorch's state dict. It leverages the utils provided by [TorchTune](https://github.com/pytorch/torchtune).
+
+```Python
+from torchtune.utils import FullModelHFCheckpointer
+from torchtune.models import convert_weights
+import torch
+
+# Convert from safetensors to TorchTune. Suppose the model has been downloaded from Hugging Face
+checkpointer = FullModelHFCheckpointer(
+    checkpoint_dir='/home/.cache/huggingface/hub/models/snapshots/hash-number',
+    checkpoint_files=['model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors'],
+    output_dir='/the/destination/dir' ,
+    model_type='LLAMA3' # or other types that TorchTune supports
+)
+
+print("loading checkpoint")
+sd = checkpointer.load_checkpoint()
+
+# Convert from TorchTune to Meta (PyTorch native)
+sd = convert_weights.tune_to_meta(sd['model'])
+
+print("saving checkpoint")
+torch.save(sd, "/the/destination/dir/checkpoint.pth")
+```
 
 ## (Optional) Finetuning
 
@@ -158,9 +188,9 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DEXECUTORCH_BUILD_QUANTIZED=ON \
-        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_CUSTOM=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
         -Bcmake-out .
 
     cmake --build cmake-out -j16 --target install --config Release
@@ -171,10 +201,10 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
     cmake -DPYTHON_EXECUTABLE=python \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_CUSTOM=ON \
-        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+        -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DEXECUTORCH_BUILD_QUANTIZED=ON \
+        -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -Bcmake-out/examples/models/llama2 \
         examples/models/llama2
 
@@ -212,7 +242,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DPYTHON_EXECUTABLE=python \
-    -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -Bcmake-out-android .
 
 cmake --build cmake-out-android -j16 --target install --config Release
@@ -226,7 +256,7 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DCMAKE_INSTALL_PREFIX=cmake-out-android \
     -DCMAKE_BUILD_TYPE=Release \
     -DPYTHON_EXECUTABLE=python \
-    -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -Bcmake-out-android/examples/models/llama2 \
     examples/models/llama2
 

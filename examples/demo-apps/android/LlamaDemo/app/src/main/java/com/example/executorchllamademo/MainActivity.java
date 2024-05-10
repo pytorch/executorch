@@ -13,6 +13,8 @@ import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.os.Bundle;
+import android.system.ErrnoException;
+import android.system.Os;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -79,9 +81,9 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     if (loadResult != 0) {
       AlertDialog.Builder builder = new AlertDialog.Builder(this);
       builder.setTitle("Load failed: " + loadResult);
-      AlertDialog alert = builder.create();
       runOnUiThread(
           () -> {
+            AlertDialog alert = builder.create();
             alert.show();
           });
     }
@@ -160,6 +162,12 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
+
+    try {
+      Os.setenv("ADSP_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir, true);
+    } catch (ErrnoException e) {
+      finish();
+    }
 
     mEditTextMessage = findViewById(R.id.editTextMessage);
     mSendButton = findViewById(R.id.sendButton);
