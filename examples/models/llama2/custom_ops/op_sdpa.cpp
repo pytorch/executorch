@@ -732,7 +732,7 @@ Tensor& sdpa_with_kv_cache_out(
     const Tensor& v_projected,
     Tensor& key_cache,
     Tensor& value_cache,
-    const int64_t start_pos,
+    const Tensor& start_pos_tensor,
     const int64_t seq_len,
     const optional<Tensor>& attn_mask,
     const double dropout_p,
@@ -741,6 +741,7 @@ Tensor& sdpa_with_kv_cache_out(
     const optional<double> scale,
     Tensor& output) {
   (void)ctx;
+  const int64_t start_pos = *start_pos_tensor.const_data_ptr<int64_t>();
   ET_KERNEL_CHECK(
       ctx,
       validate_cache_params(key_cache, value_cache, start_pos, seq_len),
