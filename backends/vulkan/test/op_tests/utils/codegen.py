@@ -130,7 +130,14 @@ class ComputeGraphGen:
                 ATenArg(name=arg.name, cpp_type=cpp_type, default=arg.default)
             )
 
-            requires_prepack = "weight" in arg.name or "bias" in arg.name
+            # These are the argument will be passed as a "weight" tensor, the
+            # corresponding object will be TensorRef in the compute graph.
+            requires_prepack = (
+                "weight" in arg.name
+                or "bias" in arg.name
+                or "running_mean" in arg.name
+                or "running_var" in arg.name
+            )
             supports_prepack = False
             if arg.name in self.suite_def.prepacked_args:
                 supports_prepack = True
