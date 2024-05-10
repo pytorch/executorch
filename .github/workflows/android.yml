@@ -61,6 +61,9 @@ jobs:
         cp cmake-out-android-arm64-v8a/extension/android/*.so artifacts-to-be-uploaded/arm64-v8a/
         cp cmake-out-android-x86_64/lib/*.a artifacts-to-be-uploaded/x86_64/
         cp cmake-out-android-x86_64/extension/android/*.so artifacts-to-be-uploaded/x86_64/
+        # Copyp AAR to S3
+        cp build_aar/executorch.aar artifacts-to-be-uploaded/
+        cp build_aar/executorch-llama.aar artifacts-to-be-uploaded/
 
   # Upload the app and its test suite to S3 so that they can be downloaded by the test job
   upload-artifacts:
