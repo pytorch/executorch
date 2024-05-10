@@ -23,7 +23,7 @@ Tensor& sdpa_with_kv_cache_out_no_context(
     const Tensor& v_projected,
     Tensor& key_cache,
     Tensor& value_cache,
-    const int64_t start_pos,
+    const Tensor& start_pos_tensor,
     const int64_t seq_len,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
@@ -41,7 +41,7 @@ Tensor& sdpa_with_kv_cache_out_no_context(
       v_projected,
       key_cache,
       value_cache,
-      start_pos,
+      start_pos_tensor,
       seq_len,
       attn_mask,
       dropout_p,
@@ -56,7 +56,7 @@ at::Tensor sdpa_with_kv_cache_aten(
     const at::Tensor& v_projected,
     at::Tensor& key_cache,
     at::Tensor& value_cache,
-    const int64_t start_pos,
+    const at::Tensor& start_pos_tensor,
     const int64_t seq_len,
     // @lint-ignore CLANGTIDY facebook-hte-ConstantArgumentPassByValue
     // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
@@ -72,7 +72,7 @@ at::Tensor sdpa_with_kv_cache_aten(
    v_projected,
    key_cache,
    value_cache,
-   start_pos,
+   start_pos_tensor,
    seq_len,
    attn_mask,
    dropout_p,
@@ -89,11 +89,11 @@ at::Tensor sdpa_with_kv_cache_aten(
 TORCH_LIBRARY(llama, m) {
   m.def(
       "sdpa_with_kv_cache(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
-      "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
+      "Tensor(b!) value_cache, Tensor start_pos, SymInt seq_len, Tensor? attn_mask=None, "
       "float drpout_p=0.0, bool is_causal=False, float? scale=None) -> Tensor");
   m.def(
       "sdpa_with_kv_cache.out(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
-      "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
+      "Tensor(b!) value_cache, Tensor start_pos, SymInt seq_len, Tensor? attn_mask=None, "
       "float drpout_p=0.0, bool is_causal=False, float? scale=None, *, Tensor(c!) out) -> Tensor(c!)");
 }
 
