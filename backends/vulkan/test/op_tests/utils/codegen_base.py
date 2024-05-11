@@ -29,6 +29,7 @@ OPT_DEVICE = "::std::optional<at::Device>"
 OPT_LAYOUT = "::std::optional<at::Layout>"
 OPT_MEMORY_FORMAT = "::std::optional<at::MemoryFormat>"
 OPT_SCALAR_TYPE = "::std::optional<at::ScalarType>"
+STRING = "c10::string_view"
 TWO_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor>"
 THREE_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor,at::Tensor>"
 TENSOR_VECTOR = "::std::vector<at::Tensor>"
@@ -166,6 +167,8 @@ class TestSuiteGen:
                 ret_str += "std::nullopt;"
             else:
                 ret_str += f"{str(data)};"
+        elif cpp_type == STRING:
+            ret_str += f'c10::string_view("{data}");'
         elif (
             cpp_type == OPT_SCALAR_TYPE
             or cpp_type == OPT_LAYOUT

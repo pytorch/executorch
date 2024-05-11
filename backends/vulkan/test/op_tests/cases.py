@@ -727,6 +727,18 @@ def get_native_batch_norm_inputs():
     return test_suite
 
 
+def get_gelu_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M1), "tanh"),
+            ((M1, M2), "tanh"),
+            ((S1, M1, M2), "tanh"),
+            ((S1, S2, S2, M2), "tanh"),
+        ]
+    )
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -755,4 +767,5 @@ test_suites = {
     "aten._softmax.default": get_softmax_inputs(),
     "aten._log_softmax.default": get_softmax_inputs(),
     "aten._native_batch_norm_legit_no_training.default": get_native_batch_norm_inputs(),
+    "aten.gelu.default": get_gelu_inputs(),
 }
