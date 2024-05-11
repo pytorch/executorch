@@ -1034,3 +1034,14 @@ class TestBackends(unittest.TestCase):
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
+
+    def test_vulkan_backend_gelu(self):
+        class GeluModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.gelu = torch.nn.GELU(approximate="tanh")
+
+            def forward(self, x):
+                return self.gelu(x)
+
+        self.lower_unary_module_and_test_output(GeluModule())
