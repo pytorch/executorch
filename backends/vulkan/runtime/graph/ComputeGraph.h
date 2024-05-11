@@ -196,6 +196,10 @@ class ComputeGraph final {
     }
   }
 
+  std::string extract_string(const ValueRef idx) {
+    return values_.at(idx).toString();
+  }
+
   inline std::vector<std::unique_ptr<PrepackNode>>& prepack_nodes() {
     return prepack_nodes_;
   }
