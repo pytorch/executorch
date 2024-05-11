@@ -413,6 +413,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`, Optional type has no attribute `exported_program`
         _transform(builder_exported_to_edge.edge_manager.exported_program())
+        modelname = f"qnn_{modelname}"
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
