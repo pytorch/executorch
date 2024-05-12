@@ -70,8 +70,8 @@ class TestSimpleView(unittest.TestCase):
         if common.TOSA_REF_MODEL_INSTALLED:
             tester.run_method_and_compare_outputs(qtol=1)
         else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
+            raise RuntimeError(
+                "TOSA ref model tool not installed and the test is an expected fail"
             )
 
     def _test_view_u55_BI_pipeline(

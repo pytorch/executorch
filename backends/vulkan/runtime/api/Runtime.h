@@ -35,10 +35,11 @@ enum AdapterSelector {
 };
 
 struct RuntimeConfiguration final {
-  bool enableValidationMessages;
-  bool initDefaultDevice;
-  AdapterSelector defaultSelector;
-  uint32_t numRequestedQueues;
+  bool enable_validation_messages;
+  bool init_default_device;
+  AdapterSelector default_selector;
+  uint32_t num_requested_queues;
+  std::string cache_data_path;
 };
 
 class Runtime final {

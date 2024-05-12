@@ -150,10 +150,10 @@ def define_common_targets(is_fbcode = False):
         name = "vulkan_compute_api",
         compiler_flags = get_vulkan_compiler_flags(),
         srcs = native.glob([
-            "runtime/api/*.cpp",
+            "runtime/api/**/*.cpp",
         ]),
         exported_headers = native.glob([
-            "runtime/api/*.h",
+            "runtime/api/**/*.h",
         ]),
         visibility = [
             "//executorch/backends/vulkan/...",

@@ -10,10 +10,8 @@
 
 //
 // Do NOT include vk_mem_alloc.h directly.
-// Always include this file (Allocator.h) instead.
+// Always include this file (vma_api.h) instead.
 //
-
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
 #define VMA_VULKAN_VERSION 1000000
 

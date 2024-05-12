@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.pass_manager import PassType
@@ -45,7 +45,12 @@ class EdgeCompileConfig:
 @dataclass
 class ExecutorchBackendConfig:
     passes: List[PassType] = field(default_factory=list)
-    memory_planning_pass: PassType = MemoryPlanningPass("greedy")
+
+    # A single memory planning pass can be defined for all the programs in the
+    # EdgeProgramManager or can be defined per program.
+    memory_planning_pass: Union[PassType, Dict[str, PassType]] = MemoryPlanningPass(
+        "greedy"
+    )
     to_out_var_pass: PassType = ToOutVarPass(ignore_to_out_var_failure=False)
     dynamic_memory_planning_mode: DynamicMemoryPlanningMode = (
         DynamicMemoryPlanningMode.UPPER_BOUND
@@ -55,7 +60,7 @@ class ExecutorchBackendConfig:
     # Whether to move delegate data blobs from the Program into separate
     # segments, rather than encoding those blobs in the flatbuffer data.
     # This makes it possible to free those blobs at runtime.
-    extract_delegate_segments: bool = False
+    extract_delegate_segments: bool = True
 
     # Whether to extract constants from the Program into separate segments,
     # rather than encoding those constants in the flatbuffer data.

@@ -59,7 +59,7 @@ done
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION=dev20240505
+NIGHTLY_VERSION=dev20240507
 
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL="https://download.pytorch.org/whl/nightly/cpu"
@@ -73,6 +73,7 @@ EXIR_REQUIREMENTS=(
 # pip packages needed for development.
 DEVEL_REQUIREMENTS=(
   cmake  # For building binary targets.
+  "pip>=23" # For building the pip package.
   pyyaml  # Imported by the kernel codegen tools.
   "setuptools>=63"  # For building the pip package.
   tomli  # Imported by extract_sources.py when using python < 3.11.

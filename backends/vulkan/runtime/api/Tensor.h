@@ -259,7 +259,7 @@ class vTensor final {
   /*
    * Binds the underlying resource to the given memory allocation
    */
-  void bind_allocation(const api::MemoryAllocation& allocation);
+  void bind_allocation(const api::Allocation& allocation);
 
  private:
   /*

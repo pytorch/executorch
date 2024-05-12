@@ -23,7 +23,8 @@ install_ubuntu() {
     unzip \
     gdb \
     rsync \
-    libssl-dev
+    libssl-dev \
+    zip
 
   # Cleanup package manager
   apt-get autoclean && apt-get clean

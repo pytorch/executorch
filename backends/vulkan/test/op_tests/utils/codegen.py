@@ -24,6 +24,7 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     OPT_LAYOUT,
     OPT_MEMORY_FORMAT,
     OPT_SCALAR_TYPE,
+    STRING,
     TENSOR_VECTOR,
     TestSuite,
     TestSuiteGen,
@@ -130,7 +131,14 @@ class ComputeGraphGen:
                 ATenArg(name=arg.name, cpp_type=cpp_type, default=arg.default)
             )
 
-            requires_prepack = "weight" in arg.name or "bias" in arg.name
+            # These are the argument will be passed as a "weight" tensor, the
+            # corresponding object will be TensorRef in the compute graph.
+            requires_prepack = (
+                "weight" in arg.name
+                or "bias" in arg.name
+                or "running_mean" in arg.name
+                or "running_var" in arg.name
+            )
             supports_prepack = False
             if arg.name in self.suite_def.prepacked_args:
                 supports_prepack = True
@@ -344,6 +352,8 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             or ref.src_cpp_type == OPT_MEMORY_FORMAT
         ):
             ret_str += "add_none(); \n"
+        elif ref.src_cpp_type == STRING:
+            ret_str += f"add_string(std::string({ref.src_cpp_name})); \n"
         elif ref.src_cpp_type == TWO_TENSOR_TUPLE:
             ret_str += f"add_value_list({{{ref.name}_first, {ref.name}_second}}); \n"
         elif ref.src_cpp_type == THREE_TENSOR_TUPLE:
@@ -582,8 +592,8 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
         api::StorageType default_storage_type;
         api::GPUMemoryLayout default_memory_layout;
         std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();
-        config.setStorageTypeOverride(default_storage_type);
-        config.setMemoryLayoutOverride(default_memory_layout);
+        config.set_storage_type_override(default_storage_type);
+        config.set_memory_layout_override(default_memory_layout);
         graph = new ComputeGraph(config);
 
         if (test_dtype == at::kHalf) {{

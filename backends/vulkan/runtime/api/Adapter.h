@@ -16,6 +16,8 @@
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
 
+#include <executorch/backends/vulkan/runtime/api/memory/Allocator.h>
+
 #include <array>
 #include <mutex>
 #include <ostream>
@@ -99,7 +101,8 @@ class Adapter final {
   explicit Adapter(
       VkInstance instance,
       PhysicalDevice physical_device,
-      const uint32_t num_queues);
+      const uint32_t num_queues,
+      const std::string& cache_data_path);
 
   Adapter(const Adapter&) = delete;
   Adapter& operator=(const Adapter&) = delete;
@@ -136,7 +139,7 @@ class Adapter final {
   ComputePipelineCache compute_pipeline_cache_;
   // Memory Management
   SamplerCache sampler_cache_;
-  MemoryAllocator vma_;
+  Allocator vma_;
 
  public:
   // Physical Device metadata
@@ -194,7 +197,7 @@ class Adapter final {
     return sampler_cache_;
   }
 
-  inline MemoryAllocator& vma() {
+  inline Allocator& vma() {
     return vma_;
   }
 
