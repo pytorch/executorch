@@ -16,13 +16,23 @@
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly image3D im_out;
 layout(set = 0, binding = 1) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_mat1;
 layout(set = 0, binding = 2) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_mat2;
+layout(set = 0, binding = 3) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_self;
 
-layout(set = 0, binding = 3) uniform PRECISION restrict OutLimits {
+layout(set = 0, binding = 4) uniform PRECISION restrict OutLimits {
   ivec3 out_limits;
 };
 
-layout(set = 0, binding = 4) uniform PRECISION restrict InSizes {
+layout(set = 0, binding = 5) uniform PRECISION restrict InSizes {
   ivec4 in_sizes;
+};
+
+layout(set = 0, binding = 6) uniform PRECISION restrict SelfSizes {
+  ivec3 self_sizes;
+};
+
+layout(set = 0, binding = 7) uniform PRECISION restrict AddmmParams {
+  float alpha;
+  float beta;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -59,5 +69,12 @@ void main() {
   $else:
     $raise Exception("Unsupported value combo for MAT1_PACKING and MAT2_PACKING")
 
+  vec4 self_texel = get_texel_W_packed(
+      im_self,
+      pos,
+      self_sizes.x == 1,
+      self_sizes.y == 1);
+
+  texel = beta * self_texel + alpha * texel;
   imageStore(im_out, pos, texel);
 }

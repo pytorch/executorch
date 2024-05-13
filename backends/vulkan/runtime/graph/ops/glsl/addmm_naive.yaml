@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-matmul_naive:
+addmm_naive:
   parameter_names_with_default_values:
     DTYPE: float
     NDIM: 3
@@ -15,6 +15,6 @@ matmul_naive:
       - VALUE: float
       - VALUE: half
   shader_variants:
-    - NAME: matmul_naive_W_packed_H_packed
-    - NAME: matmul_naive_W_packed_W_packed
+    - NAME: addmm_naive_W_packed_H_packed
+    - NAME: addmm_naive_W_packed_W_packed
       MAT2_PACKING: W_packed

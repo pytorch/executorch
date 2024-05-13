@@ -279,6 +279,17 @@ inline std::ostream& operator<<(std::ostream& os, const ivec4& v) {
   return os;
 }
 
+template <typename T, uint32_t N>
+inline detail::vec<T, N> divup_vec(
+    const detail::vec<T, N>& a,
+    const detail::vec<T, N>& b) {
+  detail::vec<T, N> result;
+  for (uint32_t i = 0; i < N; ++i) {
+    result.data[i] = api::utils::div_up(a.data[i], b.data[i]);
+  }
+  return result;
+}
+
 //
 // std::vector<T> Handling
 //
