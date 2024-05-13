@@ -104,7 +104,7 @@ class TestDiv(unittest.TestCase):
     def _test_div_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module,
                 inputs=test_data,
@@ -117,18 +117,13 @@ class TestDiv(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(test_data)
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(test_data)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_div_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module,
                 inputs=test_data,
@@ -142,13 +137,8 @@ class TestDiv(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(test_data)
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(test_data)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_div_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
@@ -202,10 +192,6 @@ class TestDiv(unittest.TestCase):
     # Expected to fail since ArmQuantizer cannot quantize a Div layer
     # TODO(MLETORCH-129)
     @parameterized.expand(test_data_suite)
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     @unittest.expectedFailure
     def test_div_u55_BI(
         self,

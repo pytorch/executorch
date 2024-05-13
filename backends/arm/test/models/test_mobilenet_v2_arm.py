@@ -49,7 +49,7 @@ class TestMobileNetV2(unittest.TestCase):
     )
 
     def test_mv2_tosa_MI(self):
-        tester = (
+        (
             ArmTester(
                 self.mv2,
                 inputs=self.model_inputs,
@@ -60,16 +60,11 @@ class TestMobileNetV2(unittest.TestCase):
             .check(list(self.all_operators))
             .partition()
             .to_executorch()
+            .run_method_and_compare_outputs()
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs()
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def test_mv2_tosa_BI(self):
-        tester = (
+        (
             ArmTester(
                 self.mv2,
                 inputs=self.model_inputs,
@@ -81,23 +76,12 @@ class TestMobileNetV2(unittest.TestCase):
             .check(list(self.operators_after_quantization))
             .partition()
             .to_executorch()
-        )
-        if common.TOSA_REF_MODEL_INSTALLED:
             # atol=1.0 is a defensive upper limit
             # TODO MLETROCH-72
             # TODO MLETROCH-149
-            tester.run_method_and_compare_outputs(
-                atol=1.0, qtol=1, inputs=self.model_inputs
-            )
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
+            .run_method_and_compare_outputs(atol=1.0, qtol=1, inputs=self.model_inputs)
+        )
 
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     def test_mv2_u55_BI(self):
         (
             ArmTester(
