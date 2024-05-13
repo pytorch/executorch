@@ -13,23 +13,34 @@
 #include "indexing_utils.h"
 #include "matmul.h"
 
+// addmm will have additional arguments compared to regular mm
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly image3D im_out;
 layout(set = 0, binding = 1) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_mat1;
 layout(set = 0, binding = 2) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_mat2;
+layout(set = 0, binding = 3) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_self;
 
-layout(set = 0, binding = 3) uniform PRECISION restrict OutLimits {
+layout(set = 0, binding = 4) uniform PRECISION restrict OutLimits {
   ivec3 out_limits;
 };
 
-layout(set = 0, binding = 4) uniform PRECISION restrict OutSizes {
+layout(set = 0, binding = 5) uniform PRECISION restrict OutSizes {
   ivec4 out_sizes;
 };
 
-layout(set = 0, binding = 5) uniform PRECISION restrict PackedDimMeta {
+layout(set = 0, binding = 6) uniform PRECISION restrict SelfSizes {
+  ivec4 self_sizes;
+};
+
+layout(set = 0, binding = 7) uniform PRECISION restrict PackedDimMeta {
   int packed_dim_size;
   int packed_dim_size_padded;
   int packed_dim_texel_len;
   int packed_dim_padding;
+};
+
+layout(set = 0, binding = 8) uniform PRECISION restrict Params {
+  float alpha;
+  float beta;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -53,6 +64,13 @@ void main() {
     for (int idx_r = 0; idx_r < FOUR; idx_r++) {
       const ivec3 out_pos =
           ivec3(idx_r + FOUR * pos.x, idx_c + FOUR * pos.y, pos.z);
+
+      vec4 self_texel = get_texel_C_packed(
+          im_self,
+          out_pos,
+          self_sizes.x == 1,
+          self_sizes.y == 1);
+      results.data[idx_c][idx_r][0] = beta * self_texel.x + alpha * results.data[idx_c][idx_r][0];
 
       // results is in transposed order w.r.t. the desired output
       imageStore(

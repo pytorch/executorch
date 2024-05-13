@@ -16,10 +16,15 @@ namespace vkcompute {
 
 constexpr size_t kShaderNameReserve = 64u;
 
+void add_dtype_suffix(std::string& kernel_name, const api::ScalarType dtype);
 void add_dtype_suffix(std::string& kernel_name, const vTensor& tensor);
 
+void add_ndim_suffix(std::string& kernel_name, const size_t ndim);
 void add_ndim_suffix(std::string& kernel_name, const vTensor& tensor);
 
+void add_memory_layout_suffix(
+    std::string& kernel_name,
+    const api::GPUMemoryLayout layout);
 void add_memory_layout_suffix(std::string& kernel_name, const vTensor& tensor);
 
 } // namespace vkcompute
