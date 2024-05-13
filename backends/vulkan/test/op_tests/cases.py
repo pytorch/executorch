@@ -651,6 +651,94 @@ def get_unary_ops_inputs():
     return test_suite
 
 
+def get_native_batch_norm_inputs():
+    Test = namedtuple(
+        "VkSliceTest", ["self", "weight", "bias", "mean", "var", "momentum", "eps"]
+    )
+
+    test_cases = [
+        Test(
+            self=(1, 1, 2, 5),
+            weight=(1,),
+            bias=(1,),
+            mean=(1,),
+            var=(1,),
+            momentum=0.0,
+            eps=0.001,
+        ),
+        Test(
+            self=(S2, 1, 2, 5),
+            weight=(1,),
+            bias=(1,),
+            mean=(1,),
+            var=(1,),
+            momentum=0.0,
+            eps=0.001,
+        ),
+        Test(
+            self=(1, S2, 2, 5),
+            weight=(S2,),
+            bias=(S2,),
+            mean=(S2,),
+            var=(S2,),
+            momentum=0.0,
+            eps=0.001,
+        ),
+        Test(
+            self=(9, S1, 2, 5),
+            weight=(S1,),
+            bias=(S1,),
+            mean=(S1,),
+            var=(S1,),
+            momentum=0.0,
+            eps=0.01,
+        ),
+        Test(
+            self=(3, S1, 2, 5),
+            weight=(S1,),
+            bias=(S1,),
+            mean=(S1,),
+            var=(S1,),
+            momentum=0.0,
+            eps=0.001,
+        ),
+        Test(
+            self=(3, S2, 2, 5),
+            weight=(S2,),
+            bias=(S2,),
+            mean=(S2,),
+            var=(S2,),
+            momentum=0.0,
+            eps=0.001,
+        ),
+        Test(
+            self=(3, S2, 2, 5),
+            weight=(S2,),
+            bias=(S2,),
+            mean=(S2,),
+            var=(S2,),
+            momentum=0.0,
+            eps=0.000,
+        ),
+    ]
+
+    test_suite = VkTestSuite(test_cases)
+
+    return test_suite
+
+
+def get_gelu_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M1), "tanh"),
+            ((M1, M2), "tanh"),
+            ((S1, M1, M2), "tanh"),
+            ((S1, S2, S2, M2), "tanh"),
+        ]
+    )
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -678,4 +766,6 @@ test_suites = {
     "aten.sqrt.default": get_unary_ops_inputs(),
     "aten._softmax.default": get_softmax_inputs(),
     "aten._log_softmax.default": get_softmax_inputs(),
+    "aten._native_batch_norm_legit_no_training.default": get_native_batch_norm_inputs(),
+    "aten.gelu.default": get_gelu_inputs(),
 }
