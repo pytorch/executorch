@@ -14,7 +14,7 @@ from coremltools.optimize.torch.quantization.quantization_config import (
     QuantizationScheme,
 )
 
-from executorch.backends.apple.coreml.quantizer.coreml_quantizer import CoreMLQuantizer
+from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import (
     convert_pt2e,
