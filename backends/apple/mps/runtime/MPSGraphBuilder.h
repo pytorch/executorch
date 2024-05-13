@@ -123,6 +123,7 @@ private:
   _DEFINE_MPS_OP(Embedding);
   _DEFINE_MPS_OP(IndexTensor);
   _DEFINE_MPS_OP(IndexPut);
+  _DEFINE_MPS_OP(Scatter);
   // Linear algebra ops
   _DEFINE_MPS_OP(MatMul);
   _DEFINE_MPS_OP(Addmm);

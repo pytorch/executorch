@@ -201,7 +201,6 @@ class TestMPSIndexingOps(TestMPS):
     #     )
 
     def test_mps_indexing_put_1(self):
-
         class IndexPut(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -218,6 +217,46 @@ class TestMPSIndexingOps(TestMPS):
             input,
             indices,
             values,
+        )
+
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_indexing_slice_scatter_1(self):
+        class IndexSliceScatter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                return x.slice_scatter(y, start=6)
+
+        module = IndexSliceScatter()
+        input = torch.zeros(8, 8)
+        src = torch.ones(2, 8)
+        model_inputs = (
+            input,
+            src,
+        )
+
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_indexing_slice_scatter_2(self):
+        class IndexSliceScatter(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                return x.slice_scatter(y, dim=1, start=2, end=6, step=2)
+
+        module = IndexSliceScatter()
+        input = torch.zeros(8, 8)
+        src = torch.ones(8, 2)
+        model_inputs = (
+            input,
+            src,
         )
 
         self.lower_and_test_with_partitioner(
