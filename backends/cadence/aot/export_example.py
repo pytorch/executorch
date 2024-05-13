@@ -14,12 +14,12 @@ import os
 from typing import Any, Tuple
 
 from executorch.backends.cadence.aot.compiler import export_to_edge
-from executorch.backends.cadence.aot.quantizer import (
-    CadenceBaseQuantizer,
-    QuantFusion,
+from executorch.backends.cadence.aot.passes import (
     ReplacePT2DequantWithCadenceDequant,
     ReplacePT2QuantWithCadenceQuant,
 )
+from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
+from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
 from executorch.exir import ExecutorchProgramManager
 from torch import nn
 from torch._export import capture_pre_autograd_graph
@@ -52,7 +52,7 @@ def export_model(
     model: nn.Module, example_inputs: Tuple[Any], file_name: str = "CadenceDemoModel"
 ):
     # Quantizer
-    quantizer = CadenceBaseQuantizer()
+    quantizer = CadenceQuantizer()
 
     # Export
     model_exp = capture_pre_autograd_graph(model, example_inputs)
