@@ -230,6 +230,14 @@ struct Value final {
         tag,                                                \
         " instead.");                                       \
     return payload.member_name;                             \
+  }                                                         \
+  inline const type& toConst##type_name() const {           \
+    VK_CHECK_COND(                                          \
+        is##type_name(),                                    \
+        "Expected value to have type " #type_name ", got ", \
+        tag,                                                \
+        " instead.");                                       \
+    return payload.member_name;                             \
   }
 
   SUPPORT_TRIVIALLY_MOVEABLE_TYPE(vTensor, Tensor, TypeTag::TENSOR, as_tensor);
