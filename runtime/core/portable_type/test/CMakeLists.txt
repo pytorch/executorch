@@ -30,11 +30,18 @@ enable_testing()
 find_package(GTest CONFIG REQUIRED)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/.. ${EXECUTORCH_ROOT}/third-party/googletest/googletest/include)
+set(_common_include_directories
+    ${EXECUTORCH_ROOT}/..
+    ${EXECUTORCH_ROOT}/third-party/googletest/googletest/include
+)
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
-set(_test_srcs optional_test.cpp executor_tensor_test.cpp half_test.cpp scalar_test.cpp tensor_impl_test.cpp)
+set(_test_srcs optional_test.cpp executor_tensor_test.cpp half_test.cpp
+               scalar_test.cpp tensor_impl_test.cpp
+)
 
 add_executable(runtime_core_portable_type_test ${_test_srcs})
-target_link_libraries(runtime_core_portable_type_test GTest::gtest GTest::gtest_main executorch)
+target_link_libraries(
+  runtime_core_portable_type_test GTest::gtest GTest::gtest_main executorch
+)
 add_test(ExecuTorchTest runtime_core_portable_type_test)
