@@ -217,7 +217,6 @@ class LayerNormFunctionalPattern(QuantizationPattern):
             weights=[],
             biases=[],
             # Ordering: normalized_shape, weights, bias
-            # pyre-fixme[6]: Incompatible parameter type
             others=others,
             output=[(layer_norm_node,)],
         )
