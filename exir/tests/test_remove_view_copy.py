@@ -32,7 +32,8 @@ class TestModel1(nn.Module):
         )  # removed, lifetime of mul.Tensor will be extended
         v4 = torch.ops.aten.mul.Tensor(v3, self.parameter2)
         v5 = v4.view(6, 5)  # not removed, output of the graph
-        return v5
+        v6 = v4.view(2, 15)  # not removed, output of the graph
+        return v5, v6
 
     def get_example_inputs(self):
         return (torch.rand(5, 6),)
@@ -87,10 +88,15 @@ class TestRemoveViewCopy(unittest.TestCase):
             ),
         )
 
-        out_remove = etpm_remove.exported_program().module()(*example_inputs)
-        out_no_remove = etpm_no_remove.exported_program().module()(*example_inputs)
+        out_remove_v5, out_remove_v6 = etpm_remove.exported_program().module()(
+            *example_inputs
+        )
+        out_no_remove_v5, out_no_remove_v6 = etpm_no_remove.exported_program().module()(
+            *example_inputs
+        )
 
-        self.assertTrue(torch.allclose(out_remove, out_no_remove))
+        self.assertTrue(torch.allclose(out_remove_v5, out_no_remove_v5))
+        self.assertTrue(torch.allclose(out_remove_v6, out_no_remove_v6))
 
     def test_spec(self) -> None:
         model = TestModel1()
@@ -196,7 +202,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         self.assertEqual(plan.operators[2].name, "aten::view_copy")
 
         instructions = plan.chains[0].instructions
-        self.assertEqual(len(instructions), 6)
+        self.assertEqual(len(instructions), 7)
 
         self.assertEqual(
             instructions[0].instr_args.op_index, 0  # pyre-ignore
@@ -215,4 +221,7 @@ class TestRemoveViewCopy(unittest.TestCase):
         )  # aten:mul @ idx9
         self.assertEqual(
             instructions[5].instr_args.op_index, 2  # pyre-ignore
+        )  # aten:view_copy @ idx11
+        self.assertEqual(
+            instructions[6].instr_args.op_index, 2  # pyre-ignore
         )  # aten:view_copy @ idx11

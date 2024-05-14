@@ -275,7 +275,7 @@ class ReplaceViewCopyWithViewPass(PassBase):
             for node in module.graph.nodes:
                 # Note: We only replace view_copy nodes that are not output, since
                 # the output pointer could be modified at runtime (T187925929)
-                if _is_view_copy(node) and node.next.op != "output":
+                if _is_view_copy(node) and all(u.op != "output" for u in node.users):
                     base, _ = node.args
                     node.target = _VIEW_OP
 
@@ -302,7 +302,9 @@ class ReplaceViewCopyWithViewPass(PassBase):
             for node in module.graph.nodes:
                 # Note: We only replace view_copy nodes that are not output, since
                 # the output pointer could be modified at runtime (T187925929)
-                assert not (_is_view_copy(node) and node.next.op != "output")
+                assert not (
+                    _is_view_copy(node) and all(u.op != "output" for u in node.users)
+                )
                 if node.op == "call_function" and node.target == _VIEW_OP:
                     assert isinstance(node.meta["spec"], _ViewSpec)
 
@@ -317,6 +319,6 @@ class ReplaceViewCopyWithViewPass(PassBase):
             for node in module.graph.nodes:
                 # Note: We only replace view_copy nodes that are not output, since
                 # the output pointer could be modified at runtime (T187925929)
-                if _is_view_copy(node) and node.next.op != "output":
+                if _is_view_copy(node) and all(u.op != "output" for u in node.users):
                     base, size = node.args
                     assert not _is_view_copy(base)
