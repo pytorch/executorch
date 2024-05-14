@@ -243,6 +243,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -Bcmake-out-android .
 
 cmake --build cmake-out-android -j16 --target install --config Release
