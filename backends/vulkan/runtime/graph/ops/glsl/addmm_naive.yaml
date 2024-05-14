@@ -10,6 +10,7 @@ addmm_naive:
     NDIM: 3
     MAT1_PACKING: W_packed
     MAT2_PACKING: H_packed
+    MAT2_IS_TRANSPOSED: false
   generate_variant_forall:
     DTYPE:
       - VALUE: float
@@ -18,3 +19,6 @@ addmm_naive:
     - NAME: addmm_naive_W_packed_H_packed
     - NAME: addmm_naive_W_packed_W_packed
       MAT2_PACKING: W_packed
+    - NAME: linear_naive_W_packed_W_packed
+      MAT2_PACKING: W_packed
+      MAT2_IS_TRANSPOSED: true
