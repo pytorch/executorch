@@ -259,6 +259,8 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -Bcmake-out-android/examples/models/llama2 \
     examples/models/llama2
