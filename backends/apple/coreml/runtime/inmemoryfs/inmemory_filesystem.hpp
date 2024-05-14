@@ -8,13 +8,14 @@
 #pragma once
 
 #include <functional>
-#include <inmemory_filesystem_metadata.hpp>
 #include <memory>
-#include <memory_buffer.hpp>
 #include <optional>
 #include <stdio.h>
 #include <string>
 #include <system_error>
+
+#include "inmemory_filesystem_metadata.hpp"
+#include "memory_buffer.hpp"
 
 namespace inmemoryfs {
 
@@ -29,36 +30,36 @@ public:
         DirectoryExpected,     // If path is not a directory.
         FileExpected,          // If the path is not a file.
     };
-    
+
     /// Options for loading file content.
     enum class FileLoadOption: int8_t {
         Malloc = 1,   // Copy file contents into memory.
         MMap,         // Memory map file contents.
         LazyMMap      // Memory map file contents but lazily.
     };
-    
+
     /// The error category for `InMemoryFileSystem`.
     struct ErrorCategory final: public std::error_category {
     public:
         inline const char* name() const noexcept override {
             return "InMemoryFileSystem";
         }
-        
+
         std::string message(int code) const override;
     };
-    
+
     struct Attributes {
         time_t modificationTime;
-        
+
         inline Attributes() noexcept:
         modificationTime(time(0))
         {}
     };
-    
+
     using MetadataWriter = std::function<bool(const InMemoryFileSystemMetadata&, std::ostream&)>;
     using MetadataWriterInMemory = std::function<size_t(const InMemoryFileSystemMetadata&, void *)>;
     using MetadataReader = std::function<std::optional<InMemoryFileSystemMetadata>(std::istream&)>;
-    
+
     /// A class representing an in-memory node. This could either be a file node or a directory node.
     class InMemoryNode {
     public:
@@ -67,7 +68,7 @@ public:
             File = 0,   /// Node is a File.
             Directory   /// Node is a Directory.
         };
-        
+
         /// Constructs an in-memory node instance.
         ///
         /// @param name The name of the Node. It must be unique in the enclosing Directory.
@@ -78,38 +79,38 @@ public:
         attributes_(std::move(attributes)),
         kind_(kind)
         {}
-        
+
         InMemoryNode(InMemoryNode const&) = delete;
         InMemoryNode& operator=(InMemoryNode const&) = delete;
-        
+
         inline virtual ~InMemoryNode() {}
-        
+
         /// Returns the node attributes.
         inline Attributes attributes() const noexcept {
             return attributes_;
         }
-        
+
         /// Sets the node attributes.
         ///
         /// @param attributes The node attributes.
         inline void set_attributes(Attributes attributes) noexcept {
             attributes_ = std::move(attributes);
         }
-        
+
         /// Returns the node kind, possible values are `File` and `Directory`.
         inline Kind kind() const noexcept {
             return kind_;
         }
-        
+
         /// Returns the name of the node.
         inline const std::string& name() const noexcept {
             return name_;
         }
-        
+
         inline void set_name(std::string name) noexcept {
             std::swap(name_, name);
         }
-        
+
         /// Returns `true` if the node is a directory otherwise `false`.
         inline bool isDirectory() const noexcept {
             switch (kind_) {
@@ -119,58 +120,58 @@ public:
                     return false;
             }
         }
-        
+
         /// Returns `true` if the node is a file otherwise `false`.
         inline bool isFile() const noexcept {
             return !isDirectory();
         }
-        
+
     private:
         std::string name_;
         InMemoryFileSystem::Attributes attributes_;
         const Kind kind_;
     };
-    
+
     /// Constructs an`InMemoryFileSystem` instance with an empty root and the specified name.
     ///
     /// @param rootName The name of the root node.
     explicit InMemoryFileSystem(std::string rootName = "root") noexcept;
-    
+
     /// Constructs an`InMemoryFileSystem` instance with the specified root.
     ///
     /// @param root The root node.
     explicit InMemoryFileSystem(std::unique_ptr<InMemoryNode> root) noexcept
     :root_(std::move(root))
     {}
-    
+
     InMemoryFileSystem(InMemoryFileSystem const&) = delete;
     InMemoryFileSystem& operator=(InMemoryFileSystem const&) = delete;
-    
+
     virtual ~InMemoryFileSystem() {}
-    
+
     /// Returns the root.
     InMemoryNode *root() const noexcept {
         return root_.get();
     }
-    
+
     /// Checks if the node at the specified path is a directory.
     ///
     /// @param canonical_path   The path components from the root.
     /// @retval `true` if the node at the specified path is a directory otherwise `false`.
     bool is_directory(const std::vector<std::string>& canonical_path) noexcept;
-    
+
     /// Checks if the node at the specified path is a file.
     ///
     /// @param canonical_path   The path components from the root.
     /// @retval `true` if the node at the specified path is a file otherwise `false`.
     bool is_file(const std::vector<std::string>& canonical_path) noexcept;
-    
+
     /// Checks if the node at the specified path exists.
     ///
     /// @param canonical_path   The path components from the root.
     /// @retval `true` if the node at the specified path exists.
     bool exists(const std::vector<std::string>& canonical_path) const noexcept;
-    
+
     /// Retrieves the canonical path of all the child nodes at the specified path. The node
     /// at the specified path must be a directory otherwise it returns an empty vector with the `error`
     /// populated.
@@ -180,7 +181,7 @@ public:
     /// @retval paths to all the items at the specified path.
     std::vector<std::vector<std::string>> get_item_paths(const std::vector<std::string>& canonical_path,
                                                          std::error_code& error) const noexcept;
-    
+
     /// Retrieves the attributes of the item at the specified path.
     ///
     /// @param canonical_path  The path components from the root.
@@ -188,7 +189,7 @@ public:
     /// @retval The item attributes at the specified path.
     std::optional<Attributes> get_attributes(const std::vector<std::string>& canonical_path,
                                              std::error_code& error) const noexcept;
-    
+
     /// Retrieves the contents of the file at the specified path.
     ///
     /// @param canonical_path  The path components from the root.
@@ -196,7 +197,7 @@ public:
     /// @retval The file contents or `nullptr` if the item at the specified path is not a file.
     std::shared_ptr<MemoryBuffer> get_file_content(const std::vector<std::string>& canonical_path,
                                                    std::error_code& error) const noexcept;
-    
+
     /// Creates an in-memory directory at the specified path.
     ///
     /// @param canonical_path  The path components from the root.
@@ -208,7 +209,7 @@ public:
                         Attributes attributes,
                         bool create_intermediate_directories,
                         std::error_code& error) noexcept;
-    
+
     /// Creates an in-memory file at the specified path.
     ///
     /// @param canonical_path  The path components from the root.
@@ -222,7 +223,7 @@ public:
                    Attributes attributes,
                    bool overwrite,
                    std::error_code& error) noexcept;
-    
+
     /// Removes the item at the specified path.
     ///
     /// @param canonical_path  The path components from the root.
@@ -230,7 +231,7 @@ public:
     /// @retval `true` if the item is removed otherwise `false`.
     bool remove_item(const std::vector<std::string>& canonical_path,
                      std::error_code& error) noexcept;
-    
+
     /// Sets the attributes at the specified path.
     ///
     /// @param canonical_path  The path components from the root.
@@ -239,7 +240,7 @@ public:
     bool set_attributes(const std::vector<std::string>& canonical_path,
                         Attributes attributes,
                         std::error_code& error) noexcept;
-    
+
     /// Writes the item at the specified path to the filesystem.
     ///
     /// @param canonical_path  The path components from the root.
@@ -251,7 +252,7 @@ public:
                             const std::string& dst_path,
                             bool recursive,
                             std::error_code& error) const noexcept;
-    
+
     /// Renames the item at the specified path, if there is already an item with the same name then
     /// the rename would fail.
     ///
@@ -262,7 +263,7 @@ public:
     bool rename_item(const std::vector<std::string>& canonical_path,
                      const std::string& name,
                      std::error_code& error) noexcept;
-    
+
     /// Creates  an`InMemoryFileSystem` from the filesystem path.
     ///
     /// The structure of the `InMemoryFileSystem` is identical to the structure of the filesystem at the
@@ -275,7 +276,7 @@ public:
     static std::unique_ptr<InMemoryFileSystem> make_from_directory(const std::string& path,
                                                                    FileLoadOption option,
                                                                    std::error_code& error) noexcept;
-    
+
     /// Serializes the item at the specified path and writes it to the stream.
     ///
     /// The structure of the `InMemoryFileSystem` is identical to the structure of the filesystem at the
@@ -292,7 +293,7 @@ public:
                    const MetadataWriter& metadata_writer,
                    std::ostream& ostream,
                    std::error_code& error) const noexcept;
-    
+
     /// Serializes the item at the specified path and writes it to the stream.
     ///
     /// The structure of the `InMemoryFileSystem` is identical to the structure of the filesystem at the
@@ -309,7 +310,7 @@ public:
                    const MetadataWriterInMemory& metadata_writer,
                    void *dst,
                    std::error_code& error) const noexcept;
-    
+
     /// Computes the size of the buffer that would be needed to serialized the item at the specified path.
     ///
     /// @param canonical_path  The path components from the root.
@@ -319,7 +320,7 @@ public:
     size_t get_buffer_size_for_serialization(const std::vector<std::string>& canonical_path,
                                              size_t alignment,
                                              const MetadataWriter& metadata_writer) const noexcept;
-    
+
     /// Constructs an `InMemoryFileSystem` instance from the buffer contents.
     ///
     /// @param buffer  The memory buffer.
@@ -327,7 +328,7 @@ public:
     /// @retval The constructed `InMemoryFileSystem` or `nullptr` if the deserialization failed.
     static std::unique_ptr<InMemoryFileSystem> make_from_buffer(const std::shared_ptr<MemoryBuffer>& buffer,
                                                                 const MetadataReader& metadata_reader) noexcept;
-    
+
 private:
     const std::unique_ptr<InMemoryNode> root_;
 };
