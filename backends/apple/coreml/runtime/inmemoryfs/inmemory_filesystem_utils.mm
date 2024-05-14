@@ -6,14 +6,17 @@
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import "inmemory_filesystem_utils.hpp"
-#import <Foundation/Foundation.h>
-#import <inmemory_filesystem_metadata.hpp>
-#import <inmemory_filesystem_metadata_keys.hpp>
+
 #import <iostream>
-#import <json_util.hpp>
-#import <objc_json_serde.h>
 #import <sstream>
 #import <unordered_map>
+
+#import <Foundation/Foundation.h>
+
+#import "inmemory_filesystem_metadata.hpp"
+#import "inmemory_filesystem_metadata_keys.hpp"
+#import "json_util.hpp"
+#import "objc_json_serde.h"
 
 namespace executorchcoreml {
 namespace serde {
@@ -29,13 +32,13 @@ struct Converter<Range> {
             to_string(RangeKeys::kSize) : to_json_value(range.size)
         };
     }
-    
+
     static void from_json(id json, Range& range) {
         NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
         if (!json_dict) {
             return;
         }
-        
+
         from_json_value(json_dict[to_string(RangeKeys::kOffset)], range.offset);
         from_json_value(json_dict[to_string(RangeKeys::kSize)], range.size);
     }
@@ -51,13 +54,13 @@ struct Converter<InMemoryNodeMetadata> {
             to_string(InMemoryNodeMetadataKeys::kKind) : to_json_value(node.kind)
         };
     }
-    
+
     static void from_json(id json, InMemoryNodeMetadata& node) {
         NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
         if (!json_dict) {
             return;
         }
-        
+
         from_json_value(json_dict[to_string(InMemoryNodeMetadataKeys::kName)], node.name);
         from_json_value(json_dict[to_string(InMemoryNodeMetadataKeys::kDataRegion)], node.data_region);
         from_json_value(json_dict[to_string(InMemoryNodeMetadataKeys::kChildIndices)], node.child_name_to_indices_map);
@@ -72,13 +75,13 @@ struct Converter<InMemoryFileSystemMetadata> {
             to_string(InMemoryFileSystemMetadataKeys::kNodes) : to_json_value(fs.nodes)
         };
     }
-    
+
     static void from_json(id json, InMemoryFileSystemMetadata& fs) {
         NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
         if (!json_dict) {
             return;
         }
-        
+
         from_json_value(json_dict[to_string(InMemoryFileSystemMetadataKeys::kNodes)], fs.nodes);
     }
 };
@@ -114,7 +117,7 @@ std::optional<InMemoryFileSystemMetadata> read_metadata_from_stream(std::istream
     if (!json_object) {
         return std::optional<InMemoryFileSystemMetadata>();
     }
-    
+
     InMemoryFileSystemMetadata metadata;
     Converter<InMemoryFileSystemMetadata>::from_json(to_json_object(json_object.value()), metadata);
     return metadata;
@@ -132,7 +135,7 @@ bool serialize(const InMemoryFileSystem& file_system,
         write_metadata_to_stream(fs_metadata, stream);
         return true;
     };
-    
+
     return file_system.serialize(canonical_path, alignment, metadata_writer, ostream, ec);
 }
 
@@ -145,7 +148,7 @@ bool serialize(const InMemoryFileSystem& file_system,
                                                                     void *metadata_dst) {
         return ::write_metadata_to_buffer(fs_metadata, metadata_dst);
     };
-    
+
     return file_system.serialize(canonical_path, alignment, metadata_writer, dst, ec);
 }
 
@@ -156,7 +159,7 @@ size_t get_buffer_size_for_serialization(const InMemoryFileSystem& file_system,
                                                             std::ostream& stream) {
         return ::write_metadata_to_stream(fs_metadata, stream);
     };
-    
+
     return file_system.get_buffer_size_for_serialization(canonical_path, alignment, metadata_writer);
 }
 
@@ -164,7 +167,7 @@ std::unique_ptr<InMemoryFileSystem> make_from_buffer(const std::shared_ptr<Memor
     InMemoryFileSystem::MetadataReader metadata_reader = [](std::istream& stream) {
         return ::read_metadata_from_stream(stream);
     };
-    
+
     return InMemoryFileSystem::make_from_buffer(buffer, metadata_reader);
 }
 } // namespace inmemoryfs
