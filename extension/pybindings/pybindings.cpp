@@ -188,6 +188,13 @@ class Module final {
             method->outputs_size());
       }
       for (size_t i = 0; i < output_storages->size(); ++i) {
+        const auto& output_tensor_meta =
+            method->method_meta().output_tensor_meta(i);
+        // If there is no tensor meta for this output, we cannot override its
+        // pointer. The span will also be unused.
+        if (!output_tensor_meta.ok()) {
+          continue;
+        }
         Error output_status = method->set_output_data_ptr(
             (*output_storages)[i].data(), (*output_storages)[i].size(), i);
         // InvalidState can be the status if outputs are already memory planned.
