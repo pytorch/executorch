@@ -16,38 +16,66 @@ struct FloatMatrix {
   float data[FOUR][FOUR][FOUR];
 };
 
+#ifdef MAT2_IS_TRANSPOSED
+vec4 matmul_naive_W_packed_W_packed(
+#else
 vec4 matmul_naive_W_packed_H_packed(
-    sampler3D im_mat1,
-    sampler3D im_mat2,
-    ivec3 mat1_pos,
-    ivec3 mat2_pos,
+#endif
+    const sampler3D im_mat1,
+    const sampler3D im_mat2,
+    const ivec3 out_pos,
     const int width) {
+  ivec3 mat1_pos = ivec3(0, out_pos.y, out_pos.z);
+#ifdef MAT2_IS_TRANSPOSED
+  ivec3 mat2_pos = ivec3(0, out_pos.x * 4, 0);
+#else
+  ivec3 mat2_pos = ivec3(out_pos.x * 4, 0, out_pos.z);
+#endif
+
   vec4 texel = vec4(0);
-  int K = (width + 3) / 4;
+  const int K = (width + 3) / 4;
 
   for (int i = 0; i < K; ++i) {
-    vec4 mat1_tex = texelFetch(im_mat1, mat1_pos, 0);
-    vec4 sums = vec4(
+    const vec4 mat1_tex = texelFetch(im_mat1, mat1_pos, 0);
+#ifdef MAT2_IS_TRANSPOSED
+    const vec4 sums = vec4(
+        dot(mat1_tex, texelFetch(im_mat2, mat2_pos, 0)),
+        dot(mat1_tex, texelFetch(im_mat2, mat2_pos + ivec3(0, 1, 0), 0)),
+        dot(mat1_tex, texelFetch(im_mat2, mat2_pos + ivec3(0, 2, 0), 0)),
+        dot(mat1_tex, texelFetch(im_mat2, mat2_pos + ivec3(0, 3, 0), 0)));
+#else
+    const vec4 sums = vec4(
         dot(mat1_tex, texelFetch(im_mat2, mat2_pos, 0)),
         dot(mat1_tex, texelFetch(im_mat2, mat2_pos + ivec3(1, 0, 0), 0)),
         dot(mat1_tex, texelFetch(im_mat2, mat2_pos + ivec3(2, 0, 0), 0)),
         dot(mat1_tex, texelFetch(im_mat2, mat2_pos + ivec3(3, 0, 0), 0)));
+#endif
 
     texel += sums;
 
     mat1_pos.x++;
+#ifdef MAT2_IS_TRANSPOSED
+    mat2_pos.x++;
+#else
     mat2_pos.y++;
+#endif
   }
 
   return texel;
 }
 
+#ifdef MAT2_IS_TRANSPOSED
+vec4 matmul_naive_W_packed_H_packed(
+#else
 vec4 matmul_naive_W_packed_W_packed(
-    sampler3D im_mat1,
-    sampler3D im_mat2,
-    ivec3 mat1_pos,
-    ivec3 mat2_pos,
+#endif
+    const sampler3D im_mat1,
+    const sampler3D im_mat2,
+    const ivec3 out_pos,
     const int width) {
+  ivec3 mat1_pos = ivec3(0, out_pos.y, out_pos.z);
+  ivec3 mat2_pos = ivec3(out_pos.x, 0, out_pos.z);
+
   vec4 texel = vec4(0);
   int K = divup4(width);
 
@@ -87,7 +115,7 @@ vec4 get_texel_W_packed(
   else if (broadcast_at_height) {
     self_texel = texelFetch(im_self, ivec3(pos.x, 0, 0), 0);
   } else {
-    self_texel = texelFetch(im_self, pos, 0);
+    self_texel = texelFetch(im_self, ivec3(pos.x, pos.y, 0), 0);
   }
 
   return self_texel;
@@ -112,7 +140,7 @@ vec4 get_texel_C_packed(
   else if (broadcast_at_height) {
     self_texel = texelFetch(im_self, ivec3(pos.x, 0, 0), 0);
   } else {
-    self_texel = texelFetch(im_self, pos, 0);
+    self_texel = texelFetch(im_self, ivec3(pos.x, pos.y, 0), 0);
   }
 
   return self_texel;
@@ -123,8 +151,7 @@ FloatMatrix matmul_partial_4x4(
     sampler3D im_mat2,
     const ivec3 pos,
     const int batch_size,
-    const int K_texel_len,
-    const int packed_dim_padding) {
+    const int K_texel_len) {
   FloatMatrix results;
   for (int i = 0; i < FOUR; i++) {
     for (int j = 0; j < FOUR; j++) {
@@ -133,43 +160,36 @@ FloatMatrix matmul_partial_4x4(
       }
     }
   }
-  vec4 im_mat1_partial_rows[FOUR];
-  vec4 im_mat2_partial_cols[FOUR];
+  vec4 im_mat1_partial_load[FOUR];
+  vec4 im_mat2_partial_load[FOUR];
 
   for (int batch_idx = 0; batch_idx < FOUR; batch_idx++) {
     if (FOUR * pos.z + batch_idx >= batch_size) {
       break;
     }
-    // read and cache 4x4 tile of im_mat1 (4 adjacent rows)
+    int mat_z = FOUR * pos.z + batch_idx;
     for (int mat1_x = 0; mat1_x < K_texel_len; mat1_x++) {
-      for (int mat1_row = 0; mat1_row < FOUR; mat1_row++) {
-        const int mat1_y = (FOUR * pos.y) + mat1_row;
-        const ivec3 mat1_pos = ivec3(mat1_x, mat1_y, FOUR * pos.z + batch_idx);
-        im_mat1_partial_rows[mat1_row] = texelFetch(im_mat1, mat1_pos, 0);
-        // set the value out of the boundary to be 0
-        if (mat1_x == K_texel_len - 1 && packed_dim_padding > 0) {
-          for (int kk = 0; kk < packed_dim_padding; kk++) {
-            im_mat1_partial_rows[mat1_row][3 - kk] = 0;
-          }
-        }
-      }
-      // read and cache 4x4 tile of im_mat2 (4 adjacent columns)
-      for (int mat2_col = 0; mat2_col < FOUR; mat2_col++) {
-        const int mat2_x = (FOUR * pos.x) + mat2_col;
-        const ivec3 pos_rd = ivec3(mat2_x, mat1_x, FOUR * pos.z + batch_idx);
-        im_mat2_partial_cols[mat2_col] = texelFetch(im_mat2, pos_rd, 0);
-        // set the value out of the boundary to be 0
-        if (mat1_x == K_texel_len - 1 && packed_dim_padding > 0) {
-          for (int kk = 0; kk < packed_dim_padding; kk++) {
-            im_mat2_partial_cols[mat2_col][3 - kk] = 0;
-          }
-        }
+      for (int offset = 0; offset < FOUR; offset++) {
+        // read and cache 4x4 tile of im_mat1
+        const int mat1_y = (FOUR * pos.y) + offset;
+        const ivec3 mat1_pos = ivec3(mat1_x, mat1_y, mat_z);
+        im_mat1_partial_load[offset] = texelFetch(im_mat1, mat1_pos, 0);
+        // read and cache 4x4 tile of im_mat2
+#ifdef MAT2_IS_TRANSPOSED
+        const int mat2_y = (FOUR * pos.x) + offset;
+        const ivec3 mat2_pos = ivec3(mat1_x, mat2_y, 0);
+        im_mat2_partial_load[offset] = texelFetch(im_mat2, mat2_pos, 0);
+#else
+        const int mat2_x = (FOUR * pos.x) + offset;
+        const ivec3 mat2_pos = ivec3(mat2_x, mat1_x, mat_z);
+        im_mat2_partial_load[offset] = texelFetch(im_mat2, mat2_pos, 0);
+#endif
       }
       // perform partial dot products and add partial result to results
       for (int out_row = 0; out_row < FOUR; out_row++) {
         for (int out_col = 0; out_col < FOUR; out_col++) {
           results.data[out_row][out_col][batch_idx] +=
-              dot(im_mat1_partial_rows[out_row], im_mat2_partial_cols[out_col]);
+              dot(im_mat1_partial_load[out_row], im_mat2_partial_load[out_col]);
         }
       }
     }
