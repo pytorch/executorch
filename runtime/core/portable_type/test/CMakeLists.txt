@@ -16,7 +16,7 @@
 cmake_minimum_required(VERSION 3.19)
 project(runtime_core_portable_type_test)
 
-# Use C++11 for size test.
+# Use C++11 for test.
 set(CMAKE_CXX_STANDARD 11)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
@@ -32,7 +32,6 @@ find_package(GTest CONFIG REQUIRED)
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories
     ${EXECUTORCH_ROOT}/..
-    ${EXECUTORCH_ROOT}/third-party/googletest/googletest/include
 )
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
