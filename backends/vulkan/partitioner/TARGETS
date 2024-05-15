@@ -5,6 +5,7 @@ oncall("executorch")
 runtime.python_library(
     name = "vulkan_partitioner",
     srcs = [
+        "supported_ops.py",
         "vulkan_partitioner.py",
     ],
     visibility = [
