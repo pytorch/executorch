@@ -82,6 +82,7 @@ MATMUL_OPS = [
     exir_ops.edge.aten.bmm.default,
     exir_ops.edge.aten.mm.default,
     exir_ops.edge.aten.addmm.default,
+    exir_ops.edge.aten.linear.default,
 ]
 
 POOLING_OPS = [
@@ -171,8 +172,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
         super().__init__()
         self.require_dynamic_shapes = require_dynamic_shape
 
-    def node_val_is_compatible(self, node: torch.fx.Node) -> bool:
-        node_val = node.meta.get("val", None)
+    def node_val_is_compatible(self, node_val: Any) -> bool:
         # Skip nodes that don't have a value
         if node_val is None:
             return True
@@ -182,20 +182,27 @@ class VulkanSupportedOperators(OperatorSupportBase):
             return False
 
         if isinstance(node_val, FakeTensor):
+            # Vulkan currently only supports tensors of up to 4D
             if len(node_val.shape) > 4:
                 return False
+
+        if isinstance(node_val, (list, tuple)):
+            for item in node_val:
+                if not self.node_val_is_compatible(item):
+                    return False
 
         return True
 
     def all_args_compatible(self, node: torch.fx.Node) -> bool:
-        if not self.node_val_is_compatible(node):
+        node_val = node.meta.get("val", None)
+        if not self.node_val_is_compatible(node_val):
             return False
 
         for arg in node.args:
             if not isinstance(arg, torch.fx.Node):
                 continue
 
-            if not self.node_val_is_compatible(node):
+            if not self.node_val_is_compatible(node_val):
                 return False
 
         return True
