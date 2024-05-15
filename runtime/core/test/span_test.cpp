@@ -44,7 +44,7 @@ TEST(SpanTest, MutableElements) {
 TEST(SpanTest, Empty) {
   int64_t x[2] = {1, 2};
   Span<int64_t> span_full = {x, 2};
-  Span<int64_t> span_empty = {x, (int64_t)0};
+  Span<int64_t> span_empty = {x, (size_t)0};
 
   EXPECT_FALSE(span_full.empty());
   EXPECT_TRUE(span_empty.empty());
