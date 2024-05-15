@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import Any, Dict, final, List, Optional
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
@@ -26,6 +27,9 @@ from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
 from torch.fx.passes.operator_support import OperatorSupportBase
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 
 class VulkanSupportedOperators(OperatorSupportBase):
@@ -144,6 +148,12 @@ class VulkanPartitioner(Partitioner):
                 tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = tag
                 partition_tags[tag] = self.delegation_spec
+
+        pl = len(partition_list)
+        if pl == 0:
+            log.warning("Nothing can be partitioned!")
+        else:
+            log.info(f"Found {pl} subgraphs to be partitioned.")
 
         tag_constant_data(exported_program)
 
