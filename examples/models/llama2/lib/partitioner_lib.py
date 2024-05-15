@@ -24,7 +24,6 @@ def get_vulkan_partitioner(args):
     assert (
         args.quantization_mode is None
     ), "Vulkan backend does not support quantization at the moment"
-    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.vulkan.partition.vulkan_partitioner`
     from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
         VulkanPartitioner,
     )
