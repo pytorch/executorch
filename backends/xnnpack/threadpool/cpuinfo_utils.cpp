@@ -32,6 +32,7 @@ bool is_non_performant_core(const struct cpuinfo_uarch_info* uarch_info) {
     case cpuinfo_uarch_cortex_a55:
     case cpuinfo_uarch_cortex_a53:
     case cpuinfo_uarch_cortex_a510:
+    case cpuinfo_uarch_icestorm:
       return true;
     // This can be so many other cores.
     // Need to update this to better account for slow cores
