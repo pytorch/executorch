@@ -65,7 +65,8 @@ class VulkanSupportedOperators(OperatorSupportBase):
             if not isinstance(arg, torch.fx.Node):
                 continue
 
-            if not self.node_val_is_compatible(node_val):
+            arg_val = arg.meta.get("val", None)
+            if not self.node_val_is_compatible(arg_val):
                 return False
 
         return True
