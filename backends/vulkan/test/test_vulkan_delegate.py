@@ -461,6 +461,35 @@ class TestBackends(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(TanhModule())
 
+    def test_vulkan_backend_linear(self):
+        class LinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(128, 64, bias=False)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        module = LinearModule()
+        sample_inputs = (torch.rand(size=(32, 128), dtype=torch.float32),)
+        batch = Dim("batch", max=32)
+        dynamic_shapes = {"x": {0: batch}}
+
+        test_inputs = [
+            (torch.rand(15, 128),),
+            (torch.rand(6, 128),),
+            (torch.rand(30, 128),),
+            (torch.rand(20, 128),),
+            (torch.rand(19, 128),),
+        ]
+
+        self.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
     def test_vulkan_backend_partial(self):
         class SimpleModel(torch.nn.Module):
             def __init__(self):
@@ -861,7 +890,7 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
-    def DISABLED_test_vulkan_backend_permute_copy(self):
+    def test_vulkan_backend_permute_copy(self):
         # aten.permute_copy.default is not enabled yet in partitioner
         class PermuteModule(torch.nn.Module):
             def __init__(self):
@@ -979,7 +1008,7 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
-    def DISABLED_test_vulkan_backend_t_default(self):
+    def test_vulkan_backend_t_default(self):
         # aten.permute_copy.default is not enabled yet in partitioner
         class TestModule(torch.nn.Module):
             def __init__(self):

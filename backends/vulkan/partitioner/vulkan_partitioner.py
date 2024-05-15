@@ -47,6 +47,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             # Matrix multiplication operators
             exir_ops.edge.aten.bmm.default,
             exir_ops.edge.aten.mm.default,
+            exir_ops.edge.aten.addmm.default,
             # Pooling operators
             exir_ops.edge.aten.max_pool2d_with_indices.default,
             # Sum
@@ -60,6 +61,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.unsqueeze_copy.default,
             exir_ops.edge.aten.view_copy.default,
             # Copy-releated operators
+            exir_ops.edge.aten.permute_copy.default,
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.cat.default,
             exir_ops.edge.aten.split_with_sizes_copy.default,
