@@ -28,9 +28,6 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
 from torch.fx.passes.operator_support import OperatorSupportBase
 
-logging.basicConfig(level=logging.INFO)
-log = logging.getLogger(__name__)
-
 
 class VulkanSupportedOperators(OperatorSupportBase):
     _ops = enumerate_supported_ops()
@@ -69,7 +66,8 @@ class VulkanSupportedOperators(OperatorSupportBase):
             if not isinstance(arg, torch.fx.Node):
                 continue
 
-            if not self.node_val_is_compatible(node_val):
+            arg_val = arg.meta.get("val", None)
+            if not self.node_val_is_compatible(arg_val):
                 return False
 
         return True
@@ -151,9 +149,9 @@ class VulkanPartitioner(Partitioner):
 
         pl = len(partition_list)
         if pl == 0:
-            log.warning("Nothing can be partitioned!")
+            logging.warning("No Vulkan subgraphs can be partitioned!")
         else:
-            log.info(f"Found {pl} subgraphs to be partitioned.")
+            logging.info(f"Found {pl} Vulkan subgraphs to be partitioned.")
 
         tag_constant_data(exported_program)
 
