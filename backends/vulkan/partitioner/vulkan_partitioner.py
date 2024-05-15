@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import Any, Dict, final, List, Optional
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
@@ -145,6 +146,12 @@ class VulkanPartitioner(Partitioner):
                 tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = tag
                 partition_tags[tag] = self.delegation_spec
+
+        pl = len(partition_list)
+        if pl == 0:
+            logging.warning("No Vulkan subgraphs can be partitioned!")
+        else:
+            logging.info(f"Found {pl} Vulkan subgraphs to be partitioned.")
 
         tag_constant_data(exported_program)
 
