@@ -22,6 +22,7 @@ _Argument = Union[
     Node, NoneType, _ScalarType, TensorSpec, List[_ScalarType], List[Node], str
 ]
 
+SEEN_NODES = set()
 
 class VkGraphBuilder:
     def __init__(self, program: ExportedProgram) -> None:
@@ -230,6 +231,7 @@ class VkGraphBuilder:
             or isinstance(arg, torch.device)
             or isinstance(arg, torch.dtype)
             or isinstance(arg, torch.layout)
+            or isinstance(arg, torch.memory_format)
         ):
             return self.create_null_value()
         elif isinstance(arg, _ScalarType):
@@ -270,6 +272,10 @@ class VkGraphBuilder:
 
     def process_call_function_node(self, node) -> None:
         operator_call_args = []
+
+        if node.target not in SEEN_NODES:
+            print(f"Processing node: {node} with args {node.target._schema}")
+            SEEN_NODES.add(node.target)
 
         for i, schema_arg in enumerate(node.target._schema.arguments):
             if not schema_arg.kwarg_only and i < len(node.args):
