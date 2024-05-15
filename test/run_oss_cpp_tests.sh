@@ -16,7 +16,7 @@ build_and_run_test() {
   local test_dir=$1
   cmake "${test_dir}" -Bcmake-out/"${test_dir}" -DCMAKE_INSTALL_PREFIX=cmake-out
   cmake --build cmake-out/"${test_dir}"
-  cmake-out/"${test_dir}"/*test
+  for t in $(cmake-out/"${test_dir}"/*test); do ./"$t"; done
 }
 
 build_executorch
