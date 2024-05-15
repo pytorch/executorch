@@ -541,11 +541,7 @@ class TestBackends(unittest.TestCase):
             model, sample_inputs, dynamic_shapes=dynamic_shapes, test_inputs=test_inputs
         )
 
-    # TODO(ssjia): Currently the pass used to reconstruct linear will error out if mm or
-    # addmm is used directly (i.e. not through linear). We will have to patch the pass
-    # directly or prevent the decomposition of linear after the decomposition selection
-    # feature is landed in order to prevent this test from crashing.
-    def DISABLED_test_vulkan_backend_matmul(self):
+    def test_vulkan_backend_matmul(self):
         class MatMulModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
