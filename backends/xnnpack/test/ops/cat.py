@@ -189,7 +189,7 @@ class TestCat(unittest.TestCase):
             return z + z
 
     @unittest.skip("T172862540 - Runtime failure.")
-    def test_qs8_cat_nhwc(self):
+    def _test_qs8_cat_nhwc(self):
         inputs = (torch.randn(1, 1, 3, 3), torch.randn(1, 1, 3, 3))
         self._test_cat(self.CatNhwc(), inputs, quant=True, quant_ops=3)
 
@@ -211,6 +211,6 @@ class TestCat(unittest.TestCase):
             return z + z
 
     @unittest.skip("T172862540 - Runtime failure.")
-    def test_qs8_cat_nhwc2(self):
+    def _test_qs8_cat_nhwc2(self):
         inputs = (torch.randn(1, 1, 3, 3), torch.randn(1, 1, 3, 3))
         self._test_cat(self.CatNhwc(), inputs, quant=True, quant_ops=4)
