@@ -60,9 +60,9 @@ void add_tensors(
     int64_t out_quant_max) {
   const size_t n = a.numel();
 
-  const auto data_a = a.data_ptr<CTYPE>();
-  const auto data_b = b.data_ptr<CTYPE>();
-  auto data_out = out.data_ptr<CTYPE>();
+  const auto data_a = a.const_data_ptr<CTYPE>();
+  const auto data_b = b.const_data_ptr<CTYPE>();
+  auto data_out = out.mutable_data_ptr<CTYPE>();
 
   for (size_t i = 0; i < n; ++i) {
     // Dq -> fp add -> Q. Can be optimized further
