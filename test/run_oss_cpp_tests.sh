@@ -15,9 +15,12 @@ build_executorch() {
 build_and_run_test() {
   local test_dir=$1
   cmake "${test_dir}" -Bcmake-out/"${test_dir}" -DCMAKE_INSTALL_PREFIX=cmake-out
-  cmake --build cmake-out/"${test_dir}"
+  cmake --build cmake-out/"${test_dir}" -j9
   for t in $(cmake-out/"${test_dir}"/*test); do ./"$t"; done
 }
 
 build_executorch
 build_and_run_test runtime/core/portable_type/test/
+build_and_run_test runtime/core/test/
+build_and_run_test runtime/core/exec_aten/util/test/
+build_and_run_test runtime/core/exec_aten/testing_util/test/
