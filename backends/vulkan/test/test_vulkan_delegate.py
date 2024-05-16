@@ -6,16 +6,19 @@
 
 import ctypes
 import unittest
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
 import torch
 
+from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
+
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
+from executorch.exir.pass_base import ExportPass
 from torch.export import Dim, export, ExportedProgram
 
 ctypes.CDLL("libvulkan.so.1")
@@ -95,19 +98,13 @@ class TestBackends(unittest.TestCase):
         test_inputs=None,
         memory_layouts=None,
         first_output_only=False,
+        custom_pass: Optional[List[ExportPass]] = None,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
         the given sample inputs. It then runs the lowered module and compares its
         outputs with the outputs of the eager module.
         """
-        program: ExportedProgram = export(
-            model, sample_inputs, dynamic_shapes=dynamic_shapes
-        )
-        edge_program: EdgeProgramManager = to_edge(
-            program, compile_config=self._edge_compile_config
-        )
-        edge_program = edge_program.to_backend(VulkanPartitioner())
 
         def run_test(memory_layout):
             compile_options = {
@@ -115,12 +112,16 @@ class TestBackends(unittest.TestCase):
             }
 
             # At least model should run in eager mode.
+            model.eval()
             model(*sample_inputs)
 
             program: ExportedProgram = export(
                 model, sample_inputs, dynamic_shapes=dynamic_shapes
             )
             edge_program: EdgeProgramManager = to_edge(program)
+
+            if custom_pass is not None:
+                edge_program = edge_program.transform(custom_pass)
 
             edge_program = edge_program.to_backend(VulkanPartitioner(compile_options))
 
@@ -1074,3 +1075,52 @@ class TestBackends(unittest.TestCase):
                 return self.gelu(x)
 
         self.lower_unary_module_and_test_output(GeluModule())
+
+    def test_vulkan_backend_mean(self):
+        class MeanModule(torch.nn.Module):
+            def __init__(self, dims, keepdim=True):
+                super().__init__()
+                self.dims = dims
+                self.keepdim = keepdim
+
+            def forward(self, x):
+                return torch.mean(x, self.dims, keepdim=self.keepdim)
+
+        sample_inputs = (
+            torch.arange(end=2 * 3 * 2 * 5, dtype=torch.float32).reshape(2, 3, 2, 5),
+        )
+
+        self.lower_module_and_test_output(
+            MeanModule(dims=[-1, -2]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
+        )
+
+        self.lower_module_and_test_output(
+            MeanModule(dims=[1]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
+        )
+
+        self.lower_module_and_test_output(
+            MeanModule(dims=[0, 1, 2, 3]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
+        )
+
+        self.lower_module_and_test_output(
+            MeanModule(dims=[-1, -2], keepdim=False),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
+        )
+
+        self.lower_module_and_test_output(
+            MeanModule(dims=[1], keepdim=False),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
+        )
