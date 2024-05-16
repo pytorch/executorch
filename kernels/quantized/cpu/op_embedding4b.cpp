@@ -170,7 +170,8 @@ void embedding_4bit_per_channel(
       zero_points_ptr = zero_points + qparams_index;
     }
 
-    const uint8_t* w_data = weight.data_ptr<uint8_t>() + weight.size(1) * index;
+    const uint8_t* w_data =
+        weight.const_data_ptr<uint8_t>() + weight.size(1) * index;
 
     for (int j = 0; j < embedding_dim; ++j) {
       int32_t group_id = j / group_size;

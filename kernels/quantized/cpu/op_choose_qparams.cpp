@@ -72,7 +72,7 @@ void choose_qparams(
     int32_t qmax,
     Tensor& scale_out,
     Tensor& zero_point_out) {
-  const float* x_fp32 = input.data_ptr<float>();
+  const float* x_fp32 = input.const_data_ptr<float>();
   // Compute x_min, x_max and q_params (scale, zero_point)
   float min = torch::executor::vec_minf(x_fp32, input.numel());
   float max = torch::executor::vec_maxf(x_fp32, input.numel());
@@ -144,8 +144,8 @@ void choose_qparams(
     nudged_zero_point = nearbyint(static_cast<float>(initial_zero_point));
   }
 
-  scale_out.data_ptr<double>()[0] = scale;
-  zero_point_out.data_ptr<int64_t>()[0] = nudged_zero_point;
+  scale_out.mutable_data_ptr<double>()[0] = scale;
+  zero_point_out.mutable_data_ptr<int64_t>()[0] = nudged_zero_point;
 }
 } // namespace
 

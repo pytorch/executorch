@@ -351,12 +351,12 @@ void cpu_flash_attention(
   //    query.options());
 
   // Data ptrs
-  scalar_t* q_data = query.data_ptr<scalar_t>();
-  scalar_t* k_data = key.data_ptr<scalar_t>();
-  scalar_t* v_data = value.data_ptr<scalar_t>();
-  accum_t* mask_data =
-      has_attn_mask ? attn_mask.value().data_ptr<accum_t>() : nullptr;
-  scalar_t* out_data = output.data_ptr<scalar_t>();
+  const scalar_t* q_data = query.const_data_ptr<scalar_t>();
+  const scalar_t* k_data = key.const_data_ptr<scalar_t>();
+  const scalar_t* v_data = value.const_data_ptr<scalar_t>();
+  const accum_t* mask_data =
+      has_attn_mask ? attn_mask.value().const_data_ptr<accum_t>() : nullptr;
+  scalar_t* out_data = output.mutable_data_ptr<scalar_t>();
   accum_t* buf_data = reinterpret_cast<accum_t*>(buf);
   scalar_t* buf_reduced_data =
       is_reduced_type ? reinterpret_cast<scalar_t*>(buf_reduced) : nullptr;
