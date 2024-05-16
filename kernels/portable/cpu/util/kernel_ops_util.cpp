@@ -294,6 +294,8 @@ bool check_convolution_args(
     IntArrayRef output_padding,
     int64_t groups,
     Tensor& out) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      !transposed, "transposed convolution not supported yet.");
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight, out));
 
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
@@ -334,9 +336,6 @@ bool check_convolution_args(
       "groups %" PRId64 " is not divisible by in.size(1) = %zd",
       groups,
       in.size(1));
-
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      !transposed, "transposed convolution not supported yet.");
 
   return true;
 }
