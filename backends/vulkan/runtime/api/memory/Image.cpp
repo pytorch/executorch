@@ -129,11 +129,14 @@ VulkanImage::VulkanImage(
   VmaAllocatorInfo allocator_info{};
   vmaGetAllocatorInfo(allocator_, &allocator_info);
 
-  // If any dims are zero, then no memory will be allocated for the image.
+  // If any dims are zero, then allocate a 1x1x1 image texture. This is to
+  // ensure that there will be some resource that can be bound to a shader.
   if (image_props.image_extents.width == 0 ||
       image_props.image_extents.height == 0 ||
       image_props.image_extents.depth == 0) {
-    return;
+    image_properties_.image_extents.width = 1u;
+    image_properties_.image_extents.height = 1u;
+    image_properties_.image_extents.depth = 1u;
   }
 
   const VkImageCreateInfo image_create_info{

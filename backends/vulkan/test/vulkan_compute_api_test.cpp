@@ -259,6 +259,38 @@ TEST_F(VulkanComputeAPITest, test_buffer_int8) {
   test_storage_buffer_type<int8_t, api::kQInt8>(16);
 }
 
+TEST_F(VulkanComputeAPITest, test_zero_size_tensor) {
+  // Simple test that performs a + b -> c
+
+  std::vector<int64_t> sizes = {0, 5, 7};
+  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+
+  // Fill input tensors
+  fill_vtensor(a, 2.5f);
+  fill_vtensor(b, 1.5f);
+
+  // a + b -> c
+  record_binary_op(api::context(), "add", a, b, c);
+
+  // Extract output tensor
+  std::vector<float> data_out = extract_vtensor(c);
+
+  // Assert all tensors are empty
+  ASSERT_TRUE(a.numel() == 0);
+  ASSERT_TRUE(b.numel() == 0);
+  ASSERT_TRUE(c.numel() == 0);
+  ASSERT_TRUE(a.nbytes() == 0);
+  ASSERT_TRUE(b.nbytes() == 0);
+  ASSERT_TRUE(c.nbytes() == 0);
+
+  // Check output
+  for (size_t i = 0; i < data_out.size(); ++i) {
+    CHECK_VALUE(data_out, i, 4.0f);
+  }
+}
+
 TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
   // Simple test that performs a + b -> c
 

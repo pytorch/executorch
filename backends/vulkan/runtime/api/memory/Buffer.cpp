@@ -38,16 +38,18 @@ VulkanBuffer::VulkanBuffer(
       memory_{},
       owns_memory_(allocate_memory),
       handle_(VK_NULL_HANDLE) {
-  // Only allocate memory if the buffer has non-zero size
+  // If the buffer size is 0, allocate a buffer with a size of 1 byte. This is
+  // to ensure that there will be some resource that can be bound to a shader.
   if (size == 0) {
-    return;
+    buffer_properties_.size = 1u;
+    buffer_properties_.mem_range = 1u;
   }
 
   const VkBufferCreateInfo buffer_create_info{
       VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, // sType
       nullptr, // pNext
       0u, // flags
-      size, // size
+      buffer_properties_.size, // size
       buffer_properties_.buffer_usage, // usage
       VK_SHARING_MODE_EXCLUSIVE, // sharingMode
       0u, // queueFamilyIndexCount
