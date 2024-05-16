@@ -417,7 +417,7 @@ target_link_libraries(executorch_no_prim_ops PRIVATE program_schema)
 # Check if dl exists for this toolchain and only then link it.
 find_library(DL_LIBRARY_EXISTS NAMES dl)
 # Check if the library was found
-if(DL_LIBRARY_EXISTS)
+if(DL_LIBRARY_EXISTS AND NOT EXECUTORCH_BUILD_CADENCE)
   target_link_libraries(executorch_no_prim_ops PRIVATE dl) # For dladdr()
 endif()
 target_include_directories(
@@ -443,7 +443,9 @@ target_link_options_shared_lib(executorch)
 # Real integrations should supply their own YAML file that only lists the
 # operators necessary for the models that will run.
 #
+if(NOT EXECUTORCH_BUILD_CADENCE)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
+endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
@@ -496,6 +498,8 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
+  elseif(EXECUTORCH_BUILD_CADENCE)
+    list(APPEND _executor_runner_libs cadence_ops_lib)
   else()
     list(APPEND _executor_runner_libs portable_ops_lib)
   endif()
@@ -564,6 +568,10 @@ endif()
 
 if(EXECUTORCH_BUILD_COREML)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
+endif()
+
+if(EXECUTORCH_BUILD_CADENCE)
+   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cadence)
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND)
