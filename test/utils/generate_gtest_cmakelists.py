@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
 import os
 import shutil
 import subprocess
@@ -41,47 +42,6 @@ def format_template(path_to_root, test_srcs):
     )
 
 
-CONFIG = [
-    (
-        "runtime/core/portable_type/test",
-        [
-            "optional_test.cpp",
-            "executor_tensor_test.cpp",
-            "half_test.cpp",
-            "scalar_test.cpp",
-            "tensor_impl_test.cpp",
-        ],
-    ),
-    (
-        "runtime/core/test",
-        [
-            "span_test.cpp",
-            "error_handling_test.cpp",
-            "event_tracer_test.cpp",
-            "freeable_buffer_test.cpp",
-            "array_ref_test.cpp",
-            "memory_allocator_test.cpp",
-            "hierarchical_allocator_test.cpp",
-            "evalue_test.cpp",
-        ],
-    ),
-    (
-        "runtime/core/exec_aten/util/test",
-        [
-            "tensor_util_test.cpp",
-            "scalar_type_util_test.cpp",
-            "operator_impl_example_test.cpp",
-            "dim_order_util_test.cpp",
-            "../../testing_util/tensor_util.cpp",
-        ],
-    ),
-    (
-        "runtime/core/exec_aten/testing_util/test",
-        ["tensor_util_test.cpp", "tensor_factory_test.cpp", "../tensor_util.cpp"],
-    ),
-]
-
-
 def write_template(path_to_root, test_srcs):
     """
     Write the template to the given path_to_root.
@@ -90,8 +50,18 @@ def write_template(path_to_root, test_srcs):
         f.write(format_template(path_to_root, test_srcs))
 
 
+def read_config_json(json_path):
+    """
+    Read the config.json file and return the list of (path_to_root, test_srcs)
+    """
+    with open(json_path) as f:
+        config = json.load(f)
+    return [(d["directory"], d["sources"]) for d in config["tests"]]
+
+
 if __name__ == "__main__":
-    for path_to_root, test_srcs in CONFIG:
+    json_path = os.path.dirname(os.path.abspath(__file__)) + "/OSSTestConfig.json"
+    for path_to_root, test_srcs in read_config_json(json_path):
         write_template(path_to_root, test_srcs)
         if shutil.which("cmake-format") is not None:
             subprocess.run(
