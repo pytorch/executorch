@@ -40,5 +40,6 @@ set(_test_srcs {test_srcs})
 add_executable({project_name} ${{_test_srcs}})
 target_link_libraries(
   {project_name} GTest::gtest GTest::gtest_main GTest::gmock executorch
+  {additional_libs}
 )
 add_test(ExecuTorchTest {project_name})

@@ -40,6 +40,6 @@ set(_test_srcs buffer_data_loader_test.cpp shared_ptr_data_loader_test.cpp
 add_executable(extension_data_loader_test ${_test_srcs})
 target_link_libraries(
   extension_data_loader_test GTest::gtest GTest::gtest_main GTest::gmock
-  executorch
+  executorch extension_data_loader
 )
 add_test(ExecuTorchTest extension_data_loader_test)
