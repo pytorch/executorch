@@ -30,6 +30,20 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "mean_to_sum_div",
+    srcs = ["mean_to_sum_div.py"],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir:sym_util",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
     name = "duplicate_dynamic_quant_chain",
     srcs = ["duplicate_dynamic_quant_chain.py"],
     visibility = [
