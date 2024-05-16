@@ -161,13 +161,16 @@ def get_qnn_quantizer(args):
     # more custom quantization are supported including 16a4w etc. default to 8bit quantized
     custom_annotations = ()
     if quant_config == "8a8w":
+        raise NotImplementedError("8a8w for llama is still under development")
         quant_dtype = QuantDtype.use_8a8w
         pass
     elif quant_config == "16a16w":
+        raise NotImplementedError("16a16w for llama is still under development")
         quant_dtype = QuantDtype.use_16a16w
         qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
         qnn_quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
     elif quant_config == "16a4w":
+        raise NotImplementedError("16a4w for llama is still under development")
         quant_dtype = QuantDtype.use_16a4w
         qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
         qnn_quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config())
