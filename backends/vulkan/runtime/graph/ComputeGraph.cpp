@@ -89,33 +89,6 @@ ComputeGraph::~ComputeGraph() {
   context_->flush();
 }
 
-void ComputeGraph::update_descriptor_counts(
-    const api::ShaderInfo& shader_info,
-    bool execute) {
-  api::DescriptorPoolConfig* config =
-      execute ? &execute_descriptor_counts_ : &prepack_descriptor_counts_;
-
-  config->descriptor_pool_max_sets += 1;
-  for (const VkDescriptorType arg_type : shader_info.kernel_layout) {
-    switch (arg_type) {
-      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-        config->descriptor_uniform_buffer_count += 1;
-        break;
-      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-        config->descriptor_storage_buffer_count += 1;
-        break;
-      case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-        config->descriptor_combined_sampler_count += 1;
-        break;
-      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-        config->descriptor_storage_image_count += 1;
-        break;
-      default:
-        VK_THROW("Unsupported descriptor type!");
-    }
-  }
-}
-
 api::StorageType ComputeGraph::suggested_storage_type() {
   if (config_.enable_storage_type_override) {
     return config_.storage_type_override;
@@ -148,22 +121,22 @@ void ComputeGraph::check_no_active_value_ptrs() {
       "invalidated.");
 }
 
-std::vector<int64_t> ComputeGraph::get_sizes_of(ValueRef idx) {
-  Value& val = values_.at(idx);
+std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
   if (val.isTensor()) {
-    return val.toTensor().sizes();
+    return val.toConstTensor().sizes();
   } else if (val.isTensorRef()) {
-    return val.toTensorRef().sizes;
+    return val.toConstTensorRef().sizes;
   }
   VK_THROW("Could not get sizes of value with type ", val.type());
 }
 
-api::ScalarType ComputeGraph::get_dtype_of(ValueRef idx) {
-  Value& val = values_.at(idx);
+api::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
   if (val.isTensor()) {
-    return val.toTensor().dtype();
+    return val.toConstTensor().dtype();
   } else if (val.isTensorRef()) {
-    return val.toTensorRef().dtype;
+    return val.toConstTensorRef().dtype;
   }
   VK_THROW("Could not get dtype of value with type ", val.type());
 }
@@ -200,14 +173,13 @@ ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
     const api::StorageType storage_type,
     const api::GPUMemoryLayout memory_layout) {
-  return add_tensor(
-      get_sizes_of(idx), get_dtype_of(idx), storage_type, memory_layout);
+  return add_tensor(sizes_of(idx), dtype_of(idx), storage_type, memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
     const api::GPUMemoryLayout memory_layout) {
-  return add_tensor(get_sizes_of(idx), get_dtype_of(idx), memory_layout);
+  return add_tensor(sizes_of(idx), dtype_of(idx), memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor(
@@ -298,6 +270,33 @@ SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {
     shared_objects_.resize(static_cast<size_t>(idx + 1));
   }
   return shared_objects_.at(idx);
+}
+
+void ComputeGraph::update_descriptor_counts(
+    const api::ShaderInfo& shader_info,
+    bool execute) {
+  api::DescriptorPoolConfig* config =
+      execute ? &execute_descriptor_counts_ : &prepack_descriptor_counts_;
+
+  config->descriptor_pool_max_sets += 1;
+  for (const VkDescriptorType arg_type : shader_info.kernel_layout) {
+    switch (arg_type) {
+      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+        config->descriptor_uniform_buffer_count += 1;
+        break;
+      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        config->descriptor_storage_buffer_count += 1;
+        break;
+      case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+        config->descriptor_combined_sampler_count += 1;
+        break;
+      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+        config->descriptor_storage_image_count += 1;
+        break;
+      default:
+        VK_THROW("Unsupported descriptor type!");
+    }
+  }
 }
 
 void ComputeGraph::copy_into_staging(

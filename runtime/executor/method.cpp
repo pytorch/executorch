@@ -933,10 +933,15 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       InvalidState,
       "Outputs can not be retrieved until method has been initialized.");
 
-  ET_CHECK_OR_RETURN_ERROR(
-      !pre_allocated_output_,
-      InvalidState,
-      "Overriding output data pointer allocated by memory plan is not allowed.");
+  // ET_CHECK_OR_RETURN_ERROR(
+  //     !pre_allocated_output_,
+  //     InvalidState,
+  //     "Overriding output data pointer allocated by memory plan is not
+  //     allowed.");
+  // TODO(T188740925): for now, return error without logs.
+  if (pre_allocated_output_) {
+    return ::torch::executor::Error::InvalidState;
+  }
 
   // Check the args
   ET_CHECK_OR_RETURN_ERROR(

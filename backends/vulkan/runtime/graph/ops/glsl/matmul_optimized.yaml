@@ -9,12 +9,12 @@ matmul_optimized:
     DTYPE: float
     NDIM: 3
     PACKING: C_packed
-    IS_ADDMM: false
+    MAT2_IS_TRANSPOSED: false
   generate_variant_forall:
     DTYPE:
       - VALUE: float
       - VALUE: half
   shader_variants:
     - NAME: matmul_optimized
-    - NAME: addmm_optimized
-      IS_ADDMM: true
+    - NAME: matmul_transposed_optimized
+      MAT2_IS_TRANSPOSED: true

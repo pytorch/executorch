@@ -9,7 +9,7 @@
 #import <XCTest/XCTest.h>
 
 #import <json_key_value_store.hpp>
-#import <json.hpp>
+#import <nlohmann/json.hpp>
 
 namespace {
 using json = nlohmann::json;
@@ -24,11 +24,11 @@ struct Entry {
     inline Entry(std::string identifier, size_t count) noexcept
     :identifier(std::move(identifier)), count(count)
     {}
-    
+
     inline Entry() noexcept
     :identifier(""), count(0)
     {}
-    
+
     inline std::string to_json_string() const noexcept {
         json j;
         to_json(j, *this);
@@ -36,12 +36,12 @@ struct Entry {
         ss << j;
         return ss.str();
     }
-    
+
     inline void from_json_string(const std::string& json_string) noexcept {
         auto j = json::parse(json_string);
         from_json(j, *this);
     }
-    
+
     std::string identifier;
     size_t count;
 };
@@ -110,12 +110,12 @@ using namespace executorchcoreml::sqlite;
     std::error_code error;
     auto database = Database::make_inmemory(Database::SynchronousMode::Normal, 100, error);
     auto store = JSONKeyValueStore<int, Entry>::make(std::move(database), "test", error);
-    
+
     XCTAssertTrue(store->put(1, Entry("1", 1), error));
     auto entry1 = store->get(1, error);
     XCTAssertTrue(entry1.value().count == 1);
     XCTAssertTrue(entry1.value().identifier == "1");
-    
+
     XCTAssertTrue(store->put(2, Entry("2", 2), error));
     auto entry2 = store->get(2, error);
     XCTAssertTrue(entry2.value().count == 2);
@@ -134,7 +134,7 @@ using namespace executorchcoreml::sqlite;
         // Commit the transaction.
         return true;
     }, Database::TransactionBehavior::Immediate, error));
-    
+
     XCTAssertTrue(store->size(error) == 2);
 }
 
@@ -150,7 +150,7 @@ using namespace executorchcoreml::sqlite;
         // Rollback the transaction.
         return false;
     }, Database::TransactionBehavior::Immediate, error));
-    
+
     XCTAssertTrue(store->size(error) == 0);
 }
 
@@ -173,7 +173,7 @@ using namespace executorchcoreml::sqlite;
         // 1 is accessed first then 2 and then 3
         XCTAssertTrue(keys == (std::vector<int>{1, 2, 3}));
     }
-    
+
     {
         std::vector<int> keys;
         XCTAssertTrue(store->get_keys_sorted_by_access_time([&keys](int key) {
@@ -210,7 +210,7 @@ using namespace executorchcoreml::sqlite;
         // 3 is accessed 1 time, 2 is accessed 2 times, and 1 is accessed 3 times.
         XCTAssertTrue(keys == (std::vector<int>{3, 2, 1}));
     }
-    
+
     {
         std::vector<int> keys;
         XCTAssertTrue(store->get_keys_sorted_by_access_count([&keys](int key) {

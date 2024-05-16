@@ -181,6 +181,7 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
     _DEFINE_MPS_NODE(Embedding);
     _DEFINE_MPS_NODE(IndexTensor);
     _DEFINE_MPS_NODE(IndexPut);
+    _DEFINE_MPS_NODE(Scatter);
     // Reduce ops
     _DEFINE_MPS_NODE(Mean);
     // Shape ops

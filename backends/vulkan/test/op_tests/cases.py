@@ -94,6 +94,26 @@ def get_addmm_inputs():
     return test_suite
 
 
+def get_linear_inputs():
+    MKN_list = [
+        (S2, M2, M1),
+        (L, L, M1),
+    ]
+
+    inputs_list = [((M, K), (N, K), None) for M, K, N in MKN_list]
+    inputs_list += [((M, K), (N, K), (N)) for M, K, N in MKN_list]
+    inputs_list += [((3, M, K), (N, K), None) for M, K, N in MKN_list]
+    inputs_list += [((3, M, K), (N, K), (N)) for M, K, N in MKN_list]
+
+    test_suite = VkTestSuite(inputs_list)
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = [
+        "api::kWidthPacked",
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
 def get_pool2d_inputs():
     test_suite = VkTestSuite(
         [
@@ -747,6 +767,7 @@ test_suites = {
     "aten.addmm.default": get_addmm_inputs(),
     "aten.bmm.default": get_bmm_inputs(),
     "aten.mm.default": get_mm_inputs(),
+    "aten.linear.default": get_linear_inputs(),
     "aten.max_pool2d_with_indices.default": get_pool2d_inputs(),
     "aten.convolution.default": get_conv_inputs(),
     "aten.native_layer_norm.default": get_native_layer_norm_inputs(),

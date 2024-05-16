@@ -22,6 +22,7 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        "//executorch/backends/transforms:addmm_mm_to_linear",
         "//executorch/exir:graph_module",
         "//executorch/exir/_serialize:_bindings",
         "//executorch/exir/_serialize:lib",

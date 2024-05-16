@@ -1602,7 +1602,9 @@ class TestPasses(unittest.TestCase):
             def forward(self, x):
                 o1 = torch.ops.aten.view_copy.default(x, [1])
                 o2 = torch.ops.aten.view_copy.default(self.parameter, [1])
-                return o1, o2
+                # view_copys at the end of a function are not replaced, so add
+                # a computation before the end of the graph.
+                return torch.ops.aten.add.Tensor(o1, o2)
 
         ep = torch.export.export(
             TestViewCopies(),
@@ -1631,10 +1633,9 @@ class TestPasses(unittest.TestCase):
         gm = gm_res.graph_module
 
         # Check after transformation
-        # Note: one view copy is not replaced, because it's the output of the graph
         FileCheck().check_count(
-            "torch.ops.aten.view_copy.default", 1, exactly=True
+            "torch.ops.aten.view_copy.default", 0, exactly=True
         ).run(gm.code)
-        FileCheck().check_count("executorch_exir_memory_view", 1, exactly=True).run(
+        FileCheck().check_count("executorch_exir_memory_view", 2, exactly=True).run(
             gm.code
         )

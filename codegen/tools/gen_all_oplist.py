@@ -22,10 +22,7 @@ def main(argv: List[Any]) -> None:
     parser = argparse.ArgumentParser(description="Generate operator lists")
     parser.add_argument(
         "--output_dir",
-        help=(
-            "The directory to store the output yaml files (selected_mobile_ops.h, "
-            + "selected_kernel_dtypes.h, selected_operators.yaml)"
-        ),
+        help=("The directory to store the output yaml file (selected_operators.yaml)"),
         required=True,
     )
     parser.add_argument(

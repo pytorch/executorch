@@ -35,7 +35,7 @@ layout(constant_id = 4) const int out_packed_dim = C_DIM;
 
 void main() {
 	const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
-	const ivec4 out_tensor_idx = to_tensor_idx(out_pos, out_sizes, out_packed_dim);
+	ivec4 out_tensor_idx = to_tensor_idx(out_pos, out_sizes, out_packed_dim);
 
   if (all(greaterThanEqual(out_tensor_idx, out_sizes))) {
     return;
@@ -46,13 +46,15 @@ void main() {
   // the input position from the indx.
   const ivec4 buf_indices = get_texel_nchw_buffer_ixs(out_tensor_idx, out_sizes, out_packed_dim);
 
-  VEC4_T value;
+  VEC4_T value = VEC4_T(0);
   // Need to look up the 4 values in the output texel separately.
-  for (int i =0 ; i < 4; i++) {
-    ivec4 user_coor = from_nchw_buffer_i(buf_indices[i], in_sizes);
-    ivec4 in_pos_elem = to_texture_elem_pos(user_coor, in_sizes, in_packed_dim);
-    VEC4_T intex = texelFetch(image_in, in_pos_elem.xyz, 0);
-    value[i] = intex[in_pos_elem.w];
+  for (int i = 0 ; i < 4; i++) {
+    if (out_tensor_idx[out_packed_dim]++ < out_sizes[out_packed_dim]) {
+      ivec4 user_coor = from_nchw_buffer_i(buf_indices[i], in_sizes);
+      ivec4 in_pos_elem = to_texture_elem_pos(user_coor, in_sizes, in_packed_dim);
+      VEC4_T intex = texelFetch(image_in, in_pos_elem.xyz, 0);
+      value[i] = intex[in_pos_elem.w];
+    }
   }
 
   imageStore(image_out, out_pos, value);

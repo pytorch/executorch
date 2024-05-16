@@ -5,13 +5,16 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#include <inmemory_filesystem_metadata.hpp>
-#include <inmemory_filesystem_metadata_keys.hpp>
-#include <inmemory_filesystem_utils.hpp>
+#include "inmemory_filesystem_utils.hpp"
+
 #include <iostream>
-#include <json.hpp>
-#include <json_util.hpp>
 #include <sstream>
+
+#include <nlohmann/json.hpp>
+
+#include "inmemory_filesystem_metadata.hpp"
+#include "inmemory_filesystem_metadata_keys.hpp"
+#include "json_util.hpp"
 
 namespace inmemoryfs {
 
