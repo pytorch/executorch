@@ -378,9 +378,11 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         qnn_quantizer, quant_dtype = get_qnn_quantizer(args)
         quantizers.append(qnn_quantizer)
 
-    builder_exported_to_edge = _prepare_for_llama_export(
-        modelname, args
-    ).export_to_edge(quantizers)
+    builder_exported_to_edge = (
+        _prepare_for_llama_export(modelname, args)
+        .pt2e_quantize(quantizers)
+        .export_to_edge()
+    )
 
     modelname = builder_exported_to_edge.modelname
 
