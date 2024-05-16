@@ -35,6 +35,9 @@ class OpList:
     def __contains__(self, op):
         return op in self._ops
 
+    def __iter__(self):
+        return iter(self._ops.keys())
+
 
 PRIM_OPS = [
     operator.getitem,
