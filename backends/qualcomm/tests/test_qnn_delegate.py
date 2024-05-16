@@ -1467,6 +1467,41 @@ class TestExampleScript(TestQNN):
             self.assertGreaterEqual(msg["top_1"], 60)
             self.assertGreaterEqual(msg["top_5"], 80)
 
+    def test_mobilenet_v3(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/mobilenet_v3.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["top_1"], 60)
+            self.assertGreaterEqual(msg["top_5"], 80)
+
     def test_inception_v3(self):
         if not self.required_envs([self.image_dataset]):
             self.skipTest("missing required envs")
