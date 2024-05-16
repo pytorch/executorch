@@ -45,17 +45,17 @@ class TestHardswish(unittest.TestCase):
         )
 
     @unittest.skip("T158969708 - Missing recomposition pass for hardswish")
-    def test_fp16_hardswish(self):
+    def _test_fp16_hardswish(self):
         inputs = (torch.randn(1, 3, 3).to(torch.float16),)
         self._test_hardswish(inputs)
 
     @unittest.skip("T158969708 - Missing recomposition pass for hardswish")
-    def test_fp32_hardswish(self):
+    def _test_fp32_hardswish(self):
         inputs = (torch.randn(1, 3, 3),)
         self._test_hardswish(inputs)
 
     @unittest.skip("T158969708 - Missing recomposition pass for hardswish")
-    def test_fp32_hardswish_functional(self):
+    def _test_fp32_hardswish_functional(self):
         inputs = (torch.randn(1, 3, 3),)
         (
             Tester(self.HardswishFunctional(), inputs)
