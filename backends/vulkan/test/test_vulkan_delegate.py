@@ -202,6 +202,19 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(add_module, sample_inputs)
 
+    def test_vulkan_backend_zero_dim_tensor(self):
+        class ZeroDimModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.zero = torch.full([], 1.3, dtype=torch.float32)
+
+            def forward(self, x):
+                return x + self.zero
+
+        internal_data_module = ZeroDimModule()
+        sample_inputs = (torch.rand(size=(2, 3), dtype=torch.float32),)
+        self.lower_module_and_test_output(internal_data_module, sample_inputs)
+
     def test_vulkan_backend_internal_data(self):
         class InternalDataModule(torch.nn.Module):
             def __init__(self):
