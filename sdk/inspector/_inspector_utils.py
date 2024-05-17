@@ -78,10 +78,18 @@ def _parse_tensor_value(
         """
         Return the size of the scalar type in bytes
         """
-        if scalar_type == ScalarType.INT:
-            return (torch.int, 4)
+        if scalar_type == ScalarType.BYTE:
+            return (torch.uint8, 1)
+        elif scalar_type == ScalarType.CHAR:
+            return (torch.int8, 1)
         elif scalar_type == ScalarType.BOOL:
             return (torch.bool, 1)
+        elif scalar_type == ScalarType.SHORT:
+            return (torch.int16, 2)
+        elif scalar_type == ScalarType.HALF:
+            return (torch.float16, 2)
+        elif scalar_type == ScalarType.INT:
+            return (torch.int, 4)
         elif scalar_type == ScalarType.FLOAT:
             return (torch.float, 4)
         elif scalar_type == ScalarType.DOUBLE:
