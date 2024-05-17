@@ -1,5 +1,14 @@
 { "tests": [
     {
+        "directory": "extension/data_loader/test",
+        "sources": [
+            "buffer_data_loader_test.cpp",
+            "shared_ptr_data_loader_test.cpp",
+            "file_data_loader_test.cpp",
+            "mmap_data_loader_test.cpp"
+        ]
+    },
+    {
         "directory": "runtime/core/portable_type/test",
         "sources": [
             "optional_test.cpp",

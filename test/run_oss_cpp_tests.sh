@@ -20,6 +20,7 @@ build_and_run_test() {
 }
 
 build_executorch
+build_and_run_test extension/data_loader/test/
 build_and_run_test runtime/core/portable_type/test/
 build_and_run_test runtime/core/test/
 build_and_run_test runtime/core/exec_aten/util/test/
