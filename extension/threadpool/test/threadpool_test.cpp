@@ -11,8 +11,8 @@
 #include <numeric>
 #include <random>
 
-#include <executorch/backends/xnnpack/threadpool/threadpool.h>
-#include <executorch/backends/xnnpack/threadpool/threadpool_guard.h>
+#include <executorch/extension/threadpool/threadpool.h>
+#include <executorch/extension/threadpool/threadpool_guard.h>
 
 using namespace ::testing;
 

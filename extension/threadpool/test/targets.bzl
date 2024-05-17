@@ -15,6 +15,6 @@ def define_common_targets():
         name = "threadpool_test",
         srcs = _THREADPOOL_TESTS,
         deps = [
-            "//executorch/backends/xnnpack/threadpool:threadpool",
+            "//executorch/extension/threadpool:threadpool",
         ],
     )
