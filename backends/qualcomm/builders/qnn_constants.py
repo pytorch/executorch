@@ -40,6 +40,11 @@ class OpConv2d:
 
 
 @dataclass(init=False, frozen=True)
+class OpConvert:
+    op_name: str = "Convert"
+
+
+@dataclass(init=False, frozen=True)
 class OpDepthToSpace:
     op_name: str = "DepthToSpace"
     param_block_size: str = "block_size"
@@ -106,6 +111,13 @@ class OpExpandDims:
 
 
 @dataclass(init=False, frozen=True)
+class OpReduceSum:
+    op_name: str = "ReduceSum"
+    param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpFullyConnected:
     op_name: str = "FullyConnected"
     param_keep_dims: str = "keep_dims"
@@ -120,6 +132,11 @@ class OpGather:
 @dataclass(init=False, frozen=True)
 class OpGelu:
     op_name: str = "Gelu"
+
+
+@dataclass(init=False, frozen=True)
+class OpSqrt:
+    op_name: str = "ElementWiseSquareRoot"
 
 
 @dataclass(init=False, frozen=True)

@@ -69,13 +69,11 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
             self.conv = torch.nn.Conv2d(
                 in_channels=weight.shape[0],
                 out_channels=weight.shape[1],
-                kernel_size=(1, 1),
+                kernel_size=1,
                 padding=0,
                 bias=use_bias,
             )
-            self.conv.weight = torch.nn.Parameter(
-                weight.reshape(*weight.shape, 1, 1)
-            )
+            self.conv.weight = torch.nn.Parameter(weight.reshape(*weight.shape, 1, 1))
             if use_bias:
                 self.conv.bias = torch.nn.Parameter(bias)
 
@@ -89,10 +87,13 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
             return res
 
     def replace_linear(module: torch.nn.Module):
-        for attr_str in dir(module):
+        attr_strs = dir(module)
+        if type(module) == torch.nn.ModuleList:
+            attr_strs += [str(i) for i in range(len(module))]
+
+        for attr_str in attr_strs:
             target_attr = getattr(module, attr_str)
             if type(target_attr) == torch.nn.Linear:
-                print('replaced: ', attr_str)
                 setattr(module, attr_str, Conv2D(target_attr.weight, target_attr.bias))
 
         for _, sub_module in module.named_children():
@@ -223,6 +224,7 @@ def generate_htp_compiler_spec(
     # TODO: enable voting mechanism in runtime and make this as an option
     htp_options.performance_mode = QnnExecuTorchHtpPerformanceMode.kHtpBurst
     htp_options.use_multi_contexts = use_multi_contexts
+    htp_options.max_sf_buf_size = 73859072
     htp_options.use_dlbc = use_dlbc
     return QnnExecuTorchBackendOptions(
         backend_type=QnnExecuTorchBackendType.kHtpBackend,

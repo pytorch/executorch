@@ -6,6 +6,7 @@
 
 
 import torch
+from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -27,25 +28,33 @@ class FuseConsecutiveTranspose(ExportPass):
         self.nodes = []
 
     def _traverse(self, node):
-        if node.op == "call_function" and node.target in self.op_map:
-            self.nodes.append(node)
-            self.visited.add(node)
-            if len(node.users) == 1:
-                self._traverse(list(node.users)[0])
+        if node in self.visited or not node.target in self.op_map:
+            return
+
+        self.nodes.append(node)
+        self.visited.add(node)
+        next_users = [n for n in list(node.users) if n.target in self.op_map]
+        if not next_users:
+            return
+
+        if len(next_users) == 1:
+            self._traverse(list(node.users)[0])
+        else:
+            raise NotImplementedError(
+                f"Check the node {node}, wich encounter mutilple permute output case"
+            )
 
     def _fuse(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         graph = graph_module.graph
         for n in graph_module.graph.nodes:
-            if n in self.visited:
-                continue
-            if n.op == "call_function" and n.target in self.op_map:
-                self._traverse(n)
-            num_nodes = len(self.nodes)
-            if num_nodes > 1:
+            self._traverse(n)
+            if len(self.nodes) > 1:
+                permute_order = []
                 input_node, output_node = self.nodes[0].args[0], self.nodes[-1]
                 input_shape = input_node.meta["val"].shape
                 axis_order = torch.arange(len(input_shape)).tolist()
                 for node in self.nodes:
+                    permute_order.append(node.args[1])
                     axis_order = [axis_order[i] for i in node.args[1]]
                 with graph.inserting_after(input_node):
                     permute_op = exir_ops.edge.aten.permute_copy.default
@@ -55,11 +64,19 @@ class FuseConsecutiveTranspose(ExportPass):
                     users = output_node.users.copy()
                     for user in users:
                         user.replace_input_with(output_node, permute_node)
+
                     # copy metadata
-
                     permute_node.meta = output_node.meta
-            # clear current stack
+                    # Without inserted_permute_tag, we might obtain wrong input shape
+                    if any(
+                        [
+                            pn.meta.get(LayoutTransform.inserted_permute_tag)
+                            for pn in self.nodes
+                        ]
+                    ):
+                        permute_node.meta[LayoutTransform.inserted_permute_tag] = True
 
+            # clear current stack
             self.nodes = []
 
     def call(self, graph_module: torch.fx.GraphModule):

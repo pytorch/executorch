@@ -6,6 +6,7 @@
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -15,7 +16,6 @@ from typing import Callable, List, Optional
 import numpy as np
 
 import torch
-from torch.ao.quantization.observer import MovingAverageMinMaxObserver
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a4w_qnn_ptq_config,
@@ -35,6 +35,7 @@ from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
+from torch.ao.quantization.observer import MovingAverageMinMaxObserver
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -54,11 +55,11 @@ class SimpleADB:
     ):
         self.qnn_sdk = qnn_sdk
         self.artifact_path = artifact_path
-        self.pte_path = pte_path
+        self.pte_path = pte_path if isinstance(pte_path, list) else [pte_path]
         self.workspace = workspace
         self.device_id = device_id
         self.host_id = host_id
-        self.working_dir = Path(self.pte_path).parent.absolute()
+        self.working_dir = Path(self.pte_path[0]).parent.absolute()
         self.input_list_filename = "input_list.txt"
         self.etdump_path = f"{self.workspace}/etdump.etdp"
         self.output_folder = f"{self.workspace}/outputs"
@@ -96,7 +97,6 @@ class SimpleADB:
 
         # necessary artifacts
         for artifact in [
-            f"{self.pte_path}",
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
             (
                 f"{self.qnn_sdk}/lib/hexagon-v{self.soc_model}/"
@@ -111,11 +111,13 @@ class SimpleADB:
             f"{self.artifact_path}/{self.runner}",
             f"{self.artifact_path}/backends/qualcomm/libqnn_executorch_backend.so",
             input_list_file,
-        ]:
+        ] + self.pte_path:
             self._adb(["push", artifact, self.workspace])
 
         # input data
         for idx, data in enumerate(inputs):
+            # print("[Warning] inputs push are is skip")
+            # break
             flat_inputs = []
             for input in data:
                 if isinstance(input, list):
@@ -137,9 +139,12 @@ class SimpleADB:
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
         if custom_runner_cmd is None:
+            pte_path_str = ",".join(
+                [os.path.basename(pte_path) for pte_path in self.pte_path]
+            )
             qnn_executor_runner_args = " ".join(
                 [
-                    f"--model_path {os.path.basename(self.pte_path)}",
+                    f"--model_paths {pte_path_str}",
                     f"--output_folder_path {self.output_folder}",
                     f"--input_list_path {self.input_list_filename}",
                     f"--etdump_path {self.etdump_path}",
@@ -185,7 +190,7 @@ def build_executorch_binary(
     direct_io=False,  # TODO: temporal workaround for llama
     shared_buffer=False,
     metadata=None,
-    act_observer=MovingAverageMinMaxObserver
+    act_observer=MovingAverageMinMaxObserver,
 ):
     if quant_dtype is not None:
         quantizer = QnnQuantizer()
@@ -196,10 +201,14 @@ def build_executorch_binary(
             pass  # default setting
         elif quant_dtype == QuantDtype.use_16a16w:
             quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config(act_observer=act_observer))
+            quantizer.set_bit16_op_quant_config(
+                get_default_16bit_qnn_ptq_config(act_observer=act_observer)
+            )
         elif quant_dtype == QuantDtype.use_16a4w:
             quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config(act_observer=act_observer))
+            quantizer.set_bit16_op_quant_config(
+                get_16a4w_qnn_ptq_config(act_observer=act_observer)
+            )
             quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
         else:
             raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
@@ -270,6 +279,7 @@ def build_executorch_binary(
             constant_methods=metadata,
             compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
+
         edge_prog_mgr = edge_prog_mgr.to_backend(qnn_partitioner)
         exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
         with open(f"{file_name}.pte", "wb") as file:

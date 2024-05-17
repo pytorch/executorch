@@ -29,7 +29,7 @@ namespace executor {
 class Runner {
  public:
   explicit Runner(
-      const std::string& model_path,
+      const std::vector<std::string>& model_path_list,
       const std::string& tokenizer_path,
       const float temperature = 0.8f);
 
@@ -64,23 +64,28 @@ class Runner {
   Error generate(
       const std::string& prompt,
       int32_t seq_len,
-      std::vector<ManagedTensor>& managed_inputs,
+      std::vector<std::vector<ManagedTensor>>& managed_kv_inputs,
+      std::vector<std::vector<float>>& freqs_inputs,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
   void stop();
-  Result<MethodMeta> method_meta();
+  std::vector<Result<MethodMeta>> get_methods_meta();
 
  private:
   // metadata
   template <typename T>
-  T getMetadataHelper(std::string method_name, T default_val);
+  T getMetadataHelper(Module*, std::string method_name, T default_val);
   template <typename T>
   int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
   Result<torch::executor::Tensor> run_model_step(
       int64_t input_token,
-      Tensor& token,
-      Tensor& start_pos,
-      std::vector<Tensor>& input_tensors);
+    Tensor& token,
+    Tensor& start_pos,
+    Tensor& atten_mask,
+    Tensor& freqs_cos,
+    Tensor& freqs_sin,
+    std::vector<std::vector<Tensor>>& kv_tensors,
+    std::vector<std::vector<Tensor>>& kv_outputs);
   // metadata
   int32_t vocab_size_;
   int64_t bos_id_;
@@ -88,8 +93,9 @@ class Runner {
   int32_t n_bos_;
   int32_t n_eos_;
   int32_t max_seq_len_;
+  int32_t head_dim_;
   std::unordered_set<std::string> model_methods_;
-  std::unique_ptr<Module> module_;
+  std::vector<std::unique_ptr<Module>> modules_;
   std::string tokenizer_path_;
   float temperature_;
   std::unique_ptr<Tokenizer> tokenizer_;

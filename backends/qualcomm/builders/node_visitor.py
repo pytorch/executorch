@@ -14,7 +14,13 @@ import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from .utils import get_parameter, is_graph_input, is_graph_output, is_parameter
+from .utils import (
+    deduce_dtype,
+    get_parameter,
+    is_graph_input,
+    is_graph_output,
+    is_parameter,
+)
 
 
 QNN_QUANT_TYPE_MAP = {
@@ -27,6 +33,7 @@ QNN_QUANT_TYPE_MAP = {
     torch.uint16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_16,
 }
 QNN_TENSOR_TYPE_MAP = {
+    torch.bool: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
     torch.float32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
     torch.int8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_8,
     torch.int16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_16,
@@ -214,24 +221,9 @@ class NodeVisitor:
         self,
         tensor: torch.Tensor,
         quant_config: Dict,
-        is_tensor: bool,
     ) -> PyQnnWrapper.Qnn_TensorType_t:
-        if quant_config and is_tensor:
-            quant_range = quant_config["quant_max"] - quant_config["quant_min"]
-            unsigned = quant_config["quant_min"] >= 0
-            if quant_range <= torch.iinfo(torch.int8).max - torch.iinfo(torch.int8).min:
-                if unsigned:
-                    quant_config["dtype"] = torch.uint8
-                else:
-                    quant_config["dtype"] = torch.int8
-            elif (
-                quant_range
-                <= torch.iinfo(torch.int16).max - torch.iinfo(torch.int16).min
-            ):
-                if unsigned:
-                    quant_config["dtype"] = torch.uint16
-                else:
-                    quant_config["dtype"] = torch.int16
+        if quant_config:
+            quant_config["dtype"] = deduce_dtype(tensor, quant_config)
             return QNN_QUANT_TYPE_MAP[quant_config["dtype"]]
         else:
             return QNN_TENSOR_TYPE_MAP[tensor.dtype]
@@ -277,7 +269,6 @@ class NodeVisitor:
         is_input_tensor: bool,
         node_name: str = None,
         wrapper_idx: int = 0,
-        is_tensor: bool = True,
     ) -> PyQnnWrapper.TensorWrapper:
         """
         Covert torch.Tensor to TensorWrapper
@@ -298,7 +289,7 @@ class NodeVisitor:
 
         tensor_name = node.name
         if is_graph_input(node, self.edge_program):
-            tensor_name = "QnnInput_"+str(self.external_ids[node])+"_"+ tensor_name
+            tensor_name = "QnnInput_" + str(self.external_ids[node]) + "_" + tensor_name
         if is_graph_output(node):
             tensor_name = "output_" + tensor_name
         dims = [1] if len(tensor.size()) == 0 else tensor.size()
@@ -306,7 +297,7 @@ class NodeVisitor:
         quant_encoding, quant_configs = self.get_quant_encoding_conf(
             node, is_input_tensor
         )
-        dtype = self.get_data_type(tensor, quant_configs, is_tensor)
+        dtype = self.get_data_type(tensor, quant_configs)
         if isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
                 tensor_name,

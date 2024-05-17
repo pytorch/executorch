@@ -52,7 +52,7 @@ class QnnBackend(BackendDetails):
                 InsertIOQDQ(edge_program),
                 LayoutTransform(edge_program, insert_permute=True),
                 # please enable this when apply convert_linear_to_conv2d
-                # FuseConsecutiveTranspose(),
+                FuseConsecutiveTranspose(),
             ]
         )
 
@@ -94,6 +94,8 @@ class QnnBackend(BackendDetails):
         )
         assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
         qnn_manager.Destroy()
+        del py_op_wrapper_list
+        del qnn_manager
         # For now, debug_handle_map is not used by QNN ExecuTorch
         return PreprocessResult(
             processed_bytes=bytes(qnn_context_binary), debug_handle_map={}

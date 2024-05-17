@@ -122,8 +122,8 @@ class CompositeDelegateModule(torch.nn.Module):
     ) -> None:
         super().__init__()
         self.modules = [
-            Conv2DSequential(),
-            Conv2DSequential(),
+            Conv2dSequential(),
+            Conv2dSequential(),
             Add(),
             Relu(),
         ]
@@ -172,7 +172,7 @@ class CompositeDelegateModule(torch.nn.Module):
         return CompositeReferenceModule(self.modules)
 
 
-class Conv1DSequential(torch.nn.Module):
+class Conv1dSequential(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.first = torch.nn.Conv1d(
@@ -208,43 +208,6 @@ class Conv1dReluLogSoftmax(torch.nn.Module):
         x = torch.nn.functional.relu(self.conv(x))
         x = self.logsoftmax(x)
         return x
-
-
-class Conv2DSequential(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.first = torch.nn.Conv2d(
-            in_channels=1,
-            out_channels=3,
-            kernel_size=(3, 3),
-            padding=1,
-            bias=True,
-        )
-        self.second = torch.nn.Conv2d(
-            in_channels=3,
-            out_channels=2,
-            kernel_size=(3, 3),
-            padding=1,
-            bias=True,
-        )
-
-    def forward(self, x):
-        return self.second(self.first(x))
-
-
-class Conv2DSingle(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(
-            in_channels=1,
-            out_channels=3,
-            kernel_size=(3, 3),
-            padding=1,
-            bias=True,
-        )
-
-    def forward(self, x):
-        return self.conv(x)
 
 
 class Conv2dAvgPool2d(torch.nn.Module):
@@ -319,6 +282,58 @@ class Conv2dMaxPool2d(torch.nn.Module):
 
     def forward(self, x):
         return self.pool(self.conv(x))
+
+
+class Conv2dSequential(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.first = torch.nn.Conv2d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=(3, 3),
+            padding=1,
+            bias=True,
+        )
+        self.second = torch.nn.Conv2d(
+            in_channels=3,
+            out_channels=2,
+            kernel_size=(3, 3),
+            padding=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        return self.second(self.first(x))
+
+
+class Conv2dSingle(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=(3, 3),
+            padding=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+class Conv2dSumReduceDim(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.first = torch.nn.Conv2d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=(3, 3),
+            padding=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        return torch.sum(self.first(x), dim=(2, 3), keepdim=False)
 
 
 class Div(torch.nn.Module):
@@ -691,7 +706,7 @@ class SqrtConstant(torch.nn.Module):
         super().__init__()
 
     def forward(self, x):
-        return x / torch.sqrt(torch.tensor([64]))
+        return x / torch.sqrt(torch.tensor([64.0]))
 
 
 class Squeeze(torch.nn.Module):
@@ -746,6 +761,14 @@ class SubConstantLong(torch.nn.Module):
 
     def forward(self, x):
         return 10 - x
+
+
+class SumIntList(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.sum(x, dim=(2, 3), keepdim=True)
 
 
 class Tanh(torch.nn.Module):

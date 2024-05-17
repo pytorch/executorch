@@ -10,12 +10,12 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpCast, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpSqrt, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class Cast(NodeVisitor):
-    target = ["aten._to_copy.default"]
+class SQRT(NodeVisitor):
+    target = ["aten.sqrt.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -25,6 +25,7 @@ class Cast(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
+        # tensor input
         input_node = node.args[0]
         input_tensor = self.get_tensor(input_node, node)
 
@@ -35,23 +36,24 @@ class Cast(NodeVisitor):
             nodes_to_wrappers,
             is_input_tensor=True,
         )
+        sqrt_input_tensors = [input_tensor_wrapper]
 
-        output_tensor = self.get_tensor(node, node)
-
+        out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
-            output_tensor,
+            out_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
             is_input_tensor=False,
         )
+        sqrt_output_tensors = [output_tensor_wrapper]
 
-        cast_op = PyQnnWrapper.PyQnnOpWrapper(
+        sqrt_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpCast.op_name,
+            OpSqrt.op_name,
         )
-        cast_op.AddInputTensors([input_tensor_wrapper])
-        cast_op.AddOutputTensors([output_tensor_wrapper])
+        sqrt_op.AddInputTensors(sqrt_input_tensors)
+        sqrt_op.AddOutputTensors(sqrt_output_tensors)
 
-        return cast_op
+        return sqrt_op

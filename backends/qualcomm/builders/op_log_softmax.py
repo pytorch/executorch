@@ -72,5 +72,4 @@ class LogSoftmax(NodeVisitor):
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {"data": np.uint32(dim)},
         )
-        # pdb.set_trace()
         return log_softmax_op

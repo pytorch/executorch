@@ -62,7 +62,7 @@ class LinearVisitor(NodeVisitor):
             bias_node = node.args[2]
 
             # TODO remove this when qnn sdk support
-            if "scales" in bias_node.meta.get("quant_attrs"):
+            if "scales" in bias_node.meta.get("quant_attrs", {}):
                 print(
                     f"[WARNING] Fallback linear bias, {bias_node}. per channel bias quantization is not support yet."
                 )

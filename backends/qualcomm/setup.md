@@ -93,7 +93,6 @@ mkdir build_android
 cd build_android
 # build executorch & qnn_executorch_backend
 cmake .. \
-    -DBUCK2=buck2 \
     -DCMAKE_INSTALL_PREFIX=$PWD \
     -DEXECUTORCH_BUILD_QNN=ON \
     -DQNN_SDK_ROOT=$QNN_SDK_ROOT \

@@ -12,7 +12,6 @@ import sys
 from functools import partial
 
 import torch
-from torch.ao.quantization.observer import MinMaxObserver
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.backends.qualcomm.utils.utils import convert_linear_to_conv2d
@@ -25,6 +24,7 @@ from executorch.examples.qualcomm.scripts.utils import (
 )
 
 from sentencepiece import SentencePieceProcessor
+from torch.ao.quantization.observer import MinMaxObserver
 
 
 def create_device_inputs(example_inputs):
@@ -48,7 +48,7 @@ def create_device_inputs(example_inputs):
 
 def calibrate(example_inputs, module: torch.fx.GraphModule):
     sp_model = SentencePieceProcessor(model_file="tokenizer.model")
-    _, _, kv_mask, k_caches, v_caches = example_inputs
+    _, _, atten_mask, k_caches, v_caches = example_inputs
 
     # TODO: change criteria & support batch inputs if necessary
     pos = torch.tensor(0, dtype=torch.int32)
@@ -68,14 +68,24 @@ def calibrate(example_inputs, module: torch.fx.GraphModule):
 
     with torch.no_grad():
         while token_list[-1] != sp_model.eos_id() and pos < 128:
-            logits, kv_mask, k_caches, v_caches = module(
+            logits, new_k_caches, new_v_caches = module(
                 torch.full((1, 1), token_list[pos]),
                 torch.full((1, 1), pos),
-                kv_mask,
+                atten_mask,
                 *k_caches,
                 *v_caches,
             )
+            k_caches = [
+                torch.cat([k_cache[:, 1:, :], new_k_caches[i]], dim=1)
+                for i, k_cache in enumerate(k_caches)
+            ]
+            v_caches = [
+                torch.cat([v_cache[:, 1:, :], new_v_caches[i]], dim=1)
+                for i, v_cache in enumerate(v_caches)
+            ]
+
             pos += 1
+            atten_mask[0][-pos - 1] = 0
             if pos >= len(token_list):
                 probs = torch.softmax(logits[:, -1] / 0.8, dim=-1)
                 token_list.append(sample_top_p(probs, 0.9).item())
@@ -174,8 +184,12 @@ if __name__ == "__main__":
         config.max_batch_size = 1
 
     state_dict = torch.load(args.checkpoint)
-    instance = LlamaModel(config)
-    instance.load_state_dict(state_dict["model"])
+    if "model" in state_dict:
+        state_dict = state_dict["model"]
+    with torch.device("meta"):
+        instance = LlamaModel(config)
+    instance.load_state_dict(state_dict, strict=False, assign=True)
+
     inputs, input_list = create_device_inputs(instance.get_export_inputs())
     pte_filename = "llama2_qnn"
 
@@ -193,6 +207,11 @@ if __name__ == "__main__":
     else:
         assert args.tokenizer_model is not None, "Need tokenizer model for calibration"
 
+    # prepare sha if the function is provided
+    for l in instance.layers:
+        if getattr(l.attention, "prepare_sha", None):
+            l.attention.prepare_sha()
+
     if args.pre_gen_pte is None:
         build_executorch_binary(
             # try this if you want: convert_linear_to_conv2d(instance.eval()),
@@ -207,7 +226,7 @@ if __name__ == "__main__":
             shared_buffer=args.shared_buffer,
             metadata=instance.get_metadata(),
             direct_io=True,
-            act_observer=MinMaxObserver
+            act_observer=MinMaxObserver,
         )
 
     if args.compile_only:
