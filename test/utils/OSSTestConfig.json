@@ -1,0 +1,55 @@
+{ "tests": [
+    {
+        "directory": "extension/data_loader/test",
+        "sources": [
+            "buffer_data_loader_test.cpp",
+            "shared_ptr_data_loader_test.cpp",
+            "file_data_loader_test.cpp",
+            "mmap_data_loader_test.cpp"
+        ],
+        "additional_libs": [
+            "extension_data_loader"
+        ]
+    },
+    {
+        "directory": "runtime/core/portable_type/test",
+        "sources": [
+            "optional_test.cpp",
+            "executor_tensor_test.cpp",
+            "half_test.cpp",
+            "scalar_test.cpp",
+            "tensor_impl_test.cpp"
+        ]
+    },
+    {
+        "directory": "runtime/core/test",
+        "sources": [
+            "span_test.cpp",
+            "error_handling_test.cpp",
+            "event_tracer_test.cpp",
+            "freeable_buffer_test.cpp",
+            "array_ref_test.cpp",
+            "memory_allocator_test.cpp",
+            "hierarchical_allocator_test.cpp",
+            "evalue_test.cpp"
+        ]
+    },
+    {
+        "directory": "runtime/core/exec_aten/util/test",
+        "sources": [
+            "tensor_util_test.cpp",
+            "scalar_type_util_test.cpp",
+            "operator_impl_example_test.cpp",
+            "dim_order_util_test.cpp",
+            "../../testing_util/tensor_util.cpp"
+        ]
+    },
+    {
+        "directory": "runtime/core/exec_aten/testing_util/test",
+        "sources": [
+            "tensor_util_test.cpp",
+            "tensor_factory_test.cpp",
+            "../tensor_util.cpp"
+        ]
+    }
+] }

@@ -135,7 +135,7 @@ class TestLinear(unittest.TestCase):
                 )
 
     @unittest.skip("XNNPACK currently only supports per-channel dynamic quantization.")
-    def test_qd8_per_tensor_linear(self):
+    def _test_qd8_per_tensor_linear(self):
         for uses_bias in (False, True):
             inputs = (torch.randn(2, 4),)
             module = torch.nn.Linear(4, 5, bias=uses_bias)
@@ -697,11 +697,11 @@ class TestLinear(unittest.TestCase):
     #    Max: 12.518657684326172, 12.516003608703613
     #    Min: -20.070953369140625, -20.077701568603516
     @unittest.skip("Need to fix the dq_per_channel output dtype")
-    def test_qd8_fp16_per_token_weight_per_channel_int8(self):
+    def _test_qd8_fp16_per_token_weight_per_channel_int8(self):
         self._run_manual_dqlinear_tests(8, torch.float16)
 
     @unittest.skip("Need to fix the dq_per_channel output dtype")
-    def test_qd8_fp16_per_token_weight_per_channel_int4(self):
+    def _test_qd8_fp16_per_token_weight_per_channel_int4(self):
         self._run_manual_dqlinear_tests(4, torch.float16)
 
     def test_qd8_fp32_per_token_weight_per_channel_group_int4(self):

@@ -94,6 +94,26 @@ def get_addmm_inputs():
     return test_suite
 
 
+def get_linear_inputs():
+    MKN_list = [
+        (S2, M2, M1),
+        (L, L, M1),
+    ]
+
+    inputs_list = [((M, K), (N, K), None) for M, K, N in MKN_list]
+    inputs_list += [((M, K), (N, K), (N)) for M, K, N in MKN_list]
+    inputs_list += [((3, M, K), (N, K), None) for M, K, N in MKN_list]
+    inputs_list += [((3, M, K), (N, K), (N)) for M, K, N in MKN_list]
+
+    test_suite = VkTestSuite(inputs_list)
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = [
+        "api::kWidthPacked",
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
 def get_pool2d_inputs():
     test_suite = VkTestSuite(
         [
@@ -470,6 +490,7 @@ def get_cat_inputs():
     test_suite = VkTestSuite(
         [
             # Cat on Height
+            ([(S1, S1, 3, 5), (S1, S1, 0, 5)], 2),
             ([(S1, S1, 3, 5), (S1, S1, 4, 5)], 2),
             ([(S1, 3, 5), (S1, 4, 5)], 1),
             ([(3, 5), (4, 5)], 0),
@@ -481,6 +502,7 @@ def get_cat_inputs():
             # Cat on Width
             ([(S1, S1, 5, 3), (S1, S1, 5, 4)], 3),
             ([(S1, 5, 3), (S1, 5, 4)], 2),
+            ([(5, 0), (5, 4)], 1),
             ([(5, 3), (5, 4)], 1),
             ([(5, 3), (5, 4), (5, 1)], 1),
             (
@@ -501,6 +523,7 @@ def get_cat_inputs():
                 0,
             ),
             # Cat on Channel
+            ([(S, 5, 4), (0, 5, 4), (S2, 5, 4)], 0),
             ([(S, 5, 4), (S1, 5, 4), (S2, 5, 4)], 0),
             ([(XS, 5, 4), (XS, 5, 4), (S2, 5, 4)], 0),
             ([(XS, S, 5, 4), (XS, S1, 5, 4), (XS, S2, 5, 4)], 1),
@@ -747,6 +770,7 @@ test_suites = {
     "aten.addmm.default": get_addmm_inputs(),
     "aten.bmm.default": get_bmm_inputs(),
     "aten.mm.default": get_mm_inputs(),
+    "aten.linear.default": get_linear_inputs(),
     "aten.max_pool2d_with_indices.default": get_pool2d_inputs(),
     "aten.convolution.default": get_conv_inputs(),
     "aten.native_layer_norm.default": get_native_layer_norm_inputs(),

@@ -10,6 +10,9 @@
 
 #define PRECISION ${PRECISION}
 
+$if MAT2_IS_TRANSPOSED:
+  #define MAT2_IS_TRANSPOSED
+
 #include "indexing_utils.h"
 #include "matmul.h"
 
@@ -31,11 +34,8 @@ layout(set = 0, binding = 6) uniform PRECISION restrict SelfSizes {
   ivec4 self_sizes;
 };
 
-layout(set = 0, binding = 7) uniform PRECISION restrict PackedDimMeta {
-  int packed_dim_size;
-  int packed_dim_size_padded;
-  int packed_dim_texel_len;
-  int packed_dim_padding;
+layout(set = 0, binding = 7) uniform PRECISION restrict InLimits {
+  ivec3 in_limits;
 };
 
 layout(set = 0, binding = 8) uniform PRECISION restrict Params {
@@ -57,8 +57,7 @@ void main() {
       im_mat2,
       pos,
       out_sizes[2],
-      packed_dim_texel_len,
-      packed_dim_padding);
+      in_limits[0]);
 
   for (int idx_c = 0; idx_c < FOUR; idx_c++) {
     for (int idx_r = 0; idx_r < FOUR; idx_r++) {
@@ -70,17 +69,16 @@ void main() {
           out_pos,
           self_sizes.x == 1,
           self_sizes.y == 1);
-      results.data[idx_c][idx_r][0] = beta * self_texel.x + alpha * results.data[idx_c][idx_r][0];
 
       // results is in transposed order w.r.t. the desired output
       imageStore(
           im_out,
           out_pos,
           vec4(
-              results.data[idx_c][idx_r][0],
-              results.data[idx_c][idx_r][1],
-              results.data[idx_c][idx_r][2],
-              results.data[idx_c][idx_r][3]));
+              beta * self_texel.x + alpha * results.data[idx_c][idx_r][0],
+              beta * self_texel.x + alpha * results.data[idx_c][idx_r][1],
+              beta * self_texel.x + alpha * results.data[idx_c][idx_r][2],
+              beta * self_texel.x + alpha * results.data[idx_c][idx_r][3]));
     }
   }
 }

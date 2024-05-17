@@ -7,10 +7,10 @@
 
 #pragma once
 
-#include <memory_buffer.hpp>
-
 #include <istream>
 #include <ostream>
+
+#include "memory_buffer.hpp"
 
 namespace inmemoryfs {
 
@@ -18,7 +18,7 @@ namespace inmemoryfs {
 class MemoryStreamBuf: public std::streambuf {
 public:
     ~MemoryStreamBuf() = default;
-    
+
     /// Constructs a `MemoryStreamBuf` from a `MemoryBuffer`.
     ///
     /// @param buffer  The memory buffer.
@@ -31,7 +31,7 @@ protected:
     /// @param dir  The seek direction.
     /// @retval The stream position.
     pos_type iseekoff(off_type offset, std::ios_base::seekdir dir);
-    
+
     /// Called by `seekof` if the `openmode` is output.
     ///
     /// @param offset  The offset  value relative to the `dir`.
@@ -44,7 +44,7 @@ protected:
     /// @param which  The open mode.
     /// @retval The stream position.
     pos_type seekpos(pos_type pos, std::ios_base::openmode which) override;
-    
+
     /// Called by the public member function `pubseekoff` to alter the stream position.
     ///
     /// @param offset  The offset  value relative to the `dir`.
@@ -74,18 +74,18 @@ protected:
     ///
     /// Returns the value of the current character, converted to a value of type int.
     std::streambuf::int_type uflow() override;
-    
+
     /// Called by other member functions to put a character into the controlled output sequence.
     ///
     /// Returns the value of the character that's put into the stream, converted to a value of type int.
     int_type overflow(int_type ch) override;
-    
+
     /// Retrieves characters from the controlled input sequence and stores them in the array pointed by s,
     /// until either n characters have been extracted or the end of the sequence is reached.
     ///
     /// Returns the number of characters copied.
     std::streamsize xsgetn(char *s, std::streamsize n) override;
-    
+
     /// Writes characters from the array pointed to by s into the controlled output sequence,
     /// until either n characters have been written or the end of the output sequence is reached.
     ///
@@ -122,4 +122,3 @@ private:
 };
 
 }
-

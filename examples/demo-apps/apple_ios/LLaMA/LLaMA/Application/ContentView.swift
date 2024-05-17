@@ -255,7 +255,7 @@ struct ContentView: View {
     case .model:
       return [UTType(filenameExtension: "pte")].compactMap { $0 }
     case .tokenizer:
-      return [UTType(filenameExtension: "bin")].compactMap { $0 }
+      return [UTType(filenameExtension: "bin"), UTType(filenameExtension: "model")].compactMap { $0 }
     }
   }
 

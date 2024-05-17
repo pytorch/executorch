@@ -10,6 +10,9 @@
 
 #define PRECISION ${PRECISION}
 
+$if MAT2_IS_TRANSPOSED:
+  #define MAT2_IS_TRANSPOSED
+
 #include "indexing_utils.h"
 #include "matmul.h"
 
@@ -25,11 +28,8 @@ layout(set = 0, binding = 4) uniform PRECISION restrict OutSizes {
   ivec4 out_sizes;
 };
 
-layout(set = 0, binding = 5) uniform PRECISION restrict PackedDimMeta {
-  int packed_dim_size;
-  int packed_dim_size_padded;
-  int packed_dim_texel_len;
-  int packed_dim_padding;
+layout(set = 0, binding = 5) uniform PRECISION restrict InLimits {
+  ivec3 in_limits;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -46,8 +46,7 @@ void main() {
       im_mat2,
       pos,
       out_sizes[2],
-      packed_dim_texel_len,
-      packed_dim_padding);
+      in_limits[0]);
 
   for (int idx_c = 0; idx_c < FOUR; idx_c++) {
     for (int idx_r = 0; idx_r < FOUR; idx_r++) {

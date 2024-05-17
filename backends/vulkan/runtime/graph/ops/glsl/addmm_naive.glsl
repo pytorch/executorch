@@ -10,6 +10,9 @@
 
 #define PRECISION ${PRECISION}
 
+$if MAT2_IS_TRANSPOSED:
+  #define MAT2_IS_TRANSPOSED
+
 #include "indexing_utils.h"
 #include "matmul.h"
 
@@ -45,7 +48,6 @@ void main() {
   }
 
   vec4 texel = vec4(0);
-  ivec3 mat1_pos = ivec3(0, pos.y, pos.z);
 
   $if MAT1_PACKING == "W_packed":
     $if MAT2_PACKING == "H_packed":
@@ -53,16 +55,13 @@ void main() {
       texel = matmul_naive_W_packed_H_packed(
           im_mat1,
           im_mat2,
-          mat1_pos,
-          mat2_pos,
+          pos,
           in_sizes[0]);
     $elif MAT2_PACKING == "W_packed":
-      ivec3 mat2_pos = ivec3(pos.x, 0, pos.z);
       texel = matmul_naive_W_packed_W_packed(
           im_mat1,
           im_mat2,
-          mat1_pos,
-          mat2_pos,
+          pos,
           in_sizes[0]);
     $else:
       $raise Exception("Unsupported value for MAT2_PACKING")
