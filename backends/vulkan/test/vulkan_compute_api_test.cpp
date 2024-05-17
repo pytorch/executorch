@@ -627,6 +627,51 @@ TEST(VulkanComputeGraphTest, test_values_string) {
   EXPECT_TRUE(stored == "hello, world");
 }
 
+TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> size_big = {7, 3, 5};
+  std::vector<int64_t> size_small = {};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(size_big, api::kFloat);
+  IOValueRef b = graph.add_input_tensor(size_small, api::kFloat);
+
+  IOValueRef out = {};
+
+  out.value = graph.add_tensor(size_big, api::kFloat);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    float val_a = i + 2.0f;
+    float val_b = i + 1.5f;
+    float val_c = val_a + val_b;
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, val_c);
+    }
+  }
+}
+
 TEST(VulkanComputeGraphTest, test_simple_graph) {
   GraphConfig config;
   ComputeGraph graph(config);
