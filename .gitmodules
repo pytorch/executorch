@@ -68,3 +68,6 @@
 [submodule "third-party/ios-cmake"]
 	path = third-party/ios-cmake
 	url = https://github.com/leetal/ios-cmake
+[submodule "examples/models/llama2/third-party/sentencepiece"]
+	path = examples/models/llama2/third-party/sentencepiece
+	url = https://github.com/google/sentencepiece.git

@@ -21,8 +21,6 @@ project(llama_runner)
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
-option(EXECUTORCH_USE_TIKTOKEN "Use Tiktoken as a tokenizer" OFF)
-
 include(CMakeDependentOption)
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
@@ -91,17 +89,19 @@ endif()
 
 # llama_runner library
 add_subdirectory(runner)
-if(EXECUTORCH_USE_TIKTOKEN)
-  # find RE2 for tokenizer
-  set(ABSL_ENABLE_INSTALL ON)
-  set(ABSL_PROPAGATE_CXX_STD ON)
-  set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
-  set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
-  target_link_libraries(llama_runner PUBLIC re2::re2)
-endif()
+# find RE2 sentencepiece for tokenizer
+set(ABSL_ENABLE_INSTALL ON)
+set(ABSL_PROPAGATE_CXX_STD ON)
+set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece)
+set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
+target_link_libraries(llama_runner PUBLIC re2::re2 sentencepiece-static)
+target_include_directories(
+  llama_runner PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece/src
+)
 
 set(link_libraries gflags)
 set(_srcs main.cpp)

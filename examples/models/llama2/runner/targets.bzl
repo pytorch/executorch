@@ -8,9 +8,6 @@ def _get_operator_lib(aten = False):
     else:
         return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/examples/models/llama2/custom_ops:custom_ops"]
 
-def use_tiktoken():
-    return native.read_config("llama", "use_tiktoken", "0") == "1"
-
 def define_common_targets():
     for aten in (True, False):
         aten_suffix = "_aten" if aten else ""
@@ -27,7 +24,6 @@ def define_common_targets():
             preprocessor_flags = [
                 "-DUSE_ATEN_LIB",
             ] if aten else [],
-            exported_preprocessor_flags = ["-DET_USE_TIKTOKEN"] if use_tiktoken() else [],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
@@ -40,11 +36,9 @@ def define_common_targets():
                 "//executorch/kernels/quantized:generated_lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
-            ] + ([
                 "//executorch/examples/models/llama2/tokenizer:tiktoken",
-            ] if use_tiktoken() else [
-                "//executorch/examples/models/llama2/tokenizer:bpe_tokenizer",
-            ]) + (_get_operator_lib(aten)) + ([
+                "//executorch/examples/models/llama2/tokenizer:sentencepiece",
+            ] + (_get_operator_lib(aten)) + ([
                 # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
                 # Therefore enable it explicitly for now to avoid failing tests
                 "//executorch/backends/vulkan:vulkan_backend_lib",

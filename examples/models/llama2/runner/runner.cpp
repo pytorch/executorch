@@ -10,11 +10,8 @@
 // The module takes in a string as input and emits a string as output.
 
 #include <executorch/examples/models/llama2/runner/runner.h>
-#if ET_USE_TIKTOKEN
+#include <executorch/examples/models/llama2/tokenizer/sentencepiece.h>
 #include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
-#else /* BPE */
-#include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
-#endif /* ET_USE_TIKTOKEN*/
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
@@ -81,17 +78,23 @@ Error Runner::load() {
   append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
   // Load tokenizer
-#if ET_USE_TIKTOKEN
-  tokenizer_ = std::make_unique<Tiktoken>(vocab_size_, bos_id_, eos_id_);
-#else
-  tokenizer_ = std::make_unique<BPETokenizer>(vocab_size_, bos_id_, eos_id_);
-#endif
-  tokenizer_->load(tokenizer_path_);
+  tokenizer_ = nullptr;
+  tokenizer_ = std::make_unique<SPTokenizer>();
+  Error err = tokenizer_->load(tokenizer_path_);
+  if (err == Error::InvalidArgument) {
+    ET_LOG(
+        Info,
+        "Failed to load tokenizer artifact as a sentencepiece artifact, trying Tiktoken");
+    tokenizer_.reset();
+    tokenizer_ = std::make_unique<Tiktoken>();
+    tokenizer_->load(tokenizer_path_);
+  }
+
   if (tokenizer_->bos_tok() != bos_id_) {
     ET_LOG(
         Error,
         "Tokenizer's BOS id %" PRIu64
-        " does not match model's BOS id %d, will override tokenizer's BOS.",
+        " does not match model's BOS id %d, will use tokenizer's BOS.",
         tokenizer_->bos_tok(),
         bos_id_);
   }
@@ -99,7 +102,7 @@ Error Runner::load() {
     ET_LOG(
         Error,
         "Tokenizer's EOS id %" PRIu64
-        " does not match model's EOS id %d, will override tokenizer's EOS.",
+        " does not match model's EOS id %d, will use tokenizer's EOS.",
         tokenizer_->eos_tok(),
         eos_id_);
   }

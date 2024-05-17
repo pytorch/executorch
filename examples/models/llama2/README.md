@@ -75,11 +75,6 @@ You can export and run the original Llama2 7B model.
     ```
     python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
     ```
-4. Create tokenizer.bin.
-
-    ```
-    python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
-    ```
 
 ### Option B: Download and export stories110M model
 
@@ -97,11 +92,6 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
 3. Export model and generate `.pte` file.
     ```
     python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X
-    ```
-4. Create tokenizer.bin.
-
-    ```
-    python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
     ```
 
 ### Option C: Download and export Llama3 8B model
@@ -211,14 +201,10 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
     cmake --build cmake-out/examples/models/llama2 -j16 --config Release
     ```
 
-For Llama3, add `-DEXECUTORCH_USE_TIKTOKEN=ON` option when building the llama runner.
-
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L18-L40).
     ```
-    cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
+    cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.model> --prompt=<prompt>
     ```
-
-For Llama3, you can pass the original `tokenizer.model` (without converting to `.bin` file).
 
 ## Step 5: Run benchmark on Android phone
 
@@ -279,13 +265,13 @@ For Llama3, add `-DEXECUTORCH_USE_TIKTOKEN=ON` option when building the llama ru
 ```
 adb shell mkdir -p /data/local/tmp/llama
 adb push <model.pte> /data/local/tmp/llama/
-adb push <tokenizer.bin> /data/local/tmp/llama/
+adb push <tokenizer.model> /data/local/tmp/llama/
 adb push cmake-out-android/examples/models/llama2/llama_main /data/local/tmp/llama/
 ```
 
 **2.3 Run model**
 ```
-adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt \"Once upon a time\" --seq_len 120"
+adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.model> --prompt \"Once upon a time\" --seq_len 120"
 ```
 ## Step 6: Build Mobile apps
 
