@@ -539,12 +539,22 @@ class TestBatchNorm2d(unittest.TestCase):
             )
             .check_not(["torch.ops.quantized_decomposed"])
             .to_edge()
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1
+                }
+            )
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default"
+                ]
+            )
             .to_executorch()
         )
         if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs()
+            tester.run_method_and_compare_outputs(test_data)
         else:
             logger.warning(
                 "TOSA ref model tool not installed, skip numerical correctness tests"
@@ -560,15 +570,25 @@ class TestBatchNorm2d(unittest.TestCase):
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
-            .check_count({"torch.ops.aten._native_batch_norm_legit_no_stats": 1})
+            .check_count({"torch.ops.aten._native_batch_norm_legit.no_stats": 1})
             .check_not(["torch.ops.quantized_decomposed"])
             .to_edge()
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_stats": 1
+                }
+            )
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_stats"
+                ]
+            )
             .to_executorch()
         )
         if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs()
+            tester.run_method_and_compare_outputs(test_data)
         else:
             logger.warning(
                 "TOSA ref model tool not installed, skip numerical correctness tests"
@@ -590,13 +610,23 @@ class TestBatchNorm2d(unittest.TestCase):
             )
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1
+                }
+            )
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default"
+                ]
+            )
             .to_executorch()
         )
 
         if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs()
+            tester.run_method_and_compare_outputs(test_data)
         else:
             logger.warning(
                 "TOSA ref model tool not installed, skip numerical correctness tests"
@@ -618,8 +648,18 @@ class TestBatchNorm2d(unittest.TestCase):
             )
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default": 1
+                }
+            )
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default"
+                ]
+            )
             .to_executorch()
         )
 
