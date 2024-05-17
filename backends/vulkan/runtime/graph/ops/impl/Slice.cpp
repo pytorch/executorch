@@ -151,6 +151,7 @@ void slice_tensor_out(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.slice_copy.Tensor, slice_tensor_out);
+  VK_REGISTER_OP(aten.slice.Tensor, slice_tensor_out);
 }
 
 } // namespace vkcompute
