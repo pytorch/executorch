@@ -390,6 +390,16 @@ class TestBackends(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(HardTanHModule())
 
+    def test_vulkan_backend_exp(self):
+        class ExpModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.exp(x)
+
+        self.lower_unary_module_and_test_output(ExpModule())
+
     def test_vulkan_backend_relu(self):
         class ReLUModule(torch.nn.Module):
             def __init__(self):

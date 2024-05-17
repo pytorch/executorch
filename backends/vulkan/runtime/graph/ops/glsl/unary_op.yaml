@@ -12,6 +12,8 @@ unary_op:
       OPERATOR: abs(X)
     - NAME: clamp
       OPERATOR: clamp(X, A, B)
+    - NAME: exp
+      OPERATOR: exp(X)
     - NAME: gelu
       OPERATOR: 0.5 * X * (1 + tanh(sqrt(2 / 3.141593) * (X + 0.044715 * X * X * X)))
     - NAME: sigmoid
