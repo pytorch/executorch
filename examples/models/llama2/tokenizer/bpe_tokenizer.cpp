@@ -325,7 +325,7 @@ BPETokenizer::encode(const std::string& text, int8_t bos, int8_t eos) {
   }
 
   delete[] str_buffer;
-  return Result(tokens);
+  return Result<std::vector<uint64_t>>(tokens);
 }
 
 } // namespace executor

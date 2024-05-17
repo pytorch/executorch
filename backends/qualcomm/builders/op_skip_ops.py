@@ -46,5 +46,7 @@ class OpGetItem(OpSkipOps):
             raise AssertionError(
                 f"Invalid number of index for {node.name }: {len(node.args[1])}"
             )
-        nodes_to_wrappers[node.name] = nodes_to_wrappers.get(node.args[0].name)
+        nodes_to_wrappers[node.name] = {
+            0: nodes_to_wrappers.get(node.args[0].name).get(node.args[1])
+        }
         return

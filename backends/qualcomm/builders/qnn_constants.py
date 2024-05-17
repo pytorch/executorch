@@ -40,6 +40,11 @@ class OpConv2d:
 
 
 @dataclass(init=False, frozen=True)
+class OpConvert:
+    op_name: str = "Convert"
+
+
+@dataclass(init=False, frozen=True)
 class OpDepthToSpace:
     op_name: str = "DepthToSpace"
     param_block_size: str = "block_size"
@@ -256,6 +261,13 @@ class OpSoftmax:
     op_name: str = "Softmax"
     param_axis: str = "axis"
     param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
+class OpSplit:
+    op_name: str = "Split"
+    param_axis: str = "axis"
+    param_split_index: str = "split_index"
 
 
 @dataclass(init=False, frozen=True)
