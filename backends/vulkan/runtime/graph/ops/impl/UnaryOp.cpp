@@ -109,6 +109,7 @@ void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 }
 
 DEFINE_ACTIVATION_FN(abs);
+DEFINE_ACTIVATION_FN(exp);
 DEFINE_ACTIVATION_FN(sigmoid);
 DEFINE_ACTIVATION_FN(sqrt);
 DEFINE_ACTIVATION_FN(tanh);
@@ -119,6 +120,7 @@ DEFINE_RELU_FN(relu);
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
   VK_REGISTER_OP(aten.clamp.default, clamp);
+  VK_REGISTER_OP(aten.exp.default, exp);
   VK_REGISTER_OP(aten.gelu.default, gelu);
   VK_REGISTER_OP(aten.hardtanh.default, hardtanh);
   VK_REGISTER_OP(aten.relu.default, relu);
