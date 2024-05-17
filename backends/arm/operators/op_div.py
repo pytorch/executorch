@@ -29,7 +29,7 @@ class DivVisitor(NodeVisitor):
         output: TosaArg,
         is_quant_node: bool,
     ) -> None:
-        # Div is implemented as x/y = x*1/y
+        # FP32 Div is implemented as output=x/y -> output=x*1/y e.g. MUL(x,RECIPROCAL(y))
         recip = tosa_graph.addIntermediate(inputs[1].shape, inputs[1].dtype)
         tosa_graph.addOperator(TosaOp.Op().RECIPROCAL, [inputs[1].name], [recip.name])
 
