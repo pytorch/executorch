@@ -14,14 +14,14 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project({project_name})
+project(extension_data_loader_test)
 
 # Use C++14 for test.
 set(CMAKE_CXX_STANDARD 14)
 
-set(EXECUTORCH_ROOT ${{CMAKE_CURRENT_SOURCE_DIR}}/{path_to_root})
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
-include(${{EXECUTORCH_ROOT}}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 # Find prebuilt executorch library
 find_package(executorch CONFIG REQUIRED)
@@ -30,16 +30,16 @@ enable_testing()
 find_package(GTest CONFIG REQUIRED)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories
-    ${{EXECUTORCH_ROOT}}/..
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+target_include_directories(executorch INTERFACE ${_common_include_directories})
+
+set(_test_srcs buffer_data_loader_test.cpp shared_ptr_data_loader_test.cpp
+               file_data_loader_test.cpp mmap_data_loader_test.cpp
 )
-target_include_directories(executorch INTERFACE ${{_common_include_directories}})
 
-set(_test_srcs {test_srcs})
-
-add_executable({project_name} ${{_test_srcs}})
+add_executable(extension_data_loader_test ${_test_srcs})
 target_link_libraries(
-  {project_name} GTest::gtest GTest::gtest_main GTest::gmock executorch
-  {additional_libs}
+  extension_data_loader_test GTest::gtest GTest::gtest_main GTest::gmock
+  executorch extension_data_loader
 )
-add_test(ExecuTorchTest {project_name})
+add_test(ExecuTorchTest extension_data_loader_test)
