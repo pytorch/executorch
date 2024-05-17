@@ -14,12 +14,12 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project(runtime_core_portable_type_test)
+project(extension_data_loader_test)
 
 # Use C++14 for test.
 set(CMAKE_CXX_STANDARD 14)
 
-set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
@@ -33,13 +33,13 @@ find_package(GTest CONFIG REQUIRED)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
-set(_test_srcs optional_test.cpp executor_tensor_test.cpp half_test.cpp
-               scalar_test.cpp tensor_impl_test.cpp
+set(_test_srcs buffer_data_loader_test.cpp shared_ptr_data_loader_test.cpp
+               file_data_loader_test.cpp mmap_data_loader_test.cpp
 )
 
-add_executable(runtime_core_portable_type_test ${_test_srcs})
+add_executable(extension_data_loader_test ${_test_srcs})
 target_link_libraries(
-  runtime_core_portable_type_test GTest::gtest GTest::gtest_main GTest::gmock
-  executorch
+  extension_data_loader_test GTest::gtest GTest::gtest_main GTest::gmock
+  executorch extension_data_loader
 )
-add_test(ExecuTorchTest runtime_core_portable_type_test)
+add_test(ExecuTorchTest extension_data_loader_test)

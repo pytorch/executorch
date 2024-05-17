@@ -259,6 +259,38 @@ TEST_F(VulkanComputeAPITest, test_buffer_int8) {
   test_storage_buffer_type<int8_t, api::kQInt8>(16);
 }
 
+TEST_F(VulkanComputeAPITest, test_zero_size_tensor) {
+  // Simple test that performs a + b -> c
+
+  std::vector<int64_t> sizes = {0, 5, 7};
+  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+
+  // Fill input tensors
+  fill_vtensor(a, 2.5f);
+  fill_vtensor(b, 1.5f);
+
+  // a + b -> c
+  record_binary_op(api::context(), "add", a, b, c);
+
+  // Extract output tensor
+  std::vector<float> data_out = extract_vtensor(c);
+
+  // Assert all tensors are empty
+  ASSERT_TRUE(a.numel() == 0);
+  ASSERT_TRUE(b.numel() == 0);
+  ASSERT_TRUE(c.numel() == 0);
+  ASSERT_TRUE(a.nbytes() == 0);
+  ASSERT_TRUE(b.nbytes() == 0);
+  ASSERT_TRUE(c.nbytes() == 0);
+
+  // Check output
+  for (size_t i = 0; i < data_out.size(); ++i) {
+    CHECK_VALUE(data_out, i, 4.0f);
+  }
+}
+
 TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
   // Simple test that performs a + b -> c
 
@@ -593,6 +625,51 @@ TEST(VulkanComputeGraphTest, test_values_string) {
   }
   std::string stored = graph.get_string(idx);
   EXPECT_TRUE(stored == "hello, world");
+}
+
+TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> size_big = {7, 3, 5};
+  std::vector<int64_t> size_small = {};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(size_big, api::kFloat);
+  IOValueRef b = graph.add_input_tensor(size_small, api::kFloat);
+
+  IOValueRef out = {};
+
+  out.value = graph.add_tensor(size_big, api::kFloat);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    float val_a = i + 2.0f;
+    float val_b = i + 1.5f;
+    float val_c = val_a + val_b;
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, val_c);
+    }
+  }
 }
 
 TEST(VulkanComputeGraphTest, test_simple_graph) {

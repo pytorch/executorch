@@ -167,7 +167,7 @@ def get_args_and_kwargs_matmul(
     inputs_inputs: List[fx.Node],
     dequants_inputs: List[fx.Node],
     quant_node: fx.Node,
-) -> Tuple[Tuple[Any], Dict[str, Any]]:
+) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
     requantize_scale = (
         # pyre-ignore[58]: Unsupported operand
         dequants_inputs[0].args[1]

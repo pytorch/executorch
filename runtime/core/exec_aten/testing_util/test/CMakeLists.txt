@@ -14,12 +14,12 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project(runtime_core_portable_type_test)
+project(runtime_core_exec_aten_testing_util_test)
 
 # Use C++14 for test.
 set(CMAKE_CXX_STANDARD 14)
 
-set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
@@ -33,13 +33,11 @@ find_package(GTest CONFIG REQUIRED)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
-set(_test_srcs optional_test.cpp executor_tensor_test.cpp half_test.cpp
-               scalar_test.cpp tensor_impl_test.cpp
-)
+set(_test_srcs tensor_util_test.cpp tensor_factory_test.cpp ../tensor_util.cpp)
 
-add_executable(runtime_core_portable_type_test ${_test_srcs})
+add_executable(runtime_core_exec_aten_testing_util_test ${_test_srcs})
 target_link_libraries(
-  runtime_core_portable_type_test GTest::gtest GTest::gtest_main GTest::gmock
-  executorch
+  runtime_core_exec_aten_testing_util_test GTest::gtest GTest::gtest_main
+  GTest::gmock executorch
 )
-add_test(ExecuTorchTest runtime_core_portable_type_test)
+add_test(ExecuTorchTest runtime_core_exec_aten_testing_util_test)
