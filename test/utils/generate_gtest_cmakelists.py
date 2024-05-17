@@ -29,7 +29,7 @@ def calculate_relative_path(path_to_root):
     return os.path.relpath("/", "/" + path_to_root)
 
 
-def format_template(path_to_root, test_srcs):
+def format_template(path_to_root, test_srcs, additional_libs):
     """
     Format the template with the given path_to_root and test_srcs.
     """
@@ -39,30 +39,34 @@ def format_template(path_to_root, test_srcs):
         project_name=calculate_project_name(path_to_root),
         path_to_root=calculate_relative_path(path_to_root),
         test_srcs=" ".join(test_srcs),
+        additional_libs=" ".join(additional_libs),
     )
 
 
-def write_template(path_to_root, test_srcs):
+def write_template(path_to_root, test_srcs, additional_libs):
     """
     Write the template to the given path_to_root.
     """
     with open(os.path.join(path_to_root, "CMakeLists.txt"), "w") as f:
-        f.write(format_template(path_to_root, test_srcs))
+        f.write(format_template(path_to_root, test_srcs, additional_libs))
 
 
 def read_config_json(json_path):
     """
-    Read the config.json file and return the list of (path_to_root, test_srcs)
+    Read the config.json file
     """
     with open(json_path) as f:
         config = json.load(f)
-    return [(d["directory"], d["sources"]) for d in config["tests"]]
+    return config["tests"]
 
 
 if __name__ == "__main__":
     json_path = os.path.dirname(os.path.abspath(__file__)) + "/OSSTestConfig.json"
-    for path_to_root, test_srcs in read_config_json(json_path):
-        write_template(path_to_root, test_srcs)
+    for d in read_config_json(json_path):
+        path_to_root = d["directory"]
+        test_srcs = d["sources"]
+        additional_libs = d.get("additional_libs", [])
+        write_template(path_to_root, test_srcs, additional_libs)
         if shutil.which("cmake-format") is not None:
             subprocess.run(
                 ["cmake-format", "-i", path_to_root + "/CMakeLists.txt"], check=True
