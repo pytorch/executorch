@@ -9,9 +9,7 @@ import executorch.exir
 import torch
 import torchvision
 
-from executorch.backends.apple.coreml.partition.coreml_partitioner import (
-    CoreMLPartitioner,
-)
+from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 
 
 class TestCoreMLPartitioner(unittest.TestCase):

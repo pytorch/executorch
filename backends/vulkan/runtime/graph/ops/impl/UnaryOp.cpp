@@ -100,10 +100,18 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         kClampShaderName);                                               \
   }
 
+void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  // args[1] is the `approximate` string
+  // https://fburl.com/code/9omngmyo
+  // currently only `approximate = "tanh"` is supported
+  return add_unary_op_node(
+      graph, args[0], kDummyFloat, kDummyFloat, args[2], "gelu");
+}
+
 DEFINE_ACTIVATION_FN(abs);
 DEFINE_ACTIVATION_FN(sigmoid);
-DEFINE_ACTIVATION_FN(tanh);
 DEFINE_ACTIVATION_FN(sqrt);
+DEFINE_ACTIVATION_FN(tanh);
 DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
 DEFINE_RELU_FN(relu);
@@ -111,11 +119,12 @@ DEFINE_RELU_FN(relu);
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
   VK_REGISTER_OP(aten.clamp.default, clamp);
+  VK_REGISTER_OP(aten.gelu.default, gelu);
   VK_REGISTER_OP(aten.hardtanh.default, hardtanh);
   VK_REGISTER_OP(aten.relu.default, relu);
   VK_REGISTER_OP(aten.sigmoid.default, sigmoid);
-  VK_REGISTER_OP(aten.tanh.default, tanh);
   VK_REGISTER_OP(aten.sqrt.default, sqrt);
+  VK_REGISTER_OP(aten.tanh.default, tanh);
 }
 
 } // namespace vkcompute

@@ -29,7 +29,7 @@ class TestEDSR(unittest.TestCase):
         )
 
     @unittest.skip("T187799178: Debugging Numerical Issues with Calibration")
-    def test_qs8_edsr(self):
+    def _test_qs8_edsr(self):
         (
             Tester(self.edsr, self.model_inputs)
             .quantize()

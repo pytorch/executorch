@@ -279,6 +279,17 @@ inline std::ostream& operator<<(std::ostream& os, const ivec4& v) {
   return os;
 }
 
+template <typename T, uint32_t N>
+inline detail::vec<T, N> divup_vec(
+    const detail::vec<T, N>& a,
+    const detail::vec<T, N>& b) {
+  detail::vec<T, N> result;
+  for (uint32_t i = 0; i < N; ++i) {
+    result.data[i] = api::utils::div_up(a.data[i], b.data[i]);
+  }
+  return result;
+}
+
 //
 // std::vector<T> Handling
 //
@@ -415,6 +426,23 @@ inline int64_t multiply_integers(const C& container) {
       container.end(),
       static_cast<int64_t>(1),
       std::multiplies<>());
+}
+
+/*
+ * Product of integer elements referred to by iterators; accumulates into the
+ * int64_t datatype. Taken from `multiply_integers` in <c10/util/accumulate.h>
+ */
+template <
+    typename Iter,
+    std::enable_if_t<
+        std::is_integral_v<typename std::iterator_traits<Iter>::value_type>,
+        int> = 0>
+inline int64_t multiply_integers(Iter begin, Iter end) {
+  // std::accumulate infers return type from `init` type, so if the `init` type
+  // is not large enough to hold the result, computation can overflow. We use
+  // `int64_t` here to avoid this.
+  return std::accumulate(
+      begin, end, static_cast<int64_t>(1), std::multiplies<>());
 }
 
 } // namespace utils

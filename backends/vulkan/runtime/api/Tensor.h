@@ -117,6 +117,13 @@ class vTensor final {
   vTensor& operator=(vTensor&& other) = default;
 
  private:
+  struct PackedDimMeta {
+    int32_t dim_size;
+    int32_t dim_size_padded;
+    int32_t dim_texel_len;
+    int32_t padding;
+  };
+
   api::ScalarType dtype_;
   api::GPUMemoryLayout memory_layout_;
 
@@ -133,6 +140,10 @@ class vTensor final {
   // that the texture limits may be different from the texture's extents if the
   // tensor has been resized with `virtual_resize()`.
   api::UniformParamsBuffer texture_limits_uniform_;
+
+  // A Vulkan uniform buffer containing an instance of PackedDimMeta which
+  // describes how the tensor's packed dimension is padded.
+  api::UniformParamsBuffer packed_dim_meta_;
 
   vTensorStorage storage_;
 
@@ -220,6 +231,12 @@ class vTensor final {
    */
   const api::BufferBindInfo texture_limits_ubo();
 
+ private:
+  vTensor::PackedDimMeta make_packed_dim_metadata() const;
+
+ public:
+  const api::BufferBindInfo packed_dim_meta_ubo();
+
   inline const api::utils::ivec3 texture_limits() const {
     return texture_limits_.limits;
   }
@@ -259,7 +276,7 @@ class vTensor final {
   /*
    * Binds the underlying resource to the given memory allocation
    */
-  void bind_allocation(const api::MemoryAllocation& allocation);
+  void bind_allocation(const api::Allocation& allocation);
 
  private:
   /*

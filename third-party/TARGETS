@@ -36,14 +36,31 @@ prebuilt_python_library_defs = {
 
 add_prebuilt_python_library_targets(prebuilt_python_library_defs)
 
+runtime.genrule(
+    name = "torchgen_files",
+    outs = {
+        "torchgen": ["torchgen"],
+    },
+    default_outs = ["."],
+    srcs = ["link_torch.sh"],
+    bash = "bash $SRCS -f torchgen -o ${OUT}",
+)
+
+runtime.genrule(
+    name = "yaml_files",
+    outs = {
+        "tags": ["aten/src/ATen/native/tags.yaml"],
+        "native_functions": ["aten/src/ATen/native/native_functions.yaml"],
+    },
+    default_outs = ["."],
+    srcs = ["link_torch.sh"],
+    bash = "mkdir -p ${OUT}/aten/src/ATen/native/ && bash $SRCS -f torchgen/packaged/ATen/native/tags.yaml,torchgen/packaged/ATen/native/native_functions.yaml -o ${OUT}/aten/src/ATen/native/",
+)
+
 runtime.python_library(
     name = "torchgen",
-    srcs = subdir_glob(
-        [
-            ("pytorch/torchgen", "**/*.py"),
-        ],
-    ),
-    base_module = "torchgen",
+    srcs = [":torchgen_files[torchgen]"] + glob(["**/*.py"]),
+    base_module = "torchgen,torchgen.executorch",
     visibility = ["PUBLIC"],
     deps = [
         "//third-party:pyyaml",
@@ -78,38 +95,12 @@ runtime.python_binary(
 
 runtime.filegroup(
     name = "aten_src_path",
-    srcs = subdir_glob([
-        ("pytorch", "aten/src/ATen/templates/*"),
-        ("pytorch", "aten/src/ATen/native/native_functions.yaml"),
-        ("pytorch", "aten/src/ATen/native/tags.yaml"),
-    ]),
+    srcs = [
+        ":yaml_files[tags]",
+        ":yaml_files[native_functions]",
+    ],
     visibility = [
         "PUBLIC",
-    ],
-    _is_external_target = True,
-)
-
-runtime.python_library(
-    name = "gen_selected_mobile_ops_header",
-    srcs = subdir_glob([
-        ("pytorch/tools", "lite_interpreter/gen_selected_mobile_ops_header.py"),
-    ]),
-    base_module = "tools",
-    _is_external_target = True,
-)
-
-runtime.python_library(
-    name = "gen_oplist_lib",
-    srcs = subdir_glob([
-        ("pytorch/tools/code_analyzer", "gen_oplist.py"),
-        ("pytorch/tools/code_analyzer", "gen_op_registration_allowlist.py"),
-    ]),
-    base_module = "tools.code_analyzer",
-    visibility = ["PUBLIC"],
-    deps = [
-        ":gen_selected_mobile_ops_header",
-        ":torchgen",
-        ":pyyaml",
     ],
     _is_external_target = True,
 )

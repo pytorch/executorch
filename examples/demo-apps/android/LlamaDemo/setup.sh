@@ -13,6 +13,7 @@ EXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN:-OFF}"
 cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="${ANDROID_ABI}" \
+  -DANDROID_PLATFORM=android-23 \
   -DEXECUTORCH_BUILD_XNNPACK=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
@@ -32,6 +33,7 @@ cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config Releas
 cmake examples/models/llama2 \
          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
          -DANDROID_ABI="$ANDROID_ABI" \
+         -DANDROID_PLATFORM=android-23 \
          -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
          -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
          -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
@@ -45,6 +47,7 @@ cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}" --config 
 cmake extension/android \
   -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI="${ANDROID_ABI}" \
+  -DANDROID_PLATFORM=android-23 \
   -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
   -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \

@@ -117,6 +117,33 @@ You can export and run the original Llama3 8B model.
 
     Due to the larger vocabulary size of Llama3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` to further reduce the model size.
 
+### Option D: Download models from Hugging Face and convert from safetensor format to state dict
+
+You can also download above models from [Hugging Face](https://huggingface.co/). Since ExecuTorch starts from a PyTorch model, a script like below can be used to convert the Hugging Face safetensors format to PyTorch's state dict. It leverages the utils provided by [TorchTune](https://github.com/pytorch/torchtune).
+
+```Python
+from torchtune.utils import FullModelHFCheckpointer
+from torchtune.models import convert_weights
+import torch
+
+# Convert from safetensors to TorchTune. Suppose the model has been downloaded from Hugging Face
+checkpointer = FullModelHFCheckpointer(
+    checkpoint_dir='/home/.cache/huggingface/hub/models/snapshots/hash-number',
+    checkpoint_files=['model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors'],
+    output_dir='/the/destination/dir' ,
+    model_type='LLAMA3' # or other types that TorchTune supports
+)
+
+print("loading checkpoint")
+sd = checkpointer.load_checkpoint()
+
+# Convert from TorchTune to Meta (PyTorch native)
+sd = convert_weights.tune_to_meta(sd['model'])
+
+print("saving checkpoint")
+torch.save(sd, "/the/destination/dir/checkpoint.pth")
+```
+
 ## (Optional) Finetuning
 
 If you want to finetune your model based on a specific dataset, PyTorch provides [TorchTune](https://github.com/pytorch/torchtune) - a native-Pytorch library for easily authoring, fine-tuning and experimenting with LLMs.
@@ -213,9 +240,11 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DPYTHON_EXECUTABLE=python \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -Bcmake-out-android .
 
 cmake --build cmake-out-android -j16 --target install --config Release
@@ -229,12 +258,16 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DCMAKE_INSTALL_PREFIX=cmake-out-android \
     -DCMAKE_BUILD_TYPE=Release \
     -DPYTHON_EXECUTABLE=python \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -Bcmake-out-android/examples/models/llama2 \
     examples/models/llama2
 
 cmake --build cmake-out-android/examples/models/llama2 -j16 --config Release
 ```
+For Llama3, add `-DEXECUTORCH_USE_TIKTOKEN=ON` option when building the llama runner.
 
 **2. Run on Android via adb shell**
 
@@ -265,7 +298,7 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 
 ## Optional: Smaller models delegated to other backends
 Currently we supported lowering the stories model to other backends, including, CoreML, MPS and QNN. Please refer to the instruction
-for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.html), [MPS](https://pytorch.org/executorch/main/build-run-mps.html), [QNN](https://pytorch.org/executorch/main/build-run-qualcomm.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
+for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.html), [MPS](https://pytorch.org/executorch/main/build-run-mps.html), [QNN](https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
 
 - Lower to CoreML: `python -m examples.models.llama2.export_llama -kv --coreml -c stories110M.pt -p params.json`
 - MPS: `python -m examples.models.llama2.export_llama -kv --mps -c stories110M.pt -p params.json`

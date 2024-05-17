@@ -6,6 +6,17 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
+    runtime.cxx_library(
+        name = "bitwise_op",
+        exported_headers = [
+            "bitwise_op.h",
+        ],
+        compiler_flags = [],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
 
     runtime.cxx_library(
         name = "pattern",

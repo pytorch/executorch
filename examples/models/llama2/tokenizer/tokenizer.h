@@ -40,6 +40,22 @@ class Tokenizer {
   virtual Result<std::vector<uint64_t>>
   encode(const std::string& input, int8_t bos, int8_t eos) = 0;
 
+  Error decode_verify(uint64_t token) const {
+    if (!initialized_) {
+      ET_LOG(Error, "Tokenizer not initialized");
+      return Error::NotSupported;
+    }
+    if (token >= vocab_size_) {
+      ET_LOG(
+          Error,
+          "token  %" PRIu64 " is out side of vacab range %d",
+          token,
+          vocab_size_);
+      return Error::NotSupported;
+    }
+    return Error::Ok;
+  }
+
   virtual Result<std::string> decode(uint64_t prev_token, uint64_t token) = 0;
 
   // getters

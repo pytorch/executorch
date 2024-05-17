@@ -17,7 +17,7 @@ class TestGenAllOplist(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.temp_file = tempfile.NamedTemporaryFile(dir=self.temp_dir.name)
 
-    @patch("tools.code_analyzer.gen_oplist.main")
+    @patch("tools_copy.code_analyzer.gen_oplist_copy_from_core.main")
     def test_model_file_list_path_is_file_pass(
         self, mock_main: NonCallableMock
     ) -> None:
@@ -28,7 +28,7 @@ class TestGenAllOplist(unittest.TestCase):
         gen_all_oplist.main(args)
         mock_main.assert_called_once_with(args)
 
-    @patch("tools.code_analyzer.gen_oplist.main")
+    @patch("tools_copy.code_analyzer.gen_oplist_copy_from_core.main")
     def test_model_file_list_path_is_directory_with_file_pass(
         self, mock_main: NonCallableMock
     ) -> None:
@@ -43,7 +43,7 @@ class TestGenAllOplist(unittest.TestCase):
         mock_main.assert_called_once_with(args)
         file_.close()
 
-    @patch("tools.code_analyzer.gen_oplist.main")
+    @patch("tools_copy.code_analyzer.gen_oplist_copy_from_core.main")
     def test_model_file_list_path_is_empty_directory_throws(
         self, mock_main: NonCallableMock
     ) -> None:

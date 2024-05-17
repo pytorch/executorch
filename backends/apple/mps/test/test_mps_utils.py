@@ -247,7 +247,9 @@ class TestMPS(unittest.TestCase):
             )
 
             executorch_program = delegated_program.to_executorch(
-                config=ExecutorchBackendConfig(extract_constant_segment=False)
+                config=ExecutorchBackendConfig(
+                    extract_delegate_segments=False, extract_constant_segment=False
+                )
             )
         else:
             delegated_program = to_backend(
@@ -264,7 +266,9 @@ class TestMPS(unittest.TestCase):
                     _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
                 ),
             ).to_executorch(
-                config=ExecutorchBackendConfig(extract_constant_segment=False)
+                config=ExecutorchBackendConfig(
+                    extract_delegate_segments=False, extract_constant_segment=False
+                )
             )
 
         if bundled_program:

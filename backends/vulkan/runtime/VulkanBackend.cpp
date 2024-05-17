@@ -48,7 +48,7 @@ using BytesVector =
     const flatbuffers::Vector<flatbuffers::Offset<vkgraph::VkBytes>>*;
 using UIntVector = const flatbuffers::Vector<uint32_t>*;
 
-const uint8_t* getConstantDataPtr(
+const uint8_t* get_constant_data_ptr(
     VkGraphPtr flatbuffer_graph,
     const int32_t buffer_idx,
     const uint8_t* constant_data) {
@@ -111,19 +111,19 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
     const size_t value_size = spec.value.nbytes;
     if (strcmp(spec.key, "storage_type_override") == 0) {
       ET_CHECK_MSG(value_size == sizeof(int32_t), "Unexpected value size!");
-      int value_as_int = static_cast<int>(GetUInt32LE(value_data));
+      int value_as_int = static_cast<int>(getUInt32LE(value_data));
       api::StorageType storage_type =
           static_cast<api::StorageType>(value_as_int);
 
-      config.setStorageTypeOverride(storage_type);
+      config.set_storage_type_override(storage_type);
     }
     if (strcmp(spec.key, "memory_layout_override") == 0) {
       ET_CHECK_MSG(value_size == sizeof(uint32_t), "Unexpected value size!");
-      uint32_t value_as_int = GetUInt32LE(value_data);
+      uint32_t value_as_int = getUInt32LE(value_data);
       api::GPUMemoryLayout memory_layout =
           static_cast<api::GPUMemoryLayout>(value_as_int);
 
-      config.setMemoryLayoutOverride(memory_layout);
+      config.set_memory_layout_override(memory_layout);
     }
   }
   return config;
@@ -181,7 +181,7 @@ class GraphBuilder {
 
     ValueRef ref;
     if (tensor_fb->constant_id() >= 0) {
-      const uint8_t* tensor_data = getConstantDataPtr(
+      const uint8_t* tensor_data = get_constant_data_ptr(
           flatbuffer_, tensor_fb->constant_id(), constant_data_);
 
       ref = compute_graph_->add_tensorref(dims_vector, dtype, tensor_data);
@@ -399,7 +399,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
   __ET_NODISCARD Error
   compileModel(const void* buffer_pointer, ComputeGraph* compute_graph) const {
     Result<VulkanDelegateHeader> header =
-        VulkanDelegateHeader::Parse(buffer_pointer);
+        VulkanDelegateHeader::parse(buffer_pointer);
 
     const uint8_t* flatbuffer_data = nullptr;
     const uint8_t* constant_data = nullptr;

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Tuple
 
 import torch
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir import to_edge
 
 from executorch.exir.dim_order_utils import (
     is_channel_last_dim_order,
@@ -67,13 +67,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             edge_op_str
         ).run(before.graph_module.code)
 
-        # TODO(gasoonjia): make to_dim_copy pass verifier
-        epm = to_edge(
-            before,
-            compile_config=EdgeCompileConfig(
-                _check_ir_validity=False, _skip_dim_order=False
-            ),
-        )
+        epm = to_edge(before)
 
         # check op strings
         FileCheck().check_not(aten_op_str).check_count(

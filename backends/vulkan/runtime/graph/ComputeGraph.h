@@ -123,9 +123,17 @@ class ComputeGraph final {
     return outputs_;
   }
 
-  void update_descriptor_counts(
-      const api::ShaderInfo& shader_info,
-      bool execute);
+  inline std::vector<std::unique_ptr<PrepackNode>>& prepack_nodes() {
+    return prepack_nodes_;
+  }
+
+  inline std::vector<std::unique_ptr<ExecuteNode>>& execute_nodes() {
+    return execute_nodes_;
+  }
+
+  //
+  // Value Extraction
+  //
 
 #define GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(ptr_type, short_name, type_name) \
   inline ptr_type get_##short_name(const ValueRef idx) {                   \
@@ -168,9 +176,33 @@ class ComputeGraph final {
     return values_.at(idx).type();
   }
 
-  std::vector<int64_t> get_sizes_of(ValueRef idx);
+  // Get Tensor Property
 
-  api::ScalarType get_dtype_of(ValueRef idx);
+  std::vector<int64_t> sizes_of(const ValueRef idx) const;
+
+  api::ScalarType dtype_of(const ValueRef idx) const;
+
+  inline api::utils::uvec3 extents_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().extents();
+  }
+
+  inline api::GPUMemoryLayout memory_layout_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().gpu_memory_layout();
+  }
+
+  inline api::BufferBindInfo sizes_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().sizes_ubo();
+  }
+
+  inline api::BufferBindInfo texture_limits_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().texture_limits_ubo();
+  }
+
+  inline api::BufferBindInfo packed_dim_meta_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().packed_dim_meta_ubo();
+  }
+
+  // Scalar Value Extraction
 
   template <typename T>
   T extract_scalar(const ValueRef idx) {
@@ -196,12 +228,8 @@ class ComputeGraph final {
     }
   }
 
-  inline std::vector<std::unique_ptr<PrepackNode>>& prepack_nodes() {
-    return prepack_nodes_;
-  }
-
-  inline std::vector<std::unique_ptr<ExecuteNode>>& execute_nodes() {
-    return execute_nodes_;
+  std::string extract_string(const ValueRef idx) {
+    return values_.at(idx).toString();
   }
 
   //
@@ -228,13 +256,6 @@ class ComputeGraph final {
    */
   api::GPUMemoryLayout suggested_memory_layout(
       const std::vector<int64_t>& sizes);
-
-  /*
-   * Returns the memory layout of a Tensor value at the specified index.
-   */
-  inline api::GPUMemoryLayout memory_layout_of(ValueRef idx) {
-    return get_tensor(idx)->gpu_memory_layout();
-  }
 
   //
   // Graph Building
@@ -362,6 +383,10 @@ class ComputeGraph final {
   //
   // Graph Preparation
   //
+
+  void update_descriptor_counts(
+      const api::ShaderInfo& shader_info,
+      bool execute);
 
   void prepare();
 

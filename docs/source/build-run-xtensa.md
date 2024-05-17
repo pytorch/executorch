@@ -64,18 +64,32 @@ Step 2. Make sure you have completed the ExecuTorch setup tutorials linked to at
 The working tree is:
 
 ```
-examples/cadence/
-├── aot
-├── kernels
-├── ops
-├── tests
-├── third-party
-└── utils
+executorch
+├── backends
+│   └── cadence
+│       ├── aot
+│       ├── ops_registration
+│       ├── tests
+│       ├── utils
+│       ├── hifi
+│       │   ├── kernels
+│       │   ├── operators
+│       │   └── third-party
+│       │       └── hifi4-nnlib
+│       └── [other cadence DSP families]
+│           ├── kernels
+│           ├── operators
+│           └── third-party
+│               └── [any required lib]
+└── examples
+    └── cadence
+        ├── models
+        └── operators
 ```
 
 ***AoT (Ahead-of-Time) Components***:
 
-The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch `.pte` file. In our case, [export_example.py](https://github.com/pytorch/executorch/blob/main/examples/cadence/aot/export_example.py) is an API that takes a model (nn.Module) and representative inputs and runs it through the quantizer (from [quantizer.py](https://github.com/pytorch/executorch/blob/main/examples/cadence/aot/quantizer.py)). Then a few compiler passes, also defined in [quantizer.py](https://github.com/pytorch/executorch/blob/main/examples/cadence/aot/quantizer.py), will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in [meta_registrations.py](https://github.com/pytorch/executorch/blob/main/examples/cadence/aot/meta_registrations.py) and have corresponding implemetations in the other folders.
+The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch `.pte` file. In our case, [export_example.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/export_example.py) is an API that takes a model (nn.Module) and representative inputs and runs it through the quantizer (from [quantizer.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer.py)). Then a few compiler passes, also defined in [quantizer.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer.py), will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in [ops_registrations.py](https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/ops_registrations.py) and have corresponding implemetations in the other folders.
 
 ***Operators***:
 
@@ -101,27 +115,27 @@ python3 -m examples.portable.scripts.export --model_name="add"
 ***Quantized Operators***:
 
 The other, more complex model are custom operators, including:
-  - a quantized [linear](https://pytorch.org/docs/stable/generated/torch.nn.Linear.html) operation. The model is defined [here](https://github.com/pytorch/executorch/blob/main/examples/cadence/tests/quantized_linear_example.py#L28). Linear is the backbone of most Automatic Speech Recognition (ASR) models.
-  - a quantized [conv1d](https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html) operation. The model is defined [here](https://github.com/pytorch/executorch/blob/main/examples/cadence/tests/quantized_conv1d_example.py#L36). Convolutions are important in wake word and many denoising models.
+  - a quantized [linear](https://pytorch.org/docs/stable/generated/torch.nn.Linear.html) operation. The model is defined [here](https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/quantized_linear_op.py#L28). Linear is the backbone of most Automatic Speech Recognition (ASR) models.
+  - a quantized [conv1d](https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html) operation. The model is defined [here](https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/quantized_conv1d_op.py#L36). Convolutions are important in wake word and many denoising models.
 
-In both cases the generated file is called `XtensaDemoModel.pte`.
+In both cases the generated file is called `CadenceDemoModel.pte`.
 
 ```bash
 cd executorch
-python3 -m examples.cadence.tests.quantized_<linear,conv1d>_example
+python3 -m examples.cadence.operators.quantized_<linear,conv1d>_op
 ```
 
 ***Small Model: RNNT predictor***:
 
 The torchaudio [RNNT-emformer](https://pytorch.org/audio/stable/tutorials/online_asr_tutorial.html) model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels: an encoder, a predictor and a joiner.
-The predictor is a sequence of basic ops (embedding, ReLU, linear, layer norm) and can be exported using:
+The [predictor](https://github.com/pytorch/executorch/blob/main/examples/cadence/models/rnnt_predictor.py) is a sequence of basic ops (embedding, ReLU, linear, layer norm) and can be exported using:
 
 ```bash
 cd executorch
-python3 -m examples.cadence.tests.rnnt_predictor_quantized_example
+python3 -m examples.cadence.models.rnnt_predictor
 ```
 
-The generated file is called `XtensaDemoModel.pte`.
+The generated file is called `CadenceDemoModel.pte`.
 
 ### Runtime
 
@@ -150,7 +164,7 @@ In order to run the CMake build, you need the path to the following:
 cd executorch
 rm -rf cmake-out
 # prebuild and install executorch library
-cmake -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/examples/cadence/cadence.cmake \
+cmake -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/backends/cadence/cadence.cmake \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DCMAKE_BUILD_TYPE=Debug \
     -DPYTHON_EXECUTABLE=python3 \
@@ -163,10 +177,10 @@ cmake -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/examples/cadence/cadence.cmake
     -DFLATC_EXECUTABLE="$(which flatc)" \
     -Bcmake-out .
 
-cmake --build cmake-out -j8 --target install --config Debug
+cmake --build cmake-out -j<num_cores> --target install --config Debug
 # build cadence runner
 cmake -DCMAKE_BUILD_TYPE=Debug \
-    -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/examples/cadence/cadence.cmake \
+    -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/examples/backends/cadence.cmake \
     -DCMAKE_PREFIX_PATH=<path_to_executorch>/cmake-out \
     -DMODEL_PATH=<path_to_program_file_generated_in_previous_step> \
     -DNXP_SDK_ROOT_DIR=<path_to_nxp_sdk_root> -DEXECUTORCH_BUILD_FLATC=0 \
@@ -212,6 +226,6 @@ First 20 elements of output 0
 
 In this tutorial, you have learned how to export a quantized operation, build the ExecuTorch runtime and run this model on the Xtensa HiFi4 DSP chip.
 
-The (quantized linear) model in this tutorial is a typical operation appearing in ASR models, and can be extended to a complete ASR model by creating the model as a new test and adding the needed operators/kernels to [operators](https://github.com/pytorch/executorch/blob/main/examples/cadence/ops) and [kernels](https://github.com/pytorch/executorch/blob/main/examples/cadence/kernels).
+The (quantized linear) model in this tutorial is a typical operation appearing in ASR models, and can be extended to a complete ASR model by creating the model as a new test and adding the needed operators/kernels to [operators](https://github.com/pytorch/executorch/blob/main/backends/cadence/hifi/operators) and [kernels](https://github.com/pytorch/executorch/blob/main/backends/cadence/hifi/kernels).
 
 Other models can be created following the same structure, always assuming that operators and kernels are available.

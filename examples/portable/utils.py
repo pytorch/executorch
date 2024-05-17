@@ -20,6 +20,7 @@ from torch.export import export, ExportedProgram
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=True,
+    _skip_dim_order=True,  # TODO(T189114319): Reuse dim order op after solving the ios oss issue
 )
 
 

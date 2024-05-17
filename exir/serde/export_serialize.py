@@ -22,6 +22,7 @@ from typing import Any, Callable, cast, Dict, Iterator, List, Optional, Union
 import sympy
 
 import torch
+import torch._export.exported_program
 import torch.export.exported_program as ep
 
 from torch._export.serde.schema import (

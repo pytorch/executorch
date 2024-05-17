@@ -12,40 +12,28 @@
 
 namespace vkcompute {
 
-// A canonical way to represent dimensions as enum. Motivation behind a
-// canonical enum is that in the user tensor, it is using a "big-endian"-ish
-// mechanism to reference a dimension in a nchw-tensor, leading to tensor of
-// different dimension have different mapping from dim to the underlying texture
-// dimension. For instasnce, for a 2d (height x width) tensors, dim 0 refers to
-// height and dim 1 refers to width; for a 4d (batch x channel x height x width)
-// tensor, dim 0 refers to batch and dim 1 refers to channel. Using this
-// canonical enum allows us to bring clarity in code.
-
-enum NchwDim : uint32_t {
-  DimWidth = 1u,
-  DimHeight = 2u,
-  DimChannel = 3u,
-  DimBatch = 4u,
-};
-
-// Convert a dim provided by user into canonical enum.
-inline NchwDim normalize_to_nchw_dim(const vTensor& v_in, int32_t dim) {
-  return static_cast<NchwDim>(v_in.dim() - dim);
-}
-
 /*
- * Maps a semantic dimension name to an integer that
- * corresponds to its innermost ordering in a 4D tensor in
- * NCHW format. Width is the innermost dimension, so it
- * corresponds to 1, height is the next innermost, so it
- * corresponds to 2, and so on.
+ * Maps a semantic dimension name to an integer that corresponds to its
+ * innermost ordering in a 4D tensor in NCHW format. In a way, it is the
+ * "negative index" associated with a dim. For instance: in a NCHW tensor, Width
+ * is the innermost dimension, so it corresponds to 1, height is the next
+ * innermost, so it corresponds to 2, and so on.
  */
-struct Dim4D {
-  static constexpr uint32_t Width = DimWidth;
-  static constexpr uint32_t Height = DimHeight;
-  static constexpr uint32_t Channel = DimChannel;
-  static constexpr uint32_t Batch = DimBatch;
+enum DimIndex : int32_t {
+  DIM_LAST = -1,
+  DIM_2ND_LAST = -2,
+  DIM_3RD_LAST = -3,
+  DIM_4TH_LAST = -4,
 };
+
+constexpr DimIndex kWidth4D = DimIndex::DIM_LAST;
+constexpr DimIndex kHeight4D = DimIndex::DIM_2ND_LAST;
+constexpr DimIndex kChannel4D = DimIndex::DIM_3RD_LAST;
+constexpr DimIndex kBatch4D = DimIndex::DIM_4TH_LAST;
+
+inline DimIndex normalize_to_dim_index(const vTensor& v_in, int32_t dim) {
+  return static_cast<DimIndex>(dim - v_in.dim());
+}
 
 /*
  * Semantic dimension names for a 1D tensor
@@ -80,47 +68,47 @@ struct DimTConv2DKernel {
  * then 1 will be returned. The structs above are intended to be used with
  * these functions.
  */
-template <uint32_t N>
-uint32_t dim_at(const std::vector<int64_t>& sizes) {
-  const uint32_t dims = sizes.size();
-  return dims < N ? 1 : api::utils::safe_downcast<uint32_t>(sizes[dims - N]);
-}
 
-inline uint32_t dim_at(const std::vector<int64_t>& sizes, NchwDim nchw_dim) {
+inline int32_t dim_at(const std::vector<int64_t>& sizes, DimIndex dim_index) {
   const uint32_t dims = sizes.size();
-  return dims < nchw_dim
+  // Recall that dim_index is a negative index.
+  return dims < -dim_index
       ? 1
-      : api::utils::safe_downcast<uint32_t>(sizes[dims - nchw_dim]);
+      : api::utils::safe_downcast<int32_t>(sizes[dims + dim_index]);
 }
 
-template <uint32_t N>
-uint32_t dim_at(const vTensor& v_in) {
-  return dim_at<N>(v_in.sizes());
+template <DimIndex DI>
+int32_t dim_at(const std::vector<int64_t>& sizes) {
+  return dim_at(sizes, DI);
 }
 
-inline uint32_t dim_at(const vTensor& v_in, NchwDim nchw_dim) {
-  return dim_at(v_in.sizes(), nchw_dim);
+template <DimIndex DI>
+int32_t dim_at(const vTensor& v_in) {
+  return dim_at(v_in.sizes(), DI);
 }
 
-inline std::ostream& operator<<(std::ostream& os, NchwDim nchw_dim) {
-  switch (nchw_dim) {
-    case DimWidth:
-      os << "DimWidth";
+inline int32_t dim_at(const vTensor& v_in, DimIndex dim_index) {
+  return dim_at(v_in.sizes(), dim_index);
+}
+
+inline std::ostream& operator<<(std::ostream& os, DimIndex dim_index) {
+  switch (dim_index) {
+    case kWidth4D:
+      os << "kWidth4D";
       break;
-    case DimHeight:
-      os << "DimHeight";
+    case kHeight4D:
+      os << "kHeight4D";
       break;
-    case DimChannel:
-      os << "DimChannel";
+    case kChannel4D:
+      os << "kChannel4D";
       break;
-    case DimBatch:
-      os << "DimBatch";
+    case kBatch4D:
+      os << "kBatch4D";
       break;
     default:
-      os << "DimUnknown";
+      os << "kDim4DUnknown";
       break;
   }
   return os;
 }
-
 } // namespace vkcompute

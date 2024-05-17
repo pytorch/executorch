@@ -29,9 +29,9 @@ layout(set = 0, binding = 3) uniform PRECISION restrict Sizes {
 
 layout(set = 0, binding = 4) uniform PRECISION restrict Block {
   // output dims
-  uvec4 out_ndims;
+  ivec4 out_ndims;
   // x = output channels aligned to 4, y = input channels aligned to 4
-  uvec2 ch_info;
+  ivec2 ch_info;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;

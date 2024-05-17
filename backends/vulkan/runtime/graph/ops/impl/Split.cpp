@@ -29,7 +29,7 @@ void add_split_with_sizes_default_node(
 
   ValueListPtr out_list = graph.get_value_list(out_list_ref);
 
-  NchwDim nchw_dim = normalize_to_nchw_dim(*t_in, dim);
+  DimIndex dim_index = normalize_to_dim_index(*t_in, dim);
 
   VK_CHECK_COND(out_list->size() == split_sizes.size());
 
@@ -39,10 +39,10 @@ void add_split_with_sizes_default_node(
 
     vTensorPtr t_out = graph.get_tensor(out_ref);
     VK_CHECK_COND(check_memory_layout_is(*t_out, api::kChannelsPacked));
-    VK_CHECK_COND(dim_at(*t_out, nchw_dim) == split_size);
+    VK_CHECK_COND(dim_at(*t_out, dim_index) == split_size);
   }
 
-  if (nchw_dim == DimWidth) {
+  if (dim_index == kWidth4D) {
     api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
     api::utils::ivec3 dst_offset = api::utils::make_ivec3({0, 0, 0}, false);
 
@@ -55,7 +55,7 @@ void add_split_with_sizes_default_node(
 
       src_offset.data[0] += range.data[0];
     }
-  } else if (nchw_dim == DimHeight) {
+  } else if (dim_index == kHeight4D) {
     api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
     api::utils::ivec3 dst_offset = api::utils::make_ivec3({0, 0, 0}, false);
 
@@ -66,7 +66,7 @@ void add_split_with_sizes_default_node(
 
       src_offset.data[1] += range.data[1];
     }
-  } else if (nchw_dim == DimBatch) {
+  } else if (dim_index == kBatch4D) {
     api::utils::ivec3 src_offset = api::utils::make_ivec3({0, 0, 0}, false);
     api::utils::ivec3 dst_offset = api::utils::make_ivec3({0, 0, 0}, false);
 
@@ -77,13 +77,13 @@ void add_split_with_sizes_default_node(
 
       src_offset.data[2] += range.data[2];
     }
-  } else if (nchw_dim == DimChannel) {
+  } else if (dim_index == kChannel4D) {
     int32_t src_offset = 0;
     int32_t dst_offset = 0;
 
     for (ValueRef out_ref : *out_list) {
       vTensorPtr t_out = graph.get_tensor(out_ref);
-      int32_t range = dim_at<Dim4D::Channel>(t_out->sizes());
+      int32_t range = dim_at<kChannel4D>(t_out->sizes());
       add_copy_channel_offset_node(
           graph, in, range, src_offset, dst_offset, out_ref);
       src_offset += range;
@@ -122,8 +122,8 @@ void add_split_tensor_node(
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
 
   vTensorPtr t_in = graph.get_tensor(in);
-  NchwDim nchw_dim = normalize_to_nchw_dim(*t_in, dim);
-  int64_t size = dim_at(*t_in, nchw_dim);
+  DimIndex dim_index = normalize_to_dim_index(*t_in, dim);
+  int64_t size = dim_at(*t_in, dim_index);
   std::vector<int64_t> split_sizes(size / split_size, split_size);
 
   add_split_with_sizes_default_node(graph, in, split_sizes, dim, out);

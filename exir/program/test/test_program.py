@@ -16,6 +16,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.error import ExportError
 from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.pass_base import ExportPass
+from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.program._program import (
     EdgeProgramManager,
     ExecutorchProgramManager,
@@ -160,6 +161,45 @@ class TestProgramManagers(unittest.TestCase):
             3,
         )
 
+    def test_executorch_manager_multi_config(self):
+        def get_executorch_memory_planning_passes() -> Dict[str, MemoryPlanningPass]:
+            return {
+                "forward": MemoryPlanningPass(
+                    memory_planning_algo="greedy",
+                    alloc_graph_input=True,
+                    alloc_graph_output=False,
+                ),
+                "foo": MemoryPlanningPass(
+                    memory_planning_algo="greedy",
+                    alloc_graph_input=False,
+                    alloc_graph_output=True,
+                ),
+            }
+
+        executorch_manager: ExecutorchProgramManager = to_edge(
+            get_exported_programs(), get_config_methods()
+        ).to_executorch(
+            ExecutorchBackendConfig(
+                memory_planning_pass=get_executorch_memory_planning_passes()
+            )
+        )
+
+        method = executorch_manager._emitter_output.program.execution_plan[0]
+        if method.name == "forward":
+            for input_val in method.inputs:
+                evalue = method.values[input_val]
+                self.assertEqual(evalue.val.allocation_info, None)
+            for output_val in method.outputs:
+                evalue = method.values[output_val]
+                self.assertNotEqual(evalue.val.allocation_info, None)
+        else:
+            for input_val in method.inputs:
+                evalue = method.values[input_val]
+                self.assertEqual(evalue.val.allocation_info, None)
+            for output_val in method.outputs:
+                evalue = method.values[output_val]
+                self.assertNotEqual(evalue.val.allocation_info, None)
+
     def test_no_getattr(self):
         class Mul(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -293,9 +333,7 @@ class TestProgramManagers(unittest.TestCase):
         # two delegate blobs for forward and foo
         self.assertEqual(
             len(
-                delegate_manager.to_executorch(
-                    ExecutorchBackendConfig(extract_delegate_segments=True)
-                )
+                delegate_manager.to_executorch(ExecutorchBackendConfig())
                 ._emitter_output.program.execution_plan[0]
                 .delegates
             ),
@@ -303,9 +341,7 @@ class TestProgramManagers(unittest.TestCase):
         )
         self.assertEqual(
             len(
-                delegate_manager.to_executorch(
-                    ExecutorchBackendConfig(extract_delegate_segments=True)
-                )
+                delegate_manager.to_executorch(ExecutorchBackendConfig())
                 ._emitter_output.program.execution_plan[1]
                 .delegates
             ),
@@ -349,7 +385,11 @@ class TestProgramManagers(unittest.TestCase):
         # one delegate blob for forward
         self.assertEqual(
             len(
-                delegate_manager.to_executorch(ExecutorchBackendConfig())
+                delegate_manager.to_executorch(
+                    ExecutorchBackendConfig(
+                        extract_delegate_segments=False,
+                    )
+                )
                 ._emitter_output.program.execution_plan[0]  # foo
                 .delegates
             ),
@@ -357,7 +397,11 @@ class TestProgramManagers(unittest.TestCase):
         )
         self.assertEqual(
             len(
-                delegate_manager.to_executorch(ExecutorchBackendConfig())
+                delegate_manager.to_executorch(
+                    ExecutorchBackendConfig(
+                        extract_delegate_segments=False,
+                    )
+                )
                 ._emitter_output.program.execution_plan[1]  # forward
                 .delegates
             ),

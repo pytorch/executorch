@@ -364,9 +364,7 @@ Tiktoken::encode(const std::string& text, int8_t bos, int8_t eos) {
 
 Result<std::string> Tiktoken::decode(uint64_t prev, uint64_t cur) {
   (void)prev;
-  if (!initialized_) {
-    return Error::NotSupported;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(Tokenizer::decode_verify(cur));
   std::string ret;
 
   std::string token_bytes;

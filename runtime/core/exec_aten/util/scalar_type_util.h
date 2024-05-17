@@ -349,6 +349,12 @@ inline constexpr bool isIntegralType(
        t == exec_aten::ScalarType::Short);
 }
 
+template <typename T, bool includeBool>
+struct is_integral_type
+    : public std::integral_constant<
+          bool,
+          isIntegralType(CppTypeToScalarType<T>::value, includeBool)> {};
+
 inline constexpr bool isFloatingType(exec_aten::ScalarType t) {
   return (
       t == exec_aten::ScalarType::Double || t == exec_aten::ScalarType::Float ||

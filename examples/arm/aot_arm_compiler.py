@@ -211,7 +211,9 @@ if __name__ == "__main__":
         logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=False, extract_constant_segment=False
+        )
     )
 
     model_name = f"{args.model_name}" + (

@@ -259,6 +259,38 @@ TEST_F(VulkanComputeAPITest, test_buffer_int8) {
   test_storage_buffer_type<int8_t, api::kQInt8>(16);
 }
 
+TEST_F(VulkanComputeAPITest, test_zero_size_tensor) {
+  // Simple test that performs a + b -> c
+
+  std::vector<int64_t> sizes = {0, 5, 7};
+  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+
+  // Fill input tensors
+  fill_vtensor(a, 2.5f);
+  fill_vtensor(b, 1.5f);
+
+  // a + b -> c
+  record_binary_op(api::context(), "add", a, b, c);
+
+  // Extract output tensor
+  std::vector<float> data_out = extract_vtensor(c);
+
+  // Assert all tensors are empty
+  ASSERT_TRUE(a.numel() == 0);
+  ASSERT_TRUE(b.numel() == 0);
+  ASSERT_TRUE(c.numel() == 0);
+  ASSERT_TRUE(a.nbytes() == 0);
+  ASSERT_TRUE(b.nbytes() == 0);
+  ASSERT_TRUE(c.nbytes() == 0);
+
+  // Check output
+  for (size_t i = 0; i < data_out.size(); ++i) {
+    CHECK_VALUE(data_out, i, 4.0f);
+  }
+}
+
 TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
   // Simple test that performs a + b -> c
 
@@ -301,11 +333,11 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   std::fill(data_b.begin(), data_b.end(), 1.5f);
 
   // Allocate memory at the last possible opportunity
-  api::MemoryAllocation a_mem = allocate_memory_for(a);
+  api::Allocation a_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_mem);
-  api::MemoryAllocation b_mem = allocate_memory_for(b);
+  api::Allocation b_mem = allocate_memory_for(b);
   b.image().bind_allocation(b_mem);
-  api::MemoryAllocation c_mem = allocate_memory_for(c);
+  api::Allocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
   // One allocation for each tensor
@@ -341,15 +373,15 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   // a and d can share the same memory allocation
-  api::MemoryAllocation a_d_mem = allocate_memory_for(a);
+  api::Allocation a_d_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_d_mem);
   d.image().bind_allocation(a_d_mem);
   // b and e can share the same memory allocation
-  api::MemoryAllocation b_e_mem = allocate_memory_for(b);
+  api::Allocation b_e_mem = allocate_memory_for(b);
   b.image().bind_allocation(b_e_mem);
   e.image().bind_allocation(b_e_mem);
   // c must have its own memory allocation
-  api::MemoryAllocation c_mem = allocate_memory_for(c);
+  api::Allocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
   // 3 allocations should be made
@@ -394,7 +426,7 @@ TEST_F(VulkanComputeAPITest, resource_bind_twice_fails) {
   vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
   // Try to double bind a resource, which should fail
-  api::MemoryAllocation a_mem = allocate_memory_for(a);
+  api::Allocation a_mem = allocate_memory_for(a);
   EXPECT_THROW(a.image().bind_allocation(a_mem), api::Error);
 }
 
@@ -402,9 +434,9 @@ TEST_F(VulkanComputeAPITest, resource_destructor_non_owning_memory) {
   // Check that the destructor of a vTensor that does not own its memory
   // does not free the memory
 
-  api::MemoryAllocation memory;
+  api::Allocation memory;
 
-  // Default MemoryAllocation constructor should not allocate memory
+  // Default Allocation constructor should not allocate memory
   EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   std::vector<int64_t> sizes = {4, 4, 1};
@@ -464,11 +496,11 @@ TEST_F(
   vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
   vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
-  api::MemoryAllocation a_mem = allocate_memory_for(a);
+  api::Allocation a_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_mem);
-  api::MemoryAllocation b_mem = allocate_memory_for(b);
+  api::Allocation b_mem = allocate_memory_for(b);
   b.image().bind_allocation(b_mem);
-  api::MemoryAllocation c_mem = allocate_memory_for(c);
+  api::Allocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
   execute_and_check_add(a, b, c, 4.0f, 8.0f);
@@ -593,6 +625,51 @@ TEST(VulkanComputeGraphTest, test_values_string) {
   }
   std::string stored = graph.get_string(idx);
   EXPECT_TRUE(stored == "hello, world");
+}
+
+TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> size_big = {7, 3, 5};
+  std::vector<int64_t> size_small = {};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(size_big, api::kFloat);
+  IOValueRef b = graph.add_input_tensor(size_small, api::kFloat);
+
+  IOValueRef out = {};
+
+  out.value = graph.add_tensor(size_big, api::kFloat);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    float val_a = i + 2.0f;
+    float val_b = i + 1.5f;
+    float val_c = val_a + val_b;
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, val_c);
+    }
+  }
 }
 
 TEST(VulkanComputeGraphTest, test_simple_graph) {

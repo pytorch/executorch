@@ -43,8 +43,7 @@ void add_slice_tensor_out_node(
 
   dim = normalize(dim, t_in->dim());
 
-  // Create a dim value as in the underlying dim is 4-dimension.
-  int64_t nchw_dim = dim + (4 - t_in->dim());
+  DimIndex dim_index = normalize_to_dim_index(*t_in, dim);
 
   std::optional<int64_t> opt_start =
       graph.extract_optional_scalar<int64_t>(opt_start_ref);
@@ -61,7 +60,7 @@ void add_slice_tensor_out_node(
   VK_CHECK_COND((0 <= start) && (start < in_sizes[dim]));
   VK_CHECK_COND((0 <= end) && (end <= in_sizes[dim]));
 
-  if (nchw_dim == 1) {
+  if (dim_index == kChannel4D) {
     // slice by channel
     std::string kernel_name = "slice_channel";
     kernel_name.reserve(kShaderNameReserve);
@@ -93,17 +92,17 @@ void add_slice_tensor_out_node(
     // GPU's coordinate is in x, y, z
     int64_t gpu_dim = -1;
     int64_t stride = 1;
-    if (nchw_dim == 3) {
+    if (dim_index == kWidth4D) {
       gpu_dim = 0; // width: x dimension in gpu
       VK_CHECK_COND(out_sizes[dim] == (1 + (end - start - 1) / step));
-    } else if (nchw_dim == 2) {
+    } else if (dim_index == kHeight4D) {
       gpu_dim = 1; // height: y dimension
       VK_CHECK_COND(out_sizes[dim] == (1 + (end - start - 1) / step));
-    } else if (nchw_dim == 0) {
+    } else if (dim_index == kBatch4D) {
       gpu_dim = 2; // batch: z dimension
 
       // Due to channel packing, each batch value is span over stride planes
-      int64_t n_channels = dim_at<Dim4D::Channel>(in_sizes);
+      int64_t n_channels = dim_at(in_sizes, kChannel4D);
       stride = api::utils::div_up<int64_t>(n_channels, 4ll);
     } else {
       VK_THROW("Unexpected ncwh_dim!");

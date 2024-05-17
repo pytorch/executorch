@@ -77,5 +77,14 @@ TEST_F(TiktokenExtensionTest, TokenizerDecodeCorrectly) {
   }
 }
 
+TEST_F(TiktokenExtensionTest, TokenizerDecodeOutOfRangeFails) {
+  Error res = tokenizer_->load(modelPath_.c_str());
+  EXPECT_EQ(res, Error::Ok);
+  // The vocab size is 128256, addes 256 just so the token is out of vocab
+  // range.
+  Result<std::string> out = tokenizer_->decode(0, 128256 + 256);
+  EXPECT_EQ(out.error(), Error::NotSupported);
+}
+
 } // namespace executor
 } // namespace torch
