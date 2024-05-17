@@ -789,6 +789,7 @@ test_suites = {
     "aten.split_with_sizes_copy.default": get_split_with_sizes_inputs(),
     "aten.split.Tensor": get_split_tensor_inputs(),
     "aten.sqrt.default": get_unary_ops_inputs(),
+    "aten.hardshrink.default": get_unary_ops_inputs(),
     "aten._softmax.default": get_softmax_inputs(),
     "aten._log_softmax.default": get_softmax_inputs(),
     "aten._native_batch_norm_legit_no_training.default": get_native_batch_norm_inputs(),
