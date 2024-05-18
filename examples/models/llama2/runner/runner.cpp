@@ -76,7 +76,7 @@ Error Runner::load() {
   n_bos_ = getMetadataHelper<int64_t>("get_n_bos", 1);
   n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
   max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
-  use_kv_cache_ = getMetadataHelper("use_kv_cache", false);
+  use_kv_cache_ = getMetadataHelper("use_kv_cache", true);
   use_sdpa_with_kv_cache_ = getMetadataHelper("use_sdpa_with_kv_cache", false);
   append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
