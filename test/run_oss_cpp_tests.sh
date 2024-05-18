@@ -23,9 +23,27 @@ build_and_run_test() {
   for t in cmake-out/"${test_dir}"/*test; do ./"$t"; done
 }
 
+probe_tests() {
+  dirs=(
+    backends
+    examples
+    extension
+    kernels
+    runtime
+    schema
+    sdk
+    test
+  )
+
+  find "${dirs[@]}" \
+      \( -type f -wholename '*/test/CMakeLists.txt' -exec dirname {} \; \) -o \
+      \( -type d -path '*/third-party/*' -prune \) \
+      | sort -u
+}
+
+probe_tests
+
 build_executorch
-build_and_run_test extension/data_loader/test/
-build_and_run_test runtime/core/portable_type/test/
-build_and_run_test runtime/core/test/
-build_and_run_test runtime/core/exec_aten/util/test/
-build_and_run_test runtime/core/exec_aten/testing_util/test/
+for test_dir in $(probe_tests); do
+  build_and_run_test $test_dir
+done

@@ -21,25 +21,11 @@ set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 
+include(${EXECUTORCH_ROOT}/build/Test.cmake)
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-
-# Find prebuilt executorch library
-find_package(executorch CONFIG REQUIRED)
-
-enable_testing()
-find_package(GTest CONFIG REQUIRED)
-
-# Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-target_include_directories(executorch INTERFACE ${_common_include_directories})
 
 set(_test_srcs optional_test.cpp executor_tensor_test.cpp half_test.cpp
                scalar_test.cpp tensor_impl_test.cpp
 )
 
-add_executable(runtime_core_portable_type_test ${_test_srcs})
-target_link_libraries(
-  runtime_core_portable_type_test GTest::gtest GTest::gtest_main GTest::gmock
-  executorch
-)
-add_test(ExecuTorchTest runtime_core_portable_type_test)
+et_cxx_test(runtime_core_portable_type_test SOURCES ${_test_srcs} EXTRA_LIBS)
