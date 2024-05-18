@@ -45,9 +45,13 @@ probe_tests() {
 
 build_executorch
 
-echo "Found test directories:"
-echo "$(probe_tests)"
+if [ -z "$1" ]; then
+  echo "Running all directories:"
+  echo "$(probe_tests)"
 
-for test_dir in $(probe_tests); do
-  build_and_run_test $test_dir
-done
+  for test_dir in $(probe_tests); do
+    build_and_run_test $test_dir
+  done
+else
+  build_and_run_test $1
+fi
