@@ -22,9 +22,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(EXECUTORCH_ROOT ${{CMAKE_CURRENT_SOURCE_DIR}}/{path_to_root})
 
 include(${{EXECUTORCH_ROOT}}/build/Test.cmake)
-include(${{EXECUTORCH_ROOT}}/build/Utils.cmake)
 
-set(_test_srcs {test_srcs}
-)
+set(_test_srcs {test_srcs})
 
 et_cxx_test({project_name} SOURCES ${{_test_srcs}} EXTRA_LIBS {additional_libs})

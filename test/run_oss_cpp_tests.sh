@@ -24,6 +24,8 @@ build_and_run_test() {
 }
 
 probe_tests() {
+  # This function finds the set of directories that contain C++ tests
+  # CMakeLists.txt rules, that are buildable using build_and_run_test
   dirs=(
     backends
     examples
@@ -41,9 +43,11 @@ probe_tests() {
       | sort -u
 }
 
-probe_tests
-
 build_executorch
+
+echo "Found test directories:"
+echo "$(probe_tests)"
+
 for test_dir in $(probe_tests); do
   build_and_run_test $test_dir
 done

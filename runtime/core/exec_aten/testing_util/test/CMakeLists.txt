@@ -22,7 +22,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 set(_test_srcs tensor_util_test.cpp tensor_factory_test.cpp ../tensor_util.cpp)
 
