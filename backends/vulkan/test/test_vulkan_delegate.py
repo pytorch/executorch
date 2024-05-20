@@ -379,6 +379,20 @@ class TestBackends(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(ClampModule())
 
+    def test_vulkan_backend_clamp_int(self):
+        class ClampModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.clamp(x, min=-3)
+
+        sample_inputs = (
+            torch.randint(low=-100, high=100, size=(5, 5), dtype=torch.int32),
+        )
+
+        self.lower_module_and_test_output(ClampModule(), sample_inputs)
+
     def test_vulkan_backend_hardtanh(self):
         class HardTanHModule(torch.nn.Module):
             def __init__(self):
