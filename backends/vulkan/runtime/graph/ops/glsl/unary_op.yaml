@@ -22,3 +22,5 @@ unary_op:
       OPERATOR: sqrt(X)
     - NAME: tanh
       OPERATOR: tanh(clamp(X, -15.0, 15.0))
+    - NAME: hardshrink
+      OPERATOR: X * (vec4(greaterThan(X, vec4(A))) + vec4(lessThan(X, vec4(B))))

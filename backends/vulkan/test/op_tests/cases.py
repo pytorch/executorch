@@ -794,4 +794,5 @@ test_suites = {
     "aten._log_softmax.default": get_softmax_inputs(),
     "aten._native_batch_norm_legit_no_training.default": get_native_batch_norm_inputs(),
     "aten.gelu.default": get_gelu_inputs(),
+    "aten.hardshrink.default": get_unary_ops_inputs(),
 }
