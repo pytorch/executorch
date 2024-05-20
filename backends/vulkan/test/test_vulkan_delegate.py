@@ -915,7 +915,6 @@ class TestBackends(unittest.TestCase):
         )
 
     def test_vulkan_backend_permute_copy(self):
-        # aten.permute_copy.default is not enabled yet in partitioner
         class PermuteModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -924,6 +923,22 @@ class TestBackends(unittest.TestCase):
                 return torch.permute(x, [3, 0, 2, 1])
 
         sample_inputs = (torch.randn(size=(3, 6, 2, 7), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            PermuteModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_permute_copy_int(self):
+        class PermuteModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.permute(x, [3, 0, 2, 1])
+
+        sample_inputs = (torch.randint(size=(3, 6, 2, 7), high=100, dtype=torch.int32),)
 
         self.lower_module_and_test_output(
             PermuteModule(),
