@@ -5,6 +5,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# This script helps build and run C++ tests with CMakeLists.txt.
+# It builds and installs the root ExecuTorch package, and then sub-directories.
+#
+# If no arg is given, it probes all sub-directories containing
+# test/CMakeLists.txt. It builds and runs these tests.
+# If an arg is given, like `runtime/core/test/`, it runs that directory only.
+
 set -ex
 
 build_executorch() {
@@ -47,11 +54,11 @@ build_executorch
 
 if [ -z "$1" ]; then
   echo "Running all directories:"
-  echo "$(probe_tests)"
+  probe_tests
 
   for test_dir in $(probe_tests); do
-    build_and_run_test $test_dir
+    build_and_run_test "${test_dir}"
   done
 else
-  build_and_run_test $1
+  build_and_run_test "$1"
 fi
