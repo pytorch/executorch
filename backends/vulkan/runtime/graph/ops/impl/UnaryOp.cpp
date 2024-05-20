@@ -100,6 +100,17 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         kClampShaderName);                                               \
   }
 
+#define DEFINE_HARDSHRINK_FN(op_name)                                    \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_unary_op_node(                                            \
+        graph,                                                           \
+        args[0],                                                         \
+        get_val_or_inf(graph, args[1], /*max = */ false),                \
+        -get_val_or_inf(graph, args[1], /*max = */ true),                \
+        args[2],                                                         \
+        "hardshrink");                                                   \
+  }
+
 void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // args[1] is the `approximate` string
   // https://fburl.com/code/9omngmyo
@@ -116,6 +127,7 @@ DEFINE_ACTIVATION_FN(tanh);
 DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
 DEFINE_RELU_FN(relu);
+DEFINE_HARDSHRINK_FN(hardshrink);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -127,6 +139,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sigmoid.default, sigmoid);
   VK_REGISTER_OP(aten.sqrt.default, sqrt);
   VK_REGISTER_OP(aten.tanh.default, tanh);
+  VK_REGISTER_OP(aten.hardshrink.default, hardshrink);
 }
 
 } // namespace vkcompute
