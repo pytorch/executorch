@@ -271,9 +271,12 @@ class LlamaEdgeManager:
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         if quantizers:
             with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-                m = capture_pre_autograd_graph(
-                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape
-                )
+                m = torch.export._trace._export(
+                    self.model,
+                    self.example_inputs,
+                    dynamic_shapes=dynamic_shape,
+                    pre_dispatch=True,
+                ).module()
                 if self.verbose:
                     logging.info(f"Applied quantizers: {quantizers}")
                 composed_quantizer = ComposableQuantizer(quantizers)
