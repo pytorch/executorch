@@ -25,6 +25,7 @@ enum ETDumpGen_State {
   ETDumpGen_Block_Created,
   ETDumpGen_Adding_Allocators,
   ETDumpGen_Adding_Events,
+  ETDumpGen_Done,
 };
 
 struct etdump_result {
@@ -100,6 +101,7 @@ class ETDumpGen : public EventTracer {
   etdump_result get_etdump_data();
   size_t get_num_blocks();
   bool is_static_etdump();
+  void reset();
 
  private:
   struct flatcc_builder* builder;
