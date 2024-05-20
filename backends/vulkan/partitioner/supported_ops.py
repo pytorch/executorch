@@ -59,6 +59,7 @@ UNARY_OPS = [
     exir_ops.edge.aten.sigmoid.default,
     exir_ops.edge.aten.sqrt.default,
     exir_ops.edge.aten.tanh.default,
+    exir_ops.edge.aten.hardshrink.default,
 ]
 
 MATMUL_OPS = [
