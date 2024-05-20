@@ -16,17 +16,18 @@ from torch.export.exported_program import ExportedProgram
 
 
 def export_program(
-    model: Callable,
+    model: torch.nn.Module,
     inputs: Any,
     pt2_quant: bool = False,
 ) -> ExportedProgram:
-    # we don't support training mode. Make it eval
+    # We don't support training mode. Make it eval
     if hasattr(model, "eval"):
-        if pt2_quant:
-            # pyre-fixme[6]: Incompatible parameter type.
+        # If the model is already a GraphModule (most likely from quantization),
+        # it can't call eval. Call the suggested torch.ao.quantization API instead,
+        # which only does dropout and batchnorm.
+        if isinstance(model, torch.fx.GraphModule):
             torch.ao.quantization.move_exported_model_to_eval(model)
         else:
-            # pyre-fixme[16]: Anonymous callable has no attribute `eval`.
             model.eval()
 
     # if it's already an ExportedProgram, just return it
@@ -46,11 +47,10 @@ def export_program(
 def export_to_edge(
     model: Callable,
     inputs: Any,
-    pt2_quant: bool = False,
     dump_graphs: bool = False,
 ) -> Tuple[EdgeProgramManager, ExportedProgram]:
     # Export the model into an ExportedProgram.
-    expo_program = export_program(model, inputs, pt2_quant)
+    expo_program = export_program(model, inputs)
 
     if dump_graphs:
         logging.info(f"Exported graph:\n{expo_program.graph_module.graph}")
