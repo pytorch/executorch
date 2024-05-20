@@ -50,6 +50,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
             if len(node_val.shape) > 4:
                 return False
 
+            # bool dtype not currently supported
+            if node_val.dtype == torch.bool:
+                return False
+
         if isinstance(node_val, (list, tuple)):
             for item in node_val:
                 if not self.node_val_is_compatible(item):
