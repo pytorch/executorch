@@ -18,7 +18,6 @@ from torch.export.exported_program import ExportedProgram
 def export_program(
     model: torch.nn.Module,
     inputs: Any,
-    pt2_quant: bool = False,
 ) -> ExportedProgram:
     # We don't support training mode. Make it eval
     if hasattr(model, "eval"):
