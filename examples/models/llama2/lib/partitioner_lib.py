@@ -72,7 +72,7 @@ def get_coreml_partitioner(args):
     compile_specs = CoreMLBackend.generate_compile_specs(
         compute_precision=ct.precision(ct.precision.FLOAT16.value),
         # using `ComputeUnit.ALL` can increase the model load time, default to `ComputeUnit.CPU_AND_GPU`
-        compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_GPU.name.upper()],
+        compute_unit=ct.ComputeUnit[ct.ComputeUnit.ALL.name.upper()],
         model_type=CoreMLBackend.MODEL_TYPE.MODEL,
     )
     return CoreMLPartitioner(
