@@ -85,6 +85,14 @@ class OpElementWiseMultiply:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseNeuron:
+    op_name: str = "ElementWiseNeuron"
+    param_operation: str = "operation"
+    param_alpha: str = "alpha"
+    param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWisePower:
     op_name: str = "ElementWisePower"
 

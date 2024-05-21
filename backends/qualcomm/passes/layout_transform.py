@@ -39,6 +39,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.relu.default,
         exir_ops.edge.aten.hardtanh.default,
         exir_ops.edge.aten.hardswish.default,
+        exir_ops.edge.aten.hardsigmoid.default,
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.linear.default,
         exir_ops.edge.aten.clamp.default,
