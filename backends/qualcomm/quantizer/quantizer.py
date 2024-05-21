@@ -7,7 +7,6 @@ from enum import IntEnum, unique
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import torch
-from executorch.backends.qualcomm.passes.convert_hardsigmoid import ConvertHardsigmoid
 from executorch.backends.qualcomm.passes.decompose_scaled_dot_product_attention import (
     DecomposeScaledDotProductAttention,
 )
@@ -384,7 +383,6 @@ class QnnQuantizer(Quantizer):
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         model = RemoveClone()(model).graph_module
         model = ReduceDynamicRange()(model).graph_module
-        model = ConvertHardsigmoid(quantization_capture=True)(model).graph_module
         model = DecomposeScaledDotProductAttention()(model).graph_module
         model = DecomposeSilu()(model).graph_module
         model = ReplaceInfBuffer()(model).graph_module
