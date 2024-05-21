@@ -282,7 +282,7 @@ adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --t
 
 ### iOS
 
-Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App. Note that to use Llama 3 8B instruct in the iOS demo app, you'll need to rename the downloaded `tokenizer.model` file to `tokenizer.bin` because the app looks for the tokenizer file with .bin extension.
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App. Note that to use Llama 3 8B instruct in the iOS demo app, you don't need to convert the downloaded `tokenizer.model` to `tokenizer.bin`, required for Llama 2 (shown in Step 2 - Option A - 4 above), but you need to rename `tokenizer.model` file to `tokenizer.bin` because the demo app looks for the tokenizer file with .bin extension.
 
 ### Android
 Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
