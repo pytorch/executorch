@@ -26,7 +26,7 @@ class Linear(torch.nn.Module):
         bias: bool = True,
     ):
         super().__init__()
-        self.inputs = (torch.ones(5, 10, 25, in_features),)
+        self.inputs = (torch.randn(5, 10, 25, in_features),)
         self.fc = torch.nn.Linear(
             in_features=in_features,
             out_features=out_features,
@@ -93,3 +93,35 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         if self._is_tosa_marker_in_file(tmp_file):
             return  # Implicit pass test
         self.fail("File does not contain TOSA dump!")
+
+
+class TestNumericalDiffPrints(unittest.TestCase):
+    def test_numerical_diff_prints(self):
+        model = Linear(20, 30)
+        tester = (
+            ArmTester(
+                model,
+                inputs=model.get_inputs(),
+                compile_spec=common.get_tosa_compile_spec(),
+            )
+            .quantize()
+            .export()
+            .to_edge()
+            .partition()
+            .to_executorch()
+        )
+        if common.TOSA_REF_MODEL_INSTALLED:
+            # We expect an assertion error here. Any other issues will cause the
+            # test to fail. Likewise the test will fail if the assertion error is
+            # not present.
+            try:
+                # Tolerate 0 difference => we want to trigger a numerical diff
+                tester.run_method_and_compare_outputs(atol=0, rtol=0, qtol=0)
+            except AssertionError:
+                pass  # Implicit pass test
+            else:
+                self.fail()
+        else:
+            logger.warning(
+                "TOSA ref model tool not installed, skip numerical correctness tests"
+            )
