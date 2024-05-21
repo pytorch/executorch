@@ -13,21 +13,20 @@ from __future__ import annotations
 
 import copy
 import functools
-
 from typing import Any, Callable, Dict, List, Optional, Set
 
 import torch
-import torch._dynamo as torchdynamo
 import torch.nn.functional as F
-
-from executorch.backends.arm.arm_quantizer_utils import (
-    _convert_scalars_to_attrs,
+from executorch.backends.arm.quantizer.arm_quantizer_utils import (
+    convert_scalars_to_attrs,
+    propagate_annotation,
+)
+from executorch.backends.arm.quantizer.quantization_annotation import (
     OP_TO_ANNOTATOR,
     OperatorConfig,
     OperatorPatternType,
-    propagate_annotation,
-    QuantizationConfig,
 )
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from torch.ao.quantization.fake_quantize import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
@@ -40,39 +39,14 @@ from torch.ao.quantization.observer import (
     PerChannelMinMaxObserver,
     PlaceholderObserver,
 )
-
 from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
-
 from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
-
 from torch.fx import Node
-
 
 __all__ = [
     "ArmQuantizer",
     "get_symmetric_quantization_config",
 ]
-
-
-def _get_dynamo_graph(function: Callable, inputs) -> torch.fx.Graph:
-    gm, _ = torchdynamo.export(function, aten_graph=True)(*inputs)
-    gm.graph.eliminate_dead_code()
-    return gm.graph
-
-
-def _get_linear_patterns(input_size: List[int]):
-    in_channels = input_size[-1]
-    out_channels = 8  # hard coding but this should not matter
-    weight = torch.ones((out_channels, in_channels))
-    bias = torch.ones((out_channels,))
-    act = torch.ones(input_size)
-
-    def linear_op(act, weight, bias=None):
-        return F.linear(act, weight, bias)
-
-    pattern_w_bias = _get_dynamo_graph(linear_op, (act, weight, bias))
-    pattern_wo_bias = _get_dynamo_graph(linear_op, (act, weight))
-    return [pattern_w_bias, pattern_wo_bias]
 
 
 def _supported_symmetric_quantized_operators() -> Dict[str, List[OperatorPatternType]]:
@@ -100,9 +74,7 @@ def _get_supported_symmetric_config_and_operators() -> List[OperatorConfig]:
     supported_config_and_operators: List[OperatorConfig] = []
     for quantization_config in [
         get_symmetric_quantization_config(),
-        get_symmetric_quantization_config(is_qat=True),
         get_symmetric_quantization_config(is_per_channel=True),
-        get_symmetric_quantization_config(is_per_channel=True, is_qat=True),
     ]:
         ops = _supported_symmetric_quantized_operators()
         for pattern_list in ops.values():
@@ -185,7 +157,6 @@ def get_symmetric_quantization_config(
             None,
             weight_quantization_spec,
             bias_quantization_spec,
-            is_qat,
         )
     else:
         quantization_config = QuantizationConfig(
@@ -193,7 +164,6 @@ def get_symmetric_quantization_config(
             act_quantization_spec,
             weight_quantization_spec,
             bias_quantization_spec,
-            is_qat,
         )
     return quantization_config
 
@@ -267,32 +237,11 @@ def _get_not_module_type_or_name_filter(
 
 class ArmQuantizer(Quantizer):
     supported_config_and_operators = _get_supported_config_and_operators()
-    STATIC_QAT_ONLY_OPS = [
-        "conv_bn_relu",
-        "conv_bn",
-    ]
 
-    # static quantization ops (both PTQ and QAT)
+    # A list of supported static quantization ops (both PTQ and QAT)
+    # The name must match the name used when registering the annotator.
     # Preserve the order that fusions come before singular ops
-    STATIC_OPS = [
-        "linear_relu",
-        "linear",
-        "conv_relu",
-        "conv",
-        "adaptive_avg_pool2d",
-        # TODO: move this to BoltNNQuantizer?
-        "gru_io_only",
-        "max_pool2d",
-        "add_relu",
-        "add",
-        "mul_relu",
-        "mul",
-        "cat",
-    ]
-
-    DYNAMIC_OPS = [
-        "linear",
-    ]
+    STATIC_OPS = ["linear", "conv", "adaptive_avg_pool2d", "max_pool2d", "add", "mul"]
 
     def __init__(self):
         super().__init__()
@@ -368,16 +317,20 @@ class ArmQuantizer(Quantizer):
     def transform_for_annotation(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
-        """Transforms scalar values to tensor attributes"""
-        return _convert_scalars_to_attrs(model)
+        """An initial pass for transforming the graph to prepare it for annotation.
+        Currently transforms scalar values to tensor attributes.
+        """
+        return convert_scalars_to_attrs(model)
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        """just handling global spec for now"""
-        # hacked for handling dynamic linear quant. will fix later.
-        if self.global_config and self.global_config.input_activation.is_dynamic:  # type: ignore[union-attr]
-            model = self._annotate_for_dynamic_quantization_config(model)
-        else:
-            model = self._annotate_for_static_quantization_config(model)
+        """Performs the quantization annotation on the graph.
+            Currently only does static quantization annotation.
+        Args:
+            model: The model to annotate statically.
+        Returns:
+            The annotated model.
+        """
+        model = self._annotate_for_static_quantization_config(model)
         propagate_annotation(model)
         return model
 
@@ -387,34 +340,29 @@ class ArmQuantizer(Quantizer):
         quantization_config: Optional[QuantizationConfig],
         filter_fn: Optional[Callable[[Node], bool]] = None,
     ) -> torch.fx.GraphModule:
+        """Loops over all STATIC_OPS and runs the corresponding registred annotator.
+        Args:
+            model: The model to annotate statically.
+            quantization_config: Specifices the QuantizationSpecs for the model's
+                input activations, output activations, weights and biases.
+            filter_fn: An optional filter function that takes a node and returns whether the node should be annotated.
+        Returns:
+            The annotated model.
+        """
         # TODO: implement the support for None to be canceling out previous annotations
         if quantization_config is None:
             return model
 
-        if quantization_config.is_qat:
-            for op in self.STATIC_QAT_ONLY_OPS:
-                OP_TO_ANNOTATOR[op](model, quantization_config, filter_fn)
         for op in self.STATIC_OPS:
-            OP_TO_ANNOTATOR[op](model, quantization_config, filter_fn)
-        return model
-
-    def _annotate_all_dynamic_patterns(
-        self,
-        model: torch.fx.GraphModule,
-        quantization_config: Optional[QuantizationConfig],
-        filter_fn: Optional[Callable[[Node], bool]] = None,
-    ) -> torch.fx.GraphModule:
-        # TODO: implement the support for None to be canceling out previous annotations
-        if quantization_config is None:
-            return model
-
-        for op in self.DYNAMIC_OPS:
             OP_TO_ANNOTATOR[op](model, quantization_config, filter_fn)
         return model
 
     def _annotate_for_static_quantization_config(
         self, model: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
+        """Matches the correct QuantizationConfig with the correct module using a filter
+        when running _annotate_all_static_patterns.
+        """
         module_name_list = list(self.module_name_config.keys())
         for module_name, config in self.module_name_config.items():
             self._annotate_all_static_patterns(
@@ -428,28 +376,6 @@ class ArmQuantizer(Quantizer):
             )
 
         self._annotate_all_static_patterns(
-            model,
-            self.global_config,
-            _get_not_module_type_or_name_filter(tp_list, module_name_list),
-        )
-        return model
-
-    def _annotate_for_dynamic_quantization_config(
-        self, model: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
-        module_name_list = list(self.module_name_config.keys())
-        for module_name, config in self.module_name_config.items():
-            self._annotate_all_dynamic_patterns(
-                model, config, _get_module_name_filter(module_name)
-            )
-
-        tp_list = list(self.module_type_config.keys())
-        for module_type, config in self.module_type_config.items():
-            self._annotate_all_dynamic_patterns(
-                model, config, _get_module_type_filter(module_type)
-            )
-
-        self._annotate_all_dynamic_patterns(
             model,
             self.global_config,
             _get_not_module_type_or_name_filter(tp_list, module_name_list),

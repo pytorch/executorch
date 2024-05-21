@@ -20,7 +20,7 @@ from executorch.backends.arm.arm_backend import (
     is_tosa,
 )
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
-from executorch.backends.arm.arm_quantizer import (
+from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
