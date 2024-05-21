@@ -7,14 +7,18 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    runtime.cxx_library(
-        name = "optimizer",
-        exported_headers = [
-            "sgd.h",
-        ],
-        exported_deps = [
-        ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
+    for aten_mode in (True, False):
+        aten_suffix = "_aten" if aten_mode else ""
+
+        runtime.cxx_library(
+            name = "optimizer" + aten_suffix,
+            exported_headers = [
+                "sgd.h",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+            ],
+            visibility = [
+                "@EXECUTORCH_CLIENTS",
+            ],
+        )
