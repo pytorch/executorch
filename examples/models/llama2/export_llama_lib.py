@@ -346,9 +346,12 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_sdpa_with_custom_op)
 
-    if args.qnn and args.use_kv_cache:
-        transforms.append(replace_sdpa_with_simple_sdpa)
-        transforms.append(replace_causal_mask)
+    if args.use_kv_cache:
+        if args.qnn or args.coreml or args.mps:
+            # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
+            # to get free perf gain.
+            transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_causal_mask)
     return (
         load_llama_model(
             modelname=modelname,

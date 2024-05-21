@@ -16,22 +16,12 @@
 cmake_minimum_required(VERSION 3.19)
 project(runtime_core_exec_aten_util_test)
 
-# Use C++14 for test.
-set(CMAKE_CXX_STANDARD 14)
+# Use C++17 for test.
+set(CMAKE_CXX_STANDARD 17)
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-
-# Find prebuilt executorch library
-find_package(executorch CONFIG REQUIRED)
-
-enable_testing()
-find_package(GTest CONFIG REQUIRED)
-
-# Let files say "include <executorch/path/to/header.h>".
-set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-target_include_directories(executorch INTERFACE ${_common_include_directories})
+include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
 set(_test_srcs
     tensor_util_test.cpp scalar_type_util_test.cpp
@@ -39,9 +29,4 @@ set(_test_srcs
     ../../testing_util/tensor_util.cpp
 )
 
-add_executable(runtime_core_exec_aten_util_test ${_test_srcs})
-target_link_libraries(
-  runtime_core_exec_aten_util_test GTest::gtest GTest::gtest_main GTest::gmock
-  executorch
-)
-add_test(ExecuTorchTest runtime_core_exec_aten_util_test)
+et_cxx_test(runtime_core_exec_aten_util_test SOURCES ${_test_srcs} EXTRA_LIBS)

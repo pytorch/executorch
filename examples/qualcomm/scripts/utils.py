@@ -163,7 +163,7 @@ def build_executorch_binary(
     quant_dtype: Optional[QuantDtype] = None,
     shared_buffer=False,
 ):
-    if quant_dtype:
+    if quant_dtype is not None:
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_annotations)
 
