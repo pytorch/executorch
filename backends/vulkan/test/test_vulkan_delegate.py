@@ -420,6 +420,17 @@ class TestBackends(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(SqrtModule())
 
+    def test_vulkan_backend_hardshrink(self):
+        class HardshrinkModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.hardshrink = torch.nn.Hardshrink(lambd=0.3)
+
+            def forward(self, x):
+                return self.hardshrink(x)
+
+        self.lower_unary_module_and_test_output(HardshrinkModule())
+
     def test_vulkan_backend_max_pool2d(self):
         class MaxPool2dModule(torch.nn.Module):
             def __init__(self):
