@@ -69,9 +69,7 @@ def export_model(
     QuantFusion(patterns)(converted_model)
 
     # Get edge program (note: the name will change to export_to_cadence in future PRs)
-    edge_prog_manager, expo_prog = export_to_edge(
-        converted_model, example_inputs, pt2_quant=True
-    )
+    edge_prog_manager, expo_prog = export_to_edge(converted_model, example_inputs)
 
     # Run a couple required passes for quant/dequant ops
     cadence_prog_manager = edge_prog_manager.transform(
