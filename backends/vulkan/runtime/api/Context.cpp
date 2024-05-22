@@ -91,16 +91,25 @@ void Context::register_shader_dispatch(
     const ShaderInfo& shader_descriptor,
     const utils::uvec3& global_workgroup_size) {
   // Adjust the global workgroup size based on the output tile size
+  uint32_t global_wg_w = utils::div_up(
+      global_workgroup_size.data[0u], shader_descriptor.out_tile_size.data[0u]);
+  uint32_t global_wg_h = utils::div_up(
+      global_workgroup_size.data[1u], shader_descriptor.out_tile_size.data[1u]);
+  uint32_t global_wg_d = utils::div_up(
+      global_workgroup_size.data[2u], shader_descriptor.out_tile_size.data[2u]);
+
+  // Submitting a global work group size of 0 is undefined behaviour. If this is
+  // detected then submit a single workgroup instead.
+  if (global_wg_w == 0u || global_wg_h == 0u || global_wg_d == 0u) {
+    global_wg_w = 1u;
+    global_wg_h = 1u;
+    global_wg_d = 1u;
+  }
+
   const utils::uvec3 effective_global_wg = {
-      utils::div_up(
-          global_workgroup_size.data[0u],
-          shader_descriptor.out_tile_size.data[0u]),
-      utils::div_up(
-          global_workgroup_size.data[1u],
-          shader_descriptor.out_tile_size.data[1u]),
-      utils::div_up(
-          global_workgroup_size.data[2u],
-          shader_descriptor.out_tile_size.data[2u]),
+      global_wg_w,
+      global_wg_h,
+      global_wg_d,
   };
 
   cmd_.bind_descriptors(descriptors.get_bind_handle());
