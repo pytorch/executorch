@@ -37,7 +37,7 @@ jobs:
         # Run pytest with coverage
         pytest -n auto --cov=./ --cov-report=xml
         # Run gtest
-        sh test/run_oss_cpp_tests.sh
+        test/run_oss_cpp_tests.sh
 
   macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
