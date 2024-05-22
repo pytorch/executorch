@@ -19,7 +19,7 @@
 layout(std430) buffer;
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
+layout(set = 0, binding = 1) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} image_in;
 
 layout(set = 0, binding = 2) uniform PRECISION restrict OutLimits {
   ivec3 out_limits;
@@ -43,5 +43,5 @@ void main() {
   }
 
   VEC4_T in_texel = texelFetch(image_in, pos, 0);
-  imageStore(image_out, pos, op(in_texel, minimum, maximum));
+  imageStore(image_out, pos, VEC4_T(op(in_texel, minimum, maximum)));
 }
