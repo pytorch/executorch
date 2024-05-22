@@ -371,8 +371,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     )
 
 
-def _export_llama(modelname, args) -> str:  # noqa: C901
-    # export_to_edge
+def get_quantizer_and_quant_params(args):
     pt2e_quant_params = _get_pt2e_quantization_params(args)
     quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
     quant_dtype = None
@@ -380,9 +379,17 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
         qnn_quantizer, quant_dtype = get_qnn_quantizer(args)
         quantizers.append(qnn_quantizer)
+    logging.info(f"Applying quantizers: {quantizers}")
+    return pt2e_quant_params, quantizers, quant_dtype
 
+
+def _export_llama(modelname, args) -> str:  # noqa: C901
+    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
+
+    # export_to_edge
     builder_exported_to_edge = (
         _prepare_for_llama_export(modelname, args)
+        .capture_pre_autograd_graph()
         .pt2e_quantize(quantizers)
         .export_to_edge()
     )
