@@ -20,21 +20,22 @@ using exec_aten::ScalarType;
 
 TEST(ScalarTypeUtilTest, ToString) {
   // Some known types.
-  EXPECT_EQ(torch::executor::toString(ScalarType::Int), "Int");
-  EXPECT_EQ(torch::executor::toString(ScalarType::ComplexHalf), "ComplexHalf");
+  EXPECT_STREQ(torch::executor::toString(ScalarType::Int), "Int");
+  EXPECT_STREQ(
+      torch::executor::toString(ScalarType::ComplexHalf), "ComplexHalf");
 
   // Undefined, which is sort of a special case since it's not part of the
   // iteration macros but is still a part of the enum.
-  EXPECT_EQ(torch::executor::toString(ScalarType::Undefined), "Undefined");
+  EXPECT_STREQ(torch::executor::toString(ScalarType::Undefined), "Undefined");
 
   // Some out-of-range types, also demonstrating that NumOptions is not really a
   // scalar type.
-  EXPECT_EQ(
+  EXPECT_STREQ(
       torch::executor::toString(ScalarType::NumOptions), "UNKNOWN_SCALAR");
-  EXPECT_EQ(
+  EXPECT_STREQ(
       torch::executor::toString(static_cast<ScalarType>(127)),
       "UNKNOWN_SCALAR");
-  EXPECT_EQ(
+  EXPECT_STREQ(
       torch::executor::toString(static_cast<ScalarType>(-1)), "UNKNOWN_SCALAR");
 }
 

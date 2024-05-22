@@ -42,13 +42,13 @@ QueryPool::QueryPool(const QueryPoolConfig& config, const Adapter* adapter_p)
       nullptr, // pNext
       0u, // flags
       VK_QUERY_TYPE_TIMESTAMP, // queryType
-      config_.maxQueryCount, // queryCount
+      config_.max_query_count, // queryCount
       0u, // pipelineStatistics
   };
 
   VK_CHECK(vkCreateQueryPool(device_, &info, nullptr, &querypool_));
 
-  shader_log().reserve(config_.initialReserveSize);
+  shader_log().reserve(config_.initial_reserve_size);
 
   VK_CHECK_COND(adapter_p, "Valid GPU device must be created for QueryPool");
   ns_per_tick_ = std::lround(adapter_p->timestamp_period());
@@ -79,16 +79,16 @@ void QueryPool::reset(const CommandBuffer& cmd) {
   previous_shader_count_ += shader_log().size();
   in_use_ = 0u;
   shader_logs_.emplace_back();
-  shader_log().reserve(config_.initialReserveSize);
+  shader_log().reserve(config_.initial_reserve_size);
   results_pending_ = false;
 }
 
 size_t QueryPool::write_timestamp(const CommandBuffer& cmd) {
   VK_CHECK_COND(
-      in_use_ < config_.maxQueryCount,
+      in_use_ < config_.max_query_count,
       "Vulkan QueryPool: Exceeded the maximum number of queries "
       "allowed by the queryPool (",
-      config_.maxQueryCount,
+      config_.max_query_count,
       ")!");
 
   cmd.write_timestamp(querypool_, in_use_);

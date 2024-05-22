@@ -12,10 +12,15 @@
 #include <executorch/backends/vulkan/runtime/api/Command.h>
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 #include <executorch/backends/vulkan/runtime/api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/api/Fence.h>
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
-#include <executorch/backends/vulkan/runtime/api/Resource.h>
 #include <executorch/backends/vulkan/runtime/api/Runtime.h>
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/ShaderRegistry.h>
 #include <executorch/backends/vulkan/runtime/api/Tensor.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
+
+#include <executorch/backends/vulkan/runtime/api/memory/Allocation.h>
+#include <executorch/backends/vulkan/runtime/api/memory/Allocator.h>
+#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/memory/Image.h>

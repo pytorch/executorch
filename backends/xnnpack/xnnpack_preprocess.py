@@ -22,6 +22,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
     serialize_xnnpack_binary,
 )
+from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.backends.xnnpack.utils.utils import is_param_node
 
 from executorch.backends.xnnpack.utils.xnnpack_constants import (
@@ -84,6 +85,9 @@ class XnnpackBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
+
+        xnnpack_edge_compile_config = get_xnnpack_edge_compile_config()
+
         # Need to wrap EP here because xnnpack does addmm to linear
         # transforms. This makes resulting graph not aten compliant
         # as aten.linear is not a core aten op.
@@ -102,7 +106,7 @@ class XnnpackBackend(BackendDetails):
             module_call_graph=edge_program.module_call_graph,
             example_inputs=edge_program.example_inputs,
             verifier=EXIREdgeDialectVerifier(
-                check_edge_ops=False, enable=False, class_only=True
+                edge_compile_config=xnnpack_edge_compile_config, class_only=True
             ),
             constants=edge_program.constants,
         )

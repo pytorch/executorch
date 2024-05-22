@@ -10,7 +10,6 @@
 #include <assert.h>
 #include <fstream>
 #include <iostream>
-#include <range.hpp>
 #include <sstream>
 
 #if __has_include(<filesystem>)
@@ -22,7 +21,8 @@ namespace filesystem = std::experimental::filesystem;
 }
 #endif
 
-#include <reversed_memory_stream.hpp>
+#include "range.hpp"
+#include "reversed_memory_stream.hpp"
 
 namespace {
 using namespace inmemoryfs;

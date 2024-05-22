@@ -143,6 +143,7 @@ vTensor::vTensor(
       // Utility Uniform Buffers that can be passed to shaders as arguments
       sizes_uniform_(),
       texture_limits_uniform_(),
+      packed_dim_meta_(),
       // Construct Tensor storage
       storage_(
           context,
@@ -212,6 +213,30 @@ const api::BufferBindInfo vTensor::texture_limits_ubo() {
   return api::BufferBindInfo(texture_limits_uniform_.buffer());
 }
 
+vTensor::PackedDimMeta vTensor::make_packed_dim_metadata() const {
+  int64_t packed_dim = gpu_memory_layout_int();
+  int32_t dim_size = api::utils::val_at(-(packed_dim + 1), sizes_);
+  int32_t dim_size_padded = api::utils::val_at(-(packed_dim + 1), gpu_sizes_);
+  int32_t dim_texel_len =
+      api::utils::safe_downcast<int32_t>(extents().data[packed_dim]);
+  int32_t padding = dim_size_padded - dim_size;
+
+  return {
+      dim_size,
+      dim_size_padded,
+      dim_texel_len,
+      padding,
+  };
+}
+
+const api::BufferBindInfo vTensor::packed_dim_meta_ubo() {
+  if (!packed_dim_meta_.buffer()) {
+    packed_dim_meta_ =
+        api::UniformParamsBuffer(storage_.context_, make_packed_dim_metadata());
+  }
+  return api::BufferBindInfo(packed_dim_meta_.buffer());
+}
+
 VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
   switch (storage_type()) {
     case api::kBuffer:
@@ -234,7 +259,7 @@ VkMemoryRequirements vTensor::get_memory_requirements() const {
   return {};
 }
 
-void vTensor::bind_allocation(const api::MemoryAllocation& allocation) {
+void vTensor::bind_allocation(const api::Allocation& allocation) {
   switch (storage_type()) {
     case api::kBuffer:
       storage_.buffer_.bind_allocation(allocation);
@@ -267,6 +292,9 @@ void vTensor::update_size_metadata(const std::vector<int64_t>& new_sizes) {
   }
   if (texture_limits_uniform_.buffer()) {
     texture_limits_uniform_.update(texture_limits_);
+  }
+  if (packed_dim_meta_.buffer()) {
+    packed_dim_meta_.update(make_packed_dim_metadata());
   }
 }
 

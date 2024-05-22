@@ -84,9 +84,9 @@ template <typename T1, typename T2, bool half_to_float = false>
 struct promote_type_with_scalar_type {
  private:
   static_assert(
-      std::is_same<T2, internal::B1>::value ||
-          std::is_same<T2, internal::I8>::value ||
-          std::is_same<T2, internal::F8>::value,
+      std::is_same<T2, torch::executor::internal::B1>::value ||
+          std::is_same<T2, torch::executor::internal::I8>::value ||
+          std::is_same<T2, torch::executor::internal::F8>::value,
       "scalar type can only be Bool, Long or Double");
   static_assert(
       !is_qint_type<T1>::value,
@@ -102,17 +102,19 @@ struct promote_type_with_scalar_type {
       "promote_type_with_scalar_type not valid for BFloat16");
   using promote_type_with_scalar_type_not_respecting_half_to_float =
       typename std::conditional<
-          is_complex_type<T1>::value || std::is_same<T2, internal::B1>::value,
+          is_complex_type<T1>::value ||
+              std::is_same<T2, torch::executor::internal::B1>::value,
           T1,
           typename std::conditional<
-              std::is_same<T2, internal::I8>::value,
+              std::is_same<T2, torch::executor::internal::I8>::value,
               typename std::conditional<
-                  std::is_same<T1, internal::B1>::value,
-                  internal::I8,
+                  std::is_same<T1, torch::executor::internal::B1>::value,
+                  torch::executor::internal::I8,
                   T1>::type,
-              typename std::
-                  conditional<is_floating_point<T1>::value, T1, internal::F4>::
-                      type>::type>::type;
+              typename std::conditional<
+                  is_floating_point<T1>::value,
+                  T1,
+                  torch::executor::internal::F4>::type>::type>::type;
 
  public:
   using type = typename std::conditional<

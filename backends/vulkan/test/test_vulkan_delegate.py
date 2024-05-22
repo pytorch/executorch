@@ -6,16 +6,19 @@
 
 import ctypes
 import unittest
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
 import torch
 
+from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
+
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
-from executorch.exir import EdgeProgramManager, to_edge
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
+from executorch.exir.pass_base import ExportPass
 from torch.export import Dim, export, ExportedProgram
 
 ctypes.CDLL("libvulkan.so.1")
@@ -28,6 +31,10 @@ from executorch.extension.pytree import tree_flatten
 
 
 class TestBackends(unittest.TestCase):
+    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
+        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+    )
+
     def assert_outputs_equal(
         self,
         model_output,
@@ -91,6 +98,7 @@ class TestBackends(unittest.TestCase):
         test_inputs=None,
         memory_layouts=None,
         first_output_only=False,
+        custom_pass: Optional[List[ExportPass]] = None,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
@@ -104,12 +112,16 @@ class TestBackends(unittest.TestCase):
             }
 
             # At least model should run in eager mode.
+            model.eval()
             model(*sample_inputs)
 
             program: ExportedProgram = export(
                 model, sample_inputs, dynamic_shapes=dynamic_shapes
             )
             edge_program: EdgeProgramManager = to_edge(program)
+
+            if custom_pass is not None:
+                edge_program = edge_program.transform(custom_pass)
 
             edge_program = edge_program.to_backend(VulkanPartitioner(compile_options))
 
@@ -189,6 +201,19 @@ class TestBackends(unittest.TestCase):
         )
 
         self.lower_module_and_test_output(add_module, sample_inputs)
+
+    def test_vulkan_backend_zero_dim_tensor(self):
+        class ZeroDimModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.zero = torch.full([], 1.3, dtype=torch.float32)
+
+            def forward(self, x):
+                return x + self.zero
+
+        internal_data_module = ZeroDimModule()
+        sample_inputs = (torch.rand(size=(2, 3), dtype=torch.float32),)
+        self.lower_module_and_test_output(internal_data_module, sample_inputs)
 
     def test_vulkan_backend_internal_data(self):
         class InternalDataModule(torch.nn.Module):
@@ -365,6 +390,16 @@ class TestBackends(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(HardTanHModule())
 
+    def test_vulkan_backend_exp(self):
+        class ExpModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.exp(x)
+
+        self.lower_unary_module_and_test_output(ExpModule())
+
     def test_vulkan_backend_relu(self):
         class ReLUModule(torch.nn.Module):
             def __init__(self):
@@ -384,6 +419,17 @@ class TestBackends(unittest.TestCase):
                 return torch.sqrt(x)
 
         self.lower_unary_module_and_test_output(SqrtModule())
+
+    def test_vulkan_backend_hardshrink(self):
+        class HardshrinkModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.hardshrink = torch.nn.Hardshrink(lambd=0.3)
+
+            def forward(self, x):
+                return self.hardshrink(x)
+
+        self.lower_unary_module_and_test_output(HardshrinkModule())
 
     def test_vulkan_backend_max_pool2d(self):
         class MaxPool2dModule(torch.nn.Module):
@@ -450,6 +496,35 @@ class TestBackends(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(TanhModule())
 
+    def test_vulkan_backend_linear(self):
+        class LinearModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(128, 64, bias=False)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        module = LinearModule()
+        sample_inputs = (torch.rand(size=(32, 128), dtype=torch.float32),)
+        batch = Dim("batch", max=32)
+        dynamic_shapes = {"x": {0: batch}}
+
+        test_inputs = [
+            (torch.rand(15, 128),),
+            (torch.rand(6, 128),),
+            (torch.rand(30, 128),),
+            (torch.rand(20, 128),),
+            (torch.rand(19, 128),),
+        ]
+
+        self.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
     def test_vulkan_backend_partial(self):
         class SimpleModel(torch.nn.Module):
             def __init__(self):
@@ -512,6 +587,20 @@ class TestBackends(unittest.TestCase):
 
         module = MatMulModule()
         sample_inputs = (torch.ones(size=(31, 63), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(module, sample_inputs)
+
+    def test_vulkan_backend_bmm(self):
+        class BMMModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.randn(size=(4, 4, 5), dtype=torch.float32)
+
+            def forward(self, x):
+                return torch.bmm(x, self.weight)
+
+        module = BMMModule()
+        sample_inputs = (torch.randn(size=(4, 3, 4), dtype=torch.float32),)
 
         self.lower_module_and_test_output(module, sample_inputs)
 
@@ -836,8 +925,7 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
-    def DISABLED_test_vulkan_backend_permute_copy(self):
-        # aten.permute_copy.default is not enabled yet in partitioner
+    def test_vulkan_backend_permute_copy(self):
         class PermuteModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -846,6 +934,22 @@ class TestBackends(unittest.TestCase):
                 return torch.permute(x, [3, 0, 2, 1])
 
         sample_inputs = (torch.randn(size=(3, 6, 2, 7), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            PermuteModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_permute_copy_int(self):
+        class PermuteModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.permute(x, [3, 0, 2, 1])
+
+        sample_inputs = (torch.randint(size=(3, 6, 2, 7), high=100, dtype=torch.int32),)
 
         self.lower_module_and_test_output(
             PermuteModule(),
@@ -865,6 +969,27 @@ class TestBackends(unittest.TestCase):
             torch.randn(size=(3, 6, 2, 7), dtype=torch.float32),
             torch.randn(size=(3, 1, 2, 7), dtype=torch.float32),
             torch.randn(size=(3, 9, 2, 7), dtype=torch.float32),
+            torch.randn(size=(3, 3, 2, 7), dtype=torch.float32),
+        )
+
+        self.lower_module_and_test_output(
+            TestModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_cat_with_zero_size(self):
+        class TestModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y, z, w):
+                return torch.cat([x, y, z, w], dim=1)
+
+        sample_inputs = (
+            torch.randn(size=(3, 6, 2, 7), dtype=torch.float32),
+            torch.randn(size=(3, 0, 2, 7), dtype=torch.float32),
+            torch.randn(size=(3, 0, 2, 7), dtype=torch.float32),
             torch.randn(size=(3, 3, 2, 7), dtype=torch.float32),
         )
 
@@ -954,7 +1079,7 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
-    def DISABLED_test_vulkan_backend_t_default(self):
+    def test_vulkan_backend_t_default(self):
         # aten.permute_copy.default is not enabled yet in partitioner
         class TestModule(torch.nn.Module):
             def __init__(self):
@@ -970,4 +1095,102 @@ class TestBackends(unittest.TestCase):
             TestModule(),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_softmax(self):
+        class SoftmaxModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = x.softmax(dim=0)
+                x = x.softmax(dim=1)
+                x = x.softmax(dim=2)
+                return x
+
+        sample_inputs = (torch.randn(size=(3, 2, 7), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            SoftmaxModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_logsoftmax(self):
+        class LogSoftmaxModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = x.log_softmax(dim=0)
+                x = x.log_softmax(dim=1)
+                x = x.log_softmax(dim=2)
+                return x
+
+        sample_inputs = (torch.randn(size=(3, 2, 7), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            LogSoftmaxModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_gelu(self):
+        class GeluModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.gelu = torch.nn.GELU(approximate="tanh")
+
+            def forward(self, x):
+                return self.gelu(x)
+
+        self.lower_unary_module_and_test_output(GeluModule())
+
+    def test_vulkan_backend_mean(self):
+        class MeanModule(torch.nn.Module):
+            def __init__(self, dims, keepdim=True):
+                super().__init__()
+                self.dims = dims
+                self.keepdim = keepdim
+
+            def forward(self, x):
+                return torch.mean(x, self.dims, keepdim=self.keepdim)
+
+        sample_inputs = (
+            torch.arange(end=2 * 3 * 2 * 5, dtype=torch.float32).reshape(2, 3, 2, 5),
+        )
+
+        self.lower_module_and_test_output(
+            MeanModule(dims=[-1, -2]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
+        )
+
+        self.lower_module_and_test_output(
+            MeanModule(dims=[1]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
+        )
+
+        self.lower_module_and_test_output(
+            MeanModule(dims=[0, 1, 2, 3]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
+        )
+
+        self.lower_module_and_test_output(
+            MeanModule(dims=[-1, -2], keepdim=False),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
+        )
+
+        self.lower_module_and_test_output(
+            MeanModule(dims=[1], keepdim=False),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
         )

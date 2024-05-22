@@ -7,10 +7,10 @@
 
 #pragma once
 
-#include <memory_buffer.hpp>
-
 #include <istream>
 #include <ostream>
+
+#include "memory_buffer.hpp"
 
 namespace inmemoryfs {
 
@@ -18,7 +18,7 @@ namespace inmemoryfs {
 class ReversedIMemoryStreamBuf: public std::streambuf {
 public:
     ~ReversedIMemoryStreamBuf() = default;
-    
+
     /// Constructs a `ReversedIMemoryStreamBuf` from a `MemoryBuffer`.
     ///
     /// @param buffer  The memory buffer.
@@ -50,7 +50,7 @@ protected:
     ///
     /// Returns the value of the current character, converted to a value of type int.
     std::streambuf::int_type uflow() override;
-    
+
     /// Retrieves characters from the controlled input sequence and stores them in the array pointed by s,
     /// until either n characters have been extracted or the end of the sequence is reached.
     ///
@@ -60,7 +60,7 @@ protected:
 private:
     /// Reads the character at the specified position.
     std::streambuf::int_type read(char *pos);
-    
+
     const std::shared_ptr<MemoryBuffer> buffer_;
     char *start_;
     char *current_;
@@ -70,7 +70,7 @@ private:
 /// A class for reading an in-memory buffer in reverse.
 class ReversedIMemoryStream final : public std::istream  {
 public:
-    
+
     /// Constructs a `ReversedIMemoryStream` from a `MemoryBuffer`.
     ///
     /// @param buffer  The memory buffer.
@@ -83,4 +83,3 @@ private:
 };
 
 }
-

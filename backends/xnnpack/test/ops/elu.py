@@ -43,17 +43,17 @@ class TestElu(unittest.TestCase):
         )
 
     @unittest.skip("T171810227 - Missing recomposition for ELU")
-    def test_fp16_elu(self):
+    def _test_fp16_elu(self):
         inputs = (torch.randn(1, 3, 3).to(torch.float16),)
         self._test_elu(inputs)
 
     @unittest.skip("T171810227 - Missing recomposition for ELU")
-    def test_fp32_elu(self):
+    def _test_fp32_elu(self):
         inputs = (torch.randn(1, 3, 3),)
         self._test_elu(inputs)
 
     @unittest.skip("T171810227 - Missing recomposition for ELU")
-    def test_qs8_elu(self):
+    def _test_qs8_elu(self):
         inputs = (torch.randn(1, 3, 4, 4),)
         (
             Tester(self.ELU(), inputs)
@@ -77,7 +77,7 @@ class TestElu(unittest.TestCase):
         )
 
     @unittest.skip("T171810227 - Missing recomposition for ELU")
-    def test_qs8_elu_functional(self):
+    def _test_qs8_elu_functional(self):
         inputs = (torch.randn(1, 3, 4, 4),)
         (
             Tester(self.ELU(), inputs)

@@ -142,6 +142,8 @@ class LlamaEdgeManager:
         verbose: bool = False,
     ):
         self.model = model
+        # graph module returned from capture_pre_autograd_graph
+        self.pre_autograd_graph_module: Optional[torch.fx.GraphModule] = None
         self.modelname = modelname
         self.weight_type = weight_type
         self.dtype = dtype
@@ -218,6 +220,7 @@ class LlamaEdgeManager:
         edge_config = EdgeCompileConfig(
             _check_ir_validity=False,
             _skip_type_promotion=bool(self.dtype == DType.fp16),
+            _skip_dim_order=True,
         )
         return edge_config
 
@@ -250,25 +253,27 @@ class LlamaEdgeManager:
         self.metadata = metadata
         return self.metadata
 
-    def export_to_edge(
+    def pt2e_quantize(
         self, quantizers: Optional[List[Quantizer]]
     ) -> "LlamaEdgeManager":
         """
-        Export the model to Edge dialect and retrieve a EdgeManager.
+        Quantize the model via pt2e flow and retrieve LlamaEdgeManager including the quantized model.
         Args:
             quantizers (Optional[List[Quantizer]]): A list of quantizers.
         """
+        assert (
+            self.edge_manager is None
+        ), "export_to_edge is already called, please call pt2e_quantize before export_to_edge"
+        logging.info(f"Using pt2e {quantizers} to quantizing the model...")
         dynamic_shape = self._get_dynamic_shape()
-        edge_config = self._get_edge_config()
-        metadata = self._get_metadata()
 
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
-        with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-            m = capture_pre_autograd_graph(
-                self.model, self.example_inputs, dynamic_shapes=dynamic_shape
-            )
-            if quantizers:
+        if quantizers:
+            with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+                m = capture_pre_autograd_graph(
+                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape
+                )
                 if self.verbose:
                     logging.info(f"Applied quantizers: {quantizers}")
                 composed_quantizer = ComposableQuantizer(quantizers)
@@ -277,8 +282,29 @@ class LlamaEdgeManager:
                 m(*self.example_inputs)
                 m = convert_pt2e(m)
                 DuplicateDynamicQuantChainPass()(m)
+                self.pre_autograd_graph_module = m
+            return self
+        else:
+            logging.info("No quantizer provided, passing...")
+            return self
+
+    def export_to_edge(self) -> "LlamaEdgeManager":
+        """
+        Export the model to Edge dialect and retrieve a LlamaEdgeManager.
+        """
+        dynamic_shape = self._get_dynamic_shape()
+        edge_config = self._get_edge_config()
+        metadata = self._get_metadata()
+
+        # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
+        # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
+        with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+            if self.pre_autograd_graph_module is None:
+                self.pre_autograd_graph_module = capture_pre_autograd_graph(
+                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape
+                )
             self.edge_manager = export_to_edge(
-                m,
+                self.pre_autograd_graph_module,
                 self.example_inputs,
                 dynamic_shapes=dynamic_shape,
                 edge_constant_methods=metadata,

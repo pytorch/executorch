@@ -846,14 +846,22 @@ class TestEmit(unittest.TestCase):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 return x.to(dtype=torch.float32, memory_format=torch.channels_last)
 
-        # Failure expected when exporting model with illegal memory format (channels_last)
+        # Failure expected when exporting model with illegal memory format (channels_last) when not using dim_order
         model = SimpleLinear()
         inputs = (torch.ones(10, 5, 2, 1),)
         with self.assertRaises(InternalError):
             to_edge(
                 export(model, inputs),
-                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+                compile_config=exir.EdgeCompileConfig(
+                    _check_ir_validity=False, _skip_dim_order=True
+                ),
             ).to_executorch()
+
+        # Success if you use dim_order
+        to_edge(
+            export(model, inputs),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        ).to_executorch()
 
     def test_emit_multiple_entry_points(self) -> None:
         class SimpleLinear(torch.nn.Module):

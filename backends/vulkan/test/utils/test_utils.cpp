@@ -204,7 +204,7 @@ void submit_to_gpu() {
   fence.wait();
 }
 
-api::MemoryAllocation allocate_memory_for(const vTensor& vten) {
+api::Allocation allocate_memory_for(const vTensor& vten) {
   return api::context()->adapter_ptr()->vma().create_allocation(
       vten.get_memory_requirements(), vten.get_allocation_create_info());
 }

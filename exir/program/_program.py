@@ -412,7 +412,7 @@ class ExirExportedProgram:
         # Existing user passes dont use run so Im just cheating here because they dont need to work on mutable buffers yet.
         # After exir.capture is gone I will clean up the memory planning infra to be consistent.
         # Frankly all of exir has big code quality issues because of the migrations that need to be addressed.
-        new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[19]
+        new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[29]
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
         new_prog = ExirExportedProgram(
@@ -550,9 +550,7 @@ def _get_aten_to_edge_passes(config: EdgeCompileConfig):
         [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
     )
 
-    post_op_replace_passes = (
-        [] if config._skip_dim_order else [MemoryFormatOpsPass()]
-    ) + base_post_op_replace_passes
+    post_op_replace_passes = base_post_op_replace_passes
 
     return pre_op_replace_passes, post_op_replace_passes
 
@@ -595,6 +593,10 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_gm_res = OpReplacePass()(new_gm)
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
+        if not config._skip_dim_order:
+            new_gm_res = MemoryFormatOpsPass()(new_gm)
+            assert new_gm_res is not None
+            new_gm = new_gm_res.graph_module
 
     for p in post_op_replace_passes:
         new_gm_res = p(new_gm)
@@ -612,8 +614,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         module_call_graph=new_ep.exported_program.module_call_graph,
         example_inputs=new_ep.exported_program.example_inputs,
         verifier=EXIREdgeDialectVerifier(
-            check_edge_ops=config._use_edge_ops,
-            enable=config._check_ir_validity,
+            edge_compile_config=config,
             class_only=True,
         ),
         constants=new_ep.exported_program.constants,
@@ -674,6 +675,8 @@ def _generate_edge_program(
     passes.extend(pre_op_replace_passes)
     if config._use_edge_ops:
         passes.append(OpReplacePass())
+        if not config._skip_dim_order:
+            passes.append(MemoryFormatOpsPass())
 
     gm = program.graph_module
     for p in passes:
@@ -690,8 +693,7 @@ def _generate_edge_program(
         module_call_graph=program.module_call_graph,
         example_inputs=program.example_inputs,
         verifier=EXIREdgeDialectVerifier(
-            check_edge_ops=config._use_edge_ops,
-            enable=config._check_ir_validity,
+            edge_compile_config=config,
             class_only=True,
         ),
         constants=program.constants,
@@ -766,10 +768,9 @@ class EdgeProgramManager:
             edge_programs = {"forward": edge_programs}
         for name, program in edge_programs.items():
             try:
-                EXIREdgeDialectVerifier(
-                    enable=self.compile_config._check_ir_validity,
-                    check_edge_ops=self.compile_config._use_edge_ops,
-                )(program.graph_module)
+                EXIREdgeDialectVerifier(edge_compile_config=self.compile_config)(
+                    program.graph_module
+                )
             except ExportError as e:
                 logging.info(f"Input program {name} is not in aten dialect.")
                 raise e
@@ -827,20 +828,18 @@ class EdgeProgramManager:
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
                     new_programs[name] = _transform(program, *passes[name])
-                    EXIREdgeDialectVerifier(
-                        enable=compile_config._check_ir_validity,
-                        check_edge_ops=compile_config._use_edge_ops,
-                    )(new_programs[name].graph_module)
+                    EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
+                        new_programs[name].graph_module
+                    )
                 else:
                     new_programs[name] = copy.deepcopy(program)
 
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
                 new_programs[name] = _transform(program, *passes)
-                EXIREdgeDialectVerifier(
-                    enable=compile_config._check_ir_validity,
-                    check_edge_ops=compile_config._use_edge_ops,
-                )(new_programs[name].graph_module)
+                EXIREdgeDialectVerifier(edge_compile_config=compile_config)(
+                    new_programs[name].graph_module
+                )
 
         return EdgeProgramManager(
             new_programs, copy.deepcopy(self._config_methods), compile_config
@@ -890,7 +889,8 @@ class EdgeProgramManager:
         )
 
     def to_executorch(
-        self, config: Optional[ExecutorchBackendConfig] = None
+        self,
+        config: Optional[ExecutorchBackendConfig] = None,
     ) -> "ExecutorchProgramManager":
         """
         Transforms the program to the ExecuTorch backend.
@@ -927,13 +927,19 @@ class EdgeProgramManager:
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
 
+            if isinstance(config.memory_planning_pass, dict):
+                memory_planning_pass = config.memory_planning_pass.get(
+                    name, ExecutorchBackendConfig().memory_planning_pass
+                )
+            else:
+                memory_planning_pass = config.memory_planning_pass
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
-            if hasattr(config.memory_planning_pass, "run"):
-                new_gm_res = config.memory_planning_pass.run(  # pyre-ignore[16]
+            if hasattr(memory_planning_pass, "run"):
+                new_gm_res = memory_planning_pass.run(  # pyre-ignore[16]
                     new_gm, new_signature
                 )
             else:
-                new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[19]
+                new_gm_res = memory_planning_pass(new_gm)  # pyre-ignore[29]
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
 

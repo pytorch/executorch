@@ -28,6 +28,9 @@ class QuantizationParams:
         self.zp = zp
         self.scale = scale
 
+    def __repr__(self):
+        return f"QuantizationParams(node_name={self.node_name}, zp={self.zp}, scale={self.scale})"
+
 
 """
 This class is used to work with TOSA artifacts.
@@ -173,7 +176,23 @@ class TosaTestUtils:
         assert (
             shutil.which(self.tosa_ref_model_path) is not None
         ), f"tosa_reference_model tool not found, did you run examples/arm/setup.sh? Path: {self.tosa_ref_model_path}"
-        cmd_ref_model = [self.tosa_ref_model_path, "--test_desc", desc_file_path]
+
+        loglevel_map = {
+            logging.INFO: "INFO",
+            logging.CRITICAL: "LOW",
+            logging.ERROR: "LOW",
+            logging.WARNING: "MED",
+            logging.DEBUG: "HIGH",
+            logging.NOTSET: "MED",
+        }
+        clamped_logging_level = max(min(logger.level // 10 * 10, 50), 0)
+        cmd_ref_model = [
+            self.tosa_ref_model_path,
+            "--test_desc",
+            desc_file_path,
+            "-l",
+            loglevel_map[clamped_logging_level],
+        ]
         TosaTestUtils._run_cmd(cmd_ref_model)
 
         # Load desc.json, just to get the name of the output file above
@@ -197,6 +216,9 @@ class TosaTestUtils:
 
         return tosa_ref_output
 
+    def get_tosa_artifact_path(self):
+        return self.intermediate_path
+
     @staticmethod
     def _run_cmd(cmd: List[str]) -> None:
         """
@@ -206,7 +228,12 @@ class TosaTestUtils:
         cmd (List[str]): The command to run as a list.
         """
         try:
-            subprocess.run(cmd, check=True)
-        except:
+            subprocess.run(cmd, check=True, capture_output=True)
+        except subprocess.CalledProcessError as e:
             cmd_str = " ".join(cmd)
-            raise RuntimeError(f"Failed to run: {cmd_str}")
+            raise RuntimeError(
+                f"The command '{cmd_str}' exited with an error:\n"
+                + e.stderr.decode()
+                + "\nStdout:\n"
+                + e.stdout.decode()
+            )

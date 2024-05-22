@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
 
+#include <fstream>
+
 namespace vkcompute {
 namespace api {
 
@@ -137,7 +139,7 @@ uint32_t SpecVar::val_size() const {
 }
 
 uint32_t SpecVar::val_offset() const {
-  return api::utils::safe_downcast<uint32_t>(offsetof(SpecVar, value));
+  return utils::safe_downcast<uint32_t>(offsetof(SpecVar, value));
 }
 
 bool operator==(const SpecVar& lhs, const SpecVar& rhs) {
@@ -358,17 +360,24 @@ void PipelineLayoutCache::purge() {
 // ComputePipelineCache
 //
 
-ComputePipelineCache::ComputePipelineCache(VkDevice device)
+ComputePipelineCache::ComputePipelineCache(
+    VkDevice device,
+    const std::string& cache_data_path)
     : cache_mutex_{},
       device_(device),
       pipeline_cache_{VK_NULL_HANDLE},
-      cache_{} {
-  const VkPipelineCacheCreateInfo pipeline_cache_create_info{
+      cache_{},
+      cache_data_path_(cache_data_path) {
+  VkPipelineCacheCreateInfo pipeline_cache_create_info{};
+
+  auto buffer = load_cache();
+
+  pipeline_cache_create_info = {
       VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO, // sType
       nullptr, // pNext
       0u, // flags
-      0u, // initialDataSize
-      nullptr, // pInitialData
+      buffer.size(), // initialDataSize
+      buffer.data(), // pInitialData
   };
 
   VK_CHECK(vkCreatePipelineCache(
@@ -392,6 +401,9 @@ ComputePipelineCache::~ComputePipelineCache() {
   if (VK_NULL_HANDLE == pipeline_cache_) {
     return;
   }
+
+  save_cache();
+
   vkDestroyPipelineCache(device_, pipeline_cache_, nullptr);
   pipeline_cache_ = VK_NULL_HANDLE;
 }
@@ -414,6 +426,38 @@ VkPipeline ComputePipelineCache::retrieve(
 
 void ComputePipelineCache::purge() {
   cache_.clear();
+}
+
+std::vector<char> ComputePipelineCache::load_cache() {
+  // Return if path is not specified; this means the optimization is disabled
+  if (cache_data_path_.empty()) {
+    return {};
+  }
+
+  // Return if file doesn't exist; this is expected on the first model-load
+  std::ifstream file(cache_data_path_, std::ios::binary | std::ios::ate);
+  if (file.fail()) {
+    return {};
+  }
+
+  auto size = file.tellg();
+  file.seekg(0, std::ios::beg);
+
+  std::vector<char> buffer(size);
+  file.read(buffer.data(), size);
+
+  return buffer;
+}
+
+void ComputePipelineCache::save_cache() {
+  size_t size{};
+  vkGetPipelineCacheData(device_, pipeline_cache_, &size, nullptr);
+
+  std::vector<char> buffer(size);
+  vkGetPipelineCacheData(device_, pipeline_cache_, &size, buffer.data());
+
+  std::ofstream file(cache_data_path_, std::ios::binary);
+  file.write(buffer.data(), buffer.size());
 }
 
 } // namespace api

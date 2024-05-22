@@ -110,14 +110,14 @@ class Conv2dVisitor(NodeVisitor):
             conv2d_res = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
             conv2d_output_name = conv2d_res.name
 
-        if group.number > 1:
+        # Given input.shape is (N, Ci, H, W), and weight.shape is (Co, Ci/G, H, W)
+        in_channels = input.shape[1]
+        out_channels = weight.shape[0]
+        if (in_channels == group.number) and (out_channels % in_channels) == 0:
             """Depthwise convolution case"""
-            # Given input.shape is (N, Ci, H, W), and weight.shape is (Co, Ci/G, H, W)
-            in_channels = input.shape[1]
-            out_channels = weight.shape[0]
             # Reshape torch shape format of weight tensor to tosa required format.
             # https://www.mlplatform.org/tosa/tosa_spec.html#_depthwise_conv2d
-            m_length = int(round(out_channels / in_channels))
+            m_length = int(out_channels / in_channels)
             weight_post_shape = (
                 weight.shape[2],
                 weight.shape[3],

@@ -3,9 +3,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 import torch
 
@@ -15,7 +20,7 @@ from executorch.backends.arm.arm_backend import (
     is_tosa,
 )
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
-from executorch.backends.arm.arm_quantizer import (
+from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
@@ -178,9 +183,19 @@ class ArmTester(Tester):
             )
         return super().quantize(quantize_stage)
 
-    def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
+    def to_edge(
+        self,
+        to_edge_stage: Optional[ToEdge] = None,
+        config: Optional[EdgeCompileConfig] = None,
+    ):
         if to_edge_stage is None:
-            to_edge_stage = ToEdge(EdgeCompileConfig(_check_ir_validity=False))
+            to_edge_stage = ToEdge(config)
+        else:
+            if config is not None:
+                to_edge_stage.edge_compile_conf = config
+
+        # TODO(T182928844): Delegate dim order op to backend.
+        to_edge_stage.edge_compile_conf._skip_dim_order = True
         return super().to_edge(to_edge_stage)
 
     def partition(self, partition_stage: Optional[Partition] = None):
@@ -226,6 +241,9 @@ class ArmTester(Tester):
         (output_name, qp_output) = _get_output_param(
             export_stage.artifact, is_quantized
         )
+
+        self.qp_input = qp_input
+        self.qp_output = qp_output
 
         # Calculate the reference output using the original module or the quant
         # module.
@@ -292,3 +310,39 @@ class ArmTester(Tester):
         """
 
         return module.forward(*inputs)
+
+    def _compare_outputs(
+        self,
+        reference_output,
+        stage_output,
+        quantization_scale=None,
+        atol=1e-03,
+        rtol=1e-03,
+        qtol=0,
+    ):
+        try:
+            super()._compare_outputs(
+                reference_output, stage_output, quantization_scale, atol, rtol, qtol
+            )
+        except AssertionError as e:
+            # Capture assertion error and print more info
+            banner = "=" * 40 + "TOSA debug info" + "=" * 40
+            logger.error(banner)
+            path_to_tosa_files = self.tosa_test_util.get_tosa_artifact_path()
+            logger.error(f"{self.qp_input=}")
+            logger.error(f"{self.qp_output=}")
+            logger.error(f"{path_to_tosa_files=}")
+            import os
+
+            torch.save(
+                stage_output,
+                os.path.join(path_to_tosa_files, "torch_tosa_output.pt"),
+            )
+
+            torch.save(
+                reference_output,
+                os.path.join(path_to_tosa_files, "torch_ref_output.pt"),
+            )
+            logger.error(f"{atol=}, {rtol=}, {qtol=}")
+
+            raise e

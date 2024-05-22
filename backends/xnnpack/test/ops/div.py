@@ -43,15 +43,21 @@ class TestDiv(unittest.TestCase):
         )
 
     def test_fp16_div(self):
-        inputs = (torch.ones(1).to(torch.float16), torch.ones(1).to(torch.float16))
+        # Adding 4 to move distribution away from 0, 4 Std Dev should be far enough
+        inputs = (
+            (torch.randn(1) + 4).to(torch.float16),
+            (torch.randn(1) + 4).to(torch.float16),
+        )
         self._test_div(inputs)
 
     def test_fp32_div(self):
-        inputs = (torch.ones(1), torch.ones(1))
+        # Adding 4 to move distribution away from 0, 4 Std Dev should be far enough
+        inputs = (torch.randn(1) + 4, torch.randn(1) + 4)
         self._test_div(inputs)
 
     def test_fp32_div_single_input(self):
-        inputs = (torch.ones(1),)
+        # Adding 4 to move distribution away from 0, 4 Std Dev should be far enough
+        inputs = (torch.randn(1) + 4,)
         (
             Tester(self.DivSingleInput(), inputs)
             .export()

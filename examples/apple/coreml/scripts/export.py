@@ -16,9 +16,7 @@ import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 
-from executorch.backends.apple.coreml.partition.coreml_partitioner import (
-    CoreMLPartitioner,
-)
+from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.exir import to_edge
 
 from executorch.exir.backend.backend_api import to_backend
@@ -36,6 +34,7 @@ from models.model_factory import EagerModelFactory
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
+    _skip_dim_order=True,  # TODO(T182928844): enable dim_order in backend
 )
 
 

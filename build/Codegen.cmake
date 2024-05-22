@@ -69,7 +69,6 @@ function(generate_bindings_for_kernels)
 
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
-  file(GLOB_RECURSE _torchgen_srcs "${TORCH_ROOT}/torchgen/*.py")
 
   set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/${GEN_LIB_NAME})
   # By default selective build output is selected_operators.yaml
@@ -77,11 +76,21 @@ function(generate_bindings_for_kernels)
 
   # Command to codegen C++ wrappers to register custom ops to both PyTorch and
   # Executorch runtime.
+  execute_process(
+    COMMAND
+      "${PYTHON_EXECUTABLE}" -c "from distutils.sysconfig import get_python_lib;print(get_python_lib())"
+    OUTPUT_VARIABLE site-packages-out
+    ERROR_VARIABLE site-packages-out-error
+    RESULT_VARIABLE site-packages-result
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  file(GLOB_RECURSE _torchgen_srcs "${site-packages-out}/torchgen/*.py")
   set(_gen_command
       "${PYTHON_EXECUTABLE}" -m torchgen.gen_executorch
       --source-path=${EXECUTORCH_ROOT}/codegen --install-dir=${_out_dir}
-      --tags-path=${TORCH_ROOT}/aten/src/ATen/native/tags.yaml
-      --aten-yaml-path=${TORCH_ROOT}/aten/src/ATen/native/native_functions.yaml
+      --tags-path=${site-packages-out}/torchgen/packaged/ATen/native/tags.yaml
+      --aten-yaml-path=${site-packages-out}/torchgen/packaged/ATen/native/native_functions.yaml
       --op-selection-yaml-path=${_oplist_yaml}
   )
 

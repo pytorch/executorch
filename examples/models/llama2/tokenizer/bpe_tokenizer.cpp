@@ -146,10 +146,7 @@ BPETokenizer::~BPETokenizer() {
  * token.
  */
 Result<std::string> BPETokenizer::decode(uint64_t prev_token, uint64_t token) {
-  if (!initialized_) {
-    ET_LOG(Error, "Tokenizer not initialized");
-    return Error::NotSupported;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(Tokenizer::decode_verify(token));
   const char* piece = vocab_[token];
   // following BOS token, sentencepiece decoder strips any leading
   // whitespace

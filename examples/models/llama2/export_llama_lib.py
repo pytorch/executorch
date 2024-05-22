@@ -346,9 +346,12 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_sdpa_with_custom_op)
 
-    if args.qnn and args.use_kv_cache:
-        transforms.append(replace_sdpa_with_simple_sdpa)
-        transforms.append(replace_causal_mask)
+    if args.use_kv_cache:
+        if args.qnn or args.coreml or args.mps:
+            # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
+            # to get free perf gain.
+            transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_causal_mask)
     return (
         load_llama_model(
             modelname=modelname,
@@ -374,13 +377,15 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
     quant_dtype = None
     if args.qnn and args.pt2e_quantize:
-        assert quantizers is None, "Should not enable both xnnpack and qnn"
+        assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
         qnn_quantizer, quant_dtype = get_qnn_quantizer(args)
         quantizers.append(qnn_quantizer)
 
-    builder_exported_to_edge = _prepare_for_llama_export(
-        modelname, args
-    ).export_to_edge(quantizers)
+    builder_exported_to_edge = (
+        _prepare_for_llama_export(modelname, args)
+        .pt2e_quantize(quantizers)
+        .export_to_edge()
+    )
 
     modelname = builder_exported_to_edge.modelname
 

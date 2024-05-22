@@ -19,7 +19,6 @@ from executorch.backends.qualcomm.passes.convert_binary_op_with_scalar import (
     ConvertBinaryOpsWithScalar,
 )
 from executorch.backends.qualcomm.passes.convert_bmm_to_matmul import ConvertBmmToMatmul
-from executorch.backends.qualcomm.passes.convert_hardsigmoid import ConvertHardsigmoid
 from executorch.backends.qualcomm.passes.convert_interpolate_with_upsample2d import (
     ConvertInterpolateWithUpsample2D,
 )
@@ -58,7 +57,10 @@ def qnn_capture_config():
 
 
 def qnn_edge_config() -> exir.EdgeCompileConfig:
-    return exir.EdgeCompileConfig(_check_ir_validity=False)
+    return exir.EdgeCompileConfig(
+        _check_ir_validity=False,
+        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+    )
 
 
 def canonicalize_program(prog: ExportedProgram):
@@ -88,6 +90,7 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     # The below super ops are supported by QNN
     remove_decompositions = [
         torch.ops.aten.pixel_shuffle.default,
+        torch.ops.aten.hardsigmoid.default,
         torch.ops.aten.hardswish.default,
     ]
 
@@ -104,7 +107,6 @@ def _transform(edge_program: ExportedProgram) -> None:
     graph_module = edge_program.graph_module
     RemoveClone()(graph_module)
     ConvertToLinear()(graph_module)
-    ConvertHardsigmoid()(graph_module)
     ConvertBmmToMatmul()(graph_module)
     ConvertInterpolateWithUpsample2D()(graph_module)
     I64toI32(edge_program)(graph_module)

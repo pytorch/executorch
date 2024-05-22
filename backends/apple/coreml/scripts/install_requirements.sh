@@ -53,14 +53,6 @@ if [ $STATUS -ne 0 ]; then
     exit 1
 fi
 
-echo "${green}ExecuTorch: Cloning ios-cmake."
-git clone https://github.com/leetal/ios-cmake.git "$COREML_DIR_PATH/third-party/ios-cmake"
-STATUS=$?
-if [ $STATUS -ne 0 ]; then
-    echo "${red}ExecuTorch: Failed to clone ios-cmake."
-    exit 1
-fi
-
 echo "${green}ExecuTorch: Cloning nlohmann."
 git clone https://github.com/nlohmann/json.git "$COREML_DIR_PATH/third-party/nlohmann_json"
 STATUS=$?
@@ -72,5 +64,5 @@ fi
 sh "$COREML_DIR_PATH/scripts/install_inmemoryfs.sh"
 
 echo "${green}ExecuTorch: Copying protobuf files."
-mkdir -p "$COREML_DIR_PATH/runtime/sdk/format/" 
-cp -rf "$PROTOBUF_FILES_DIR_PATH" "$COREML_DIR_PATH/runtime/sdk/format/" 
+mkdir -p "$COREML_DIR_PATH/runtime/sdk/format/"
+cp -rf "$PROTOBUF_FILES_DIR_PATH" "$COREML_DIR_PATH/runtime/sdk/format/"

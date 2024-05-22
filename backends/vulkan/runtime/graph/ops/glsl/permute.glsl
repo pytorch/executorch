@@ -17,7 +17,7 @@ layout(std430) buffer;
 #include "indexing_utils.h"
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
+layout(set = 0, binding = 1) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} image_in;
 
 layout(set = 0, binding = 2) uniform PRECISION restrict OutLimits {
   ivec3 out_limits;
@@ -29,9 +29,9 @@ layout(set = 0, binding = 3) uniform PRECISION restrict Sizes {
 
 layout(set = 0, binding = 4) uniform PRECISION restrict Block {
   // output dims
-  uvec4 out_ndims;
+  ivec4 out_ndims;
   // x = output channels aligned to 4, y = input channels aligned to 4
-  uvec2 ch_info;
+  ivec2 ch_info;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;

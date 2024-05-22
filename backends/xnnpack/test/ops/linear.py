@@ -48,6 +48,18 @@ class TestLinear(unittest.TestCase):
                     num_batch_dims=num_batch_dims,
                 )
 
+    def test_qc8_linear(self):
+        for use_bias in (True, False):
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: torch.nn.Linear(
+                        in_size, out_size, bias=use_bias  # noqa
+                    ),
+                    uses_bias=use_bias,
+                    quant_type="per_channel",
+                    num_batch_dims=num_batch_dims,
+                )
+
     def test_fp32_addmm(self):
         """
         Note that the ConvertToLinear pass requires the weight matrix to be transposed.
@@ -107,7 +119,7 @@ class TestLinear(unittest.TestCase):
                     ),
                     num_batch_dims=num_batch_dims,
                     uses_bias=use_bias,
-                    quant=True,
+                    quant_type="per_tensor",
                 )
 
     def test_qs8_linear(self):
@@ -119,10 +131,11 @@ class TestLinear(unittest.TestCase):
                     ),
                     uses_bias=use_bias,
                     num_batch_dims=num_batch_dims,
+                    quant_type="per_tensor",
                 )
 
     @unittest.skip("XNNPACK currently only supports per-channel dynamic quantization.")
-    def test_qd8_per_tensor_linear(self):
+    def _test_qd8_per_tensor_linear(self):
         for uses_bias in (False, True):
             inputs = (torch.randn(2, 4),)
             module = torch.nn.Linear(4, 5, bias=uses_bias)
@@ -399,9 +412,10 @@ class TestLinear(unittest.TestCase):
                 )
                 self.quant_weight_per_channel()
 
-            # TODO - change bias dtyoe to arg.dtype
             self.bias = (
-                torch.nn.Parameter(torch.randn(self.oc), requires_grad=False)
+                torch.nn.Parameter(
+                    torch.randn(self.oc).to(self.op_dtype), requires_grad=False
+                )
                 if use_bias
                 else None
             )
@@ -582,14 +596,14 @@ class TestLinear(unittest.TestCase):
 
         def forward(self, input: torch.Tensor) -> torch.Tensor:
             # Input
-            input = self.fwd_input_per_token(input)
+            input = self.fwd_input_per_token(input).to(self.op_dtype)
 
             # Weights
             w = (
                 self.fwd_weight_per_channel_group()
                 if self.w_scales.ndim == 2
                 else self.fwd_weight_per_channel()
-            )
+            ).to(self.op_dtype)
             assert isinstance(w, torch.Tensor)
             return torch.nn.functional.linear(input, w, self.bias)
 
@@ -684,11 +698,11 @@ class TestLinear(unittest.TestCase):
     #    Max: 12.518657684326172, 12.516003608703613
     #    Min: -20.070953369140625, -20.077701568603516
     @unittest.skip("Need to fix the dq_per_channel output dtype")
-    def test_qd8_fp16_per_token_weight_per_channel_int8(self):
+    def _test_qd8_fp16_per_token_weight_per_channel_int8(self):
         self._run_manual_dqlinear_tests(8, torch.float16)
 
     @unittest.skip("Need to fix the dq_per_channel output dtype")
-    def test_qd8_fp16_per_token_weight_per_channel_int4(self):
+    def _test_qd8_fp16_per_token_weight_per_channel_int4(self):
         self._run_manual_dqlinear_tests(4, torch.float16)
 
     def test_qd8_fp32_per_token_weight_per_channel_group_int4(self):
@@ -721,12 +735,44 @@ class TestLinear(unittest.TestCase):
                     use_bias=use_bias,
                 )
 
+    def test_qd8_fp16_per_token_weight_per_channel_group_int4(self):
+        M_sizes = [1, 2, 17, 31]
+        K_sizes = [8, 32, 64, 128]
+        bl_sizes = [8, 16, 16, 32]
+        N_sizes = [2, 17, 92, 128]
+
+        for use_bias in [True, False]:
+            for i, _ in enumerate(M_sizes):
+                M = int(M_sizes[i])
+                K = int(K_sizes[i])
+                N = int(N_sizes[i])
+                bl = int(bl_sizes[i])
+                mod = self.ManualDQLinear(
+                    input_channels=K,
+                    output_channels=N,
+                    weight_n_bit=4,
+                    dtype=torch.float16,
+                    group_size=bl,
+                    force_groupwise_quant=True,
+                    use_bias=use_bias,
+                )
+
+                inputs = (torch.randn(1, M, K, dtype=torch.float16),)
+                self._test_manual_dq_linear(
+                    mod,
+                    inputs,
+                    weight_groupwise=True,
+                    use_bias=use_bias,
+                    atol=0.1,
+                    rtol=0.1,
+                )
+
     def _test_linear(
         self,
         make_module,
         uses_bias,
         num_batch_dims=1,
-        quant=False,
+        quant_type=None,
         dtype: torch.dtype = torch.float,
         atol=1e-03,
     ):
@@ -745,6 +791,8 @@ class TestLinear(unittest.TestCase):
         in_sizes = [3, 4, 4]
         input_sizes = [4, 37, 17]
         output_sizes = [4, 17, 37]
+
+        quant = quant_type is not None
 
         """
         Note that torch.nn.Linear maps to aten.mm.default (no bias) or aten.addmm.default (bias),
@@ -769,7 +817,19 @@ class TestLinear(unittest.TestCase):
             tester = Tester(module, inputs, dynamic_shapes=dynamic_shape)
 
             if quant:
-                tester.quantize()
+                if quant_type == "per_channel":
+                    quant_config = get_symmetric_quantization_config(
+                        is_per_channel=True,
+                        is_dynamic=False,
+                    )
+                elif quant_type == "per_tensor":
+                    quant_config = get_symmetric_quantization_config(
+                        is_per_channel=False,
+                        is_dynamic=False,
+                    )
+                else:
+                    raise ValueError(f"Unsupported quant type {quant_type}")
+                tester.quantize(Quantize(quantization_config=quant_config))
 
             tester.export()
             tester.check_count({aten_op: 1})

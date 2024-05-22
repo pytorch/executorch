@@ -16,6 +16,7 @@ set -euxo pipefail
 readonly BUILD_DEPS=(
   # This list must match the build-system.requires list from pyproject.toml.
   "cmake"
+  "pip>=23"
   "pyyaml"
   "setuptools>=63"
   "tomli"

@@ -166,6 +166,8 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         return True
 
     def check_node_has_valid_dtype(self, node):
+        # max_pool2d_with_indicies returns indicies which is int64
+        # this is supportable within XNNPACK
         if node.target in {exir_ops.edge.aten.max_pool2d_with_indices.default}:
             return True
 
@@ -268,13 +270,16 @@ class XnnpackOperatorSupport(OperatorSupportBase):
     ) -> bool:
         """
         Only if the first output value is consumed in the graph
+        and it is not in ceil mode
         """
         users = list(node.users.keys())
+        is_ceil_mode = len(node.args) >= 6 and node.args[5]
         return (
             True
             if len(users) == 1
             and users[0].target == operator.getitem
             and users[0].args[1] == 0
+            and not is_ceil_mode
             else False
         )
 

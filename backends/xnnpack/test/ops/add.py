@@ -58,17 +58,17 @@ class TestAdd(unittest.TestCase):
         )
 
     def test_fp16_add(self):
-        inputs = (torch.ones(1).to(torch.float16), torch.ones(1).to(torch.float16))
+        inputs = (torch.randn(1).to(torch.float16), torch.randn(1).to(torch.float16))
         self._test_add(inputs)
 
     def test_fp32_add(self):
-        inputs = (torch.ones(1), torch.ones(1))
+        inputs = (torch.randn(1), torch.randn(1))
         self._test_add(inputs)
 
     def test_fp32_add_constant(self):
         inputs = (torch.randn(4, 4, 4),)
         (
-            Tester(self.AddConstant(torch.ones(4, 4, 4)), inputs)
+            Tester(self.AddConstant(torch.randn(4, 4, 4)), inputs)
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 4})
             .to_edge()
@@ -84,7 +84,7 @@ class TestAdd(unittest.TestCase):
     def test_qs8_add_constant(self):
         inputs = (torch.randn(4, 4, 4),)
         (
-            Tester(self.AddConstant(torch.ones(4, 4, 4)), inputs)
+            Tester(self.AddConstant(torch.randn(4, 4, 4)), inputs)
             .quantize()
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 4})
@@ -95,7 +95,7 @@ class TestAdd(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
             .to_executorch()
             .serialize()
-            .run_method_compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_qs8_add(self):

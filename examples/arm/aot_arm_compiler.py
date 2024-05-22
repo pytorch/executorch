@@ -11,10 +11,16 @@ import argparse
 import logging
 
 import torch
-
 from executorch.backends.arm.arm_backend import generate_ethosu_compile_spec
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    ArmQuantizer,
+    get_symmetric_quantization_config,
+)
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+
+# Quantize model if required using the standard export quantizaion flow.
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
@@ -22,14 +28,6 @@ from ..portable.utils import export_to_edge, save_pte_program
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
-
-from executorch.backends.arm.arm_quantizer import (
-    ArmQuantizer,
-    get_symmetric_quantization_config,
-)
-
-# Quantize model if required using the standard export quantizaion flow.
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def quantize(model, example_inputs):
@@ -211,7 +209,9 @@ if __name__ == "__main__":
         logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=False, extract_constant_segment=False
+        )
     )
 
     model_name = f"{args.model_name}" + (

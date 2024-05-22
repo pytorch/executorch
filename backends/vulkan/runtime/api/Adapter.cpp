@@ -292,7 +292,8 @@ DeviceHandle::~DeviceHandle() {
 Adapter::Adapter(
     VkInstance instance,
     PhysicalDevice physical_device,
-    const uint32_t num_queues)
+    const uint32_t num_queues,
+    const std::string& cache_data_path)
     : queue_usage_mutex_{},
       physical_device_(std::move(physical_device)),
       queues_{},
@@ -307,7 +308,7 @@ Adapter::Adapter(
       shader_layout_cache_(device_.handle_),
       shader_cache_(device_.handle_),
       pipeline_layout_cache_(device_.handle_),
-      compute_pipeline_cache_(device_.handle_),
+      compute_pipeline_cache_(device_.handle_, cache_data_path),
       sampler_cache_(device_.handle_),
       vma_(instance_, physical_device_.handle, device_.handle_) {}
 

@@ -39,6 +39,14 @@ TEST_F(TokenizerExtensionTest, DecodeWithoutLoadFails) {
   EXPECT_EQ(result.error(), Error::NotSupported);
 }
 
+TEST_F(TokenizerExtensionTest, DecodeOutOfRangeFails) {
+  Error res = tokenizer_->load(modelPath_.c_str());
+  EXPECT_EQ(res, Error::Ok);
+  auto result = tokenizer_->decode(0, 64000);
+  // The vocab size is 32000, and token 64000 is out of vocab range.
+  EXPECT_EQ(result.error(), Error::NotSupported);
+}
+
 TEST_F(TokenizerExtensionTest, TokenizerVocabSizeIsExpected) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
