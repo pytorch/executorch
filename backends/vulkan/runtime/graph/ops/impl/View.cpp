@@ -65,7 +65,7 @@ void add_view_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  api::utils::uvec3 global_size = t_out->extents();
+  api::utils::uvec3 global_size = t_out->image_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
@@ -78,7 +78,7 @@ void add_view_node(
       // Parameter Buffers
       {t_out->sizes_ubo(), t_in->sizes_ubo()},
       // Specialization Constants
-      {SV(t_in->gpu_memory_layout_int()), SV(t_out->gpu_memory_layout_int())},
+      {SV(t_in->packed_dim_whcn_idx()), SV(t_out->packed_dim_whcn_idx())},
       // Resizing Logic
       resize_view_node,
       {sizes}));

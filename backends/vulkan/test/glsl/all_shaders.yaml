@@ -64,3 +64,9 @@ idx_fill_texture:
         SUFFIX: "float"
   shader_variants:
     - NAME: idx_fill_texture
+
+scalar_add_buffer:
+  parameter_names_with_default_values:
+    DTYPE: float
+  shader_variants:
+    - NAME: scalar_add_buffer

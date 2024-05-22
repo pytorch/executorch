@@ -16,6 +16,11 @@ namespace vkcompute {
 
 constexpr size_t kShaderNameReserve = 64u;
 
+void add_storage_type_suffix(
+    std::string& kernel_name,
+    const api::StorageType storage_type);
+void add_storage_type_suffix(std::string& kernel_name, const vTensor& tensor);
+
 void add_dtype_suffix(std::string& kernel_name, const api::ScalarType dtype);
 void add_dtype_suffix(std::string& kernel_name, const vTensor& tensor);
 
