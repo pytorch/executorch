@@ -43,6 +43,7 @@ set(lib_list
     qnn_executorch_backend
     portable_ops_lib
     extension_module
+    extension_module_static
     xnnpack_backend
     XNNPACK
     cpuinfo

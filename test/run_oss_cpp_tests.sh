@@ -18,6 +18,7 @@ build_executorch() {
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
 }
