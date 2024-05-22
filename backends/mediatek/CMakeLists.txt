@@ -24,12 +24,6 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
 )
 
-find_library(NEURON_BUFFER_ALLOCATOR
-             NAMES neuron_buffer_allocator
-			 PATHS ${NEURON_BUFFER_ALLOCATOR_LIB}
-			 NO_DEFAULT_PATH
-)
-
 # targets
 add_library(neuron_backend STATIC)
 target_link_libraries(neuron_backend
@@ -37,7 +31,7 @@ target_link_libraries(neuron_backend
     executorch
     android
     log
-	${NEURON_BUFFER_ALLOCATOR}
+    ${NEURON_BUFFER_ALLOCATOR_LIB}
 )
 target_sources(neuron_backend
     INTERFACE
@@ -45,7 +39,6 @@ target_sources(neuron_backend
     ${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronBufferAllocator.h
     ${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronExecutor.h
     ${CMAKE_CURRENT_LIST_DIR}/runtime/include/NeuronLog.h
-    ${CMAKE_CURRENT_LIST_DIR}/runtime/include/api/APUWareUtilsLib.h
     ${CMAKE_CURRENT_LIST_DIR}/runtime/include/api/APUWareUtilsLib.h
     ${CMAKE_CURRENT_LIST_DIR}/runtime/include/api/NeuronAdapterShim.h
     PRIVATE

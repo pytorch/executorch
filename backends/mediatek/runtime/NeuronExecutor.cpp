@@ -39,17 +39,16 @@ int NeuronExecutor::LoadFromCompiledNetwork(const void *buffer, size_t size,
     mModel = std::unique_ptr<NeuronModel, NeuronDeleter>(model);
 
     std::vector<uint32_t> input_op_number;
-    // fake input
-    NeuronOperandType fakeInputOperanedType{
+    // fake input, the real outputs are loaded by compiled network.
+    NeuronOperandType fakeInputOperandType{
         .type = NEURON_TENSOR_FLOAT32,
         .dimensionCount = 0,
         .scale = 0.0f,
         .zeroPoint = 0,
     };
-    
-    /*TODO: Get the input/output count from the Payload*/
+
     for (int i = 0; i < inputCount; i++) {
-        mInputOperand.push_back(fakeInputOperanedType);
+        mInputOperand.push_back(fakeInputOperandType);
     }
     for (int i = 0; i < mInputOperand.size(); i++) {
       err |= NeuronModel_addOperand(model, &mInputOperand[i]);
@@ -59,9 +58,9 @@ int NeuronExecutor::LoadFromCompiledNetwork(const void *buffer, size_t size,
     int32_t operandType = 0;
     const uint16_t network_operand_restore_data =
         RESTORE_DLA_EXTENSION_OPERAND_TYPE;
-    const char *extensionRestroeCompiledNetwork = RESTORE_DLA_EXTENSION_NAME;
+    const char *extensionRestoreCompiledNetwork = RESTORE_DLA_EXTENSION_NAME;
     err |= NeuronModel_getExtensionOperandType(
-        model, extensionRestroeCompiledNetwork, network_operand_restore_data,
+        model, extensionRestoreCompiledNetwork, network_operand_restore_data,
         &operandType);
     CHECK_NO_ERROR(err);
 
@@ -77,8 +76,8 @@ int NeuronExecutor::LoadFromCompiledNetwork(const void *buffer, size_t size,
     CHECK_NO_ERROR(err);
     input_op_number.emplace_back(input_op_number.size());
 
-    // fake output
-    NeuronOperandType fakeOutputOperanedType{
+    // fake output, the real outputs are loaded by compiled network.
+    NeuronOperandType fakeOutputOperandType{
         .type = NEURON_TENSOR_FLOAT32,
         .dimensionCount = 0,
         .scale = 0.0f,
@@ -86,7 +85,7 @@ int NeuronExecutor::LoadFromCompiledNetwork(const void *buffer, size_t size,
     };
 
     for (int i = 0; i < outputCount; i++) {
-        mOutputOperand.push_back(fakeOutputOperanedType);
+        mOutputOperand.push_back(fakeOutputOperandType);
     }
 
     std::vector<uint32_t> output_op_number;
@@ -104,7 +103,7 @@ int NeuronExecutor::LoadFromCompiledNetwork(const void *buffer, size_t size,
     const uint16_t network_operation_type_restore =
         RESTORE_DLA_EXTENSION_OPERATION_TYPE;
     err |= NeuronModel_getExtensionOperationType(
-        model, extensionRestroeCompiledNetwork, network_operation_type_restore,
+        model, extensionRestoreCompiledNetwork, network_operation_type_restore,
         &operationType);
 
     CHECK_NO_ERROR(err);

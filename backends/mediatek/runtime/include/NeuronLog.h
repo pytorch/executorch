@@ -68,7 +68,7 @@ namespace neuron {
     }                                                                   \
   } while (0)
 
-inline int ReadSystemProperty(std::string property) {
+inline int ReadSystemProperty(std::string &property) {
   char property_value[PROP_VALUE_MAX];
   if (__system_property_get(property.c_str(), property_value)) {
       LogInfo("Get System Property  %s : %s", property.c_str(), property_value);

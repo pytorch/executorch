@@ -7,10 +7,10 @@ set -e
 SOURCE_DIR=$(realpath "$(dirname "$0")/../../..")
 
 # Check if buck2 exists
-# if ! command -v buck2 &> /dev/null; then
-#     echo "Error: buck2 is not installed." >&2
-#     exit 1
-# fi
+BUCK_PATH=${BUCK2:-buck2}
+if [ -z "$BUCK2" ]; then
+    echo "Info: BUCK2 environment variable is not set." >&2
+fi
 
 # Check if the ANDROID_NDK environment variable is set
 if [ -z "$ANDROID_NDK" ]; then
@@ -30,12 +30,12 @@ rm -rf cmake-android-out && mkdir cmake-android-out && cd cmake-android-out
 
 # Configure the project with CMake
 # Note: Add any additional configuration options you need here
-cmake -DBUCK2=/proj/mtk25629/ExecuTorch/upstream/executorch/buck2 \
+cmake -DBUCK2="$BUCK_PATH" \
       -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK/build/cmake/android.toolchain.cmake" \
       -DANDROID_ABI=arm64-v8a \
       -DANDROID_PLATFORM=android-30 \
       -DEXECUTORCH_BUILD_NEURON=ON \
-	  -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
+      -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
       ..
 
 # Build the project
