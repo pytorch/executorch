@@ -39,7 +39,6 @@ We generate the model file for the ExecuTorch runtime in Android Demo App.
 For delegating DeepLab v3 to XNNPACK backend, please do the following to export the model:
 
 ```bash
-export FLATC_EXECUTABLE=$(realpath third-party/flatbuffers/cmake-android-out/flatc)
 python3 -m examples.xnnpack.aot_compiler --model_name="dl3" --delegate
 mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 cp dl3_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
