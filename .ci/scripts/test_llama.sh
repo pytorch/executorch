@@ -68,7 +68,7 @@ which "${PYTHON_EXECUTABLE}"
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
-    retry cmake -DBUCK2="$BUCK" \
+    retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Debug \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
@@ -85,7 +85,7 @@ cmake_install_executorch_libraries() {
 cmake_build_llama_runner() {
     echo "Building llama runner"
     dir="examples/models/llama2"
-    retry cmake -DBUCK2="$BUCK" \
+    retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Debug \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
