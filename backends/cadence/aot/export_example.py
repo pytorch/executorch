@@ -13,11 +13,7 @@ from executorch.backends.cadence.aot.ops_registrations import *  # noqa
 import os
 from typing import Any, Tuple
 
-from executorch.backends.cadence.aot.compiler import export_to_edge
-from executorch.backends.cadence.aot.passes import (
-    ReplacePT2DequantWithCadenceDequant,
-    ReplacePT2QuantWithCadenceQuant,
-)
+from executorch.backends.cadence.aot.compiler import export_to_cadence, export_to_edge
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
 from executorch.exir import ExecutorchProgramManager
@@ -68,13 +64,11 @@ def export_model(
     patterns = [q.pattern for q in quantizer.quantizers]
     QuantFusion(patterns)(converted_model)
 
-    # Get edge program (note: the name will change to export_to_cadence in future PRs)
-    edge_prog_manager, expo_prog = export_to_edge(converted_model, example_inputs)
+    # Get edge program
+    edge_prog_manager = export_to_edge(converted_model, example_inputs)
 
-    # Run a couple required passes for quant/dequant ops
-    cadence_prog_manager = edge_prog_manager.transform(
-        [ReplacePT2QuantWithCadenceQuant(), ReplacePT2DequantWithCadenceDequant()]
-    )
+    # Get edge program after Cadence specific passes
+    cadence_prog_manager = export_to_cadence(converted_model, example_inputs)
 
     exec_prog = cadence_prog_manager.to_executorch()
 
@@ -84,7 +78,6 @@ def export_model(
 
     # Print some information to terminal
     print_ops_info(
-        expo_prog.graph_module,
         edge_prog_manager.exported_program().graph_module,
         cadence_prog_manager.exported_program().graph_module,
     )
