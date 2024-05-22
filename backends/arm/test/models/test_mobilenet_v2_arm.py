@@ -46,9 +46,8 @@ class TestMobileNetV2(unittest.TestCase):
         _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
     )
 
-    @unittest.skip("This test is not supported yet")
     def test_mv2_tosa_MI(self):
-        (
+        tester = (
             ArmTester(
                 self.mv2,
                 inputs=self.model_inputs,
@@ -60,6 +59,12 @@ class TestMobileNetV2(unittest.TestCase):
             .partition()
             .to_executorch()
         )
+        if common.TOSA_REF_MODEL_INSTALLED:
+            tester.run_method_and_compare_outputs()
+        else:
+            logger.warning(
+                "TOSA ref model tool not installed, skip numerical correctness tests"
+            )
 
     def test_mv2_tosa_BI(self):
         tester = (
