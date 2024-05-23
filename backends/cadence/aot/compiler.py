@@ -9,15 +9,20 @@ from typing import Any, Tuple
 
 import torch
 
+from executorch.backends.cadence.aot.passes import (
+    ReplacePT2DequantWithCadenceDequant,
+    ReplacePT2QuantWithCadenceQuant,
+)
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 
 from torch.export import export
 from torch.export.exported_program import ExportedProgram
 
 
+# Export the model and lower it to an ExportedProgram (in aten IR)
 def export_program(
     model: torch.nn.Module,
-    inputs: Any,
+    inputs: Tuple[Any, ...],
 ) -> ExportedProgram:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
@@ -37,26 +42,49 @@ def export_program(
     return export(model, inputs)
 
 
-# Export the model and lower it it edge IR.
+# Export the model and lower it to an EdgeProgramManager (in edge IR).
 def export_to_edge(
     model: torch.nn.Module,
-    inputs: Any,
+    inputs: Tuple[Any, ...],
     dump_graphs: bool = False,
-) -> Tuple[EdgeProgramManager, ExportedProgram]:
+) -> EdgeProgramManager:
+    assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
+
     # Export the model into an ExportedProgram.
     expo_program = export_program(model, inputs)
 
     if dump_graphs:
-        logging.info(f"Exported graph:\n{expo_program.graph_module.graph}")
+        logging.info("Exported graph:")
+        expo_program.graph_module.graph.print_tabular()
 
     # Call to_edge to convert the graph to edge IR.
+    # Note: dim_order is skipped (https://github.com/pytorch/executorch/issues/3704)
     edge_prog_manager = to_edge(
-        expo_program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        expo_program,
+        compile_config=EdgeCompileConfig(
+            _check_ir_validity=False, _skip_dim_order=True
+        ),
     )
 
     if dump_graphs:
-        logging.info(
-            f"Edge graph:\n{edge_prog_manager.exported_program().graph_module.graph}"
-        )
+        logging.info("Edge graph:")
+        edge_prog_manager.exported_program().graph_module.graph.print_tabular()
 
-    return edge_prog_manager, expo_program
+    return edge_prog_manager
+
+
+# Export the model and lower it to an EdgeProgramManager (in edge IR), and
+# apply passes specific to Cadence DSP execution.
+def export_to_cadence(
+    model: torch.nn.Module,
+    inputs: Tuple[Any, ...],
+    dump_graphs: bool = False,
+) -> EdgeProgramManager:
+    edge_program_manager = export_to_edge(model, inputs)
+
+    # Run a couple required passes for quant/dequant ops
+    cadence_program_manager = edge_program_manager.transform(
+        [ReplacePT2QuantWithCadenceQuant(), ReplacePT2DequantWithCadenceDequant()]
+    )
+
+    return cadence_program_manager
