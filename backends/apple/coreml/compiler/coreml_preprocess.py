@@ -184,8 +184,8 @@ class CoreMLBackend(BackendDetails):
 
     @staticmethod
     def model_metadata_from_spec(
-        model_spec: ct.proto.Model_pb2, identifier: str
-    ) -> Dict[str, str]:
+        model_spec: ct.proto.Model_pb2, identifier: str  # pyre-ignore
+    ) -> ModelMetadata:
         input_names: List[str] = [input.name for input in model_spec.description.input]
         output_names = [output.name for output in model_spec.description.output]
 
@@ -300,7 +300,7 @@ class CoreMLBackend(BackendDetails):
 
         # Save model.
         model_path = model_dir_path / MODEL_PATHS.MODEL.value
-        mlmodel.save(model_path)
+        mlmodel.save(str(model_path))
         # Extract delegate mapping file.
         model_debug_info: Optional[ModelDebugInfo] = CoreMLBackend.get_model_debug_info(
             model_path
@@ -327,13 +327,17 @@ class CoreMLBackend(BackendDetails):
                 model_debug_info=model_debug_info, model_dir_path=model_dir_path
             )
 
-        processed_bytes: bytes = executorchcoreml.flatten_directory_contents(
-            str(model_dir_path.resolve())
+        processed_bytes: bytes = (
+            executorchcoreml.flatten_directory_contents(str(model_dir_path.resolve()))
+            or b""
         )
 
         debug_handle_map: Optional[Dict[str, Tuple[int]]] = None
         if model_debug_info is not None:
-            debug_handle_map = model_debug_info.debugSymbolToHandles
+            debug_handle_map = {
+                key: tuple(value)
+                for key, value in model_debug_info.debugSymbolToHandles.items()
+            }
 
         shutil.rmtree(str(dir_path.resolve()))
         return PreprocessResult(
@@ -341,26 +345,23 @@ class CoreMLBackend(BackendDetails):
             debug_handle_map=debug_handle_map,
         )
 
-    @classmethod
+    @staticmethod
     def preprocess(
-        cls,
         edge_program: ExportedProgram,
-        module_compile_specs: List[CompileSpec],
+        compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
         model_type: CoreMLBackend.MODEL_TYPE = (
             CoreMLBackend.model_type_from_compile_specs(
-                module_compile_specs,
+                compile_specs,
             )
         )
 
         model_compute_precision: ct.precision = (
-            CoreMLBackend.model_compute_precision_from_compile_specs(
-                module_compile_specs
-            )
+            CoreMLBackend.model_compute_precision_from_compile_specs(compile_specs)
         )
 
         minimum_deployment_target: ct.target = (
-            CoreMLBackend.min_deployment_target_from_compile_specs(module_compile_specs)
+            CoreMLBackend.min_deployment_target_from_compile_specs(compile_specs)
         )
 
         mlmodel = ct.convert(
