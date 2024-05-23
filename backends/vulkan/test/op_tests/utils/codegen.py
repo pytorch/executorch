@@ -17,6 +17,8 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     CppTestFileGen,
     DOUBLE,
     INT,
+    OPT_AT_DOUBLE_ARRAY_REF,
+    OPT_AT_INT_ARRAY_REF,
     OPT_AT_TENSOR,
     OPT_BOOL,
     OPT_DEVICE,
@@ -288,6 +290,16 @@ class ComputeGraphGen:
             ret_str += f"{self.graph}{self.dot}add_none() : "
             ret_str += f"{self.graph}{self.dot}add_scalar<int64_t>"
             ret_str += f"({ref.src_cpp_name}.value());\n"
+            return ret_str
+        elif (
+            ref.src_cpp_type == OPT_AT_DOUBLE_ARRAY_REF
+            or ref.src_cpp_type == OPT_AT_INT_ARRAY_REF
+        ):
+            ret_str = f"{cpp_type} {ref.name} = "
+            ret_str += f"!{ref.src_cpp_name}.has_value() ? "
+            ret_str += f"{self.graph}{self.dot}add_none() : "
+            ret_str += f"{self.graph}{self.dot}add_scalar_list"
+            ret_str += f"({ref.src_cpp_name}->vec());\n"
             return ret_str
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             assert ref.is_in, "AT_TENSOR_LIST must be an input"
