@@ -33,7 +33,7 @@ void add_full_node(
   float fill_value_val = graph.extract_scalar<float>(fill_value);
   vTensorPtr t_out = graph.get_tensor(out);
 
-  api::utils::uvec3 global_size = t_out->extents();
+  api::utils::uvec3 global_size = t_out->image_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("full");
@@ -51,7 +51,7 @@ void add_full_node(
       // Shader params buffers
       {t_out->sizes_ubo(), graph.create_params_buffer(fill_value_val)},
       // Specialization Constants
-      {SV(t_out->gpu_memory_layout_int())},
+      {SV(t_out->packed_dim_whcn_idx())},
       // Resizing Logic
       resize_full_node,
       {size}));

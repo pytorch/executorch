@@ -135,7 +135,7 @@ void add_copy_channel_offset_node(
     // the actual coordinate.
 
     ivec3 dst_offset{
-        0, 0, dst_first_z + batch_idx * api::utils::div_up(out_channels, 4)};
+        0, 0, dst_first_z + batch_idx * api::utils::div_up_4(out_channels)};
 
     uvec3 global_size{
         api::utils::safe_downcast<uint32_t>(dim_at<kWidth4D>(in_sizes)),

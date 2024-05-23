@@ -70,7 +70,7 @@ void add_max_pool2d_node(
 
   check_max_pool2d_args(*t_in, *t_out);
 
-  api::utils::uvec3 global_size = t_out->extents();
+  api::utils::uvec3 global_size = t_out->image_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("max_pool2d");

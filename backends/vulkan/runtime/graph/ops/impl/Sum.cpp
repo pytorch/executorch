@@ -68,7 +68,7 @@ void add_sum_dim_node(
       in_dim > 2 ? static_cast<int32_t>(t_input->sizes()[in_dim - 3]) : 1;
   uint32_t dim_size = t_input->sizes()[dim];
 
-  api::utils::uvec3 global_size = t_out->extents();
+  api::utils::uvec3 global_size = t_out->image_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("sum_dim");

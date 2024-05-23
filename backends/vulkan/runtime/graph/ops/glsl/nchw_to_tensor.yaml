@@ -4,19 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-image_to_nchw:
+nchw_to_tensor:
   parameter_names_with_default_values:
-    NDIM: 3
+    STORAGE: texture3d
     DTYPE: float
   generate_variant_forall:
-    NDIM:
-      - VALUE: 3
-        SUFFIX: 3d
-      - VALUE: 2
-        SUFFIX: 2d
     DTYPE:
       - VALUE: half
       - VALUE: float
       - VALUE: int
+    STORAGE:
+      - VALUE: texture3d
+      - VALUE: texture2d
+      - VALUE: buffer
   shader_variants:
-    - NAME: image_to_nchw
+    - NAME: nchw_to_tensor

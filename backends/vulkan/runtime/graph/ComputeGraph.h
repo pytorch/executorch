@@ -182,12 +182,28 @@ class ComputeGraph final {
 
   api::ScalarType dtype_of(const ValueRef idx) const;
 
-  inline api::utils::uvec3 extents_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().extents();
+  inline api::utils::uvec3 image_extents_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().image_extents();
+  }
+
+  inline int32_t texel_numel_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().texel_numel();
+  }
+
+  inline api::StorageType storage_type_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().storage_type();
+  }
+
+  inline bool is_buffer_storage(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().has_buffer_storage();
   }
 
   inline api::GPUMemoryLayout memory_layout_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().gpu_memory_layout();
+  }
+
+  inline int32_t packed_dim_whcn_idx_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().packed_dim_whcn_idx();
   }
 
   inline api::BufferBindInfo sizes_ubo(const ValueRef idx) {
@@ -198,8 +214,12 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().texture_limits_ubo();
   }
 
-  inline api::BufferBindInfo packed_dim_meta_ubo(const ValueRef idx) {
-    return values_.at(idx).toTensor().packed_dim_meta_ubo();
+  inline api::BufferBindInfo texel_strides_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().texel_strides_ubo();
+  }
+
+  inline api::BufferBindInfo ntexels_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().ntexels_ubo();
   }
 
   // Scalar Value Extraction
@@ -274,6 +294,16 @@ class ComputeGraph final {
       const api::ScalarType dtype,
       const api::StorageType storage_type,
       const api::GPUMemoryLayout memory_layout,
+      const int64_t shared_object_idx = -1);
+
+  /*
+   * Add a `vTensor` value to the graph with the specified properties. The
+   * suggested memory layout will be used to construct the `vTensor`.
+   */
+  ValueRef add_tensor(
+      const std::vector<int64_t>& sizes,
+      const api::ScalarType dtype,
+      const api::StorageType storage_type,
       const int64_t shared_object_idx = -1);
 
   /*
@@ -378,6 +408,20 @@ class ComputeGraph final {
     return {t, staging};
   }
 
+  /*
+   * Convenience function to add an input tensor with a specific storage type
+   * along with its staging buffer
+   */
+  inline IOValueRef add_input_tensor(
+      const std::vector<int64_t>& sizes,
+      const api::ScalarType dtype,
+      const api::StorageType storage_type,
+      const int64_t shared_object_idx = -1) {
+    ValueRef t = add_tensor(sizes, dtype, storage_type, shared_object_idx);
+    ValueRef staging = set_input_tensor(t);
+    return {t, staging};
+  }
+
   SharedObject& get_shared_object(const int64_t idx);
 
   //
@@ -389,6 +433,36 @@ class ComputeGraph final {
       bool execute);
 
   void prepare();
+
+  //
+  // Dispatch Utilities
+  //
+
+  /*
+   * Create a global workgroup size for a given `vTensor` value assuming that
+   * every shader invocation calculates one texel element of the output tensor.
+   *
+   * For tensors that use texture storage, the image extents of the `vTensor`
+   * will be used to set the global workgroup size.
+   *
+   * For tensor that use buffer storage, the number of texels in the texel
+   * buffer will be used to set the x component of the global workgroup size.
+   * All other components will be set to 1 (i.e. {ntexels, 1, 1} will be
+   * returned).
+   */
+  api::utils::uvec3 create_global_wg_size(const ValueRef idx);
+
+  /*
+   * Suggest a local workgroup size for a given `vTensor` value, assuming that
+   * every shader invocation calculates one texel element of the output tensor.
+   *
+   * The local workgroup size will be formed to try and minimize the number of
+   * inactive invocations.
+   *
+   * Currently, the local workgroup size is hard-coded to contain a total of 64
+   * shader invocations. In the future, this value can be configured.
+   */
+  api::utils::uvec3 create_local_wg_size(const ValueRef idx);
 
   //
   // Input/Output
