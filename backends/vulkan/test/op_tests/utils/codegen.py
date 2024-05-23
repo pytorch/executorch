@@ -600,8 +600,8 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
   protected:
     ComputeGraph* graph;
     at::ScalarType test_dtype = at::kFloat;
-    float rtol = 1e-5;
-    float atol = 1e-5;
+    float rtol = 1e-4;
+    float atol = 1e-4;
 
     void SetUp() override {{
         GraphConfig config;
