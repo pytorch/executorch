@@ -807,4 +807,7 @@ test_suites = {
     "aten.gelu.default": get_gelu_inputs(),
     "aten.hardshrink.default": get_unary_ops_inputs(),
     "aten.upsample_nearest2d.vec": get_upsample_inputs(),
+    "aten.sin.default": get_unary_ops_inputs(),
+    "aten.neg.default": get_unary_ops_inputs(),
+    "aten.cos.default": get_unary_ops_inputs(),
 }
