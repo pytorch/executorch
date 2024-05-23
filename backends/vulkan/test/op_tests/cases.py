@@ -671,6 +671,7 @@ def get_unary_ops_inputs():
             (S1, S2, S2, M2),
         ]
     )
+    test_suite.storage_types = ["api::kTexture3D", "api::kBuffer"]
     return test_suite
 
 

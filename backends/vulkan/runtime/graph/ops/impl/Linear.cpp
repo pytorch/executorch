@@ -101,7 +101,7 @@ void add_addmm_naive_node(
   ValueRef self = prepack_if_tensor_ref(graph, self_data, api::kWidthPacked);
   ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, api::kHeightPacked);
 
-  api::utils::uvec3 global_size = graph.extents_of(out);
+  api::utils::uvec3 global_size = graph.image_extents_of(out);
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name =
@@ -163,7 +163,7 @@ void add_addmm_optimized_node(
   }
 
   api::utils::uvec3 global_size =
-      api::utils::divup_vec(graph.extents_of(out), {4, 4, 1});
+      api::utils::divup_vec(graph.image_extents_of(out), {4, 4, 1});
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name = graph.get_bool(mat2_is_transposed)

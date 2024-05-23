@@ -38,26 +38,28 @@ void add_unary_op_node(
     const float max,
     const ValueRef out,
     const std::string& op_name) {
-  ValueRef arg = prepack_if_tensor_ref(graph, in);
-
-  vTensorPtr t_out = graph.get_tensor(out);
-  api::utils::uvec3 global_size = t_out->extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   std::string kernel_name(op_name);
-  add_dtype_suffix(kernel_name, *t_out);
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
+
+  api::ParamsBindList ubos({});
+  if (graph.is_buffer_storage(out)) {
+    ubos.append({graph.ntexels_ubo(out)});
+  } else {
+    ubos.append({graph.texture_limits_ubo(out)});
+  }
+  ubos.append(
+      {graph.create_params_buffer(min), graph.create_params_buffer(max)});
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}, {arg, api::MemoryAccessType::READ}},
+      {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(),
-       graph.create_params_buffer(min),
-       graph.create_params_buffer(max)},
+      ubos,
       // Specialization Constants
       {},
       // Resizing Logic

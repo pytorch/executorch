@@ -250,5 +250,10 @@ ParamsBindList::ParamsBindList(
   std::copy(init_list.begin(), init_list.end(), bind_infos.begin());
 }
 
+void ParamsBindList::append(const ParamsBindList& other) {
+  bind_infos.insert(
+      bind_infos.end(), other.bind_infos.begin(), other.bind_infos.end());
+}
+
 } // namespace api
 } // namespace vkcompute
