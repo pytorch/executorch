@@ -857,6 +857,23 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_batch_norm(self):
+        class BatchNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.bn = torch.nn.BatchNorm2d(num_features=3)
+
+            def forward(self, x):
+                return self.bn(x)
+
+        sample_inputs = (torch.randn(size=(4, 3, 2, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            BatchNormModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_full(self):
         class FullModule(torch.nn.Module):
             def __init__(self):

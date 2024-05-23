@@ -84,6 +84,7 @@ REDUCTION_OPS = [
 ]
 
 NORMALIZATION_OPS = [
+    exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
     exir_ops.edge.aten.native_layer_norm.default,
 ]
 
