@@ -23,6 +23,7 @@ build_executorch() {
   cmake --build cmake-out -j9 --target install
   ls cmake-out/lib
   for t in cmake-out/lib/*.a; do lipo -info $t; done
+  nm -gC cmake-out/lib/libgtest.a
 }
 
 build_and_run_test() {
