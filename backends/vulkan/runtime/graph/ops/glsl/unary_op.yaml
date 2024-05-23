@@ -1,17 +1,23 @@
 unary_op:
   parameter_names_with_default_values:
     OPERATOR: clamp(X, A, B)
-    NDIM: 3
     DTYPE: float
+    STORAGE: texture3d
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
+    STORAGE:
+      - VALUE: texture3d
+      - VALUE: buffer
   shader_variants:
     - NAME: abs
       OPERATOR: abs(X)
     - NAME: clamp
       OPERATOR: clamp(X, A, B)
+    - NAME: clamp_int
+      OPERATOR: clamp(X, A, B)
+      DTYPE: int
     - NAME: exp
       OPERATOR: exp(X)
     - NAME: gelu

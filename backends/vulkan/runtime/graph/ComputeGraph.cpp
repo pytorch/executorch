@@ -163,6 +163,19 @@ ValueRef ComputeGraph::add_tensor(
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const api::ScalarType dtype,
+    const api::StorageType storage_type,
+    const int64_t shared_object_idx) {
+  return add_tensor(
+      sizes,
+      dtype,
+      storage_type,
+      suggested_memory_layout(sizes),
+      shared_object_idx);
+}
+
+ValueRef ComputeGraph::add_tensor(
+    const std::vector<int64_t>& sizes,
+    const api::ScalarType dtype,
     const api::GPUMemoryLayout memory_layout,
     const int64_t shared_object_idx) {
   return add_tensor(
@@ -297,6 +310,39 @@ void ComputeGraph::update_descriptor_counts(
         VK_THROW("Unsupported descriptor type!");
     }
   }
+}
+
+api::utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
+  if (is_buffer_storage(idx)) {
+    return {uint32_t(texel_numel_of(idx)), 1u, 1u};
+  }
+  return image_extents_of(idx);
+}
+
+api::utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
+  if (is_buffer_storage(idx)) {
+    return {64u, 1u, 1u};
+  }
+
+  const api::utils::uvec3 image_extents = image_extents_of(idx);
+  api::utils::uvec3 local_group_size = {4, 4, 4};
+
+  if (image_extents.data[2u] == 1) {
+    if (image_extents.data[1u] == 1) {
+      local_group_size.data[0u] = 64;
+      local_group_size.data[1u] = 1;
+      local_group_size.data[2u] = 1;
+    } else if (image_extents.data[1u] < 8) {
+      local_group_size.data[0u] = 16;
+      local_group_size.data[1u] = 4;
+      local_group_size.data[2u] = 1;
+    } else {
+      local_group_size.data[0u] = 8;
+      local_group_size.data[1u] = 8;
+      local_group_size.data[2u] = 1;
+    }
+  }
+  return local_group_size;
 }
 
 void ComputeGraph::copy_into_staging(

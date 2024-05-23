@@ -270,6 +270,8 @@ struct ParamsBindList final {
   std::vector<BufferBindInfo> bind_infos;
 
   ParamsBindList(std::initializer_list<const BufferBindInfo> init_list);
+
+  void append(const ParamsBindList& other);
 };
 
 class StorageBuffer final {

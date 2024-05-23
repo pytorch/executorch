@@ -253,6 +253,16 @@ class LlamaEdgeManager:
         self.metadata = metadata
         return self.metadata
 
+    def capture_pre_autograd_graph(self) -> "LlamaEdgeManager":
+        dynamic_shape = self._get_dynamic_shape()
+        # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
+        # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
+        with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+            self.pre_autograd_graph_module = capture_pre_autograd_graph(
+                self.model, self.example_inputs, dynamic_shapes=dynamic_shape
+            )
+        return self
+
     def pt2e_quantize(
         self, quantizers: Optional[List[Quantizer]]
     ) -> "LlamaEdgeManager":
@@ -265,19 +275,18 @@ class LlamaEdgeManager:
             self.edge_manager is None
         ), "export_to_edge is already called, please call pt2e_quantize before export_to_edge"
         logging.info(f"Using pt2e {quantizers} to quantizing the model...")
-        dynamic_shape = self._get_dynamic_shape()
 
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         if quantizers:
             with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-                m = capture_pre_autograd_graph(
-                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape
-                )
                 if self.verbose:
                     logging.info(f"Applied quantizers: {quantizers}")
                 composed_quantizer = ComposableQuantizer(quantizers)
-                m = prepare_pt2e(m, composed_quantizer)
+                assert (
+                    self.pre_autograd_graph_module is not None
+                ), "Please run capture_pre_autograd_graph first"
+                m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
                 # Calibrate
                 m(*self.example_inputs)
                 m = convert_pt2e(m)

@@ -15,10 +15,6 @@ on:
 jobs:
   linux:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-    strategy:
-      matrix:
-        include:
-          - build-tool: buck2
     with:
       runner: linux.2xlarge
       docker-image: ${{ inputs.docker-image }}
@@ -32,16 +28,16 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL=${{ matrix.build-tool }}
-
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_PYBIND=ON \
-        EXECUTORCH_BUILD_XNNPACK=ON \
-        .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
+        .ci/scripts/setup-linux.sh cmake
 
         # Run pytest with coverage
         pytest -n auto --cov=./ --cov-report=xml
+        # Run gtest
+        test/run_oss_cpp_tests.sh
 
   macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -64,7 +60,7 @@ jobs:
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_PYBIND=ON \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON" \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
         ${CONDA_RUN} --no-capture-output \
         .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 

@@ -10,6 +10,26 @@
 
 namespace vkcompute {
 
+void add_storage_type_suffix(
+    std::string& kernel_name,
+    const api::StorageType storage_type) {
+  switch (storage_type) {
+    case api::kBuffer:
+      kernel_name += "_buffer";
+      break;
+    case api::kTexture3D:
+      kernel_name += "_texture3d";
+      break;
+    case api::kTexture2D:
+      kernel_name += "_texture2d";
+      break;
+  }
+}
+
+void add_storage_type_suffix(std::string& kernel_name, const vTensor& tensor) {
+  return add_storage_type_suffix(kernel_name, tensor.storage_type());
+}
+
 void add_dtype_suffix(std::string& kernel_name, const api::ScalarType dtype) {
   switch (dtype) {
     case api::kFloat:

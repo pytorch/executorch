@@ -43,7 +43,7 @@ void add_softmax_node(
   softmax_dim = normalize(softmax_dim, in_dim);
 
   vTensorPtr t_out = graph.get_tensor(out);
-  uvec3 global_size = t_out->extents();
+  uvec3 global_size = t_out->image_extents();
 
   api::ShaderInfo shader_descriptor;
   std::string kernel_name = in_dim - softmax_dim == 3

@@ -97,9 +97,9 @@ ValueRef prepack_biases(
       {out_channels}, graph.dtype_of(weight), storage_type, memory_layout);
   vTensorPtr t = graph.get_tensor(v);
 
-  api::ShaderInfo shader = get_nchw_to_image_shader(*t);
+  api::ShaderInfo shader = get_nchw_to_tensor_shader(*t);
 
-  api::utils::uvec3 global_size = t->extents();
+  api::utils::uvec3 global_size = t->image_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
@@ -111,7 +111,7 @@ ValueRef prepack_biases(
       v,
       {t->sizes_ubo()},
       // Specialization constants
-      {SV(t->gpu_memory_layout_int())}));
+      {SV(t->packed_dim_whcn_idx())}));
 
   return v;
 }
@@ -170,9 +170,9 @@ std::vector<int64_t> get_final_sizes(
     const std::vector<int64_t>& original_sizes,
     const Conv2dMethod method) {
   int64_t batch_padded =
-      api::utils::align_up(api::utils::val_at(-4, original_sizes), INT64_C(4));
+      api::utils::align_up_4(api::utils::val_at(-4, original_sizes));
   int64_t channels_padded =
-      api::utils::align_up(api::utils::val_at(-3, original_sizes), INT64_C(4));
+      api::utils::align_up_4(api::utils::val_at(-3, original_sizes));
   int64_t height = api::utils::val_at(-2, original_sizes);
   int64_t width = api::utils::val_at(-1, original_sizes);
 
@@ -200,7 +200,7 @@ ValueRef prepack_weights(
       final_sizes, graph.dtype_of(vref), api::kTexture2D, api::kChannelsPacked);
   vTensorPtr t = graph.get_tensor(v);
 
-  api::utils::uvec3 global_size = t->extents();
+  api::utils::uvec3 global_size = t->image_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   api::ShaderInfo shader =
@@ -217,7 +217,7 @@ ValueRef prepack_weights(
        graph.create_params_buffer(
            api::utils::make_ivec4(original_sizes, /*reverse = */ true))},
       // Specialization constants
-      {SV(t->gpu_memory_layout_int())}));
+      {SV(t->packed_dim_whcn_idx())}));
 
   return v;
 }
@@ -245,8 +245,8 @@ Conv2dParams create_conv2d_params(
   });
   const auto weight_sizes = graph.sizes_of(weight);
   const int32_t in_group_size =
-      api::utils::safe_downcast<int32_t>(api::utils::align_up(
-          transposed ? weight_sizes.at(0) : weight_sizes.at(1), INT64_C(4)));
+      api::utils::safe_downcast<int32_t>(api::utils::align_up_4(
+          transposed ? weight_sizes.at(0) : weight_sizes.at(1)));
   return {overlay_region, in_group_size};
 }
 
@@ -322,7 +322,7 @@ void add_conv2d_node(
   }
   check_conv_args(*t_in, *t_out);
 
-  api::utils::uvec3 global_size = t_out->extents();
+  api::utils::uvec3 global_size = t_out->image_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   Kernel2dParams kernel_params = create_kernel2d_params(
