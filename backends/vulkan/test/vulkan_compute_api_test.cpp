@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include <c10/util/Half.h>
+#include <executorch/runtime/core/portable_type/half.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
@@ -120,6 +120,7 @@ std::vector<int64_t> get_reference_strides(
           return {};
       }
   }
+  return {};
 }
 
 TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
@@ -347,7 +348,7 @@ TEST_F(VulkanComputeAPITest, test_buffer_float16) {
   if (!api::context()->adapter_ptr()->has_full_float16_buffers_support()) {
     GTEST_SKIP();
   }
-  test_storage_buffer_type<c10::Half, api::kHalf>(16);
+  test_storage_buffer_type<torch::executor::Half, api::kHalf>(16);
 }
 
 TEST_F(VulkanComputeAPITest, test_buffer_int8) {
@@ -1628,7 +1629,7 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
 
   for (auto& sizes : to_test) {
     RUN_TESTS(float, api::kFloat)
-    RUN_TESTS(c10::Half, api::kHalf)
+    RUN_TESTS(torch::executor::Half, api::kHalf)
   }
 #undef RUN_TESTS
 }
