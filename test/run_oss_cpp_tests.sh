@@ -23,9 +23,8 @@ build_executorch() {
 }
 
 build_gtest() {
-  git clone https://github.com/google/googletest.git -b v1.14.0 cmake-out/googletest || true
-  mkdir -p cmake-out/googletest/build
-  pushd cmake-out/googletest/build
+  mkdir -p third-party/googletest/build
+  pushd third-party/googletest/build
   cmake .. -DCMAKE_INSTALL_PREFIX=.
   make -j4
   make install
@@ -36,7 +35,7 @@ build_and_run_test() {
   local test_dir=$1
   cmake "${test_dir}" \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
-    -DGTest_DIR="$(pwd)/cmake-out/googletest/build/lib64/cmake/GTest" --debug-find \
+    -DGTest_DIR="$(pwd)/third-party/googletest/build/lib/cmake/GTest" --debug-find \
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9 || true
   cat cmake-out/"${test_dir}"/CMakeFiles/*.dir/link.txt
