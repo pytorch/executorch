@@ -241,6 +241,16 @@ def get_native_layer_norm_inputs():
     return test_suite
 
 
+def get_upsample_inputs():
+    test_suite = VkTestSuite(
+        [
+            # TODO(dixu): implement the basic upsample logic to have a meaningful test
+            ((2, 2, 2, 2), None, [1, 1]),
+        ]
+    )
+    return test_suite
+
+
 def get_full_inputs():
     test_suite = VkTestSuite(
         [
@@ -796,4 +806,5 @@ test_suites = {
     "aten._native_batch_norm_legit_no_training.default": get_native_batch_norm_inputs(),
     "aten.gelu.default": get_gelu_inputs(),
     "aten.hardshrink.default": get_unary_ops_inputs(),
+    "aten.upsample_nearest2d.vec": get_upsample_inputs(),
 }
