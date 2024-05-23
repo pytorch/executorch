@@ -28,7 +28,7 @@ install_buck() {
   fi
 
   pushd .ci/docker
-  BUCK2_VERSION=2024-05-15
+  BUCK2_VERSION=$(cat .ci/docker/ci_commit_pins/buck2.txt)
   BUCK2=buck2-aarch64-apple-darwin-${BUCK2_VERSION}.zst
   curl -s "https://ossci-macos.s3.amazonaws.com/${BUCK2}" -o "${BUCK2}"
 
