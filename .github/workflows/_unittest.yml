@@ -61,4 +61,4 @@ jobs:
         # Run pytest with coverage
         ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
         # Run gtest
-        # test/run_oss_cpp_tests.sh
+        test/run_oss_cpp_tests.sh
