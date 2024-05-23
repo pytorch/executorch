@@ -21,6 +21,7 @@ build_executorch() {
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
+  ls cmake-out/lib
 }
 
 build_and_run_test() {
