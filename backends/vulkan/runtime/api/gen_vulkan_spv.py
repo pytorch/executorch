@@ -89,7 +89,7 @@ def define_variable(name: str) -> str:
         raise RuntimeError(f"{name} is not defined")
 
 
-def get_buffer_scalar_type(dtype: str) -> str:
+def buffer_scalar_type(dtype: str) -> str:
     if dtype == "half":
         return "float16_t"
     elif dtype[-1] == "8":
@@ -98,14 +98,16 @@ def get_buffer_scalar_type(dtype: str) -> str:
     return dtype
 
 
-def get_buffer_gvec_type(dtype: str, n: int) -> str:
+def buffer_gvec_type(dtype: str, n: int) -> str:
     if n == 1:
-        return get_buffer_scalar_type(dtype)
+        return buffer_scalar_type(dtype)
 
     if dtype == "float":
         return f"vec{n}"
     elif dtype == "half":
         return f"f16vec{n}"
+    elif dtype == "int":
+        return f"ivec{n}"
     elif dtype == "int8":
         return f"i8vec{n}"
     elif dtype == "uint8":
@@ -114,7 +116,7 @@ def get_buffer_gvec_type(dtype: str, n: int) -> str:
     raise AssertionError(f"Invalid dtype: {dtype}")
 
 
-def get_texel_type(dtype: str) -> str:
+def texel_type(dtype: str) -> str:
     image_format = TYPE_MAPPINGS["IMAGE_FORMAT"][dtype]
     if image_format[-1] == "f":
         return "vec4"
@@ -125,13 +127,13 @@ def get_texel_type(dtype: str) -> str:
     raise AssertionError(f"Invalid image format: {image_format}")
 
 
-def get_gvec_type(dtype: str, n: int) -> str:
-    gvec4_type = get_texel_type(dtype)
+def gvec_type(dtype: str, n: int) -> str:
+    gvec4_type = texel_type(dtype)
     return gvec4_type[:-1] + str(n)
 
 
-def get_texel_component_type(dtype: str) -> str:
-    vec4_type = get_texel_type(dtype)
+def texel_component_type(dtype: str) -> str:
+    vec4_type = texel_type(dtype)
     if vec4_type[:3] == "vec":
         return "float"
     elif vec4_type[:4] == "ivec":
@@ -141,17 +143,159 @@ def get_texel_component_type(dtype: str) -> str:
     raise AssertionError(f"Invalid vec4 type: {vec4_type}")
 
 
+def texel_load_type(dtype: str, storage_type: str) -> str:
+    if storage_type.lower() == "buffer":
+        return buffer_gvec_type(dtype, 4)
+    else:
+        return texel_type(dtype)
+
+
+def texel_load_component_type(dtype: str, storage_type: str) -> str:
+    if storage_type.lower() == "buffer":
+        return buffer_scalar_type(dtype)
+    else:
+        return texel_component_type(dtype)
+
+
+def get_access_qualifier(access_type: Optional[str]) -> str:
+    if access_type is None:
+        return ""
+    if access_type.lower() == "r":
+        return "readonly"
+    if access_type.lower() == "w":
+        return "writeonly"
+    if access_type.lower() == "rw":
+        return ""
+
+    raise AssertionError(f"Invalid access type: {access_type}")
+
+
+def layout_declare_buffer(
+    slot: int,
+    access_type: str,
+    var_name: str,
+    dtype: str,
+    precision: str = "PRECISION",
+    is_scalar_array: bool = True,
+) -> str:
+    array_type = buffer_gvec_type(dtype, 4)
+    if is_scalar_array:
+        array_type = buffer_scalar_type(dtype)
+
+    out_str = f"""
+layout(set = 0, binding = {slot}) buffer {precision} restrict {get_access_qualifier(access_type)} {var_name}Buffer {{
+    {array_type} {var_name}[];
+}};
+"""
+    return out_str
+
+
+def layout_declare_image(
+    slot: int,
+    access_type: str,
+    var_name: str,
+    dtype: str,
+    precision: str = "PRECISION",
+    image_ndim: int = 3,
+) -> str:
+    image_format = TYPE_MAPPINGS["IMAGE_FORMAT"][dtype]
+    image_type = TYPE_MAPPINGS["IMAGE_T"][image_ndim][dtype]
+    return f"layout(set = 0, binding = {slot}, {image_format}) uniform {precision} restrict {get_access_qualifier(access_type)} {image_type} {var_name};"
+
+
+def layout_declare_sampler(
+    slot: int,
+    access_type: str,
+    var_name: str,
+    dtype: str,
+    precision: str = "PRECISION",
+    access_qualifier: Optional[str] = None,
+    image_ndim: int = 3,
+) -> str:
+    sampler_type = TYPE_MAPPINGS["SAMPLER_T"][image_ndim][dtype]
+    return f"layout(set = 0, binding = {slot}) uniform {precision} {sampler_type} {var_name};"
+
+
+def layout_declare_tensor(
+    slot: int,
+    access_type: str,
+    var_name: str,
+    dtype: str,
+    storage_type: str,
+    precision: str = "PRECISION",
+) -> str:
+    assert storage_type.lower() in ["buffer", "texture3d", "texture2d"]
+
+    image_ndim = 3
+    if storage_type.lower() == "texture2d":
+        image_ndim = 2
+
+    # Create buffer binding
+    if storage_type.lower() == "buffer":
+        return layout_declare_buffer(
+            slot, access_type, var_name, dtype, precision, is_scalar_array=False
+        )
+
+    # Create image/sampler binding
+    if access_type.lower() == "r":
+        return layout_declare_sampler(
+            slot, access_type, var_name, dtype, precision, image_ndim=image_ndim
+        )
+    else:
+        return layout_declare_image(
+            slot, access_type, var_name, dtype, precision, image_ndim=image_ndim
+        )
+
+
+def layout_declare_ubo(slot: int, *args, precision: str = "PRECISION") -> str:
+    assert len(args) % 2 == 0
+
+    var_list = list(zip(args[::2], args[1::2]))
+
+    ubo_name = ""
+    for _, var_name in var_list:
+        ubo_name += var_name + "_"
+
+    out_str = f"""
+layout(set = 0, binding = {slot}) uniform {precision} restrict readonly {ubo_name}UBO {{
+"""
+    for type_name, var_name in var_list:
+        out_str += f"{type_name} {var_name};\n"
+    out_str += "};"
+
+    return out_str
+
+
+def define_active_storage_type(storage_type: str):
+    if storage_type.lower() == "buffer":
+        return "#define USING_BUFFER"
+    elif storage_type.lower() == "texture3d":
+        return "#define USING_TEXTURE3D"
+    elif storage_type.lower() == "texture2d":
+        return "#define USING_TEXTURE2D"
+    else:
+        raise AssertionError(f"Invalid storage type: {storage_type}")
+
+
 UTILITY_FNS: Dict[str, Any] = {
     "macro_define": define_variable,
     "get_pos": {
         3: lambda pos: pos,
         2: lambda pos: f"{pos}.xy",
     },
-    "buffer_scalar_type": get_buffer_scalar_type,
-    "buffer_gvec_type": get_buffer_gvec_type,
-    "texel_type": get_texel_type,
-    "gvec_type": get_gvec_type,
-    "texel_component_type": get_texel_component_type,
+    "buffer_scalar_type": buffer_scalar_type,
+    "buffer_gvec_type": buffer_gvec_type,
+    "texel_type": texel_type,
+    "gvec_type": gvec_type,
+    "texel_component_type": texel_component_type,
+    "texel_load_type": texel_load_type,
+    "texel_load_component_type": texel_load_component_type,
+    "layout_declare_buffer": layout_declare_buffer,
+    "layout_declare_image": layout_declare_image,
+    "layout_declare_sampler": layout_declare_sampler,
+    "layout_declare_tensor": layout_declare_tensor,
+    "layout_declare_ubo": layout_declare_ubo,
+    "define_active_storage_type": define_active_storage_type,
 }
 
 

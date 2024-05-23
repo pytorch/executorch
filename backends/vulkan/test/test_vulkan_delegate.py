@@ -379,6 +379,20 @@ class TestBackends(unittest.TestCase):
 
         self.lower_unary_module_and_test_output(ClampModule())
 
+    def test_vulkan_backend_clamp_int(self):
+        class ClampModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.clamp(x, min=-3)
+
+        sample_inputs = (
+            torch.randint(low=-100, high=100, size=(5, 5), dtype=torch.int32),
+        )
+
+        self.lower_module_and_test_output(ClampModule(), sample_inputs)
+
     def test_vulkan_backend_hardtanh(self):
         class HardTanHModule(torch.nn.Module):
             def __init__(self):
@@ -389,6 +403,16 @@ class TestBackends(unittest.TestCase):
                 return self.tanh(x)
 
         self.lower_unary_module_and_test_output(HardTanHModule())
+
+    def test_vulkan_backend_exp(self):
+        class ExpModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.exp(x)
+
+        self.lower_unary_module_and_test_output(ExpModule())
 
     def test_vulkan_backend_relu(self):
         class ReLUModule(torch.nn.Module):
@@ -409,6 +433,17 @@ class TestBackends(unittest.TestCase):
                 return torch.sqrt(x)
 
         self.lower_unary_module_and_test_output(SqrtModule())
+
+    def test_vulkan_backend_hardshrink(self):
+        class HardshrinkModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.hardshrink = torch.nn.Hardshrink(lambd=0.3)
+
+            def forward(self, x):
+                return self.hardshrink(x)
+
+        self.lower_unary_module_and_test_output(HardshrinkModule())
 
     def test_vulkan_backend_max_pool2d(self):
         class MaxPool2dModule(torch.nn.Module):
@@ -905,7 +940,6 @@ class TestBackends(unittest.TestCase):
         )
 
     def test_vulkan_backend_permute_copy(self):
-        # aten.permute_copy.default is not enabled yet in partitioner
         class PermuteModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -914,6 +948,22 @@ class TestBackends(unittest.TestCase):
                 return torch.permute(x, [3, 0, 2, 1])
 
         sample_inputs = (torch.randn(size=(3, 6, 2, 7), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            PermuteModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_permute_copy_int(self):
+        class PermuteModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.permute(x, [3, 0, 2, 1])
+
+        sample_inputs = (torch.randint(size=(3, 6, 2, 7), high=100, dtype=torch.int32),)
 
         self.lower_module_and_test_output(
             PermuteModule(),

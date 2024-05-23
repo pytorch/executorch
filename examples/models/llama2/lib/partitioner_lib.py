@@ -56,13 +56,8 @@ def get_coreml_partitioner(args):
         args.use_kv_cache is True
     ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
     try:
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `coremltools`.
         import coremltools as ct
-
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.compiler`
         from executorch.backends.apple.coreml.compiler import CoreMLBackend
-
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition`
         from executorch.backends.apple.coreml.partition import CoreMLPartitioner
     except ImportError:
         raise ImportError(

@@ -51,6 +51,8 @@ class TestCoreMLQuantizer:
             prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)
         elif quantization_type == "QAT":
             prepared_graph = prepare_qat_pt2e(pre_autograd_aten_dialect, quantizer)
+        else:
+            raise ValueError("Invalid quantization type")
 
         prepared_graph(*example_inputs)
         converted_graph = convert_pt2e(prepared_graph)

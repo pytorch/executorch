@@ -11,7 +11,9 @@ from typing import Optional, Union
 
 import lm_eval
 import torch
-
+from executorch.examples.models.llama2.export_llama_lib import (
+    get_quantizer_and_quant_params,
+)
 from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
 from executorch.examples.models.llama2.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
@@ -31,7 +33,7 @@ from .export_llama_lib import (
 )
 
 
-class GPTFastEvalWrapper(eval_wrapper):
+class EagerEvalWrapper(eval_wrapper):
     """
     A wrapper class based on GPTFast, providing integration with the lm-evaluation-harness library.
     """
@@ -99,9 +101,9 @@ class GPTFastEvalWrapper(eval_wrapper):
         raise Exception("unimplemented")
 
 
-class ETEagerEvalWrapper(GPTFastEvalWrapper):
+class ETPybindEvalWrapper(EagerEvalWrapper):
     """
-    A wrapper class for ExecuTorch Eager integration with the
+    A wrapper class for ExecuTorch py-binded integration with the
     lm-evaluation-harness library.
     """
 
@@ -135,7 +137,7 @@ class ETEagerEvalWrapper(GPTFastEvalWrapper):
             return result[0]
 
 
-class ETRunnerEvalWrapper(GPTFastEvalWrapper):
+class ETRunnerEvalWrapper(EagerEvalWrapper):
     """
     A wrapper class for ExecuTorch Runtime integration with the
     lm-evaluation-harness library.
@@ -224,8 +226,8 @@ def gen_eval_wrapper(
                 max_seq_length=args.max_seq_length,
             )
 
-        # ETRunnerEvalWrapper: Create a wrapper around an ExecuTorch model, evaluated eagerly
-        return ETEagerEvalWrapper(
+        # ETPybindEvalWrapper: Create a wrapper around an ExecuTorch model, evaluated with pybindings
+        return ETPybindEvalWrapper(
             model=model,
             tokenizer=tokenizer,
             # Exported model takes at most (max_seq_length - 1) tokens.
@@ -233,14 +235,28 @@ def gen_eval_wrapper(
             max_seq_length=args.max_seq_length - 1,
         )
 
+    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
     # GPTFastEvalWrapper: Create a wrapper around a pre-exported model
     manager: LlamaEdgeManager = _prepare_for_llama_export(model_name, args)
-    model = (
-        manager.model.eval().to(device="cuda")
-        if torch.cuda.is_available()
-        else manager.model.to(device="cpu")
-    )
-    return GPTFastEvalWrapper(
+
+    if len(quantizers) != 0:
+        manager = manager.capture_pre_autograd_graph().pt2e_quantize(quantizers)
+        model = (
+            manager.pre_autograd_graph_module.to(device="cuda")
+            if torch.cuda.is_available()
+            else manager.pre_autograd_graph_module.to(device="cpu")
+        )
+    else:
+        # TODO: use manager.pre_autograd_graph_module for the eval to remove the if-else branch
+        # for quantizers. Currently capture_pre_autograd_graph only works with --kv_cache, but
+        # fails without the kv_cache mode
+        model = (
+            manager.model.eval().to(device="cuda")
+            if torch.cuda.is_available()
+            else manager.model.eval().to(device="cpu")
+        )
+
+    return EagerEvalWrapper(
         model=model,
         tokenizer=tokenizer,
         max_seq_length=args.max_seq_length,

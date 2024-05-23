@@ -66,7 +66,7 @@ void add_slice_tensor_out_node(
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
 
-    api::utils::uvec3 global_size = t_out->extents();
+    api::utils::uvec3 global_size = t_out->image_extents();
     api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
     const struct Block final {
@@ -103,7 +103,7 @@ void add_slice_tensor_out_node(
 
       // Due to channel packing, each batch value is span over stride planes
       int64_t n_channels = dim_at(in_sizes, kChannel4D);
-      stride = api::utils::div_up<int64_t>(n_channels, 4ll);
+      stride = api::utils::div_up_4(n_channels);
     } else {
       VK_THROW("Unexpected ncwh_dim!");
     }
@@ -112,7 +112,7 @@ void add_slice_tensor_out_node(
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
 
-    api::utils::uvec3 global_size = t_out->extents();
+    api::utils::uvec3 global_size = t_out->image_extents();
     api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
     const struct Block final {
@@ -151,6 +151,7 @@ void slice_tensor_out(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.slice_copy.Tensor, slice_tensor_out);
+  VK_REGISTER_OP(aten.slice.Tensor, slice_tensor_out);
 }
 
 } // namespace vkcompute

@@ -86,7 +86,7 @@ void add_repeat_channel_node(
 
   // Channel packed global work ids
   running_range.data[2] =
-      out_whcn_sizes.data[3] * api::utils::div_up(out_whcn_sizes.data[2], 4);
+      out_whcn_sizes.data[3] * api::utils::div_up_4(out_whcn_sizes.data[2]);
   api::utils::uvec3 global_size = api::utils::make_uvec3(running_range);
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
@@ -110,7 +110,7 @@ void add_repeat_channel_node(
       // Parameter buffers
       {graph.create_params_buffer(repeat_channel_args)},
       // Specialization Constants
-      {SV(t_out->gpu_memory_layout_int())}));
+      {SV(t_out->packed_dim_whcn_idx())}));
 }
 
 void add_repeat_node(

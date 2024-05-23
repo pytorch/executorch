@@ -671,6 +671,7 @@ def get_unary_ops_inputs():
             (S1, S2, S2, M2),
         ]
     )
+    test_suite.storage_types = ["api::kTexture3D", "api::kBuffer"]
     return test_suite
 
 
@@ -781,6 +782,7 @@ test_suites = {
     "aten.permute_copy.default": get_permute_inputs(),
     "aten.view_copy.default": get_view_inputs(),
     "aten.slice_copy.Tensor": get_slice_inputs(),
+    "aten.slice.Tensor": get_slice_inputs(),
     "aten.unsqueeze_copy.default": get_unsqueeze_inputs(),
     "aten.clone.default": get_clone_inputs(),
     "aten.repeat.default": get_repeat_inputs(),
@@ -788,8 +790,10 @@ test_suites = {
     "aten.split_with_sizes_copy.default": get_split_with_sizes_inputs(),
     "aten.split.Tensor": get_split_tensor_inputs(),
     "aten.sqrt.default": get_unary_ops_inputs(),
+    "aten.exp.default": get_unary_ops_inputs(),
     "aten._softmax.default": get_softmax_inputs(),
     "aten._log_softmax.default": get_softmax_inputs(),
     "aten._native_batch_norm_legit_no_training.default": get_native_batch_norm_inputs(),
     "aten.gelu.default": get_gelu_inputs(),
+    "aten.hardshrink.default": get_unary_ops_inputs(),
 }

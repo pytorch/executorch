@@ -25,7 +25,7 @@ void add_clone_node(
   std::string kernel_name = "clone";
   add_dtype_suffix(kernel_name, *t_out);
 
-  api::utils::uvec3 global_size = t_out->extents();
+  api::utils::uvec3 global_size = t_out->image_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(

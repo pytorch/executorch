@@ -15,7 +15,7 @@ set -e
 
 OUTPUT="${1:-executorch}"
 EXIT_STATUS=0
-BUCK2_RELEASE_DATE="2024-02-15"
+BUCK2_RELEASE_DATE="2024-05-15"
 BUCK2_ARCHIVE="buck2-aarch64-apple-darwin.zst"
 BUCK2=".venv/bin/buck2"
 APP_PATH="examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo"

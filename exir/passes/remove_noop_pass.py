@@ -77,12 +77,14 @@ class RemoveNoopPass(ExportPass):
                 continue
 
             if node.target == torch.ops.aten.slice_copy.Tensor:
-                if orig_tensor.size() == node.meta["val"].size():
-                    # If the graph is quantized, we must remove the entire pattern consisting of dq->op->q.
-                    # Otherwise, removing only the op will suffice.
-                    if node.args[0].target in _DEQUANT_OPS:
-                        dequant_nodes += [node.args[0]]
-                    node.replace_all_uses_with(node.args[0])
+                # Only do this check if all the dims are static.
+                if all(isinstance(dim, int) for dim in orig_tensor.size()):
+                    if orig_tensor.shape == node.meta["val"].shape:
+                        # If the graph is quantized, we must remove the entire pattern consisting of dq->op->q.
+                        # Otherwise, removing only the op will suffice.
+                        if node.args[0].target in _DEQUANT_OPS:
+                            dequant_nodes += [node.args[0]]
+                        node.replace_all_uses_with(node.args[0])
 
         graph_module.graph.eliminate_dead_code()
         eliminate_dq_q(graph_module, dequant_nodes)

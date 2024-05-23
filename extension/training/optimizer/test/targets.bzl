@@ -14,5 +14,6 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/extension/training/optimizer:optimizer",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
     )

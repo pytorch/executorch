@@ -95,40 +95,24 @@ void set_staging_zeros(api::StorageBuffer& staging, const size_t nbytes) {
   memset(data_ptr, 0, staging.nbytes());
 }
 
-api::ShaderInfo get_nchw_to_image_shader(const vTensor& v_dst) {
+api::ShaderInfo get_nchw_to_tensor_shader(const vTensor& v_dst) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
-  switch (v_dst.storage_type()) {
-    case api::kTexture3D:
-    case api::kTexture2D:
-      kernel_name = "nchw_to_image";
-      break;
-    default:
-      VK_THROW("No kernel available!");
-  }
-
-  add_ndim_suffix(kernel_name, v_dst);
+  kernel_name = "nchw_to_tensor";
   add_dtype_suffix(kernel_name, v_dst);
+  add_storage_type_suffix(kernel_name, v_dst);
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-api::ShaderInfo get_image_to_nchw_shader(const vTensor& v_src) {
+api::ShaderInfo get_tensor_to_nchw_shader(const vTensor& v_src) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
-  switch (v_src.storage_type()) {
-    case api::kTexture3D:
-    case api::kTexture2D:
-      kernel_name = "image_to_nchw";
-      break;
-    default:
-      VK_THROW("No kernel available!");
-  }
-
-  add_ndim_suffix(kernel_name, v_src);
+  kernel_name = "tensor_to_nchw";
   add_dtype_suffix(kernel_name, v_src);
+  add_storage_type_suffix(kernel_name, v_src);
 
   return VK_KERNEL_FROM_STR(kernel_name);
 }

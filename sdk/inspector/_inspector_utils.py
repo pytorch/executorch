@@ -78,16 +78,19 @@ def _parse_tensor_value(
         """
         Return the size of the scalar type in bytes
         """
-        if scalar_type == ScalarType.INT:
-            return (torch.int, 4)
-        elif scalar_type == ScalarType.BOOL:
-            return (torch.bool, 1)
-        elif scalar_type == ScalarType.FLOAT:
-            return (torch.float, 4)
-        elif scalar_type == ScalarType.DOUBLE:
-            return (torch.double, 8)
-        elif scalar_type == ScalarType.LONG:
-            return (torch.long, 8)
+        get_scalar_type_size_map = {
+            ScalarType.BYTE: (torch.uint8, 1),
+            ScalarType.CHAR: (torch.int8, 1),
+            ScalarType.BOOL: (torch.bool, 1),
+            ScalarType.SHORT: (torch.int16, 2),
+            ScalarType.HALF: (torch.float16, 2),
+            ScalarType.INT: (torch.int, 4),
+            ScalarType.FLOAT: (torch.float, 4),
+            ScalarType.DOUBLE: (torch.double, 8),
+            ScalarType.LONG: (torch.long, 8),
+        }
+        if scalar_type in get_scalar_type_size_map:
+            return get_scalar_type_size_map[scalar_type]
         else:
             raise RuntimeError(
                 f"Unsupported scalar type in get_scalar_type_size : {scalar_type}"

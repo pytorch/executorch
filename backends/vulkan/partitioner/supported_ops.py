@@ -52,7 +52,9 @@ BINARY_OPS = [
 UNARY_OPS = [
     exir_ops.edge.aten.abs.default,
     exir_ops.edge.aten.clamp.default,
+    exir_ops.edge.aten.exp.default,
     exir_ops.edge.aten.gelu.default,
+    exir_ops.edge.aten.hardshrink.default,
     exir_ops.edge.aten.hardtanh.default,
     exir_ops.edge.aten.relu.default,
     exir_ops.edge.aten.sigmoid.default,

@@ -531,8 +531,11 @@ for (int i=0; i<out.size(); i++) {{
 
         return graph_build
 
-    def gen_graph_exec_code(self) -> str:
+    def gen_graph_exec_code(self, loop_range: int = 1) -> str:
         graph_exec = ""
+        if loop_range > 1:
+            graph_exec += f"for (int i = 0; i < {loop_range} ; ++i) "
+        graph_exec += "{\n"
         for aten_arg in self.args:
             ref = self.refs[aten_arg.name]
             if ref.is_in:
@@ -544,6 +547,8 @@ for (int i=0; i<out.size(); i++) {{
 
         graph_exec += self.declare_vk_out_for(self.refs["out"])
         graph_exec += self.copy_from_staging(self.refs["out"])
+        graph_exec += self.check_graph_out(self.refs["out"])
+        graph_exec += "}\n"
 
         return graph_exec
 
@@ -564,7 +569,6 @@ for (int i=0; i<out.size(); i++) {{
         op_check_fn_body += self.gen_conditional_skips()
         op_check_fn_body += self.gen_graph_build_code()
         op_check_fn_body += self.gen_graph_exec_code()
-        op_check_fn_body += self.check_graph_out(self.refs["out"])
 
         # Add two level of indent for readability
         op_check_fn_body = re.sub(r"^", "        ", op_check_fn_body, flags=re.M)
