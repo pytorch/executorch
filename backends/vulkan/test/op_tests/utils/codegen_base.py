@@ -47,6 +47,8 @@ class TestSuite:
         self.prepacked_args: List[str] = []
         self.requires_prepack: bool = False
         self.dtypes: List[str] = ["at::kFloat", "at::kHalf"]
+        self.atol: str = "1e-5"
+        self.rtol: str = "1e-5"
 
     def supports_prepack(self):
         return len(self.prepacked_args) > 0
