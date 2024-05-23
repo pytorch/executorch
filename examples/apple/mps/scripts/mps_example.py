@@ -12,8 +12,8 @@ import logging
 import torch
 from examples.apple.mps.scripts.bench_utils import bench_torch, compare_outputs
 from executorch import exir
-from executorch.backends.apple.mps.mps_preprocess import MPSBackend
-from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
+from executorch.backends.apple.mps import MPSBackend
+from executorch.backends.apple.mps.partition import MPSPartitioner
 
 from executorch.exir import (
     EdgeCompileConfig,
