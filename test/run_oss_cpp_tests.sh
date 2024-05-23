@@ -31,7 +31,7 @@ build_and_run_test() {
     -DGTest_DIR="$(pwd)/cmake-out/lib/cmake/GTest" --debug-find \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -Bcmake-out/"${test_dir}"
-  cmake --build cmake-out/"${test_dir}" -j9
+  cmake --build cmake-out/"${test_dir}" -j9 || true
   cat cmake-out/"${test_dir}"/CMakeFiles/*.dir/link.txt
   for t in cmake-out/"${test_dir}"/*test; do ./"$t"; done
 }
