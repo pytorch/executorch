@@ -54,7 +54,9 @@ class VkGraphBuilder:
             return vk_graph_schema.VkDataType.FLOAT16
         elif torch_dtype == torch.float32:
             return vk_graph_schema.VkDataType.FLOAT32
-        # Narrowing conversion for index tensor produced by max_poolNd_with_indices.
+        # Even with I64ToI32DtypePass, the SpecPropPass will revert to i64 for
+        # output tensors: https://fburl.com/code/ojei0xq2. This narrowing
+        # conversion resolves that case.
         elif torch_dtype == torch.int64:
             return vk_graph_schema.VkDataType.INT32
         else:

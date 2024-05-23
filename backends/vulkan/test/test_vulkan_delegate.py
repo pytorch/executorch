@@ -19,6 +19,7 @@ from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from executorch.exir.pass_base import ExportPass
+from executorch.exir.passes.i64_to_i32_dtype_pass import I64ToI32DtypePass
 from torch.export import Dim, export, ExportedProgram
 
 ctypes.CDLL("libvulkan.so.1")
@@ -34,6 +35,11 @@ class TestBackends(unittest.TestCase):
     _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
         _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
     )
+
+    def i64_to_i32_dtype(self, x):
+        if isinstance(x, tuple):
+            return tuple(self.i64_to_i32_dtype(e) for e in x)
+        return x.to(torch.int32) if x.dtype == torch.int64 else x
 
     def assert_outputs_equal(
         self,
@@ -59,7 +65,7 @@ class TestBackends(unittest.TestCase):
                 self.assertTrue(
                     torch.allclose(
                         model_output[0],
-                        ref_output[0],
+                        self.i64_to_i32_dtype(ref_output[0]),
                         atol=atol,
                         rtol=rtol,
                         equal_nan=equal_nan,
@@ -70,7 +76,7 @@ class TestBackends(unittest.TestCase):
                     self.assertTrue(
                         torch.allclose(
                             model_output[i],
-                            ref_output[i],
+                            self.i64_to_i32_dtype(ref_output[i]),
                             atol=atol,
                             rtol=rtol,
                             equal_nan=equal_nan,
@@ -81,7 +87,7 @@ class TestBackends(unittest.TestCase):
             self.assertTrue(
                 torch.allclose(
                     model_output[0],
-                    ref_output,
+                    self.i64_to_i32_dtype(ref_output),
                     atol=atol,
                     rtol=rtol,
                     equal_nan=equal_nan,
@@ -135,7 +141,10 @@ class TestBackends(unittest.TestCase):
             executorch_module = _load_for_executorch_from_buffer(
                 executorch_program.buffer
             )
-            inputs_flattened, _ = tree_flatten(sample_inputs)
+
+            # In ET graph only, convert all i64 dtypes to i32 dtypes.
+            sample_inputs_int32 = self.i64_to_i32_dtype(sample_inputs)
+            inputs_flattened, _ = tree_flatten(sample_inputs_int32)
 
             model_output = executorch_module.run_method(
                 "forward", tuple(inputs_flattened)
@@ -392,6 +401,24 @@ class TestBackends(unittest.TestCase):
         )
 
         self.lower_module_and_test_output(ClampModule(), sample_inputs)
+
+    def test_vulkan_backend_clamp_int64(self):
+        class ClampModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.clamp(x, min=-3)
+
+        sample_inputs = (
+            torch.randint(low=-100, high=100, size=(5, 5), dtype=torch.int64),
+        )
+
+        self.lower_module_and_test_output(
+            ClampModule(),
+            sample_inputs,
+            custom_pass=[I64ToI32DtypePass()],
+        )
 
     def test_vulkan_backend_hardtanh(self):
         class HardTanHModule(torch.nn.Module):

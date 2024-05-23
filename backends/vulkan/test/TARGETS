@@ -19,6 +19,7 @@ python_unittest(
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/exir:lib",
         "//executorch/exir:pass_base",
+        "//executorch/exir/passes:i64_to_i32_dtype_pass",
         "//executorch/extension/pybindings:portable_lib",  # @manual
         "//executorch/extension/pytree:pylib",
         "//executorch/kernels/portable:custom_ops_generated_lib",
