@@ -4,15 +4,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+
 import json
 import os
 import sys
 from multiprocessing.connection import Client
 
 import numpy as np
-
+import timm
 import torch
-from executorch.examples.models.mobilenet_v3 import MV3Model
+
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
     make_output_dir,
@@ -29,8 +31,7 @@ def get_dataset(dataset_path, data_size):
     def get_data_loader():
         preprocess = transforms.Compose(
             [
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
+                transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 transforms.Normalize(
                     mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
@@ -51,7 +52,8 @@ def get_dataset(dataset_path, data_size):
             break
         feature, target = data
         inputs.append((feature,))
-        targets.append(target)
+        for element in target:
+            targets.append(element)
         input_list += f"input_{index}_0.raw\n"
 
     return inputs, targets, input_list
@@ -59,6 +61,14 @@ def get_dataset(dataset_path, data_size):
 
 if __name__ == "__main__":
     parser = setup_common_args_and_variables()
+
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. Default ./gMLP_image_classification",
+        default="./gMLP_image_classification",
+        type=str,
+    )
 
     parser.add_argument(
         "-d",
@@ -72,17 +82,7 @@ if __name__ == "__main__":
         required=True,
     )
 
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. "
-        "Default ./mobilenet_v3",
-        default="./mobilenet_v3",
-        type=str,
-    )
-
     args = parser.parse_args()
-
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     # ensure the working directory exist.
@@ -99,16 +99,20 @@ if __name__ == "__main__":
         dataset_path=f"{args.dataset}",
         data_size=data_num,
     )
-    pte_filename = "mv3_qnn"
-    instance = MV3Model()
+
+    pte_filename = "gMLP_image_classification_qnn"
+    model = timm.create_model("gmlp_s16_224", pretrained=True).eval()
+    sample_input = (torch.randn(1, 3, 224, 224),)
+
     build_executorch_binary(
-        instance.get_eager_model().eval(),
-        instance.get_example_inputs(),
+        model,
+        sample_input,
         args.model,
         f"{args.artifact}/{pte_filename}",
-        inputs,
+        dataset=inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
+        quant_dtype=QuantDtype.use_8a8w,
         shared_buffer=args.shared_buffer,
     )
 
@@ -143,11 +147,11 @@ if __name__ == "__main__":
     # top-k analysis
     predictions = []
     for i in range(data_num):
-        predictions.append(
-            np.fromfile(
-                os.path.join(output_data_folder, f"output_{i}_0.raw"), dtype=np.float32
-            )
-        )
+        prediction = np.fromfile(
+            os.path.join(output_data_folder, f"output_{i}_0.raw"), dtype=np.float32
+        ).reshape([1, 1000])
+        for i in range(prediction.shape[0]):
+            predictions.append(prediction[i])
 
     k_val = [1, 5]
     topk = [topk_accuracy(predictions, targets, k).item() for k in k_val]

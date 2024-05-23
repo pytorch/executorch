@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import copy
+from collections import defaultdict
 from typing import Any, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
@@ -49,7 +50,7 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
 
         self.skip_node_id_set = skip_node_id_set
-        self.nodes_to_wrappers = {}
+        self.nodes_to_wrappers = self.nodes_to_wrappers = defaultdict(dict)
         self.qnn_manager = PyQnnManager.QnnManager(
             generate_qnn_executorch_option(compiler_specs)
         )

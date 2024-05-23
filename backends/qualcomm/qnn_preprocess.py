@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from collections import defaultdict
 from typing import final, List
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
@@ -54,7 +55,7 @@ class QnnBackend(BackendDetails):
         assert pass_result is not None
 
         enable_tensor_dump = qnn_manager.IsTensorDump()
-        nodes_to_wrappers = {}
+        nodes_to_wrappers = defaultdict(dict)
         node_visitors = get_node_visitors(
             edge_program, enable_tensor_dump=enable_tensor_dump
         )

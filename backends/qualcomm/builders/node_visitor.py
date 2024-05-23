@@ -215,9 +215,8 @@ class NodeVisitor:
         self,
         tensor: torch.Tensor,
         quant_config: Dict,
-        is_tensor: bool,
     ) -> PyQnnWrapper.Qnn_TensorType_t:
-        if quant_config and is_tensor:
+        if quant_config:
             quant_range = quant_config["quant_max"] - quant_config["quant_min"]
             unsigned = quant_config["quant_min"] >= 0
             if quant_range <= torch.iinfo(torch.int8).max - torch.iinfo(torch.int8).min:
@@ -234,8 +233,8 @@ class NodeVisitor:
                 else:
                     quant_config["dtype"] = torch.int16
             return QNN_QUANT_TYPE_MAP[quant_config["dtype"]]
-        else:
-            return QNN_TENSOR_TYPE_MAP[tensor.dtype]
+
+        return QNN_TENSOR_TYPE_MAP[tensor.dtype]
 
     def define_custom_tensor_wrapper(
         self,
@@ -247,10 +246,11 @@ class NodeVisitor:
         dims: torch.Size,
         tensor: torch.Tensor,
         is_fake_tensor: bool,
-        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
+        wrapper_idx: int = 0,
     ) -> PyQnnWrapper.TensorWrapper:
-        if node_name in nodes_to_wrappers:
-            return nodes_to_wrappers[node_name]
+        if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
+            return cached
         if is_fake_tensor:
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
                 node_name,
@@ -266,7 +266,7 @@ class NodeVisitor:
         else:
             # Can implement non-fake tensor when there is a need
             return None
-        nodes_to_wrappers[node_name] = tensor_wrapper
+        nodes_to_wrappers[node_name][wrapper_idx] = tensor_wrapper
         return tensor_wrapper
 
     def define_tensor(
@@ -274,10 +274,11 @@ class NodeVisitor:
         node: torch.fx.Node,
         tensor: torch.Tensor,
         tensor_type: PyQnnWrapper.Qnn_TensorType_t,
-        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
         is_input_tensor: bool,
         node_name: str = None,
         is_tensor: bool = True,
+        wrapper_idx: int = 0,
     ) -> PyQnnWrapper.TensorWrapper:
         """
         Covert torch.Tensor to TensorWrapper
@@ -293,8 +294,8 @@ class NodeVisitor:
         if node_name is None:
             node_name = node.name
 
-        if node_name in nodes_to_wrappers:
-            return nodes_to_wrappers[node_name]
+        if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
+            return cached
         tensor_name = node.name
         if is_graph_output(node):
             tensor_name = "output_" + tensor_name
@@ -303,7 +304,7 @@ class NodeVisitor:
         quant_encoding, quant_configs = self.get_quant_encoding_conf(
             node, is_input_tensor
         )
-        dtype = self.get_data_type(tensor, quant_configs, is_tensor)
+        dtype = self.get_data_type(tensor, quant_configs)
         if isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
                 tensor_name,
@@ -334,13 +335,13 @@ class NodeVisitor:
                 tensor.detach().numpy(),
                 True,
             )
-        nodes_to_wrappers[node_name] = tensor_wrapper
+        nodes_to_wrappers[node_name][wrapper_idx] = tensor_wrapper
         return tensor_wrapper
 
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         """Convert torch.fx.Node to OpWrapper"""
         raise NotImplementedError("NodeVisitor must be extended!")
@@ -372,10 +373,8 @@ def generate_node_to_external_map(
         if is_graph_input(node, edge_program):
             node_to_external_map[node] = len(node_to_external_map)
     for node in edge_program.graph_module.graph.nodes:
-        if node.op == "output":
-            for output_nodes in node.args:
-                for output_node in output_nodes:
-                    node_to_external_map[output_node] = len(node_to_external_map)
+        if is_graph_output(node):
+            node_to_external_map[node] = len(node_to_external_map)
     return node_to_external_map
 
 
