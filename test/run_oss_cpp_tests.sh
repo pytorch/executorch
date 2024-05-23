@@ -17,7 +17,6 @@ set -ex
 build_executorch() {
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
-    -DGTest_DIR=cmake-out/lib/cmake/GTest \
     -DEXECUTORCH_BUILD_GTESTS=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -Bcmake-out
@@ -26,7 +25,10 @@ build_executorch() {
 
 build_and_run_test() {
   local test_dir=$1
-  cmake "${test_dir}" -Bcmake-out/"${test_dir}" -DCMAKE_INSTALL_PREFIX=cmake-out
+  cmake "${test_dir}" \
+    -DGTest_DIR=$(realpath cmake-out/lib/cmake/GTest) \
+    -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
   cat cmake-out/"${test_dir}"/CMakeFiles/*.dir/link.txt
   for t in cmake-out/"${test_dir}"/*test; do ./"$t"; done
