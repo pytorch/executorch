@@ -51,6 +51,11 @@ jobs:
 
         bash .ci/scripts/setup-conda.sh
 
+        # Create temp directory for sccache shims
+        export TMP_DIR=$(mktemp -d)
+        export PATH="${TMP_DIR}:$PATH"
+        trap 'rm -rfv ${TMP_DIR}' EXIT
+
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_PYBIND=ON \
