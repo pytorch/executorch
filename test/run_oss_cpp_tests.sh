@@ -22,6 +22,7 @@ build_executorch() {
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
   ls cmake-out/lib
+  for t in cmake-out/lib/*.a; do lipo -info $t; done
 }
 
 build_and_run_test() {
