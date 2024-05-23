@@ -35,7 +35,7 @@ build_and_run_test() {
   local test_dir=$1
   cmake "${test_dir}" \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
-    -DGTest_DIR="$(pwd)/third-party/googletest/build/lib/cmake/GTest" \
+    -DCMAKE_PREFIX_PATH="$(pwd)/third-party/googletest/build" \
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
   for t in cmake-out/"${test_dir}"/*test; do ./"$t"; done
