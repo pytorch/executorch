@@ -28,7 +28,7 @@ build_executorch() {
 build_and_run_test() {
   local test_dir=$1
   cmake "${test_dir}" \
-    -DGTest_DIR="$(pwd)/cmake-out/lib/cmake/GTest;$(pwd)/cmake-out/lib64/cmake/GTest" \
+    -DGTest_DIR="$(pwd)/cmake-out/lib/cmake/GTest:$(pwd)/cmake-out/lib64/cmake/GTest" \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
