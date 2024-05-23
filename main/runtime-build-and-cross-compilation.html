@@ -620,6 +620,7 @@ cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>/User
 <span class="nb">cd</span><span class="w">  </span>..
 cmake<span class="w"> </span>--build<span class="w">  </span>cmake-android-out<span class="w">  </span>-j9
 
+adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/data/local/tmp/executorch
 <span class="c1"># push the binary to an Android device</span>
 adb<span class="w"> </span>push<span class="w">  </span>cmake-android-out/executor_runner<span class="w">  </span>/data/local/tmp/executorch
 <span class="c1"># push the model file</span>
