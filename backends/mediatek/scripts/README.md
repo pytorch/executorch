@@ -18,7 +18,7 @@ Before you begin, ensure you have the following prerequisites installed and conf
 
 ### 3. MediaTek ExercuTorch Libraries
 
-Download the following libraries required for MediaTek ExercuTorch:
+Download the following libraries from MediaTek's NeuroPilot portal (link to be added):
 
 - `libneuronusdk_adapter.mtk.so.8.1.1`: This universal SDK contains the implementation required for executing target-dependent code on the MediaTek chip.
 - `libneuron_buffer_allocator.so`: This utility library is designed for allocating DMA buffers necessary for model inference.
