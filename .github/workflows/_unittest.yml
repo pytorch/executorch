@@ -64,6 +64,6 @@ jobs:
         .ci/scripts/setup-macos.sh cmake
 
         # Run pytest with coverage
-        # ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
+        ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
         # Run gtest
         ${CONDA_RUN} test/run_oss_cpp_tests.sh
