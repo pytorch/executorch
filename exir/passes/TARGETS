@@ -326,3 +326,14 @@ python_library(
         "//executorch/exir/dialects:lib",
     ],
 )
+
+python_library(
+    name = "i64_to_i32_dtype_pass",
+    srcs = [
+        "i64_to_i32_dtype_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+    ],
+)
