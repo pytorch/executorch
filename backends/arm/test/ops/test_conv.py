@@ -247,7 +247,7 @@ class TestConv2D(unittest.TestCase):
         tester = (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .export()
@@ -272,7 +272,7 @@ class TestConv2D(unittest.TestCase):
         tester = (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
@@ -296,7 +296,7 @@ class TestConv2D(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()

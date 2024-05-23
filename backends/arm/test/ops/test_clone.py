@@ -37,7 +37,9 @@ class TestSimpleClone(unittest.TestCase):
     ):
         tester = (
             ArmTester(
-                module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
             .check_count({"torch.ops.aten.clone.default": 1})
@@ -59,7 +61,9 @@ class TestSimpleClone(unittest.TestCase):
     ):
         tester = (
             ArmTester(
-                module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
             .export()
@@ -82,7 +86,9 @@ class TestSimpleClone(unittest.TestCase):
     ):
         (
             ArmTester(
-                module, inputs=test_data, compile_spec=common.get_u55_compile_spec()
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
             .export()
