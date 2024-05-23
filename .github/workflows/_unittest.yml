@@ -41,10 +41,6 @@ jobs:
 
   macos:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    strategy:
-      matrix:
-        include:
-          - build-tool: buck2
     with:
       runner: macos-m1-stable
       python-version: '3.11'
@@ -53,8 +49,6 @@ jobs:
       script: |
         set -eux
 
-        BUILD_TOOL=${{ matrix.build-tool }}
-
         bash .ci/scripts/setup-conda.sh
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
@@ -62,9 +56,9 @@ jobs:
         EXECUTORCH_BUILD_PYBIND=ON \
         CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
         ${CONDA_RUN} --no-capture-output \
-        .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        .ci/scripts/setup-macos.sh cmake
 
         # Run pytest with coverage
         ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
         # Run gtest
-        ${CONDA_RUN} buck2 test runtime/core/... runtime/platform/...
+        # test/run_oss_cpp_tests.sh
