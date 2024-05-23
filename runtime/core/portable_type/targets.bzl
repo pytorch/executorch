@@ -26,7 +26,6 @@ def define_common_targets():
         visibility = [
             "//executorch/runtime/core/exec_aten/...",
             "//executorch/runtime/core/portable_type/test/...",
-            "//executorch/backends/...",
         ],
         exported_deps = [
             ":scalar_type",

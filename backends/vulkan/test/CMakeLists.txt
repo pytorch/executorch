@@ -17,8 +17,13 @@
 cmake_minimum_required(VERSION 3.19)
 project(executorch)
 
-find_package(executorch CONFIG REQUIRED)
+find_package(executorch CONFIG REQUIRED COMPONENTS vulkan_backend)
 find_package(GTest CONFIG REQUIRED)
+
+# Only build tests if Vulkan was compiled
+find_library(LIB_VULKAN_BACKEND vulkan_backend)
+
+if(LIB_VULKAN_BACKEND)
 
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
@@ -80,3 +85,5 @@ target_link_libraries(
                                   test_shaderlib
 )
 target_compile_options(vulkan_compute_api_test PRIVATE ${VULKAN_CXX_FLAGS})
+
+endif()
