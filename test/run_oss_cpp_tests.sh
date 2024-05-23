@@ -17,30 +17,26 @@ set -ex
 build_executorch() {
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
-    -DEXECUTORCH_BUILD_GTESTS=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
-  ls cmake-out/lib
-  for t in cmake-out/lib/*.a; do lipo -info $t; done
-  nm -gC cmake-out/lib/libgtest.a
 }
 
 build_gtest() {
-  git clone https://github.com/google/googletest.git -b v1.14.0
-  cd googletest
-  mkdir build
-  cd build
+  git clone https://github.com/google/googletest.git -b v1.14.0 cmake-out/googletest
+  mkdir cmake-out/googletest/build
+  pushd cmake-out/googletest/build
   cmake .. -DCMAKE_INSTALL_PREFIX=.
-  make
+  make -j4
   make install
-  cd ../..
+  popd
 }
 
 build_and_run_test() {
   local test_dir=$1
   cmake "${test_dir}" \
-    -DGTest_DIR="$(pwd)/googletest/build/lib/cmake/GTest" --debug-find \
+    -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DGTest_DIR="$(pwd)/googletest/cmake-out/build/lib/cmake/GTest" --debug-find \
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9 || true
   cat cmake-out/"${test_dir}"/CMakeFiles/*.dir/link.txt
@@ -68,6 +64,7 @@ probe_tests() {
 }
 
 build_executorch
+build_gtest
 
 if [ -z "$1" ]; then
   echo "Running all directories:"
