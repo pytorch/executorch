@@ -17,6 +17,7 @@ set -ex
 build_executorch() {
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DGTest_DIR=cmake-out/third-party/googletest/googletest/generated \
     -DEXECUTORCH_BUILD_GTESTS=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -Bcmake-out
