@@ -122,8 +122,11 @@ void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 }
 
 DEFINE_ACTIVATION_FN(abs);
+DEFINE_ACTIVATION_FN(cos);
 DEFINE_ACTIVATION_FN(exp);
+DEFINE_ACTIVATION_FN(neg);
 DEFINE_ACTIVATION_FN(sigmoid);
+DEFINE_ACTIVATION_FN(sin);
 DEFINE_ACTIVATION_FN(sqrt);
 DEFINE_ACTIVATION_FN(tanh);
 DEFINE_CLAMP_FN(clamp);
@@ -134,11 +137,14 @@ DEFINE_HARDSHRINK_FN(hardshrink);
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
   VK_REGISTER_OP(aten.clamp.default, clamp);
+  VK_REGISTER_OP(aten.cos.default, cos);
   VK_REGISTER_OP(aten.exp.default, exp);
   VK_REGISTER_OP(aten.gelu.default, gelu);
   VK_REGISTER_OP(aten.hardtanh.default, hardtanh);
+  VK_REGISTER_OP(aten.neg.default, neg);
   VK_REGISTER_OP(aten.relu.default, relu);
   VK_REGISTER_OP(aten.sigmoid.default, sigmoid);
+  VK_REGISTER_OP(aten.sin.default, sin);
   VK_REGISTER_OP(aten.sqrt.default, sqrt);
   VK_REGISTER_OP(aten.tanh.default, tanh);
   VK_REGISTER_OP(aten.hardshrink.default, hardshrink);
