@@ -389,6 +389,14 @@ class MPSAddmm(MPSNode3x1):
 
 
 ##
+## Linear algebra ops
+##
+@dataclass
+class MPSInt8PackedMM(MPSNode3x1):
+    pass
+
+
+##
 ## Constant ops
 ##
 @dataclass
@@ -697,6 +705,7 @@ MPSNodeUnion = Union[
     # Linear algebra ops
     MPSMatMul,
     MPSAddmm,
+    MPSInt8PackedMM,
     # Constant ops
     MPSFull,
     MPSFullLike,

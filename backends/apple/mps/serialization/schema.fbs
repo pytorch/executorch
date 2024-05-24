@@ -441,6 +441,10 @@ union MPSNodeUnion {
 
     // Range ops
     MPSArange,
+
+    // Quantized linear algebra ops
+    MPSInt8PackedMM: _MPSNode3x1,
+
 }
 
 table MPSNode {
