@@ -223,7 +223,7 @@ add_subdirectory(
 install(TARGETS qnn_executorch_backend DESTINATION lib)
 
 # QNN pybind
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+if(EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(
     ${EXECUTORCH_SOURCE_DIR}/third-party/pybind11
     ${CMAKE_CURRENT_BINARY_DIR}/pybind11

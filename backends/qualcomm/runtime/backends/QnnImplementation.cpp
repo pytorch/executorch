@@ -5,7 +5,11 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 
 #include "QnnInterface.h"
@@ -14,7 +18,11 @@ namespace executor {
 namespace qnn {
 template <typename Fn>
 Fn loadQnnFunction(void* handle, const char* function_name) {
+#ifdef _WIN32
+  return reinterpret_cast<Fn>(GetProcAddress(reinterpret_cast<HMODULE>(handle), function_name));
+#else
   return reinterpret_cast<Fn>(dlsym(handle, function_name)); // NOLINT
+#endif
 }
 
 Error QnnImplementation::InitBackend(
@@ -54,13 +62,21 @@ Error QnnImplementation::StartBackend(
     const std::string& lib_path,
     const QnnSaver_Config_t** saver_config) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
+#ifdef _WIN32
+  void* lib_handle = LoadLibrary(lib_path.c_str());
+#else
   void* lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
+#endif
 
   if (lib_handle == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
         "Cannot Open QNN library %s, with error: %s",
         lib_path.c_str(),
+#ifdef _WIN32
+        GetLastError());
+#else
         dlerror());
+#endif
     return Error::Internal;
   }
 
@@ -72,7 +88,11 @@ Error QnnImplementation::StartBackend(
     QNN_EXECUTORCH_LOG_ERROR(
         "QnnImplementation::Load Cannot load symbol "
         "QnnInterface_getProviders : %s",
+#ifdef _WIN32
+        GetLastError());
+#else
         dlerror());
+#endif
     return Error::Internal;
   }
 
@@ -120,6 +140,14 @@ Error QnnImplementation::StartBackend(
   if (loaded_lib_handle_.count(backend_id) > 0) {
     QNN_EXECUTORCH_LOG_WARN("closing %pK...", loaded_lib_handle_[backend_id]);
 
+#ifdef _WIN32
+    if (FreeLibrary(reinterpret_cast<HMODULE>(loaded_lib_handle_[backend_id])) == 0) {
+      QNN_EXECUTORCH_LOG_WARN(
+          "Sadly, fail to close %pK with error %d",
+          loaded_lib_handle_[backend_id],
+          GetLastError());
+    }
+#else
     int dlclose_error = dlclose(loaded_lib_handle_[backend_id]);
     if (dlclose_error != 0) {
       QNN_EXECUTORCH_LOG_WARN(
@@ -127,6 +155,7 @@ Error QnnImplementation::StartBackend(
           loaded_lib_handle_[backend_id],
           dlerror());
     }
+#endif
   }
   loaded_lib_handle_[backend_id] = lib_handle;
 
@@ -138,6 +167,15 @@ Error QnnImplementation::StartBackend(
     lib_path_to_backend_id_.erase(lib_path);
     loaded_backend_.erase(backend_id);
 
+#ifdef _WIN32
+    if (FreeLibrary(reinterpret_cast<HMODULE>(loaded_lib_handle_[backend_id])) == 0) {
+      QNN_EXECUTORCH_LOG_WARN(
+          "fail to close %pK after backend-init "
+          "failure, with error %d",
+          loaded_lib_handle_[backend_id],
+          GetLastError());
+    }
+#else
     int dlclose_error = dlclose(loaded_lib_handle_[backend_id]);
     if (dlclose_error != 0) {
       QNN_EXECUTORCH_LOG_WARN(
@@ -146,6 +184,7 @@ Error QnnImplementation::StartBackend(
           loaded_lib_handle_[backend_id],
           dlerror());
     }
+#endif
 
     loaded_lib_handle_.erase(backend_id);
     return be_init_st;
@@ -160,12 +199,22 @@ Error QnnImplementation::TerminateAllBackends() {
   loaded_backend_.clear();
 
   for (auto& it : loaded_lib_handle_) {
+#ifdef _WIN32
+    if (FreeLibrary(reinterpret_cast<HMODULE>(it.second)) == 0) {
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Fail to close QNN backend %d with error %d",
+          it.first,
+          GetLastError());
+      ret_status = Error::Internal;
+    }
+#else
     int dlclose_error = dlclose(it.second);
     if (dlclose_error != 0) {
       QNN_EXECUTORCH_LOG_ERROR(
           "Fail to close QNN backend %d with error %s", it.first, dlerror());
       ret_status = Error::Internal;
     }
+#endif
   }
   loaded_lib_handle_.clear();
   lib_path_to_backend_id_.clear();

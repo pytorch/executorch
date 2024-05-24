@@ -109,6 +109,7 @@ def define_common_targets():
                 "DEFAULT": [],
                 "ovr_config//os:linux": ["-DET_USE_LIBDL"],
                 "ovr_config//os:macos": ["-DET_USE_LIBDL"],
+                "ovr_config//os:windows": ["-DET_USE_WINAPI"],
             },
         ),
         visibility = [

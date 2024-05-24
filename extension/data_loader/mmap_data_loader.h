@@ -12,6 +12,12 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/types.h>
+#endif
+
 namespace torch {
 namespace executor {
 namespace util {
@@ -75,12 +81,22 @@ class MmapDataLoader : public DataLoader {
       : file_name_(rhs.file_name_),
         file_size_(rhs.file_size_),
         page_size_(rhs.page_size_),
+#ifdef _WIN32
+        file_handle_(rhs.file_handle_),
+        mapping_handle_(rhs.mapping_handle_),
+#else
         fd_(rhs.fd_),
+#endif
         mlock_config_(rhs.mlock_config_) {
     rhs.file_name_ = nullptr;
     rhs.file_size_ = 0;
     rhs.page_size_ = 0;
+#ifdef _WIN32
+    rhs.file_handle_ = INVALID_HANDLE_VALUE;
+    rhs.mapping_handle_ = nullptr;
+#else
     rhs.fd_ = -1;
+#endif
     rhs.mlock_config_ = MlockConfig::NoMlock;
   }
 
@@ -93,7 +109,12 @@ class MmapDataLoader : public DataLoader {
 
  private:
   MmapDataLoader(
+#ifdef _WIN32
+      HANDLE file_handle,
+      HANDLE mapping_handle,
+#else
       int fd,
+#endif
       size_t file_size,
       const char* file_name,
       size_t page_size,
@@ -101,7 +122,12 @@ class MmapDataLoader : public DataLoader {
       : file_name_(file_name),
         file_size_(file_size),
         page_size_(page_size),
+#ifdef _WIN32
+        file_handle_(file_handle),
+        mapping_handle_(mapping_handle),
+#else
         fd_(fd),
+#endif
         mlock_config_(mlock_config) {}
 
   // Not safely copyable.
@@ -112,7 +138,12 @@ class MmapDataLoader : public DataLoader {
   const char* file_name_; // String data is owned by the instance.
   size_t file_size_;
   size_t page_size_;
+#ifdef _WIN32
+  HANDLE file_handle_;
+  HANDLE mapping_handle_;
+#else
   int fd_; // Owned by the instance.
+#endif
   MlockConfig mlock_config_;
 };
 
