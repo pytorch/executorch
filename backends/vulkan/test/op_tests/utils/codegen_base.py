@@ -22,6 +22,8 @@ AT_TENSOR_LIST = "at::TensorList"
 BOOL = "bool"
 DOUBLE = "double"
 INT = "int64_t"
+OPT_AT_DOUBLE_ARRAY_REF = "::std::optional<at::ArrayRef<double>>"
+OPT_AT_INT_ARRAY_REF = "at::OptionalIntArrayRef"
 OPT_AT_TENSOR = "::std::optional<at::Tensor>"
 OPT_BOOL = "::std::optional<bool>"
 OPT_INT64 = "::std::optional<int64_t>"
@@ -45,6 +47,8 @@ class TestSuite:
         self.prepacked_args: List[str] = []
         self.requires_prepack: bool = False
         self.dtypes: List[str] = ["at::kFloat", "at::kHalf"]
+        self.atol: str = "1e-5"
+        self.rtol: str = "1e-5"
 
     def supports_prepack(self):
         return len(self.prepacked_args) > 0
@@ -142,6 +146,10 @@ class TestSuiteGen:
 
         if cpp_type == AT_INT_ARRAY_REF:
             ret_str = f"std::vector<int64_t> {arg.name} = "
+        elif (
+            cpp_type == OPT_AT_DOUBLE_ARRAY_REF or cpp_type == OPT_AT_INT_ARRAY_REF
+        ) and str(data) != "None":
+            ret_str = f"std::vector<double> {arg.name} = "
         else:
             ret_str = f"{cpp_type} {arg.name} = "
 
@@ -156,6 +164,11 @@ class TestSuiteGen:
             ret_str += f"{data};"
         elif cpp_type == AT_INT_ARRAY_REF:
             ret_str += f"{init_list_str(data)};"
+        elif cpp_type == OPT_AT_DOUBLE_ARRAY_REF or cpp_type == OPT_AT_INT_ARRAY_REF:
+            if str(data) == "None":
+                ret_str += "std::nullopt;"
+            else:
+                ret_str += f"{init_list_str(data)};"
         elif cpp_type == BOOL:
             ret_str += f"{str(data).lower()};"
         elif cpp_type == INT:

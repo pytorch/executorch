@@ -29,7 +29,7 @@ build_and_run_test() {
   cmake --build cmake-out/"${test_dir}" -j9
 
   for t in cmake-out/"${test_dir}"/*test; do
-    if [ -e $t ]; then
+    if [ -e "$t" ]; then
       ./"$t";
     fi
   done
