@@ -341,4 +341,3 @@ jobs:
 
         # Run pytest with coverage
         pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test
-
