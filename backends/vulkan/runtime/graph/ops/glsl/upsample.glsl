@@ -13,21 +13,15 @@
 
 #define PRECISION ${PRECISION}
 
-#define VEC4_T ${texel_type(DTYPE)}
+#define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
+${define_active_storage_type(STORAGE)}
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
-
-layout(set = 0, binding = 2) uniform PRECISION restrict OutLimits {
-  ivec3 out_limits;
-};
-
-layout(set = 0, binding = 3) uniform PRECISION restrict Sizes {
-  ivec4 sizes;
-};
+${layout_declare_tensor(0, "w", "image_out", DTYPE, STORAGE)}
+${layout_declare_tensor(1, "r", "image_in", DTYPE, STORAGE)}
+${layout_declare_ubo(2, "ivec3", "out_limits")}
+${layout_declare_ubo(3, "ivec4", "sizes")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
