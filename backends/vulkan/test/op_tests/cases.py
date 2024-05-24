@@ -395,10 +395,31 @@ def get_slice_inputs():
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.dtypes = ["at::kFloat"]
-    test_suite.layouts = [
-        "api::kChannelsPacked",
-    ]
+    test_suite.layouts = ["api::kChannelsPacked"]
     test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
+def get_index_select_inputs():
+    Test = namedtuple("VkIndexSelectTest", ["self", "dim", "index"])
+    Test.__new__.__defaults__ = (None, 0, None)
+
+    test_cases = []
+
+    for i in range(4):
+        test_cases += [
+            Test(self=[9, 9, 9, 9], dim=i, index=[0]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[2]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[0, 2]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[3, 1]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[5, 5]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[2, 3, 4, 5, 7, 10]),
+        ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = ["api::kChannelsPacked"]
     return test_suite
 
 
@@ -795,6 +816,7 @@ test_suites = {
     "aten.view_copy.default": get_view_inputs(),
     "aten.slice_copy.Tensor": get_slice_inputs(),
     "aten.slice.Tensor": get_slice_inputs(),
+    "aten.index_select.default": get_index_select_inputs(),
     "aten.unsqueeze_copy.default": get_unsqueeze_inputs(),
     "aten.clone.default": get_clone_inputs(),
     "aten.repeat.default": get_repeat_inputs(),

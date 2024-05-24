@@ -1255,3 +1255,39 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
             custom_pass=[MeanToSumDiv()],
         )
+
+    def test_vulkan_backend_index_select_channel(self):
+        class IndexSelectModule(torch.nn.Module):
+            def __init__(self, dim, indices):
+                super().__init__()
+                self.dim = dim
+                self.index = torch.tensor(indices, dtype=torch.int32)
+
+            def forward(self, x):
+                return torch.index_select(x, self.dim, self.index)
+
+        sample_inputs = (torch.arange(96).reshape(2, 8, 2, 3).float(),)
+
+        self.lower_module_and_test_output(
+            IndexSelectModule(dim=1, indices=[2, 3, 5, 6, 7]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_index_select(self):
+        class IndexSelectModule(torch.nn.Module):
+            def __init__(self, dim, indices):
+                super().__init__()
+                self.dim = dim
+                self.index = torch.tensor(indices, dtype=torch.int32)
+
+            def forward(self, x):
+                return torch.index_select(x, self.dim, self.index)
+
+        sample_inputs = (torch.arange(144).reshape(12, 1, 3, 4).float(),)
+
+        self.lower_module_and_test_output(
+            IndexSelectModule(dim=0, indices=[1, 3, 5, 7, 8, 9, 10, 11, 2, 3]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
