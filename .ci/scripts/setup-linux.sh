@@ -23,10 +23,3 @@ fi
 install_flatc_from_source
 install_executorch
 build_executorch_runner "${BUILD_TOOL}"
-
-INSTALL_VULKAN_DEPS=$2
-if [[ -n "$INSTALL_VULKAN_DEPS" ]]
-  # Install dependencies needed for Vulkan delegate
-  install_swiftshader
-  install_glslc
-fi
