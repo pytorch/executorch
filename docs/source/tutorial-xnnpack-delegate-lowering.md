@@ -152,7 +152,7 @@ cmake \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-    -DEXECUTORCH_ENABLE_LOGGING=1 \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DPYTHON_EXECUTABLE=python \
     -Bcmake-out .
 ```
@@ -167,16 +167,6 @@ Now you should be able to find the executable built at `./cmake-out/backends/xnn
 ./cmake-out/backends/xnnpack/xnn_executor_runner --model_path=./mv2_xnnpack_fp32.pte
 # or to run the quantized variant
 ./cmake-out/backends/xnnpack/xnn_executor_runner --model_path=./mv2_xnnpack_q8.pte
-```
-
-
-## Running the XNNPACK Model with Buck
-Alternatively, you can use `buck2` to run the `.pte` file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install [buck2](getting-started-setup.md#Build-&-Run). You can now run it with the prebuilt `xnn_executor_runner` provided in the examples. This will run the model on some sample inputs.
-
-```bash
-buck2 run examples/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_fp32.pte
-# or to run the quantized variant
-buck2 run examples/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_q8.pte
 ```
 
 ## Building and Linking with the XNNPACK Backend

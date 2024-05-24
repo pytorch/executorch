@@ -88,12 +88,37 @@ You can find more valid quantized example models by running:
 python3 -m examples.xnnpack.quantization.example --help
 ```
 
-A quantized model can be run via `executor_runner`:
+## Running the XNNPACK Model with CMake
+After exporting the XNNPACK Delegated model, we can now try running it with example inputs using CMake. We can build and use the xnn_executor_runner, which is a sample wrapper for the ExecuTorch Runtime and XNNPACK Backend. We first begin by configuring the CMake build like such:
 ```bash
-buck2 run examples/portable/executor_runner:executor_runner -- --model_path ./mv2_quantized.pte
-```
-Please note that running a quantized model will require the presence of various quantized/dequantize operators in the [quantized kernel lib](../../kernels/quantized).
+# cd to the root of executorch repo
+cd executorch
 
+# Get a clean cmake-out directory
+rm- -rf cmake-out
+mkdir cmake-out
+
+# Configure cmake
+cmake \
+    -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
+    -DPYTHON_EXECUTABLE=python \
+    -Bcmake-out .
+```
+Then you can build the runtime componenets with
+
+```bash
+cmake --build cmake-out -j9 --target install --config Release
+```
+
+Now you should be able to find the executable built at `./cmake-out/backends/xnnpack/xnn_executor_runner` you can run the executable with the model you generated as such
+```bash
+./cmake-out/backends/xnnpack/xnn_executor_runner --model_path=./mv2_quantized.pte
+```
 
 ## Delegating a Quantized Model
 
