@@ -40,6 +40,8 @@ build_and_run_test() {
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
 
+  export RESOURCES_PATH=extension/module/test/resources
+
   for t in cmake-out/"${test_dir}"/*test; do
     if [ -e "$t" ]; then
       ./"$t";

@@ -12,7 +12,7 @@
 #
 # This file should be formatted with
 # ~~~
-# cmake-format -i Utils.cmake
+# cmake-format -i Test.cmake
 # ~~~
 # It should also be cmake-lint clean.
 #
@@ -53,6 +53,9 @@ target_link_libraries(
   ${target_name} GTest::gtest GTest::gtest_main GTest::gmock executorch
   ${ET_CXX_TEST_EXTRA_LIBS}
 )
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
+target_link_options_shared_lib(portable_ops_lib)
 
 # add_test adds a test target to be used by ctest.
 # We use `ExecuTorchTest` as the ctest target name for the test executable
