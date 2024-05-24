@@ -78,7 +78,7 @@ install_sccache() {
   export PATH="${SCCACHE_PATH}:${PATH}"
 
   # Create temp directory for sccache shims if TMP_DIR doesn't exist
-  if [ ! -v TMP_DIR ]; then
+  if [ -z "${TMP_DIR:-}" ]; then
     TMP_DIR=$(mktemp -d)
     trap 'rm -rfv ${TMP_DIR}' EXIT
     export PATH="${TMP_DIR}:$PATH"
