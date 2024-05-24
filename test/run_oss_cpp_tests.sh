@@ -17,6 +17,7 @@ set -ex
 build_executorch() {
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
@@ -35,15 +36,27 @@ build_and_run_test() {
   local test_dir=$1
   cmake "${test_dir}" \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DCMAKE_PREFIX_PATH="$(pwd)/third-party/googletest/build" \
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
 
   for t in cmake-out/"${test_dir}"/*test; do
     if [ -e "$t" ]; then
-      ./"$t";
+      LLVM_PROFILE_FILE=cmake-out/$(basename $t).profraw ./"$t";
     fi
   done
+}
+
+report_coverage() {
+  llvm-profdata merge -sparse cmake-out/*.profraw -o cmake-out/merged.profdata
+  local binary_list=""
+  for t in cmake-out/"${test_dir}"/*test; do
+    if [ -e "$t" ]; then
+      binary_list+=" -object $t"
+    fi
+  done
+  llvm-cov report -instr-profile=cmake-out/merged.profdata $binary_list
 }
 
 probe_tests() {
@@ -79,3 +92,5 @@ if [ -z "$1" ]; then
 else
   build_and_run_test "$1"
 fi
+
+report_coverage
