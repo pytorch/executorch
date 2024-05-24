@@ -70,8 +70,9 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    intro-overview
-   concepts
    intro-how-it-works
+   getting-started-architecture
+   concepts
 
 .. toctree::
    :glob:
@@ -79,17 +80,10 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Getting Started
    :hidden:
 
-   getting-started-architecture
    getting-started-setup
+   export-overview
    runtime-build-and-cross-compilation
 
-.. toctree::
-   :glob:
-   :maxdepth: 2
-   :caption: Working with LLMs
-   :hidden:
-
-   llm/getting-started
 
 .. toctree::
    :glob:
@@ -116,11 +110,11 @@ Topics in this section will help you get started with ExecuTorch.
 
 .. toctree::
    :glob:
-   :maxdepth: 1
-   :caption: Exporting to ExecuTorch
+   :maxdepth: 2
+   :caption: Working with LLMs
    :hidden:
 
-   export-overview
+   llm/getting-started
 
 .. toctree::
    :glob:
