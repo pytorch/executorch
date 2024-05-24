@@ -42,8 +42,8 @@
   <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Exporting to ExecuTorch Tutorial" href="../tutorials/export-to-executorch-tutorial.html" />
-    <link rel="prev" title="Building with CMake" href="../runtime-build-and-cross-compilation.html" />
+    <link rel="next" title="Export to ExecuTorch API Reference" href="../export-to-executorch-api-reference.html" />
+    <link rel="prev" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" href="../build-run-xtensa.html" />
 
 
   <!-- Google Tag Manager -->
@@ -303,28 +303,15 @@
               <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../intro-overview.html">ExecuTorch Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../concepts.html">ExecuTorch Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../intro-how-it-works.html">How ExecuTorch Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../concepts.html">ExecuTorch Concepts</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../getting-started-setup.html">Setting Up ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../export-overview.html">Exporting to ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../runtime-build-and-cross-compilation.html">Building with CMake</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#table-of-contents">Table Of Contents</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#running-a-large-language-model-locally">Running a Large Language Model Locally</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#delegation">Delegation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#quantization">Quantization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#profiling-and-debugging">Profiling and Debugging</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#custom-kernels">Custom Kernels</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#how-to-build-mobile-apps">How to Build Mobile Apps</a></li>
-</ul>
-</li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
@@ -342,9 +329,19 @@
 <li class="toctree-l1"><a class="reference internal" href="../build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Exporting to ExecuTorch</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../export-overview.html">Exporting to ExecuTorch</a></li>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#table-of-contents">Table Of Contents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#running-a-large-language-model-locally">Running a Large Language Model Locally</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#delegation">Delegation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#quantization">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#profiling-and-debugging">Profiling and Debugging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#custom-kernels">Custom Kernels</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-build-mobile-apps">How to Build Mobile Apps</a></li>
+</ul>
+</li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -1397,10 +1394,10 @@ all instances of <code class="docutils literal notranslate"><span class="pre">to
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="../tutorials/export-to-executorch-tutorial.html" class="btn btn-neutral float-right" title="Exporting to ExecuTorch Tutorial" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="../export-to-executorch-api-reference.html" class="btn btn-neutral float-right" title="Export to ExecuTorch API Reference" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="../runtime-build-and-cross-compilation.html" class="btn btn-neutral" title="Building with CMake" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="../build-run-xtensa.html" class="btn btn-neutral" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
