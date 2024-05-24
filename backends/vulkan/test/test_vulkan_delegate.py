@@ -393,6 +393,16 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(ClampModule(), sample_inputs)
 
+    def test_vulkan_backend_cos(self):
+        class CosModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.cos(x)
+
+        self.lower_unary_module_and_test_output(CosModule())
+
     def test_vulkan_backend_hardtanh(self):
         class HardTanHModule(torch.nn.Module):
             def __init__(self):
@@ -413,6 +423,26 @@ class TestBackends(unittest.TestCase):
                 return torch.exp(x)
 
         self.lower_unary_module_and_test_output(ExpModule())
+
+    def test_vulkan_backend_neg(self):
+        class NegModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.neg(x)
+
+        self.lower_unary_module_and_test_output(NegModule())
+
+    def test_vulkan_backend_sin(self):
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        self.lower_unary_module_and_test_output(SinModule())
 
     def test_vulkan_backend_relu(self):
         class ReLUModule(torch.nn.Module):
@@ -853,6 +883,23 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(
             NativeLayerNormModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_batch_norm(self):
+        class BatchNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.bn = torch.nn.BatchNorm2d(num_features=3)
+
+            def forward(self, x):
+                return self.bn(x)
+
+        sample_inputs = (torch.randn(size=(4, 3, 2, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            BatchNormModule(),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
