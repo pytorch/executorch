@@ -77,16 +77,11 @@ install_sccache() {
 
   export PATH="${SCCACHE_PATH}:${PATH}"
 
-  # Create temp directory for sccache shims
-  TMP_DIR=$(mktemp -d)
-  trap 'rm -rfv ${TMP_DIR}' EXIT
-
   write_sccache_stub "${TMP_DIR}/c++"
   write_sccache_stub "${TMP_DIR}/cc"
   write_sccache_stub "${TMP_DIR}/clang++"
   write_sccache_stub "${TMP_DIR}/clang"
 
-  export PATH="${TMP_DIR}:$PATH"
   sccache --zero-stats || true
 }
 
