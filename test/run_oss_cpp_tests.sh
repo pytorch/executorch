@@ -27,7 +27,12 @@ build_and_run_test() {
   local test_dir=$1
   cmake "${test_dir}" -Bcmake-out/"${test_dir}" -DCMAKE_INSTALL_PREFIX=cmake-out
   cmake --build cmake-out/"${test_dir}" -j9
-  for t in cmake-out/"${test_dir}"/*test; do ./"$t"; done
+
+  for t in cmake-out/"${test_dir}"/*test; do
+    if [ -e "$t" ]; then
+      ./"$t";
+    fi
+  done
 }
 
 probe_tests() {

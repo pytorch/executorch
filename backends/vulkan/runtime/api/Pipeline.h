@@ -55,6 +55,8 @@ struct SpecVar final {
 
 bool operator==(const SpecVar& lhs, const SpecVar& rhs);
 
+bool operator!=(const SpecVar& lhs, const SpecVar& rhs);
+
 class SpecVarList final {
   std::vector<SpecVar> vars;
 
