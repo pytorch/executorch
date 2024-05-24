@@ -33,7 +33,8 @@ if(ANDROID)
       "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}/glslc"
   )
 else()
-  find_program(GLSLC_PATH glslc PATHS ENV PATH)
+  message("searching using PATH: " $ENV{PATH})
+  find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
 
   if(NOT GLSLC_PATH)
     message(FATAL_ERROR "USE_VULKAN glslc not found")
