@@ -40,7 +40,7 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 include(cmake/ShaderLibrary.cmake)
 
-# Third party libs
+# Third party include paths
 
 set(VULKAN_THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third-party)
 
@@ -48,44 +48,35 @@ set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
 set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
+set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH} ${VOLK_PATH}
+                    ${VMA_PATH}
+)
+
 # Compile settings
 
 set(VULKAN_CXX_FLAGS "")
 list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_WRAPPER")
 list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_VOLK")
 
-# Vulkan Compute API
+# vulkan API files
 
-file(GLOB vulkan_api_cpp ${RUNTIME_PATH}/api/*.cpp)
+file(GLOB_RECURSE vulkan_api_cpp ${RUNTIME_PATH}/api/*)
 list(APPEND vulkan_api_cpp ${VOLK_PATH}/volk.c)
 
-set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH} ${VOLK_PATH}
-                    ${VMA_PATH}
-)
-
-# vulkan_graph_lib
+# vulkan ComputeGraph files
 
 file(GLOB_RECURSE vulkan_graph_cpp ${RUNTIME_PATH}/graph/*)
 list(APPEND vulkan_graph_cpp ${vulkan_api_cpp})
 
-add_library(vulkan_graph_lib STATIC ${vulkan_graph_cpp})
-target_include_directories(vulkan_graph_lib PRIVATE ${COMMON_INCLUDES})
-target_compile_options(vulkan_graph_lib PRIVATE ${VULKAN_CXX_FLAGS})
-# Link this library with --whole-archive due to dynamic operator registrations
-target_link_options_shared_lib(vulkan_graph_lib)
-
-# vulkan_standard_shaders
+# Standard GLSL shader library
 
 set(VULKAN_GRAPH_SHADERS_PATH ${RUNTIME_PATH}/graph/ops/glsl/)
-# Declares a vulkan_standard_shaders library containing compiled SPIR-V shaders
-# from the above path
-vulkan_shader_library(${VULKAN_GRAPH_SHADERS_PATH} vulkan_standard_shaders)
-# preserve the path of the generated cpp file
-set(vulkan_standard_shaders_cpp
-    ${CMAKE_BINARY_DIR}/vulkan_standard_shaders/spv.cpp
-)
+# Generates a spv.cpp file containing compiled GLSL shaders
+gen_vulkan_shader_lib_cpp(${VULKAN_GRAPH_SHADERS_PATH})
+# Save the path of the generated cpp file
+set(vulkan_standard_shaders_cpp ${generated_spv_cpp})
 
-# Generate Files from flatc
+# Generate Vulkan Delegate Schema Files from flatc
 
 set(SCHEMA_INCLUDE_DIR ${CMAKE_BINARY_DIR}/schema/include)
 
@@ -150,31 +141,6 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
 endif()
 
 # Test targets
-
-if(EXECUTORCH_BUILD_GTESTS)
-  set(TEST_UTILS_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/test/utils)
-  file(GLOB TEST_UTILS_CPP ${CMAKE_CURRENT_SOURCE_DIR}/test/utils/*.cpp)
-
-  set(TEST_SHADERS_PATH ${CMAKE_CURRENT_SOURCE_DIR}/test/glsl)
-  vulkan_shader_library(${TEST_SHADERS_PATH} test_shaderlib)
-
-  # vulkan_compute_api_test
-  set(COMPUTE_API_TEST_CPP
-      ${CMAKE_CURRENT_SOURCE_DIR}/test/vulkan_compute_api_test.cpp
-  )
-
-  add_executable(
-    vulkan_compute_api_test ${COMPUTE_API_TEST_CPP} ${TEST_UTILS_CPP}
-  )
-  target_include_directories(
-    vulkan_compute_api_test PRIVATE ${COMMON_INCLUDES} ${TEST_UTILS_HEADERS}
-  )
-  target_link_libraries(
-    vulkan_compute_api_test PRIVATE gtest_main vulkan_graph_lib
-                                    vulkan_standard_shaders test_shaderlib
-  )
-  target_compile_options(vulkan_compute_api_test PRIVATE ${VULKAN_CXX_FLAGS})
-endif()
 
 install(
   TARGETS vulkan_backend

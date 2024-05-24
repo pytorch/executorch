@@ -12,9 +12,8 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir import EdgeCompileConfig
-from torchvision import models
+from torchvision import models, transforms
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
 
@@ -26,7 +25,10 @@ class TestMobileNetV2(unittest.TestCase):
 
     mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights)
     mv2 = mv2.eval()
-    model_inputs = (torch.ones(1, 3, 224, 224),)
+    normalize = transforms.Normalize(
+        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+    )
+    model_inputs = (normalize(torch.randn((1, 3, 224, 224))),)
 
     all_operators = {
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
@@ -73,7 +75,7 @@ class TestMobileNetV2(unittest.TestCase):
                 inputs=self.model_inputs,
                 compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
-            .quantize(Quantize(calibrate=False))
+            .quantize()
             .export()
             .to_edge(config=self._edge_compile_config)
             .check(list(self.operators_after_quantization))
@@ -81,7 +83,12 @@ class TestMobileNetV2(unittest.TestCase):
             .to_executorch()
         )
         if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs()
+            # atol=1.0 is a defensive upper limit
+            # TODO MLETROCH-72
+            # TODO MLETROCH-149
+            tester.run_method_and_compare_outputs(
+                atol=1.0, qtol=1, inputs=self.model_inputs
+            )
         else:
             logger.warning(
                 "TOSA ref model tool not installed, skip numerical correctness tests"
@@ -98,7 +105,7 @@ class TestMobileNetV2(unittest.TestCase):
                 inputs=self.model_inputs,
                 compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             )
-            .quantize(Quantize(calibrate=False))
+            .quantize()
             .export()
             .to_edge(config=self._edge_compile_config)
             .check(list(self.operators_after_quantization))

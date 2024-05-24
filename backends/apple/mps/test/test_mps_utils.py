@@ -10,8 +10,8 @@ from typing import Any, Tuple, Union
 
 import executorch.exir as exir
 import torch
-from executorch.backends.apple.mps.mps_preprocess import MPSBackend
-from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
+from executorch.backends.apple.mps import MPSBackend
+from executorch.backends.apple.mps.partition import MPSPartitioner
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,

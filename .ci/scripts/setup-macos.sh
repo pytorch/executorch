@@ -28,7 +28,6 @@ install_buck() {
   fi
 
   pushd .ci/docker
-
   # TODO(huydo): This is a one-off copy of buck2 2024-05-15 to unblock Jon and
   # re-enable ShipIt. It’s not ideal that upgrading buck2 will require a manual
   # update the cached binary on S3 bucket too. Let me figure out if there is a
@@ -36,7 +35,11 @@ install_buck() {
   # buck2 only when it’s needed. AFAIK, the complicated part was that buck2
   # --version doesn't say anything w.r.t its release version, i.e. 2024-05-15.
   # See D53878006 for more details.
-  BUCK2=buck2-aarch64-apple-darwin.zst
+  #
+  # If you need to upgrade buck2 version on S3, please reach out to Dev Infra
+  # team for help.
+  BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
+  BUCK2=buck2-aarch64-apple-darwin-${BUCK2_VERSION}.zst
   curl -s "https://ossci-macos.s3.amazonaws.com/${BUCK2}" -o "${BUCK2}"
 
   zstd -d "${BUCK2}" -o buck2
