@@ -158,6 +158,8 @@ def get_qnn_quantizer(args):
         backend == "qnn"
     ), f"The quantization config is for backend {backend} instead of qnn."
     qnn_quantizer = QnnQuantizer()
+    qnn_quantizer.set_per_channel_conv_quant(enable=True)
+    qnn_quantizer.set_per_channel_linear_quant(enable=True)
     # more custom quantization are supported including 16a4w etc. default to 8bit quantized
     custom_annotations = ()
     if quant_config == "8a8w":
