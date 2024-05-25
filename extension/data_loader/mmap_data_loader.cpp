@@ -72,36 +72,6 @@ const char* get_last_error_message() {
 }
 #endif
 
-#ifdef _WIN32
-class FileHandle {
- public:
-  explicit FileHandle(HANDLE handle) : handle_(handle) {}
-  ~FileHandle() {
-    if (handle_ != INVALID_HANDLE_VALUE) {
-      CloseHandle(handle_);
-    }
-  }
-  HANDLE get() const { return handle_; }
-
- private:
-  HANDLE handle_;
-};
-#else
-class FileHandle {
- public:
-  explicit FileHandle(int fd) : fd_(fd) {}
-  ~FileHandle() {
-    if (fd_ >= 0) {
-      ::close(fd_);
-    }
-  }
-  int get() const { return fd_; }
-
- private:
-  int fd_;
-};
-#endif
-
 MmapDataLoader::~MmapDataLoader() {
   // file_name_ can be nullptr if this instance was moved from, but freeing a
   // null pointer is safe.
@@ -110,6 +80,10 @@ MmapDataLoader::~MmapDataLoader() {
   if (mapping_handle_ != nullptr) {
     CloseHandle(mapping_handle_);
   }
+#else
+  // fd_ can be -1 if this instance was moved from, but closing a negative fd is
+  // safe (though it will return an error).
+  ::close(fd_);
 #endif
 }
 
