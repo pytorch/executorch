@@ -447,6 +447,23 @@ if(MAX_KERNEL_NUM)
   )
 endif()
 
+# shared version
+add_library(executorch_no_prim_ops_shared SHARED ${_executorch_no_prim_ops__srcs})
+target_link_libraries(executorch_no_prim_ops_shared PRIVATE program_schema)
+if(DL_LIBRARY_EXISTS)
+  target_link_libraries(executorch_no_prim_ops_shared PRIVATE dl) # For dladdr()
+endif()
+target_include_directories(
+  executorch_no_prim_ops_shared PUBLIC ${_common_include_directories}
+)
+target_compile_options(executorch_no_prim_ops_shared PUBLIC ${_common_compile_options})
+if(MAX_KERNEL_NUM)
+  target_compile_definitions(
+    executorch_no_prim_ops_shared PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
+  )
+endif()
+
+# contains prim ops
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE executorch_no_prim_ops)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
