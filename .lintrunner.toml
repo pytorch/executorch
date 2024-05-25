@@ -156,3 +156,33 @@ command = [
     '--',
     '@{{PATHSFILE}}',
 ]
+
+[[linter]]
+code = 'NEWLINE'
+include_patterns = ['**']
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+    '**/*.png',
+    '**/*.webp',
+    '**/*.jpeg',
+    '**/*.mp4',
+    '**/*.pte',
+    '**/*.pth',
+    '**/*.bin',
+    '**/*.patch',
+    '**/*.svg',
+    '**/*.bat',
+    '**/*.jpg',
+    '**/*.jar',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'newlines_linter',
+    '--',
+    '@{{PATHSFILE}}',
+]
+is_formatter = true

@@ -17,15 +17,26 @@ set -ex
 build_executorch() {
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
-    -DEXECUTORCH_BUILD_GTESTS=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
 }
 
+build_gtest() {
+  mkdir -p third-party/googletest/build
+  pushd third-party/googletest/build
+  cmake .. -DCMAKE_INSTALL_PREFIX=.
+  make -j4
+  make install
+  popd
+}
+
 build_and_run_test() {
   local test_dir=$1
-  cmake "${test_dir}" -Bcmake-out/"${test_dir}" -DCMAKE_INSTALL_PREFIX=cmake-out
+  cmake "${test_dir}" \
+    -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DCMAKE_PREFIX_PATH="$(pwd)/third-party/googletest/build" \
+    -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
 
   for t in cmake-out/"${test_dir}"/*test; do
@@ -56,6 +67,7 @@ probe_tests() {
 }
 
 build_executorch
+build_gtest
 
 if [ -z "$1" ]; then
   echo "Running all directories:"
