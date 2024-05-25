@@ -129,7 +129,7 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
     case qcir::QuantizeType::AXIS_SCALE_OFFSET: {
       size_t len = param.axisScaleOffsetEncoding.numScaleOffsets;
       axis = param.axisScaleOffsetEncoding.axis;
-      for (uint i = 0; i < len; ++i) {
+      for (size_t i = 0; i < len; ++i) {
         data.emplace_back(qcir::ScaleOffset(
             param.axisScaleOffsetEncoding.scaleOffset[i].scale,
             param.axisScaleOffsetEncoding.scaleOffset[i].offset));
