@@ -37,7 +37,8 @@ class TestEdgeDialectVerifier(unittest.TestCase):
         class M(torch.nn.Module):
             def forward(self, x, y):
                 z = y.item()
-                torch._constrain_as_value(z, 0, 4)
+                torch._check(z > 0)
+                torch._check(z < 4)
                 return x[z : z + y.shape[0]]
 
         ep = torch.export.export(M(), (torch.randn(10), torch.tensor([3])))

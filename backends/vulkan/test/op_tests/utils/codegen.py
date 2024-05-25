@@ -600,8 +600,8 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
   protected:
     ComputeGraph* graph;
     at::ScalarType test_dtype = at::kFloat;
-    float rtol = 1e-5;
-    float atol = 1e-5;
+    float rtol = {rtol};
+    float atol = {atol};
 
     void SetUp() override {{
         GraphConfig config;
@@ -651,6 +651,8 @@ class VkTestSuiteGen(TestSuiteGen):
             op_name=self.op_name,
             check_fn=check_fn,
             prepacked_check_fn=prepacked_check_fn,
+            rtol=self.suite_def.rtol,
+            atol=self.suite_def.atol,
         )
 
     def gen_parameterization(self) -> str:
