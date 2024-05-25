@@ -7,6 +7,7 @@ ethos-u-scratch/
 executorch.egg-info
 pip-out/
 __pycache__/
+.python-version
 
 # Any exported models and profiling outputs
 *.pte
