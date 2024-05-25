@@ -370,14 +370,31 @@ Error QnnManager::Compile(
 } // namespace qnn
 } // namespace executor
 } // namespace torch
-void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment) {
+
+extern "C" {
+
+#ifdef _WIN32
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdll-attribute-on-redeclaration"
+#define EXPORT __declspec(dllexport)
+#else
+#define EXPORT
+#endif
+
+EXPORT void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment) {
   using torch::executor::qnn::SharedBuffer;
   void* buffer_ptr =
       SharedBuffer::GetSharedBufferManager().AllocMem(bytes, alignment);
   return buffer_ptr;
 }
 
-void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
+EXPORT void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
   using torch::executor::qnn::SharedBuffer;
   SharedBuffer::GetSharedBufferManager().FreeMem(buffer_ptr);
 }
+
+#ifdef _WIN32
+#pragma clang diagnostic pop
+#endif
+
+} // extern "C"
