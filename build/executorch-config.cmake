@@ -55,6 +55,7 @@ set(lib_list
     optimized_native_cpu_ops_lib
     quantized_kernels
     quantized_ops_lib
+    custom_ops
 )
 foreach(lib ${lib_list})
   # Name of the variable which stores result of the find_library search
