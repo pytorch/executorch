@@ -25,23 +25,24 @@ install_swiftshader() {
   export LD_LIBRARY_PATH="${_swiftshader_dir}/build/Linux/libvulkan.so.1"
 }
 
-install_glslc() {
-  _shaderc_url_base="https://storage.googleapis.com/shaderc/artifacts/prod/graphics_shader_compiler/shaderc/linux/continuous_clang_release"
-  _shaderc_version="448/20240305-065535"
-  _shaderc_url="${_shaderc_url_base}/${_shaderc_version}/install.tgz"
+install_vulkan_sdk() {
+  VULKAN_SDK_VERSION=$1
+  _vulkan_sdk_url="https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/linux/vulkansdk-linux-x86_64-${VULKAN_SDK_VERSION}.tar.gz"
 
-  _glslc_dir=/tmp/shaderc
-  mkdir -p $_glslc_dir
+  _vulkan_sdk_dir=/tmp/vulkansdk
+  mkdir -p $_vulkan_sdk_dir
 
-  _tmp_archive="/tmp/install.tgz"
+  _tmp_archive="/tmp/vulkansdk.tar.gz"
 
   curl --silent --show-error --location --fail --retry 3 \
-    --output "${_tmp_archive}" "${_shaderc_url}"
+    --output "${_tmp_archive}" "${_vulkan_sdk_url}"
 
-  tar -C "${_glslc_dir}" -xzf "${_tmp_archive}"
+  tar -C "${_vulkan_sdk_dir}" -xzf "${_tmp_archive}"
 
-  export PATH="${PATH}:${_glslc_dir}/install/bin/"
+  export PATH="${PATH}:${_vulkan_sdk_dir}/${VULKAN_SDK_VERSION}/x86_64/bin/"
 }
 
+VULKAN_SDK_VERSION="1.2.198.1"
+
 install_swiftshader
-install_glslc
+install_vulkan_sdk "${VULKAN_SDK_VERSION}"
