@@ -392,6 +392,23 @@ def get_slice_inputs():
         Test(self=[13, 1, 10], dim=0, start=1, step=20),
     ]
 
+    # Slice by negative/unspecified indices
+    INT64_MAX = 9223372036854775807  # represents arr[:]
+    test_cases += [
+        Test(self=[8, 9], dim=0, start=-2, step=1),
+        Test(self=[8, 9], dim=0, start=-2, step=2),
+        Test(self=[8, 9], dim=0, end=-2, step=1),
+        Test(self=[8, 9], dim=0, end=-2, step=2),
+        Test(self=[8, 9], dim=0, end=INT64_MAX, step=1),
+        Test(self=[8, 9], dim=0, end=INT64_MAX, step=2),
+        Test(self=[8, 9], dim=1, start=-2, step=1),
+        Test(self=[8, 9], dim=1, start=-2, step=2),
+        Test(self=[8, 9], dim=1, end=-2, step=1),
+        Test(self=[8, 9], dim=1, end=-2, step=2),
+        Test(self=[8, 9], dim=1, end=INT64_MAX, step=1),
+        Test(self=[8, 9], dim=1, end=INT64_MAX, step=2),
+    ]
+
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.dtypes = ["at::kFloat"]

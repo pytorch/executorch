@@ -49,7 +49,7 @@ void add_upsample_node(
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE}, {arg, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out->texture_limits_ubo(), graph.create_params_buffer(0.5)},
+      {t_out->texture_limits_ubo()},
       // Specialization Constants
       {},
       // Resizing Logic

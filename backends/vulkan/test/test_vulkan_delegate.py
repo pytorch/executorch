@@ -202,6 +202,23 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(add_module, sample_inputs)
 
+    def test_vulkan_backend_add_int(self):
+        class AddIntModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                z = x + y
+                return z
+
+        add_int_module = AddIntModule()
+        sample_inputs = (
+            torch.randint(low=-100, high=100, size=(2, 3), dtype=torch.int32),
+            torch.randint(low=-100, high=100, size=(2, 3), dtype=torch.int32),
+        )
+
+        self.lower_module_and_test_output(add_int_module, sample_inputs)
+
     def test_vulkan_backend_zero_dim_tensor(self):
         class ZeroDimModule(torch.nn.Module):
             def __init__(self):
