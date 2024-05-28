@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from .eager_eval import EagerEvalWrapper, evaluate_model
+from .model import Llama2Model
 
-__all__ = ["EagerEvalWrapper", "evaluate_model"]
+__all__ = [
+    Llama2Model,
+]
