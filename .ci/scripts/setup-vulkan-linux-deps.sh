@@ -11,7 +11,7 @@ set -exu
 install_swiftshader() {
   _https_amazon_aws=https://ossci-android.s3.amazonaws.com
   _swiftshader_archive=swiftshader-abe07b943-prebuilt.tar.gz
-  _swiftshader_dir=/var/lib/swiftshader
+  _swiftshader_dir=/tmp/swiftshader
   mkdir -p $_swiftshader_dir
 
   _tmp_archive="/tmp/${_swiftshader_archive}"
@@ -30,7 +30,7 @@ install_glslc() {
   _shaderc_version="448/20240305-065535"
   _shaderc_url="${_shaderc_url_base}/${_shaderc_version}/install.tgz"
 
-  _glslc_dir=/var/lib/shaderc
+  _glslc_dir=/tmp/shaderc
   mkdir -p $_glslc_dir
 
   _tmp_archive="/tmp/install.tgz"
