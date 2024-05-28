@@ -6,7 +6,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -exu
+set -ex
 
 install_swiftshader() {
   _https_amazon_aws=https://ossci-android.s3.amazonaws.com
@@ -23,7 +23,7 @@ install_swiftshader() {
 
   export VK_ICD_FILENAMES="${_swiftshader_dir}/build/Linux/vk_swiftshader_icd.json"
 
-  if [ -z $LD_LIBRARY_PATH ]; then
+  if [ -z "${LD_LIBRARY_PATH}" ]; then
     export LD_LIBRARY_PATH="${_swiftshader_dir}/build/Linux/libvulkan.so.1"
   else
     export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${_swiftshader_dir}/build/Linux/libvulkan.so.1"
