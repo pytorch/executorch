@@ -83,6 +83,10 @@ class TensorWrapper {
     return QNN_VER_PTR(tensor_)->rank;
   };
 
+  std::uint32_t GetBytes() const {
+    return bytes_;
+  };
+
   const void* GetStaticTensorData() const {
     return QNN_VER_PTR(tensor_)->clientBuf.data;
   };

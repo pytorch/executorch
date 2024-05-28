@@ -50,7 +50,7 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
 
         self.skip_node_id_set = skip_node_id_set
-        self.nodes_to_wrappers = self.nodes_to_wrappers = defaultdict(dict)
+        self.nodes_to_wrappers = defaultdict(dict)
         self.qnn_manager = PyQnnManager.QnnManager(
             generate_qnn_executorch_option(compiler_specs)
         )
@@ -95,6 +95,9 @@ class QnnOperatorSupport(OperatorSupportBase):
         self.nodes_to_wrappers.clear()
         print(f"[QNN Partitioner Op Support]: {node.target.__name__} | {supported}")
         return supported
+
+    def __del__(self):
+        self.qnn_manager.Destroy()
 
 
 class QnnPartitioner(Partitioner):
@@ -145,6 +148,7 @@ class QnnPartitioner(Partitioner):
                 # pop certain keys in meta for not affecting the passes in compilation
                 # TODO: need to put property name in common definitions
                 node.meta.pop("axis_order", "")
+        del self.op_support_checker
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )

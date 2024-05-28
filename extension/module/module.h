@@ -194,6 +194,16 @@ class Module final {
     return event_tracer_.get();
   }
 
+  /**
+   * Set output data pointer for forward method.
+   *
+   * @param[in] output_tensor A Tensor for the output of 'forward' method.
+   * @param[in] output_index Index of the output in 'forward' method.
+   *
+   * @returns An Error to indicate success or failure of the loading process.
+   */
+  Error set_output_data_ptr(Tensor& output_tensor, size_t output_index);
+
  private:
   struct MethodHolder {
     std::vector<std::vector<uint8_t>> planned_buffers;

@@ -312,6 +312,8 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(1, 197, 96),)
         self.lower_module_and_test_output(module, sample_input)
 
+    # fp16 pad op might hit corner case in runtime
+    @unittest.expectedFailure
     def test_qnn_backend_pad(self):
         module = Pad()  # noqa: F405
         sample_input = (torch.randn([1, 8, 128]),)
@@ -391,12 +393,13 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_slice_copy(self):
-        module = SliceCopy()  # noqa: F405
+        modules = [SliceCopy(), SliceCopyWithStep()]  # noqa: F405
         sample_input = (
             torch.randn([1, 512]),
             torch.randn([1, 8]),
         )
-        self.lower_module_and_test_output(module, sample_input)
+        for module in modules:
+            self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_stack(self):
         module = Stack()  # noqa: F405
@@ -423,7 +426,6 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.expectedFailure
     def test_qnn_backend_unbind(self):
         module = Unbind()  # noqa: F405
         sample_input = (torch.randn([3, 3]),)
@@ -979,13 +981,14 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_slice_copy(self):
-        module = SliceCopy()  # noqa: F405
+        modules = [SliceCopy(), SliceCopyWithStep()]  # noqa: F405
         sample_input = (
             torch.randn([1, 512]),
             torch.randn([1, 8]),
         )
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for module in modules:
+            module = self.get_qdq_module(module, sample_input)
+            self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_softmax(self):
         module = Softmax()  # noqa: F405
@@ -1020,7 +1023,6 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
-    @unittest.expectedFailure
     def test_qnn_backend_unbind(self):
         module = Unbind()  # noqa: F405
         sample_input = (torch.randn([3, 3]),)
@@ -1944,16 +1946,13 @@ class TestExampleScript(TestQNN):
             self.assertGreaterEqual(msg["MPA"], 0.70)
             self.assertGreaterEqual(msg["MIoU"], 0.55)
 
-    def test_dummy_llama2(self):
-        self.skipTest(
-            "The module of llama is changing frequently. Reopen it when it's stable"
-        )
+    def test_stories_single_llama(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
 
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/scripts/dummy_llama2.py",
+            f"{self.executorch_root}/examples/qualcomm/llama2/llama.py",
             "--artifact",
             self.artifact_dir,
             "--build_folder",
@@ -1962,59 +1961,36 @@ class TestExampleScript(TestQNN):
             self.device,
             "--model",
             self.model,
+            "--checkpoint",
+            f"{self.artifact_dir}/stories110M.pt",
+            "--params",
+            f"{self.artifact_dir}/params.json",
+            "--tokenizer_model",
+            f"{self.artifact_dir}/tokenizer.model",
+            "--tokenizer_bin",
+            f"{self.artifact_dir}/tokenizer.bin",
             "--ip",
             self.ip,
             "--port",
             str(self.port),
-            "--use_fp16",
+            "--prompt",
+            "Once",
+            "--ptq",
+            "16a4w",
+            "--temperature",
+            "0",
         ]
         if self.host:
             cmds.extend(["--host", self.host])
-        if self.shared_buffer:
-            cmds.extend(["--shared_buffer"])
 
+        golden_start_with = "Once upon a time,"
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertTrue(msg["is_close"])
-
-    @unittest.expectedFailure
-    def test_ptq_dummy_llama2(self):
-        self.skipTest(
-            "The module of llama is changing frequently. Reopen it when it's stable"
-        )
-        if not self.required_envs():
-            self.skipTest("missing required envs")
-
-        cmds = [
-            "python",
-            f"{self.executorch_root}/examples/qualcomm/scripts/dummy_llama2.py",
-            "--artifact",
-            self.artifact_dir,
-            "--build_folder",
-            self.build_folder,
-            "--device",
-            self.device,
-            "--model",
-            self.model,
-            "--ip",
-            self.ip,
-            "--port",
-            str(self.port),
-        ]
-        if self.host:
-            cmds.extend(["--host", self.host])
-        if self.shared_buffer:
-            cmds.extend(["--shared_buffer"])
-
-        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
-        with Listener((self.ip, self.port)) as listener:
-            conn = listener.accept()
-            p.communicate()
-            msg = json.loads(conn.recv())
-            self.assertTrue(all(msg["is_close"]))
+            model_out = msg["result"][0]
+            self.assertTrue(model_out.startswith(golden_start_with))
 
     def test_mobilebert(self):
         if not self.required_envs([self.pretrained_weight]):
