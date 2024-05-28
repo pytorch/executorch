@@ -6,7 +6,7 @@
 
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -23,10 +23,6 @@ from lm_eval.models.huggingface import HFLM as eval_wrapper
 from lm_eval.tasks import get_task_dict
 
 from sentencepiece import SentencePieceProcessor
-
-from torchao.prototype.hqq import pack_2xint4, triton_mixed_mm
-from torchao.prototype.hqq.hqq_tinygemm_linear import HQQLinearTorchWeightOnlyInt4
-from triton.testing import do_bench
 
 from ..builder import DType
 
@@ -151,7 +147,7 @@ def run_wikitext_eval(m, tokenizer_path, seq_len):
     print("tokenizer_path: ", tokenizer_path)
     tokenizer = Tokenizer(str(tokenizer_path))
     eval_wrapper = EagerEvalWrapper(
-        model=m.to(device="cuda"),
+        model=m,
         tokenizer=tokenizer,
         max_seq_length=seq_len,
         use_kv_cache=False,
@@ -159,8 +155,8 @@ def run_wikitext_eval(m, tokenizer_path, seq_len):
     eval_results = eval(
         eval_wrapper,
         tasks=["wikitext"],
-        limit=128,
-        # limit=5,
+        # limit=128,
+        limit=5,
         # limit=1,
     )
     for task, res in eval_results["results"].items():
@@ -171,7 +167,13 @@ class LinearActFakeQuant(torch.nn.Module):
     def __init__(self, linear):
         super().__init__()
         self.linear = linear
-        self.activation_fake_quant = torch.quantization.FakeQuantize(
+        self.input_activation_fake_quant = torch.quantization.FakeQuantize(
+            observer=torch.quantization.MovingAverageMinMaxObserver,
+            dtype=torch.int32,
+            quant_min=torch.iinfo(torch.uint16).min,
+            quant_max=torch.iinfo(torch.uint16).max,
+        )
+        self.output_activation_fake_quant = torch.quantization.FakeQuantize(
             observer=torch.quantization.MovingAverageMinMaxObserver,
             dtype=torch.int32,
             quant_min=torch.iinfo(torch.uint16).min,
@@ -179,35 +181,63 @@ class LinearActFakeQuant(torch.nn.Module):
         )
 
     def forward(self, x):
-        x = self.activation_fake_quant(x)
-        return self.linear(x)
+        x = self.input_activation_fake_quant(x)
+        return self.output_activation_fake_quant(self.linear(x))
+
+
+def get_quant_params(activation_fake_quant):
+    quant_min = activation_fake_quant.quant_min
+    quant_max = activation_fake_quant.quant_max
+    qparams = activation_fake_quant.calculate_qparams()
+    scale = qparams[0]
+    zero_point = qparams[1]
+    return (quant_min, quant_max, scale, zero_point)
 
 
 class LinearActQuant(torch.nn.Module):
+
     def __init__(self, linear_fake_quant):
         super().__init__()
         self.linear_fake_quant = linear_fake_quant
-        self.quant_min = self.linear_fake_quant.activation_fake_quant.quant_min
-        self.quant_max = self.linear_fake_quant.activation_fake_quant.quant_max
-        qparams = self.linear_fake_quant.activation_fake_quant.calculate_qparams()
-        self.scale = qparams[0]
-        self.zero_point = qparams[1]
+        self.input_quant_min, self.input_quant_max, input_scale, input_zero_point = (
+            get_quant_params(linear_fake_quant.input_activation_fake_quant)
+        )
+        self.input_scale = input_scale.to(device="cuda")
+        self.input_zero_point = input_zero_point.to(device="cuda")
+
+        (
+            self.output_quant_min,
+            self.output_quant_max,
+            output_scale,
+            output_zero_point,
+        ) = get_quant_params(linear_fake_quant.output_activation_fake_quant)
+        self.output_scale = output_scale.to(device="cuda")
+        self.output_zero_point = output_zero_point.to(device="cuda")
 
     def forward(self, x):
-        q_tensor = torch.round(x / self.scale + self.zero_point)
-        # Clip to ensure within the range [quant_min, quant_max]
-        q_tensor = torch.clamp(q_tensor, self.quant_min, self.quant_max)
+        # Manually quantize the input tensor using observed min and max values
+        q_tensor = torch.round(x / self.input_scale + self.input_zero_point)
+        # Clip to ensure within the range [0, 255]
+        q_tensor = torch.clamp(q_tensor, self.input_quant_min, self.input_quant_max)
         # Dequantize to the original scale
-        dq_tensor = (q_tensor - self.zero_point) * self.scale
-        linear_output = self.linear(dq_tensor)
+        dequantized_tensor = (q_tensor - self.input_zero_point) * self.input_scale
 
-        # Quantize the linear output tensor
-        q_linear_output = torch.round(linear_output / self.scale + self.zero_point)
-        q_linear_output = torch.clamp(q_linear_output, self.quant_min, self.quant_max)
+        linear_output = self.linear_fake_quant.linear(dequantized_tensor)
+
+        # # Quantize the linear output tensor
+        q_linear_output = torch.round(
+            linear_output / self.output_scale + self.output_zero_point
+        )
+        q_linear_output = torch.clamp(
+            q_linear_output, self.output_quant_min, self.output_quant_max
+        )
         # Dequantize the linear output tensor
-        dq_linear_output = (q_linear_output - self.zero_point) * self.scale
+        dq_linear_output = (
+            q_linear_output - self.output_zero_point
+        ) * self.output_scale
 
         return dq_linear_output
+
 
 def _replace_linear_q_act(module: torch.nn.Module, stage: str):
     for name, child in module.named_children():
@@ -238,6 +268,7 @@ def prepare(model):
 
 def convert(model):
     replace_linear_q_act(model, "convert")
+
 
 def quantize(
     model: torch.nn.Module,
@@ -347,8 +378,12 @@ def quantize(
             for name, child in module.named_children():
                 if isinstance(child, nn.Linear):
                     new_linear = HQQLinear(
-                        child, quant_config, compute_dtype=compute_dtype, del_orig=False
-                    )  # , device="cpu")
+                        child,
+                        quant_config,
+                        compute_dtype=compute_dtype,
+                        del_orig=True,
+                        device="cpu",
+                    )
                     setattr(module, name, new_linear)
                 else:
                     _replace_linear_16a4w_hqq(
@@ -383,8 +418,7 @@ def quantize(
         prepare(model)
         print("model after prepare: ", model)
 
-        # x = torch.tensor([[1]], device="cuda")
-        # _ = model(x)
+        # Calibration with wikitext, currently only use 5 samples and can be fine tuned
         run_wikitext_eval(model, tokenizer_path, 128)
         print("model after calibrate: ", model)
         convert(model)

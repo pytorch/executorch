@@ -366,8 +366,8 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
         )
         .set_output_dir(output_dir_path)
         .set_metadata(args.metadata)
-        .source_transform(transforms)
         .to_dtype(dtype_override)
+        .source_transform(transforms)
     )
 
 
