@@ -199,20 +199,19 @@ class LinearActQuant(torch.nn.Module):
     def __init__(self, linear_fake_quant):
         super().__init__()
         self.linear_fake_quant = linear_fake_quant
-        self.input_quant_min, self.input_quant_max, input_scale, input_zero_point = (
-            get_quant_params(linear_fake_quant.input_activation_fake_quant)
-        )
-        self.input_scale = input_scale.to(device="cuda")
-        self.input_zero_point = input_zero_point.to(device="cuda")
+        (
+            self.input_quant_min,
+            self.input_quant_max,
+            self.input_scale,
+            self.input_zero_point,
+        ) = get_quant_params(linear_fake_quant.input_activation_fake_quant)
 
         (
             self.output_quant_min,
             self.output_quant_max,
-            output_scale,
-            output_zero_point,
+            self.output_scale,
+            self.output_zero_point,
         ) = get_quant_params(linear_fake_quant.output_activation_fake_quant)
-        self.output_scale = output_scale.to(device="cuda")
-        self.output_zero_point = output_zero_point.to(device="cuda")
 
     def forward(self, x):
         # Manually quantize the input tensor using observed min and max values
