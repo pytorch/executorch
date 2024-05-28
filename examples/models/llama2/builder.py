@@ -15,6 +15,8 @@ from json import JSONDecodeError
 from typing import Any, Callable, List, Optional
 
 import torch
+
+from examples.portable.utils import export_to_edge, save_pte_program
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
