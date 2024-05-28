@@ -90,6 +90,7 @@ class EagerEvalWrapper(eval_wrapper):
     def _model_generate(self, context, max_length, eos_token_id):
         raise Exception("unimplemented")
 
+
 @torch.no_grad()
 def evaluate_model(
     eval_wrapper: LM,

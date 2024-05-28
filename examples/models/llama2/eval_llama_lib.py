@@ -10,12 +10,9 @@ import argparse
 from typing import Optional, Union
 
 import torch
+from executorch.examples.models.llama2.evaluate import EagerEvalWrapper, evaluate_model
 from executorch.examples.models.llama2.export_llama_lib import (
     get_quantizer_and_quant_params,
-)
-from executorch.examples.models.llama2.source_transformation.quantize import (
-    EagerEvalWrapper,
-    evaluate_model,
 )
 from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
 from executorch.examples.models.llama2.tokenizer.tokenizer import (
