@@ -32,11 +32,13 @@ jobs:
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_PYBIND=ON \
         CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
-        .ci/scripts/setup-linux.sh cmake
+
         echo "Running setup Vulkan deps!"
         source .ci/scripts/setup-vulkan-linux-deps.sh
         echo "PATH: " $PATH
         echo "LD_LIBRARY_PATH: " $LD_LIBRARY_PATH
+
+        .ci/scripts/setup-linux.sh cmake
 
         # Run pytest with coverage
         pytest -n auto --cov=./ --cov-report=xml
