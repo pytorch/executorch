@@ -22,7 +22,8 @@ install_swiftshader() {
   tar -C "${_swiftshader_dir}" -xzf "${_tmp_archive}"
 
   export VK_ICD_FILENAMES="${_swiftshader_dir}/build/Linux/vk_swiftshader_icd.json"
-  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${_swiftshader_dir}/build/Linux/libvulkan.so.1"
+  cp ${_swiftshader_dir}/build/Linux/libvulkan.so.1 /usr/local/lib
+  # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${_swiftshader_dir}/build/Linux/libvulkan.so.1"
 }
 
 install_glslc() {
@@ -40,7 +41,8 @@ install_glslc() {
 
   tar -C "${_glslc_dir}" -xzf "${_tmp_archive}"
 
-  export PATH="${PATH}:${_glslc_dir}/install/bin/"
+  cp ${_glslc_dir}/install/bin/glslc /usr/local/bin
+  # export PATH="${PATH}:${_glslc_dir}/install/bin/"
 }
 
 install_swiftshader
