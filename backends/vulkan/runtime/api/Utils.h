@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cmath>
+#include <limits>
 #include <numeric>
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
