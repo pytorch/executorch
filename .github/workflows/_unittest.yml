@@ -28,10 +28,8 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        echo "Running setup Vulkan deps!"
+        # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
         source .ci/scripts/setup-vulkan-linux-deps.sh
-        echo "PATH: " $PATH
-        echo "LD_LIBRARY_PATH: " $LD_LIBRARY_PATH
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python \
