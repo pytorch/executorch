@@ -28,16 +28,15 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python \
-        EXECUTORCH_BUILD_PYBIND=ON \
-        CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
-
         echo "Running setup Vulkan deps!"
         source .ci/scripts/setup-vulkan-linux-deps.sh
         echo "PATH: " $PATH
         echo "LD_LIBRARY_PATH: " $LD_LIBRARY_PATH
 
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python \
+        EXECUTORCH_BUILD_PYBIND=ON \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
         .ci/scripts/setup-linux.sh cmake
 
         # Run pytest with coverage
