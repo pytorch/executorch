@@ -244,8 +244,12 @@ def get_native_layer_norm_inputs():
 def get_upsample_inputs():
     test_suite = VkTestSuite(
         [
-            # TODO(dixu): implement the basic upsample logic to have a meaningful test
+            # (input tensor shape, output 2D image size (H, W), output scaling factors)
             ((2, 2, 2, 2), None, [1, 1]),
+            ((1, 1, 2, 2), None, [2, 2]),
+            ((1, 1, 2, 2), None, [2, 4]),
+            ((1, 1, 2, 2), None, [4, 2]),
+            # TODO(T190297757) add supports for output_sizes
         ]
     )
     return test_suite
@@ -390,6 +394,23 @@ def get_slice_inputs():
         Test(self=[13, 1, 10], dim=0, start=1, step=2),
         Test(self=[13, 1, 10], dim=0, start=1, step=5),
         Test(self=[13, 1, 10], dim=0, start=1, step=20),
+    ]
+
+    # Slice by negative/unspecified indices
+    INT64_MAX = 9223372036854775807  # represents arr[:]
+    test_cases += [
+        Test(self=[8, 9], dim=0, start=-2, step=1),
+        Test(self=[8, 9], dim=0, start=-2, step=2),
+        Test(self=[8, 9], dim=0, end=-2, step=1),
+        Test(self=[8, 9], dim=0, end=-2, step=2),
+        Test(self=[8, 9], dim=0, end=INT64_MAX, step=1),
+        Test(self=[8, 9], dim=0, end=INT64_MAX, step=2),
+        Test(self=[8, 9], dim=1, start=-2, step=1),
+        Test(self=[8, 9], dim=1, start=-2, step=2),
+        Test(self=[8, 9], dim=1, end=-2, step=1),
+        Test(self=[8, 9], dim=1, end=-2, step=2),
+        Test(self=[8, 9], dim=1, end=INT64_MAX, step=1),
+        Test(self=[8, 9], dim=1, end=INT64_MAX, step=2),
     ]
 
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
