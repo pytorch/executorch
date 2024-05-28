@@ -51,15 +51,15 @@ build_and_run_test() {
 
   for t in cmake-out/"${test_dir}"/*test; do
     if [ -e "$t" ]; then
-      LLVM_PROFILE_FILE=cmake-out/$(basename $t).profraw ./"$t";
+      LLVM_PROFILE_FILE="cmake-out/$(basename $t).profraw" ./"$t";
       TEST_BINARY_LIST="${TEST_BINARY_LIST} -object $t"
     fi
   done
 }
 
 report_coverage() {
-  ${LLVM_PROFDATA} merge -sparse cmake-out/*.profraw -o cmake-out/merged.profdata
-  ${LLVM_COV} report -instr-profile=cmake-out/merged.profdata $TEST_BINARY_LIST
+  "${LLVM_PROFDATA}" merge -sparse cmake-out/*.profraw -o cmake-out/merged.profdata
+  "${LLVM_COV}" report -instr-profile=cmake-out/merged.profdata $TEST_BINARY_LIST
 }
 
 probe_tests() {
