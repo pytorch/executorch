@@ -96,4 +96,4 @@ else
   build_and_run_test "$1"
 fi
 
-report_coverage
+report_coverage || true
