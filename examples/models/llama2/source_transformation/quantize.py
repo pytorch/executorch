@@ -11,8 +11,22 @@ from typing import Any, Dict, Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
+from executorch.examples.models.llama2.tokenizer.tokenizer import (
+    Tokenizer,
+    Tokenizer as SentencePieceTokenizer,
+)
+from hqq.core.quantize import BaseQuantizeConfig, HQQLinear
+from lm_eval.api.model import LM
+from lm_eval.evaluator import evaluate
+from lm_eval.models.huggingface import HFLM as eval_wrapper
+from lm_eval.tasks import get_task_dict
 
 from sentencepiece import SentencePieceProcessor
+
+from torchao.prototype.hqq import pack_2xint4, triton_mixed_mm
+from torchao.prototype.hqq.hqq_tinygemm_linear import HQQLinearTorchWeightOnlyInt4
+from triton.testing import do_bench
 
 from ..builder import DType
 
@@ -32,6 +46,198 @@ except:
     fsStandardEmbedding = nn.Embedding
     fsLinear = nn.Linear
 
+
+class EagerEvalWrapper(eval_wrapper):
+    """
+    A wrapper class based on GPTFast, providing integration with the lm-evaluation-harness library.
+    """
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        tokenizer: Union[SentencePieceTokenizer, Tiktoken],
+        max_seq_length: Optional[int] = None,
+        use_kv_cache: bool = False,
+    ):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        super().__init__(device=device)
+        self._model = model
+        self._tokenizer = tokenizer
+        self._device = torch.device(device)
+        self._max_seq_length = 2048 if max_seq_length is None else max_seq_length
+        self._use_kv_cache = use_kv_cache
+
+    @property
+    def eot_token_id(self):
+        return self._tokenizer.eos_id
+
+    @property
+    def max_length(self):
+        return self._max_seq_length
+
+    @property
+    def max_gen_toks(self):
+        return 50
+
+    @property
+    def batch_size(self):
+        return 1
+
+    @property
+    def device(self):
+        return self._device
+
+    def tok_encode(self, string: str, **kwargs):
+        tokens = self._tokenizer.encode(string, bos=True, eos=False)
+        encoded = torch.tensor(tokens, dtype=torch.int, device=self.device)
+        # encoded is a pytorch tensor, but some internal logic in the
+        # eval harness expects it to be a list instead
+        # TODO: verify this for multi-batch as well
+        encoded = encoded.tolist()
+        return encoded
+
+    def tok_decode(self, tokens):
+        decoded = self._tokenizer.decode(tokens)
+        return decoded
+
+    def _model_call(self, inps):
+        bsz, seq_len = inps.shape
+        if self._use_kv_cache:
+            pos_tensor = torch.arange(
+                self._max_seq_length, dtype=torch.int64, device=self.device
+            )
+
+            logits = self._model(inps[:, : self._max_seq_length], pos_tensor)
+            return logits
+        else:
+            logits = self._model(inps)
+            return logits
+
+    def _model_generate(self, context, max_length, eos_token_id):
+        raise Exception("unimplemented")
+
+
+@torch.no_grad()
+def eval(
+    eval_wrapper: LM,
+    tasks: Optional[list] = None,
+    limit: Optional[int] = None,
+) -> dict:
+    """
+    Evaluates a language model on a specified task using the lm-evaluation-harness library.
+    Args:
+        eval_wrapper (LM): A LM wrapper class compatible with lm-evaluation-harness evaluation
+        task (str): The name of the evaluation task to perform.
+        limit (Optional[int]): The maximum number of samples to evaluate (None for all available).
+    Returns:
+        eval_results (dict): A dictionary of evaluation results for the specified task(s).
+    """
+    if tasks is None:
+        tasks = ["wikitext"]
+    if "hendrycks_test" in tasks:
+        tasks.remove("hendrycks_test")
+        tasks += list(lm_eval.tasks.hendrycks_test.create_all_tasks().keys())
+    task_dict = get_task_dict(tasks)
+    eval_results = evaluate(
+        eval_wrapper,
+        task_dict,
+        limit=limit,
+    )
+    return eval_results
+
+
+def run_wikitext_eval(m, tokenizer_path, seq_len):
+    print("run_wikitext_eval calibration...")
+    print("tokenizer_path: ", tokenizer_path)
+    tokenizer = Tokenizer(str(tokenizer_path))
+    eval_wrapper = EagerEvalWrapper(
+        model=m.to(device="cuda"),
+        tokenizer=tokenizer,
+        max_seq_length=seq_len,
+        use_kv_cache=False,
+    )
+    eval_results = eval(
+        eval_wrapper,
+        tasks=["wikitext"],
+        limit=128,
+        # limit=5,
+        # limit=1,
+    )
+    for task, res in eval_results["results"].items():
+        print(f"{task}: {res}")
+
+
+class LinearActFakeQuant(torch.nn.Module):
+    def __init__(self, linear):
+        super().__init__()
+        self.linear = linear
+        self.activation_fake_quant = torch.quantization.FakeQuantize(
+            observer=torch.quantization.MovingAverageMinMaxObserver,
+            dtype=torch.int32,
+            quant_min=torch.iinfo(torch.uint16).min,
+            quant_max=torch.iinfo(torch.uint16).max,
+        )
+
+    def forward(self, x):
+        x = self.activation_fake_quant(x)
+        return self.linear(x)
+
+
+class LinearActQuant(torch.nn.Module):
+    def __init__(self, linear_fake_quant):
+        super().__init__()
+        self.linear_fake_quant = linear_fake_quant
+        self.quant_min = self.linear_fake_quant.activation_fake_quant.quant_min
+        self.quant_max = self.linear_fake_quant.activation_fake_quant.quant_max
+        qparams = self.linear_fake_quant.activation_fake_quant.calculate_qparams()
+        self.scale = qparams[0]
+        self.zero_point = qparams[1]
+
+    def forward(self, x):
+        q_tensor = torch.round(x / self.scale + self.zero_point)
+        # Clip to ensure within the range [quant_min, quant_max]
+        q_tensor = torch.clamp(q_tensor, self.quant_min, self.quant_max)
+        # Dequantize to the original scale
+        dq_tensor = (q_tensor - self.zero_point) * self.scale
+        linear_output = self.linear(dq_tensor)
+
+        # Quantize the linear output tensor
+        q_linear_output = torch.round(linear_output / self.scale + self.zero_point)
+        q_linear_output = torch.clamp(q_linear_output, self.quant_min, self.quant_max)
+        # Dequantize the linear output tensor
+        dq_linear_output = (q_linear_output - self.zero_point) * self.scale
+
+        return dq_linear_output
+
+def _replace_linear_q_act(module: torch.nn.Module, stage: str):
+    for name, child in module.named_children():
+        if stage == "convert":
+            if isinstance(child, LinearActFakeQuant):
+                new_linear = LinearActQuant(child)
+                setattr(module, name, new_linear)
+            else:
+                _replace_linear_q_act(child, stage)
+        elif stage == "prepare":
+            if isinstance(child, HQQLinear):
+                new_linear = LinearActFakeQuant(child)
+                setattr(module, name, new_linear)
+            else:
+                _replace_linear_q_act(child, stage)
+
+
+def replace_linear_q_act(module: torch.nn.Module, stage: str):
+    _replace_linear_q_act(
+        module,
+        stage,
+    )
+
+
+def prepare(model):
+    replace_linear_q_act(model, "prepare")
+
+
+def convert(model):
+    replace_linear_q_act(model, "convert")
 
 def quantize(
     model: torch.nn.Module,
@@ -127,6 +333,62 @@ def quantize(
             group_size,
         )
         model = gptq_quantizer.quantize(model, inputs)
+        return model
+    elif qmode == "16a4w-hqq":
+        print("running 16a4w-hqq")
+        from hqq.core.quantize import BaseQuantizeConfig, HQQLinear
+
+        def _replace_linear_16a4w_hqq(
+            module: torch.nn.Module,
+            quant_config,
+            compute_dtype,
+            del_orig=False,
+        ):
+            for name, child in module.named_children():
+                if isinstance(child, nn.Linear):
+                    new_linear = HQQLinear(
+                        child, quant_config, compute_dtype=compute_dtype, del_orig=False
+                    )  # , device="cpu")
+                    setattr(module, name, new_linear)
+                else:
+                    _replace_linear_16a4w_hqq(
+                        child,
+                        quant_config,
+                        compute_dtype,
+                        del_orig=False,
+                    )
+
+        def replace_linear_16a4w_hqq(
+            module: torch.nn.Module,
+            quant_config,
+            compute_dtype,
+            del_orig=False,
+        ):
+            _replace_linear_16a4w_hqq(
+                module,
+                quant_config,
+                compute_dtype,
+                del_orig=False,
+            )
+
+        compute_dtype = torch.float32  # torch.bfloat16 #[torch.float16, torch.bfloat16]
+        quant_config = BaseQuantizeConfig(
+            quant_zero=False, quant_scale=False, offload_meta=False, view_as_float=False
+        )
+        print("before replace_linear_16a4w_hqq model: ", model)
+        replace_linear_16a4w_hqq(model, quant_config, compute_dtype)
+        print("after replace_linear_16a4w_hqq model: ", model)
+
+        print("model before prepare: ", model)
+        prepare(model)
+        print("model after prepare: ", model)
+
+        # x = torch.tensor([[1]], device="cuda")
+        # _ = model(x)
+        run_wikitext_eval(model, tokenizer_path, 128)
+        print("model after calibrate: ", model)
+        convert(model)
+
         return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
