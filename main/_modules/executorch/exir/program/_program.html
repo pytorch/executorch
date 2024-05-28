@@ -484,6 +484,7 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.emit</span> <span class="kn">import</span> <span class="n">emit_program</span><span class="p">,</span> <span class="n">EmitterOutput</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.emit._emitter</span> <span class="kn">import</span> <span class="n">_DelegateDebugIdentifierMap</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.error</span> <span class="kn">import</span> <span class="n">ExportError</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.graph_module</span> <span class="kn">import</span> <span class="n">get_control_flow_submodules</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.pass_manager</span> <span class="kn">import</span> <span class="n">PassType</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">base_post_op_replace_passes</span><span class="p">,</span>
@@ -501,6 +502,7 @@
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_graph_asserts_pass</span> <span class="kn">import</span> <span class="n">RemoveGraphAssertsPass</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_mixed_type_operators</span> <span class="kn">import</span> <span class="n">RemoveMixedTypeOperators</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.passes.replace_aten_with_edge_pass</span> <span class="kn">import</span> <span class="n">aten_to_edge</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.replace_view_copy_with_view_pass</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">ReplaceViewCopyWithViewPass</span><span class="p">,</span>
 <span class="p">)</span>
@@ -532,6 +534,17 @@
 <span class="kn">from</span> <span class="nn">torch.utils</span> <span class="kn">import</span> <span class="n">_pytree</span> <span class="k">as</span> <span class="n">pytree</span>
 
 <span class="n">Val</span> <span class="o">=</span> <span class="n">Any</span>
+
+<span class="kn">from</span> <span class="nn">torch.library</span> <span class="kn">import</span> <span class="n">Library</span>
+
+<span class="c1"># This is the reserved namespace that is used to register ops to that will</span>
+<span class="c1"># be prevented from being decomposed during to_edge_transform_and_lower.</span>
+<span class="n">edge_no_decomp_namespace</span> <span class="o">=</span> <span class="s2">&quot;EDGE_DO_NOT_DECOMP&quot;</span>
+<span class="n">lib</span> <span class="o">=</span> <span class="n">Library</span><span class="p">(</span><span class="n">edge_no_decomp_namespace</span><span class="p">,</span> <span class="s2">&quot;DEF&quot;</span><span class="p">)</span>
+<span class="c1"># Map from aten ops to the transformed ops registered in the edge_no_decomp_namespace.</span>
+<span class="n">aten_op_to_transform_op</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="c1"># Map from the transformed ops registered in the edge_no_decomp_namespace to aten ops.</span>
+<span class="n">transform_op_to_aten_op</span> <span class="o">=</span> <span class="p">{}</span>
 
 
 <span class="k">def</span> <span class="nf">_get_updated_range_constraints</span><span class="p">(</span><span class="n">gm</span><span class="p">):</span>
@@ -1120,12 +1133,15 @@
 
 
 <span class="k">def</span> <span class="nf">_generate_edge_program</span><span class="p">(</span>
-    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span>
+    <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">ops_set_to_not_decompose</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
 
     <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">EXIRATenDialectVerifier</span><span class="p">()(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+            <span class="n">EXIRATenDialectVerifier</span><span class="p">(</span><span class="n">ops_set_to_not_decompose</span><span class="p">)(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
         <span class="k">except</span> <span class="n">ExportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in ATen dialect.&quot;</span><span class="p">)</span>
             <span class="k">raise</span> <span class="n">e</span>
@@ -1159,6 +1175,7 @@
         <span class="n">verifier</span><span class="o">=</span><span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
             <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
             <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">exception_list</span><span class="o">=</span><span class="n">ops_set_to_not_decompose</span><span class="p">,</span>
         <span class="p">),</span>
         <span class="n">constants</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
     <span class="p">)</span>
@@ -1167,6 +1184,269 @@
     <span class="n">edge_program</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span><span class="n">edge_program</span><span class="p">,</span> <span class="o">*</span><span class="n">post_op_replace_passes</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">edge_program</span>
+
+
+<span class="k">def</span> <span class="nf">_replace_aten_ops_with_transformed_ops</span><span class="p">(</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="p">,</span>
+<span class="p">):</span>
+
+    <span class="n">ops_to_not_decompose</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">partitioners</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">partitioners</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span>
+
+    <span class="c1"># Iterate through the graph and replace the aten ops with the corresponding</span>
+    <span class="c1"># transformed ops.</span>
+    <span class="k">for</span> <span class="n">partitioner</span> <span class="ow">in</span> <span class="n">partitioners</span><span class="p">:</span>
+        <span class="n">ops_set_to_not_decompose</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">op_aten</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span><span class="p">:</span>
+            <span class="n">_register_no_decomp_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+            <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+                <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+                <span class="ow">and</span> <span class="n">is_op_supported</span>
+            <span class="p">):</span>
+                <span class="n">ops_to_not_decompose</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">=</span> <span class="n">aten_op_to_transform_op</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">]</span>
+
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">submod</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">get_control_flow_submodules</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">submod</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+                <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+                    <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+                    <span class="ow">and</span> <span class="n">is_op_supported</span>
+                <span class="p">):</span>
+                    <span class="n">ops_to_not_decompose</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)</span>
+                    <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">=</span> <span class="n">aten_op_to_transform_op</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">ops_to_not_decompose</span>
+
+
+<span class="k">def</span> <span class="nf">_restore_transformed_ops_to_aten_ops</span><span class="p">(</span><span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">):</span>
+    <span class="c1"># Iterate through the graph and replace back the transformed ops with their</span>
+    <span class="c1"># corresponding aten ops.</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)</span> <span class="ow">in</span> <span class="n">transform_op_to_aten_op</span><span class="p">:</span>
+            <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">=</span> <span class="n">transform_op_to_aten_op</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)]</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">submod</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">get_control_flow_submodules</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">submod</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span>
+                <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)</span> <span class="ow">in</span> <span class="n">transform_op_to_aten_op</span>
+            <span class="p">):</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">=</span> <span class="n">transform_op_to_aten_op</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">)]</span>
+
+
+<span class="c1"># Returns the op in edge_no_decomp_namespace namespace for the aten</span>
+<span class="c1"># op that is passed in.</span>
+<span class="k">def</span> <span class="nf">_get_transformed_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">):</span>
+    <span class="n">op_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;::&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">overload_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">overload_name</span>
+    <span class="k">assert</span> <span class="nb">hasattr</span><span class="p">(</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="p">,</span> <span class="n">edge_no_decomp_namespace</span>
+    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Couldn&#39;t find </span><span class="si">{</span><span class="n">edge_no_decomp_namespace</span><span class="si">}</span><span class="s2"> in torch.ops. Please make sure the Library has been registered.&quot;</span>
+    <span class="n">op_namespace</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="p">,</span> <span class="n">edge_no_decomp_namespace</span><span class="p">)</span>
+    <span class="n">op</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">op_namespace</span><span class="p">,</span> <span class="n">op_name</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="n">overload_name</span><span class="p">)</span>
+
+
+<span class="c1"># Registers the op in edge_no_decomp_namespace namespace for the aten</span>
+<span class="c1"># op that is passed in if it is not already cached in the table.</span>
+<span class="k">def</span> <span class="nf">_register_no_decomp_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">):</span>
+    <span class="c1"># Check if the op is already cached in the table. If not, then we need to</span>
+    <span class="c1"># create a new op in the edge_no_decomp_namespace namespace.</span>
+    <span class="k">if</span> <span class="n">aten_op_to_transform_op</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">op_aten</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span>
+        <span class="n">op_aten</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span>
+    <span class="p">):</span>
+        <span class="c1"># Extract the schema from the aten op.</span>
+        <span class="n">op_schema</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;::&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">op_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;::&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+        <span class="c1"># Define an op in the edge_no_decomp_namespace namespace with the aten schema.</span>
+        <span class="n">lib</span><span class="o">.</span><span class="n">define</span><span class="p">(</span><span class="n">op_schema</span><span class="p">)</span>
+        <span class="c1"># Define the implementation of the op in the edge_no_decomp_namespace namespace.</span>
+        <span class="c1"># Important to note that the implementation of the op is the same as the aten op.</span>
+        <span class="n">lib</span><span class="o">.</span><span class="n">impl</span><span class="p">(</span><span class="n">op_name</span><span class="p">,</span> <span class="n">op_aten</span><span class="p">,</span> <span class="s2">&quot;CompositeExplicitAutograd&quot;</span><span class="p">)</span>
+        <span class="c1"># Cache the aten op and transformed op in their corresponding tables for future use.</span>
+        <span class="n">aten_op_to_transform_op</span><span class="p">[</span><span class="n">op_aten</span><span class="p">]</span> <span class="o">=</span> <span class="n">_get_transformed_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">)</span>
+        <span class="n">transform_op_to_aten_op</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">aten_op_to_transform_op</span><span class="p">[</span><span class="n">op_aten</span><span class="p">])]</span> <span class="o">=</span> <span class="n">op_aten</span>
+
+
+<span class="k">def</span> <span class="nf">_sanity_check_graph_for_non_decomp_ops</span><span class="p">(</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">ops_set_to_not_decompose</span><span class="p">,</span>
+    <span class="n">check_op_support</span><span class="p">,</span>
+    <span class="n">generate_error</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">partitioner_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+<span class="p">):</span>
+    <span class="n">warning_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Found </span><span class="si">{</span><span class="n">ops_set_to_not_decompose</span><span class="si">}</span><span class="s2"> in edge dialect program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span>
+    <span class="k">if</span> <span class="n">partitioner_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">warning_str</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot; This op was registered by the partitioner </span><span class="si">{</span><span class="n">partitioner_name</span><span class="si">}</span><span class="s2"> to not be decomposed.&quot;</span>
+
+    <span class="c1"># Check that the ops that were registered to not be decomposed are not present in the</span>
+    <span class="c1"># graph anymore as the transform passes and backends should have consumed them by now.</span>
+    <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">aten_to_edge</span><span class="p">(</span><span class="n">op</span><span class="p">)</span> <span class="k">for</span> <span class="n">op</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+    <span class="p">}</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">ops_set_to_not_decompose</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+        <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+        <span class="p">)</span> <span class="ow">and</span> <span class="n">is_op_supported</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">generate_error</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">warning_str</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">warning_str</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">submod</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">get_control_flow_submodules</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">submod</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+            <span class="n">is_op_supported</span> <span class="o">=</span> <span class="n">check_op_support</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="k">if</span> <span class="n">check_op_support</span> <span class="k">else</span> <span class="kc">True</span>
+            <span class="k">if</span> <span class="p">(</span>
+                <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;call_function&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span>
+            <span class="p">)</span> <span class="ow">and</span> <span class="n">is_op_supported</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">generate_error</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">warning_str</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">warning_str</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">_get_ops_to_not_decompose</span><span class="p">(</span><span class="n">partitioners</span><span class="p">,</span> <span class="n">ops_set_to_not_decompose_by_partitioner</span><span class="p">):</span>
+    <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">partitioner</span> <span class="ow">in</span> <span class="n">partitioners</span><span class="p">:</span>
+        <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="n">ops_set_to_not_decompose</span><span class="o">.</span><span class="n">union</span><span class="p">(</span>
+            <span class="n">ops_set_to_not_decompose_by_partitioner</span><span class="p">[</span><span class="n">partitioner</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">ops_set_to_not_decompose</span>
+
+
+<span class="k">def</span> <span class="nf">_to_edge_transform_and_lower</span><span class="p">(</span>
+    <span class="n">programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
+    <span class="n">transform_passes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
+        <span class="n">Union</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">PassType</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">PassType</span><span class="p">]]]</span>
+    <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
+        <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">]]]</span>
+    <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    :func:`to_edge_transform_and_lower` constructs an EdgeProgramManager from a set of</span>
+<span class="sd">    exported programs in ATen dialect. It differs fundamentally from to_edge in that it</span>
+<span class="sd">    combines the conversion of the ATen dialect to the edge dialect program, then running</span>
+<span class="sd">    the transformation passes and then subsequently lowering the programs to their</span>
+<span class="sd">    corresponding backends all in a single pass.</span>
+<span class="sd">    This is fundamentally useful for lowering to backends that have ops registered that they</span>
+<span class="sd">    do not want to be decomposed and thus rely on matching with these non-decomposed ops. For</span>
+<span class="sd">    these sorts of backends this is the *only* API that should be used to lower to the edge</span>
+<span class="sd">    dialect. Using a combination of to_edge(...) and to_backend(...) will result in inconsistent</span>
+<span class="sd">    or wrong behavior.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        programs: Can be a single ExportedProgram or a dictionary mapping function names</span>
+<span class="sd">        to their corresponding ExportedPrograms. If only a single ExportedProgram is</span>
+<span class="sd">        provided it will be assigned the name &quot;forward&quot;.</span>
+
+<span class="sd">        transform_passes: The passes can either be a list of passes, or a dictionary</span>
+<span class="sd">        mapping method names to lists of passes. If it is just a list of passes, all methods</span>
+<span class="sd">        in the given EdgeProgramManager will be transformed with the provided passes. If it</span>
+<span class="sd">        is a dictionary, only method names specified in the dictionary will be transformed</span>
+<span class="sd">        with their corresponding passes.</span>
+
+<span class="sd">        partitioner: The partitioner can either be a Partitioner subclass instance, or a</span>
+<span class="sd">        dictionary mapping method names to Partitioner subclass instance. If it is a</span>
+<span class="sd">        Partitioner subclass, all programs in the given EdgeProgramManager will be lowered</span>
+<span class="sd">        using the given partitioner. If it is a dictionary, only method names specified in</span>
+<span class="sd">        the dictionary will be lowered with the given partitioner.</span>
+
+<span class="sd">        constant_methods: An optional dictionary of method name to the constant value</span>
+<span class="sd">        returned by that method in eager mode. Often used to store config information on</span>
+<span class="sd">        Edge models.</span>
+
+<span class="sd">        compile_config: An optional argument used to provide greater control over the</span>
+<span class="sd">        transformation to edge dialect process.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        EdgeProgramManager</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+    <span class="k">assert</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constant_methods</span><span class="p">,</span> <span class="n">EdgeCompileConfig</span><span class="p">)</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">programs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">aten_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">programs</span><span class="p">}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">aten_programs</span> <span class="o">=</span> <span class="n">programs</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">partitioner</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">partitioner</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">partitioner</span><span class="p">}</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">partitioner</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="n">ops_set_to_not_decompose_by_program</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">ops_set_to_not_decompose_by_program</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_replace_aten_ops_with_transformed_ops</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">program</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">_default_decomposition_table</span><span class="p">())</span>
+
+        <span class="n">_restore_transformed_ops_to_aten_ops</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
+
+        <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">program</span>
+
+        <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_generate_edge_program</span><span class="p">(</span>
+            <span class="n">name</span><span class="p">,</span>
+            <span class="n">config</span><span class="p">,</span>
+            <span class="n">program</span><span class="p">,</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">ops_set_to_not_decompose_by_program</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[])),</span>
+        <span class="p">)</span>
+
+    <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">EdgeProgramManager</span><span class="p">(</span>
+        <span class="n">edge_programs</span><span class="p">,</span>
+        <span class="n">constant_methods</span><span class="p">,</span>
+        <span class="n">config</span><span class="p">,</span>
+        <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">()</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="o">*</span><span class="n">ops_set_to_not_decompose_by_program</span><span class="o">.</span><span class="n">values</span><span class="p">())),</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">transform_passes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">transform_passes</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">partitioner_list</span> <span class="ow">in</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioner_list</span><span class="p">:</span>
+                <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">({</span><span class="n">name</span><span class="p">:</span> <span class="n">curr_partitioner</span><span class="p">})</span>
+                <span class="n">curr_op_set</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
+            <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
+                <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
+                <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)()(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+
+        <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">partitioners</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioners</span><span class="p">:</span>
+            <span class="n">curr_op_set</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">()</span>
+            <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="n">ops_set_to_not_decompose</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">curr_op_set</span><span class="p">)</span>
+            <span class="n">_sanity_check_graph_for_non_decomp_ops</span><span class="p">(</span>
+                <span class="n">name</span><span class="p">,</span>
+                <span class="n">program</span><span class="p">,</span>
+                <span class="n">ops_set_to_not_decompose</span><span class="p">,</span>
+                <span class="n">check_op_support</span><span class="p">,</span>
+                <span class="n">partitioner_name</span><span class="o">=</span><span class="n">curr_partitioner</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+                <span class="n">generate_error</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">edge_manager</span>
 
 
 <div class="viewcode-block" id="to_edge"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.to_edge">[docs]</a><span class="k">def</span> <span class="nf">to_edge</span><span class="p">(</span>
@@ -1221,6 +1501,7 @@
         <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
         <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">ops_set_to_not_decompose</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">OpOverload</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Should not be called directly by users. User should use :func:&#39;to_edge&#39; instead.</span>
@@ -1232,9 +1513,10 @@
             <span class="n">edge_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">edge_programs</span><span class="p">}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">try</span><span class="p">:</span>
-                <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span><span class="n">edge_compile_config</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span><span class="p">)(</span>
-                    <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
-                <span class="p">)</span>
+                <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
+                    <span class="n">edge_compile_config</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compile_config</span><span class="p">,</span>
+                    <span class="n">exception_list</span><span class="o">=</span><span class="n">ops_set_to_not_decompose</span><span class="p">,</span>
+                <span class="p">)(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
             <span class="k">except</span> <span class="n">ExportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
                 <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in aten dialect.&quot;</span><span class="p">)</span>
                 <span class="k">raise</span> <span class="n">e</span>
