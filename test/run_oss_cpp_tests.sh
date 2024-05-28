@@ -14,6 +14,14 @@
 
 set -ex
 
+if [[ $(uname) == "Darwin" ]]; then
+  export LLVM_PROFDATA="${LLVM_PROFDATA:-xcrun llvm-profdata}"
+  export LLVM_COV="${LLVM_COV:-xcrun llvm-cov}"
+elif [[ $(uname) == "Linux" ]]; then
+  export LLVM_PROFDATA="${LLVM_PROFDATA:-llvm-profdata}"
+  export LLVM_COV="${LLVM_COV:-llvm-cov}"
+fi
+
 build_executorch() {
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
