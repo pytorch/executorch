@@ -244,8 +244,12 @@ def get_native_layer_norm_inputs():
 def get_upsample_inputs():
     test_suite = VkTestSuite(
         [
-            # TODO(dixu): implement the basic upsample logic to have a meaningful test
+            # (input tensor shape, output 2D image size (H, W), output scaling factors)
             ((2, 2, 2, 2), None, [1, 1]),
+            ((1, 1, 2, 2), None, [2, 2]),
+            ((1, 1, 2, 2), None, [2, 4]),
+            ((1, 1, 2, 2), None, [4, 2]),
+            # TODO(T190297757) add supports for output_sizes
         ]
     )
     return test_suite
