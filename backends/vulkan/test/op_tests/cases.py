@@ -423,6 +423,25 @@ def get_index_select_inputs():
     return test_suite
 
 
+def get_embedding_inputs():
+    Test = namedtuple("VkEmbeddingTest", ["weight", "indices"])
+    Test.__new__.__defaults__ = (None, None)
+
+    test_cases = [
+        Test(weight=[10, 9], indices=[0, 2]),
+        Test(weight=[10, 9], indices=[2, 3, 4, 5, 7]),
+        Test(weight=[10, 9], indices=[[0, 2], [1, 4], [7, 7]]),
+        Test(weight=[10, 9], indices=[[1, 2, 3], [1, 2, 3], [1, 2, 3], [1, 2, 3]]),
+        Test(weight=[10, 9], indices=[[[3, 1, 4], [1, 5, 9]], [[2, 6, 5], [3, 5, 8]]]),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) + (-1, "false", "false") for tc in test_cases])
+
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = ["api::kChannelsPacked"]
+    return test_suite
+
+
 def get_unsqueeze_inputs():
     test_suite = VkTestSuite(
         [
@@ -817,6 +836,7 @@ test_suites = {
     "aten.slice_copy.Tensor": get_slice_inputs(),
     "aten.slice.Tensor": get_slice_inputs(),
     "aten.index_select.default": get_index_select_inputs(),
+    "aten.embedding.default": get_embedding_inputs(),
     "aten.unsqueeze_copy.default": get_unsqueeze_inputs(),
     "aten.clone.default": get_clone_inputs(),
     "aten.repeat.default": get_repeat_inputs(),

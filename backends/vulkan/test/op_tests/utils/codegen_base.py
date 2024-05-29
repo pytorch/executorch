@@ -78,11 +78,14 @@ def init_list_str(pylist: Any) -> str:
     if not isinstance(pylist, (list, tuple)):
         pylist = [pylist]
 
-    init_list_str = "{"
+    list_str = "{"
     for s in pylist:
-        init_list_str += f"{s}, "
-    init_list_str = init_list_str[:-2] + "}"
-    return init_list_str
+        if isinstance(s, (list, tuple)):
+            list_str += f"{init_list_str(s)}, "
+        else:
+            list_str += f"{s}, "
+    list_str = list_str[:-2] + "}"
+    return list_str
 
 
 def get_or_return_default(arg: Argument, inputs: List[Any], i: int):
@@ -105,8 +108,17 @@ class TestSuiteGen:
             self.f, method=False, fallback_binding=self.f.manual_cpp_binding
         ).most_faithful_signature()
 
-    def gen_case_name_tuple(self, t: Tuple) -> str:
-        return "x".join([str(e) for e in t])
+    def gen_case_name_tuple(self, t) -> str:
+        return "x".join(
+            [
+                (
+                    str(e)
+                    if not isinstance(e, (list, tuple))
+                    else self.gen_case_name_tuple(e)
+                )
+                for e in t
+            ]
+        )
 
     def gen_case_name(self, inputs: List[Any], prepack: bool = False) -> str:
         name_str = self.op_name
@@ -119,7 +131,7 @@ class TestSuiteGen:
             elif isinstance(arg_sizes_or_val, list):
                 lst = []
                 for size in arg_sizes_or_val:
-                    if isinstance(size, tuple):
+                    if isinstance(size, (list, tuple)):
                         lst.append(self.gen_case_name_tuple(size))
                     else:
                         lst.append(str(size))
@@ -154,7 +166,7 @@ class TestSuiteGen:
             ret_str = f"{cpp_type} {arg.name} = "
 
         if cpp_type == AT_TENSOR:
-            if arg.name == "index":
+            if arg.name == "index" or arg.name == "indices":
                 ret_str += f"make_index_tensor({init_list_str(data)});"
             else:
                 ret_str += (
@@ -283,19 +295,52 @@ at::Tensor make_seq_tensor(
     values[i] = (float) i;
   }}
 
-  // from_blob doesn't take ownership of data. Hence must create a copy as
-  // "values" will go out of scope.
+  // Clone as original data will be deallocated upon return.
   return at::from_blob(values.data(), sizes, at::kFloat).toType(dtype).detach().clone();
 }}
 
 
 at::Tensor make_index_tensor(std::vector<int64_t> indices) {{
-  int64_t size = static_cast<int64_t>(indices.size());
   at::ScalarType dtype = at::kInt;
+  std::vector<int64_t> sizes = {{static_cast<int64_t>(indices.size())}};
 
-  // from_blob doesn't take ownership of data. Hence must create a copy as
-  // "values" will go out of scope.
-  return at::from_blob(indices.data(), {{size}}, dtype).detach().clone();
+  // Clone as original data will be deallocated upon return.
+  return at::from_blob(indices.data(), sizes, dtype).detach().clone();
+}}
+
+at::Tensor make_index_tensor(std::vector<std::vector<int64_t>> indices) {{
+  at::ScalarType dtype = at::kInt;
+  std::vector<int64_t> sizes = {{
+    static_cast<int64_t>(indices.size()),
+    static_cast<int64_t>(indices[0].size())}};
+
+  // Flatten indices as from_blob reads garbage otherwise.
+  std::vector<int64_t> acc;
+  for (auto& vec: indices) {{
+    acc.insert(acc.end(), vec.begin(), vec.end());
+  }}
+
+  // Clone as original data will be deallocated upon return.
+  return at::from_blob(acc.data(), sizes, dtype).detach().clone();
+}}
+
+at::Tensor make_index_tensor(std::vector<std::vector<std::vector<int64_t>>> indices) {{
+  at::ScalarType dtype = at::kInt;
+  std::vector<int64_t> sizes = {{
+    static_cast<int64_t>(indices.size()),
+    static_cast<int64_t>(indices[0].size()),
+    static_cast<int64_t>(indices[0][0].size())}};
+
+  // Flatten indices as from_blob reads garbage otherwise.
+  std::vector<int64_t> acc;
+  for (auto& v: indices) {{
+    for (auto& vv: v) {{
+      acc.insert(acc.end(), vv.begin(), vv.end());
+    }}
+  }}
+
+  // Clone as original data will be deallocated upon return.
+  return at::from_blob(acc.data(), sizes, dtype).detach().clone();
 }}
 
 {test_suites_cpp}
