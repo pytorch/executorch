@@ -249,7 +249,9 @@ def get_upsample_inputs():
             ((1, 1, 2, 2), None, [2, 2]),
             ((1, 1, 2, 2), None, [2, 4]),
             ((1, 1, 2, 2), None, [4, 2]),
-            # TODO(T190297757) add supports for output_sizes
+            ((1, 1, 2, 2), [2, 2], None),
+            ((1, 1, 2, 2), [2, 4], None),
+            ((1, 1, 2, 2), [3, 2], None),
         ]
     )
     return test_suite
@@ -817,6 +819,28 @@ def get_gelu_inputs():
     return test_suite
 
 
+def get_arange_inputs():
+    test_suite = VkTestSuite(
+        [
+            (1, 13),
+            (1.0, 11),
+            (-13, 3),
+            (-11.0, 2),
+            (3, 15, 3),
+            (3, 23, 2),
+            (3, 23.0, 4),
+            (13, 1, -1),
+            (-3, -13, -2),
+            (13, -2.0, -4),
+        ],
+    )
+
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -855,4 +879,5 @@ test_suites = {
     "aten.sin.default": get_unary_ops_inputs(),
     "aten.neg.default": get_unary_ops_inputs(),
     "aten.cos.default": get_unary_ops_inputs(),
+    "aten.arange.start_step": get_arange_inputs(),
 }
