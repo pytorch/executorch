@@ -14,6 +14,14 @@
 
 set -ex
 
+if [[ $(uname) == "Darwin" ]]; then
+  export LLVM_PROFDATA="${LLVM_PROFDATA:-xcrun llvm-profdata}"
+  export LLVM_COV="${LLVM_COV:-xcrun llvm-cov}"
+elif [[ $(uname) == "Linux" ]]; then
+  export LLVM_PROFDATA="${LLVM_PROFDATA:-llvm-profdata}"
+  export LLVM_COV="${LLVM_COV:-llvm-cov}"
+fi
+
 build_executorch() {
   BUILD_VULKAN="OFF"
   if [ -x "$(command -v glslc)" ]; then
@@ -21,6 +29,7 @@ build_executorch() {
   fi
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_VULKAN=$BUILD_VULKAN \
     -Bcmake-out
@@ -40,6 +49,7 @@ build_and_run_test() {
   local test_dir=$1
   cmake "${test_dir}" \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DCMAKE_PREFIX_PATH="$(pwd)/third-party/googletest/build" \
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
@@ -48,9 +58,15 @@ build_and_run_test() {
   echo "${LD_LIBRARY_PATH}"
   for t in cmake-out/"${test_dir}"/*test; do
     if [ -e "$t" ]; then
-      ./"$t";
+      LLVM_PROFILE_FILE="cmake-out/$(basename $t).profraw" ./"$t";
+      TEST_BINARY_LIST="${TEST_BINARY_LIST} -object $t"
     fi
   done
+}
+
+report_coverage() {
+  "${LLVM_PROFDATA}" merge -sparse cmake-out/*.profraw -o cmake-out/merged.profdata
+  "${LLVM_COV}" report -instr-profile=cmake-out/merged.profdata $TEST_BINARY_LIST
 }
 
 probe_tests() {
@@ -86,3 +102,5 @@ if [ -z "$1" ]; then
 else
   build_and_run_test "$1"
 fi
+
+report_coverage || true
