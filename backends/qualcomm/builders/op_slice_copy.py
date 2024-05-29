@@ -61,7 +61,9 @@ class StrideSlice(NodeVisitor):
         ranges = []
         for i in range(input_tensor_rank):
             if i == dim:
-                ranges.extend([start, end, 1])
+                # find step
+                step = node.args[4] if len(node.args) > 4 else 1
+                ranges.extend([start, end, step])
             else:
                 ranges.extend([0, input_tensor.shape[i], 1])
 

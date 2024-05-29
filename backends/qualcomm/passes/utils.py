@@ -9,6 +9,8 @@ from executorch.backends.qualcomm.builders.utils import get_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
+q_io_key = "q_tensor_io"
+
 q_ops = {
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
     exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,

@@ -33,6 +33,7 @@ class RMSNorm(torch.nn.Module):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
+        self.sqrt_dim = dim ** 0.5
 
     def _norm(self, x):
         """
@@ -45,7 +46,8 @@ class RMSNorm(torch.nn.Module):
             torch.Tensor: The normalized tensor.
 
         """
-        return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
+        y = x / self.sqrt_dim
+        return x * torch.rsqrt(torch.sum(y * y, dim=-1) + self.eps)
 
     def forward(self, x):
         """
@@ -174,8 +176,8 @@ def apply_rotary_emb(
     xk_out_r = xk_r * freqs_cos - xk_i * freqs_sin
     xk_out_i = xk_r * freqs_sin + xk_i * freqs_cos
 
-    xq_out = torch.stack([xq_out_r, xq_out_i], dim=-1).flatten(3)
-    xk_out = torch.stack([xk_out_r, xk_out_i], dim=-1).flatten(3)
+    xq_out = torch.stack([xq_out_r, xq_out_i], dim=-1).flatten(-2)
+    xk_out = torch.stack([xk_out_r, xk_out_i], dim=-1).flatten(-2)
 
     return xq_out.type_as(xq), xk_out.type_as(xk)
 

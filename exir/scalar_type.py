@@ -26,3 +26,4 @@ class ScalarType(IntEnum):
     BFLOAT16 = 15
     QUINT4x2 = 16
     QUINT2x4 = 17
+    Bits16 = 22
