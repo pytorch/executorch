@@ -15,6 +15,14 @@ from json import JSONDecodeError
 from typing import Any, Callable, List, Optional
 
 import torch
+
+try:
+    from ...portable.utils import export_to_edge, save_pte_program
+except ImportError:
+    # Workaround to bypass the different paths between executorch pip package and directly python call
+    # TODO: remove this try catch workaround and have a standard wa to import portable.utils
+    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `examples.portable.utils`.
+    from examples.portable.utils import export_to_edge, save_pte_program
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
@@ -33,7 +41,6 @@ from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.nn.attention import SDPBackend
 
-from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -156,6 +163,7 @@ class LlamaEdgeManager:
         self.edge_manager: Optional[EdgeProgramManager] = None
         self.export_program = None
         self.output_dir = "."
+        self._saved_pte_filename = None
 
     def set_metadata(self, metadata: Optional[dict]) -> "LlamaEdgeManager":
         """
@@ -388,4 +396,11 @@ class LlamaEdgeManager:
             output_name (Optional[str]): The name of the .pte file.
         """
         assert output_name, "Need a valid output name"
-        save_pte_program(self.export_program, output_name, self.output_dir)
+        filename = save_pte_program(self.export_program, output_name, self.output_dir)
+        self._saved_pte_filename = filename
+
+    def get_saved_pte_filename(self) -> Optional[str]:
+        """
+        Return the filename of the most recenet saved .pte file. Return None if the model is not saved.
+        """
+        return self._saved_pte_filename

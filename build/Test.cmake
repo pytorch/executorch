@@ -19,6 +19,19 @@
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
+# Add code coverage flags to supported compilers
+if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
+  if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    string(APPEND CMAKE_C_FLAGS  " --coverage -fprofile-abs-path")
+    string(APPEND CMAKE_CXX_FLAGS  " --coverage -fprofile-abs-path")
+  elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+    string(APPEND CMAKE_C_FLAGS  " -fprofile-instr-generate -fcoverage-mapping")
+    string(APPEND CMAKE_CXX_FLAGS " -fprofile-instr-generate -fcoverage-mapping")
+  else()
+    message(ERROR "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported")
+  endif()
+endif()
+
 # A helper function to generate a gtest cxx executable target
 # @param target_name: name for the executable
 # @param SOURCES <list_of_sources>: test sources to be compiled. Sometimes

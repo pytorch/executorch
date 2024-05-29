@@ -102,7 +102,7 @@ def export_to_exec_prog(
 
 def save_pte_program(
     prog: ExecutorchProgramManager, model_name: str, output_dir: str = ""
-) -> None:
+) -> str:
     if model_name.endswith(".pte"):
         filename = model_name
     else:
@@ -114,3 +114,5 @@ def save_pte_program(
             logging.info(f"Saved exported program to {filename}")
     except Exception as e:
         logging.error(f"Error while saving to {filename}: {e}")
+
+    return filename
