@@ -158,10 +158,10 @@ class TestSuiteGen:
 
         if cpp_type == AT_INT_ARRAY_REF:
             ret_str = f"std::vector<int64_t> {arg.name} = "
-        elif (
-            cpp_type == OPT_AT_DOUBLE_ARRAY_REF or cpp_type == OPT_AT_INT_ARRAY_REF
-        ) and str(data) != "None":
+        elif cpp_type == OPT_AT_DOUBLE_ARRAY_REF and str(data) != "None":
             ret_str = f"std::vector<double> {arg.name} = "
+        elif cpp_type == OPT_AT_INT_ARRAY_REF and str(data) != "None":
+            ret_str = f"std::vector<int64_t> {arg.name} = "
         else:
             ret_str = f"{cpp_type} {arg.name} = "
 

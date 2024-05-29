@@ -4,27 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-binary_op:
+arange:
   parameter_names_with_default_values:
-    OPERATOR: X + A * Y
     NDIM: 3
-    DTYPE: float
-    PACKING: C_packed
+    DTYPE: int
     STORAGE: texture3d
+    PACKING: C_packed
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
       - VALUE: int
   shader_variants:
-    - NAME: binary_add
-    - NAME: binary_sub
-      OPERATOR: X - A * Y
-    - NAME: binary_mul
-      OPERATOR: X * Y
-    - NAME: binary_div
-      OPERATOR: X / Y
-    - NAME: binary_pow
-      OPERATOR: pow(X, Y)
-    - NAME: binary_floor_divide
-      OPERATOR: floor(X / Y)
+    - NAME: arange

@@ -17,6 +17,20 @@
 
 namespace vkcompute {
 
+inline int64_t normalize_idx(
+    const int64_t index,
+    const int64_t max,
+    const int64_t default_value) {
+  // INT64_MAX is passed when value is unspecified
+  if (index == INT64_MAX) {
+    return default_value;
+  }
+  if (index == default_value) {
+    return index;
+  }
+  return normalize(index, max);
+}
+
 void add_slice_tensor_out_node(
     ComputeGraph& graph,
     ValueRef in,
@@ -57,8 +71,8 @@ void add_slice_tensor_out_node(
   int64_t start = opt_start.value_or(0);
   int64_t end = opt_end.value_or(in_sizes[dim]);
 
-  VK_CHECK_COND((0 <= start) && (start < in_sizes[dim]));
-  VK_CHECK_COND((0 <= end) && (end <= in_sizes[dim]));
+  start = normalize_idx(start, in_sizes[dim], 0);
+  end = normalize_idx(end, in_sizes[dim], in_sizes[dim]);
 
   if (dim_index == kChannel4D) {
     // slice by channel

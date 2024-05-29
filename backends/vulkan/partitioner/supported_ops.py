@@ -113,6 +113,7 @@ ORCHESTRATION_OPS = [
 ]
 
 CREATION_OPS = [
+    exir_ops.edge.aten.arange.start_step,
     exir_ops.edge.aten.clone.default,
     exir_ops.edge.aten.full.default,
 ]

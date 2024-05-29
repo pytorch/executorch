@@ -39,10 +39,10 @@ void main() {
   for (int i = 0; i < 4; ++i) {
     // Read input tensor for embedding index.
     const ivec3 in_pos = ivec3(out_pos.y, out_idx.z * 4 + i, out_idx.w / 4);
-    const int in_texel = texelFetch(t_in, in_pos, 0)[out_idx.w % 4];
+    const int in_texel_elem = texelFetch(t_in, in_pos, 0)[out_idx.w % 4];
 
     // Read weight tensor for embedding.
-    out_texel[i] = texelFetch(t_weight, ivec3(out_pos.x, in_texel, 0), 0).x;
+    out_texel[i] = texelFetch(t_weight, ivec3(out_pos.x, in_texel_elem, 0), 0).x;
   }
 
   imageStore(t_out, out_pos, out_texel);
