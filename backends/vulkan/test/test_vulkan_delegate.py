@@ -1308,3 +1308,54 @@ class TestBackends(unittest.TestCase):
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
+
+    def test_vulkan_backend_arange_int(self):
+        class ArangeModule(torch.nn.Module):
+            def __init__(self, input):
+                super().__init__()
+                self.input = input
+
+            def forward(self, x):
+                return torch.arange(*self.input, dtype=torch.int32)
+
+        # `torch.arange` could take one, two or three arguments as input.
+        # If only one argument is provided, it will be interpreted as `end`.
+        # If two arguments are provided, the first one will be interpreted as `start`
+        # and the second one will be interpreted as `end`.
+        # If three arguments are provided, the first one will be interpreted as `start`,
+        # the second one will be interpreted as `end` and the third one will be
+        # interpreted as `step`.
+        inputs = [
+            [1],
+            [-3, 5],
+            [1, 11, 2],
+            [12, 1, -2],
+        ]
+        for input in inputs:
+            self.lower_module_and_test_output(
+                ArangeModule(input),
+                (torch.randn(size=(1,), dtype=torch.float32),),  # dummy input
+                memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            )
+
+    def test_vulkan_backend_arange_float(self):
+        class ArangeModule(torch.nn.Module):
+            def __init__(self, input):
+                super().__init__()
+                self.input = input
+
+            def forward(self, x):
+                return torch.arange(*self.input)
+
+        inputs = [
+            [1.5],
+            [-3, 5.0],
+            [1.0, 11, 2],
+            [12, 1, -2.0],
+        ]
+        for input in inputs:
+            self.lower_module_and_test_output(
+                ArangeModule(input),
+                (torch.randn(size=(1,), dtype=torch.float32),),  # dummy input
+                memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            )
