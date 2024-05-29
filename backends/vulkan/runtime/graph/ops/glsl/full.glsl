@@ -12,7 +12,6 @@
 
 #define VEC4_T ${texel_type(DTYPE)}
 
-#include "broadcasting_utils.h"
 #include "indexing_utils.h"
 
 layout(std430) buffer;

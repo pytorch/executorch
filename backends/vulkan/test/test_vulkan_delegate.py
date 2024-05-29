@@ -1272,3 +1272,90 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
             custom_pass=[MeanToSumDiv()],
         )
+
+    def test_vulkan_backend_index_select_int(self):
+        class IndexSelectModule(torch.nn.Module):
+            def __init__(self, dim, indices):
+                super().__init__()
+                self.dim = dim
+                self.index = torch.tensor(indices, dtype=torch.int32)
+
+            def forward(self, x):
+                return torch.index_select(x, self.dim, self.index)
+
+        sample_inputs = (torch.arange(96).reshape(2, 8, 2, 3).int(),)
+
+        self.lower_module_and_test_output(
+            IndexSelectModule(dim=1, indices=[2, 3, 5, 6, 7]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_index_select(self):
+        class IndexSelectModule(torch.nn.Module):
+            def __init__(self, dim, indices):
+                super().__init__()
+                self.dim = dim
+                self.index = torch.tensor(indices, dtype=torch.int32)
+
+            def forward(self, x):
+                return torch.index_select(x, self.dim, self.index)
+
+        sample_inputs = (torch.arange(144).reshape(12, 1, 3, 4).float(),)
+
+        self.lower_module_and_test_output(
+            IndexSelectModule(dim=0, indices=[1, 3, 5, 7, 8, 9, 10, 11, 2, 3]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_arange_int(self):
+        class ArangeModule(torch.nn.Module):
+            def __init__(self, input):
+                super().__init__()
+                self.input = input
+
+            def forward(self, x):
+                return torch.arange(*self.input, dtype=torch.int32)
+
+        # `torch.arange` could take one, two or three arguments as input.
+        # If only one argument is provided, it will be interpreted as `end`.
+        # If two arguments are provided, the first one will be interpreted as `start`
+        # and the second one will be interpreted as `end`.
+        # If three arguments are provided, the first one will be interpreted as `start`,
+        # the second one will be interpreted as `end` and the third one will be
+        # interpreted as `step`.
+        inputs = [
+            [1],
+            [-3, 5],
+            [1, 11, 2],
+            [12, 1, -2],
+        ]
+        for input in inputs:
+            self.lower_module_and_test_output(
+                ArangeModule(input),
+                (torch.randn(size=(1,), dtype=torch.float32),),  # dummy input
+                memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            )
+
+    def test_vulkan_backend_arange_float(self):
+        class ArangeModule(torch.nn.Module):
+            def __init__(self, input):
+                super().__init__()
+                self.input = input
+
+            def forward(self, x):
+                return torch.arange(*self.input)
+
+        inputs = [
+            [1.5],
+            [-3, 5.0],
+            [1.0, 11, 2],
+            [12, 1, -2.0],
+        ]
+        for input in inputs:
+            self.lower_module_and_test_output(
+                ArangeModule(input),
+                (torch.randn(size=(1,), dtype=torch.float32),),  # dummy input
+                memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            )

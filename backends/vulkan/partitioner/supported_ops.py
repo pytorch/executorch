@@ -99,6 +99,7 @@ SHAPE_MANIPULATION_OPS = [
 ]
 
 INDEXING_OPS = [
+    exir_ops.edge.aten.index_select.default,
     exir_ops.edge.aten.select_copy.int,
     exir_ops.edge.aten.slice_copy.Tensor,
 ]
@@ -111,6 +112,7 @@ ORCHESTRATION_OPS = [
 ]
 
 CREATION_OPS = [
+    exir_ops.edge.aten.arange.start_step,
     exir_ops.edge.aten.clone.default,
     exir_ops.edge.aten.full.default,
 ]
