@@ -124,13 +124,12 @@ void max_pool2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 //
 
 struct DivisorParams final {
-  int32_t divisor;
+  int32_t divisor_override;
   bool count_include_pad;
 };
 
 DivisorParams create_divisor_params(
     ComputeGraph& graph,
-    const api::utils::ivec2& kernel_size,
     const ValueRef divisor_override,
     const ValueRef count_include_pad) {
   return {
@@ -165,8 +164,8 @@ void add_avg_pool2d_node(
   Kernel2dParams kernel_params =
       create_kernel2d_params(graph, kernel_size, stride, padding);
 
-  DivisorParams divisor_params = create_divisor_params(
-      graph, kernel_params.kernel_size, divisor_override, count_include_pad);
+  DivisorParams divisor_params =
+      create_divisor_params(graph, divisor_override, count_include_pad);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
