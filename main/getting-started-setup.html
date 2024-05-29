@@ -588,6 +588,7 @@ git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w
 
 <span class="c1"># Install ExecuTorch pip package and its dependencies, as well as</span>
 <span class="c1"># development tools like CMake.</span>
+<span class="c1"># If developing on a Mac, make sure to install the Xcode Command Line Tools first.</span>
 ./install_requirements.sh
 </pre></div>
 </div>
@@ -700,8 +701,8 @@ the version is important, and newer or older versions may not work with the
 version of the buck2 prelude used by the ExecuTorch repo.</p></li>
 </ul>
 <p>Configure Buck2 by decompressing with the following command (filename depends
-on your system):</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># For example, buck2-x86_64-unknown-linux-musl.zst or buck2-aarch64-apple-darwin.zst</span>
+on your system, and the location of the binary can be different):</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># For example, buck2-x86_64-unknown-linux-musl.zst for Linux, or buck2-aarch64-apple-darwin.zst for Mac with Apple silicon.</span>
 zstd<span class="w"> </span>-cdq<span class="w"> </span>buck2-DOWNLOADED_FILENAME.zst<span class="w"> </span>&gt;<span class="w"> </span>/tmp/buck2<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>/tmp/buck2
 </pre></div>
 </div>
@@ -711,6 +712,7 @@ as <code class="docutils literal notranslate"><span class="pre">buck2</span></co
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>/tmp/buck2<span class="w"> </span>run<span class="w"> </span>//examples/portable/executor_runner:executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>add.pte
 </pre></div>
 </div>
+<p>Note that the first run may take a while as it will have to complie the kernels from sources</p>
 </div>
 </div>
 <div class="section" id="next-steps">
