@@ -154,7 +154,12 @@ class TestSuiteGen:
             ret_str = f"{cpp_type} {arg.name} = "
 
         if cpp_type == AT_TENSOR:
-            ret_str += f"{self.suite_def.data_gen}({init_list_str(data)}, test_dtype);"
+            if arg.name == "index":
+                ret_str += f"make_index_tensor({init_list_str(data)});"
+            else:
+                ret_str += (
+                    f"{self.suite_def.data_gen}({init_list_str(data)}, test_dtype);"
+                )
         elif cpp_type == OPT_AT_TENSOR:
             if str(data) == "None":
                 ret_str += "std::nullopt;"
@@ -267,7 +272,7 @@ at::Tensor make_rand_tensor(
 
 at::Tensor make_seq_tensor(
     std::vector<int64_t> sizes,
-      at::ScalarType dtype = at::kFloat) {{
+    at::ScalarType dtype = at::kFloat) {{
   int64_t n = 1;
   for (auto size: sizes) {{
     n *= size;
@@ -281,6 +286,16 @@ at::Tensor make_seq_tensor(
   // from_blob doesn't take ownership of data. Hence must create a copy as
   // "values" will go out of scope.
   return at::from_blob(values.data(), sizes, at::kFloat).toType(dtype).detach().clone();
+}}
+
+
+at::Tensor make_index_tensor(std::vector<int64_t> indices) {{
+  int64_t size = static_cast<int64_t>(indices.size());
+  at::ScalarType dtype = at::kInt;
+
+  // from_blob doesn't take ownership of data. Hence must create a copy as
+  // "values" will go out of scope.
+  return at::from_blob(indices.data(), {{size}}, dtype).detach().clone();
 }}
 
 {test_suites_cpp}
