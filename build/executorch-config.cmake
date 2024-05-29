@@ -40,6 +40,7 @@ set(lib_list
     extension_data_loader
     ${FLATCCRT_LIB}
     mpsdelegate
+    mpsdelegate_include
     qnn_executorch_backend
     portable_ops_lib
     extension_module

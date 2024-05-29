@@ -6,7 +6,10 @@
 //
 
 #include <executorch/backends/apple/mps/runtime/operations/OperationUtils.h>
-#include <op_llama_cpp_linear.h>
+#include <executorch/backends/apple/mps/runtime/MPSStream.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include "op_llama_cpp_linear.h"
+#include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
 // #define _CAPTURE_KERNEL 1
 namespace torch {
@@ -16,64 +19,60 @@ namespace native {
 
 
 using namespace mps;
+using RuntimeContext = torch::executor::RuntimeContext;
+using MPSStream = mps::delegate::MPSStream;
 
-Tensor _llama_cpp_mm_int8(const Tensor& A, const Tensor& B, const Tensor& scales) {
+Tensor& _llama_cpp_mm_int8_out(
+  RuntimeContext& ctx,
+  const Tensor& A, 
+  const Tensor& B, 
+  const Tensor& scales, 
+  Tensor& C) {
+    (void)ctx;
     auto M = A.size(0);
     auto N = B.size(0);
     auto K = A.size(1);
 
-    TORCH_CHECK(A.dtype() == kBFloat16 || A.dtype() == kHalf || A.dtype() == kFloat,
-                __func__,
-                " : expect A to be either 32-bit or 16-bit float tensor.");
-    TORCH_CHECK(A.is_contiguous(), __func__, " : expect A to be contiguous.");
-    TORCH_CHECK(A.dim() == 2, __func__, " : expect A to be 2D tensor.");
+    // ET_KERNEL_CHECK(A.dtype() == exec_aten::ScalarType:: || A.dtype() == kHalf || A.dtype() == kFloat,
+    //             __func__,
+    //             " : expect A to be either 32-bit or 16-bit float tensor.");
+    // ET_KERNEL_CHECK(A.dim() == 2, __func__, " : expect A to be 2D tensor.");
 
-    TORCH_CHECK(B.dtype() == kChar, __func__, " : expect B to be int8 tensor.");
-    TORCH_CHECK(B.is_contiguous(), __func__, " : expect B to be contiguous.");
-    TORCH_CHECK(B.size(1) == K, __func__, " : expect B.size(1) == ", K);
+    // TORCH_CHECK(B.dtype() == kChar, __func__, " : expect B to be int8 tensor.");
+    // TORCH_CHECK(B.is_contiguous(), __func__, " : expect B to be contiguous.");
+    // TORCH_CHECK(B.size(1) == K, __func__, " : expect B.size(1) == ", K);
 
-  auto C = at::empty({M, N}, A.options());
-  MPSStream* mpsStream = getCurrentMPSStream();
+  // auto C = at::empty({M, N}, A.options());
+  MPSStream* mpsStream = mps::delegate::getCurrentMPSStream();
   std::array<uint32_t, 3> sizes = {static_cast<uint32_t>(M), static_cast<uint32_t>(K), static_cast<uint32_t>(N)};
-  dispatch_sync_with_rethrow(mpsStream->queue(), ^() {
+  dispatch_sync(mpsStream->queue(), ^() {
     @autoreleasepool {
       NSError *error = nil;
-#if _CAPTURE_KERNEL
-      if (getMPSProfiler().isCaptureEnabled()) {
-        getMPSProfiler().startCapture(__func__, mpsStream);
-      }
-#endif
       id<MTLDevice> device = mpsStream->device();
       id<MTLComputeCommandEncoder> computeEncoder = mpsStream->commandEncoder();
       // Load the custom linear shader
       id<MTLLibrary> customKernelLibrary = [device newLibraryWithSource:[NSString stringWithUTF8String:QUANTIZED_KERNEL]
                                                                   options:nil
                                                                     error:&error];
-      TORCH_CHECK(customKernelLibrary, "Error creating custom kernel library: ", error.localizedDescription.UTF8String);
-      const std::string kernel = "kernel_mul_mm_" + scalarToMetalTypeString(A.scalar_type()) + "_char";
+      ET_CHECK_MSG(customKernelLibrary, "Error creating custom kernel library: ", error.localizedDescription.UTF8String);
+      const std::string kernel = "kernel_mul_mm_" + mps::delegate::scalarToMetalTypeString(A.scalar_type()) + "_char";
 
       // Create a function
       id<MTLFunction> customQuantizedLinearFunction = [customKernelLibrary newFunctionWithName:[NSString stringWithUTF8String:kernel.c_str()]];
-      TORCH_CHECK(customQuantizedLinearFunction, "Error creating custom kernel function: ", kernel);
+      ET_CHECK_MSG(customQuantizedLinearFunction, "Error creating custom kernel function: %s", kernel.c_str());
 
       id<MTLComputePipelineState> quantizedPSO = [device newComputePipelineStateWithFunction:customQuantizedLinearFunction error:&error];
-      TORCH_CHECK(quantizedPSO, error.localizedDescription.UTF8String);
+      // ET_CHECK_MSG(quantizedPSO != nil, "%s", error.localizedDescription.UTF8String.c_str());
 
       [computeEncoder setComputePipelineState:quantizedPSO];
-      mtl_setBuffer(computeEncoder, A, 0);
-      mtl_setBuffer(computeEncoder, B, 1);
-      mtl_setBuffer(computeEncoder, scales, 2);
-      mtl_setBuffer(computeEncoder, C, 3);
+      [computeEncoder setBuffer:mps::delegate::getMTLBufferStorage(A) offset:0 atIndex:0];
+      [computeEncoder setBuffer:mps::delegate::getMTLBufferStorage(B) offset:0 atIndex:1];
+      [computeEncoder setBuffer:mps::delegate::getMTLBufferStorage(scales) offset:0 atIndex:2];
+      [computeEncoder setBuffer:mps::delegate::getMTLBufferStorage(C) offset:0 atIndex:3];
       [computeEncoder setBytes:sizes.data() length:16 atIndex:4];
         [computeEncoder setThreadgroupMemoryLength:12288 atIndex:0];
         [computeEncoder dispatchThreadgroups:MTLSizeMake( (M + 31)/32, (N + 63)/64, 1) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
-        mpsStream->synchronize(SyncType::COMMIT_AND_WAIT);
-        
-#if _CAPTURE_KERNEL
-      if (getMPSProfiler().isCapturing()) {
-        getMPSProfiler().stopCapture(mpsStream);
-      }
-#endif
+        mpsStream->synchronize(mps::delegate::SyncType::COMMIT_AND_WAIT);
     }
   });
 
@@ -83,3 +82,8 @@ Tensor _llama_cpp_mm_int8(const Tensor& A, const Tensor& B, const Tensor& scales
 } // namespace native
 } // namespace executor
 } // namespace torch
+
+EXECUTORCH_LIBRARY(
+    llama_cpp,
+    "_weight_int8pack_mm.out",
+    torch::executor::native::_llama_cpp_mm_int8_out);

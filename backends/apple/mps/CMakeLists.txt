@@ -71,6 +71,9 @@ find_library(METAL_FRAMEWORK Metal)
 find_library(MPS_FRAMEWORK MetalPerformanceShaders)
 find_library(MPS_GRAPG_FRAMEWORK MetalPerformanceShadersGraph)
 
+add_library(mpsdelegate_include INTERFACE)
+target_include_directories(mpsdelegate_include INTERFACE ${_mps_schema__include_dir} ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
+
 target_link_libraries(
   mpsdelegate
   PRIVATE bundled_program
@@ -81,6 +84,8 @@ target_link_libraries(
           ${MPS_FRAMEWORK}
           ${MPS_GRAPG_FRAMEWORK}
 )
+ 
+target_link_libraries(mpsdelegate PUBLIC mpsdelegate_include)
 
 target_link_options_shared_lib(mpsdelegate)
 target_compile_options(mpsdelegate PUBLIC ${_common_compile_options})
@@ -92,3 +97,4 @@ install(
   INCLUDES
   DESTINATION ${_common_include_directories}
 )
+install(TARGETS mpsdelegate_include DESTINATION lib INCLUDES DESTINATION ${_mps_schema__include_dir} ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)

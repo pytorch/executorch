@@ -55,15 +55,31 @@ list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 # TODO: Consider moving xnnpack/threadpool in a separate lib since it's now used
 # by custom ops too.
-if(NOT EXECUTORCH_BUILD_XNNPACK)
+if(EXECUTORCH_BUILD_XNNPACK)
+#   list(
+#     APPEND
+#     _custom_ops__srcs
+#     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool.cpp"
+#     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool_guard.cpp"
+#   )
+# else()
+  list(APPEND custom_ops_libs xnnpack_backend)
+endif()
+
+if(EXECUTORCH_BUILD_MPS)
+  message("Building llama.cpp kernel")
+  list(APPEND _custom_ops__srcs "${CMAKE_CURRENT_SOURCE_DIR}/op_llama_cpp_linear.mm")
   list(
     APPEND
-    _custom_ops__srcs
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool_guard.cpp"
+    custom_ops_libs
+    mpsdelegate
+    "-framework Foundation"
+    "-weak_framework MetalPerformanceShaders"
+    "-weak_framework MetalPerformanceShadersGraph"
+    "-weak_framework Metal"
   )
-else()
-  list(APPEND custom_ops_libs xnnpack_backend)
+  message("DEBUG: ${CMAKE_INSTALL_PREFIX}/schema/include")
+  list(APPEND _common_include_directories "${CMAKE_INSTALL_PREFIX}/schema/include" "${EXECUTORCH_ROOT}/third-party/flatbuffers/include")
 endif()
 
 add_library(custom_ops ${_custom_ops__srcs})
@@ -84,7 +100,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   # Add a AOT library
   find_package(Torch CONFIG REQUIRED)
   add_library(
-    custom_ops_aot_lib SHARED ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
+    custom_ops_aot_lib SHARED ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp ${CMAKE_CURRENT_SOURCE_DIR}/op_llama_cpp_linear_aot.cpp
   )
   target_include_directories(
     custom_ops_aot_lib PUBLIC "${_common_include_directories}"

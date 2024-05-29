@@ -19,6 +19,7 @@ namespace delegate {
 #define INF std::numeric_limits<float>::infinity()
 
 MPSDataType getMPSScalarType(exec_aten::ScalarType scalar_type);
+std::string scalarToMetalTypeString(const exec_aten::ScalarType& scalar_type);
 exec_aten::ScalarType getScalarType(MPSDataType mpsDataType);
 MPSGraphTensor *castMPSTensor(MPSGraph *mpsGraph, MPSGraphTensor *tensor, exec_aten::ScalarType toType);
 MPSGraphTensor *castMPSTensor(MPSGraph *mpsGraph, MPSGraphTensor *tensor, MPSDataType toType);
@@ -37,6 +38,7 @@ id<MTLBuffer> getMTLBufferStorage(const Tensor &tensor);
 void *pageAlignedBlockPtr(const void *ptr, NSUInteger size, NSUInteger *alignedBlockSize);
 
 MPSGraphTensor *permuteTensor(MPSGraph *graph, MPSGraphTensor *inputTensor, NSArray *permuteOrder);
+void dispatch_sync_with_rethrow(dispatch_queue_t queue, void (^block)());
 
 } // namespace delegate
 } // namespace mps

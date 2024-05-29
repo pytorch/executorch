@@ -4,6 +4,7 @@
 //
 //  Created by Mengwei Liu on 5/10/24.
 //
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 #pragma once
 namespace torch {
@@ -34,19 +35,15 @@ template <> struct BlockType<bfloat> {
 };
 #endif
 
-template<typename T, typename FLOAT>
-void dequantize_float(constant FLOAT * src, constant T * scales, uint index, thread float4x4 & reg) {
-    for (int i = 0; i < 16; i++){
-        reg[i/4][i%4] = src[i];
-    }
+template<typename T>
+float2 get_scale_zero(constant T * scalesAndZeros, uint2 index) {
+    return float2(1.0, 0.0);
 }
 
 template<typename T>
-void dequantize_i8(constant char * src, constant T * scales, uint index, thread float4x4 & reg) {
-    T scale = scales[index];
-    for (int i = 0; i < 16; i++){
-        reg[i/4][i%4] = src[i] * scale;
-    }
+float2 get_scale_zero_q8(constant T * scalesAndZeros, uint2 index) {
+    T scale = scalesAndZeros[index[0]];
+    return float2(scale, 0.0);
 }
 
 #define BLOCK_SIZE_M 64 // 8 simdgroup matrices from matrix A
@@ -60,33 +57,29 @@ void dequantize_i8(constant char * src, constant T * scales, uint index, thread 
 #define SG_MAT_ROW 8
 
 // T: input type, W: weight type
-template<typename T, typename W, void (*dequantize_func)(constant W *, constant T *, uint, thread float4x4 &)>
+template<typename T, typename W, float2 (*get_scale_zero_func)(constant T *, uint2)>
 kernel void kernel_mul_mm(
     constant T                 * A              [[buffer(0)]],  // 2 x 4096
     constant char              * B              [[buffer(1)]],  // 1024 x 4096
-    constant T                 * scales         [[buffer(2)]],
+    constant T                 * scalesAndZeros [[buffer(2)]],
     device T                   * outputData     [[buffer(3)]],  // 2 x 1024
     constant uint3             & sizes          [[buffer(4)]],
     threadgroup uchar          * shared_memory  [[threadgroup(0)]], // threadgroup buffer at index 0
     uint3                        tgpig          [[threadgroup_position_in_grid]], // 3d coordinates
     uint                         tiitg          [[thread_index_in_threadgroup]], // 128 per threadgroup
     uint                         sgitg          [[simdgroup_index_in_threadgroup]]) {
-    
+
     using T4 = typename BlockType<T>::type4;
     using Tsimd8x8 = typename BlockType<T>::simdgroup_type8x8;
     // sizes: x = M, y = K, z = N
     // pytorch: M x K @ N x K -> M x N
     // ggml: K x N @ K x M -> N x M
     uint32_t ne00 = sizes.y; // K
-    uint32_t ne01 = sizes.z; // N
     uint32_t nb00 = sizeof(W);
     uint32_t nb01 = nb00 * ne00;
-    uint32_t nb02 = nb01 * ne01;
     uint32_t ne10 = sizes.y; // K
-    uint32_t ne11 = sizes.x; // M
     uint32_t nb10 = sizeof(T);
     uint32_t nb11 = nb10 * ne10;
-    uint32_t nb12 = nb11 * ne11;
     uint32_t ne0 = sizes.z; // N
     uint32_t ne1 = sizes.x; // M
     constant char * src0 = (constant char *)B;
@@ -121,17 +114,13 @@ kernel void kernel_mul_mm(
         + nb11 * (r1 * BLOCK_SIZE_N + thread_col)
         + nb10 * (BLOCK_SIZE_K / THREAD_PER_COL * (tiitg % THREAD_PER_COL)));
 
-    // scales index
-    uint scale_index = r0 * BLOCK_SIZE_M + thread_row;
-
-    for (int loop_k = 0; loop_k < ne00; loop_k += BLOCK_SIZE_K) {
+    for (uint32_t loop_k = 0; loop_k < ne00; loop_k += BLOCK_SIZE_K) {
         // load data and store to threadgroup memory
-        float4x4 temp_a;
-        dequantize_func(x, scales, scale_index, temp_a);
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
         #pragma unroll(16)
         for (int i = 0; i < 16; i++) {
+            float weight = *(x + i);
             // for example, tiitg 32, i 12 -> 0 + 1 = 1, it needs to work on sg mat grid row 1
             int sg_mat_grid_row_index = (tiitg % THREAD_PER_ROW) * THREAD_PER_ROW + i / 8;
             // same example, sg mat grid col index: 32 / 2 / 8 = 2, so currently need to work with sg mat at (1, 2)
@@ -141,8 +130,7 @@ kernel void kernel_mul_mm(
             int col_offset = (tiitg / THREAD_PER_ROW) % 8;
             // now calculates the overall offset for sa
             int sa_offset = (sg_mat_grid_row_index * 8 + sg_mat_grid_col_index) * 64 + (row_offset * 8 + col_offset);
-            float temp_a_val = temp_a[i/4][i%4];
-            *(sa + sa_offset) = temp_a[i/4][i%4];
+            *(sa + sa_offset) = weight;
         }
         // read 8 values for input matrix
 
@@ -193,8 +181,12 @@ kernel void kernel_mul_mm(
     device T * C = outputData + (BLOCK_SIZE_M * r0) + (BLOCK_SIZE_N * r1) * ne0;
     if (sgitg == 0) {
         for (int i = 0; i < n_rows; i++) {
+            // dequantize
+            float2 scale_zero = get_scale_zero_func(scalesAndZeros, uint2(r0 * BLOCK_SIZE_M + i, 0));
             for (int j = tiitg; j < n_cols; j += BLOCK_SIZE_N) {
-                *(C + i + j * ne0) = *(temp_str + i + j * BLOCK_SIZE_M);
+                float temp = *(temp_str + i + j * BLOCK_SIZE_M);
+                temp = temp * scale_zero[0] + scale_zero[1];
+                *(C + i + j * ne0) = (device T)(temp);
             }
         }
     }
@@ -215,15 +207,22 @@ kernel void kernel_mul_mm<DTYPE, WDTYPE, DEQUANT_FUNC>(                  \
     uint                         sgitg          [[simdgroup_index_in_threadgroup]])
 
 
-INSTANTIATE_MM(float, float, dequantize_float<float>);
-INSTANTIATE_MM(half, half, dequantize_float<half>);
-INSTANTIATE_MM(float, char, dequantize_i8);
-INSTANTIATE_MM(half, char, dequantize_i8);
+INSTANTIATE_MM(float, float, get_scale_zero);
+INSTANTIATE_MM(half, half, get_scale_zero);
+INSTANTIATE_MM(float, char, get_scale_zero_q8);
+INSTANTIATE_MM(half, char, get_scale_zero_q8);
 #if __METAL_VERSION__ >= 310
-INSTANTIATE_MM(bfloat, bfloat, dequantize_float<bfloat>);
+INSTANTIATE_MM(bfloat, bfloat, get_scale_zero);
 #endif
 
 )METAL_QUANTIZED";
+
+Tensor& _llama_cpp_mm_int8_out(
+  RuntimeContext& ctx,
+  const Tensor& A, 
+  const Tensor& B, 
+  const Tensor& scales, 
+  Tensor& C);
 
 } // namespace native
 } // namespace executor
