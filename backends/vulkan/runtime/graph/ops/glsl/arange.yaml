@@ -1,0 +1,19 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+arange:
+  parameter_names_with_default_values:
+    NDIM: 3
+    DTYPE: int
+    STORAGE: texture3d
+    PACKING: C_packed
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+      - VALUE: int
+  shader_variants:
+    - NAME: arange
