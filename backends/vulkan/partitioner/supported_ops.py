@@ -99,6 +99,7 @@ SHAPE_MANIPULATION_OPS = [
 ]
 
 INDEXING_OPS = [
+    exir_ops.edge.aten.embedding.default,
     exir_ops.edge.aten.index_select.default,
     exir_ops.edge.aten.select_copy.int,
     exir_ops.edge.aten.slice_copy.Tensor,
