@@ -20,6 +20,7 @@ try:
     from ...portable.utils import export_to_edge, save_pte_program
 except ImportError:
     # Workaround to bypass the different paths between executorch pip package and directly python call
+    # TODO: remove this try catch workaround and have a standard wa to import portable.utils
     # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `examples.portable.utils`.
     from examples.portable.utils import export_to_edge, save_pte_program
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
