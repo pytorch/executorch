@@ -244,8 +244,14 @@ def get_native_layer_norm_inputs():
 def get_upsample_inputs():
     test_suite = VkTestSuite(
         [
-            # TODO(dixu): implement the basic upsample logic to have a meaningful test
+            # (input tensor shape, output 2D image size (H, W), output scaling factors)
             ((2, 2, 2, 2), None, [1, 1]),
+            ((1, 1, 2, 2), None, [2, 2]),
+            ((1, 1, 2, 2), None, [2, 4]),
+            ((1, 1, 2, 2), None, [4, 2]),
+            ((1, 1, 2, 2), [2, 2], None),
+            ((1, 1, 2, 2), [2, 4], None),
+            ((1, 1, 2, 2), [3, 2], None),
         ]
     )
     return test_suite
@@ -390,6 +396,23 @@ def get_slice_inputs():
         Test(self=[13, 1, 10], dim=0, start=1, step=2),
         Test(self=[13, 1, 10], dim=0, start=1, step=5),
         Test(self=[13, 1, 10], dim=0, start=1, step=20),
+    ]
+
+    # Slice by negative/unspecified indices
+    INT64_MAX = 9223372036854775807  # represents arr[:]
+    test_cases += [
+        Test(self=[8, 9], dim=0, start=-2, step=1),
+        Test(self=[8, 9], dim=0, start=-2, step=2),
+        Test(self=[8, 9], dim=0, end=-2, step=1),
+        Test(self=[8, 9], dim=0, end=-2, step=2),
+        Test(self=[8, 9], dim=0, end=INT64_MAX, step=1),
+        Test(self=[8, 9], dim=0, end=INT64_MAX, step=2),
+        Test(self=[8, 9], dim=1, start=-2, step=1),
+        Test(self=[8, 9], dim=1, start=-2, step=2),
+        Test(self=[8, 9], dim=1, end=-2, step=1),
+        Test(self=[8, 9], dim=1, end=-2, step=2),
+        Test(self=[8, 9], dim=1, end=INT64_MAX, step=1),
+        Test(self=[8, 9], dim=1, end=INT64_MAX, step=2),
     ]
 
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
@@ -796,6 +819,28 @@ def get_gelu_inputs():
     return test_suite
 
 
+def get_arange_inputs():
+    test_suite = VkTestSuite(
+        [
+            (1, 13),
+            (1.0, 11),
+            (-13, 3),
+            (-11.0, 2),
+            (3, 15, 3),
+            (3, 23, 2),
+            (3, 23.0, 4),
+            (13, 1, -1),
+            (-3, -13, -2),
+            (13, -2.0, -4),
+        ],
+    )
+
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -834,4 +879,5 @@ test_suites = {
     "aten.sin.default": get_unary_ops_inputs(),
     "aten.neg.default": get_unary_ops_inputs(),
     "aten.cos.default": get_unary_ops_inputs(),
+    "aten.arange.start_step": get_arange_inputs(),
 }
