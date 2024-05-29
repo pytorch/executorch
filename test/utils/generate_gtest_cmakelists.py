@@ -73,4 +73,3 @@ if __name__ == "__main__":
             )
         else:
             print(f"Please run cmake-format -i {path_to_root}/CMakeLists.txt")
-    print("Note: Please update test/run_oss_cpp_tests.sh")
