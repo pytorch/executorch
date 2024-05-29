@@ -624,7 +624,7 @@ cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-Bcmake-out<span class="w"> </span>.
 </pre></div>
@@ -640,18 +640,9 @@ cmake<span class="w"> </span><span class="se">\</span>
 </pre></div>
 </div>
 </div>
-<div class="section" id="running-the-xnnpack-model-with-buck">
-<h2>Running the XNNPACK Model with Buck<a class="headerlink" href="#running-the-xnnpack-model-with-buck" title="Permalink to this heading">¶</a></h2>
-<p>Alternatively, you can use <code class="docutils literal notranslate"><span class="pre">buck2</span></code> to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install <span class="xref myst">buck2</span>. You can now run it with the prebuilt <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span></code> provided in the examples. This will run the model on some sample inputs.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_fp32.pte
-<span class="c1"># or to run the quantized variant</span>
-buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_q8.pte
-</pre></div>
-</div>
-</div>
 <div class="section" id="building-and-linking-with-the-xnnpack-backend">
 <h2>Building and Linking with the XNNPACK Backend<a class="headerlink" href="#building-and-linking-with-the-xnnpack-backend" title="Permalink to this heading">¶</a></h2>
-<p>You can build the XNNPACK backend <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/targets.bzl#L54">BUCK target</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt#L83">CMake target</a>, and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this <a class="reference internal" href="demo-apps-android.html"><span class="doc std std-doc">resource</span></a> next.</p>
+<p>You can build the XNNPACK backend <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt#L83">CMake target</a>, and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this <a class="reference internal" href="demo-apps-android.html"><span class="doc std std-doc">resource</span></a> next.</p>
 </div>
 </div>
 
@@ -705,7 +696,6 @@ buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_exe
 <li><a class="reference internal" href="#lowering-a-quantized-model-to-xnnpack">Lowering a Quantized Model to XNNPACK</a></li>
 <li><a class="reference internal" href="#lowering-with-aot-compiler-py-script">Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script</a></li>
 <li><a class="reference internal" href="#running-the-xnnpack-model-with-cmake">Running the XNNPACK Model with CMake</a></li>
-<li><a class="reference internal" href="#running-the-xnnpack-model-with-buck">Running the XNNPACK Model with Buck</a></li>
 <li><a class="reference internal" href="#building-and-linking-with-the-xnnpack-backend">Building and Linking with the XNNPACK Backend</a></li>
 </ul>
 </li>
