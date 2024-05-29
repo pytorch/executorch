@@ -11,6 +11,7 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <type_traits>
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 

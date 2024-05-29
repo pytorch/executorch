@@ -244,8 +244,14 @@ def get_native_layer_norm_inputs():
 def get_upsample_inputs():
     test_suite = VkTestSuite(
         [
-            # TODO(dixu): implement the basic upsample logic to have a meaningful test
+            # (input tensor shape, output 2D image size (H, W), output scaling factors)
             ((2, 2, 2, 2), None, [1, 1]),
+            ((1, 1, 2, 2), None, [2, 2]),
+            ((1, 1, 2, 2), None, [2, 4]),
+            ((1, 1, 2, 2), None, [4, 2]),
+            ((1, 1, 2, 2), [2, 2], None),
+            ((1, 1, 2, 2), [2, 4], None),
+            ((1, 1, 2, 2), [3, 2], None),
         ]
     )
     return test_suite
@@ -412,10 +418,31 @@ def get_slice_inputs():
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.dtypes = ["at::kFloat"]
-    test_suite.layouts = [
-        "api::kChannelsPacked",
-    ]
+    test_suite.layouts = ["api::kChannelsPacked"]
     test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
+def get_index_select_inputs():
+    Test = namedtuple("VkIndexSelectTest", ["self", "dim", "index"])
+    Test.__new__.__defaults__ = (None, 0, None)
+
+    test_cases = []
+
+    for i in range(4):
+        test_cases += [
+            Test(self=[9, 9, 9, 9], dim=i, index=[0]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[2]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[0, 2]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[3, 1]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[5, 5]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[2, 3, 4, 5, 7]),
+        ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = ["api::kChannelsPacked"]
     return test_suite
 
 
@@ -792,6 +819,28 @@ def get_gelu_inputs():
     return test_suite
 
 
+def get_arange_inputs():
+    test_suite = VkTestSuite(
+        [
+            (1, 13),
+            (1.0, 11),
+            (-13, 3),
+            (-11.0, 2),
+            (3, 15, 3),
+            (3, 23, 2),
+            (3, 23.0, 4),
+            (13, 1, -1),
+            (-3, -13, -2),
+            (13, -2.0, -4),
+        ],
+    )
+
+    test_suite.layouts = [
+        "api::kChannelsPacked",
+    ]
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -812,6 +861,7 @@ test_suites = {
     "aten.view_copy.default": get_view_inputs(),
     "aten.slice_copy.Tensor": get_slice_inputs(),
     "aten.slice.Tensor": get_slice_inputs(),
+    "aten.index_select.default": get_index_select_inputs(),
     "aten.unsqueeze_copy.default": get_unsqueeze_inputs(),
     "aten.clone.default": get_clone_inputs(),
     "aten.repeat.default": get_repeat_inputs(),
@@ -829,4 +879,5 @@ test_suites = {
     "aten.sin.default": get_unary_ops_inputs(),
     "aten.neg.default": get_unary_ops_inputs(),
     "aten.cos.default": get_unary_ops_inputs(),
+    "aten.arange.start_step": get_arange_inputs(),
 }

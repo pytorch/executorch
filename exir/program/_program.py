@@ -20,6 +20,7 @@ from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackend
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
+from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     base_post_op_replace_passes,
@@ -37,6 +38,7 @@ from executorch.exir.passes.normalize_view_copy_base_pass import (
 )
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
+from executorch.exir.passes.replace_aten_with_edge_pass import aten_to_edge
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
@@ -68,6 +70,17 @@ from torch.fx.passes.infra.pass_manager import PassManager
 from torch.utils import _pytree as pytree
 
 Val = Any
+
+from torch.library import Library
+
+# This is the reserved namespace that is used to register ops to that will
+# be prevented from being decomposed during to_edge_transform_and_lower.
+edge_no_decomp_namespace = "EDGE_DO_NOT_DECOMP"
+lib = Library(edge_no_decomp_namespace, "DEF")
+# Map from aten ops to the transformed ops registered in the edge_no_decomp_namespace.
+aten_op_to_transform_op = {}
+# Map from the transformed ops registered in the edge_no_decomp_namespace to aten ops.
+transform_op_to_aten_op = {}
 
 
 def _get_updated_range_constraints(gm):
@@ -656,12 +669,15 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
 
 
 def _generate_edge_program(
-    name: str, config: EdgeCompileConfig, program: ExportedProgram
+    name: str,
+    config: EdgeCompileConfig,
+    program: ExportedProgram,
+    ops_set_to_not_decompose: Optional[List[torch._ops.OpOverload]] = None,
 ) -> ExportedProgram:
 
     if config._check_ir_validity:
         try:
-            EXIRATenDialectVerifier()(program.graph_module)
+            EXIRATenDialectVerifier(ops_set_to_not_decompose)(program.graph_module)
         except ExportError as e:
             logging.info(f"Input program {name} is not in ATen dialect.")
             raise e
@@ -695,6 +711,7 @@ def _generate_edge_program(
         verifier=EXIREdgeDialectVerifier(
             edge_compile_config=config,
             class_only=True,
+            exception_list=ops_set_to_not_decompose,
         ),
         constants=program.constants,
     )
@@ -703,6 +720,269 @@ def _generate_edge_program(
     edge_program = _transform(edge_program, *post_op_replace_passes)
 
     return edge_program
+
+
+def _replace_aten_ops_with_transformed_ops(
+    name: str,
+    program: ExportedProgram,
+    partitioner,
+):
+
+    ops_to_not_decompose = set()
+    partitioners = partitioner.get(name)
+    if partitioners is None:
+        return
+
+    # Iterate through the graph and replace the aten ops with the corresponding
+    # transformed ops.
+    for partitioner in partitioners:
+        ops_set_to_not_decompose, check_op_support = partitioner.ops_to_not_decompose()
+
+        for op_aten in ops_set_to_not_decompose:
+            _register_no_decomp_op(op_aten)
+
+        for node in program.graph.nodes:
+            is_op_supported = check_op_support(node) if check_op_support else True
+            if (
+                node.op == "call_function"
+                and node.target in ops_set_to_not_decompose
+                and is_op_supported
+            ):
+                ops_to_not_decompose.add(node.target)
+                node.target = aten_op_to_transform_op[node.target]
+
+        for _, submod, _ in get_control_flow_submodules(program.graph_module):
+            for node in submod.graph.nodes:
+                is_op_supported = check_op_support(node) if check_op_support else True
+                if (
+                    node.op == "call_function"
+                    and node.target in ops_set_to_not_decompose
+                    and is_op_supported
+                ):
+                    ops_to_not_decompose.add(node.target)
+                    node.target = aten_op_to_transform_op[node.target]
+
+    return ops_to_not_decompose
+
+
+def _restore_transformed_ops_to_aten_ops(program: ExportedProgram):
+    # Iterate through the graph and replace back the transformed ops with their
+    # corresponding aten ops.
+    for node in program.graph.nodes:
+        if node.op == "call_function" and str(node.target) in transform_op_to_aten_op:
+            node.target = transform_op_to_aten_op[str(node.target)]
+    for _, submod, _ in get_control_flow_submodules(program.graph_module):
+        for node in submod.graph.nodes:
+            if (
+                node.op == "call_function"
+                and str(node.target) in transform_op_to_aten_op
+            ):
+                node.target = transform_op_to_aten_op[str(node.target)]
+
+
+# Returns the op in edge_no_decomp_namespace namespace for the aten
+# op that is passed in.
+def _get_transformed_op(op_aten):
+    op_name = op_aten._schema.name.split("::")[1]
+    overload_name = op_aten._schema.overload_name
+    assert hasattr(
+        torch.ops, edge_no_decomp_namespace
+    ), f"Couldn't find {edge_no_decomp_namespace} in torch.ops. Please make sure the Library has been registered."
+    op_namespace = getattr(torch.ops, edge_no_decomp_namespace)
+    op = getattr(op_namespace, op_name)
+    return getattr(op, overload_name)
+
+
+# Registers the op in edge_no_decomp_namespace namespace for the aten
+# op that is passed in if it is not already cached in the table.
+def _register_no_decomp_op(op_aten):
+    # Check if the op is already cached in the table. If not, then we need to
+    # create a new op in the edge_no_decomp_namespace namespace.
+    if aten_op_to_transform_op.get(op_aten) is None and isinstance(
+        op_aten, torch._ops.OpOverload
+    ):
+        # Extract the schema from the aten op.
+        op_schema = str(op_aten._schema).split("::")[1]
+        op_name = op_aten._schema.name.split("::")[1]
+        # Define an op in the edge_no_decomp_namespace namespace with the aten schema.
+        lib.define(op_schema)
+        # Define the implementation of the op in the edge_no_decomp_namespace namespace.
+        # Important to note that the implementation of the op is the same as the aten op.
+        lib.impl(op_name, op_aten, "CompositeExplicitAutograd")
+        # Cache the aten op and transformed op in their corresponding tables for future use.
+        aten_op_to_transform_op[op_aten] = _get_transformed_op(op_aten)
+        transform_op_to_aten_op[str(aten_op_to_transform_op[op_aten])] = op_aten
+
+
+def _sanity_check_graph_for_non_decomp_ops(
+    name: str,
+    program: ExportedProgram,
+    ops_set_to_not_decompose,
+    check_op_support,
+    generate_error=False,
+    partitioner_name=None,
+):
+    warning_str = f"Found {ops_set_to_not_decompose} in edge dialect program {name}."
+    if partitioner_name is not None:
+        warning_str += f" This op was registered by the partitioner {partitioner_name} to not be decomposed."
+
+    # Check that the ops that were registered to not be decomposed are not present in the
+    # graph anymore as the transform passes and backends should have consumed them by now.
+    ops_set_to_not_decompose = {
+        aten_to_edge(op) for op in ops_set_to_not_decompose
+    }.union(ops_set_to_not_decompose)
+    for node in program.graph_module.graph.nodes:
+        is_op_supported = check_op_support(node) if check_op_support else True
+        if (
+            node.op == "call_function" and node.target in ops_set_to_not_decompose
+        ) and is_op_supported:
+            if generate_error:
+                raise RuntimeError(warning_str)
+            else:
+                logging.warning(warning_str)
+    for _, submod, _ in get_control_flow_submodules(program.graph_module):
+        for node in submod.graph.nodes:
+            is_op_supported = check_op_support(node) if check_op_support else True
+            if (
+                node.op == "call_function" and node.target in ops_set_to_not_decompose
+            ) and is_op_supported:
+                if generate_error:
+                    raise RuntimeError(warning_str)
+                else:
+                    logging.warning(warning_str)
+
+
+def _get_ops_to_not_decompose(partitioners, ops_set_to_not_decompose_by_partitioner):
+    ops_set_to_not_decompose = set()
+    for partitioner in partitioners:
+        ops_set_to_not_decompose = ops_set_to_not_decompose.union(
+            ops_set_to_not_decompose_by_partitioner[partitioner][0]
+        )
+    return ops_set_to_not_decompose
+
+
+def _to_edge_transform_and_lower(
+    programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
+    transform_passes: Optional[
+        Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
+    ] = None,
+    partitioner: Optional[
+        Union[List[Partitioner], Dict[str, List[Partitioner]]]
+    ] = None,
+    constant_methods: Optional[Dict[str, Any]] = None,
+    compile_config: Optional[EdgeCompileConfig] = None,
+) -> "EdgeProgramManager":
+    """
+    :func:`to_edge_transform_and_lower` constructs an EdgeProgramManager from a set of
+    exported programs in ATen dialect. It differs fundamentally from to_edge in that it
+    combines the conversion of the ATen dialect to the edge dialect program, then running
+    the transformation passes and then subsequently lowering the programs to their
+    corresponding backends all in a single pass.
+    This is fundamentally useful for lowering to backends that have ops registered that they
+    do not want to be decomposed and thus rely on matching with these non-decomposed ops. For
+    these sorts of backends this is the *only* API that should be used to lower to the edge
+    dialect. Using a combination of to_edge(...) and to_backend(...) will result in inconsistent
+    or wrong behavior.
+
+    Args:
+        programs: Can be a single ExportedProgram or a dictionary mapping function names
+        to their corresponding ExportedPrograms. If only a single ExportedProgram is
+        provided it will be assigned the name "forward".
+
+        transform_passes: The passes can either be a list of passes, or a dictionary
+        mapping method names to lists of passes. If it is just a list of passes, all methods
+        in the given EdgeProgramManager will be transformed with the provided passes. If it
+        is a dictionary, only method names specified in the dictionary will be transformed
+        with their corresponding passes.
+
+        partitioner: The partitioner can either be a Partitioner subclass instance, or a
+        dictionary mapping method names to Partitioner subclass instance. If it is a
+        Partitioner subclass, all programs in the given EdgeProgramManager will be lowered
+        using the given partitioner. If it is a dictionary, only method names specified in
+        the dictionary will be lowered with the given partitioner.
+
+        constant_methods: An optional dictionary of method name to the constant value
+        returned by that method in eager mode. Often used to store config information on
+        Edge models.
+
+        compile_config: An optional argument used to provide greater control over the
+        transformation to edge dialect process.
+
+    Returns:
+        EdgeProgramManager
+    """
+    ops_set_to_not_decompose = set()
+
+    assert not isinstance(constant_methods, EdgeCompileConfig)
+    config = compile_config or EdgeCompileConfig()
+    if not isinstance(programs, dict):
+        aten_programs = {"forward": programs}
+    else:
+        aten_programs = programs
+
+    if not isinstance(partitioner, dict) and partitioner is not None:
+        partitioner = {"forward": partitioner}
+    else:
+        partitioner = {}
+
+    ops_set_to_not_decompose_by_program = {}
+    edge_programs: Dict[str, ExportedProgram] = {}
+    for name, program in aten_programs.items():
+        if partitioner is not None:
+            ops_set_to_not_decompose_by_program[name] = (
+                _replace_aten_ops_with_transformed_ops(name, program, partitioner)
+            )
+        program = program.run_decompositions(_default_decomposition_table())
+
+        _restore_transformed_ops_to_aten_ops(program)
+
+        edge_programs[name] = program
+
+        edge_programs[name] = _generate_edge_program(
+            name,
+            config,
+            program,
+            list(ops_set_to_not_decompose_by_program.get(name, [])),
+        )
+
+    edge_manager = EdgeProgramManager(
+        edge_programs,
+        constant_methods,
+        config,
+        list(set().union(*ops_set_to_not_decompose_by_program.values())),
+    )
+
+    if transform_passes is not None:
+        edge_manager = edge_manager.transform(transform_passes)
+
+    if partitioner is not None:
+        for name, partitioner_list in partitioner.items():
+            for curr_partitioner in partitioner_list:
+                edge_manager = edge_manager.to_backend({name: curr_partitioner})
+                curr_op_set, check_op_support = curr_partitioner.ops_to_not_decompose()
+
+    for name, program in edge_manager._edge_programs.items():
+        if config._check_ir_validity:
+            EXIREdgeDialectVerifier(
+                edge_compile_config=config,
+                class_only=True,
+            )()(program.graph_module)
+
+        ops_set_to_not_decompose = set()
+        partitioners = partitioner.get(name, [])
+        for curr_partitioner in partitioners:
+            curr_op_set, check_op_support = curr_partitioner.ops_to_not_decompose()
+            ops_set_to_not_decompose = ops_set_to_not_decompose.union(curr_op_set)
+            _sanity_check_graph_for_non_decomp_ops(
+                name,
+                program,
+                ops_set_to_not_decompose,
+                check_op_support,
+                partitioner_name=curr_partitioner.__class__.__name__,
+                generate_error=True,
+            )
+
+    return edge_manager
 
 
 def to_edge(
@@ -757,6 +1037,7 @@ class EdgeProgramManager:
         edge_programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
         constant_methods: Optional[Dict[str, Any]] = None,
         compile_config: Optional[EdgeCompileConfig] = None,
+        ops_set_to_not_decompose: Optional[List[torch._ops.OpOverload]] = None,
     ):
         """
         Should not be called directly by users. User should use :func:'to_edge' instead.
@@ -768,9 +1049,10 @@ class EdgeProgramManager:
             edge_programs = {"forward": edge_programs}
         for name, program in edge_programs.items():
             try:
-                EXIREdgeDialectVerifier(edge_compile_config=self.compile_config)(
-                    program.graph_module
-                )
+                EXIREdgeDialectVerifier(
+                    edge_compile_config=self.compile_config,
+                    exception_list=ops_set_to_not_decompose,
+                )(program.graph_module)
             except ExportError as e:
                 logging.info(f"Input program {name} is not in aten dialect.")
                 raise e

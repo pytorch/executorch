@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-upsample:
+upsample_nearest2d:
   parameter_names_with_default_values:
     NDIM: 3
     DTYPE: float
@@ -15,4 +15,4 @@ upsample:
       - VALUE: half
       - VALUE: float
   shader_variants:
-    - NAME: upsample
+    - NAME: upsample_nearest2d
