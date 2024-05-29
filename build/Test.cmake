@@ -44,6 +44,7 @@ cmake_parse_arguments(ET_CXX_TEST "" "" "${multi_arg_names}" ${ARGN})
 find_package(executorch CONFIG REQUIRED)
 
 target_link_options_shared_lib(portable_ops_lib)
+target_link_options_shared_lib(extension_data_loader)
 
 enable_testing()
 find_package(GTest CONFIG REQUIRED)
