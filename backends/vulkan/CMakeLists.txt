@@ -58,6 +58,7 @@ add_subdirectory(${VOLK_PATH})
 # Compile settings
 
 set(VULKAN_CXX_FLAGS "-fexceptions")
+list(APPEND VULKAN_CXX_FLAGS "-std=c++17")
 list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_WRAPPER")
 list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_VOLK")
 
