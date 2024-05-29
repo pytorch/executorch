@@ -5,6 +5,8 @@ index_select_channel:
     STORAGE: texture3d
   generate_variant_forall:
     DTYPE:
+      - VALUE: half
       - VALUE: float
+      - VALUE: int
   shader_variants:
     - NAME: index_select_channel

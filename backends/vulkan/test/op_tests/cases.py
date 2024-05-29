@@ -413,7 +413,7 @@ def get_index_select_inputs():
             Test(self=[9, 9, 9, 9], dim=i, index=[0, 2]),
             Test(self=[9, 9, 9, 9], dim=i, index=[3, 1]),
             Test(self=[9, 9, 9, 9], dim=i, index=[5, 5]),
-            Test(self=[9, 9, 9, 9], dim=i, index=[2, 3, 4, 5, 7, 10]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[2, 3, 4, 5, 7]),
         ]
 
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])

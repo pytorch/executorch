@@ -36,7 +36,7 @@ void main() {
   const ivec4 idx = to_tensor_idx(out_pos, out_sizes, packed_dim);
   const ivec4 buffer_ixs = get_texel_nchw_buffer_ixs(idx, out_sizes, packed_dim);
 
-  vec4 out_texel;
+  VEC4_T out_texel;
   for (int i = 0; i < 4; ++i) {
       const ivec4 out_idx = from_nchw_buffer_i(buffer_ixs[i], out_sizes);
       int out_channel = out_idx.z;
@@ -47,7 +47,7 @@ void main() {
 
       ivec4 in_elem_pos = to_texture_elem_pos(in_idx, in_sizes, packed_dim);
 
-      vec4 in_texel = texelFetch(t_in, in_elem_pos.xyz, 0);
+      VEC4_T in_texel = texelFetch(t_in, in_elem_pos.xyz, 0);
 
       out_texel[i] = in_texel[in_elem_pos.w];
   }

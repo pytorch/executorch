@@ -1256,7 +1256,7 @@ class TestBackends(unittest.TestCase):
             custom_pass=[MeanToSumDiv()],
         )
 
-    def test_vulkan_backend_index_select_channel(self):
+    def test_vulkan_backend_index_select_int(self):
         class IndexSelectModule(torch.nn.Module):
             def __init__(self, dim, indices):
                 super().__init__()
@@ -1266,7 +1266,7 @@ class TestBackends(unittest.TestCase):
             def forward(self, x):
                 return torch.index_select(x, self.dim, self.index)
 
-        sample_inputs = (torch.arange(96).reshape(2, 8, 2, 3).float(),)
+        sample_inputs = (torch.arange(96).reshape(2, 8, 2, 3).int(),)
 
         self.lower_module_and_test_output(
             IndexSelectModule(dim=1, indices=[2, 3, 5, 6, 7]),

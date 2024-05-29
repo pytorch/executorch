@@ -200,4 +200,3 @@ std::shared_ptr<BackendDelegate> BackendDelegate::make(const Config& config) {
     return std::make_shared<BackendDelegateImpl>(config);
 }
 } //namespace executorchcoreml
-
