@@ -115,21 +115,54 @@ def get_linear_inputs():
 
 
 def get_avg_pool2d_inputs():
-    Test = namedtuple("VkAvgPoolTest", ["self", "kernel_size", "stride", "padding", "ceil_mode", "count_include_pad", "divisor_override"])
+    Test = namedtuple(
+        "VkAvgPoolTest",
+        [
+            "self",
+            "kernel_size",
+            "stride",
+            "padding",
+            "ceil_mode",
+            "count_include_pad",
+            "divisor_override",
+        ],
+    )
     Test.__new__.__defaults__ = (None, None)
 
-    test_cases = [
-        Test(self=(S, M1, M2), kernel_size=[2, 2], stride=[1, 1], padding=[0, 0], ceil_mode=False, count_include_pad=True, divisor_override=None),
-        Test(self=(S, M1, M2), kernel_size=[2, 2], stride=[1, 1], padding=[0, 0], ceil_mode=False, count_include_pad=True, divisor_override=5),
-        Test(self=(S, M1, M2), kernel_size=[5, 4], stride=[1, 1], padding=[2, 1], ceil_mode=False, count_include_pad=True, divisor_override=None),
-        Test(self=(S, M1, M2), kernel_size=[4, 5], stride=[1, 1], padding=[2, 1], ceil_mode=False, count_include_pad=True, divisor_override=None),
-        Test(self=(S, M1, M2), kernel_size=[5, 4], stride=[1, 1], padding=[2, 1], ceil_mode=True, count_include_pad=False, divisor_override=None),
-        Test(self=(S, M1, M2), kernel_size=[4, 5], stride=[2, 2], padding=[2, 1], ceil_mode=True, count_include_pad=False, divisor_override=None),
-        Test(self=(S, M1, M2), kernel_size=[5, 4], stride=[3, 1], padding=[2, 1], ceil_mode=False, count_include_pad=False, divisor_override=None),
-        Test(self=(S, M1, M2), kernel_size=[4, 5], stride=[1, 3], padding=[2, 1], ceil_mode=False, count_include_pad=False, divisor_override=None),
-        Test(self=(S, M1, M2), kernel_size=[5, 4], stride=[4, 4], padding=[2, 1], ceil_mode=True, count_include_pad=True, divisor_override=None),
-        Test(self=(S, M1, M2), kernel_size=[4, 5], stride=[1, 1], padding=[2, 1], ceil_mode=True, count_include_pad=True, divisor_override=None),
-    ]
+    test_cases = []
+
+    for ceil_mode in [True, False]:
+        for count_include_pad in [True, False]:
+            for divisor_override in [None, 5]:
+                test_cases += [
+                    Test(
+                        self=(S, M1, M2),
+                        kernel_size=[2, 2],
+                        stride=[1, 1],
+                        padding=[0, 0],
+                        ceil_mode=ceil_mode,
+                        count_include_pad=count_include_pad,
+                        divisor_override=divisor_override,
+                    ),
+                    Test(
+                        self=(S, M1, M2),
+                        kernel_size=[5, 4],
+                        stride=[3, 1],
+                        padding=[2, 1],
+                        ceil_mode=ceil_mode,
+                        count_include_pad=count_include_pad,
+                        divisor_override=divisor_override,
+                    ),
+                    Test(
+                        self=(S, M1, M2),
+                        kernel_size=[4, 5],
+                        stride=[1, 3],
+                        padding=[2, 1],
+                        ceil_mode=ceil_mode,
+                        count_include_pad=count_include_pad,
+                        divisor_override=divisor_override,
+                    ),
+                ]
 
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
     return test_suite

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import re
-from typing import Any, List, Tuple
+from typing import Any, List
 
 from torchgen.api import cpp
 from torchgen.api.types import CppSignatureGroup
