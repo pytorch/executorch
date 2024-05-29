@@ -102,8 +102,8 @@ bool SharedBuffer::IsAllocated(void* buf) {
 
 Error SharedBuffer::Load() {
 #ifndef __ANDROID__
-  QNN_EXECUTORCH_LOG_ERROR("Shared buffer is not supported on this platform.");
-  return Error::Internal;
+  QNN_EXECUTORCH_LOG_WARN("Shared buffer is not supported on this platform.");
+  return Error::Ok;
 #else
   // On Android, 32-bit and 64-bit libcdsprpc.so can be found at /vendor/lib/
   // and /vendor/lib64/ respectively.
