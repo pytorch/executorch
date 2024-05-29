@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from executorch.examples.models.llama2.tokenizer.tokenizer import Tokenizer
 
 from sentencepiece import SentencePieceProcessor
 
@@ -127,6 +128,44 @@ def quantize(
             group_size,
         )
         model = gptq_quantizer.quantize(model, inputs)
+        return model
+    elif qmode == "16a4w-hqq":
+        try:
+            from executorch.examples.models.llama2.source_transformation import (
+                hqq_16a4w,
+            )
+        except ImportError:
+            print(
+                "Please follow instruction in https://github.com/mobiusml/hqq to install the latest version."
+            )
+        if calibration_tasks is None:
+            calibration_tasks = ["wikitext"]
+        if calibration_limit is None:
+            calibration_limit = 5
+        if calibration_seq_length is None:
+            calibration_seq_length = 128
+        if tokenizer_path is None:
+            tokenizer_path = checkpoint_path.parent / "tokenizer.model"
+        assert tokenizer_path.is_file(), tokenizer_path
+        tokenizer = Tokenizer(model_path=str(tokenizer_path))  # pyre-ignore[28]
+
+        # Step 1: Run hqq quantization, the linear inside the model will be replaced with HQQ linear
+        hqq_16a4w.run_hqq_quantize(model)
+
+        # Run hqq quantization first
+        # Insert observer
+        hqq_16a4w.prepare(model)
+        # Calibration
+        hqq_16a4w.calibrate(
+            model=model,
+            tokenizer=tokenizer,
+            calibration_tasks=calibration_tasks,
+            calibration_limit=calibration_limit,
+            calibration_seq_length=calibration_seq_length,
+        )
+        # Convert observer to the fake quantized model
+        hqq_16a4w.convert(model)
+
         return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
