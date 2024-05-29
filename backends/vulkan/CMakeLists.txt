@@ -48,8 +48,8 @@ set(VULKAN_HEADERS_INSTALL_DIR ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers)
 set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
-set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_INSTALL_DIR}/include ${VOLK_PATH}
-                    ${VMA_PATH}
+set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_INSTALL_DIR}/include
+                    ${VOLK_PATH} ${VMA_PATH}
 )
 
 set(VOLK_PULL_IN_VULKAN)
@@ -58,7 +58,6 @@ add_subdirectory(${VOLK_PATH})
 # Compile settings
 
 set(VULKAN_CXX_FLAGS "-fexceptions")
-list(APPEND VULKAN_CXX_FLAGS "-std=c++17")
 list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_WRAPPER")
 list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_VOLK")
 
@@ -75,8 +74,8 @@ list(APPEND vulkan_graph_cpp ${vulkan_api_cpp})
 
 set(VULKAN_GRAPH_SHADERS_PATH ${RUNTIME_PATH}/graph/ops/glsl/)
 # Generates a spv.cpp file containing compiled GLSL shaders
-# gen_vulkan_shader_lib_cpp(${VULKAN_GRAPH_SHADERS_PATH})
-# Save the path of the generated cpp file
+# gen_vulkan_shader_lib_cpp(${VULKAN_GRAPH_SHADERS_PATH}) Save the path of the
+# generated cpp file
 set(vulkan_standard_shaders_cpp ${generated_spv_cpp})
 
 # Generate Vulkan Delegate Schema Files from flatc
@@ -121,6 +120,8 @@ target_link_libraries(vulkan_backend PRIVATE vulkan_schema executorch volk)
 target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 # Link this library with --whole-archive due to dynamic backend registration
 target_link_options_shared_lib(vulkan_backend)
+
+set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
 
 # Executor Runner
 

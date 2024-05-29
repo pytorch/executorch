@@ -182,7 +182,9 @@ inline constexpr bool greater_than_max(const T& x) {
 #endif
 
 template <typename To, typename From>
-std::enable_if_t<std::is_integral<From>::value && !std::is_same<From, bool>::value, bool>
+std::enable_if_t<
+    std::is_integral<From>::value && !std::is_same<From, bool>::value,
+    bool>
 overflows(From f) {
   using limit = std::numeric_limits<To>;
   // Casting from signed to unsigned; allow for negative numbers to wrap using
@@ -447,7 +449,8 @@ inline int64_t multiply_integers(const C& container) {
 template <
     typename Iter,
     std::enable_if_t<
-        std::is_integral<typename std::iterator_traits<Iter>::value_type>::value,
+        std::is_integral<
+            typename std::iterator_traits<Iter>::value_type>::value,
         int> = 0>
 inline int64_t multiply_integers(Iter begin, Iter end) {
   // std::accumulate infers return type from `init` type, so if the `init` type
