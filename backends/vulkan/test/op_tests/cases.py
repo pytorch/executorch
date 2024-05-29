@@ -244,8 +244,12 @@ def get_native_layer_norm_inputs():
 def get_upsample_inputs():
     test_suite = VkTestSuite(
         [
-            # TODO(dixu): implement the basic upsample logic to have a meaningful test
+            # (input tensor shape, output 2D image size (H, W), output scaling factors)
             ((2, 2, 2, 2), None, [1, 1]),
+            ((1, 1, 2, 2), None, [2, 2]),
+            ((1, 1, 2, 2), None, [2, 4]),
+            ((1, 1, 2, 2), None, [4, 2]),
+            # TODO(T190297757) add supports for output_sizes
         ]
     )
     return test_suite
@@ -392,13 +396,51 @@ def get_slice_inputs():
         Test(self=[13, 1, 10], dim=0, start=1, step=20),
     ]
 
+    # Slice by negative/unspecified indices
+    INT64_MAX = 9223372036854775807  # represents arr[:]
+    test_cases += [
+        Test(self=[8, 9], dim=0, start=-2, step=1),
+        Test(self=[8, 9], dim=0, start=-2, step=2),
+        Test(self=[8, 9], dim=0, end=-2, step=1),
+        Test(self=[8, 9], dim=0, end=-2, step=2),
+        Test(self=[8, 9], dim=0, end=INT64_MAX, step=1),
+        Test(self=[8, 9], dim=0, end=INT64_MAX, step=2),
+        Test(self=[8, 9], dim=1, start=-2, step=1),
+        Test(self=[8, 9], dim=1, start=-2, step=2),
+        Test(self=[8, 9], dim=1, end=-2, step=1),
+        Test(self=[8, 9], dim=1, end=-2, step=2),
+        Test(self=[8, 9], dim=1, end=INT64_MAX, step=1),
+        Test(self=[8, 9], dim=1, end=INT64_MAX, step=2),
+    ]
+
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.dtypes = ["at::kFloat"]
-    test_suite.layouts = [
-        "api::kChannelsPacked",
-    ]
+    test_suite.layouts = ["api::kChannelsPacked"]
     test_suite.data_gen = "make_seq_tensor"
+    return test_suite
+
+
+def get_index_select_inputs():
+    Test = namedtuple("VkIndexSelectTest", ["self", "dim", "index"])
+    Test.__new__.__defaults__ = (None, 0, None)
+
+    test_cases = []
+
+    for i in range(4):
+        test_cases += [
+            Test(self=[9, 9, 9, 9], dim=i, index=[0]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[2]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[0, 2]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[3, 1]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[5, 5]),
+            Test(self=[9, 9, 9, 9], dim=i, index=[2, 3, 4, 5, 7]),
+        ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = ["api::kChannelsPacked"]
     return test_suite
 
 
@@ -795,6 +837,7 @@ test_suites = {
     "aten.view_copy.default": get_view_inputs(),
     "aten.slice_copy.Tensor": get_slice_inputs(),
     "aten.slice.Tensor": get_slice_inputs(),
+    "aten.index_select.default": get_index_select_inputs(),
     "aten.unsqueeze_copy.default": get_unsqueeze_inputs(),
     "aten.clone.default": get_clone_inputs(),
     "aten.repeat.default": get_repeat_inputs(),
