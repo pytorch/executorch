@@ -249,7 +249,9 @@ def get_upsample_inputs():
             ((1, 1, 2, 2), None, [2, 2]),
             ((1, 1, 2, 2), None, [2, 4]),
             ((1, 1, 2, 2), None, [4, 2]),
-            # TODO(T190297757) add supports for output_sizes
+            ((1, 1, 2, 2), [2, 2], None),
+            ((1, 1, 2, 2), [2, 4], None),
+            ((1, 1, 2, 2), [3, 2], None),
         ]
     )
     return test_suite

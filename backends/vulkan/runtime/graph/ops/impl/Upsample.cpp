@@ -31,7 +31,6 @@ void add_upsample_nearest2d_node(
     const ValueRef output_sizes,
     const ValueRef scale_factors,
     const ValueRef out) {
-  // TODO(T190297757) add supports for output_sizes
   if (graph.val_is_none(output_sizes) && graph.val_is_none(scale_factors)) {
     VK_THROW(
         "Invalid input, must provide either output_sizes or scale_factors");
@@ -40,7 +39,6 @@ void add_upsample_nearest2d_node(
     VK_THROW(
         "Invalid input, must provide ONLY one of output_sizes or scale_factors");
   }
-  auto scales = graph.get_double_list(scale_factors);
 
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
 
@@ -50,10 +48,25 @@ void add_upsample_nearest2d_node(
   api::utils::ivec2 input_size = {
       api::utils::safe_downcast<int32_t>(input_sizes.data[0]),
       api::utils::safe_downcast<int32_t>(input_sizes.data[1])};
-  // Reverse scale factors that pre-computed before GLSL.
   api::utils::vec2 rev_scales = {
-      api::utils::safe_downcast<float>(1.0 / scales->at(1)),
-      api::utils::safe_downcast<float>(1.0 / scales->at(0))};
+      api::utils::safe_downcast<float>(1.0),
+      api::utils::safe_downcast<float>(1.0)};
+
+  // Reverse scale factors that pre-computed before GLSL.
+  if (!graph.val_is_none(output_sizes)) {
+    auto output_size_ref = graph.get_int_list(output_sizes);
+    rev_scales = {
+        api::utils::safe_downcast<float>(
+            (float)input_size.data[0] / output_size_ref->at(1)),
+        api::utils::safe_downcast<float>(
+            (float)input_size.data[1] / output_size_ref->at(0))};
+
+  } else {
+    auto scales = graph.get_double_list(scale_factors);
+    rev_scales = {
+        api::utils::safe_downcast<float>(1.0 / scales->at(1)),
+        api::utils::safe_downcast<float>(1.0 / scales->at(0))};
+  }
 
   vTensorPtr t_out = graph.get_tensor(out);
   api::utils::uvec3 global_size = t_out->image_extents();
