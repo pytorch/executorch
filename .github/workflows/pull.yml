@@ -33,7 +33,7 @@ jobs:
 
   test-setup-linux-gcc:
     name: test-setup-linux-gcc
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3.1
     strategy:
       matrix:
         include:
@@ -58,7 +58,7 @@ jobs:
 
   test-models-linux:
     name: test-models-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3.1
     needs: gather-models
     strategy:
       matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
@@ -85,7 +85,7 @@ jobs:
 
   test-llama-runner-linux:
     name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3.1
     strategy:
       matrix:
         dtype: [fp32]
@@ -139,7 +139,7 @@ jobs:
 
   test-custom-ops-linux:
     name: test-custom-ops-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3.1
     strategy:
       matrix:
         include:
@@ -164,7 +164,7 @@ jobs:
 
   test-selective-build-linux:
     name: test-selective-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3.1
     strategy:
       matrix:
         include:
@@ -189,7 +189,7 @@ jobs:
 
   test-quantized-aot-lib-linux:
     name: test-quantized-aot-lib-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3.1
     strategy:
       matrix:
         include:
@@ -212,7 +212,7 @@ jobs:
 
   test-pybind-build-linux:
     name: test-pybind-build-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3.1
     strategy:
       matrix:
         include:
