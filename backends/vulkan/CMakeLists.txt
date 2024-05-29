@@ -52,8 +52,8 @@ set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_INSTALL_DIR}/include
                     ${VOLK_PATH} ${VMA_PATH}
 )
 
-set(VOLK_INSTALL ON)
-add_subdirectory(${VOLK_PATH})
+# set(VOLK_INSTALL ON)
+# add_subdirectory(${VOLK_PATH})
 
 # Compile settings
 
