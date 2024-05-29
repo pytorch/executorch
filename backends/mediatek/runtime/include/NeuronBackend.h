@@ -43,8 +43,8 @@ class NeuronBackend final : public PyTorchBackendInterface {
   bool is_available() const override;
 };
 
-constexpr char kHighAddrKey[] = "HighAddr";
-constexpr char kImportForeverKey[] = "ImportForever";
+extern const char kHighAddrKey[];
+extern const char kImportForeverKey[];
 
 struct NeuronDelegateSetting {
   bool mHighAddr = false;
@@ -167,10 +167,3 @@ private:
 
 } // namespace executor
 } // namespace torch
-
-
-namespace {
-auto cls = torch::executor::NeuronBackend();
-torch::executor::Backend backend{"NeuropilotBackend", &cls};
-static auto success_with_compiler = register_backend(backend);
-} // namespace

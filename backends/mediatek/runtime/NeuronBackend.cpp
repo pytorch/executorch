@@ -24,6 +24,9 @@
 namespace torch {
 namespace executor {
 
+const char kHighAddrKey[] = "HighAddr";
+const char kImportForeverKey[] = "ImportForever";
+
 Result<DelegateHandle*> NeuronBackend::init(BackendInitContext& context,
                                             FreeableBuffer* processed,
                                             ArrayRef<CompileSpec> compile_specs) const {
@@ -151,3 +154,9 @@ int NeuronExecuTorchDelegate::HintNeuronBackend(EValue** args) const {
 
 } // namespace executor
 } // namespace torch
+
+namespace {
+auto cls = torch::executor::NeuronBackend();
+torch::executor::Backend backend{"NeuropilotBackend", &cls};
+static auto success_with_compiler = register_backend(backend);
+} // namespace
