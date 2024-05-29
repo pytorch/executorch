@@ -171,11 +171,25 @@ function(extract_sources sources_file)
       set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
     endif()
 
+    set(TARGET_PLATFORM ${CMAKE_SYSTEM_NAME})
+    string(TOLOWER ${TARGET_PLATFORM} TARGET_PLATFORM)
+
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" OR
+       CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+      set(TARGET_ARCH "aarch64")
+    elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+      set(TARGET_ARCH "x8664")
+    else()
+      set(TARGET_ARCH "default")
+    endif()
+
     execute_process(
       COMMAND
         ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
         --config=${executorch_root}/build/cmake_deps.toml --out=${sources_file}
         --buck2=${BUCK2}
+        --platform=${TARGET_PLATFORM}
+        --arch=${TARGET_ARCH}
       OUTPUT_VARIABLE gen_srcs_output
       ERROR_VARIABLE gen_srcs_error
       RESULT_VARIABLE gen_srcs_exit_code
