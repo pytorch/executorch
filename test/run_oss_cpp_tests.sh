@@ -44,6 +44,8 @@ build_and_run_test() {
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
 
+  echo "Printing LD_LIBRARY_PATH..."
+  echo "${LD_LIBRARY_PATH}"
   for t in cmake-out/"${test_dir}"/*test; do
     if [ -e "$t" ]; then
       ./"$t";
