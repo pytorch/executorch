@@ -18,12 +18,16 @@
 #include <executorch/backends/vulkan/runtime/api/Command.h>
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
 
+#ifndef VULKAN_QUERY_POOL_SIZE
+#define VULKAN_QUERY_POOL_SIZE 4096u
+#endif
+
 namespace vkcompute {
 namespace api {
 
 struct QueryPoolConfig final {
-  uint32_t max_query_count;
-  uint32_t initial_reserve_size;
+  uint32_t max_query_count = VULKAN_QUERY_POOL_SIZE;
+  uint32_t initial_reserve_size = 256u;
 };
 
 struct ShaderDuration final {

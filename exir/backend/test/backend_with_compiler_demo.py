@@ -83,15 +83,19 @@ class BackendWithCompilerDemo(BackendDetails):
         processed_bytes = ""
         number_of_instruction = 0
         debug_handle_map = {}
+        match_ops = [
+            exir_ops.edge.aten.sin.default,
+            exir_ops.edge.aten.mm.default,
+            exir_ops.edge.aten.add.Tensor,
+            torch.ops.aten.sin.default,
+            exir_ops.edge.aten.linear.default,
+            exir_ops.edge.aten.scaled_dot_product_attention.default,
+        ]
+
         for node in edge_program.graph.nodes:
             if node.op == "call_function":
                 # TODO(gasoonjia): remove the support of torch.ops.aten.sin.default after migrate serde to edge dialect.
-                if (
-                    node.target == exir_ops.edge.aten.sin.default
-                    or node.target == exir_ops.edge.aten.mm.default
-                    or node.target == exir_ops.edge.aten.add.Tensor
-                    or node.target == torch.ops.aten.sin.default
-                ):
+                if node.target in match_ops:
                     simple_op = DemoOp(
                         node.target.__name__,
                         int(torch.prod(torch.tensor(node.meta["val"].shape), 0).item()),

@@ -7,7 +7,7 @@ import logging
 from typing import Any, cast, Dict, List, Union
 
 import torch
-from executorch.backends.apple.mps.mps_preprocess import MPSBackend
+from executorch.backends.apple.mps import MPSBackend
 from executorch.backends.apple.mps.operators.node_visitor import get_node_visitors
 from executorch.backends.transforms import get_shape
 from executorch.exir.backend.backend_details import CompileSpec

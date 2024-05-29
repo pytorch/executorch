@@ -202,6 +202,23 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(add_module, sample_inputs)
 
+    def test_vulkan_backend_add_int(self):
+        class AddIntModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                z = x + y
+                return z
+
+        add_int_module = AddIntModule()
+        sample_inputs = (
+            torch.randint(low=-100, high=100, size=(2, 3), dtype=torch.int32),
+            torch.randint(low=-100, high=100, size=(2, 3), dtype=torch.int32),
+        )
+
+        self.lower_module_and_test_output(add_int_module, sample_inputs)
+
     def test_vulkan_backend_zero_dim_tensor(self):
         class ZeroDimModule(torch.nn.Module):
             def __init__(self):
@@ -393,6 +410,16 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(ClampModule(), sample_inputs)
 
+    def test_vulkan_backend_cos(self):
+        class CosModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.cos(x)
+
+        self.lower_unary_module_and_test_output(CosModule())
+
     def test_vulkan_backend_hardtanh(self):
         class HardTanHModule(torch.nn.Module):
             def __init__(self):
@@ -413,6 +440,26 @@ class TestBackends(unittest.TestCase):
                 return torch.exp(x)
 
         self.lower_unary_module_and_test_output(ExpModule())
+
+    def test_vulkan_backend_neg(self):
+        class NegModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.neg(x)
+
+        self.lower_unary_module_and_test_output(NegModule())
+
+    def test_vulkan_backend_sin(self):
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        self.lower_unary_module_and_test_output(SinModule())
 
     def test_vulkan_backend_relu(self):
         class ReLUModule(torch.nn.Module):
@@ -857,6 +904,23 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_batch_norm(self):
+        class BatchNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.bn = torch.nn.BatchNorm2d(num_features=3)
+
+            def forward(self, x):
+                return self.bn(x)
+
+        sample_inputs = (torch.randn(size=(4, 3, 2, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            BatchNormModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_full(self):
         class FullModule(torch.nn.Module):
             def __init__(self):
@@ -1208,3 +1272,90 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
             custom_pass=[MeanToSumDiv()],
         )
+
+    def test_vulkan_backend_index_select_int(self):
+        class IndexSelectModule(torch.nn.Module):
+            def __init__(self, dim, indices):
+                super().__init__()
+                self.dim = dim
+                self.index = torch.tensor(indices, dtype=torch.int32)
+
+            def forward(self, x):
+                return torch.index_select(x, self.dim, self.index)
+
+        sample_inputs = (torch.arange(96).reshape(2, 8, 2, 3).int(),)
+
+        self.lower_module_and_test_output(
+            IndexSelectModule(dim=1, indices=[2, 3, 5, 6, 7]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_index_select(self):
+        class IndexSelectModule(torch.nn.Module):
+            def __init__(self, dim, indices):
+                super().__init__()
+                self.dim = dim
+                self.index = torch.tensor(indices, dtype=torch.int32)
+
+            def forward(self, x):
+                return torch.index_select(x, self.dim, self.index)
+
+        sample_inputs = (torch.arange(144).reshape(12, 1, 3, 4).float(),)
+
+        self.lower_module_and_test_output(
+            IndexSelectModule(dim=0, indices=[1, 3, 5, 7, 8, 9, 10, 11, 2, 3]),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_arange_int(self):
+        class ArangeModule(torch.nn.Module):
+            def __init__(self, input):
+                super().__init__()
+                self.input = input
+
+            def forward(self, x):
+                return torch.arange(*self.input, dtype=torch.int32)
+
+        # `torch.arange` could take one, two or three arguments as input.
+        # If only one argument is provided, it will be interpreted as `end`.
+        # If two arguments are provided, the first one will be interpreted as `start`
+        # and the second one will be interpreted as `end`.
+        # If three arguments are provided, the first one will be interpreted as `start`,
+        # the second one will be interpreted as `end` and the third one will be
+        # interpreted as `step`.
+        inputs = [
+            [1],
+            [-3, 5],
+            [1, 11, 2],
+            [12, 1, -2],
+        ]
+        for input in inputs:
+            self.lower_module_and_test_output(
+                ArangeModule(input),
+                (torch.randn(size=(1,), dtype=torch.float32),),  # dummy input
+                memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            )
+
+    def test_vulkan_backend_arange_float(self):
+        class ArangeModule(torch.nn.Module):
+            def __init__(self, input):
+                super().__init__()
+                self.input = input
+
+            def forward(self, x):
+                return torch.arange(*self.input)
+
+        inputs = [
+            [1.5],
+            [-3, 5.0],
+            [1.0, 11, 2],
+            [12, 1, -2.0],
+        ]
+        for input in inputs:
+            self.lower_module_and_test_output(
+                ArangeModule(input),
+                (torch.randn(size=(1,), dtype=torch.float32),),  # dummy input
+                memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            )

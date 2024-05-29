@@ -22,6 +22,8 @@ AT_TENSOR_LIST = "at::TensorList"
 BOOL = "bool"
 DOUBLE = "double"
 INT = "int64_t"
+OPT_AT_DOUBLE_ARRAY_REF = "::std::optional<at::ArrayRef<double>>"
+OPT_AT_INT_ARRAY_REF = "at::OptionalIntArrayRef"
 OPT_AT_TENSOR = "::std::optional<at::Tensor>"
 OPT_BOOL = "::std::optional<bool>"
 OPT_INT64 = "::std::optional<int64_t>"
@@ -45,6 +47,8 @@ class TestSuite:
         self.prepacked_args: List[str] = []
         self.requires_prepack: bool = False
         self.dtypes: List[str] = ["at::kFloat", "at::kHalf"]
+        self.atol: str = "1e-5"
+        self.rtol: str = "1e-5"
 
     def supports_prepack(self):
         return len(self.prepacked_args) > 0
@@ -142,11 +146,20 @@ class TestSuiteGen:
 
         if cpp_type == AT_INT_ARRAY_REF:
             ret_str = f"std::vector<int64_t> {arg.name} = "
+        elif (
+            cpp_type == OPT_AT_DOUBLE_ARRAY_REF or cpp_type == OPT_AT_INT_ARRAY_REF
+        ) and str(data) != "None":
+            ret_str = f"std::vector<double> {arg.name} = "
         else:
             ret_str = f"{cpp_type} {arg.name} = "
 
         if cpp_type == AT_TENSOR:
-            ret_str += f"{self.suite_def.data_gen}({init_list_str(data)}, test_dtype);"
+            if arg.name == "index":
+                ret_str += f"make_index_tensor({init_list_str(data)});"
+            else:
+                ret_str += (
+                    f"{self.suite_def.data_gen}({init_list_str(data)}, test_dtype);"
+                )
         elif cpp_type == OPT_AT_TENSOR:
             if str(data) == "None":
                 ret_str += "std::nullopt;"
@@ -156,6 +169,11 @@ class TestSuiteGen:
             ret_str += f"{data};"
         elif cpp_type == AT_INT_ARRAY_REF:
             ret_str += f"{init_list_str(data)};"
+        elif cpp_type == OPT_AT_DOUBLE_ARRAY_REF or cpp_type == OPT_AT_INT_ARRAY_REF:
+            if str(data) == "None":
+                ret_str += "std::nullopt;"
+            else:
+                ret_str += f"{init_list_str(data)};"
         elif cpp_type == BOOL:
             ret_str += f"{str(data).lower()};"
         elif cpp_type == INT:
@@ -254,7 +272,7 @@ at::Tensor make_rand_tensor(
 
 at::Tensor make_seq_tensor(
     std::vector<int64_t> sizes,
-      at::ScalarType dtype = at::kFloat) {{
+    at::ScalarType dtype = at::kFloat) {{
   int64_t n = 1;
   for (auto size: sizes) {{
     n *= size;
@@ -268,6 +286,16 @@ at::Tensor make_seq_tensor(
   // from_blob doesn't take ownership of data. Hence must create a copy as
   // "values" will go out of scope.
   return at::from_blob(values.data(), sizes, at::kFloat).toType(dtype).detach().clone();
+}}
+
+
+at::Tensor make_index_tensor(std::vector<int64_t> indices) {{
+  int64_t size = static_cast<int64_t>(indices.size());
+  at::ScalarType dtype = at::kInt;
+
+  // from_blob doesn't take ownership of data. Hence must create a copy as
+  // "values" will go out of scope.
+  return at::from_blob(indices.data(), {{size}}, dtype).detach().clone();
 }}
 
 {test_suites_cpp}

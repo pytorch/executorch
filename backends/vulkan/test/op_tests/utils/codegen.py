@@ -17,6 +17,8 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     CppTestFileGen,
     DOUBLE,
     INT,
+    OPT_AT_DOUBLE_ARRAY_REF,
+    OPT_AT_INT_ARRAY_REF,
     OPT_AT_TENSOR,
     OPT_BOOL,
     OPT_DEVICE,
@@ -288,6 +290,16 @@ class ComputeGraphGen:
             ret_str += f"{self.graph}{self.dot}add_none() : "
             ret_str += f"{self.graph}{self.dot}add_scalar<int64_t>"
             ret_str += f"({ref.src_cpp_name}.value());\n"
+            return ret_str
+        elif (
+            ref.src_cpp_type == OPT_AT_DOUBLE_ARRAY_REF
+            or ref.src_cpp_type == OPT_AT_INT_ARRAY_REF
+        ):
+            ret_str = f"{cpp_type} {ref.name} = "
+            ret_str += f"!{ref.src_cpp_name}.has_value() ? "
+            ret_str += f"{self.graph}{self.dot}add_none() : "
+            ret_str += f"{self.graph}{self.dot}add_scalar_list"
+            ret_str += f"({ref.src_cpp_name}->vec());\n"
             return ret_str
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             assert ref.is_in, "AT_TENSOR_LIST must be an input"
@@ -588,8 +600,8 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
   protected:
     ComputeGraph* graph;
     at::ScalarType test_dtype = at::kFloat;
-    float rtol = 1e-5;
-    float atol = 1e-5;
+    float rtol = {rtol};
+    float atol = {atol};
 
     void SetUp() override {{
         GraphConfig config;
@@ -639,6 +651,8 @@ class VkTestSuiteGen(TestSuiteGen):
             op_name=self.op_name,
             check_fn=check_fn,
             prepacked_check_fn=prepacked_check_fn,
+            rtol=self.suite_def.rtol,
+            atol=self.suite_def.atol,
         )
 
     def gen_parameterization(self) -> str:
