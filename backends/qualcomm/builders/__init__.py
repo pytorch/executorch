@@ -33,6 +33,7 @@ from . import (
     op_mul,
     op_pad,
     op_pow,
+    op_prelu,
     op_quantize,
     op_relu,
     op_reshape,
@@ -42,6 +43,7 @@ from . import (
     op_skip_ops,
     op_slice_copy,
     op_softmax,
+    op_space_to_depth,
     op_sqrt,
     op_squeeze,
     op_sub,
@@ -50,6 +52,7 @@ from . import (
     op_transpose,
     op_unsqueeze,
     op_upsample_bilinear2d,
+    op_upsample_nearest2d,
 )
 
 __all__ = [
@@ -75,11 +78,13 @@ __all__ = [
     op_layer_norm,
     op_linear,
     op_log_softmax,
+    op_matmul,
     op_max_pool2d,
     op_mean_dim,
     op_mul,
     op_pad,
     op_pow,
+    op_prelu,
     op_quantize,
     op_relu,
     op_reshape,
@@ -89,6 +94,7 @@ __all__ = [
     op_skip_ops,
     op_slice_copy,
     op_softmax,
+    op_space_to_depth,
     op_squeeze,
     op_sqrt,
     op_sub,
@@ -97,5 +103,5 @@ __all__ = [
     op_transpose,
     op_unsqueeze,
     op_upsample_bilinear2d,
-    op_matmul,
+    op_upsample_nearest2d,
 ]

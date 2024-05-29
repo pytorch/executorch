@@ -7,7 +7,7 @@
 import argparse
 
 from executorch.sdk import Inspector
-from executorch.sdk.inspector._inspector_utils import compare_results
+from executorch.sdk.inspector._inspector_utils import compare_results, TimeScale
 
 
 def main() -> None:
@@ -16,6 +16,20 @@ def main() -> None:
         "--etdump_path",
         required=True,
         help="Provide an ETDump file path.",
+    )
+    parser.add_argument(
+        "--source_time_scale",
+        type=str,
+        choices=[ts.value for ts in TimeScale],
+        help="Enter the source time scale (ns, us, ms, s, cycles)",
+        default=TimeScale.NS.value,
+    )
+    parser.add_argument(
+        "--target_time_scale",
+        type=str,
+        choices=[ts.value for ts in TimeScale],
+        help="Enter the target time scale (ns, us, ms, s, cycles)",
+        default=TimeScale.MS.value,
     )
     parser.add_argument(
         "--etrecord_path",
@@ -35,6 +49,8 @@ def main() -> None:
         etdump_path=args.etdump_path,
         etrecord=args.etrecord_path,
         debug_buffer_path=args.debug_buffer_path,
+        source_time_scale=TimeScale(args.source_time_scale),
+        target_time_scale=TimeScale(args.target_time_scale),
     )
     inspector.print_data_tabular()
     if args.compare_results:

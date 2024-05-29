@@ -3,19 +3,21 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
+import numpy as np
 import torch
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpResizeBilinear, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpSpaceToDepth, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class ResizeBilinear(NodeVisitor):
-    target = ["aten.upsample_bilinear2d.default"]
+class SpaceToDepthVisitor(NodeVisitor):
+    target = ["aten.pixel_unshuffle.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -44,23 +46,31 @@ class ResizeBilinear(NodeVisitor):
             is_input_tensor=False,
         )
 
-        reisze_bilinear_op = PyQnnWrapper.PyQnnOpWrapper(
+        block_size = []
+        for index in range(1, 3):
+            block_size.append(input_tensor.shape[index] / output_tensor.shape[index])
+        block_size = np.array(block_size, dtype=np.uint32)
+        block_size_shape = [2]
+
+        space_to_depth_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpResizeBilinear.op_name,
+            OpSpaceToDepth.op_name,
         )
-        reisze_bilinear_op.AddInputTensors([input_tensor_wrapper])
-        reisze_bilinear_op.AddOutputTensors([output_tensor_wrapper])
+        space_to_depth_op.AddInputTensors([input_tensor_wrapper])
+        space_to_depth_op.AddOutputTensors([output_tensor_wrapper])
+        space_to_depth_op.AddTensorParam(
+            OpSpaceToDepth.param_block_size,
+            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            len(block_size.shape),
+            block_size_shape,
+            block_size,
+            True,
+        )
+        space_to_depth_op.AddScalarParam(
+            OpSpaceToDepth.param_mode,
+            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
+            {"data": np.uint32(OpSpaceToDepth.Mode.CRD)},
+        )
 
-        reisze_bilinear_op.AddScalarParam(
-            OpResizeBilinear.param_align_corners,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {"data": node.args[2]},
-        )
-        reisze_bilinear_op.AddScalarParam(
-            OpResizeBilinear.param_half_pixel_centers,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {"data": not node.args[2]},
-        )
-
-        return reisze_bilinear_op
+        return space_to_depth_op
