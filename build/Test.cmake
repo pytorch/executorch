@@ -37,11 +37,13 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 #
 function(et_cxx_test target_name)
 
-set(multi_arg_names SOURCES EXTRA_LIBS EXTRA_WHOLE_LIBS)
+set(multi_arg_names SOURCES EXTRA_LIBS)
 cmake_parse_arguments(ET_CXX_TEST "" "" "${multi_arg_names}" ${ARGN})
 
 # Find prebuilt executorch library
 find_package(executorch CONFIG REQUIRED)
+
+target_link_options_shared_lib(portable_ops_lib)
 
 enable_testing()
 find_package(GTest CONFIG REQUIRED)
@@ -53,12 +55,8 @@ add_executable(${target_name} ${ET_CXX_TEST_SOURCES})
 # Includes gtest, gmock, executorch by default
 target_link_libraries(
   ${target_name} GTest::gtest GTest::gtest_main GTest::gmock executorch
-  ${ET_CXX_TEST_EXTRA_LIBS} ${ET_CXX_TEST_EXTRA_WHOLE_LIBS}
+  ${ET_CXX_TEST_EXTRA_LIBS}
 )
-
-foreach(whole_lib ${ET_CXX_TEST_EXTRA_WHOLE_LIBS})
-  target_link_options_shared_lib(${whole_lib})
-endforeach()
 
 # add_test adds a test target to be used by ctest.
 # We use `ExecuTorchTest` as the ctest target name for the test executable
