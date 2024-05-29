@@ -6,15 +6,15 @@
 
 import json
 import os
-import re
 import sys
 from multiprocessing.connection import Client
 
 import numpy as np
 import piq
 import torch
+
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-from executorch.examples.models.edsr import EdsrModel
+from executorch.examples.qualcomm.scripts.edsr import get_dataset
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
     make_output_dir,
@@ -23,72 +23,21 @@ from executorch.examples.qualcomm.scripts.utils import (
     SimpleADB,
 )
 
-from PIL import Image
-from torch.utils.data import Dataset
-from torchsr.datasets import B100
-from torchvision.transforms.functional import to_pil_image, to_tensor
+from torchvision.transforms.functional import to_pil_image
 
 
-class SrDataset(Dataset):
-    def __init__(self, hr_dir: str, lr_dir: str):
-        self.input_size = np.asanyarray([224, 224])
-        self.hr = []
-        self.lr = []
+def get_instance(repo: str):
+    import sys
 
-        for file in sorted(os.listdir(hr_dir)):
-            self.hr.append(self._resize_img(os.path.join(hr_dir, file), 2))
+    sys.path.insert(0, repo)
 
-        for file in sorted(os.listdir(lr_dir)):
-            self.lr.append(self._resize_img(os.path.join(lr_dir, file), 1))
+    from RealESRGAN import RealESRGAN
 
-        if len(self.hr) != len(self.lr):
-            raise AssertionError(
-                "The number of high resolution pics is not equal to low "
-                "resolution pics"
-            )
-
-    def __getitem__(self, idx: int):
-        return self.hr[idx], self.lr[idx]
-
-    def __len__(self):
-        return len(self.lr)
-
-    def _resize_img(self, file: str, scale: int):
-        with Image.open(file) as img:
-            return to_tensor(img.resize(tuple(self.input_size * scale))).unsqueeze(0)
-
-    def get_input_list(self):
-        input_list = ""
-        for i in range(len(self.lr)):
-            input_list += f"input_{i}_0.raw\n"
-        return input_list
-
-
-def get_b100(
-    dataset_dir: str,
-):
-    hr_dir = f"{dataset_dir}/sr_bm_dataset/SRBenchmarks/benchmark/B100/HR"
-    lr_dir = f"{dataset_dir}/sr_bm_dataset/SRBenchmarks/benchmark/B100/LR_bicubic/X2"
-
-    if not os.path.exists(hr_dir) or not os.path.exists(lr_dir):
-        B100(root=f"{dataset_dir}/sr_bm_dataset", scale=2, download=True)
-
-    return SrDataset(hr_dir, lr_dir)
-
-
-def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str, dataset_dir: str):
-    if not (lr_dir and hr_dir) and not default_dataset:
-        raise RuntimeError(
-            "Nither custom dataset is provided nor using default dataset."
-        )
-
-    if (lr_dir and hr_dir) and default_dataset:
-        raise RuntimeError("Either use custom dataset, or use default dataset.")
-
-    if default_dataset:
-        return get_b100(dataset_dir)
-
-    return SrDataset(hr_dir, lr_dir)
+    # required by layout transform
+    sys.setrecursionlimit(2000)
+    model = RealESRGAN(torch.device("cpu"), scale=2)
+    model.load_weights("weights/RealESRGAN_x2.pth", download=True)
+    return model.model.eval()
 
 
 if __name__ == "__main__":
@@ -97,8 +46,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-a",
         "--artifact",
-        help="path for storing generated artifacts by this example. Default ./edsr",
-        default="./edsr",
+        help="path for storing generated artifacts by this example. Default ./esrgan",
+        default="./esrgan",
         type=str,
     )
 
@@ -126,6 +75,13 @@ if __name__ == "__main__":
         default=False,
     )
 
+    parser.add_argument(
+        "--oss_repo",
+        help="Path to cloned https://github.com/ai-forever/Real-ESRGAN",
+        type=str,
+        required=True,
+    )
+
     args = parser.parse_args()
 
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
@@ -144,11 +100,11 @@ if __name__ == "__main__":
     )
 
     inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
-    pte_filename = "edsr_qnn"
-    instance = EdsrModel()
+    pte_filename = "esrgan_qnn"
+    instance = get_instance(args.oss_repo)
 
     build_executorch_binary(
-        instance.get_eager_model().eval(),
+        instance,
         (inputs[0],),
         args.model,
         f"{args.artifact}/{pte_filename}",
@@ -156,7 +112,6 @@ if __name__ == "__main__":
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
         quant_dtype=QuantDtype.use_8a8w,
-        shared_buffer=args.shared_buffer,
     )
 
     if args.compile_only:
@@ -176,7 +131,6 @@ if __name__ == "__main__":
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
-        shared_buffer=args.shared_buffer,
     )
     adb.push(inputs=inputs, input_list=input_list)
     adb.execute()
@@ -196,16 +150,13 @@ if __name__ == "__main__":
             os.listdir(output_data_folder), key=lambda f: int(f.split("_")[1])
         ):
             filename = os.path.join(output_data_folder, f)
-            if re.match(r"^output_[0-9]+_[1-9].raw$", f):
-                os.remove(filename)
-            else:
-                output = np.fromfile(filename, dtype=np.float32)
-                output = torch.tensor(output).reshape(output_shape).clamp(0, 1)
-                output_raws.append(output)
-                to_pil_image(output.squeeze(0)).save(
-                    os.path.join(output_pic_folder, str(cnt) + ".png")
-                )
-                cnt += 1
+            output = np.fromfile(filename, dtype=np.float32)
+            output = torch.tensor(output).reshape(output_shape).clamp(0, 1)
+            output_raws.append(output)
+            to_pil_image(output.squeeze(0)).save(
+                os.path.join(output_pic_folder, str(cnt) + ".png")
+            )
+            cnt += 1
 
     adb.pull(output_path=args.artifact, callback=post_process)
 
@@ -221,5 +172,5 @@ if __name__ == "__main__":
         with Client((args.ip, args.port)) as conn:
             conn.send(json.dumps({"PSNR": avg_PSNR, "SSIM": avg_SSIM}))
     else:
-        print(f"Average of PNSR is: {avg_PSNR}")
+        print(f"Average of PSNR is: {avg_PSNR}")
         print(f"Average of SSIM is: {avg_SSIM}")
