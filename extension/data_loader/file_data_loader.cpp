@@ -12,10 +12,14 @@
 #include <cstddef>
 #include <cstring>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#endif
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -54,9 +58,15 @@ FileDataLoader::~FileDataLoader() {
   // file_name_ can be nullptr if this instance was moved from, but freeing a
   // null pointer is safe.
   std::free(const_cast<char*>(file_name_));
+#ifdef _WIN32
+  if (fd_ != INVALID_HANDLE_VALUE) {
+    CloseHandle(fd_);
+  }
+#else
   // fd_ can be -1 if this instance was moved from, but closing a negative fd is
   // safe (though it will return an error).
   ::close(fd_);
+#endif
 }
 
 Result<FileDataLoader> FileDataLoader::from(
@@ -68,6 +78,34 @@ Result<FileDataLoader> FileDataLoader::from(
       "Alignment %zu is not a power of 2",
       alignment);
 
+#ifdef _WIN32
+  HANDLE fd = CreateFile(
+      file_name,
+      GENERIC_READ,
+      FILE_SHARE_READ,
+      NULL,
+      OPEN_EXISTING,
+      FILE_ATTRIBUTE_NORMAL,
+      NULL);
+  if (fd == INVALID_HANDLE_VALUE) {
+    ET_LOG(
+        Error, "Failed to open %s: %lu", file_name, GetLastError());
+    return Error::AccessFailed;
+  }
+
+  LARGE_INTEGER file_size_li;
+  if (!GetFileSizeEx(fd, &file_size_li)) {
+    ET_LOG(
+        Error,
+        "Could not get length of %s: %lu",
+        file_name,
+        GetLastError());
+    CloseHandle(fd);
+    return Error::AccessFailed;
+  }
+  size_t file_size = static_cast<size_t>(file_size_li.QuadPart);
+
+#else
   // Use open() instead of fopen() to avoid the layer of buffering that
   // fopen() does. We will be reading large portions of the file in one shot,
   // so buffering does not help.
@@ -92,12 +130,17 @@ Result<FileDataLoader> FileDataLoader::from(
     return Error::AccessFailed;
   }
   size_t file_size = st.st_size;
+#endif
 
   // Copy the filename so we can print better debug messages if reads fail.
   const char* file_name_copy = ::strdup(file_name);
   if (file_name_copy == nullptr) {
     ET_LOG(Error, "strdup(%s) failed", file_name);
+#ifdef _WIN32
+    CloseHandle(fd);
+#else
     ::close(fd);
+#endif
     return Error::MemoryAllocationFailed;
   }
 
@@ -121,7 +164,11 @@ void FreeSegment(void* context, void* data, __ET_UNUSED size_t size) {
 Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
+#ifdef _WIN32
+      fd_ != INVALID_HANDLE_VALUE,
+#else
       fd_ >= 0,
+#endif
       InvalidState,
       "Uninitialized");
   ET_CHECK_OR_RETURN_ERROR(
@@ -138,6 +185,20 @@ Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
     return FreeableBuffer(nullptr, 0, /*free_fn=*/nullptr);
   }
 
+#ifdef _WIN32
+  // Seek to the right place in the file.
+  LARGE_INTEGER li;
+  li.QuadPart = offset;
+  if (!SetFilePointerEx(fd_, li, NULL, FILE_BEGIN)) {
+    ET_LOG(
+        Error,
+        "Seeking %s to offset %zu failed: %lu",
+        file_name_,
+        offset,
+        GetLastError());
+    return Error::AccessFailed;
+  }
+#else
   // Seek to the right place in the file.
   off_t seek_offset = ::lseek(fd_, offset, SEEK_SET);
   if (seek_offset != offset) {
@@ -150,6 +211,7 @@ Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
         strerror(errno));
     return Error::AccessFailed;
   }
+#endif
 
   // Allocate memory for the FreeableBuffer.
   size_t alloc_size = size;
@@ -185,6 +247,34 @@ Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
   // Read the data into the aligned address.
   size_t needed = size;
   uint8_t* buf = reinterpret_cast<uint8_t*>(aligned_buffer);
+#ifdef _WIN32
+  while (needed > 0) {
+    DWORD nread = 0;
+    if (!ReadFile(fd_, buf, static_cast<DWORD>(needed), &nread, NULL)) {
+      ET_LOG(
+          Error,
+          "Reading from %s: failed to read %zu bytes at offset %zu: %lu",
+          file_name_,
+          size,
+          offset,
+          GetLastError());
+      std::free(buffer);
+      return Error::AccessFailed;
+    }
+    if (nread == 0) {
+      ET_LOG(
+          Error,
+          "Reading from %s: failed to read %zu bytes at offset %zu: EOF",
+          file_name_,
+          size,
+          offset);
+      std::free(buffer);
+      return Error::AccessFailed;
+    }
+    needed -= nread;
+    buf += nread;
+  }
+#else
   while (needed > 0) {
     ssize_t nread = ::read(fd_, buf, needed);
     if (nread < 0 && errno == EINTR) {
@@ -208,6 +298,7 @@ Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
     needed -= nread;
     buf += nread;
   }
+#endif
 
   // We can't naively free this pointer, since it may not be what malloc() gave
   // us. Pass the offset to the real buffer as context. This is the number of
@@ -228,7 +319,11 @@ Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
 Result<size_t> FileDataLoader::size() const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
+#ifdef _WIN32
+      fd_ != INVALID_HANDLE_VALUE,
+#else
       fd_ >= 0,
+#endif
       InvalidState,
       "Uninitialized");
   return file_size_;

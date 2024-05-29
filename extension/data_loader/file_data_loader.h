@@ -8,6 +8,15 @@
 
 #pragma once
 
+#ifdef _WIN32
+#include <windows.h>
+#define FD_TYPE HANDLE
+#define INVALID_FD INVALID_HANDLE_VALUE
+#else
+#define FD_TYPE int
+#define INVALID_FD -1
+#endif
+
 #include <cstddef>
 
 #include <executorch/runtime/core/data_loader.h>
@@ -60,7 +69,7 @@ class FileDataLoader : public DataLoader {
     rhs.file_name_ = nullptr;
     rhs.file_size_ = 0;
     rhs.alignment_ = 0;
-    rhs.fd_ = -1;
+    rhs.fd_ = INVALID_FD;
   }
 
   ~FileDataLoader() override;
@@ -72,7 +81,7 @@ class FileDataLoader : public DataLoader {
 
  private:
   FileDataLoader(
-      int fd,
+      FD_TYPE fd,
       size_t file_size,
       size_t alignment,
       const char* file_name)
@@ -89,7 +98,7 @@ class FileDataLoader : public DataLoader {
   const char* file_name_; // Owned by the instance.
   size_t file_size_;
   size_t alignment_;
-  int fd_; // Owned by the instance.
+  FD_TYPE fd_; // Owned by the instance.
 };
 
 } // namespace util
