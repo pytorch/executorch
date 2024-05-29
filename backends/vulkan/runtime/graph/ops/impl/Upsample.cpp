@@ -16,10 +16,10 @@
 
 namespace vkcompute {
 
-// Executorch-Vulkan framework to add node
+// ExecuTorch-Vulkan framework to add node
 // Args:
 //   in: will be converted from NCHW input tensor to 3D ARGB representation in
-//   openGL (via Executorch) output_sizes: optional 2D array of targetting
+//   openGL (via ExecuTorch) output_sizes: optional 2D array of targetting
 //   output size of H and W dimensions. >= input sizes;
 
 //      will be computed if only given the scale_factors.
