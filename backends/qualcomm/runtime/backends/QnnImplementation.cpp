@@ -69,12 +69,15 @@ Error QnnImplementation::StartBackend(
 #endif
 
   if (lib_handle == nullptr) {
+#ifdef _WIN32
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Cannot Open QNN library %s, with error: %d",
+        lib_path.c_str(),
+        GetLastError());
+#else
     QNN_EXECUTORCH_LOG_ERROR(
         "Cannot Open QNN library %s, with error: %s",
         lib_path.c_str(),
-#ifdef _WIN32
-        GetLastError());
-#else
         dlerror());
 #endif
     return Error::Internal;

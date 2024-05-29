@@ -75,9 +75,15 @@ class QnnManager {
  private:
   Error LoadQnnLibrary();
 
+#ifdef _WIN32
+  static constexpr const char* htp_library_name_ = "QnnHtp.dll";
+  static constexpr const char* gpu_library_name_ = "QnnGpu.dll";
+  static constexpr const char* dsp_library_name_ = "QnnDsp.dll";
+#else
   static constexpr const char* htp_library_name_ = "libQnnHtp.so";
   static constexpr const char* gpu_library_name_ = "libQnnGpu.so";
   static constexpr const char* dsp_library_name_ = "libQnnDsp.so";
+#endif
 
   QnnExecuTorchContextBinary qnn_context_blob_;
   std::unique_ptr<BackendConfigParameters> backend_params_ptr_;
