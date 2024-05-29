@@ -371,14 +371,12 @@ Error QnnManager::Compile(
 } // namespace executor
 } // namespace torch
 
-extern "C" {
-
 #ifdef _WIN32
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdll-attribute-on-redeclaration"
 #define EXPORT __declspec(dllexport)
 #else
-#define EXPORT
+#define EXPORT __attribute__((visibility("default")))
 #endif
 
 EXPORT void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment) {
@@ -396,5 +394,3 @@ EXPORT void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
 #ifdef _WIN32
 #pragma clang diagnostic pop
 #endif
-
-} // extern "C"
