@@ -21,8 +21,8 @@ install_swiftshader() {
 
   tar -C "${_swiftshader_dir}" -xzf "${_tmp_archive}"
 
-  export VK_ICD_FILENAMES="${_swiftshader_dir}/build/Linux/vk_swiftshader_icd.json"
-  export LD_LIBRARY_PATH="${_swiftshader_dir}/build/Linux/libvulkan.so.1"
+  export VK_ICD_FILENAMES="${_swiftshader_dir}/swiftshader/build/Linux/vk_swiftshader_icd.json"
+  export LD_LIBRARY_PATH="${_swiftshader_dir}/swiftshader/build/Linux/libvulkan.so.1"
 }
 
 install_vulkan_sdk() {
