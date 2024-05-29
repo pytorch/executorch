@@ -198,7 +198,7 @@ overflows(From f) {
 }
 
 template <typename To, typename From>
-std::enable_if_t<std::is_floating_point_v<From>, bool> overflows(From f) {
+std::enable_if_t<std::is_floating_point<From>::value, bool> overflows(From f) {
   using limit = std::numeric_limits<To>;
   if (limit::has_infinity && std::isinf(static_cast<double>(f))) {
     return false;
