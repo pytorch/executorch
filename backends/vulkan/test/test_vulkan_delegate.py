@@ -78,10 +78,6 @@ class TestBackends(unittest.TestCase):
                     )
         else:
             # If one output, eager returns tensor while executor tuple of size 1
-            # print("ET-VK")
-            # print(model_output[0])
-            # print("Eager-mode")
-            # print(ref_output)
             self.assertTrue(
                 torch.allclose(
                     model_output[0],
