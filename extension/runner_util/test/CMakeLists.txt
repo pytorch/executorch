@@ -30,6 +30,7 @@ et_cxx_test(
   SOURCES
   ${_test_srcs}
   EXTRA_LIBS
+  extension_data_loader
   extension_runner_util
   portable_kernels
   portable_ops_lib
