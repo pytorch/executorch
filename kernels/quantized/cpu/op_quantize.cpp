@@ -122,7 +122,8 @@ Tensor& quantize_per_tensor_out(
   case ScalarType::out_dtype: {                                    \
     auto* out_data_ptr = out.mutable_data_ptr<OUT_CTYPE>();        \
     const auto* input_data_ptr = input.const_data_ptr<IN_CTYPE>(); \
-    for (size_t i = 0; i < input.numel(); i++) {                   \
+    const auto input_numel = input.numel();                        \
+    for (size_t i = 0; i < input_numel; i++) {                     \
       IN_CTYPE value = input_data_ptr[i];                          \
       out_data_ptr[i] = quantize_val<OUT_CTYPE, IN_CTYPE>(         \
           scale, zero_point, value, quant_min, quant_max);         \

@@ -95,7 +95,8 @@ Tensor& dequantize_per_tensor_out(
   case ScalarType::out_dtype: {                                    \
     auto* out_data_ptr = out.mutable_data_ptr<OUT_CTYPE>();        \
     const auto* input_data_ptr = input.const_data_ptr<IN_CTYPE>(); \
-    for (size_t i = 0; i < input.numel(); i++) {                   \
+    const auto input_numel = input.numel();                        \
+    for (size_t i = 0; i < input_numel; i++) {                     \
       out_data_ptr[i] = static_cast<OUT_CTYPE>(                    \
           (input_data_ptr[i] - static_cast<int32_t>(zero_point)) * \
           static_cast<float>(scale));                              \
