@@ -897,6 +897,25 @@
         <span class="k">return</span> <span class="n">ret_event</span>
 
     <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_calculate_elapsed_time</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">):</span>
+        <span class="c1"># We&#39;re assuming if there&#39;s a wraparound in the time values, then</span>
+        <span class="c1"># the time representation of that platform only contains 32 bits.</span>
+        <span class="c1"># This should be fine for now, but ideally we should source the max</span>
+        <span class="c1"># time value from the platform using etdump.</span>
+        <span class="n">max_uint32</span> <span class="o">=</span> <span class="mi">2</span><span class="o">**</span><span class="mi">32</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="n">start_time</span> <span class="o">&gt;</span> <span class="n">end_time</span><span class="p">:</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">start_time</span> <span class="o">&gt;</span> <span class="n">max_uint32</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">end_time</span> <span class="o">&gt;</span> <span class="n">max_uint32</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Expected start_time (</span><span class="si">{</span><span class="n">start_time</span><span class="si">}</span><span class="s2">) and end_time (</span><span class="si">{</span><span class="n">end_time</span><span class="si">}</span><span class="s2">) to be less than </span><span class="si">{</span><span class="n">max_uint32</span><span class="si">}</span><span class="s2"> for cases where there is wrap-around of time values.&quot;</span>
+                <span class="p">)</span>
+            <span class="c1"># Handle wraparound</span>
+            <span class="n">elapsed_time</span> <span class="o">=</span> <span class="p">(</span><span class="n">max_uint32</span> <span class="o">-</span> <span class="n">start_time</span><span class="p">)</span> <span class="o">+</span> <span class="n">end_time</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Normal case</span>
+            <span class="n">elapsed_time</span> <span class="o">=</span> <span class="n">end_time</span> <span class="o">-</span> <span class="n">start_time</span>
+        <span class="k">return</span> <span class="n">elapsed_time</span>
+
+    <span class="nd">@staticmethod</span>
     <span class="k">def</span> <span class="nf">_populate_profiling_related_fields</span><span class="p">(</span>
         <span class="n">ret_event</span><span class="p">:</span> <span class="s2">&quot;Event&quot;</span><span class="p">,</span>
         <span class="n">profile_event_signature</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ProfileEventSignature</span><span class="p">],</span>
@@ -952,27 +971,31 @@
                 <span class="c1"># Scale factor should only be applied to non-delegated ops</span>
                 <span class="k">if</span> <span class="p">(</span>
                     <span class="n">ret_event</span><span class="o">.</span><span class="n">is_delegated_op</span>
-                    <span class="ow">and</span> <span class="n">ret_event</span><span class="o">.</span><span class="n">_delegate_time_scale_converter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                    <span class="ow">and</span> <span class="p">(</span><span class="n">convert_time_scale</span> <span class="o">:=</span> <span class="n">ret_event</span><span class="o">.</span><span class="n">_delegate_time_scale_converter</span><span class="p">)</span>
+                    <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                 <span class="p">):</span>
-                    <span class="n">scaled_time</span> <span class="o">=</span> <span class="n">ret_event</span><span class="o">.</span><span class="n">_delegate_time_scale_converter</span><span class="p">(</span>
-                        <span class="n">ret_event</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
-                        <span class="n">profile_event</span><span class="o">.</span><span class="n">end_time</span><span class="p">,</span>
-                        <span class="c1"># pyre-ignore</span>
-                    <span class="p">)</span> <span class="o">-</span> <span class="n">ret_event</span><span class="o">.</span><span class="n">_delegate_time_scale_converter</span><span class="p">(</span>
-                        <span class="n">ret_event</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">profile_event</span><span class="o">.</span><span class="n">start_time</span>
+                    <span class="n">scaled_time</span> <span class="o">=</span> <span class="n">Event</span><span class="o">.</span><span class="n">_calculate_elapsed_time</span><span class="p">(</span>
+                        <span class="n">convert_time_scale</span><span class="p">(</span><span class="n">ret_event</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">profile_event</span><span class="o">.</span><span class="n">start_time</span><span class="p">),</span>
+                        <span class="n">convert_time_scale</span><span class="p">(</span><span class="n">ret_event</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">profile_event</span><span class="o">.</span><span class="n">end_time</span><span class="p">),</span>
                     <span class="p">)</span>
                 <span class="c1"># If it&#39;s not a delegated op then we can just use the raw time values</span>
                 <span class="c1"># and then scale them according to the scale factor that was passed in.</span>
                 <span class="k">elif</span> <span class="ow">not</span> <span class="n">ret_event</span><span class="o">.</span><span class="n">is_delegated_op</span><span class="p">:</span>
                     <span class="n">scaled_time</span> <span class="o">=</span> <span class="p">(</span>
-                        <span class="nb">float</span><span class="p">(</span><span class="n">profile_event</span><span class="o">.</span><span class="n">end_time</span> <span class="o">-</span> <span class="n">profile_event</span><span class="o">.</span><span class="n">start_time</span><span class="p">)</span>
+                        <span class="nb">float</span><span class="p">(</span>
+                            <span class="n">Event</span><span class="o">.</span><span class="n">_calculate_elapsed_time</span><span class="p">(</span>
+                                <span class="n">profile_event</span><span class="o">.</span><span class="n">start_time</span><span class="p">,</span> <span class="n">profile_event</span><span class="o">.</span><span class="n">end_time</span>
+                            <span class="p">)</span>
+                        <span class="p">)</span>
                         <span class="o">/</span> <span class="n">scale_factor</span>
                     <span class="p">)</span>
                 <span class="c1"># If there was no scale factor passed in just take a difference of the</span>
                 <span class="c1"># end and start times.</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">scaled_time</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
-                        <span class="n">profile_event</span><span class="o">.</span><span class="n">end_time</span> <span class="o">-</span> <span class="n">profile_event</span><span class="o">.</span><span class="n">start_time</span>
+                        <span class="n">Event</span><span class="o">.</span><span class="n">_calculate_elapsed_time</span><span class="p">(</span>
+                            <span class="n">profile_event</span><span class="o">.</span><span class="n">start_time</span><span class="p">,</span> <span class="n">profile_event</span><span class="o">.</span><span class="n">end_time</span>
+                        <span class="p">)</span>
                     <span class="p">)</span>
 
                 <span class="n">data</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">scaled_time</span><span class="p">)</span>
