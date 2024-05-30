@@ -9,21 +9,20 @@
 set -ex
 
 install_swiftshader() {
-  SWIFTSHADER_COMMIT=$1
-  pushd /tmp || return
+  _https_amazon_aws=https://ossci-android.s3.amazonaws.com
+  _swiftshader_archive=swiftshader-abe07b943-prebuilt.tar.gz
+  _swiftshader_dir=/tmp/swiftshader
+  mkdir -p $_swiftshader_dir
 
-  git clone https://github.com/google/swiftshader.git
+  _tmp_archive="/tmp/${_swiftshader_archive}"
 
-  cd swiftshader
-  git checkout $SWIFTSHADER_COMMIT
+  curl --silent --show-error --location --fail --retry 3 \
+    --output "${_tmp_archive}" "$_https_amazon_aws/${_swiftshader_archive}"
 
-  cd build
-  cmake ..
-  cmake --build . --parallel
+  tar -C "${_swiftshader_dir}" -xzf "${_tmp_archive}"
 
-  export LD_LIBRARY_PATH="$(pwd)/Linux/libvulkan.so.1"
-
-  popd || return
+  export VK_ICD_FILENAMES="${_swiftshader_dir}/swiftshader/build/Linux/vk_swiftshader_icd.json"
+  export LD_LIBRARY_PATH="${_swiftshader_dir}/swiftshader/build/Linux/"
 }
 
 install_vulkan_sdk() {
@@ -43,8 +42,7 @@ install_vulkan_sdk() {
   export PATH="${PATH}:${_vulkan_sdk_dir}/${VULKAN_SDK_VERSION}/x86_64/bin/"
 }
 
-SWIFTSHADER_COMMIT=ec5dbd2dfb4623f5b2721a77bb5388d79fafc506
 VULKAN_SDK_VERSION="1.2.198.1"
 
-install_swiftshader "${SWIFTSHADER_COMMIT}"
+install_swiftshader
 install_vulkan_sdk "${VULKAN_SDK_VERSION}"

@@ -71,10 +71,10 @@ list(APPEND vulkan_graph_cpp ${vulkan_api_cpp})
 # Standard GLSL shader library
 
 set(VULKAN_GRAPH_SHADERS_PATH ${RUNTIME_PATH}/graph/ops/glsl/)
-# # Generates a spv.cpp file containing compiled GLSL shaders
-# gen_vulkan_shader_lib_cpp(${VULKAN_GRAPH_SHADERS_PATH})
-# # Save the path of the generated cpp file
-# set(vulkan_standard_shaders_cpp ${generated_spv_cpp})
+# Generates a spv.cpp file containing compiled GLSL shaders
+gen_vulkan_shader_lib_cpp(${VULKAN_GRAPH_SHADERS_PATH})
+# Save the path of the generated cpp file
+set(vulkan_standard_shaders_cpp ${generated_spv_cpp})
 
 # Generate Vulkan Delegate Schema Files from flatc
 
