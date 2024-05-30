@@ -1359,3 +1359,48 @@ class TestBackends(unittest.TestCase):
                 (torch.randn(size=(1,), dtype=torch.float32),),  # dummy input
                 memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
             )
+
+    def test_vulkan_backend_embedding_1d(self):
+        class EmbeddingModule(torch.nn.Module):
+            def __init__(self, embedding):
+                super().__init__()
+                self.embedding = embedding
+
+            def forward(self, x):
+                return self.embedding(x)
+
+        self.lower_module_and_test_output(
+            EmbeddingModule(torch.nn.Embedding(5, 4)),
+            (torch.tensor([0, 1, 0, 4, 2, 0], dtype=torch.int32),),
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_embedding_2d(self):
+        class EmbeddingModule(torch.nn.Module):
+            def __init__(self, embedding):
+                super().__init__()
+                self.embedding = embedding
+
+            def forward(self, x):
+                return self.embedding(x)
+
+        self.lower_module_and_test_output(
+            EmbeddingModule(torch.nn.Embedding(5, 4)),
+            (torch.tensor([[0, 1, 0], [4, 2, 0]], dtype=torch.int32),),
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_embedding_3d(self):
+        class EmbeddingModule(torch.nn.Module):
+            def __init__(self, embedding):
+                super().__init__()
+                self.embedding = embedding
+
+            def forward(self, x):
+                return self.embedding(x)
+
+        self.lower_module_and_test_output(
+            EmbeddingModule(torch.nn.Embedding(5, 4)),
+            (torch.tensor([[[0, 1], [0, 1]], [[4, 2], [3, 3]]], dtype=torch.int32),),
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
