@@ -31,6 +31,7 @@ build_executorch() {
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_VULKAN=$BUILD_VULKAN \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
@@ -54,8 +55,8 @@ build_and_run_test() {
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
 
-  echo "Printing LD_LIBRARY_PATH..."
-  echo "${LD_LIBRARY_PATH}"
+  export RESOURCES_PATH=extension/module/test/resources
+
   for t in cmake-out/"${test_dir}"/*test; do
     if [ -e "$t" ]; then
       LLVM_PROFILE_FILE="cmake-out/$(basename $t).profraw" ./"$t";

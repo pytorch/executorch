@@ -12,10 +12,12 @@
 #
 # This file should be formatted with
 # ~~~
-# cmake-format -i Utils.cmake
+# cmake-format -i Test.cmake
 # ~~~
 # It should also be cmake-lint clean.
 #
+
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 # Add code coverage flags to supported compilers
 if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
@@ -53,6 +55,9 @@ cmake_parse_arguments(ET_CXX_TEST "" "" "${multi_arg_names}" ${ARGN})
 
 # Find prebuilt executorch library
 find_package(executorch CONFIG REQUIRED)
+
+target_link_options_shared_lib(extension_data_loader)
+target_link_options_shared_lib(portable_ops_lib)
 
 enable_testing()
 find_package(GTest CONFIG REQUIRED)

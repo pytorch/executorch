@@ -7,6 +7,9 @@ on:
       - release/*
     tags:
       - ciflow/trunk/*
+  pull_request:
+    paths:
+      - .ci/scripts/**
   workflow_dispatch:
 
 concurrency:
