@@ -27,6 +27,7 @@ build_executorch() {
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
 }
@@ -48,6 +49,8 @@ build_and_run_test() {
     -DCMAKE_PREFIX_PATH="$(pwd)/third-party/googletest/build" \
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
+
+  export RESOURCES_PATH=extension/module/test/resources
 
   for t in cmake-out/"${test_dir}"/*test; do
     if [ -e "$t" ]; then
