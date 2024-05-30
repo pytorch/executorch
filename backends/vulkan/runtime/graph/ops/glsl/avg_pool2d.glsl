@@ -9,7 +9,8 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
-#define FLT_MIN -3.402823466e+38
+
+#define VEC4_T ${texel_type(DTYPE)}
 
 #include "indexing_utils.h"
 
@@ -36,7 +37,7 @@ void main() {
   const ivec2 start = max(ivec2(0), ipos);
   const ivec2 end = min(ipos + kernel_size, ivec2(in_sizes.xy));
 
-  vec4 sum = vec4(0);
+  VEC4_T sum = VEC4_T(0);
   for (int y = start.y; y < end.y; ++y) {
     for (int x = start.x; x < end.x; ++x) {
       sum += texelFetch(t_in, ivec3(x, y, pos.z), 0);
