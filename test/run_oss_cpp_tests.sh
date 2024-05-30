@@ -32,6 +32,7 @@ build_executorch() {
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
     -DEXECUTORCH_BUILD_VULKAN=$BUILD_VULKAN \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
@@ -46,6 +47,10 @@ build_gtest() {
   popd
 }
 
+export_test_add_model() {
+  python3 -m examples.portable.scripts.export --model_name="add" --output_dir="cmake-out"
+}
+
 build_and_run_test() {
   local test_dir=$1
   cmake "${test_dir}" \
@@ -55,7 +60,10 @@ build_and_run_test() {
     -Bcmake-out/"${test_dir}"
   cmake --build cmake-out/"${test_dir}" -j9
 
-  export RESOURCES_PATH=extension/module/test/resources
+  RESOURCES_PATH=$(realpath extension/module/test/resources)
+  export RESOURCES_PATH
+  ET_MODULE_ADD_PATH=$(realpath cmake-out/add.pte)
+  export ET_MODULE_ADD_PATH
 
   for t in cmake-out/"${test_dir}"/*test; do
     if [ -e "$t" ]; then
@@ -92,6 +100,7 @@ probe_tests() {
 
 build_executorch
 build_gtest
+export_test_add_model
 
 if [ -z "$1" ]; then
   echo "Running all directories:"
