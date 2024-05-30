@@ -91,15 +91,17 @@ Tensor& dequantize_per_tensor_out(
 
   // calculate the dequantized output, cast scale to float to match fbgemm
   // behavior
-#define DEQUANTIZE_IMPL(IN_CTYPE, OUT_CTYPE, out_dtype)            \
-  case ScalarType::out_dtype: {                                    \
-    auto* out_data_ptr = out.mutable_data_ptr<OUT_CTYPE>();        \
-    const auto* input_data_ptr = input.const_data_ptr<IN_CTYPE>(); \
-    for (size_t i = 0; i < input.numel(); i++) {                   \
-      out_data_ptr[i] = static_cast<OUT_CTYPE>(                    \
-          (input_data_ptr[i] - static_cast<int32_t>(zero_point)) * \
-          static_cast<float>(scale));                              \
-    }                                                              \
+#define DEQUANTIZE_IMPL(IN_CTYPE, OUT_CTYPE, out_dtype)                        \
+  case ScalarType::out_dtype: {                                                \
+    /* Hoist these function calls out of our inner loop because they might not \
+     * get inlined without LTO, particularly in ATen mode. */                  \
+    auto* out_data_ptr = out.mutable_data_ptr<OUT_CTYPE>();                    \
+    const auto* input_data_ptr = input.const_data_ptr<IN_CTYPE>();             \
+    for (size_t i = 0; i < input.numel(); i++) {                               \
+      out_data_ptr[i] = static_cast<OUT_CTYPE>(                                \
+          (input_data_ptr[i] - static_cast<int32_t>(zero_point)) *             \
+          static_cast<float>(scale));                                          \
+    }                                                                          \
   } break;
 #define CALCULATE_INT_TYPE(IN_CTYPE, in_dtype)               \
   case ScalarType::in_dtype:                                 \
