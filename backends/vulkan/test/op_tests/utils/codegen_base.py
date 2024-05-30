@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import re
-from typing import Any, List, Tuple
+from typing import Any, List
 
 from torchgen.api import cpp
 from torchgen.api.types import CppSignatureGroup
@@ -22,6 +22,8 @@ AT_TENSOR_LIST = "at::TensorList"
 BOOL = "bool"
 DOUBLE = "double"
 INT = "int64_t"
+OPT_AT_DOUBLE_ARRAY_REF = "::std::optional<at::ArrayRef<double>>"
+OPT_AT_INT_ARRAY_REF = "at::OptionalIntArrayRef"
 OPT_AT_TENSOR = "::std::optional<at::Tensor>"
 OPT_BOOL = "::std::optional<bool>"
 OPT_INT64 = "::std::optional<int64_t>"
@@ -45,6 +47,8 @@ class TestSuite:
         self.prepacked_args: List[str] = []
         self.requires_prepack: bool = False
         self.dtypes: List[str] = ["at::kFloat", "at::kHalf"]
+        self.atol: str = "1e-5"
+        self.rtol: str = "1e-5"
 
     def supports_prepack(self):
         return len(self.prepacked_args) > 0
@@ -74,11 +78,14 @@ def init_list_str(pylist: Any) -> str:
     if not isinstance(pylist, (list, tuple)):
         pylist = [pylist]
 
-    init_list_str = "{"
+    list_str = "{"
     for s in pylist:
-        init_list_str += f"{s}, "
-    init_list_str = init_list_str[:-2] + "}"
-    return init_list_str
+        if isinstance(s, (list, tuple)):
+            list_str += f"{init_list_str(s)}, "
+        else:
+            list_str += f"{s}, "
+    list_str = list_str[:-2] + "}"
+    return list_str
 
 
 def get_or_return_default(arg: Argument, inputs: List[Any], i: int):
@@ -101,8 +108,17 @@ class TestSuiteGen:
             self.f, method=False, fallback_binding=self.f.manual_cpp_binding
         ).most_faithful_signature()
 
-    def gen_case_name_tuple(self, t: Tuple) -> str:
-        return "x".join([str(e) for e in t])
+    def gen_case_name_tuple(self, t) -> str:
+        return "x".join(
+            [
+                (
+                    str(e)
+                    if not isinstance(e, (list, tuple))
+                    else self.gen_case_name_tuple(e)
+                )
+                for e in t
+            ]
+        )
 
     def gen_case_name(self, inputs: List[Any], prepack: bool = False) -> str:
         name_str = self.op_name
@@ -115,7 +131,7 @@ class TestSuiteGen:
             elif isinstance(arg_sizes_or_val, list):
                 lst = []
                 for size in arg_sizes_or_val:
-                    if isinstance(size, tuple):
+                    if isinstance(size, (list, tuple)):
                         lst.append(self.gen_case_name_tuple(size))
                     else:
                         lst.append(str(size))
@@ -142,11 +158,20 @@ class TestSuiteGen:
 
         if cpp_type == AT_INT_ARRAY_REF:
             ret_str = f"std::vector<int64_t> {arg.name} = "
+        elif cpp_type == OPT_AT_DOUBLE_ARRAY_REF and str(data) != "None":
+            ret_str = f"std::vector<double> {arg.name} = "
+        elif cpp_type == OPT_AT_INT_ARRAY_REF and str(data) != "None":
+            ret_str = f"std::vector<int64_t> {arg.name} = "
         else:
             ret_str = f"{cpp_type} {arg.name} = "
 
         if cpp_type == AT_TENSOR:
-            ret_str += f"{self.suite_def.data_gen}({init_list_str(data)}, test_dtype);"
+            if arg.name == "index" or arg.name == "indices":
+                ret_str += f"make_index_tensor({init_list_str(data)});"
+            else:
+                ret_str += (
+                    f"{self.suite_def.data_gen}({init_list_str(data)}, test_dtype);"
+                )
         elif cpp_type == OPT_AT_TENSOR:
             if str(data) == "None":
                 ret_str += "std::nullopt;"
@@ -156,6 +181,11 @@ class TestSuiteGen:
             ret_str += f"{data};"
         elif cpp_type == AT_INT_ARRAY_REF:
             ret_str += f"{init_list_str(data)};"
+        elif cpp_type == OPT_AT_DOUBLE_ARRAY_REF or cpp_type == OPT_AT_INT_ARRAY_REF:
+            if str(data) == "None":
+                ret_str += "std::nullopt;"
+            else:
+                ret_str += f"{init_list_str(data)};"
         elif cpp_type == BOOL:
             ret_str += f"{str(data).lower()};"
         elif cpp_type == INT:
@@ -254,7 +284,7 @@ at::Tensor make_rand_tensor(
 
 at::Tensor make_seq_tensor(
     std::vector<int64_t> sizes,
-      at::ScalarType dtype = at::kFloat) {{
+    at::ScalarType dtype = at::kFloat) {{
   int64_t n = 1;
   for (auto size: sizes) {{
     n *= size;
@@ -265,9 +295,52 @@ at::Tensor make_seq_tensor(
     values[i] = (float) i;
   }}
 
-  // from_blob doesn't take ownership of data. Hence must create a copy as
-  // "values" will go out of scope.
+  // Clone as original data will be deallocated upon return.
   return at::from_blob(values.data(), sizes, at::kFloat).toType(dtype).detach().clone();
+}}
+
+
+at::Tensor make_index_tensor(std::vector<int64_t> indices) {{
+  at::ScalarType dtype = at::kInt;
+  std::vector<int64_t> sizes = {{static_cast<int64_t>(indices.size())}};
+
+  // Clone as original data will be deallocated upon return.
+  return at::from_blob(indices.data(), sizes, dtype).detach().clone();
+}}
+
+at::Tensor make_index_tensor(std::vector<std::vector<int64_t>> indices) {{
+  at::ScalarType dtype = at::kInt;
+  std::vector<int64_t> sizes = {{
+    static_cast<int64_t>(indices.size()),
+    static_cast<int64_t>(indices[0].size())}};
+
+  // Flatten indices as from_blob reads garbage otherwise.
+  std::vector<int64_t> acc;
+  for (auto& vec: indices) {{
+    acc.insert(acc.end(), vec.begin(), vec.end());
+  }}
+
+  // Clone as original data will be deallocated upon return.
+  return at::from_blob(acc.data(), sizes, dtype).detach().clone();
+}}
+
+at::Tensor make_index_tensor(std::vector<std::vector<std::vector<int64_t>>> indices) {{
+  at::ScalarType dtype = at::kInt;
+  std::vector<int64_t> sizes = {{
+    static_cast<int64_t>(indices.size()),
+    static_cast<int64_t>(indices[0].size()),
+    static_cast<int64_t>(indices[0][0].size())}};
+
+  // Flatten indices as from_blob reads garbage otherwise.
+  std::vector<int64_t> acc;
+  for (auto& v: indices) {{
+    for (auto& vv: v) {{
+      acc.insert(acc.end(), vv.begin(), vv.end());
+    }}
+  }}
+
+  // Clone as original data will be deallocated upon return.
+  return at::from_blob(acc.data(), sizes, dtype).detach().clone();
 }}
 
 {test_suites_cpp}

@@ -31,7 +31,7 @@ void check_dim_order_eq(
 }
 } // namespace
 
-TEST(TensorUtilTest, DimOrderToStride) {
+TEST(DimOrderUtilTest, DimOrderToStride) {
   exec_aten::SizesType sizes_1[1] = {5};
   exec_aten::SizesType dim_order_1[1] = {0};
   exec_aten::SizesType strides_1[1] = {0};
@@ -208,7 +208,7 @@ TEST(TensorUtilTest, DimOrderToStride) {
   check_strides_eq({strides_3_zero, 3}, {expected_strides_3_zero, 3});
 }
 
-TEST(TensorUtilTest, StrideToDimOrder) {
+TEST(DimOrderUtilTest, StrideToDimOrder) {
   exec_aten::SizesType strides[3] = {5, 1, 15};
   exec_aten::DimOrderType dim_order[3] = {0, 0, 0};
 
@@ -220,7 +220,7 @@ TEST(TensorUtilTest, StrideToDimOrder) {
   check_dim_order_eq(dim_order, expected_dim_order);
 }
 
-TEST(TensorUtilTest, StrideToDimOrderSameStrides) {
+TEST(DimOrderUtilTest, StrideToDimOrderSameStrides) {
   exec_aten::SizesType strides[4] = {4, 3, 1, 1};
   exec_aten::DimOrderType dim_order[4] = {0, 0, 0, 0};
 
@@ -231,7 +231,7 @@ TEST(TensorUtilTest, StrideToDimOrderSameStrides) {
   check_dim_order_eq(dim_order, expected_dim_order);
 }
 
-TEST(TensorUtilTest, IsDefaultDimOrderTest) {
+TEST(DimOrderUtilTest, IsDefaultDimOrderTest) {
   for (int i = 1; i < 7; ++i) {
     std::vector<exec_aten::DimOrderType> dim_order(i);
     std::iota(dim_order.begin(), dim_order.end(), 0);
@@ -245,7 +245,7 @@ TEST(TensorUtilTest, IsDefaultDimOrderTest) {
   }
 }
 
-TEST(TensorUtilTest, IsDefaultDimOrderFailCasesTest) {
+TEST(DimOrderUtilTest, IsDefaultDimOrderFailCasesTest) {
   // Dims is default order but have two elements swapped
   for (int i = 3; i < 8; ++i) {
     std::vector<exec_aten::DimOrderType> dim_order(i);
@@ -268,7 +268,7 @@ TEST(TensorUtilTest, IsDefaultDimOrderFailCasesTest) {
   }
 }
 
-TEST(TensorUtilTest, IsChannelsLastDimOrderTest) {
+TEST(DimOrderUtilTest, IsChannelsLastDimOrderTest) {
   exec_aten::DimOrderType dim_order_4d[4] = {0, 2, 3, 1};
   exec_aten::DimOrderType dim_order_5d[5] = {0, 2, 3, 4, 1};
 
@@ -280,7 +280,7 @@ TEST(TensorUtilTest, IsChannelsLastDimOrderTest) {
   EXPECT_FALSE(torch::executor::is_contiguous_dim_order(dim_order_5d, 5));
 }
 
-TEST(TensorUtilTest, IsChannelsLastDimOrderFailCasesTest) {
+TEST(DimOrderUtilTest, IsChannelsLastDimOrderFailCasesTest) {
   // Non 4D and 5D dim order returns false
   exec_aten::DimOrderType dim_order_3d[4] = {1, 2, 0};
   exec_aten::DimOrderType dim_order_6d[6] = {0, 2, 3, 4, 5, 1};

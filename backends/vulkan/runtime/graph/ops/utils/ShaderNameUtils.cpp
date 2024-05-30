@@ -10,20 +10,44 @@
 
 namespace vkcompute {
 
-void add_dtype_suffix(std::string& kernel_name, const vTensor& tensor) {
-  switch (tensor.image().format()) {
-    case VK_FORMAT_R32G32B32A32_SFLOAT:
+void add_storage_type_suffix(
+    std::string& kernel_name,
+    const api::StorageType storage_type) {
+  switch (storage_type) {
+    case api::kBuffer:
+      kernel_name += "_buffer";
+      break;
+    case api::kTexture3D:
+      kernel_name += "_texture3d";
+      break;
+    case api::kTexture2D:
+      kernel_name += "_texture2d";
+      break;
+  }
+}
+
+void add_storage_type_suffix(std::string& kernel_name, const vTensor& tensor) {
+  return add_storage_type_suffix(kernel_name, tensor.storage_type());
+}
+
+void add_dtype_suffix(std::string& kernel_name, const api::ScalarType dtype) {
+  switch (dtype) {
+    case api::kFloat:
       kernel_name += "_float";
       break;
-    case VK_FORMAT_R16G16B16A16_SFLOAT:
+    case api::kHalf:
       kernel_name += "_half";
       break;
-    case VK_FORMAT_R32G32B32A32_SINT:
+    case api::kInt:
       kernel_name += "_int";
       break;
     default:
       break;
   }
+}
+
+void add_dtype_suffix(std::string& kernel_name, const vTensor& tensor) {
+  return add_dtype_suffix(kernel_name, tensor.dtype());
 }
 
 void add_ndim_suffix(std::string& kernel_name, const vTensor& tensor) {
@@ -39,8 +63,10 @@ void add_ndim_suffix(std::string& kernel_name, const vTensor& tensor) {
   }
 }
 
-void add_memory_layout_suffix(std::string& kernel_name, const vTensor& tensor) {
-  switch (tensor.gpu_memory_layout()) {
+void add_memory_layout_suffix(
+    std::string& kernel_name,
+    api::GPUMemoryLayout layout) {
+  switch (layout) {
     case api::kChannelsPacked:
       kernel_name += "_C_packed";
       break;
@@ -53,6 +79,10 @@ void add_memory_layout_suffix(std::string& kernel_name, const vTensor& tensor) {
     default:
       break;
   }
+}
+
+void add_memory_layout_suffix(std::string& kernel_name, const vTensor& tensor) {
+  return add_memory_layout_suffix(kernel_name, tensor.gpu_memory_layout());
 }
 
 } // namespace vkcompute

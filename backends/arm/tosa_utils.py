@@ -183,7 +183,9 @@ def is_consumer_node_depthwise_conv2d(node):
         for arg in consumer_node.args:
             inputs.append(TosaArg(arg))
         group = inputs[-1]
-        if group.number > 1:
+        in_channels = inputs[0].shape[1]
+        out_channels = inputs[1].shape[0]
+        if (in_channels == group.number) and (out_channels % in_channels) == 0:
             return True
 
     return False

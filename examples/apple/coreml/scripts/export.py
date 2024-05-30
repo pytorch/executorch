@@ -16,9 +16,7 @@ import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 
-from executorch.backends.apple.coreml.partition.coreml_partitioner import (
-    CoreMLPartitioner,
-)
+from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.exir import to_edge
 
 from executorch.exir.backend.backend_api import to_backend

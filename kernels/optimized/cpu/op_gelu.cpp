@@ -42,8 +42,8 @@ void gelu(
     const Tensor& input,
     string_view approximate,
     Tensor& output) {
-  const CTYPE* in_data = input.data_ptr<CTYPE>();
-  CTYPE* out_data = output.data_ptr<CTYPE>();
+  const CTYPE* in_data = input.const_data_ptr<CTYPE>();
+  CTYPE* out_data = output.mutable_data_ptr<CTYPE>();
   size_t lim = input.numel();
 
   // TODO: Add fast path for tanh using sleef's tanh

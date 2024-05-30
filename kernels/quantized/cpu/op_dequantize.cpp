@@ -91,13 +91,14 @@ Tensor& dequantize_per_tensor_out(
 
   // calculate the dequantized output, cast scale to float to match fbgemm
   // behavior
-#define DEQUANTIZE_IMPL(IN_CTYPE, OUT_CTYPE, out_dtype)                        \
-  case ScalarType::out_dtype:                                                  \
-    for (size_t i = 0; i < input.numel(); i++) {                               \
-      out.data_ptr<OUT_CTYPE>()[i] = static_cast<OUT_CTYPE>(                   \
-          (input.data_ptr<IN_CTYPE>()[i] - static_cast<int32_t>(zero_point)) * \
-          static_cast<float>(scale));                                          \
-    }                                                                          \
+#define DEQUANTIZE_IMPL(IN_CTYPE, OUT_CTYPE, out_dtype)              \
+  case ScalarType::out_dtype:                                        \
+    for (size_t i = 0; i < input.numel(); i++) {                     \
+      out.mutable_data_ptr<OUT_CTYPE>()[i] = static_cast<OUT_CTYPE>( \
+          (input.const_data_ptr<IN_CTYPE>()[i] -                     \
+           static_cast<int32_t>(zero_point)) *                       \
+          static_cast<float>(scale));                                \
+    }                                                                \
     break;
 #define CALCULATE_INT_TYPE(IN_CTYPE, in_dtype)               \
   case ScalarType::in_dtype:                                 \
@@ -153,8 +154,8 @@ Tensor& dequantize_per_tensor_tensor_args_out(
 
   dequantize_per_tensor_out(
       input,
-      scale.data_ptr<double>()[0],
-      zero_point.data_ptr<int64_t>()[0],
+      scale.const_data_ptr<double>()[0],
+      zero_point.const_data_ptr<int64_t>()[0],
       quant_min,
       quant_max,
       dtype,

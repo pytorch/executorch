@@ -10,17 +10,15 @@ matmul_naive:
     NDIM: 3
     MAT1_PACKING: W_packed
     MAT2_PACKING: H_packed
-    IS_ADDMM: false
+    MAT2_IS_TRANSPOSED: false
   generate_variant_forall:
     DTYPE:
       - VALUE: float
       - VALUE: half
   shader_variants:
     - NAME: matmul_naive_W_packed_H_packed
-    - NAME: addmm_naive_W_packed_H_packed
-      IS_ADDMM: true
     - NAME: matmul_naive_W_packed_W_packed
       MAT2_PACKING: W_packed
-    - NAME: addmm_naive_W_packed_W_packed
+    - NAME: matmul_transposed_naive_W_packed_W_packed
       MAT2_PACKING: W_packed
-      IS_ADDMM: true
+      MAT2_IS_TRANSPOSED: true

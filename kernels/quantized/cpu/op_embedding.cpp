@@ -163,7 +163,7 @@ void embedding_byte_per_channel(
     }
 
     const CTYPE_WEIGHT* w_data =
-        weight.data_ptr<CTYPE_WEIGHT>() + embedding_dim * index;
+        weight.const_data_ptr<CTYPE_WEIGHT>() + embedding_dim * index;
 
     for (int j = 0; j < embedding_dim; ++j) {
       int32_t group_id = j / group_size;

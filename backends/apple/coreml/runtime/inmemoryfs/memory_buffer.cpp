@@ -5,9 +5,10 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#include <memory_buffer.hpp>
+#include "memory_buffer.hpp"
 
 #include <assert.h>
+#include <cstring>
 #include <functional>
 #include <iostream>
 #include <mutex>

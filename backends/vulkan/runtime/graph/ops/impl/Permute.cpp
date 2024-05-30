@@ -74,8 +74,8 @@ void add_permute_node(
   int32_t out_channels = dim_at<kChannel4D>(t_out->sizes());
   int32_t in_channels = dim_at<kChannel4D>(t_in->sizes());
 
-  int32_t out_c_aligned = api::utils::align_up(out_channels, 4);
-  int32_t in_c_aligned = api::utils::align_up(in_channels, 4);
+  int32_t out_c_aligned = api::utils::align_up_4(out_channels);
+  int32_t in_c_aligned = api::utils::align_up_4(in_channels);
 
   const struct Block final {
     ivec4 out_ndims;
@@ -85,7 +85,7 @@ void add_permute_node(
       {out_c_aligned, in_c_aligned},
   };
 
-  api::utils::uvec3 global_size = t_out->extents();
+  api::utils::uvec3 global_size = t_out->image_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(

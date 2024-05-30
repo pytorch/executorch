@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import operator
 from types import NoneType
 from typing import cast, List, Optional, Union
@@ -35,6 +36,9 @@ class VkGraphBuilder:
 
         # Mapping from Node to VkValue id
         self.node_to_value_ids = {}
+
+        # For logging
+        self.seen_ops = set()
 
     @staticmethod
     def get_vk_datatype(torch_dtype: torch.dtype) -> vk_graph_schema.VkDataType:
@@ -230,6 +234,7 @@ class VkGraphBuilder:
             or isinstance(arg, torch.device)
             or isinstance(arg, torch.dtype)
             or isinstance(arg, torch.layout)
+            or isinstance(arg, torch.memory_format)
         ):
             return self.create_null_value()
         elif isinstance(arg, _ScalarType):
@@ -270,6 +275,8 @@ class VkGraphBuilder:
 
     def process_call_function_node(self, node) -> None:
         operator_call_args = []
+
+        self.seen_ops.add(node.target)
 
         for i, schema_arg in enumerate(node.target._schema.arguments):
             if not schema_arg.kwarg_only and i < len(node.args):
@@ -324,6 +331,10 @@ class VkGraphBuilder:
     def build_graph(self) -> vk_graph_schema.VkGraph:
         for node in self.program.graph_module.graph.nodes:
             self.process_node(node)
+
+        logging.info("Operators included in this Vulkan partition: ")
+        for op in self.seen_ops:
+            logging.info(f"    {op.__name__}")
 
         return vk_graph_schema.VkGraph(
             version="0",

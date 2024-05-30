@@ -46,7 +46,7 @@ target_compile_options(
 
 # Install libraries
 install(
-  TARGETS extension_module
+  TARGETS extension_module extension_module_static
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}

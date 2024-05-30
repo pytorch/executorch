@@ -54,7 +54,7 @@ class TestSub(unittest.TestCase):
         self._test_sub(inputs)
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
-    def test_qs8_sub(self):
+    def _test_qs8_sub(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
         (
             Tester(self.Sub(), inputs)
@@ -78,7 +78,7 @@ class TestSub(unittest.TestCase):
         )
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
-    def test_qs8_sub2(self):
+    def _test_qs8_sub2(self):
         inputs = (torch.randn(1, 1, 4, 4),)
         (
             Tester(self.Sub2(), inputs)
@@ -102,7 +102,7 @@ class TestSub(unittest.TestCase):
         )
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
-    def test_qs8_sub3(self):
+    def _test_qs8_sub3(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1))
         (
             Tester(self.Sub(), inputs)
@@ -126,7 +126,7 @@ class TestSub(unittest.TestCase):
         )
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
-    def test_qs8_sub_relu(self):
+    def _test_qs8_sub_relu(self):
         class Sub(torch.nn.Module):
             def forward(self, x, y):
                 z = x - y

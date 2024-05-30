@@ -19,14 +19,17 @@ from executorch.backends.qualcomm.passes.convert_binary_op_with_scalar import (
     ConvertBinaryOpsWithScalar,
 )
 from executorch.backends.qualcomm.passes.convert_bmm_to_matmul import ConvertBmmToMatmul
-from executorch.backends.qualcomm.passes.convert_hardsigmoid import ConvertHardsigmoid
 from executorch.backends.qualcomm.passes.convert_interpolate_with_upsample2d import (
     ConvertInterpolateWithUpsample2D,
 )
+from executorch.backends.qualcomm.passes.convert_prelu import ConvertPReLU
 from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.qualcomm.passes.fold_qdq import FoldQDQ
 from executorch.backends.qualcomm.passes.i64_to_i32 import I64toI32
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm.passes.recompose_pixel_unshuffle import (
+    RecomposePixelUnshuffle,
+)
 from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     _soc_info_table,
@@ -91,6 +94,7 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     # The below super ops are supported by QNN
     remove_decompositions = [
         torch.ops.aten.pixel_shuffle.default,
+        torch.ops.aten.hardsigmoid.default,
         torch.ops.aten.hardswish.default,
     ]
 
@@ -106,8 +110,9 @@ def _transform(edge_program: ExportedProgram) -> None:
     # apply passes one by one here to avoid IR capture failure
     graph_module = edge_program.graph_module
     RemoveClone()(graph_module)
+    RecomposePixelUnshuffle()(graph_module)
     ConvertToLinear()(graph_module)
-    ConvertHardsigmoid()(graph_module)
+    ConvertPReLU(edge_program)(graph_module)
     ConvertBmmToMatmul()(graph_module)
     ConvertInterpolateWithUpsample2D()(graph_module)
     I64toI32(edge_program)(graph_module)

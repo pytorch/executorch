@@ -17,6 +17,8 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     CppTestFileGen,
     DOUBLE,
     INT,
+    OPT_AT_DOUBLE_ARRAY_REF,
+    OPT_AT_INT_ARRAY_REF,
     OPT_AT_TENSOR,
     OPT_BOOL,
     OPT_DEVICE,
@@ -289,6 +291,16 @@ class ComputeGraphGen:
             ret_str += f"{self.graph}{self.dot}add_scalar<int64_t>"
             ret_str += f"({ref.src_cpp_name}.value());\n"
             return ret_str
+        elif (
+            ref.src_cpp_type == OPT_AT_DOUBLE_ARRAY_REF
+            or ref.src_cpp_type == OPT_AT_INT_ARRAY_REF
+        ):
+            ret_str = f"{cpp_type} {ref.name} = "
+            ret_str += f"!{ref.src_cpp_name}.has_value() ? "
+            ret_str += f"{self.graph}{self.dot}add_none() : "
+            ret_str += f"{self.graph}{self.dot}add_scalar_list"
+            ret_str += f"({ref.src_cpp_name}->vec());\n"
+            return ret_str
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             assert ref.is_in, "AT_TENSOR_LIST must be an input"
             # This logic is a bit convoluted. We need to create a IOValueRef for
@@ -531,8 +543,11 @@ for (int i=0; i<out.size(); i++) {{
 
         return graph_build
 
-    def gen_graph_exec_code(self) -> str:
+    def gen_graph_exec_code(self, loop_range: int = 1) -> str:
         graph_exec = ""
+        if loop_range > 1:
+            graph_exec += f"for (int i = 0; i < {loop_range} ; ++i) "
+        graph_exec += "{\n"
         for aten_arg in self.args:
             ref = self.refs[aten_arg.name]
             if ref.is_in:
@@ -544,6 +559,8 @@ for (int i=0; i<out.size(); i++) {{
 
         graph_exec += self.declare_vk_out_for(self.refs["out"])
         graph_exec += self.copy_from_staging(self.refs["out"])
+        graph_exec += self.check_graph_out(self.refs["out"])
+        graph_exec += "}\n"
 
         return graph_exec
 
@@ -564,7 +581,6 @@ for (int i=0; i<out.size(); i++) {{
         op_check_fn_body += self.gen_conditional_skips()
         op_check_fn_body += self.gen_graph_build_code()
         op_check_fn_body += self.gen_graph_exec_code()
-        op_check_fn_body += self.check_graph_out(self.refs["out"])
 
         # Add two level of indent for readability
         op_check_fn_body = re.sub(r"^", "        ", op_check_fn_body, flags=re.M)
@@ -584,8 +600,8 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
   protected:
     ComputeGraph* graph;
     at::ScalarType test_dtype = at::kFloat;
-    float rtol = 1e-5;
-    float atol = 1e-5;
+    float rtol = {rtol};
+    float atol = {atol};
 
     void SetUp() override {{
         GraphConfig config;
@@ -635,6 +651,8 @@ class VkTestSuiteGen(TestSuiteGen):
             op_name=self.op_name,
             check_fn=check_fn,
             prepacked_check_fn=prepacked_check_fn,
+            rtol=self.suite_def.rtol,
+            atol=self.suite_def.atol,
         )
 
     def gen_parameterization(self) -> str:

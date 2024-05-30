@@ -28,7 +28,7 @@ import torch
 import executorch.exir
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
-from executorch.backends.apple.coreml.partition.coreml_partitioner import CoreMLPartitioner
+from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 
 class Model(torch.nn.Module):
     def __init__(self):
@@ -72,7 +72,7 @@ from torch.ao.quantization.quantize_pt2e import (
     prepare_qat_pt2e,
 )
 
-from executorch.backends.apple.coreml.quantizer.coreml_quantizer import CoreMLQuantizer
+from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
 from coremltools.optimize.torch.quantization.quantization_config import (
     LinearQuantizerConfig,
     QuantizationScheme,

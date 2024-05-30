@@ -56,8 +56,18 @@ inline constexpr Type align_up(const Type& number, const Type& multiple) {
 }
 
 template <typename Type>
+inline constexpr Type align_up_4(const Type& numerator) {
+  return (numerator + 3) & -4;
+}
+
+template <typename Type>
 inline constexpr Type div_up(const Type& numerator, const Type& denominator) {
   return (numerator + denominator - 1) / denominator;
+}
+
+template <typename Type>
+inline constexpr Type div_up_4(const Type& numerator) {
+  return (numerator + 3) / 4;
 }
 
 //
@@ -277,6 +287,17 @@ inline std::ostream& operator<<(std::ostream& os, const ivec4& v) {
   os << "(" << v.data[0u] << ", " << v.data[1u] << ", " << v.data[2u] << ", "
      << v.data[3u] << ")";
   return os;
+}
+
+template <typename T, uint32_t N>
+inline detail::vec<T, N> divup_vec(
+    const detail::vec<T, N>& a,
+    const detail::vec<T, N>& b) {
+  detail::vec<T, N> result;
+  for (uint32_t i = 0; i < N; ++i) {
+    result.data[i] = api::utils::div_up(a.data[i], b.data[i]);
+  }
+  return result;
 }
 
 //

@@ -143,6 +143,38 @@ class NodeVisitor:
             mps_graph.mps_values.append(mps_tensor)
         return self.tensor_to_id[node]
 
+    def define_constant(
+        self,
+        constant_tensor: torch.tensor,
+        mps_graph: MPSGraph,
+    ):
+        """Defines a scalar value into the MPSGraph serialization schema
+
+        Args:
+            tensor (torch.fx.Node): EdgeIR tensor to define into mps_graph
+            mps_graph (MPSGraph): MPSGraph object for serializing into flatbuffer
+        """
+        constant_tensor = constant_tensor.contiguous()
+        # MPS TODO: cache these values
+        id = len(mps_graph.mps_values)
+        self.tensor_to_id[constant_tensor] = id
+        mps_data_type = edge_dtype_to_mps_dtype(constant_tensor.dtype)
+        constant_buffer_size, constant_buffer, mps_data_type = self.get_serialized_data(
+            constant_tensor, mps_graph, mps_data_type, id
+        )
+        dims = list(constant_tensor.shape)
+
+        mps_tensor = MPSTensor(
+            datatype=mps_data_type,
+            num_dims=len(dims),
+            dims=dims,
+            constant_buffer_size=constant_buffer_size,
+            constant_buffer=constant_buffer,
+        )
+
+        mps_graph.mps_values.append(mps_tensor)
+        return id
+
     def define_scalar(
         self,
         val: Union[float, int],
@@ -157,6 +189,7 @@ class NodeVisitor:
         """
         assert isinstance(val, int) or isinstance(val, float)
 
+        # MPS TODO: cache these values
         id = len(mps_graph.mps_values)
         self.tensor_to_id[val] = id
 

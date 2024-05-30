@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include <c10/util/Half.h>
+#include <executorch/runtime/core/portable_type/half.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
@@ -24,6 +24,19 @@
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
 using namespace vkcompute::api;
+
+std::vector<std::vector<int64_t>> standard_sizes_to_test = {
+    // 3D
+    {9, 15, 19},
+    {7, 11, 24},
+    {13, 8, 11},
+    {12, 11, 19},
+    // 4D
+    {9, 13, 11, 17},
+    {17, 14, 18, 20},
+    {7, 13, 12, 21},
+    {3, 8, 13, 17},
+};
 
 //
 // Compute API Tests
@@ -46,6 +59,92 @@ class VulkanComputeAPITest : public ::testing::Test {
 
 TEST_F(VulkanComputeAPITest, print_adapter) {
   std::cout << *(api::context()->adapter_ptr()) << std::endl;
+}
+
+std::vector<int64_t> get_reference_strides(
+    const std::vector<int64_t>& sizes,
+    const api::GPUMemoryLayout layout,
+    const bool texel_strides) {
+  int64_t C = api::utils::val_at(-3, sizes);
+  int64_t H = api::utils::val_at(-2, sizes);
+  int64_t W = api::utils::val_at(-1, sizes);
+
+  switch (layout) {
+    case api::kWidthPacked:
+      if (texel_strides) {
+        W = api::utils::div_up(W, INT64_C(4));
+      }
+      switch (sizes.size()) {
+        case 1:
+          return {1};
+        case 2:
+          return {W, 1};
+        case 3:
+          return {H * W, W, 1};
+        case 4:
+          return {C * H * W, H * W, W, 1};
+        default:
+          return {};
+      }
+      break;
+    case api::kHeightPacked:
+      if (texel_strides) {
+        H = api::utils::div_up(H, INT64_C(4));
+      }
+      switch (sizes.size()) {
+        case 1:
+          return {1};
+        case 2:
+          return {1, H};
+        case 3:
+          return {W * H, 1, H};
+        case 4:
+          return {C * W * H, W * H, 1, H};
+        default:
+          return {};
+      }
+    case api::kChannelsPacked:
+      if (texel_strides) {
+        C = api::utils::div_up(C, INT64_C(4));
+      }
+      switch (sizes.size()) {
+        case 1:
+          return {1};
+        case 2:
+          return {W, 1};
+        case 3:
+          return {1, W * C, C};
+        case 4:
+          return {H * W * C, 1, W * C, C};
+        default:
+          return {};
+      }
+  }
+  return {};
+}
+
+TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
+  for (const auto& sizes : standard_sizes_to_test) {
+    for (const auto& layout :
+         {api::kWidthPacked, api::kHeightPacked, api::kChannelsPacked}) {
+      // texel_strides = true
+      {
+        std::vector<int64_t> strides = calculate_strides(sizes, layout);
+        std::vector<int64_t> ref_strides =
+            get_reference_strides(sizes, layout, true);
+
+        ASSERT_TRUE(strides == ref_strides);
+      }
+
+      // texel_strides = false
+      {
+        std::vector<int64_t> strides = calculate_strides(sizes, layout, false);
+        std::vector<int64_t> ref_strides =
+            get_reference_strides(sizes, layout, false);
+        ASSERT_TRUE(strides == ref_strides);
+      }
+    }
+  }
 }
 
 TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {
@@ -249,7 +348,7 @@ TEST_F(VulkanComputeAPITest, test_buffer_float16) {
   if (!api::context()->adapter_ptr()->has_full_float16_buffers_support()) {
     GTEST_SKIP();
   }
-  test_storage_buffer_type<c10::Half, api::kHalf>(16);
+  test_storage_buffer_type<torch::executor::Half, api::kHalf>(16);
 }
 
 TEST_F(VulkanComputeAPITest, test_buffer_int8) {
@@ -257,6 +356,61 @@ TEST_F(VulkanComputeAPITest, test_buffer_int8) {
     GTEST_SKIP();
   }
   test_storage_buffer_type<int8_t, api::kQInt8>(16);
+}
+
+TEST_F(VulkanComputeAPITest, test_zero_size_tensor) {
+  // Simple test that performs a + b -> c
+
+  std::vector<int64_t> sizes = {0, 5, 7};
+  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+
+  // Fill input tensors
+  fill_vtensor(a, 2.5f);
+  fill_vtensor(b, 1.5f);
+
+  // a + b -> c
+  record_binary_op(api::context(), "add", a, b, c);
+
+  // Extract output tensor
+  std::vector<float> data_out = extract_vtensor(c);
+
+  // Assert all tensors are empty
+  ASSERT_TRUE(a.numel() == 0);
+  ASSERT_TRUE(b.numel() == 0);
+  ASSERT_TRUE(c.numel() == 0);
+  ASSERT_TRUE(a.nbytes() == 0);
+  ASSERT_TRUE(b.nbytes() == 0);
+  ASSERT_TRUE(c.nbytes() == 0);
+
+  // Check output
+  for (size_t i = 0; i < data_out.size(); ++i) {
+    CHECK_VALUE(data_out, i, 4.0f);
+  }
+}
+
+void run_buffer_tensor_sanity_check(vTensor& tensor) {
+  fill_vtensor(tensor, 0.0f, true);
+
+  record_scalar_add_buffer(api::context(), tensor, 2.0f);
+  std::vector<float> data_out = extract_vtensor(tensor);
+
+  // Check output
+  for (size_t i = 0; i < tensor.numel(); ++i) {
+    CHECK_VALUE(data_out, i, i + 2.0f);
+  }
+}
+
+TEST_F(VulkanComputeAPITest, buffer_tensor_sanity_check) {
+  for (const auto& sizes : standard_sizes_to_test) {
+    for (const auto& layout :
+         {api::kWidthPacked, api::kHeightPacked, api::kChannelsPacked}) {
+      vTensor a =
+          vTensor(api::context(), sizes, api::kFloat, api::kBuffer, layout);
+      run_buffer_tensor_sanity_check(a);
+    }
+  }
 }
 
 TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
@@ -593,6 +747,92 @@ TEST(VulkanComputeGraphTest, test_values_string) {
   }
   std::string stored = graph.get_string(idx);
   EXPECT_TRUE(stored == "hello, world");
+}
+
+TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> size_big = {7, 3, 5};
+  std::vector<int64_t> size_small = {};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(size_big, api::kFloat);
+  IOValueRef b = graph.add_input_tensor(size_small, api::kFloat);
+
+  IOValueRef out = {};
+
+  out.value = graph.add_tensor(size_big, api::kFloat);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    float val_a = i + 2.0f;
+    float val_b = i + 1.5f;
+    float val_c = val_a + val_b;
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, val_c);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_simple_graph_with_buffer) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> sizes = {7, 13, 19};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(sizes, api::kFloat, api::kBuffer);
+
+  IOValueRef out = {};
+
+  out.value = graph.add_tensor(sizes, api::kFloat, api::kBuffer);
+
+  auto addFn = VK_GET_OP_FN("aten.abs.default");
+  addFn(graph, {a.value, out.value, kDummyValueRef, kDummyValueRef});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    float val = -i + 2.0f;
+    float expected_val = std::abs(val);
+
+    fill_vtensor(graph, a, val);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, expected_val);
+    }
+  }
 }
 
 TEST(VulkanComputeGraphTest, test_simple_graph) {
@@ -1275,11 +1515,11 @@ void run_from_gpu_test(
 
   {
     api::PipelineBarrier pipeline_barrier{};
-    api::SpecVarList specialization_constants = {vten.gpu_memory_layout_int()};
+    api::SpecVarList specialization_constants = {vten.packed_dim_whcn_idx()};
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        vten.extents(),
+        vten.image_extents(),
         {4, 4, 4},
         specialization_constants,
         VK_NULL_HANDLE,
@@ -1317,7 +1557,7 @@ void run_to_gpu_test(
   }
 
   vTensor vten =
-      vTensor(api::context(), sizes, api::kFloat, storage_type, memory_layout);
+      vTensor(api::context(), sizes, dtype, storage_type, memory_layout);
 
   // Create and fill input staging buffer
   api::StorageBuffer staging_buffer_in(api::context(), dtype, vten.gpu_numel());
@@ -1380,12 +1620,6 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
   };
 
 #define RUN_TESTS(ctype, dtype)                                    \
-  run_from_gpu_test<ctype>(                                        \
-      sizes, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, dtype); \
-  run_from_gpu_test<ctype>(                                        \
-      sizes, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, dtype);    \
-  run_from_gpu_test<ctype>(                                        \
-      sizes, api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, dtype);   \
   run_to_gpu_test<ctype>(                                          \
       sizes, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, dtype); \
   run_to_gpu_test<ctype>(                                          \
@@ -1395,7 +1629,7 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
 
   for (auto& sizes : to_test) {
     RUN_TESTS(float, api::kFloat)
-    RUN_TESTS(c10::Half, api::kHalf)
+    RUN_TESTS(torch::executor::Half, api::kHalf)
   }
 #undef RUN_TESTS
 }

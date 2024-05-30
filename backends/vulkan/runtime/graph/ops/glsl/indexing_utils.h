@@ -71,6 +71,24 @@ ivec4 from_nchw_buffer_i(int buf_i, ivec4 sizes) {
       (buf_i / (sizes.x * sizes.y * sizes.z)));
 }
 
+/*
+ * Input: Texel buffer index, (W, H, C, N) strides of a tensor, which dim is
+ *        packed along a texel
+ * Returns: The (w, h, c, n) tensor index corresponding to the first element of
+ *          the texel at the specified buffer index
+ */
+ivec4 from_texel_buf_i(int buf_i, ivec4 strides, int packed_dim) {
+  ivec4 idx;
+  for (int i = 3; i >= 0; i--) {
+    if (i != packed_dim) {
+      idx[i] = buf_i / strides[i];
+      buf_i %= strides[i];
+    }
+  }
+  idx[packed_dim] = buf_i * 4;
+  return idx;
+}
+
 //
 // (w, h, c, n) Tensor Index <-> (x, y, z) Texture Position Conversion
 //
@@ -154,6 +172,26 @@ ivec4 to_texture_elem_pos(ivec4 idx, ivec4 sizes, int packed_dim) {
   pos.w = idx[packed_dim] % 4;
   return pos;
 }
+
+//
+// Texel Access and Storage
+//
+
+#ifdef USING_BUFFER
+#define load_texel(buf, idx) buf[idx];
+#elif defined(USING_TEXTURE2D)
+#define load_texel(im, pos) texelFetch(im, pos.xy, 0);
+#else // defined(USING_TEXTURE3D)
+#define load_texel(im, pos) texelFetch(im, pos, 0);
+#endif
+
+#ifdef USING_BUFFER
+#define write_texel(buf, idx, texel) buf[idx] = texel;
+#elif defined(USING_TEXTURE2D)
+#define write_texel(im, pos, texel) imageStore(im, pos.xy, texel);
+#else // defined(USING_TEXTURE3D)
+#define write_texel(im, pos, texel) imageStore(im, pos, texel);
+#endif
 
 //
 // Miscellaneous Utility Functions and Macros

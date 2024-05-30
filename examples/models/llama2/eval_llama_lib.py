@@ -9,20 +9,17 @@ import argparse
 
 from typing import Optional, Union
 
-import lm_eval
 import torch
-
+from executorch.examples.models.llama2.evaluate import EagerEvalWrapper, evaluate_model
+from executorch.examples.models.llama2.export_llama_lib import (
+    get_quantizer_and_quant_params,
+)
 from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
 from executorch.examples.models.llama2.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
 )
 
 from lm_eval.api.model import LM
-from lm_eval.evaluator import evaluate
-from lm_eval.models.huggingface import HFLM as eval_wrapper
-from lm_eval.tasks import get_task_dict
-
-from torch import nn
 
 from .builder import LlamaEdgeManager
 from .export_llama_lib import (
@@ -31,77 +28,9 @@ from .export_llama_lib import (
 )
 
 
-class GPTFastEvalWrapper(eval_wrapper):
+class ETPybindEvalWrapper(EagerEvalWrapper):
     """
-    A wrapper class based on GPTFast, providing integration with the lm-evaluation-harness library.
-    """
-
-    def __init__(
-        self,
-        model: nn.Module,
-        tokenizer: Union[SentencePieceTokenizer, Tiktoken],
-        max_seq_length: Optional[int] = None,
-        use_kv_cache: bool = False,
-    ):
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        super().__init__(device=device)
-        self._model = model
-        self._tokenizer = tokenizer
-        self._device = torch.device(device)
-        self._max_seq_length = 2048 if max_seq_length is None else max_seq_length
-        self._use_kv_cache = use_kv_cache
-
-    @property
-    def eot_token_id(self):
-        return self._tokenizer.eos_id
-
-    @property
-    def max_length(self):
-        return self._max_seq_length
-
-    @property
-    def max_gen_toks(self):
-        return 50
-
-    @property
-    def batch_size(self):
-        return 1
-
-    @property
-    def device(self):
-        return self._device
-
-    def tok_encode(self, string: str, **kwargs):
-        tokens = self._tokenizer.encode(string, bos=True, eos=False)
-        encoded = torch.tensor(tokens, dtype=torch.int, device=self.device)
-        # encoded is a pytorch tensor, but some internal logic in the
-        # eval harness expects it to be a list instead
-        # TODO: verify this for multi-batch as well
-        encoded = encoded.tolist()
-        return encoded
-
-    def tok_decode(self, tokens):
-        decoded = self._tokenizer.decode(tokens)
-        return decoded
-
-    def _model_call(self, inps):
-        if self._use_kv_cache:
-            result_logits = []
-            for pos in range(self._max_seq_length):
-                pos_tensor = torch.tensor([pos], dtype=torch.int64)
-                logits = self._model(inps[:, pos : pos + 1], pos_tensor)
-                result_logits.append(logits)
-            return torch.cat(result_logits, dim=1)
-        else:
-            return self._model(inps)
-
-    def _model_generate(self, context, max_length, eos_token_id):
-        raise Exception("unimplemented")
-
-
-class ETEagerEvalWrapper(GPTFastEvalWrapper):
-    """
-    A wrapper class for ExecuTorch Eager integration with the
+    A wrapper class for ExecuTorch py-binded integration with the
     lm-evaluation-harness library.
     """
 
@@ -135,7 +64,7 @@ class ETEagerEvalWrapper(GPTFastEvalWrapper):
             return result[0]
 
 
-class ETRunnerEvalWrapper(GPTFastEvalWrapper):
+class ETRunnerEvalWrapper(EagerEvalWrapper):
     """
     A wrapper class for ExecuTorch Runtime integration with the
     lm-evaluation-harness library.
@@ -160,40 +89,6 @@ class ETRunnerEvalWrapper(GPTFastEvalWrapper):
         # inps: Tensor of shape (1, N)
         # logits: Tensor of shape (1, N, vocab_size)
         pass
-
-
-@torch.no_grad()
-def eval(
-    eval_wrapper: LM,
-    tasks: Optional[list] = None,
-    limit: Optional[int] = None,
-) -> dict:
-    """
-    Evaluates a language model on a specified task using the lm-evaluation-harness library.
-
-    Args:
-        eval_wrapper (LM): A LM wrapper class compatible with lm-evaluation-harness evaluation
-        task (str): The name of the evaluation task to perform.
-        limit (Optional[int]): The maximum number of samples to evaluate (None for all available).
-
-    Returns:
-        eval_results (dict): A dictionary of evaluation results for the specified task(s).
-    """
-
-    if tasks is None:
-        tasks = ["wikitext"]
-
-    if "hendrycks_test" in tasks:
-        tasks.remove("hendrycks_test")
-        tasks += list(lm_eval.tasks.hendrycks_test.create_all_tasks().keys())
-    task_dict = get_task_dict(tasks)
-
-    eval_results = evaluate(
-        eval_wrapper,
-        task_dict,
-        limit=limit,
-    )
-    return eval_results
 
 
 def gen_eval_wrapper(
@@ -224,8 +119,8 @@ def gen_eval_wrapper(
                 max_seq_length=args.max_seq_length,
             )
 
-        # ETRunnerEvalWrapper: Create a wrapper around an ExecuTorch model, evaluated eagerly
-        return ETEagerEvalWrapper(
+        # ETPybindEvalWrapper: Create a wrapper around an ExecuTorch model, evaluated with pybindings
+        return ETPybindEvalWrapper(
             model=model,
             tokenizer=tokenizer,
             # Exported model takes at most (max_seq_length - 1) tokens.
@@ -233,14 +128,28 @@ def gen_eval_wrapper(
             max_seq_length=args.max_seq_length - 1,
         )
 
+    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
     # GPTFastEvalWrapper: Create a wrapper around a pre-exported model
     manager: LlamaEdgeManager = _prepare_for_llama_export(model_name, args)
-    model = (
-        manager.model.eval().to(device="cuda")
-        if torch.cuda.is_available()
-        else manager.model.to(device="cpu")
-    )
-    return GPTFastEvalWrapper(
+
+    if len(quantizers) != 0:
+        manager = manager.capture_pre_autograd_graph().pt2e_quantize(quantizers)
+        model = (
+            manager.pre_autograd_graph_module.to(device="cuda")
+            if torch.cuda.is_available()
+            else manager.pre_autograd_graph_module.to(device="cpu")
+        )
+    else:
+        # TODO: use manager.pre_autograd_graph_module for the eval to remove the if-else branch
+        # for quantizers. Currently capture_pre_autograd_graph only works with --kv_cache, but
+        # fails without the kv_cache mode
+        model = (
+            manager.model.eval().to(device="cuda")
+            if torch.cuda.is_available()
+            else manager.model.eval().to(device="cpu")
+        )
+
+    return EagerEvalWrapper(
         model=model,
         tokenizer=tokenizer,
         max_seq_length=args.max_seq_length,
@@ -290,7 +199,7 @@ def eval_llama(
     eval_wrapper = gen_eval_wrapper(model_name, args)
 
     # Evaluate the model
-    eval_results = eval(
+    eval_results = evaluate_model(
         eval_wrapper,
         args.tasks,
         args.limit,

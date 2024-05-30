@@ -52,7 +52,8 @@ class XnnpackBackend final : public PyTorchBackendInterface {
       // now.
       executor->~XNNExecutor();
 
-      ET_LOG(Error, "XNNCompiler::compleModel failed: 0x%x", (unsigned int)err);
+      ET_LOG(
+          Error, "XNNCompiler::compileModel failed: 0x%x", (unsigned int)err);
       return err;
     }
     return executor;

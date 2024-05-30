@@ -6,6 +6,11 @@
 
 from typing import final, List
 
+from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
+from executorch.backends.transforms.fuse_batch_norm_with_conv import (
+    FuseBatchNormWithConvPass,
+)
+
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
@@ -37,6 +42,8 @@ class VulkanBackend(BackendDetails):
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
         passes = [
+            AddmmToLinearTransform(),
+            FuseBatchNormWithConvPass(program),
             SpecPropPass(),
             ConstraintBasedSymShapeEvalPass(),
             MemoryPlanningPass("greedy"),
