@@ -44,17 +44,17 @@ include(cmake/ShaderLibrary.cmake)
 
 set(VULKAN_THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third-party)
 
-set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
+set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers)
 set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
 set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
 
-set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH} ${VOLK_PATH}
-                    ${VMA_PATH}
+set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH}/include
+                    ${VOLK_PATH} ${VMA_PATH}
 )
 
 # Compile settings
 
-set(VULKAN_CXX_FLAGS "")
+set(VULKAN_CXX_FLAGS "-fexceptions")
 list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_WRAPPER")
 list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_VOLK")
 
@@ -118,6 +118,8 @@ target_link_libraries(vulkan_backend PRIVATE vulkan_schema executorch)
 target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 # Link this library with --whole-archive due to dynamic backend registration
 target_link_options_shared_lib(vulkan_backend)
+
+set_property(TARGET vulkan_backend PROPERTY CXX_STANDARD 17)
 
 # Executor Runner
 
