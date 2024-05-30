@@ -293,14 +293,22 @@ def export_llama(modelname, args) -> str:
             from executorch.util.python_profiler import CProfilerFlameGraph
 
             with CProfilerFlameGraph(args.profile_path):
-                return _export_llama(modelname, args)
+                builder = _export_llama(modelname, args)
+                assert (
+                    filename := builder.get_saved_pte_filename()
+                ) is not None, "Fail to get file name from builder"
+                return filename
         except ImportError:
             print(
                 "Please run `pip install snakeviz` to install required dependencies for cProfiler flamegraph."
             )
             return ""
     else:
-        return _export_llama(modelname, args)
+        builder = _export_llama(modelname, args)
+        assert (
+            filename := builder.get_saved_pte_filename()
+        ) is not None, "Fail to get file name from builder"
+        return filename
 
 
 def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
@@ -366,8 +374,8 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
         )
         .set_output_dir(output_dir_path)
         .set_metadata(args.metadata)
-        .source_transform(transforms)
         .to_dtype(dtype_override)
+        .source_transform(transforms)
     )
 
 
@@ -383,7 +391,7 @@ def get_quantizer_and_quant_params(args):
     return pt2e_quant_params, quantizers, quant_dtype
 
 
-def _export_llama(modelname, args) -> str:  # noqa: C901
+def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
     # export_to_edge
@@ -468,4 +476,4 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
     builder.save_to_pte(output_file)
 
-    return output_file
+    return builder

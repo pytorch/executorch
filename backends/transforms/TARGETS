@@ -34,6 +34,22 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "fuse_batch_norm_with_conv",
+    srcs = ["fuse_batch_norm_with_conv.py"],
+    visibility = [
+        "//executorch/backends/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir:sym_util",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
     name = "mean_to_sum_div",
     srcs = ["mean_to_sum_div.py"],
     visibility = [
@@ -45,6 +61,19 @@ runtime.python_library(
         "//executorch/exir:pass_base",
         "//executorch/exir:sym_util",
         "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "utils",
+    srcs = ["utils.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir/dialects:lib",
+        "//pytorch/ao:torchao",  # @manual
     ],
 )
 

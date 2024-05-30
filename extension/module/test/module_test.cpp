@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <executorch/extension/module/module.h>
+#include <array>
 
 using namespace ::testing;
 
