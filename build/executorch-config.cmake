@@ -44,6 +44,7 @@ set(lib_list
     portable_ops_lib
     extension_module
     extension_module_static
+    extension_runner_util
     xnnpack_backend
     XNNPACK
     cpuinfo
