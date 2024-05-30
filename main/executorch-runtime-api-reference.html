@@ -998,6 +998,24 @@
 
 <dl class="cpp function">
 <dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1aad65ae293d991cee8754515423b2ef21"></span><span class="sig-name descname"><span class="pre">__ET_NODISCARD</span> <span class="pre">Error</span> <span class="pre">get_inputs</span> <span class="pre">(EValue</span> <span class="pre">*input_evalues,</span> <span class="pre">size_t</span> <span class="pre">length)</span></span></dt>
+<dd><p>Copies the method’s inputs into the provided array.</p>
+<p>WARNING: The input contains shallow copies of internal tensor inputs. Please do not mutate returned <a class="reference internal" href="#classtorch_1_1executor_1_1Tensor"><span class="std std-ref">Tensor</span></a> elements.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>input_evalues</strong> – <strong>[in]</strong> The array to copy the inputs into. The first <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Method_1a1274c6ddc3d710368ee5d9281c11ea36"><span class="std std-ref"><span class="pre">inputs_size()</span></span></a></code> elements will be set to the corresponding input values. The rest of the array will be set to the <a class="reference internal" href="#structtorch_1_1executor_1_1EValue"><span class="std std-ref">EValue</span></a> value None. </p></li>
+<li><p><strong>length</strong> – <strong>[in]</strong> The size of the <code class="docutils literal notranslate"><span class="pre">input_evalues</span></code> array in elements. Must be greater than or equal to <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Method_1a1274c6ddc3d710368ee5d9281c11ea36"><span class="std std-ref"><span class="pre">inputs_size()</span></span></a></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Error::Ok on success, non-Ok on failure. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
 <span class="target" id="classtorch_1_1executor_1_1Method_1a82d8271805244454855638dfee96aec4"></span><span class="sig-name descname"><span class="pre">__ET_NODISCARD</span> <span class="pre">Error</span> <span class="pre">execute</span> <span class="pre">()</span></span></dt>
 <dd><p>Execute the method.</p>
 <p>NOTE: Will fail if the method has been partially executed using the <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Method_1afa90da9f1fd53b09c1aefc637cd223a5"><span class="std std-ref"><span class="pre">experimental_step()</span></span></a></code> api.</p>
