@@ -12,6 +12,19 @@
         ]
     },
     {
+        "directory": "extension/module/test",
+        "sources": [
+            "module_test.cpp"
+        ],
+        "additional_libs": [
+            "extension_data_loader",
+            "extension_module_static",
+            "portable_kernels",
+            "portable_ops_lib"
+
+        ]
+    },
+    {
         "directory": "runtime/core/portable_type/test",
         "sources": [
             "optional_test.cpp",
