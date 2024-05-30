@@ -61,8 +61,8 @@ build_and_run_test() {
 }
 
 report_coverage() {
-  "${LLVM_PROFDATA}" merge -sparse cmake-out/*.profraw -o cmake-out/merged.profdata
-  "${LLVM_COV}" report -instr-profile=cmake-out/merged.profdata $TEST_BINARY_LIST
+  ${LLVM_PROFDATA} merge -sparse cmake-out/*.profraw -o cmake-out/merged.profdata
+  ${LLVM_COV} report -instr-profile=cmake-out/merged.profdata $TEST_BINARY_LIST
 }
 
 probe_tests() {
