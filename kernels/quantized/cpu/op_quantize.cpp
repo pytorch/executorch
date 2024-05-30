@@ -118,15 +118,17 @@ Tensor& quantize_per_tensor_out(
   check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
 
   // calculate the quantized input
-#define QUANTIZE_IMPL(IN_CTYPE, OUT_CTYPE, out_dtype)              \
-  case ScalarType::out_dtype: {                                    \
-    auto* out_data_ptr = out.mutable_data_ptr<OUT_CTYPE>();        \
-    const auto* input_data_ptr = input.const_data_ptr<IN_CTYPE>(); \
-    for (size_t i = 0; i < input.numel(); i++) {                   \
-      IN_CTYPE value = input_data_ptr[i];                          \
-      out_data_ptr[i] = quantize_val<OUT_CTYPE, IN_CTYPE>(         \
-          scale, zero_point, value, quant_min, quant_max);         \
-    }                                                              \
+#define QUANTIZE_IMPL(IN_CTYPE, OUT_CTYPE, out_dtype)                          \
+  case ScalarType::out_dtype: {                                                \
+    /* Hoist these function calls out of our inner loop because they might not \
+     * get inlined without LTO, particularly in ATen mode. */                  \
+    auto* out_data_ptr = out.mutable_data_ptr<OUT_CTYPE>();                    \
+    const auto* input_data_ptr = input.const_data_ptr<IN_CTYPE>();             \
+    for (size_t i = 0; i < input.numel(); i++) {                               \
+      IN_CTYPE value = input_data_ptr[i];                                      \
+      out_data_ptr[i] = quantize_val<OUT_CTYPE, IN_CTYPE>(                     \
+          scale, zero_point, value, quant_min, quant_max);                     \
+    }                                                                          \
   } break;
 #define CALCULATE_FLOAT_TYPE(IN_CTYPE, in_dtype)         \
   case ScalarType::in_dtype:                             \
