@@ -23,11 +23,16 @@ elif [[ $(uname) == "Linux" ]]; then
 fi
 
 build_executorch() {
+  BUILD_VULKAN="OFF"
+  if [ -x "$(command -v glslc)" ]; then
+    BUILD_VULKAN="ON"
+  fi
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_VULKAN=$BUILD_VULKAN \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
 }
