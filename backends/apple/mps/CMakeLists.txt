@@ -69,7 +69,7 @@ add_library(mpsdelegate ${_mps_backend__srcs})
 find_library(FOUNDATION_FRAMEWORK Foundation)
 find_library(METAL_FRAMEWORK Metal)
 find_library(MPS_FRAMEWORK MetalPerformanceShaders)
-find_library(MPS_GRAPG_FRAMEWORK MetalPerformanceShadersGraph)
+find_library(MPS_GRAPH_FRAMEWORK MetalPerformanceShadersGraph)
 
 target_link_libraries(
   mpsdelegate
@@ -79,7 +79,7 @@ target_link_libraries(
           ${FOUNDATION_FRAMEWORK}
           ${METAL_FRAMEWORK}
           ${MPS_FRAMEWORK}
-          ${MPS_GRAPG_FRAMEWORK}
+          ${MPS_GRAPH_FRAMEWORK}
 )
 
 target_link_options_shared_lib(mpsdelegate)
