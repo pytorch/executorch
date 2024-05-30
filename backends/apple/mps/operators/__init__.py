@@ -34,8 +34,6 @@ from . import (  # noqa
     shape_ops,
     # unary ops
     unary_ops,
-    # quantized ops
-    quantized,
 )
 
 __all__ = [
@@ -69,6 +67,4 @@ __all__ = [
     pad_ops,
     # Range ops
     range_ops,
-    # quantized ops
-    quantized,
 ]
