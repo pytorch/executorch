@@ -32,7 +32,7 @@ et_cxx_test(
 
 et_cxx_test(logging_test SOURCES logging_test.cpp)
 target_compile_definitions(
-  platform_override_test PUBLIC DET_MIN_LOG_LEVEL=Debug
+  platform_override_test PUBLIC ET_MIN_LOG_LEVEL=Debug
 )
 
 et_cxx_test(clock_test SOURCES clock_test.cpp stub_platform.cpp)
