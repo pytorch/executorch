@@ -16,6 +16,13 @@
 
 namespace vkcompute {
 
+struct Kernel2dParams final {
+  api::utils::ivec2 kernel_size;
+  api::utils::ivec2 stride;
+  api::utils::ivec2 padding;
+  api::utils::ivec2 dilation;
+};
+
 struct Kernel1dParams final {
   int kernel_size;
   int stride;
@@ -25,13 +32,6 @@ struct Kernel1dParams final {
   int out_group_size;
 };
 
-struct Kernel2dParams final {
-  api::utils::ivec2 kernel_size;
-  api::utils::ivec2 stride;
-  api::utils::ivec2 padding;
-  api::utils::ivec2 dilation;
-};
-
 Kernel2dParams create_kernel2d_params(
     ComputeGraph& graph,
     const ValueRef weight,
@@ -39,12 +39,6 @@ Kernel2dParams create_kernel2d_params(
     const ValueRef stride,
     const ValueRef padding,
     const ValueRef dilation);
-
-Kernel2dParams create_kernel2d_params(
-    ComputeGraph& graph,
-    const ValueRef kernel_size,
-    const ValueRef stride,
-    const ValueRef padding);
 
 int64_t calc_out_size(
     const int64_t in_size,

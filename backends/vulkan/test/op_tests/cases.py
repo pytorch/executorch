@@ -114,62 +114,7 @@ def get_linear_inputs():
     return test_suite
 
 
-def get_avg_pool2d_inputs():
-    Test = namedtuple(
-        "VkAvgPoolTest",
-        [
-            "self",
-            "kernel_size",
-            "stride",
-            "padding",
-            "ceil_mode",
-            "count_include_pad",
-            "divisor_override",
-        ],
-    )
-    Test.__new__.__defaults__ = (None, None)
-
-    test_cases = []
-
-    for ceil_mode in [True, False]:
-        for count_include_pad in [True, False]:
-            for divisor_override in [None, 5]:
-                test_cases += [
-                    Test(
-                        self=(S, M1, M2),
-                        kernel_size=[2, 2],
-                        stride=[1, 1],
-                        padding=[0, 0],
-                        ceil_mode=ceil_mode,
-                        count_include_pad=count_include_pad,
-                        divisor_override=divisor_override,
-                    ),
-                    Test(
-                        self=(S, M1, M2),
-                        kernel_size=[5, 4],
-                        stride=[3, 1],
-                        padding=[2, 1],
-                        ceil_mode=ceil_mode,
-                        count_include_pad=count_include_pad,
-                        divisor_override=divisor_override,
-                    ),
-                    Test(
-                        self=(S, M1, M2),
-                        kernel_size=[4, 5],
-                        stride=[1, 3],
-                        padding=[2, 1],
-                        ceil_mode=ceil_mode,
-                        count_include_pad=count_include_pad,
-                        divisor_override=divisor_override,
-                    ),
-                ]
-
-    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
-    test_suite.dtypes = ["at::kFloat"]
-    return test_suite
-
-
-def get_max_pool2d_inputs():
+def get_pool2d_inputs():
     test_suite = VkTestSuite(
         [
             ((S, M1, M2), [2, 2], [1, 1], [0, 0], [1, 1]),
@@ -924,8 +869,7 @@ test_suites = {
     "aten.bmm.default": get_bmm_inputs(),
     "aten.mm.default": get_mm_inputs(),
     "aten.linear.default": get_linear_inputs(),
-    "aten.avg_pool2d.default": get_avg_pool2d_inputs(),
-    "aten.max_pool2d_with_indices.default": get_max_pool2d_inputs(),
+    "aten.max_pool2d_with_indices.default": get_pool2d_inputs(),
     "aten.convolution.default": get_conv_inputs(),
     "aten.native_layer_norm.default": get_native_layer_norm_inputs(),
     "aten.full.default": get_full_inputs(),

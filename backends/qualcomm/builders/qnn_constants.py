@@ -219,6 +219,11 @@ class OpPoolMax2d:
 
 
 @dataclass(init=False, frozen=True)
+class OpPRelu:
+    op_name: str = "Prelu"
+
+
+@dataclass(init=False, frozen=True)
 class OpQuantize:
     op_name: str = "Quantize"
 
@@ -255,6 +260,13 @@ class OpResizeBilinear:
 
 
 @dataclass(init=False, frozen=True)
+class OpResizeNearestNeighbor:
+    op_name: str = "ResizeNearestNeighbor"
+    param_align_corners: str = "align_corners"
+    param_half_pixel_centers: str = "half_pixel_centers"
+
+
+@dataclass(init=False, frozen=True)
 class OpSigmoid:
     op_name: str = "Sigmoid"
 
@@ -264,6 +276,18 @@ class OpSoftmax:
     op_name: str = "Softmax"
     param_axis: str = "axis"
     param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
+class OpSpaceToDepth:
+    op_name: str = "SpaceToDepth"
+    param_block_size: str = "block_size"
+    param_mode: str = "mode"
+
+    @unique
+    class Mode(IntEnum):
+        DCR = 0
+        CRD = 1
 
 
 @dataclass(init=False, frozen=True)

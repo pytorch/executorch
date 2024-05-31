@@ -28,6 +28,9 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
+        # Setup swiftshader and Vulkan SDK which are required to build the Vulkan delegate
+        source .ci/scripts/setup-vulkan-linux-deps.sh
+
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_PYBIND=ON \
@@ -37,6 +40,7 @@ jobs:
         # Run pytest with coverage
         pytest -n auto --cov=./ --cov-report=xml
         # Run gtest
+        LLVM_PROFDATA=llvm-profdata-12 LLVM_COV=llvm-cov-12 \
         test/run_oss_cpp_tests.sh
 
   macos:
@@ -66,4 +70,5 @@ jobs:
         # Run pytest with coverage
         ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
         # Run gtest
+        LLVM_PROFDATA="xcrun llvm-profdata" LLVM_COV="xcrun llvm-cov" \
         ${CONDA_RUN} test/run_oss_cpp_tests.sh
