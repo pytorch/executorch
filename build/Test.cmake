@@ -19,6 +19,15 @@
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
+# Find prebuilt executorch library
+find_package(executorch CONFIG REQUIRED)
+
+enable_testing()
+find_package(GTest CONFIG REQUIRED)
+
+target_link_options_shared_lib(extension_data_loader)
+target_link_options_shared_lib(portable_ops_lib)
+
 # Add code coverage flags to supported compilers
 if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
   if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
@@ -52,15 +61,6 @@ function(et_cxx_test target_name)
 
 set(multi_arg_names SOURCES EXTRA_LIBS)
 cmake_parse_arguments(ET_CXX_TEST "" "" "${multi_arg_names}" ${ARGN})
-
-# Find prebuilt executorch library
-find_package(executorch CONFIG REQUIRED)
-
-target_link_options_shared_lib(extension_data_loader)
-target_link_options_shared_lib(portable_ops_lib)
-
-enable_testing()
-find_package(GTest CONFIG REQUIRED)
 
 # Let files say "include <executorch/path/to/header.h>".
 target_include_directories(executorch INTERFACE ${EXECUTORCH_ROOT}/..)
