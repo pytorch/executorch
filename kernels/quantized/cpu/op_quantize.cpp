@@ -118,15 +118,19 @@ Tensor& quantize_per_tensor_out(
   check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
 
   // calculate the quantized input
-#define QUANTIZE_IMPL(IN_CTYPE, OUT_CTYPE, out_dtype)          \
-  case ScalarType::out_dtype:                                  \
-    for (size_t i = 0; i < input.numel(); i++) {               \
-      IN_CTYPE value = input.const_data_ptr<IN_CTYPE>()[i];    \
-      out.mutable_data_ptr<OUT_CTYPE>()[i] =                   \
-          quantize_val<OUT_CTYPE, IN_CTYPE>(                   \
-              scale, zero_point, value, quant_min, quant_max); \
-    }                                                          \
-    break;
+#define QUANTIZE_IMPL(IN_CTYPE, OUT_CTYPE, out_dtype)                          \
+  case ScalarType::out_dtype: {                                                \
+    /* Hoist these function calls out of our inner loop because they might not \
+     * get inlined without LTO, particularly in ATen mode. */                  \
+    auto* out_data_ptr = out.mutable_data_ptr<OUT_CTYPE>();                    \
+    const auto* input_data_ptr = input.const_data_ptr<IN_CTYPE>();             \
+    const auto input_numel = input.numel();                                    \
+    for (size_t i = 0; i < input_numel; i++) {                                 \
+      IN_CTYPE value = input_data_ptr[i];                                      \
+      out_data_ptr[i] = quantize_val<OUT_CTYPE, IN_CTYPE>(                     \
+          scale, zero_point, value, quant_min, quant_max);                     \
+    }                                                                          \
+  } break;
 #define CALCULATE_FLOAT_TYPE(IN_CTYPE, in_dtype)         \
   case ScalarType::in_dtype:                             \
     switch (out.scalar_type()) {                         \
@@ -306,16 +310,21 @@ Tensor& quantize_per_channel_out(
     for (size_t channel_ix = 0; channel_ix < input.size(axis); ++channel_ix) { \
       double _scale = scale_data[channel_ix];                                  \
       int64_t _zero_point = zero_point_data[channel_ix];                       \
+      auto* out_data_ptr = out.mutable_data_ptr<CTYPE_OUT>();                  \
+      const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();           \
       apply_over_dim_list(                                                     \
-          [input, out, _scale, _zero_point, quant_min, quant_max](             \
-              size_t in_ix) {                                                  \
-            out.mutable_data_ptr<CTYPE_OUT>()[in_ix] =                         \
-                quantize_val<CTYPE_OUT, CTYPE_IN>(                             \
-                    _scale,                                                    \
-                    _zero_point,                                               \
-                    input.const_data_ptr<CTYPE_IN>()[in_ix],                   \
-                    quant_min,                                                 \
-                    quant_max);                                                \
+          [input_data_ptr,                                                     \
+           out_data_ptr,                                                       \
+           _scale,                                                             \
+           _zero_point,                                                        \
+           quant_min,                                                          \
+           quant_max](size_t in_ix) {                                          \
+            out_data_ptr[in_ix] = quantize_val<CTYPE_OUT, CTYPE_IN>(           \
+                _scale,                                                        \
+                _zero_point,                                                   \
+                input_data_ptr[in_ix],                                         \
+                quant_min,                                                     \
+                quant_max);                                                    \
           },                                                                   \
           input,                                                               \
           optional_dim_list,                                                   \

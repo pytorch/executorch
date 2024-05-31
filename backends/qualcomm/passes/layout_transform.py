@@ -24,38 +24,43 @@ class LayoutTransform(ExportPass):
     """
 
     layout_sensitive_ops = {
-        exir_ops.edge.aten.convolution.default,
-        exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-        exir_ops.edge.aten.max_pool2d_with_indices.default,
         exir_ops.edge.aten.avg_pool2d.default,
-        exir_ops.edge.aten.upsample_bilinear2d.default,
+        exir_ops.edge.aten.convolution.default,
+        exir_ops.edge.aten.max_pool2d_with_indices.default,
+        exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
         exir_ops.edge.aten.pixel_shuffle.default,
+        exir_ops.edge.aten.pixel_unshuffle.default,
+        exir_ops.edge.aten.upsample_bilinear2d.default,
+        exir_ops.edge.aten.upsample_nearest2d.default,
     }
 
     layout_agnostic_ops = {
         exir_ops.edge.aten.add.Tensor,
-        exir_ops.edge.aten.cat.default,
-        exir_ops.edge.aten.mul.Tensor,
-        exir_ops.edge.aten.relu.default,
-        exir_ops.edge.aten.hardtanh.default,
-        exir_ops.edge.aten.hardswish.default,
-        exir_ops.edge.aten.hardsigmoid.default,
-        exir_ops.edge.aten.mean.dim,
-        exir_ops.edge.aten.linear.default,
-        exir_ops.edge.aten.clamp.default,
-        exir_ops.edge.aten._to_copy.default,
-        exir_ops.edge.aten.sub.Tensor,
-        exir_ops.edge.aten.div.Tensor,
-        exir_ops.edge.aten.ceil.default,
-        exir_ops.edge.aten._softmax.default,  # TODO: Need to find a new solution to do "axis_order" to transform axis.
-        exir_ops.edge.aten._log_softmax.default,
-        exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.bmm.default,
+        exir_ops.edge.aten.cat.default,
+        exir_ops.edge.aten.ceil.default,
+        exir_ops.edge.aten.clamp.default,
+        exir_ops.edge.aten.constant_pad_nd.default,
+        exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.full.default,
         exir_ops.edge.aten.gelu.default,
-        exir_ops.edge.aten.sqrt.default,
-        exir_ops.edge.aten.sum.dim_IntList,
+        exir_ops.edge.aten.hardswish.default,
+        exir_ops.edge.aten.hardsigmoid.default,
+        exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.leaky_relu.default,
+        exir_ops.edge.aten.linear.default,
+        exir_ops.edge.aten._log_softmax.default,
+        exir_ops.edge.aten.mean.dim,
+        exir_ops.edge.aten.mul.Tensor,
         exir_ops.edge.aten.pow.Tensor_Scalar,
+        exir_ops.edge.aten.prelu.default,
+        exir_ops.edge.aten.relu.default,
+        exir_ops.edge.aten._softmax.default,  # TODO: Need to find a new solution to do "axis_order" to transform axis.
+        exir_ops.edge.aten.sqrt.default,
+        exir_ops.edge.aten.sub.Tensor,
+        exir_ops.edge.aten.sum.dim_IntList,
+        exir_ops.edge.aten._to_copy.default,
+        exir_ops.edge.aten.split_with_sizes.default,
         *q_ops,
         *dq_ops,
         _operator.getitem,
@@ -138,7 +143,7 @@ class LayoutTransform(ExportPass):
                 ),
                 (
                     node.op != "output"
-                    and not isinstance(node.meta["val"], tuple)
+                    and not isinstance(node.meta["val"], (tuple, list))
                     and len(node.meta["val"].shape) == 0
                 ),
                 is_parameter(node, self.edge_program),

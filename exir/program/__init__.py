@@ -9,6 +9,7 @@
 from executorch.exir.program._fake_program import get_fake_program
 from executorch.exir.program._program import (
     _to_edge,
+    _to_edge_transform_and_lower,
     edge_to_executorch_passes,
     EdgeProgramManager,
     ExecutorchProgram,
@@ -22,6 +23,7 @@ __all__ = [
     "ExecutorchProgram",
     "_to_edge",
     "to_edge",
+    "_to_edge_transform_and_lower",
     "edge_to_executorch_passes",
     "EdgeProgramManager",
     "ExecutorchProgramManager",
