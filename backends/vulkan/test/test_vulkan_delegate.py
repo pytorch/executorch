@@ -527,6 +527,40 @@ class TestBackends(unittest.TestCase):
             first_output_only=True,
         )
 
+    def test_vulkan_backend_avg_pool2d(self):
+        class AvgPool2dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.avg_pool = torch.nn.AvgPool2d(
+                    kernel_size=(4, 4),
+                    stride=(4, 4),
+                    padding=(0, 0),
+                    ceil_mode=True,
+                    count_include_pad=True,
+                    divisor_override=None,
+                )
+
+            def forward(self, x):
+                return self.avg_pool(x)
+
+        avg_pool2d_module = AvgPool2dModule()
+        sample_inputs = (torch.randn(5, 13, 55, 68),)
+
+        batch = Dim("batch", max=8)
+        dynamic_shapes = {"x": {0: batch}}
+        test_inputs = [
+            (torch.randn(3, 14, 15, 9),),
+            (torch.randn(1, 1, 4, 6),),
+            (torch.randn(5, 10, 50, 40),),
+        ]
+        self.lower_module_and_test_output(
+            avg_pool2d_module,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_abs(self):
         class AbsModule(torch.nn.Module):
             def __init__(self):
