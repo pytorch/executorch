@@ -75,7 +75,10 @@ def is_graph_output(tensor: torch.fx.Node) -> bool:
         tensor: EdgeIR Tensor that is being checked for graph input
     """
     for user in tensor.users.keys():
-        if user.op == "output":
+        # getitem node is skiped, check the op_skip_ops.py
+        if user.op == "output" or (
+            user.target.__name__ == "getitem" and is_graph_output(user)
+        ):
             return True
     return False
 
