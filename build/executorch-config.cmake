@@ -12,6 +12,10 @@
 
 cmake_minimum_required(VERSION 3.19)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+  set(CMAKE_FIND_LIBRARY_SUFFIXES ".dll;.a")
+endif()
+
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../..")
 set(required_lib_list executorch executorch_no_prim_ops portable_kernels)
 foreach(lib ${required_lib_list})
@@ -77,8 +81,7 @@ foreach(lib ${lib_list})
       # keep all libs as static when CMAKE_TOOLCHAIN_IOS is used
       add_library(${lib} STATIC IMPORTED)
     endif()
-    if ("${${lib_var}}" MATCHES ".dll.a$")
-      string(REGEX REPLACE ".dll.a$" ".dll" ${lib_var} "${${lib_var}}")
+    if ("${${lib_var}}" MATCHES ".dll$")
       set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}" IMPORTED_IMPLIB "${${lib_var}}.a")
     else()
       set_target_properties(${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}")
