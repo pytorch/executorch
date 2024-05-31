@@ -19,6 +19,7 @@ class MeanToSumDiv(ExportPass):
         )
         # args[0] is the input tensor
         shape = args[0].node.meta["val"].shape
+        dtype = args[0].node.meta["val"].dtype
         dims_to_reduce = args[1]
         size = 1.0
         for dim in dims_to_reduce:
@@ -32,7 +33,7 @@ class MeanToSumDiv(ExportPass):
                 ],
                 size,
             ),
-            {"dtype": torch.float32},
+            {"dtype": dtype},
             meta,
         )
 
