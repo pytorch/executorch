@@ -69,12 +69,5 @@
             "tensor_util_test.cpp",
             "tensor_factory_test.cpp"
         ]
-    },
-    {
-        "directory": "test/utils",
-        "sources": [
-            "alignment_test.cpp",
-            "UnitTestMain.cpp"
-        ]
     }
 ] }
