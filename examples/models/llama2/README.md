@@ -53,8 +53,11 @@ Performance was measured on the Samsung Galaxy S22, S24, and One Plus 12 devices
 - For Llama7b, your device may require at least 32GB RAM. If this is a constraint for you, please try the smaller stories model.
 
 ## Step 1: Setup
-1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch
+> :warning: **double check your python environment**: make sure `conda activate <VENV>` is run before all the bash and python scripts.
+
+1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_requirements.sh --pybind xnnpack`
 2. Run `examples/models/llama2/install_requirements.sh` to install a few dependencies.
+
 
 ## Step 2: Prepare model
 
