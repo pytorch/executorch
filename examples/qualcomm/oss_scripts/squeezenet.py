@@ -12,7 +12,7 @@ from multiprocessing.connection import Client
 import numpy as np
 
 import torch
-from executorch.examples.models.mobilenet_v3 import MV3Model
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
     make_output_dir,
@@ -76,8 +76,8 @@ if __name__ == "__main__":
         "-a",
         "--artifact",
         help="path for storing generated artifacts by this example. "
-        "Default ./mobilenet_v3",
-        default="./mobilenet_v3",
+        "Default ./squeezenet",
+        default="./squeezenet",
         type=str,
     )
 
@@ -99,17 +99,19 @@ if __name__ == "__main__":
         dataset_path=f"{args.dataset}",
         data_size=data_num,
     )
-    pte_filename = "mv3_qnn"
-    instance = MV3Model()
+    pte_filename = "squeezenet_qnn"
+    instance = torch.hub.load(
+        "pytorch/vision:v0.10.0", "squeezenet1_1", pretrained=True
+    )
     build_executorch_binary(
-        instance.get_eager_model().eval(),
-        instance.get_example_inputs(),
+        instance.eval(),
+        (torch.randn(1, 3, 224, 224),),
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
-        shared_buffer=args.shared_buffer,
+        quant_dtype=QuantDtype.use_16a16w,
     )
 
     if args.compile_only:
@@ -129,7 +131,6 @@ if __name__ == "__main__":
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
-        shared_buffer=args.shared_buffer,
     )
     adb.push(inputs=inputs, input_list=input_list)
     adb.execute()

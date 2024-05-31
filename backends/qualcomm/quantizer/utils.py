@@ -662,3 +662,25 @@ def annotate_unbind(node: Node, quantization_config: QuantizationConfig) -> None
         input_qspec_map=input_qspec_map,
         _annotated=True,
     )
+
+
+@register_annotator([torch.ops.aten.chunk.default])
+def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+
+    input_qspec_map = {}
+    input_act = node.args[0]
+    assert isinstance(input_act, Node)
+    input_qspec_map[input_act] = quantization_config.input_activation
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        _annotated=True,
+    )
+
+    for user in node.users:
+        user.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
