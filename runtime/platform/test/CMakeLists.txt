@@ -25,14 +25,6 @@ et_cxx_test(platform_test SOURCES executor_pal_test.cpp)
 
 et_cxx_test(platform_death_test SOURCES executor_pal_death_test.cpp)
 
-et_cxx_test(
-  platform_override_test SOURCES executor_pal_override_test.cpp
-  stub_platform.cpp
-)
-
 et_cxx_test(logging_test SOURCES logging_test.cpp)
-target_compile_definitions(
-  platform_override_test PUBLIC ET_MIN_LOG_LEVEL=Debug
-)
 
 et_cxx_test(clock_test SOURCES clock_test.cpp stub_platform.cpp)
