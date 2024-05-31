@@ -52,7 +52,6 @@ et_cxx_test(
   portable_kernels portable_ops_lib
 )
 add_dependencies(portable_kernels_test generate_wrapper)
-# message(FATAL_ERROR "${CMAKE_INSTALL_PREFIX}/include")
 target_include_directories(
   portable_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/portable"
                                 "${CMAKE_INSTALL_PREFIX}/include"
