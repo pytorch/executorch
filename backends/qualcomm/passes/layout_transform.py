@@ -60,6 +60,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.sum.dim_IntList,
         exir_ops.edge.aten._to_copy.default,
+        exir_ops.edge.aten.split_with_sizes.default,
         *q_ops,
         *dq_ops,
         _operator.getitem,
@@ -142,7 +143,7 @@ class LayoutTransform(ExportPass):
                 ),
                 (
                     node.op != "output"
-                    and not isinstance(node.meta["val"], tuple)
+                    and not isinstance(node.meta["val"], (tuple, list))
                     and len(node.meta["val"].shape) == 0
                 ),
                 is_parameter(node, self.edge_program),
