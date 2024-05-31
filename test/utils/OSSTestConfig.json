@@ -12,6 +12,13 @@
         ]
     },
     {
+        "directory": "extension/evalue_util/test",
+        "sources": [
+            "print_evalue_test.cpp",
+            "../print_evalue.cpp"
+        ]
+    },
+    {
         "directory": "extension/module/test",
         "sources": [
             "module_test.cpp"
@@ -53,16 +60,21 @@
             "tensor_util_test.cpp",
             "scalar_type_util_test.cpp",
             "operator_impl_example_test.cpp",
-            "dim_order_util_test.cpp",
-            "../../testing_util/tensor_util.cpp"
+            "dim_order_util_test.cpp"
         ]
     },
     {
         "directory": "runtime/core/exec_aten/testing_util/test",
         "sources": [
             "tensor_util_test.cpp",
-            "tensor_factory_test.cpp",
-            "../tensor_util.cpp"
+            "tensor_factory_test.cpp"
+        ]
+    },
+    {
+        "directory": "test/utils",
+        "sources": [
+            "alignment_test.cpp",
+            "UnitTestMain.cpp"
         ]
     }
 ] }

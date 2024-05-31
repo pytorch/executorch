@@ -65,7 +65,9 @@ find_package(GTest CONFIG REQUIRED)
 # Let files say "include <executorch/path/to/header.h>".
 target_include_directories(executorch INTERFACE ${EXECUTORCH_ROOT}/..)
 
-add_executable(${target_name} ${ET_CXX_TEST_SOURCES})
+set(ET_TEST_UTIL_SOURCES ${EXECUTORCH_ROOT}/runtime/core/exec_aten/testing_util/tensor_util.cpp)
+
+add_executable(${target_name} ${ET_CXX_TEST_SOURCES} ${ET_TEST_UTIL_SOURCES})
 # Includes gtest, gmock, executorch by default
 target_link_libraries(
   ${target_name} GTest::gtest GTest::gtest_main GTest::gmock executorch
