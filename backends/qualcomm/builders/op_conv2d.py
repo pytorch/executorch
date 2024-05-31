@@ -108,7 +108,7 @@ class Conv2d(NodeVisitor):
             is_input_tensor=True,
         )
         unsqueeze_output_tensor = unsqueeze_input_tensor.unsqueeze(1).contiguous()
-        dtype = self.get_data_type(unsqueeze_output_tensor, input_quant_configs, True)
+        dtype = self.get_data_type(unsqueeze_output_tensor, input_quant_configs)
         unsqueeze_output_tensor_wrapper = self.define_custom_tensor_wrapper(
             node_name=node.name + "_unsqueeze",
             tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
@@ -186,7 +186,7 @@ class Conv2d(NodeVisitor):
         )
         conv_output_tensor = self.get_tensor(node, node)
         conv_output_tensor = conv_output_tensor.unsqueeze(1).contiguous()
-        dtype = self.get_data_type(conv_output_tensor, input_quant_configs, True)
+        dtype = self.get_data_type(conv_output_tensor, input_quant_configs)
         conv_output_tensor_wrapper = self.define_custom_tensor_wrapper(
             node_name=node.name + "_squeeze",
             tensor_type=PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,

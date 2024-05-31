@@ -89,6 +89,11 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_chunk_single(self):
+        module = Chunk()  # noqa: F405
+        sample_input = (torch.randn(1, 1, 4, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_clamp(self):
         module = Clamp()  # noqa: F405
         sample_input = (torch.randn((9, 4, 5, 3)),)
@@ -452,6 +457,11 @@ class TestQNNFloatingPointModel(TestQNN):
             shared_buffer=TestQNN.shared_buffer,
         )
 
+    def test_qnn_backend_chunk_add(self):
+        module = ChunkAdd()  # noqa: F405
+        sample_input = (torch.randn(1, 2, 4, 2),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv1d_relu_log_softmax(self):
         module = Conv1dReluLogSoftmax()  # noqa: F405
         sample_input = (torch.rand(1, 2, 28),)
@@ -633,6 +643,12 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_chunk_single(self):
+        module = Chunk()  # noqa: F405
+        sample_input = (torch.randn(1, 1, 4, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_clamp(self):
         module = Clamp()  # noqa: F405
@@ -1041,6 +1057,12 @@ class TestQNNQuantizedModel(TestQNN):
             shared_buffer=TestQNN.shared_buffer,
         )
 
+    def test_qnn_backend_chunk_add(self):
+        module = ChunkAdd()  # noqa: F405
+        sample_input = (torch.randn(1, 1, 4, 2),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv1d_relu_log_softmax(self):
         module = Conv1dReluLogSoftmax()  # noqa: F405
         sample_input = (torch.rand(1, 2, 28),)
@@ -1103,18 +1125,50 @@ class TestQNNQuantizedModel(TestQNN):
 
     def test_qnn_backend_example_models(self):
         instances = [
-            {"module": DeepLabV3ResNet101Model(), "annotation": ()},
-            {"module": EdsrModel(), "annotation": ()},
-            {"module": InceptionV3Model(), "annotation": ()},
-            {"module": InceptionV4Model(), "annotation": ()},
+            {
+                "module": DeepLabV3ResNet101Model(),
+                "annotation": (),
+                "quant_dtype": QuantDtype.use_8a8w,
+            },
+            {
+                "module": EdsrModel(),
+                "annotation": (),
+                "quant_dtype": QuantDtype.use_8a8w,
+            },
+            {
+                "module": InceptionV3Model(),
+                "annotation": (),
+                "quant_dtype": QuantDtype.use_8a8w,
+            },
+            {
+                "module": InceptionV4Model(),
+                "annotation": (),
+                "quant_dtype": QuantDtype.use_8a8w,
+            },
             # The module of llama is changing frequently. Reopen it when it's stable
-            # {"module": Llama2Model(), "annotation": ()},
-            {"module": MV2Model(), "annotation": ()},
-            {"module": MV3Model(), "annotation": ()},
+            # {"module": Llama2Model(), "annotation": (), "quant_dtype": QuantDtype.use_8a8w},
+            {
+                "module": MV2Model(),
+                "annotation": (),
+                "quant_dtype": QuantDtype.use_8a8w,
+            },
+            {
+                "module": MV3Model(),
+                "annotation": (),
+                "quant_dtype": QuantDtype.use_8a8w,
+            },
             # only works on QNN 2.12 so far
-            # { 'module': MobileBertModelExample(), 'annotation': () },
-            {"module": TorchVisionViTModel(), "annotation": ()},
-            {"module": Wav2LetterModel(), "annotation": ()},
+            # { 'module': MobileBertModelExample(), 'annotation': (), "quant_dtype": QuantDtype.use_8a8w },
+            {
+                "module": TorchVisionViTModel(),
+                "annotation": (),
+                "quant_dtype": QuantDtype.use_8a8w,
+            },
+            {
+                "module": Wav2LetterModel(),
+                "annotation": (),
+                "quant_dtype": QuantDtype.use_8a8w,
+            },
         ]
         expected_partitions = [
             1,
@@ -1139,6 +1193,7 @@ class TestQNNQuantizedModel(TestQNN):
                     module,
                     sample_input,
                     custom_quant_annotations=instance["annotation"],
+                    quant_dtype=instance["quant_dtype"],
                 )
                 self.lower_module_and_test_output(
                     module,
@@ -1467,6 +1522,39 @@ class TestExampleOssScript(TestQNN):
             self.assertGreaterEqual(msg["top_1"], 60)
             self.assertGreaterEqual(msg["top_5"], 90)
 
+    def test_gMLP(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/gMLP_image_classification.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["top_1"], 60)
+            self.assertGreaterEqual(msg["top_5"], 90)
+
     def test_ssd300_vgg16(self):
         if not self.required_envs([self.pretrained_weight, self.oss_repo]):
             self.skipTest("missing required envs")
@@ -1524,6 +1612,7 @@ class TestExampleOssScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
@@ -1565,6 +1654,39 @@ class TestExampleOssScript(TestQNN):
             msg = json.loads(conn.recv())
             self.assertGreaterEqual(msg["PSNR"], 24)
             self.assertGreaterEqual(msg["SSIM"], 0.8)
+
+    def test_squeezenet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/squeezenet.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["top_1"], 40)
+            self.assertGreaterEqual(msg["top_5"], 70)
 
 
 class TestExampleScript(TestQNN):

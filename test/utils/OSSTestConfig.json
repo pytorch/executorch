@@ -34,7 +34,18 @@
             "extension_module_static",
             "portable_kernels",
             "portable_ops_lib"
-
+        ]
+    },
+    {
+        "directory": "extension/runner_util/test",
+        "sources": [
+            "inputs_test.cpp"
+        ],
+        "additional_libs": [
+            "extension_data_loader",
+            "extension_runner_util",
+            "portable_kernels",
+            "portable_ops_lib"
         ]
     },
     {
