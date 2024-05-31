@@ -144,28 +144,28 @@ def get_avg_pool2d_inputs():
                         count_include_pad=count_include_pad,
                         divisor_override=divisor_override,
                     ),
-                    Test(
-                        self=(S, M1, M2),
-                        kernel_size=[5, 4],
-                        stride=[3, 1],
-                        padding=[2, 1],
-                        ceil_mode=ceil_mode,
-                        count_include_pad=count_include_pad,
-                        divisor_override=divisor_override,
-                    ),
-                    Test(
-                        self=(S, M1, M2),
-                        kernel_size=[4, 5],
-                        stride=[1, 3],
-                        padding=[2, 1],
-                        ceil_mode=ceil_mode,
-                        count_include_pad=count_include_pad,
-                        divisor_override=divisor_override,
-                    ),
                 ]
-
+        test_cases += [
+            Test(
+                self=(S, M1, M2),
+                kernel_size=[5, 4],
+                stride=[3, 1],
+                padding=[2, 1],
+                ceil_mode=ceil_mode,
+                count_include_pad=True,
+                divisor_override=None,
+            ),
+            Test(
+                self=(S, M1, M2),
+                kernel_size=[4, 5],
+                stride=[1, 3],
+                padding=[2, 1],
+                ceil_mode=ceil_mode,
+                count_include_pad=True,
+                divisor_override=None,
+            ),
+        ]
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
-    test_suite.dtypes = ["at::kFloat"]
     return test_suite
 
 
