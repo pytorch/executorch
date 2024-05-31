@@ -14,17 +14,15 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-project(runtime_core_exec_aten_util_test)
+project(extension_kernel_util_test)
 
 # Use C++17 for test.
 set(CMAKE_CXX_STANDARD 17)
 
-set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../..)
+set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
-set(_test_srcs tensor_util_test.cpp scalar_type_util_test.cpp
-               operator_impl_example_test.cpp dim_order_util_test.cpp
-)
+set(_test_srcs make_boxed_from_unboxed_functor_test.cpp)
 
-et_cxx_test(runtime_core_exec_aten_util_test SOURCES ${_test_srcs} EXTRA_LIBS)
+et_cxx_test(extension_kernel_util_test SOURCES ${_test_srcs} EXTRA_LIBS)
