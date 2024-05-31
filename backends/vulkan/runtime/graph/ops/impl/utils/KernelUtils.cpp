@@ -41,6 +41,19 @@ Kernel2dParams create_kernel2d_params(
   };
 }
 
+Kernel2dParams create_kernel2d_params(
+    ComputeGraph& graph,
+    const ValueRef kernel_size,
+    const ValueRef stride,
+    const ValueRef padding) {
+  return {
+      make_ivec2_kernel_size(graph, kernel_size, /*kernel_size_only = */ true),
+      make_ivec2_from_list(graph, stride),
+      make_ivec2_from_list(graph, padding),
+      {},
+  };
+}
+
 int64_t calc_out_size(
     const int64_t in_size,
     const int64_t kernel_size,
@@ -143,7 +156,9 @@ std::vector<int64_t> calc_out_sizes_hw(
       make_ivec2_kernel_size(graph, weight, kernel_size_only);
   const auto stride = make_ivec2_from_list(graph, args[0]);
   const auto padding = make_ivec2_from_list(graph, args[1]);
-  const auto dilation = make_ivec2_from_list(graph, args[2]);
+  const auto dilation = args[2] == kDummyValueRef
+      ? api::utils::ivec2{1, 1}
+      : make_ivec2_from_list(graph, args[2]);
 
   if (transposed) {
     const auto output_padding = make_ivec2_from_list(graph, args[3]);
