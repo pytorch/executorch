@@ -82,7 +82,7 @@ TensorImpl impl_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
 template <
     typename T,
     typename = std::enable_if_t<std::is_floating_point<T>::value>>
-bool elem_is_close(const T ai, const T bi, double rtol, double atol) {
+bool elem_is_close(const T& ai, const T& bi, double rtol, double atol) {
   if (std::isnan(ai) && std::isnan(bi)) {
     // NaN == NaN
   } else if (
