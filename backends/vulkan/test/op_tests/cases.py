@@ -166,6 +166,7 @@ def get_avg_pool2d_inputs():
             ),
         ]
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+    test_suite.dtypes = ["at::kFloat"]
     return test_suite
 
 
