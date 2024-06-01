@@ -115,4 +115,25 @@ void et_pal_emit_log_message(
     const char* message,
     size_t length) ET_INTERNAL_PLATFORM_WEAKNESS;
 
+/**
+ * Get a shared memory region by name.
+ * If the shared memory region does not exist, it will be created.
+ * 
+ * @param[in] name Name of the shared memory region.
+ * @param[in] size Size of the shared memory region in bytes.
+ * 
+ * @retval A pointer to the shared memory region on success. nullptr on failure.
+ */
+void* et_pal_get_shared_memory(
+    const char* name,
+    size_t size) ET_INTERNAL_PLATFORM_WEAKNESS;
+
+/**
+ * Free a shared memory region by name.
+ * 
+ * @param[in] name Name of the shared memory region.
+ */
+void et_pal_free_shared_memory(
+    const char* name) ET_INTERNAL_PLATFORM_WEAKNESS;
+
 } // extern "C"

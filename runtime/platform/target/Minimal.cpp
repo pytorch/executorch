@@ -47,3 +47,11 @@ void et_pal_emit_log_message(
     __ET_UNUSED size_t line,
     __ET_UNUSED const char* message,
     __ET_UNUSED size_t length) {}
+
+void* et_pal_get_shared_memory(
+    __ET_UNUSED const char* name,
+    __ET_UNUSED size_t size) {
+  return nullptr;
+}
+
+void et_pal_free_shared_memory(__ET_UNUSED void* ptr) {}

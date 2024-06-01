@@ -30,10 +30,11 @@
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
+#include <unordered_map>
+#include <memory>
+#include <string>
 
 #include <executorch/runtime/platform/compiler.h>
-
-#define SHARED_MEMORY_NAME "torch_executor_platform_init_time"
 
 // The FILE* to write logs to.
 #define ET_LOG_OUTPUT_FILE stderr
@@ -69,48 +70,30 @@
 #endif // NDEBUG
 
 /// Start time of the system (used to zero the system timestamp).
-static std::shared_ptr<std::chrono::time_point<std::chrono::steady_clock>> systemStartTime = nullptr;
+static std::chrono::time_point<std::chrono::steady_clock>* systemStartTime = nullptr;
 
+// Shared memory
+typedef std::pair<std::shared_ptr<void>, HANDLE> SharedMemory;
+static std::unordered_map<std::string, SharedMemory> sharedMemoryMap;
+
+void* et_pal_get_shared_memory_internal(
+    const char* name,
+    size_t size);
 bool check_shared_memory() {
   if (systemStartTime != nullptr) {
     return true;
   }
 
-  HANDLE hMapFile = OpenFileMapping(
-    FILE_MAP_ALL_ACCESS,   // read/write access
-    FALSE,                 // do not inherit the name
-    _T(SHARED_MEMORY_NAME)  // name of mapping object
+  void *sharedMemory = et_pal_get_shared_memory_internal(
+    "torch_executor_platform_init_time",
+    sizeof(std::chrono::time_point<std::chrono::steady_clock>)
   );
-
-  if (hMapFile == NULL) {
-    // Create a new file mapping object
-    hMapFile = CreateFileMapping(
-      INVALID_HANDLE_VALUE,    // use paging file
-      NULL,                    // default security
-      PAGE_READWRITE,          // read/write access
-      0,                       // maximum object size (high-order DWORD)
-      sizeof(std::chrono::time_point<std::chrono::steady_clock>),                // maximum object size (low-order DWORD)
-      _T(SHARED_MEMORY_NAME)   // name of mapping object
-    );
-    if (hMapFile == NULL) {
-      return false;
-    }
-  }
-
-  systemStartTime =std::shared_ptr<std::chrono::time_point<std::chrono::steady_clock>>(
-    (std::chrono::time_point<std::chrono::steady_clock>*) MapViewOfFile(
-      hMapFile,   // handle to map object
-      FILE_MAP_ALL_ACCESS, // read/write permission
-      0,
-      0,
-      sizeof(std::chrono::time_point<std::chrono::steady_clock>)
-    )
-  );
-
-  if (systemStartTime == nullptr) {
+  if (sharedMemory == nullptr) {
     return false;
   }
 
+  systemStartTime = static_cast<std::chrono::time_point<std::chrono::steady_clock>*>(sharedMemory);
+  *systemStartTime = std::chrono::steady_clock::now();
   return true;
 }
 
@@ -212,4 +195,72 @@ void et_pal_emit_log_message(
       line,
       message);
   fflush(ET_LOG_OUTPUT_FILE);
+}
+
+void* et_pal_get_shared_memory_internal(
+    const char* name,
+    size_t size) {
+
+  auto it = sharedMemoryMap.find(name);
+  if (it != sharedMemoryMap.end()) {
+    return it->second.first.get();
+  }
+
+  HANDLE hMapFile = OpenFileMapping(
+      FILE_MAP_ALL_ACCESS,
+      FALSE,
+      name);
+  if (hMapFile == NULL) {
+    hMapFile = CreateFileMapping(
+        INVALID_HANDLE_VALUE,
+        NULL,
+        PAGE_READWRITE,
+        0,
+        size,
+        name);
+    if (hMapFile == NULL) {
+      return nullptr;
+    }
+  }
+
+  void* sharedMemory = MapViewOfFile(
+      hMapFile,
+      FILE_MAP_ALL_ACCESS,
+      0,
+      0,
+      size);
+  if (sharedMemory == NULL) {
+    CloseHandle(hMapFile);
+    return nullptr;
+  }
+
+  sharedMemoryMap[name] = {
+    std::shared_ptr<void>(
+      sharedMemory,
+      [hMapFile](void* ptr) {
+        UnmapViewOfFile(ptr);
+        CloseHandle(hMapFile);
+      }
+    ),
+    hMapFile
+  };
+  return sharedMemoryMap[name].first.get();
+}
+
+void* et_pal_get_shared_memory(
+    const char* name,
+    size_t size) {
+  _ASSERT_PAL_INITIALIZED();
+  return et_pal_get_shared_memory_internal(name, size);
+}
+
+void et_pal_free_shared_memory(
+    const char* name) {
+  _ASSERT_PAL_INITIALIZED();
+  auto it = sharedMemoryMap.find(name);
+  if (it == sharedMemoryMap.end()) {
+    return;
+  }
+
+  sharedMemoryMap.erase(it);
 }
