@@ -67,6 +67,10 @@ gen_operators_lib(
   LIB_NAME "optimized_ops_lib" KERNEL_LIBS optimized_kernels DEPS executorch
 )
 
-install(TARGETS cpublas optimized_kernels optimized_ops_lib DESTINATION lib)
+install(
+  TARGETS cpublas optimized_kernels optimized_ops_lib
+  DESTINATION lib
+  PUBLIC_HEADER DESTINATION include/optimized
+)
 
 install(TARGETS cpublas DESTINATION lib)
