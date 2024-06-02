@@ -104,7 +104,10 @@ bool check_shared_memory() {
       0,
       0,
       sizeof(std::chrono::time_point<std::chrono::steady_clock>)
-    )
+    ),
+    [](std::chrono::time_point<std::chrono::steady_clock>* ptr) {
+      UnmapViewOfFile(ptr);
+    }
   );
 
   if (systemStartTime == nullptr) {
