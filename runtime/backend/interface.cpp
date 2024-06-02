@@ -8,32 +8,86 @@
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/assert.h>
-#include <executorch/runtime/platform/platform.h>
 
-namespace torch {
-namespace executor {
-
-PyTorchBackendInterface::~PyTorchBackendInterface() {}
+#ifdef _WIN32
+#include <memory>
+#include <windows.h>
+#include <tchar.h>
+#define getpid GetCurrentProcessId
+#else
+#include <unistd.h>
+#endif
 
 // Task t128866626: Remove global static variables.
 // We want to be able to run multiple Executor instances
 // and having a global registration isn't a viable solution
 // in the long term.
-torch::executor::BackendRegistry& getBackendRegistry();
-torch::executor::BackendRegistry& getBackendRegistry() {
-  // Operator registration happens in static initialization time when PAL init
-  // may or may not happen already. Here we are assuming et_pal_init() doesn't
-  // have any side effect even if falled multiple times.
-  ::et_pal_init();
+#ifdef _WIN32
 
-  static torch::executor::BackendRegistry* backend_reg = static_cast<torch::executor::BackendRegistry*>(
-    ::et_pal_get_shared_memory(
-      "torch_executor_backend_registry",
-      sizeof(torch::executor::BackendRegistry)
-    )
+#define SHARED_MEMORY_NAME "torch_executor_backend_registry"
+static std::shared_ptr<torch::executor::BackendRegistry> backend_reg;
+
+torch::executor::BackendRegistry& getBackendRegistry() {
+  if (backend_reg != nullptr) {
+    return *backend_reg;
+  }
+
+  HANDLE hMapFile = OpenFileMapping(
+    FILE_MAP_ALL_ACCESS,   // read/write access
+    FALSE,                 // do not inherit the name
+    _T(SHARED_MEMORY_NAME)  // name of mapping object
   );
+
+  if (hMapFile == NULL) {
+    // Create a new file mapping object
+    hMapFile = CreateFileMapping(
+      INVALID_HANDLE_VALUE,    // use paging file
+      NULL,                    // default security
+      PAGE_READWRITE,          // read/write access
+      0,                       // maximum object size (high-order DWORD)
+      sizeof(torch::executor::BackendRegistry),                // maximum object size (low-order DWORD)
+      _T(SHARED_MEMORY_NAME)   // name of mapping object
+    );
+    if (hMapFile == NULL) {
+      return *backend_reg;
+    }
+  }
+
+  torch::executor::BackendRegistry* registry = (torch::executor::BackendRegistry*) MapViewOfFile(
+    hMapFile,   // handle to map object
+    FILE_MAP_ALL_ACCESS, // read/write permission
+    0,
+    0,
+    sizeof(torch::executor::BackendRegistry)
+  );
+
+  if (registry == NULL) {
+    return *backend_reg;
+  }
+
+  if (backend_reg == nullptr) {
+    backend_reg = std::shared_ptr<torch::executor::BackendRegistry>(registry, [](torch::executor::BackendRegistry* ptr) {
+      UnmapViewOfFile(ptr);
+    });
+  }
+
   return *backend_reg;
 }
+
+#else
+
+torch::executor::BackendRegistry& getBackendRegistry();
+torch::executor::BackendRegistry& getBackendRegistry() {
+  static torch::executor::BackendRegistry backend_reg;
+  return backend_reg;
+}
+
+#endif
+
+namespace torch {
+namespace executor {
+
+PyTorchBackendInterface::~PyTorchBackendInterface() {}
 
 PyTorchBackendInterface* get_backend_class(const char* name) {
   return getBackendRegistry().get_backend_class(name);

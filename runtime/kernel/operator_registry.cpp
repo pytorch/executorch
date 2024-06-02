@@ -8,31 +8,79 @@
 
 #include <executorch/runtime/kernel/operator_registry.h>
 
-#include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/runtime/platform/system.h>
 #include <cinttypes>
 
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+#ifdef _WIN32
+#include <memory>
+#include <windows.h>
+#include <tchar.h>
+
+#define SHARED_MEMORY_NAME "torch_executor_operator_registry"
+static std::shared_ptr<torch::executor::OperatorRegistry> operator_reg;
+
+torch::executor::OperatorRegistry& getOperatorRegistry() {
+  if (operator_reg != nullptr) {
+    return *operator_reg;
+  }
+
+  HANDLE hMapFile = OpenFileMapping(
+    FILE_MAP_ALL_ACCESS,   // read/write access
+    FALSE,                 // do not inherit the name
+    _T(SHARED_MEMORY_NAME)  // name of mapping object
+  );
+
+  if (hMapFile == NULL) {
+    // Create a new file mapping object
+    hMapFile = CreateFileMapping(
+      INVALID_HANDLE_VALUE,    // use paging file
+      NULL,                    // default security
+      PAGE_READWRITE,          // read/write access
+      0,                       // maximum object size (high-order DWORD)
+      sizeof(torch::executor::OperatorRegistry),                // maximum object size (low-order DWORD)
+      _T(SHARED_MEMORY_NAME)   // name of mapping object
+    );
+    if (hMapFile == NULL) {
+      return *operator_reg;
+    }
+  }
+
+  torch::executor::OperatorRegistry* registry = (torch::executor::OperatorRegistry*) MapViewOfFile(
+    hMapFile,   // handle to map object
+    FILE_MAP_ALL_ACCESS, // read/write permission
+    0,
+    0,
+    sizeof(torch::executor::OperatorRegistry)
+  );
+
+  if (registry == NULL) {
+    return *operator_reg;
+  }
+
+  if (operator_reg == nullptr) {
+    operator_reg = std::shared_ptr<torch::executor::OperatorRegistry>(registry, [](torch::executor::OperatorRegistry* ptr) {
+      UnmapViewOfFile(ptr);
+    });
+  }
+
+  return *operator_reg;
+}
+
+#else
 
 torch::executor::OperatorRegistry& getOperatorRegistry();
 torch::executor::OperatorRegistry& getOperatorRegistry() {
-  // Operator registration happens in static initialization time when PAL init
-  // may or may not happen already. Here we are assuming et_pal_init() doesn't
-  // have any side effect even if falled multiple times.
-  ::et_pal_init();
-
-  static torch::executor::OperatorRegistry* operator_registry = static_cast<torch::executor::OperatorRegistry*>(
-    ::et_pal_get_shared_memory(
-      "torch_executor_operator_registry",
-      sizeof(torch::executor::OperatorRegistry)
-    )
-  );
-  return *operator_registry;
+  static torch::executor::OperatorRegistry operator_registry;
+  return operator_registry;
 }
+
+#endif
+
+namespace torch {
+namespace executor {
 
 Error register_kernels(const ArrayRef<Kernel>& kernels) {
   Error success = getOperatorRegistry().register_kernels(kernels);
@@ -47,6 +95,11 @@ Error register_kernels(const ArrayRef<Kernel>& kernels) {
 }
 
 Error OperatorRegistry::register_kernels(const ArrayRef<Kernel>& kernels) {
+  // Operator registration happens in static initialization time when PAL init
+  // may or may not happen already. Here we are assuming et_pal_init() doesn't
+  // have any side effect even if falled multiple times.
+  ::et_pal_init();
+
   if (kernels.size() + this->num_kernels_ > kMaxNumOfKernels) {
     ET_LOG(
         Error,

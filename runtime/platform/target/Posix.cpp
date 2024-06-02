@@ -27,9 +27,6 @@
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
-#include <unordered_map>
-#include <memory>
-#include <string>
 
 #include <executorch/runtime/platform/compiler.h>
 
@@ -71,9 +68,6 @@ static std::chrono::time_point<std::chrono::steady_clock> systemStartTime;
 
 /// Flag set to true if the PAL has been successfully initialized.
 static bool initialized = false;
-
-// Shared memory
-static std::unordered_map<std::string, std::shared_ptr<void>> sharedMemoryMap;
 
 /**
  * Initialize the platform abstraction layer.
@@ -175,30 +169,4 @@ void et_pal_emit_log_message(
       line,
       message);
   fflush(ET_LOG_OUTPUT_FILE);
-}
-
-void* et_pal_get_shared_memory(
-    const char* name,
-    size_t size) {
-  _ASSERT_PAL_INITIALIZED();
-
-  auto it = sharedMemoryMap.find(name);
-  if (it != sharedMemoryMap.end()) {
-    return it->second.get();
-  }
-
-  auto sharedMemory = std::shared_ptr<void>(malloc(size), free);
-  if (sharedMemory == nullptr) {
-    return nullptr;
-  }
-
-  sharedMemoryMap[name] = sharedMemory;
-  return sharedMemory.get();
-}
-
-void et_pal_free_shared_memory(
-    const char* name) {
-  _ASSERT_PAL_INITIALIZED();
-
-  sharedMemoryMap.erase(name);
 }
