@@ -4,7 +4,7 @@ ExecuTorch Runtime API Reference
 The ExecuTorch C++ API provides an on-device execution framework for exported PyTorch models.
 
 For a tutorial style introduction to the runtime API, check out the
-`runtime api tutorial <running-a-model-cpp-tutorial.html>`__.
+`runtime tutorial <running-a-model-cpp-tutorial.html>`__ and its `simplified <extension-module.html>`__ version.
 
 Model Loading and Execution
 ---------------------------

@@ -143,3 +143,4 @@ assert(output.isTensor());
 ## Conclusion
 
 In this tutorial, we went over the APIs and steps required to load and perform an inference with an ExecuTorch model in C++.
+Also, check out the [Simplified Runtime APIs Tutorial](extension-module.md).
