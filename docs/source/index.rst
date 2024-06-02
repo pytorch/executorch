@@ -93,6 +93,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
+   extension-module
    tutorials/sdk-integration-tutorial
    demo-apps-ios
    demo-apps-android
@@ -223,6 +224,13 @@ ExecuTorch tutorials.
    :card_description: A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.
    :image: _static/img/generic-pytorch-logo.png
    :link: running-a-model-cpp-tutorial.html
+   :tags:
+
+.. customcarditem::
+   :header: Simplified Runtime APIs Tutorial
+   :card_description: A simplified tutorial for executing the model on device.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: extension-module.html
    :tags:
 
 .. customcarditem::
