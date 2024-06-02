@@ -36,7 +36,7 @@ class LlavaModel(EagerModelBase):
             )
         )
         self.device = "cpu"
-        self.dtype = torch.float32
+        self.dtype = torch.float16
         self.model_.to(device=self.device, dtype=self.dtype)
 
     def get_eager_model(self):
