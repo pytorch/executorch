@@ -63,8 +63,8 @@ TORCH_URL="https://download.pytorch.org/whl/test/cpu"
 
 # pip packages needed by exir.
 EXIR_REQUIREMENTS=(
-  torch=="2.3.0"
-  torchvision=="0.18.0"
+  torch=="2.3.1"
+  torchvision=="0.18.1"
 )
 
 # pip packages needed for development.
@@ -81,7 +81,7 @@ DEVEL_REQUIREMENTS=(
 # TODO(dbort): Make each example publish its own requirements.txt
 EXAMPLES_REQUIREMENTS=(
   timm==0.6.13
-  torchaudio=="2.3.0"
+  torchaudio=="2.3.1"
   torchsr==1.0.4
   transformers==4.38.2
 )
