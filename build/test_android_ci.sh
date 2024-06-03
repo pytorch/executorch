@@ -37,6 +37,24 @@ build_android_llama_demo_app() {
   popd
 }
 
+build_aar() {
+  cp extension/android/build/libs/executorch.jar build_aar/libs
+  echo \<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" \
+   package=\"org.pytorch.executorch\"\> \
+   \<uses-sdk android:minSdkVersion=\"19\" /\> \
+   \</manifest\> > build_aar/AndroidManifest.xml
+  pushd build_aar
+  mv jni/arm64-v8a/libexecutorch_jni.so jni/arm64-v8a/libexecutorch.so
+  mv jni/x86_64/libexecutorch_jni.so jni/x86_64/libexecutorch.so
+  zip -r executorch.aar libs jni AndroidManifest.xml
+
+  rm jni/arm64-v8a/libexecutorch.so jni/x86_64/libexecutorch.so
+  zip -r executorch-llama.aar libs jni AndroidManifest.xml
+  popd
+}
+
+mkdir -p build_aar/jni/arm64-v8a build_aar/jni/x86_64 build_aar/libs
+
 build_android_native_library arm64-v8a
 build_android_native_library x86_64
 export_model
