@@ -80,14 +80,14 @@ Error Runner::load() {
   if (tokenizer_->bos_tok() != bos_id_) {
     ET_LOG(
         Error,
-        "Tokenizer's BOS id %lu does not match model's BOS id %d, will override tokenizer's BOS.",
+        "Tokenizer's BOS id %lu does not match model's BOS id %ld, will override tokenizer's BOS.",
         tokenizer_->bos_tok(),
         bos_id_);
   }
   if (tokenizer_->eos_tok() != eos_id_) {
     ET_LOG(
         Error,
-        "Tokenizer's EOS id %lu does not match model's EOS id %d, will override tokenizer's EOS.",
+        "Tokenizer's EOS id %lu does not match model's EOS id %ld, will override tokenizer's EOS.",
         tokenizer_->eos_tok(),
         eos_id_);
   }

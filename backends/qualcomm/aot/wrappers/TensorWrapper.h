@@ -75,6 +75,10 @@ class TensorWrapper {
     return QNN_VER_PTR(tensor_)->memType;
   };
 
+  Qnn_QuantizeParams_t GetQuantizeParams() const {
+    return QNN_VER_PTR(tensor_)->quantizeParams;
+  }
+
   std::string GetName() const {
     return qnn_tensor_name_;
   };

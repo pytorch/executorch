@@ -325,9 +325,16 @@ Error QnnManager::AllocateTensor() {
     std::sort(
         input_tensors_.begin(), input_tensors_.end(), CompareExportedInput);
   }
-  for (auto& tensor : output_tensors) {
-    std::shared_ptr<TensorWrapper> tensor_wrapper = CreateTensorWrapper(tensor);
-    tensor_wrapper->UpdateQnnTensorMeta(tensor);
+  for (size_t i = 0; i < output_tensors.size(); ++i) {
+    std::shared_ptr<TensorWrapper> tensor_wrapper =
+        CreateTensorWrapper(output_tensors[i]);
+    tensor_wrapper->UpdateQnnTensorMeta(output_tensors[i]);
+    std::string tensor_name = tensor_wrapper->GetName();
+    // this is required by identifying shared buffer mechanism
+    // info might be missed if context binary came from qnn_converter
+    if (tensor_name.find("output_") == std::string::npos) {
+      tensor_wrapper->SetName("output_" + tensor_name);
+    }
     if (IsTensorDump()) {
       tensor_wrapper->AllocateDataBuffer();
     }
