@@ -41,7 +41,6 @@ void et_pal_emit_log_message(
     const char* message,
     size_t length) {
   int android_log_level = ANDROID_LOG_UNKNOWN;
-
   if (level == 'D') {
     android_log_level = ANDROID_LOG_DEBUG;
   } else if (level == 'I') {
