@@ -32,7 +32,7 @@ from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
-from torch.export import export, ExportedProgram
+from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
 
 from torch.library import impl, Library
@@ -270,6 +270,38 @@ class TestProgramManagers(unittest.TestCase):
                 torch.ones(1), torch.ones(1)
             ),
             original_res,  # x * y + x
+        )
+
+    def test_issue_3659(self):
+
+        class Mul(torch.nn.Module):
+            def __init__(self):
+                super(Mul, self).__init__()
+
+            def forward(self, x: torch.Tensor, y: torch.Tensor):
+                return torch.matmul(x, y)
+
+            def get_eager_model(self) -> torch.nn.Module:
+                return self
+
+            def get_example_inputs(self):
+                return (torch.randn(1, 3, 10), torch.randn(1, 10, 3))
+
+            def get_dynamic_shapes(self):
+                dim1_x = Dim("Dot_dim1_x", min=2, max=100)
+                dim2_x = Dim("Dot_dim2_x", min=2, max=100)
+                return {"x": {1: dim1_x, 2: dim2_x}, "y": {1: dim2_x, 2: dim1_x}}
+
+        model = Mul()
+        ep = torch.export.export(
+            model, model.get_example_inputs(), dynamic_shapes=model.get_dynamic_shapes()
+        )
+
+        to_edge(
+            ep,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=True,
+            ),
         )
 
     def test_transform_dict_api(self):
