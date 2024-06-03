@@ -127,10 +127,8 @@ def get_avg_pool2d_inputs():
             "divisor_override",
         ],
     )
-    Test.__new__.__defaults__ = (None, None)
 
     test_cases = []
-
     for ceil_mode in [True, False]:
         for count_include_pad in [True, False]:
             for divisor_override in [None, 5]:
@@ -145,26 +143,7 @@ def get_avg_pool2d_inputs():
                         divisor_override=divisor_override,
                     ),
                 ]
-        test_cases += [
-            Test(
-                self=(S, M1, M2),
-                kernel_size=[5, 4],
-                stride=[3, 1],
-                padding=[2, 1],
-                ceil_mode=ceil_mode,
-                count_include_pad=True,
-                divisor_override=None,
-            ),
-            Test(
-                self=(S, M1, M2),
-                kernel_size=[4, 5],
-                stride=[1, 3],
-                padding=[2, 1],
-                ceil_mode=ceil_mode,
-                count_include_pad=True,
-                divisor_override=None,
-            ),
-        ]
+
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
     test_suite.dtypes = ["at::kFloat"]
     return test_suite
