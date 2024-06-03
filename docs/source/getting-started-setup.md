@@ -183,7 +183,7 @@ Output 0: tensor(sizes=[1], [2.])
   ```
   :::
 
-To learn how to build a similar program, visit the [ExecuTorch in C++ Tutorial](running-a-model-cpp-tutorial.md).
+To learn how to build a similar program, visit the [Runtime APIs Tutorial](extension-module.md).
 
 ### [Optional] Setting Up Buck2
 **Buck2** is an open-source build system that some of our examples currently utilize for building and running.

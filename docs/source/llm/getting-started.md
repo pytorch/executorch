@@ -344,8 +344,7 @@ curl -O https://raw.githubusercontent.com/pytorch/executorch/main/examples/llm_m
 curl -O https://raw.githubusercontent.com/pytorch/executorch/main/examples/llm_manual/managed_tensor.h
 ```
 
-To learn more, see [Running an ExecuTorch Model in C++](../running-a-model-cpp-tutorial.md)
-and the [ExecuTorch Runtime API Reference](../executorch-runtime-api-reference.md).
+To learn more, see the [Runtime APIs Tutorial](../extension-module.md).
 
 ### Building and Running
 
