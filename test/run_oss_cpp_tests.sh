@@ -30,6 +30,7 @@ build_executorch() {
   cmake . \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
@@ -48,7 +49,9 @@ build_gtest() {
 }
 
 export_test_add_model() {
-  python3 -m examples.portable.scripts.export --model_name="add" --output_dir="cmake-out"
+  if ! test -f cmake-out/add.pte; then
+    python3 -m examples.portable.scripts.export --model_name="add" --output_dir="cmake-out"
+  fi
 }
 
 build_and_run_test() {

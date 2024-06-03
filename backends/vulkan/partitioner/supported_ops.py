@@ -73,6 +73,7 @@ MATMUL_OPS = [
 ]
 
 POOLING_OPS = [
+    exir_ops.edge.aten.avg_pool2d.default,
     exir_ops.edge.aten.max_pool2d_with_indices.default,
 ]
 
