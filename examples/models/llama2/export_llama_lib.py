@@ -91,6 +91,13 @@ def build_model(
 def build_args_parser() -> argparse.ArgumentParser:
     ckpt_dir = f"{Path(__file__).absolute().parent.as_posix()}"
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-N",
+        "--modelname",
+        default="llama2",
+        type=str,
+        help="model name",
+    )
     parser.add_argument("-o", "--output-dir", default=".", help="output directory")
     # parser.add_argument(
     #     "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
@@ -287,13 +294,13 @@ def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
         return return_val
 
 
-def export_llama(modelname, args) -> str:
+def export_llama(args) -> str:
     if args.profile_path is not None:
         try:
             from executorch.util.python_profiler import CProfilerFlameGraph
 
             with CProfilerFlameGraph(args.profile_path):
-                builder = _export_llama(modelname, args)
+                builder = _export_llama(args)
                 assert (
                     filename := builder.get_saved_pte_filename()
                 ) is not None, "Fail to get file name from builder"
@@ -304,14 +311,14 @@ def export_llama(modelname, args) -> str:
             )
             return ""
     else:
-        builder = _export_llama(modelname, args)
+        builder = _export_llama(args)
         assert (
             filename := builder.get_saved_pte_filename()
         ) is not None, "Fail to get file name from builder"
         return filename
 
 
-def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
+def _prepare_for_llama_export(args) -> LlamaEdgeManager:
     """
     Helper function for export_llama. Loads the model from checkpoint and params,
     and sets up a LlamaEdgeManager with initial transforms and dtype conversion.
@@ -339,13 +346,13 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     # source transforms
     transforms = []
     if args.quantization_mode:
-        modelname = f"{modelname}_q"
+        modelname = f"{args.modelname}_q"
         transforms.append(
             get_quant_weight_transform(args, dtype_override, verbose_export())
         )
 
     if args.embedding_quantize:
-        modelname = f"{modelname}_e"
+        modelname = f"{args.modelname}_e"
         transforms.append(get_quant_embedding_transform(args))
 
     if args.expand_rope_table:
@@ -362,7 +369,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             transforms.append(replace_causal_mask)
     return (
         load_llama_model(
-            modelname=modelname,
+            modelname=args.modelname,
             checkpoint=checkpoint_path,
             checkpoint_dir=checkpoint_dir,
             params_path=params_path,
@@ -391,12 +398,12 @@ def get_quantizer_and_quant_params(args):
     return pt2e_quant_params, quantizers, quant_dtype
 
 
-def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
+def _export_llama(args) -> LlamaEdgeManager:  # noqa: C901
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
     # export_to_edge
     builder_exported_to_edge = (
-        _prepare_for_llama_export(modelname, args)
+        _prepare_for_llama_export(args)
         .capture_pre_autograd_graph()
         .pt2e_quantize(quantizers)
         .export_to_edge()
