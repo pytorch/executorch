@@ -887,6 +887,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
 
 TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   GraphConfig config;
+  config.enable_querypool = true;
   ComputeGraph graph(config);
 
   std::vector<int64_t> size_big = {8, 73, 62};
@@ -934,6 +935,11 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
     // Sanity check that the values are correct
     for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
       CHECK_VALUE(data_out, i, val_out);
+    }
+
+    if (graph.context()->querypool()) {
+      graph.context()->querypool().extract_results();
+      graph.context()->querypool().print_results();
     }
   }
 }

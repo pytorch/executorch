@@ -33,10 +33,8 @@ Context::Context(size_t adapter_i, const ContextConfig& config)
       command_pool_(device_, queue_.family_index, config_.cmd_pool_config),
       descriptor_pool_(device_, config_.descriptor_pool_config),
       fences_(device_),
-// Diagnostics
-#ifdef USE_VULKAN_GPU_DIAGNOSTICS
-      querypool_(config_.query_pool_config, adapter_p_),
-#endif /* USE_VULKAN_GPU_DIAGNOSTICS */
+      // Profiling
+      querypool_(config_.query_pool_config, nullptr),
       // Command buffer submission
       cmd_mutex_{},
       cmd_(VK_NULL_HANDLE, 0u),
@@ -45,8 +43,7 @@ Context::Context(size_t adapter_i, const ContextConfig& config)
       buffer_clearlist_mutex_{},
       buffers_to_clear_{},
       image_clearlist_mutex_{},
-      images_to_clear_{} {
-}
+      images_to_clear_{} {}
 
 Context::~Context() {
   try {
@@ -54,6 +51,36 @@ Context::~Context() {
     // Let the device know the context is done with the queue
     adapter_p_->return_queue(queue_);
   } catch (...) {
+  }
+}
+
+void Context::initialize_querypool() {
+  querypool_.initialize(adapter_p_);
+}
+
+void Context::cmd_reset_querypool() {
+  if (querypool_) {
+    set_cmd();
+    querypool_.reset_querypool(cmd_);
+  }
+}
+
+void Context::report_shader_dispatch_start(
+    const std::string& shader_name,
+    const utils::uvec3& global_wg_size,
+    const utils::uvec3& local_wg_size) {
+  if (querypool_) {
+    querypool_.shader_profile_begin(
+        cmd_,
+        shader_name,
+        create_extent3d(global_wg_size),
+        create_extent3d(local_wg_size));
+  }
+}
+
+void Context::report_shader_dispatch_end() {
+  if (querypool_) {
+    querypool_.shader_profile_end(cmd_);
   }
 }
 
