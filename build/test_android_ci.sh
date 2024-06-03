@@ -45,9 +45,11 @@ build_aar() {
    \<uses-sdk android:minSdkVersion=\"19\" /\> \
    \</manifest\> > build_aar/AndroidManifest.xml
   pushd build_aar
+  mv jni/arm64-v8a/libexecutorch_jni.so jni/arm64-v8a/libexecutorch.so
+  mv jni/x86_64/libexecutorch_jni.so jni/x86_64/libexecutorch.so
   zip -r executorch.aar libs jni AndroidManifest.xml
 
-  rm jni/arm64-v8a/libexecutorch_jni.so jni/x86_64/libexecutorch_jni.so
+  rm jni/arm64-v8a/libexecutorch.so jni/x86_64/libexecutorch.so
   zip -r executorch-llama.aar libs jni AndroidManifest.xml
   popd
 }
