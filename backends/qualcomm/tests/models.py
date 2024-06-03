@@ -103,6 +103,23 @@ class Ceil(torch.nn.Module):
         return torch.ceil(x)
 
 
+class Chunk(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.chunk(x, chunks=2, dim=-1)
+
+
+class ChunkAdd(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        c1, c2 = torch.chunk(x, chunks=2, dim=-1)
+        return torch.add(c1, c2)
+
+
 class Clamp(torch.nn.Module):
     def __init__(self):
         super().__init__()
