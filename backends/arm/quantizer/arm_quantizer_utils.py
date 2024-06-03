@@ -152,6 +152,7 @@ def is_share_obs_or_fq_op(op: Callable) -> bool:
         torch.ops.aten.unsqueeze.default,
         # TODO: remove?
         torch.ops.aten.adaptive_avg_pool2d.default,
+        torch.ops.aten.avg_pool2d.default,
         torch.ops.aten.view_copy.default,
         torch.ops.aten.view.default,
         torch.ops.aten.slice.Tensor,

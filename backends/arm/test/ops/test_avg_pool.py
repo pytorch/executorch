@@ -5,19 +5,21 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    ArmQuantizer,
+    get_symmetric_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
+from executorch.backends.xnnpack.test.tester.tester import Quantize
 from executorch.exir.backend.backend_details import CompileSpec
 from parameterized import parameterized
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 test_data_suite = [
     # (test_name, test_data, [kernel_size, stride, padding])
@@ -69,13 +71,14 @@ class TestAvgPool2d(unittest.TestCase):
     def _test_avgpool2d_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
     ):
+        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
-            .quantize()
+            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .check_count({"torch.ops.aten.avg_pool2d.default": 1})
             .check(["torch.ops.quantized_decomposed"])
@@ -93,13 +96,14 @@ class TestAvgPool2d(unittest.TestCase):
         compile_spec: CompileSpec,
         test_data: Tuple[torch.tensor],
     ):
+        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
                 compile_spec=compile_spec,
             )
-            .quantize()
+            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .check_count({"torch.ops.aten.avg_pool2d.default": 1})
             .check(["torch.ops.quantized_decomposed"])
@@ -121,10 +125,7 @@ class TestAvgPool2d(unittest.TestCase):
             self.AvgPool2d(*model_params), (test_data,)
         )
 
-    # Expected to fail since ArmQuantizer cannot quantize a AvgPool2D layer
-    # TODO(MLETORCH-93)
     @parameterized.expand(test_data_suite)
-    @unittest.expectedFailure
     def test_avgpool2d_tosa_BI(
         self,
         test_name: str,
@@ -135,10 +136,7 @@ class TestAvgPool2d(unittest.TestCase):
             self.AvgPool2d(*model_params), (test_data,)
         )
 
-    # Expected to fail since ArmQuantizer cannot quantize a AvgPool2D layer
-    # TODO(MLETORCH-93)
     @parameterized.expand(test_data_suite)
-    @unittest.expectedFailure
     def test_avgpool2d_tosa_u55_BI(
         self,
         test_name: str,
@@ -152,7 +150,6 @@ class TestAvgPool2d(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite)
-    @unittest.expectedFailure
     def test_avgpool2d_tosa_u85_BI(
         self,
         test_name: str,
