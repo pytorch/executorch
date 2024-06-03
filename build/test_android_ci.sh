@@ -22,6 +22,7 @@ build_android_native_library() {
   pushd examples/demo-apps/android/LlamaDemo
   CMAKE_OUT="cmake-out-android-$1" ANDROID_NDK=/opt/ndk ANDROID_ABI="$1" ./gradlew setup
   popd
+  cp "cmake-out-android-$1"/extension/android/*.so build_aar/jni/$1/
 }
 
 build_android_demo_app() {
@@ -60,3 +61,4 @@ build_android_native_library x86_64
 export_model
 build_android_demo_app
 build_android_llama_demo_app
+build_aar
