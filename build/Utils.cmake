@@ -154,42 +154,35 @@ function(target_link_options_shared_lib target_name)
 endfunction()
 
 # Extract source files based on toml config. This is useful to keep buck2 and
-# cmake aligned. Do not regenerate if file exists.
+# cmake aligned.
 function(extract_sources sources_file)
-  if(EXISTS "${sources_file}")
-    message(STATUS "executorch: Using source file list ${sources_file}")
+  # Run a script to extract the source lists from the
+  # buck2 build system and write them to a file we can include.
+  message(STATUS "executorch: Generating source file list ${sources_file}")
+  if(EXECUTORCH_ROOT)
+    set(executorch_root ${EXECUTORCH_ROOT})
   else()
-    # A file wasn't generated. Run a script to extract the source lists from the
-    # buck2 build system and write them to a file we can include.
-    #
-    # NOTE: This will only happen once during cmake setup, so it will not re-run
-    # if the buck2 targets change.
-    message(STATUS "executorch: Generating source file list ${sources_file}")
-    if(EXECUTORCH_ROOT)
-      set(executorch_root ${EXECUTORCH_ROOT})
-    else()
-      set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
-    endif()
+    set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
+  endif()
 
-    execute_process(
-      COMMAND
-        ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
-        --config=${executorch_root}/build/cmake_deps.toml --out=${sources_file}
-        --buck2=${BUCK2}
-      OUTPUT_VARIABLE gen_srcs_output
-      ERROR_VARIABLE gen_srcs_error
-      RESULT_VARIABLE gen_srcs_exit_code
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  execute_process(
+    COMMAND
+      ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
+      --config=${executorch_root}/build/cmake_deps.toml --out=${sources_file}
+      --buck2=${BUCK2}
+    OUTPUT_VARIABLE gen_srcs_output
+    ERROR_VARIABLE gen_srcs_error
+    RESULT_VARIABLE gen_srcs_exit_code
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 
-    if(NOT gen_srcs_exit_code EQUAL 0)
-      message("Error while generating ${sources_file}. "
-              "Exit code: ${gen_srcs_exit_code}"
+  if(NOT gen_srcs_exit_code EQUAL 0)
+    message("Error while generating ${sources_file}. "
+            "Exit code: ${gen_srcs_exit_code}"
       )
-      message("Output:\n${gen_srcs_output}")
-      message("Error:\n${gen_srcs_error}")
-      message(FATAL_ERROR "executorch: source list generation failed")
-    endif()
+    message("Output:\n${gen_srcs_output}")
+    message("Error:\n${gen_srcs_error}")
+    message(FATAL_ERROR "executorch: source list generation failed")
   endif()
 endfunction()
 
