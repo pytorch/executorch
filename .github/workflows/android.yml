@@ -47,6 +47,8 @@ jobs:
         BUILD_TOOL=${{ matrix.build-tool }}
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Build Android library
+        bash build/build_android_library.sh
         # Build Android demo app
         bash build/test_android_ci.sh
 
