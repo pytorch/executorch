@@ -35,7 +35,7 @@ class TestSimpleClone(unittest.TestCase):
     def _test_clone_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: torch.Tensor
     ):
-        tester = (
+        (
             ArmTester(
                 module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
             )
@@ -45,19 +45,13 @@ class TestSimpleClone(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(qtol=1)
         )
-
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(qtol=1)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_clone_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
             )
@@ -68,14 +62,8 @@ class TestSimpleClone(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(qtol=1)
         )
-
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(qtol=1)
-        else:
-            raise RuntimeError(
-                "TOSA ref model tool not installed and the test is an expected fail"
-            )
 
     def _test_clone_tosa_u55_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
@@ -108,9 +96,5 @@ class TestSimpleClone(unittest.TestCase):
     # TODO MLETROCH-125
     @parameterized.expand(Clone.test_parameters)
     @unittest.expectedFailure
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     def test_clone_u55_BI(self, test_tensor: torch.Tensor):
         self._test_clone_tosa_u55_pipeline(self.Clone(), (test_tensor,))
