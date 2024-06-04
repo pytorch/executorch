@@ -89,7 +89,7 @@ build_aar() {
 
 BUILD_AAR_DIR="$(mktemp -d)"
 export BUILD_AAR_DIR
-mkdir -p "${BUILD_AAR_DIR}/jni/arm64-v8a" "${BUILD_AAR_DIR}/jni/x86_64"
+mkdir -p "${BUILD_AAR_DIR}/jni/arm64-v8a" "${BUILD_AAR_DIR}/jni/x86_64" "${BUILD_AAR_DIR}/libs"
 build_jar
 build_android_native_library arm64-v8a
 build_android_native_library x86_64
