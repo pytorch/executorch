@@ -83,6 +83,8 @@ build_aar() {
   rm jni/arm64-v8a/libexecutorch.so jni/x86_64/libexecutorch.so
   zip -r executorch-llama.aar libs jni/arm64-v8a/libexecutorch_llama_jni.so jni/x86_64/libexecutorch_llama_jni.so AndroidManifest.xml
   popd
+  cp "${BUILD_AAR_DIR}/executorch-llama.aar" .
+  cp "${BUILD_AAR_DIR}/executorch.aar" .
 }
 
 BUILD_AAR_DIR="$(mktemp -d)"
