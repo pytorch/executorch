@@ -17,7 +17,7 @@ build_jar() {
 build_android_native_library() {
   ANDROID_ABI="$1"
   ANDROID_NDK="${ANDROID_NDK:-/opt/ndk}"
-  CMAKE_OUT="${cmake-out-android-$1}"
+  CMAKE_OUT="cmake-out-android-$1"
   EXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN:-OFF}"
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
