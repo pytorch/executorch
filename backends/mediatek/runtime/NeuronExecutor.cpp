@@ -127,7 +127,7 @@ int NeuronExecutor::LoadFromCompiledNetwork(const void *buffer, size_t size,
     err |= NeuronModel_finish(model);
     CHECK_NO_ERROR(err);
     // ---------------------------Compilation------------------------------------
-    //err = NeuronCompilation_create(model, &compilation) != NEURON_NO_ERROR;
+    //err = NeuronCompilation_e(model, &compilation) != NEURON_NO_ERROR;
     err = NeuronCompilation_createWithOptions(model, &compilation, runtimeOption.c_str());
     CHECK_NO_ERROR(err);
 
@@ -144,7 +144,7 @@ int NeuronExecutor::LoadFromCompiledNetwork(const void *buffer, size_t size,
 
 
     // ---------------------------Execution------------------------------------
-    // Run the compiled model against a set of inputs
+    // Create Neuron executor instance.
     err = NeuronExecution_create(compilation, &execution);
     CHECK_NO_ERROR(err);
     mExecution = std::unique_ptr<NeuronExecution, NeuronDeleter>(execution);
