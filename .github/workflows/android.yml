@@ -9,6 +9,8 @@ on:
     paths:
       - .ci/docker/**
       - .github/workflows/android.yml
+      - build/build_android_library.sh
+      - build/test_android_ci.sh
       - install_requirements.sh
       - examples/demo-apps/android/**
       - extension/android/**
