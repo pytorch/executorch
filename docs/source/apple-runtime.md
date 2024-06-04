@@ -1,8 +1,8 @@
-# Running ExecuTorch on iOS
+# Integrating and Running ExecuTorch on Apple Platforms
 
 **Author:** [Anthony Shoumikhin](https://github.com/shoumikhin)
 
-The ExecuTorch Runtime for iOS is distributed as a collection of prebuilt [.xcframework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes:
+The ExecuTorch Runtime for iOS and macOS is distributed as a collection of prebuilt [.xcframework](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) binary targets. These targets are compatible with both iOS and macOS devices and simulators and are available in both release and debug modes:
 
 * `executorch` - Main Runtime components
 * `backend_coreml` - Core ML backend
@@ -27,13 +27,17 @@ The prebuilt ExecuTorch runtime, backend, and kernels are available as a [Swift 
 
 In Xcode, go to `File > Add Package Dependencies`. Paste the URL of the [ExecuTorch repo](https://github.com/pytorch/executorch) into the search bar and select it. Make sure to change the branch name to the desired ExecuTorch version, e.g., "0.2.0", or just use the "latest" branch name for the latest stable build.
 
-![](_static/img/swiftpm_xcode.png)
+![](_static/img/swiftpm_xcode1.png)
 
 Then select which ExecuTorch framework should link against which target.
 
-![](_static/img/swiftpm_xcode.png)
+![](_static/img/swiftpm_xcode2.png)
 
-Watch the [demo video](_static/img/swiftpm_xcode.mp4) on how to add the package and run a simple ExecuTorch model on iOS.
+Click the screenshot below to watch the *demo video* on how to add the package and run a simple ExecuTorch model on iOS.
+
+<a href="https://pytorch.org/executorch/main/_static/img/swiftpm_xcode.mp4">
+  <img src="https://pytorch.org/executorch/main/_static/img/swiftpm_xcode.png" width="800" alt="Integrating and Running ExecuTorch on Apple Platforms">
+</a>
 
 #### CLI
 
