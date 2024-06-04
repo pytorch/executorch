@@ -70,8 +70,9 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    intro-overview
-   concepts
    intro-how-it-works
+   getting-started-architecture
+   concepts
 
 .. toctree::
    :glob:
@@ -79,17 +80,10 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Getting Started
    :hidden:
 
-   getting-started-architecture
    getting-started-setup
+   export-overview
    runtime-build-and-cross-compilation
 
-.. toctree::
-   :glob:
-   :maxdepth: 2
-   :caption: Working with LLMs
-   :hidden:
-
-   llm/getting-started
 
 .. toctree::
    :glob:
@@ -99,6 +93,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
+   extension-module
    tutorials/sdk-integration-tutorial
    demo-apps-ios
    demo-apps-android
@@ -116,11 +111,11 @@ Topics in this section will help you get started with ExecuTorch.
 
 .. toctree::
    :glob:
-   :maxdepth: 1
-   :caption: Exporting to ExecuTorch
+   :maxdepth: 2
+   :caption: Working with LLMs
    :hidden:
 
-   export-overview
+   llm/getting-started
 
 .. toctree::
    :glob:
@@ -229,6 +224,13 @@ ExecuTorch tutorials.
    :card_description: A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.
    :image: _static/img/generic-pytorch-logo.png
    :link: running-a-model-cpp-tutorial.html
+   :tags:
+
+.. customcarditem::
+   :header: Simplified Runtime APIs Tutorial
+   :card_description: A simplified tutorial for executing the model on device.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: extension-module.html
    :tags:
 
 .. customcarditem::

@@ -92,6 +92,7 @@ portability details.
 
    # Install ExecuTorch pip package and its dependencies, as well as
    # development tools like CMake.
+   # If developing on a Mac, make sure to install the Xcode Command Line Tools first.
    ./install_requirements.sh
    ```
 
@@ -182,7 +183,7 @@ Output 0: tensor(sizes=[1], [2.])
   ```
   :::
 
-To learn how to build a similar program, visit the [ExecuTorch in C++ Tutorial](running-a-model-cpp-tutorial.md).
+To learn how to build a similar program, visit the [Runtime APIs Tutorial](extension-module.md).
 
 ### [Optional] Setting Up Buck2
 **Buck2** is an open-source build system that some of our examples currently utilize for building and running.
@@ -201,10 +202,10 @@ To set up `Buck2`, You will need the following prerequisits for this section:
   version of the buck2 prelude used by the ExecuTorch repo.
 
 Configure Buck2 by decompressing with the following command (filename depends
-   on your system):
+   on your system, and the location of the binary can be different):
 
    ```bash
-   # For example, buck2-x86_64-unknown-linux-musl.zst or buck2-aarch64-apple-darwin.zst
+   # For example, buck2-x86_64-unknown-linux-musl.zst for Linux, or buck2-aarch64-apple-darwin.zst for Mac with Apple silicon.
    zstd -cdq buck2-DOWNLOADED_FILENAME.zst > /tmp/buck2 && chmod +x /tmp/buck2
    ```
 
@@ -216,6 +217,8 @@ After the installation, you can run the `add.pte` program by following `buck2` c
 ```bash
 /tmp/buck2 run //examples/portable/executor_runner:executor_runner -- --model_path add.pte
 ```
+
+Note that the first run may take a while as it will have to complie the kernels from sources
 
 ## Next Steps
 

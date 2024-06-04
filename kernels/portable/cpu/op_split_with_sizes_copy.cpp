@@ -55,8 +55,7 @@ void split_with_sizes_copy_out(
     target_out_sizes[dim] = static_cast<Tensor::SizesType>(split_sizes[i]);
     ET_KERNEL_CHECK(
         ctx,
-        tensor_is_broadcastable_to(
-            {target_out_sizes, target_out_ndim}, out[i].sizes()),
+        resize_tensor(out[i], {target_out_sizes, target_out_ndim}) == Error::Ok,
         InvalidArgument, );
   }
 
