@@ -129,4 +129,6 @@ using `Cmd + R`. Try installing a Release build for better performance.
 Congratulations! You've successfully set up the ExecuTorch iOS Demo App. Now,
 you can explore and enjoy the power of ExecuTorch on your iOS device!
 
+Learn more about [ExecuTorch Runtime on iOS](https://pytorch.org/executorch/stable/ios-runtime).
+
 ![](_static/img/demo_ios_xcode.jpg)
