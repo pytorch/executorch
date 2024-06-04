@@ -11,7 +11,7 @@ build_jar() {
   pushd extension/android
   ./gradlew build
   popd
-  cp extension/android/build/libs/executorch.jar build_aar/libs
+  cp extension/android/build/libs/executorch.jar "${BUILD_AAR_DIR}/libs"
 }
 
 build_android_native_library() {
@@ -65,15 +65,15 @@ build_android_native_library() {
 
   cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config Release
 
-  cp "${CMAKE_OUT}"/extension/android/*.so build_aar/jni/$1/
+  cp "${CMAKE_OUT}"/extension/android/*.so "${BUILD_AAR_DIR}/jni/$1/"
 }
 
 build_aar() {
   echo \<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" \
    package=\"org.pytorch.executorch\"\> \
    \<uses-sdk android:minSdkVersion=\"19\" /\> \
-   \</manifest\> > build_aar/AndroidManifest.xml
-  pushd build_aar
+   \</manifest\> > "${BUILD_AAR_DIR}/AndroidManifest.xml"
+  pushd "${BUILD_AAR_DIR}"
   # Rename libexecutorch_jni.so to libexecutorch.so for soname consistency
   # between Java and JNI
   mv jni/arm64-v8a/libexecutorch_jni.so jni/arm64-v8a/libexecutorch.so
@@ -85,7 +85,9 @@ build_aar() {
   popd
 }
 
-mkdir -p build_aar/jni/arm64-v8a build_aar/jni/x86_64 build_aar/libs
+BUILD_AAR_DIR="$(mktemp -d)"
+export BUILD_AAR_DIR
+mkdir -p "${BUILD_AAR_DIR}/jni/arm64-v8a" "${BUILD_AAR_DIR}/jni/arm64-v8a"
 build_jar
 build_android_native_library arm64-v8a
 build_android_native_library x86_64
