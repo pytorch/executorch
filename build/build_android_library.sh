@@ -78,7 +78,7 @@ build_aar() {
   # between Java and JNI
   mv jni/arm64-v8a/libexecutorch_jni.so jni/arm64-v8a/libexecutorch.so
   mv jni/x86_64/libexecutorch_jni.so jni/x86_64/libexecutorch.so
-  zip -r executorch.aar jni/arm64-v8a/libexecutorch.so jni/x86_64/libexecutorch.so jni AndroidManifest.xml
+  zip -r executorch.aar libs jni/arm64-v8a/libexecutorch.so jni/x86_64/libexecutorch.so AndroidManifest.xml
 
   rm jni/arm64-v8a/libexecutorch.so jni/x86_64/libexecutorch.so
   zip -r executorch-llama.aar libs jni/arm64-v8a/libexecutorch_llama_jni.so jni/x86_64/libexecutorch_llama_jni.so AndroidManifest.xml
