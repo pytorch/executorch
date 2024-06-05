@@ -471,9 +471,10 @@
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
 <span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">os</span>
 <span class="kn">import</span> <span class="nn">pickle</span>
 <span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">IO</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span>
 <span class="kn">from</span> <span class="nn">zipfile</span> <span class="kn">import</span> <span class="n">BadZipFile</span><span class="p">,</span> <span class="n">ZipFile</span>
 
 <span class="kn">from</span> <span class="nn">executorch</span> <span class="kn">import</span> <span class="n">exir</span>
@@ -606,7 +607,7 @@
 
 
 <div class="viewcode-block" id="generate_etrecord"><a class="viewcode-back" href="../../../../sdk-etrecord.html#executorch.sdk.etrecord._etrecord.generate_etrecord">[docs]</a><span class="k">def</span> <span class="nf">generate_etrecord</span><span class="p">(</span>
-    <span class="n">etrecord_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">et_record</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">,</span> <span class="n">BinaryIO</span><span class="p">,</span> <span class="n">IO</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]],</span>
     <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">],</span>
     <span class="n">executorch_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
         <span class="n">ExecutorchProgram</span><span class="p">,</span>
@@ -646,7 +647,10 @@
 <span class="sd">        None</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">etrecord_zip</span> <span class="o">=</span> <span class="n">ZipFile</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">et_record</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">)):</span>
+        <span class="n">et_record</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">fspath</span><span class="p">(</span><span class="n">et_record</span><span class="p">)</span>  <span class="c1"># pyre-ignore</span>
+
+    <span class="n">etrecord_zip</span> <span class="o">=</span> <span class="n">ZipFile</span><span class="p">(</span><span class="n">et_record</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span>
     <span class="c1"># Write the magic file identifier that will be used to verify that this file</span>
     <span class="c1"># is an etrecord when it&#39;s used later in the SDK tooling.</span>
     <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">ETRECORD_IDENTIFIER</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
