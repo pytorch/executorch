@@ -1,5 +1,5 @@
 # Summary
-This example demonstrates how to run a [Llama 2](https://ai.meta.com/llama/) 7B model on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on a phone.
+This example demonstrates how to run a [Llama 2](https://llama.meta.com/llama2/) 7B or [Llama 3](https://ai.meta.com/llama/) 8B model on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on a phone.
 
 
 For Llama2, please refer to [the llama's github page](https://github.com/facebookresearch/llama) for details.
@@ -104,7 +104,8 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
 
 ### Option C: Download and export Llama3 8B model
 
-You can export and run the original Llama3 8B model.
+You can export and run the original Llama 3 8B instruct model.
+> :warning: **use the main branch**: Llama 3 is only supported on the ExecuTorch main branch (not release 2.0)
 
 1. Llama3 pretrained parameters can be downloaded from [Meta's official llama3 repository](https://github.com/meta-llama/llama3/).
 
