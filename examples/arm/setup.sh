@@ -76,7 +76,7 @@ fi
 
 # ethos-u
 ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
-ethos_u_base_rev="0995223100e3da8011700f58e491f1bf59511e3c"
+ethos_u_base_rev="24.05"
 
 ########
 ### Mandatory user args
