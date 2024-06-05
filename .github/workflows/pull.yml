@@ -89,7 +89,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        build-tool: [buck2, cmake]
+        build-tool: [cmake] # can't build tiktoken or sentencepiece in buck2 mode
         mode: [portable, xnnpack+custom, xnnpack+custom+qe]
       fail-fast: false
     with:

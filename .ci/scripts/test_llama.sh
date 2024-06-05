@@ -145,12 +145,7 @@ fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
 
-# Create tokenizer.bin.
-echo "Creating tokenizer.bin"
-$PYTHON_EXECUTABLE -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
-
-
-RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.bin --prompt=Once --temperature=0 --seq_len=10"
+RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.model --prompt=Once --temperature=0 --seq_len=10"
 # Check build tool.
 echo "Running ${EXPORTED_MODEL_NAME} in portable mode"
 if [[ "${BUILD_TOOL}" == "buck2" ]]; then
@@ -158,7 +153,7 @@ if [[ "${BUILD_TOOL}" == "buck2" ]]; then
   # shellcheck source=/dev/null
   $BUCK run examples/models/llama2:main -- ${RUNTIME_ARGS} > result.txt
 elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-  cmake_install_executorch_libraries
+  # cmake_install_executorch_libraries
   cmake_build_llama_runner
   # Run llama runner
   NOW=$(date +"%H:%M:%S")

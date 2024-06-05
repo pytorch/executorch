@@ -5,8 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-
-#include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
+#undef ABSL_USES_STD_STRING_VIEW
+#include <executorch/examples/models/llama2/tokenizer/sentencepiece.h>
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
@@ -21,8 +21,9 @@ class TokenizerExtensionTest : public Test {
  public:
   void SetUp() override {
     torch::executor::runtime_init();
-    tokenizer_ = std::make_unique<BPETokenizer>(32000, 1, 2);
-    modelPath_ = std::getenv("RESOURCES_PATH") + std::string("/test.bin");
+    tokenizer_ = std::make_unique<SPTokenizer>();
+    modelPath_ =
+        std::getenv("RESOURCES_PATH") + std::string("/fb/sentencepiece.model");
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;
@@ -40,7 +41,7 @@ TEST_F(TokenizerExtensionTest, DecodeWithoutLoadFails) {
 }
 
 TEST_F(TokenizerExtensionTest, DecodeOutOfRangeFails) {
-  Error res = tokenizer_->load(modelPath_.c_str());
+  Error res = tokenizer_->load(modelPath_);
   EXPECT_EQ(res, Error::Ok);
   auto result = tokenizer_->decode(0, 64000);
   // The vocab size is 32000, and token 64000 is out of vocab range.
@@ -48,7 +49,7 @@ TEST_F(TokenizerExtensionTest, DecodeOutOfRangeFails) {
 }
 
 TEST_F(TokenizerExtensionTest, TokenizerVocabSizeIsExpected) {
-  Error res = tokenizer_->load(modelPath_.c_str());
+  Error res = tokenizer_->load(modelPath_);
   EXPECT_EQ(res, Error::Ok);
   // test.bin has vocab size 0 but the tokenizer respects the vocab size being
   // passed in and add placeholder tokens.

@@ -2,13 +2,13 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
     runtime.cxx_library(
-        name = "bpe_tokenizer",
+        name = "sentencepiece",
         srcs = [
-            "bpe_tokenizer.cpp",
+            "sentencepiece.cpp",
         ],
         exported_headers = [
             "tokenizer.h",
-            "bpe_tokenizer.h",
+            "sentencepiece.h",
         ],
         exported_deps = [
             "//executorch/runtime/core/exec_aten:lib",
@@ -16,6 +16,9 @@ def define_common_targets():
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",
+        ],
+        exported_external_deps = [
+            "sentencepiece",
         ],
     )
 

@@ -8,15 +8,15 @@ def define_common_targets():
     """
 
     runtime.cxx_test(
-        name = "test_bpe_tokenizer",
+        name = "test_sentencepiece",
         srcs = [
-            "test_bpe_tokenizer.cpp",
+            "test_sentencepiece.cpp",
         ],
         deps = [
-            "//executorch/examples/models/llama2/tokenizer:bpe_tokenizer",
+            "//executorch/examples/models/llama2/tokenizer:sentencepiece",
         ],
         env = {
-            "RESOURCES_PATH": "$(location :resources)/resources",
+            "RESOURCES_PATH": "$(location :resources_fb_only)/resources",
         },
     )
 
@@ -34,13 +34,6 @@ def define_common_targets():
         external_deps = [
             "re2",
         ],
-    )
-
-    runtime.filegroup(
-        name = "resources",
-        srcs = native.glob([
-            "resources/**",
-        ]),
     )
 
     runtime.filegroup(
