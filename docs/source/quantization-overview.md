@@ -17,6 +17,15 @@ For an example quantization flow with ``XNPACKQuantizer``, more documentation an
 
 ## Source Quantization: Int8DynActInt4WeightQuantizer
 
-In addition to export based quantization (described above), ExecuTorch also provides source-based quantization. This is accomplished via [torchao](https://github.com/pytorch/ao). One specific example is `Int8DynActInt4WeightQuantizer`. 
+In addition to export based quantization (described above), ExecuTorch wants to highlight source based quantizations, accomplished via [torchao](https://github.com/pytorch/ao). Unlike export based quantization, source based quantization directly modifies the model prior to export. One specific example is `Int8DynActInt4WeightQuantizer`. 
 
-Imported with ``from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer``, this class uses a quantization object constructed with the specified precicion and groupsize, to mutate a provided ``nn.Module``.
+This scheme represents 4-bit weight quantization with 8-bit dynamic quantization of activation during inference.
+
+Imported with ``from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer``, this class uses a quantization instance constructed with a specified dtype precision and groupsize, to mutate a provided ``nn.Module``.
+
+```
+from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+
+model = Int8DynActInt4WeightQuantizer(precision=torch_dtype, groupsize=group_size).quantize(model)
+```
+
