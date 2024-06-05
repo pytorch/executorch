@@ -48,10 +48,20 @@ build_gtest() {
   popd
 }
 
-export_test_add_model() {
-  if ! test -f cmake-out/add.pte; then
-    python3 -m examples.portable.scripts.export --model_name="add" --output_dir="cmake-out"
-  fi
+export_test_model() {
+  python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry" --outdir "cmake-out" 2> /dev/null
+  python3 -m test.models.export_delegated_program --modules "ModuleAddMul" --backend_id "StubBackend" --outdir "cmake-out" || true
+
+  export ET_MODULE_ADD_HALF_PATH="$(realpath cmake-out/ModuleAddHalf.pte)"
+  export ET_MODULE_ADD_PATH="$(realpath cmake-out/ModuleAdd.pte)"
+  export ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH="$(realpath cmake-out/ModuleDynamicCatUnallocatedIO.pte)"
+  export ET_MODULE_INDEX_PATH="$(realpath cmake-out/ModuleIndex.pte)"
+  export ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH="$(realpath cmake-out/ModuleLinear-no-constant-segment.pte)"
+  export ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH="$(realpath cmake-out/ModuleLinear.pte)"
+  export ET_MODULE_MULTI_ENTRY_PATH="$(realpath cmake-out/ModuleMultipleEntry.pte)"
+  export ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH="$(realpath cmake-out/ModuleAddMul-nosegments-da1024.pte)"
+  export ET_MODULE_ADD_MUL_NOSEGMENTS_PATH="$(realpath cmake-out/ModuleAddMul-nosegments.pte)"
+  export ET_MODULE_ADD_MUL_PATH="$(realpath cmake-out/ModuleAddMul.pte)"
 }
 
 build_and_run_test() {
@@ -65,8 +75,6 @@ build_and_run_test() {
 
   RESOURCES_PATH=$(realpath extension/module/test/resources)
   export RESOURCES_PATH
-  ET_MODULE_ADD_PATH=$(realpath cmake-out/add.pte)
-  export ET_MODULE_ADD_PATH
 
   for t in cmake-out/"${test_dir}"/*test; do
     if [ -e "$t" ]; then
