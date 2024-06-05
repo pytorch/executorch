@@ -695,6 +695,8 @@ api::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
             return api::kInt;
         case c10::kLong:
             return api::kInt;
+        case c10::kChar:
+            return api::kChar;
         default:
             VK_THROW("Unsupported at::ScalarType!");
     }
