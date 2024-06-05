@@ -47,11 +47,15 @@ class TestSuite:
         self.prepacked_args: List[str] = []
         self.requires_prepack: bool = False
         self.dtypes: List[str] = ["at::kFloat", "at::kHalf"]
+
+        self.data_gen: str = "make_rand_tensor"
         self.data_range = (0, 1)
-        self.atol: str = "1e-5"
-        self.rtol: str = "1e-5"
+
         self.arg_dtype = {}
         self.arg_data_range = {}
+
+        self.atol: str = "1e-5"
+        self.rtol: str = "1e-5"
 
     def supports_prepack(self):
         return len(self.prepacked_args) > 0

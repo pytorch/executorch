@@ -319,7 +319,7 @@ def get_upsample_inputs():
     return test_suite
 
 
-@register_test_suite("aten.full.default")
+@register_test_suite(["aten.full.default", "aten.full_like.default"])
 def get_full_inputs():
     test_suite = VkTestSuite(
         [
