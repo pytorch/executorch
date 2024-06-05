@@ -28,7 +28,7 @@ build_android_demo_app() {
 
 build_android_llama_demo_app() {
   mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
-  cp executorch.aar examples/demo-apps/android/LlamaDemo/app/libs
+  cp executorch-llama.aar examples/demo-apps/android/LlamaDemo/app/libs
   pushd examples/demo-apps/android/LlamaDemo
   ANDROID_HOME=/opt/android/sdk ./gradlew build
   ANDROID_HOME=/opt/android/sdk ./gradlew assembleAndroidTest
