@@ -34,7 +34,9 @@ class TestSimpleView(unittest.TestCase):
     ):
         (
             ArmTester(
-                module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
             .check_count({"torch.ops.aten.view.default": 1})
@@ -50,7 +52,9 @@ class TestSimpleView(unittest.TestCase):
     ):
         (
             ArmTester(
-                module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
             .export()
@@ -67,7 +71,9 @@ class TestSimpleView(unittest.TestCase):
     ):
         (
             ArmTester(
-                module, inputs=test_data, compile_spec=common.get_u55_compile_spec()
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
             .export()

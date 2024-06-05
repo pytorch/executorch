@@ -52,7 +52,7 @@ class TestMobileNetV2(unittest.TestCase):
         (
             ArmTester(
                 self.mv2,
-                inputs=self.model_inputs,
+                example_inputs=self.model_inputs,
                 compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .export()
@@ -67,7 +67,7 @@ class TestMobileNetV2(unittest.TestCase):
         (
             ArmTester(
                 self.mv2,
-                inputs=self.model_inputs,
+                example_inputs=self.model_inputs,
                 compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
@@ -86,7 +86,7 @@ class TestMobileNetV2(unittest.TestCase):
         (
             ArmTester(
                 self.mv2,
-                inputs=self.model_inputs,
+                example_inputs=self.model_inputs,
                 compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()

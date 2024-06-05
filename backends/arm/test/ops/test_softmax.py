@@ -42,7 +42,7 @@ class TestSoftmax(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
@@ -61,7 +61,9 @@ class TestSoftmax(unittest.TestCase):
     ):
         (
             ArmTester(
-                module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
             .export()
@@ -81,7 +83,7 @@ class TestSoftmax(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()

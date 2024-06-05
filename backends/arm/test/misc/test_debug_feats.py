@@ -45,7 +45,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=module.get_inputs(),
+                example_inputs=module.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
@@ -59,7 +59,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=module.get_inputs(),
+                example_inputs=module.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
@@ -101,7 +101,7 @@ class TestNumericalDiffPrints(unittest.TestCase):
         tester = (
             ArmTester(
                 model,
-                inputs=model.get_inputs(),
+                example_inputs=model.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
