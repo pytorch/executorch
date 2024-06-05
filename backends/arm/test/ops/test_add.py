@@ -61,7 +61,7 @@ class TestSimpleAdd(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
@@ -80,7 +80,7 @@ class TestSimpleAdd(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
@@ -100,7 +100,7 @@ class TestSimpleAdd(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
