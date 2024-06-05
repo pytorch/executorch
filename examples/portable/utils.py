@@ -37,7 +37,7 @@ def _to_core_aten(
         raise ValueError(
             f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
         )
-    core_aten_ep = export(model, example_inputs, dynamic_shapes=dynamic_shapes)
+    core_aten_ep = export(model, example_inputs, dynamic_shapes=dynamic_shapes, strict=False)
     if verbose:
         logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
     return core_aten_ep
