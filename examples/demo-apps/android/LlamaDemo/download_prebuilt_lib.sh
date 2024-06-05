@@ -7,8 +7,8 @@
 
 set -eu
 
-AAR_URL="https://gha-artifacts.s3.amazonaws.com/pytorch/executorch/9357260259/artifact/executorch.aar"
-AAR_SHASUM="2081b318fefe105e5f92249350c4551a1f3826ec"
+AAR_URL="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.2.1/executorch-llama.aar"
+AAR_SHASUM="2973b1c41aa2c2775482d7cc7c803d0f6ca282c1"
 
 LIBS_PATH="$(dirname "$0")/app/libs"
 AAR_PATH="${LIBS_PATH}/executorch-llama.aar"
