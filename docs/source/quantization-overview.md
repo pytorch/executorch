@@ -24,8 +24,15 @@ This scheme represents 4-bit weight quantization with 8-bit dynamic quantization
 Imported with ``from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer``, this class uses a quantization instance constructed with a specified dtype precision and groupsize, to mutate a provided ``nn.Module``.
 
 ```
+# Source Quant
 from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
 model = Int8DynActInt4WeightQuantizer(precision=torch_dtype, groupsize=group_size).quantize(model)
-```
 
+# Export to ExecuTorch
+from executorch.exir import to_edge
+from torch.export import export
+
+exported_model = export(model, ...)
+et_program = to_edge(exported_model, ...).to_executorch(...)
+```
