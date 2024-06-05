@@ -303,6 +303,17 @@ def get_full_inputs():
     return test_suite
 
 
+def get_full_like_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((S1, S2), 4.0),
+            ((M, M1, M2), -3.5),
+            ((L, M, M1, M2), 9.876),
+        ]
+    )
+    return test_suite
+
+
 def get_select_int_inputs():
     test_suite = VkTestSuite(
         [
@@ -909,6 +920,7 @@ test_suites = {
     "aten.convolution.default": get_conv_inputs(),
     "aten.native_layer_norm.default": get_native_layer_norm_inputs(),
     "aten.full.default": get_full_inputs(),
+    "aten.full_like.default": get_full_like_inputs(),
     "aten.select.int": get_select_int_inputs(),
     "aten.select_copy.int": get_select_int_inputs(),
     "aten.permute.default": get_permute_inputs(),
