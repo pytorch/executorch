@@ -45,7 +45,9 @@ def _save_pte_program(
 
 
 def export_model(
-    model: nn.Module, example_inputs: Tuple[Any], file_name: str = "CadenceDemoModel"
+    model: nn.Module,
+    example_inputs: Tuple[Any, ...],
+    file_name: str = "CadenceDemoModel",
 ):
     # Quantizer
     quantizer = CadenceQuantizer()
@@ -72,9 +74,8 @@ def export_model(
 
     exec_prog = cadence_prog_manager.to_executorch()
 
-    logging.info(
-        f"Final exported graph module:\n{exec_prog.exported_program().graph_module}"
-    )
+    logging.info("Final exported graph:")
+    exec_prog.exported_program().graph_module.graph.print_tabular()
 
     # Print some information to terminal
     print_ops_info(
