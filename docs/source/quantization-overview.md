@@ -14,3 +14,9 @@ Backend developers will need to implement their own ``Quantizer`` to express how
 Modeling users will use the ``Quantizer`` specific to their target backend to quantize their model, e.g. ``XNNPACKQuantizer``.
 
 For an example quantization flow with ``XNPACKQuantizer``, more documentation and tutorials, please see ``Performing Quantization`` section in [ExecuTorch tutorial](./tutorials/export-to-executorch-tutorial).
+
+## Source Quantization: Int8DynActInt4WeightQuantizer
+
+In addition to export based quantization (described above), ExecuTorch also provides source-based quantization. This is accomplished via [torchao](https://github.com/pytorch/ao). One specific example is `Int8DynActInt4WeightQuantizer`. 
+
+Imported with ``from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer``, this class uses a quantization object constructed with the specified precicion and groupsize, to mutate a provided ``nn.Module``.
