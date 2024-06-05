@@ -13,8 +13,8 @@ We provide two prebuilt Android libraries (AAR), `executorch.aar` for generic us
     - Comes with two ABI variants, arm64-v8a and x86_64.
 
 ## Downloading AAR
-[executorch.aar](https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.2.1/executorch.aar) (sha1sum: 09d17f7bc59589b581e45bb49511d19196d0297d)
-[executorch_llama.aar](https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.2.1/executorch-llama.aar) (sha1sum: 09d17f7bc59589b581e45bb49511d19196d0297d)
+[executorch.aar](https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.2.1/executorch.aar) (sha1sum: af7690394fd978603abeff40cf64bd2df0dc793a)
+[executorch_llama.aar](https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.2.1/executorch-llama.aar) (sha1sum: 2973b1c41aa2c2775482d7cc7c803d0f6ca282c1)
 
 ## Using prebuilt libraries
 
