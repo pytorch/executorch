@@ -446,7 +446,7 @@ def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
         # Generate ETRecord
         if edge_manager_copy:
             generate_etrecord(
-                etrecord_path="etrecord.bin",
+                et_record="etrecord.bin",
                 edge_dialect_program=edge_manager_copy,
                 executorch_program=builder.export_program,
             )
