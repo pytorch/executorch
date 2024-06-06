@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building an ExecuTorch Android Demo App &mdash; ExecuTorch 0.2 documentation</title>
+  <title>Running an ExecuTorch Model Using the Module Extension in C++ &mdash; ExecuTorch 0.2 documentation</title>
   
 
   
@@ -41,8 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Lowering a Model as a Delegate" href="examples-end-to-end-to-lower-model-to-delegate.html" />
-    <link rel="prev" title="Building an ExecuTorch iOS Demo App" href="demo-apps-ios.html" />
+    <link rel="next" title="Using the ExecuTorch SDK to Profile a Model" href="tutorials/sdk-integration-tutorial.html" />
+    <link rel="prev" title="Running an ExecuTorch Model in C++ Tutorial" href="running-a-model-cpp-tutorial.html" />
 
 
   <!-- Google Tag Manager -->
@@ -316,10 +316,10 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Building an ExecuTorch Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-vulkan.html">Building and Running ExecuTorch with the Vulkan Backend</a></li>
@@ -427,13 +427,13 @@
       </li>
 
         
-      <li>Building an ExecuTorch Android Demo App</li>
+      <li>Running an ExecuTorch Model Using the Module Extension in C++</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/demo-apps-android.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/extension-module.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -465,204 +465,144 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="building-an-executorch-android-demo-app">
-<h1>Building an ExecuTorch Android Demo App<a class="headerlink" href="#building-an-executorch-android-demo-app" title="Permalink to this heading">¶</a></h1>
-<p>This is forked from <a class="reference external" href="https://github.com/pytorch/android-demo-app">PyTorch Android Demo App</a>.</p>
-<p>This guide explains how to setup ExecuTorch for Android using a demo app. The app employs a <a class="reference external" href="https://pytorch.org/hub/pytorch_vision_deeplabv3_resnet101/">DeepLab v3</a> model for image segmentation tasks. Models are exported to ExecuTorch using <a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html"><span class="doc std std-doc">XNNPACK FP32 backend</span></a>.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-What you will learn</div>
+  <div class="section" id="running-an-executorch-model-using-the-module-extension-in-c">
+<h1>Running an ExecuTorch Model Using the Module Extension in C++<a class="headerlink" href="#running-an-executorch-model-using-the-module-extension-in-c" title="Permalink to this heading">¶</a></h1>
+<p><strong>Author:</strong> <a class="reference external" href="https://github.com/shoumikhin">Anthony Shoumikhin</a></p>
+<p>In the <a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc std std-doc">Running an ExecuTorch Model in C++ Tutorial</span></a>, we explored the lower-level ExecuTorch APIs for running an exported model. While these APIs offer zero overhead, great flexibility, and control, they can be verbose and complex for regular use. To simplify this and resemble PyTorch’s eager mode in Python, we introduce the Module facade APIs over the regular ExecuTorch runtime APIs. The Module APIs provide the same flexibility but default to commonly used components like <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code> and <code class="docutils literal notranslate"><span class="pre">MemoryAllocator</span></code>, hiding most intricate details.</p>
+<div class="section" id="example">
+<h2>Example<a class="headerlink" href="#example" title="Permalink to this heading">¶</a></h2>
+<p>Let’s see how we can run the <code class="docutils literal notranslate"><span class="pre">SimpleConv</span></code> model generated from the <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Exporting to ExecuTorch tutorial</span></a> using the <code class="docutils literal notranslate"><span class="pre">Module</span></code> APIs:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="o">::</span><span class="nn">torch</span><span class="o">::</span><span class="nn">executor</span><span class="p">;</span>
+
+<span class="c1">// Create a Module.</span>
+<span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">);</span>
+
+<span class="c1">// Wrap the input data with a Tensor.</span>
+<span class="kt">float</span><span class="w"> </span><span class="n">input</span><span class="p">[</span><span class="mi">1</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="p">];</span>
+<span class="n">Tensor</span><span class="o">::</span><span class="n">SizesType</span><span class="w"> </span><span class="n">sizes</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="p">};</span>
+<span class="n">TensorImpl</span><span class="w"> </span><span class="nf">tensor</span><span class="p">(</span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Float</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">size</span><span class="p">(</span><span class="n">sizes</span><span class="p">),</span><span class="w"> </span><span class="n">sizes</span><span class="p">,</span><span class="w"> </span><span class="n">input</span><span class="p">);</span>
+
+<span class="c1">// Perform an inference.</span>
+<span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">({</span><span class="n">EValue</span><span class="p">(</span><span class="n">Tensor</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tensor</span><span class="p">))});</span>
+
+<span class="c1">// Check for success or failure.</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// Retrieve the output data.</span>
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">output</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">result</span><span class="o">-&gt;</span><span class="n">at</span><span class="p">(</span><span class="mi">0</span><span class="p">).</span><span class="n">toTensor</span><span class="p">().</span><span class="n">const_data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>The code now boils down to creating a <code class="docutils literal notranslate"><span class="pre">Module</span></code> and calling <code class="docutils literal notranslate"><span class="pre">forward()</span></code> on it, with no additional setup. Let’s take a closer look at these and other <code class="docutils literal notranslate"><span class="pre">Module</span></code> APIs to better understand the internal workings.</p>
+</div>
+<div class="section" id="apis">
+<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="creating-a-module">
+<h3>Creating a Module<a class="headerlink" href="#creating-a-module" title="Permalink to this heading">¶</a></h3>
+<p>Creating a <code class="docutils literal notranslate"><span class="pre">Module</span></code> object is an extremely fast operation that does not involve significant processing time or memory allocation. The actual loading of a <code class="docutils literal notranslate"><span class="pre">Program</span></code> and a <code class="docutils literal notranslate"><span class="pre">Method</span></code> happens lazily on the first inference unless explicitly requested with a dedicated API.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="force-loading-a-method">
+<h3>Force-Loading a Method<a class="headerlink" href="#force-loading-a-method" title="Permalink to this heading">¶</a></h3>
+<p>To force-load the <code class="docutils literal notranslate"><span class="pre">Module</span></code> (and thus the underlying ExecuTorch <code class="docutils literal notranslate"><span class="pre">Program</span></code>) at any time, use the <code class="docutils literal notranslate"><span class="pre">load()</span></code> function:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">error</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">load</span><span class="p">();</span>
+
+<span class="n">assert</span><span class="p">(</span><span class="k">module</span><span class="p">.</span><span class="n">is_loaded</span><span class="p">());</span>
+</pre></div>
+</div>
+<p>To force-load a particular <code class="docutils literal notranslate"><span class="pre">Method</span></code>, call the <code class="docutils literal notranslate"><span class="pre">load_method()</span></code> function:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">error</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">load_method</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">);</span>
+
+<span class="n">assert</span><span class="p">(</span><span class="k">module</span><span class="p">.</span><span class="n">is_method_loaded</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">));</span>
+</pre></div>
+</div>
+<p>Note: the <code class="docutils literal notranslate"><span class="pre">Program</span></code> is loaded automatically before any <code class="docutils literal notranslate"><span class="pre">Method</span></code> is loaded. Subsequent attemps to load them have no effect if one of the previous attemps was successful.</p>
+</div>
+<div class="section" id="querying-for-metadata">
+<h3>Querying for Metadata<a class="headerlink" href="#querying-for-metadata" title="Permalink to this heading">¶</a></h3>
+<p>Get a set of method names that a Module contains udsing the <code class="docutils literal notranslate"><span class="pre">method_names()</span></code> function:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">method_names</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">method_names</span><span class="p">();</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">method_names</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">assert</span><span class="p">(</span><span class="n">method_names</span><span class="p">.</span><span class="n">count</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">));</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Note: <code class="docutils literal notranslate"><span class="pre">method_names()</span></code> will try to force-load the <code class="docutils literal notranslate"><span class="pre">Program</span></code> when called the first time.</p>
+<p>Introspect miscellaneous metadata about a particular method via <code class="docutils literal notranslate"><span class="pre">MethodMeta</span></code> struct returned by <code class="docutils literal notranslate"><span class="pre">method_meta()</span></code> function:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">method_meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">method_meta</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">);</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">method_meta</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="n">assert</span><span class="p">(</span><span class="n">method_meta</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">&quot;forward&quot;</span><span class="p">);</span>
+<span class="w">  </span><span class="n">assert</span><span class="p">(</span><span class="n">method_meta</span><span class="o">-&gt;</span><span class="n">num_inputs</span><span class="p">()</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">input_meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method_meta</span><span class="o">-&gt;</span><span class="n">input_tensor_meta</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">input_meta</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">assert</span><span class="p">(</span><span class="n">input_meta</span><span class="o">-&gt;</span><span class="n">scalar_type</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Float</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">output_meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">meta</span><span class="o">-&gt;</span><span class="n">output_tensor_meta</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">output_meta</span><span class="p">.</span><span class="n">ok</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">assert</span><span class="p">(</span><span class="n">output_meta</span><span class="o">-&gt;</span><span class="n">sizes</span><span class="p">().</span><span class="n">size</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Note: <code class="docutils literal notranslate"><span class="pre">method_meta()</span></code> will try to force-load the <code class="docutils literal notranslate"><span class="pre">Method</span></code> when called for the first time.</p>
+</div>
+<div class="section" id="perform-an-inference">
+<h3>Perform an Inference<a class="headerlink" href="#perform-an-inference" title="Permalink to this heading">¶</a></h3>
+<p>Assuming that the <code class="docutils literal notranslate"><span class="pre">Program</span></code>’s method names and their input format is known ahead of time, we rarely need to query for those and can run the methods directly by name using the <code class="docutils literal notranslate"><span class="pre">execute()</span></code> function:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">execute</span><span class="p">(</span><span class="s">&quot;forward&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="n">EValue</span><span class="p">(</span><span class="n">Tensor</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tensor</span><span class="p">))});</span>
+</pre></div>
+</div>
+<p>Which can also be simplified for the standard <code class="docutils literal notranslate"><span class="pre">forward()</span></code> method name as:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">module</span><span class="p">.</span><span class="n">forward</span><span class="p">({</span><span class="n">EValue</span><span class="p">(</span><span class="n">Tensor</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tensor</span><span class="p">))});</span>
+</pre></div>
+</div>
+<p>Note: <code class="docutils literal notranslate"><span class="pre">execute()</span></code> or <code class="docutils literal notranslate"><span class="pre">forward()</span></code> will try to force load the <code class="docutils literal notranslate"><span class="pre">Program</span></code> and the <code class="docutils literal notranslate"><span class="pre">Method</span></code> when called for the first time. Therefore, the first inference will take more time than subsequent ones as it loads the model lazily and prepares it for execution unless the <code class="docutils literal notranslate"><span class="pre">Program</span></code> or <code class="docutils literal notranslate"><span class="pre">Method</span></code> was loaded explicitly earlier using the corresponding functions.</p>
+</div>
+<div class="section" id="result-and-error-types">
+<h3>Result and Error Types<a class="headerlink" href="#result-and-error-types" title="Permalink to this heading">¶</a></h3>
+<p>Most of the ExecuTorch APIs, including those described above, return either <code class="docutils literal notranslate"><span class="pre">Result</span></code> or <code class="docutils literal notranslate"><span class="pre">Error</span></code> types. Let’s understand what those are:</p>
 <ul class="simple">
-<li><p class="sd-card-text">How to set up a build target for Android arm64-v8a</p></li>
-<li><p class="sd-card-text">How to build the required ExecuTorch runtime with JNI wrapper for Android</p></li>
-<li><p class="sd-card-text">How to build the app with required JNI library and model file</p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/core/error.h"><code class="docutils literal notranslate"><span class="pre">Error</span></code></a> is a C++ enum containing a collection of valid error codes, where the default is <code class="docutils literal notranslate"><span class="pre">Error::Ok</span></code>, denoting success.</p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/core/result.h"><code class="docutils literal notranslate"><span class="pre">Result</span></code></a> can hold either an <code class="docutils literal notranslate"><span class="pre">Error</span></code> if the operation has failed or a payload, i.e., the actual result of the operation like an <code class="docutils literal notranslate"><span class="pre">EValue</span></code> wrapping a <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> or any other standard C++ data type if the operation succeeded. To check if <code class="docutils literal notranslate"><span class="pre">Result</span></code> has a valid value, call the <code class="docutils literal notranslate"><span class="pre">ok()</span></code> function. To get the <code class="docutils literal notranslate"><span class="pre">Error</span></code> use the <code class="docutils literal notranslate"><span class="pre">error()</span></code> function, and to get the actual data, use the overloaded <code class="docutils literal notranslate"><span class="pre">get()</span></code> function or dereferencing pointer operators like <code class="docutils literal notranslate"><span class="pre">*</span></code> and <code class="docutils literal notranslate"><span class="pre">-&gt;</span></code>.</p></li>
 </ul>
 </div>
-</div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-Prerequisites</div>
-<ul class="simple">
-<li><p class="sd-card-text">Refer to <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting up ExecuTorch</a> to set up the repo and dev environment.</p></li>
-<li><p class="sd-card-text">Download and install <a class="reference external" href="https://developer.android.com/studio">Android Studio and SDK</a>.</p></li>
-<li><p class="sd-card-text">Supported Host OS: CentOS, macOS Ventura (M1/x86_64). See below for Qualcomm HTP specific requirements.</p></li>
-<li><p class="sd-card-text"><em>Qualcomm HTP Only<a class="footnote-reference brackets" href="#id3" id="id1">1</a>:</em> To build and run on Qualcomm’s AI Engine Direct, please follow <a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</span></a> for hardware and software pre-requisites. The version we use for this tutorial is 2.19. The chip we use for this tutorial is SM8450.</p></li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>This demo app and tutorial has only been validated with arm64-v8a <a class="reference external" href="https://developer.android.com/ndk/guides/abis">ABI</a>.</p>
-</div>
-<div class="section" id="build">
-<h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
-<div class="section" id="ahead-of-time">
-<h3>Ahead-Of-Time<a class="headerlink" href="#ahead-of-time" title="Permalink to this heading">¶</a></h3>
-<p>We generate the model file for the ExecuTorch runtime in Android Demo App.</p>
-<div class="section" id="xnnpack-delegation">
-<h4>XNNPACK Delegation<a class="headerlink" href="#xnnpack-delegation" title="Permalink to this heading">¶</a></h4>
-<p>For delegating DeepLab v3 to XNNPACK backend, please do the following to export the model:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.xnnpack.aot_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;dl3&quot;</span><span class="w"> </span>--delegate
-mkdir<span class="w"> </span>-p<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
-cp<span class="w"> </span>dl3_xnnpack_fp32.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
-</pre></div>
-</div>
-<p>For more detailed tutorial of lowering to XNNPACK, please see <a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html"><span class="doc std std-doc">XNNPACK backend</span></a>.</p>
-</div>
-<div class="section" id="qualcomm-hexagon-npu">
-<h4>Qualcomm Hexagon NPU<a class="headerlink" href="#qualcomm-hexagon-npu" title="Permalink to this heading">¶</a></h4>
-<p>For delegating to Qualcomm Hexagon NPU, please follow the tutorial <a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">here</span></a>.</p>
-<p>After generating the model, copy the model to <code class="docutils literal notranslate"><span class="pre">assets</span></code> directory.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build_android<span class="w"> </span>-m<span class="w"> </span>SM8450<span class="w"> </span>-s<span class="w"> </span>&lt;adb_connected_device_serial&gt;
-cp<span class="w"> </span>deeplab_v3/dlv3_qnn.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
-</pre></div>
-</div>
-</div>
-</div>
-<div class="section" id="runtime">
-<h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
-<p>We build the required ExecuTorch runtime library to run the model.</p>
-<div class="section" id="xnnpack">
-<h4>XNNPACK<a class="headerlink" href="#xnnpack" title="Permalink to this heading">¶</a></h4>
-<ol class="arabic simple">
-<li><p>Build the CMake target for the library with XNNPACK backend:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path-to-android-ndk&gt;
-<span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
+<div class="section" id="profile-the-module">
+<h3>Profile the Module<a class="headerlink" href="#profile-the-module" title="Permalink to this heading">¶</a></h3>
+<p>Use <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ExecuTorch Dump</span></a> to trace model execution. Create an instance of the <code class="docutils literal notranslate"><span class="pre">ETDumpGen</span></code> class and pass it to the <code class="docutils literal notranslate"><span class="pre">Module</span></code> constructor. After executing a method, save the <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> to a file for further analysis. You can capture multiple executions in a single trace if desired.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;fstream&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;memory&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/sdk/etdump/etdump_flatcc.h&gt;</span>
 
-rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-android-out
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="o">::</span><span class="nn">torch</span><span class="o">::</span><span class="nn">executor</span><span class="p">;</span>
 
-<span class="c1"># Build the core executorch library</span>
-cmake<span class="w"> </span>.<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_NDK</span><span class="si">}</span><span class="s2">/build/cmake/android.toolchain.cmake&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DANDROID_ABI<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_ABI</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Bcmake-android-out
+<span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Module</span><span class="o">::</span><span class="n">MlockConfig</span><span class="o">::</span><span class="n">UseMlock</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="p">());</span>
 
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install
-</pre></div>
-</div>
-<p>When we set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_XNNPACK=ON</span></code>, we will build the target <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt"><code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code></a> which in turn is linked into libexecutorch_jni via <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt">CMake</a>.</p>
-<ol class="arabic simple" start="2">
-<li><p>Build the Android extension:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Build the android extension</span>
-cmake<span class="w"> </span>extension/android<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_NDK</span><span class="si">}</span><span class="s2">&quot;</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DANDROID_ABI<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_ABI</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Bcmake-android-out/extension/android
+<span class="c1">// Execute a method, e.g. module.forward(...); or module.execute(&quot;my_method&quot;, ...);</span>
 
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out/extension/android<span class="w"> </span>-j16
-</pre></div>
-</div>
-<p><code class="docutils literal notranslate"><span class="pre">libexecutorch_jni.so</span></code> wraps up the required XNNPACK Backend runtime library from <code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code>, and adds an additional JNI layer using fbjni. This is later exposed to Java app.</p>
-</div>
-<div class="section" id="id2">
-<h4>Qualcomm Hexagon NPU<a class="headerlink" href="#id2" title="Permalink to this heading">¶</a></h4>
-<ol class="arabic simple">
-<li><p>Build the CMake target for the library with Qualcomm Hexagon NPU (HTP) backend (XNNPACK also included):</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path-to-android-ndk&gt;
-<span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
-<span class="nb">export</span><span class="w"> </span><span class="nv">QNN_SDK_ROOT</span><span class="o">=</span>&lt;path-to-qnn-sdk&gt;
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">etdump</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">dynamic_cast</span><span class="o">&lt;</span><span class="n">ETDumpGen</span><span class="o">*&gt;</span><span class="p">(</span><span class="k">module</span><span class="p">.</span><span class="n">event_tracer</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">trace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump</span><span class="o">-&gt;</span><span class="n">get_etdump_data</span><span class="p">();</span>
 
-rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-android-out
-cmake<span class="w"> </span>.<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_NDK</span><span class="si">}</span><span class="s2">/build/cmake/android.toolchain.cmake&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_ABI</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-Bcmake-android-out
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">trace</span><span class="p">.</span><span class="n">buf</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">trace</span><span class="p">.</span><span class="n">size</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">unique_ptr</span><span class="o">&lt;</span><span class="kt">void</span><span class="p">,</span><span class="w"> </span><span class="k">decltype</span><span class="p">(</span><span class="o">&amp;</span><span class="n">free</span><span class="p">)</span><span class="o">&gt;</span><span class="w"> </span><span class="n">guard</span><span class="p">(</span><span class="n">trace</span><span class="p">.</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="n">free</span><span class="p">);</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">ofstream</span><span class="w"> </span><span class="n">file</span><span class="p">(</span><span class="s">&quot;/path/to/trace.etdump&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">ios</span><span class="o">::</span><span class="n">binary</span><span class="p">);</span>
 
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install
-</pre></div>
-</div>
-<p>Similar to the XNNPACK library, with this setup, we compile <code class="docutils literal notranslate"><span class="pre">libexecutorch_jni.so</span></code> but it adds an additional static library <code class="docutils literal notranslate"><span class="pre">qnn_executorch_backend</span></code> which wraps up Qualcomm HTP runtime library and registers the Qualcomm HTP backend. This is later exposed to Java app.</p>
-<p><code class="docutils literal notranslate"><span class="pre">qnn_executorch_backend</span></code> is built when we turn on CMake option <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_QNN</span></code>. It will include the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/CMakeLists.txt">CMakeLists.txt</a> from backends/qualcomm where we <code class="docutils literal notranslate"><span class="pre">add_library(qnn_executorch_backend</span> <span class="pre">STATIC)</span></code>.</p>
-<ol class="arabic simple" start="2">
-<li><p>Build the Android extension:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>extension/android<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_NDK</span><span class="si">}</span><span class="s2">&quot;</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DANDROID_ABI<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_ABI</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-Bcmake-android-out/extension/android
-
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out/extension/android<span class="w"> </span>-j16
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">file</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="n">file</span><span class="p">.</span><span class="n">write</span><span class="p">(</span><span class="k">static_cast</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*&gt;</span><span class="p">(</span><span class="n">trace</span><span class="p">.</span><span class="n">buf</span><span class="p">),</span><span class="w"> </span><span class="n">trace</span><span class="p">.</span><span class="n">size</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
 </pre></div>
 </div>
 </div>
-</div>
-</div>
-<div class="section" id="deploying-on-device-via-demo-app">
-<h2>Deploying on Device via Demo App<a class="headerlink" href="#deploying-on-device-via-demo-app" title="Permalink to this heading">¶</a></h2>
-<div class="section" id="steps-for-deploying-model-via-xnnpack">
-<h3>Steps for Deploying Model via XNNPACK<a class="headerlink" href="#steps-for-deploying-model-via-xnnpack" title="Permalink to this heading">¶</a></h3>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
-cp<span class="w"> </span>cmake-android-out/extension/android/libexecutorch_jni.so<span class="w"> </span><span class="se">\</span>
-<span class="w">   </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a/libexecutorch.so
-</pre></div>
-</div>
-<p>This allows the Android app to load ExecuTorch runtime with XNNPACK backend as a JNI library. Later, this shared library will be loaded by <code class="docutils literal notranslate"><span class="pre">NativePeer.java</span></code> in Java code.</p>
-</div>
-<div class="section" id="steps-for-deploying-model-via-qualcomm-s-ai-engine-direct">
-<h3>Steps for Deploying Model via Qualcomm’s AI Engine Direct<a class="headerlink" href="#steps-for-deploying-model-via-qualcomm-s-ai-engine-direct" title="Permalink to this heading">¶</a></h3>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
-</pre></div>
-</div>
-<p>We need to push some additional Qualcomm HTP backend libraries to the app. Please refer to <a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">Qualcomm docs</span></a> here.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cp<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtp.so<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV69Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnSystem.so<span class="w"> </span><span class="se">\</span>
-<span class="w">   </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
-</pre></div>
-</div>
-<p>Copy the core libraries:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cp<span class="w"> </span>cmake-android-out/extension/android/libexecutorch_jni.so<span class="w"> </span><span class="se">\</span>
-<span class="w">   </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a/libexecutorch.so
-cp<span class="w"> </span>cmake-android-out/lib/libqnn_executorch_backend.so<span class="w"> </span><span class="se">\</span>
-<span class="w">   </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a/libqnn_executorch_backend.so
-</pre></div>
-</div>
-</div>
-</div>
-<div class="section" id="running-the-app">
-<h2>Running the App<a class="headerlink" href="#running-the-app" title="Permalink to this heading">¶</a></h2>
-<ol class="arabic simple">
-<li><p>Open the project <code class="docutils literal notranslate"><span class="pre">examples/demo-apps/android/ExecuTorchDemo</span></code> with Android Studio.</p></li>
-<li><p><a class="reference external" href="https://developer.android.com/studio/run">Run</a> the app (^R).</p></li>
-</ol>
-<p><img src="_static/img/android_studio.png" alt="Android Studio View" /><br></p>
-<p>On the phone or emulator, you can try running the model:
-<img src="_static/img/android_demo_run.png" alt="Android Demo" /><br></p>
-</div>
-<div class="section" id="takeaways">
-<h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this heading">¶</a></h2>
-<p>Through this tutorial we’ve learnt how to build the ExecuTorch runtime library with XNNPACK (or Qualcomm HTP) backend, and expose it to JNI layer to build the Android app running segmentation model.</p>
-</div>
-<div class="section" id="reporting-issues">
-<h2>Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permalink to this heading">¶</a></h2>
-<p>If you encountered any bugs or issues following this tutorial please file a bug/issue here on <a class="reference external" href="https://github.com/pytorch/executorch/issues/new">Github</a>.</p>
-<hr class="footnotes docutils" />
-<dl class="footnote brackets">
-<dt class="label" id="id3"><span class="brackets"><a class="fn-backref" href="#id1">1</a></span></dt>
-<dd><p>This section applies only if Qualcomm HTP Backend is needed in the app. Same applies to sections with title<code class="docutils literal notranslate"><span class="pre">Qualcomm</span> <span class="pre">Hexagon</span> <span class="pre">NPU</span></code>.</p>
-</dd>
-</dl>
 </div>
 </div>
 
@@ -674,10 +614,10 @@ cp<span class="w"> </span>cmake-android-out/lib/libqnn_executorch_backend.so<spa
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="examples-end-to-end-to-lower-model-to-delegate.html" class="btn btn-neutral float-right" title="Lowering a Model as a Delegate" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="tutorials/sdk-integration-tutorial.html" class="btn btn-neutral float-right" title="Using the ExecuTorch SDK to Profile a Model" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="demo-apps-ios.html" class="btn btn-neutral" title="Building an ExecuTorch iOS Demo App" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="running-a-model-cpp-tutorial.html" class="btn btn-neutral" title="Running an ExecuTorch Model in C++ Tutorial" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -711,28 +651,17 @@ cp<span class="w"> </span>cmake-android-out/lib/libqnn_executorch_backend.so<spa
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Building an ExecuTorch Android Demo App</a><ul>
-<li><a class="reference internal" href="#build">Build</a><ul>
-<li><a class="reference internal" href="#ahead-of-time">Ahead-Of-Time</a><ul>
-<li><a class="reference internal" href="#xnnpack-delegation">XNNPACK Delegation</a></li>
-<li><a class="reference internal" href="#qualcomm-hexagon-npu">Qualcomm Hexagon NPU</a></li>
+<li><a class="reference internal" href="#">Running an ExecuTorch Model Using the Module Extension in C++</a><ul>
+<li><a class="reference internal" href="#example">Example</a></li>
+<li><a class="reference internal" href="#apis">APIs</a><ul>
+<li><a class="reference internal" href="#creating-a-module">Creating a Module</a></li>
+<li><a class="reference internal" href="#force-loading-a-method">Force-Loading a Method</a></li>
+<li><a class="reference internal" href="#querying-for-metadata">Querying for Metadata</a></li>
+<li><a class="reference internal" href="#perform-an-inference">Perform an Inference</a></li>
+<li><a class="reference internal" href="#result-and-error-types">Result and Error Types</a></li>
+<li><a class="reference internal" href="#profile-the-module">Profile the Module</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#runtime">Runtime</a><ul>
-<li><a class="reference internal" href="#xnnpack">XNNPACK</a></li>
-<li><a class="reference internal" href="#id2">Qualcomm Hexagon NPU</a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li><a class="reference internal" href="#deploying-on-device-via-demo-app">Deploying on Device via Demo App</a><ul>
-<li><a class="reference internal" href="#steps-for-deploying-model-via-xnnpack">Steps for Deploying Model via XNNPACK</a></li>
-<li><a class="reference internal" href="#steps-for-deploying-model-via-qualcomm-s-ai-engine-direct">Steps for Deploying Model via Qualcomm’s AI Engine Direct</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#running-the-app">Running the App</a></li>
-<li><a class="reference internal" href="#takeaways">Takeaways</a></li>
-<li><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
 </ul>
 </li>
 </ul>

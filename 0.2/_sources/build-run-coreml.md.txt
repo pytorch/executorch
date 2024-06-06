@@ -143,7 +143,7 @@ libsqlite3.tbd
 ```
 5. Add the exported program to the [Copy Bundle Phase](https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target#Copy-files-to-the-finished-product) of your Xcode target.
 
-6. Please follow the [running a model](./running-a-model-cpp-tutorial.md) tutorial to integrate the code for loading an ExecuTorch program.
+6. Please follow the [Runtime APIs Tutorial](extension-module.md) to integrate the code for loading an ExecuTorch program.
 
 7. Update the code to load the program from the Application's bundle.
 ``` objective-c
