@@ -76,7 +76,7 @@ You can export and run the original Llama2 7B model.
 4. Create tokenizer.bin.
 
     ```
-    python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+    python -m examples.models.llama2.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
 
 ### Option B: Download and export stories110M model
@@ -99,7 +99,7 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
 4. Create tokenizer.bin.
 
     ```
-    python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+    python -m examples.models.llama2.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
 
 ### Option C: Download and export Llama3 8B model
