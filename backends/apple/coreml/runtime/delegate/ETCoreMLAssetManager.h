@@ -104,7 +104,7 @@ NS_ASSUME_NONNULL_BEGIN
 ///
 /// @param error   On failure, error is filled with the failure information.
 /// @retval `YES` is the assets are purged otherwise `NO`.
-- (BOOL)purge:(NSError* __autoreleasing*)error;
+- (BOOL)purgeAndReturnError:(NSError* __autoreleasing*)error;
 
 /// The estimated size of the assets store. The returned value might not correct if the asset
 /// directory is tampered externally.
