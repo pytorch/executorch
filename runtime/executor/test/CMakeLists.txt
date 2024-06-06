@@ -54,10 +54,9 @@ et_cxx_test(
 # TODO(T191569140): Enable this test. et_cxx_test( program_test SOURCES
 # program_test.cpp EXTRA_LIBS extension_data_loader )
 
-target_include_directories(
-  program_test PRIVATE "${CMAKE_INSTALL_PREFIX}/schema/include"
-                       "${EXECUTORCH_ROOT}/third-party/flatbuffers/include"
-)
+# target_include_directories( program_test PRIVATE
+# "${CMAKE_INSTALL_PREFIX}/schema/include"
+# "${EXECUTORCH_ROOT}/third-party/flatbuffers/include" )
 
 et_cxx_test(
   kernel_resolution_test SOURCES kernel_resolution_test.cpp EXTRA_LIBS
