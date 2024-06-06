@@ -492,7 +492,7 @@ the model <code class="docutils literal notranslate"><span class="pre">SimpleCon
 <span class="n">assert</span><span class="p">(</span><span class="n">loader</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
 
 <span class="n">Result</span><span class="o">&lt;</span><span class="n">Program</span><span class="o">&gt;</span><span class="w"> </span><span class="n">program</span><span class="w"> </span><span class="o">=</span>
-<span class="w">      </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">Program</span><span class="o">::</span><span class="n">load</span><span class="p">(</span><span class="n">loader</span><span class="p">.</span><span class="n">get</span><span class="p">());</span>
+<span class="w">      </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">Program</span><span class="o">::</span><span class="n">load</span><span class="p">(</span><span class="o">&amp;</span><span class="n">loader</span><span class="p">.</span><span class="n">get</span><span class="p">());</span>
 <span class="n">assert</span><span class="p">(</span><span class="n">program</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
 </pre></div>
 </div>
