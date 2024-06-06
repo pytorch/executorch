@@ -52,16 +52,26 @@ export_test_model() {
   python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry" --outdir "cmake-out" 2> /dev/null
   python3 -m test.models.export_delegated_program --modules "ModuleAddMul" --backend_id "StubBackend" --outdir "cmake-out" || true
 
-  export ET_MODULE_ADD_HALF_PATH="$(realpath cmake-out/ModuleAddHalf.pte)"
-  export ET_MODULE_ADD_PATH="$(realpath cmake-out/ModuleAdd.pte)"
-  export ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH="$(realpath cmake-out/ModuleDynamicCatUnallocatedIO.pte)"
-  export ET_MODULE_INDEX_PATH="$(realpath cmake-out/ModuleIndex.pte)"
-  export ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH="$(realpath cmake-out/ModuleLinear-no-constant-segment.pte)"
-  export ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH="$(realpath cmake-out/ModuleLinear.pte)"
-  export ET_MODULE_MULTI_ENTRY_PATH="$(realpath cmake-out/ModuleMultipleEntry.pte)"
-  export ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH="$(realpath cmake-out/ModuleAddMul-nosegments-da1024.pte)"
-  export ET_MODULE_ADD_MUL_NOSEGMENTS_PATH="$(realpath cmake-out/ModuleAddMul-nosegments.pte)"
-  export ET_MODULE_ADD_MUL_PATH="$(realpath cmake-out/ModuleAddMul.pte)"
+  ET_MODULE_ADD_HALF_PATH="$(realpath cmake-out/ModuleAddHalf.pte)"
+  ET_MODULE_ADD_PATH="$(realpath cmake-out/ModuleAdd.pte)"
+  ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH="$(realpath cmake-out/ModuleDynamicCatUnallocatedIO.pte)"
+  ET_MODULE_INDEX_PATH="$(realpath cmake-out/ModuleIndex.pte)"
+  ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH="$(realpath cmake-out/ModuleLinear-no-constant-segment.pte)"
+  ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH="$(realpath cmake-out/ModuleLinear.pte)"
+  ET_MODULE_MULTI_ENTRY_PATH="$(realpath cmake-out/ModuleMultipleEntry.pte)"
+  ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH="$(realpath cmake-out/ModuleAddMul-nosegments-da1024.pte)"
+  ET_MODULE_ADD_MUL_NOSEGMENTS_PATH="$(realpath cmake-out/ModuleAddMul-nosegments.pte)"
+  ET_MODULE_ADD_MUL_PATH="$(realpath cmake-out/ModuleAddMul.pte)"
+  export ET_MODULE_ADD_HALF_PATH
+  export ET_MODULE_ADD_PATH
+  export ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH
+  export ET_MODULE_INDEX_PATH
+  export ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH
+  export ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH
+  export ET_MODULE_MULTI_ENTRY_PATH
+  export ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH
+  export ET_MODULE_ADD_MUL_NOSEGMENTS_PATH
+  export ET_MODULE_ADD_MUL_PATH
 }
 
 build_and_run_test() {
