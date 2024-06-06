@@ -196,8 +196,8 @@ Tensor& dequantize_per_channel_out(
       "Failed to resize out Tensor in dequantize_per_channel_out");
 
   ET_CHECK_MSG(
-      scale.scalar_type() == ScalarType::Double,
-      "scale.scalar_type() %" PRId8 " is not double type",
+      scale.scalar_type() == ScalarType::Float,
+      "scale.scalar_type() %" PRId8 " is not float type",
       static_cast<int8_t>(scale.scalar_type()));
 
   ET_CHECK_MSG(
@@ -232,7 +232,7 @@ Tensor& dequantize_per_channel_out(
       dims[i] = i - 1;
     }
   }
-  const double* scale_data = scale.const_data_ptr<double>();
+  const float* scale_data = scale.const_data_ptr<float>();
   const int64_t* zero_point_data;
   if (opt_zero_points.has_value()) {
     zero_point_data = opt_zero_points.value().const_data_ptr<int64_t>();
@@ -254,7 +254,7 @@ Tensor& dequantize_per_channel_out(
 #define DEQUANTIZE_IMPL(CTYPE_IN, CTYPE_OUT, out_dtype)                        \
   case ScalarType::out_dtype:                                                  \
     for (size_t channel_ix = 0; channel_ix < input.size(axis); ++channel_ix) { \
-      double _scale = scale_data[channel_ix];                                  \
+      float _scale = scale_data[channel_ix];                                   \
       int64_t _zero_point = 0;                                                 \
       if (zero_point_data != nullptr) {                                        \
         _zero_point = zero_point_data[channel_ix];                             \
