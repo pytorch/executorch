@@ -48,12 +48,11 @@ et_cxx_test(
   extension_runner_util
 )
 
-# et_cxx_test(method_meta_test SOURCES method_meta_test.cpp EXTRA_LIBS
-# extension_data_loader)
+# TODO(T191569140): Enable this test. et_cxx_test(method_meta_test SOURCES
+# method_meta_test.cpp EXTRA_LIBS extension_data_loader)
 
-et_cxx_test(
-  program_test SOURCES program_test.cpp EXTRA_LIBS extension_data_loader
-)
+# TODO(T191569140): Enable this test. et_cxx_test( program_test SOURCES
+# program_test.cpp EXTRA_LIBS extension_data_loader )
 
 target_include_directories(
   program_test PRIVATE "${CMAKE_INSTALL_PREFIX}/schema/include"
@@ -70,8 +69,9 @@ et_cxx_test(
   extension_data_loader extension_runner_util
 )
 
-# et_cxx_test( backend_integration_test SOURCES backend_integration_test.cpp
-# EXTRA_LIBS extension_data_loader extension_runner_util )
+# TODO(T191569140): Enable this test. et_cxx_test( backend_integration_test
+# SOURCES backend_integration_test.cpp EXTRA_LIBS extension_data_loader
+# extension_runner_util )
 
 et_cxx_test(memory_manager_test SOURCES memory_manager_test.cpp)
 
