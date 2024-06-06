@@ -31,7 +31,7 @@ Result<util::FileDataLoader> loader =
 assert(loader.ok());
 
 Result<Program> program =
-      torch::executor::Program::load(loader.get());
+      torch::executor::Program::load(&loader.get());
 assert(program.ok());
 ```
 
