@@ -111,7 +111,7 @@ probe_tests() {
 
 build_executorch
 build_gtest
-export_test_add_model
+export_test_model
 
 if [ -z "$1" ]; then
   echo "Running all directories:"
