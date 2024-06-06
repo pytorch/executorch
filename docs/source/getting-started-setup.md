@@ -83,7 +83,7 @@ portability details.
 
    ```bash
    # Clone the ExecuTorch repo from GitHub
-   git clone --branch v0.2.0 https://github.com/pytorch/executorch.git
+   git clone --branch v0.2.1 https://github.com/pytorch/executorch.git
    cd executorch
 
    # Update and pull submodules
