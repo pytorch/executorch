@@ -40,6 +40,7 @@ foreach(kernel ${_kernels})
   add_custom_command(
     OUTPUT "${_wrapper_dir}/supported_features.cpp"
            "${_wrapper_dir}/supported_features.h"
+    COMMAND mkdir -p ${_wrapper_dir}
     COMMAND
       python kernels/test/gen_supported_features.py
       kernels/${kernel}/test/supported_features_def.yaml >
