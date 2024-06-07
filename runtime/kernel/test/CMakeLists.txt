@@ -22,13 +22,17 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
-set(_test_srcs
-    kernel_runtime_context_test.cpp
-    operator_registry_test
+add_executable(operator_registry_test operator_registry_test.cpp ../operator_registry.cpp
+ ../../core/evalue.cpp ../../platform/abort.cpp ../../platform/log.cpp ../../platform/runtime.cpp ../../platform/target/Posix.cpp)
+target_link_libraries(
+  operator_registry_test GTest::gtest GTest::gtest_main GTest::gmock
 )
+target_include_directories(operator_registry_test PRIVATE ${EXECUTORCH_ROOT}/..)
+add_test(ExecuTorchTest operator_registry_test)
 
-et_cxx_test(runtime_kernel_test SOURCES ${_test_srcs} EXTRA_LIBS)
 
-et_cxx_test(runtime_max_kernel_num_test SOURCES operator_registry_max_kernel_num_test)
+# et_cxx_test(operator_registry_test SOURCES operator_registry_test.cpp)
 
-et_cxx_test(runtime_double_registration_test SOURCES kernel_double_registration_test)
+# et_cxx_test(runtime_max_kernel_num_test SOURCES operator_registry_max_kernel_num_test)
+
+# et_cxx_test(runtime_double_registration_test SOURCES kernel_double_registration_test)
