@@ -99,6 +99,7 @@ class TestBackends(unittest.TestCase):
         test_inputs=None,
         memory_layouts=None,
         first_output_only=False,
+        custom_pass: Optional[List[ExportPass]] = None,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
@@ -1357,30 +1358,35 @@ class TestBackends(unittest.TestCase):
             MeanModule(dims=[-1, -2]),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
         )
 
         self.lower_module_and_test_output(
             MeanModule(dims=[1]),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
         )
 
         self.lower_module_and_test_output(
             MeanModule(dims=[0, 1, 2, 3]),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
         )
 
         self.lower_module_and_test_output(
             MeanModule(dims=[-1, -2], keepdim=False),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
         )
 
         self.lower_module_and_test_output(
             MeanModule(dims=[1], keepdim=False),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            custom_pass=[MeanToSumDiv()],
         )
 
     def test_vulkan_backend_index_select_int(self):
