@@ -36,6 +36,7 @@ build_executorch() {
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
     -DEXECUTORCH_BUILD_VULKAN=$BUILD_VULKAN \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
 }
