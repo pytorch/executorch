@@ -155,13 +155,13 @@ class ArmTester(Tester):
     def __init__(
         self,
         model: torch.nn.Module,
-        inputs: Tuple[torch.Tensor],
+        example_inputs: Tuple[torch.Tensor],
         compile_spec: List[CompileSpec] = None,
     ):
         """
         Args:
             model (torch.nn.Module): The model to test
-            inputs (Tuple[torch.Tensor]): The inputs to the model
+            example_inputs (Tuple[torch.Tensor]): Example inputs to the model
             compile_spec (List[CompileSpec]): The compile spec to use
         """
 
@@ -173,7 +173,7 @@ class ArmTester(Tester):
 
         self.compile_spec = compile_spec
 
-        super().__init__(model, inputs)
+        super().__init__(model, example_inputs)
 
     def quantize(self, quantize_stage: Optional[Quantize] = None):
         if quantize_stage is None:

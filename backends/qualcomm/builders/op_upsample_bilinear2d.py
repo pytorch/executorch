@@ -60,7 +60,7 @@ class ResizeBilinear(NodeVisitor):
         reisze_bilinear_op.AddScalarParam(
             OpResizeBilinear.param_half_pixel_centers,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {"data": True},
+            {"data": not node.args[2]},
         )
 
         return reisze_bilinear_op

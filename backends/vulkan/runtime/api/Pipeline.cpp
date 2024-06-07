@@ -159,6 +159,10 @@ bool operator==(const SpecVar& lhs, const SpecVar& rhs) {
   return false;
 }
 
+bool operator!=(const SpecVar& lhs, const SpecVar& rhs) {
+  return !(lhs == rhs);
+}
+
 SpecVarList::SpecVarList() {}
 
 SpecVarList::SpecVarList(std::initializer_list<SpecVar> init_list) {

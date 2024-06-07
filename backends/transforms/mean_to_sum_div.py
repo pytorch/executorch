@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass
@@ -19,6 +18,7 @@ class MeanToSumDiv(ExportPass):
         )
         # args[0] is the input tensor
         shape = args[0].node.meta["val"].shape
+        dtype = args[0].node.meta["val"].dtype
         dims_to_reduce = args[1]
         size = 1.0
         for dim in dims_to_reduce:
@@ -32,7 +32,7 @@ class MeanToSumDiv(ExportPass):
                 ],
                 size,
             ),
-            {"dtype": torch.float32},
+            {"dtype": dtype},
             meta,
         )
 

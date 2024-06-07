@@ -27,12 +27,21 @@ class ConvertInterpolateWithUpsample2D(ExportPass):
                 input_node = src_partition.input_nodes[0]
                 output_node = src_partition.output_nodes[0]
                 with graph.inserting_after(input_node):
-                    # args: input, output_size, aligned_corners, scales_h, scales_w
                     # TODO: robust way to get the configuration parameters and operator
-                    #       currently we're targeting to specific combination in deeplabv3
-                    output_size = list(output_node.meta["val"].shape)
-                    args = [input_node, output_size[-2:], False]
-                    upsample_op = exir_ops.edge.aten.upsample_bilinear2d.default
+                    # please check torch/_decomp/decomposition.py for details
+                    if output_node.target.__name__ == "aten.index.Tensor":
+                        # nearest_2d
+                        # args: input, output_size, scales_h, scales_w
+                        output_size = list(output_node.meta["val"].shape)
+                        args = [input_node, output_size[-2:]]
+                        upsample_op = exir_ops.edge.aten.upsample_nearest2d.default
+                    else:
+                        # upsample_2d
+                        # args: input, output_size, aligned_corners, scales_h, scales_w
+                        output_size = list(output_node.meta["val"].shape)
+                        args = [input_node, output_size[-2:], False]
+                        upsample_op = exir_ops.edge.aten.upsample_bilinear2d.default
+
                     upsample2d_node = graph.create_node(
                         "call_function", upsample_op, tuple(args)
                     )

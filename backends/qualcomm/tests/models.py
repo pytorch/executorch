@@ -103,6 +103,23 @@ class Ceil(torch.nn.Module):
         return torch.ceil(x)
 
 
+class Chunk(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.chunk(x, chunks=2, dim=-1)
+
+
+class ChunkAdd(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        c1, c2 = torch.chunk(x, chunks=2, dim=-1)
+        return torch.add(c1, c2)
+
+
 class Clamp(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -423,6 +440,24 @@ class LayerNorm(torch.nn.Module):
         return self.linear(self.layer_norm(x))
 
 
+class LeakyReLUDefault(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.leaky_relu = torch.nn.LeakyReLU()
+
+    def forward(self, x):
+        return self.leaky_relu(x)
+
+
+class LeakyReLUCustom(torch.nn.Module):
+    def __init__(self, coeff):
+        super().__init__()
+        self.leaky_relu = torch.nn.LeakyReLU(coeff)
+
+    def forward(self, x):
+        return self.leaky_relu(x)
+
+
 class Linear(torch.nn.Module):
     def __init__(self, use_bias: bool = True):
         super().__init__()
@@ -528,12 +563,35 @@ class Pad(torch.nn.Module):
 
 
 class PixelShuffle(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, scale):
         super().__init__()
-        self.pixel_shuffle = torch.nn.PixelShuffle(2)
+        self.pixel_shuffle = torch.nn.PixelShuffle(scale)
 
     def forward(self, x):
         return self.pixel_shuffle(x)
+
+
+class PixelUnshuffle(torch.nn.Module):
+    def __init__(self, scale):
+        super().__init__()
+        self.pixel_unshuffle = torch.nn.PixelUnshuffle(scale)
+
+    def forward(self, x):
+        return self.pixel_unshuffle(x)
+
+
+class PixelUnshuffleMathEquivalent(torch.nn.Module):
+    def __init__(self, scale):
+        super().__init__()
+        self.scale = scale
+
+    def forward(self, x):
+        b, c, hh, hw = x.size()
+        out_channel = c * (self.scale**2)
+        h = hh // self.scale
+        w = hw // self.scale
+        x_view = x.view(b, c, h, self.scale, w, self.scale)
+        return x_view.permute(0, 1, 3, 5, 2, 4).reshape(b, out_channel, h, w)
 
 
 class PowTensorScalar(torch.nn.Module):
@@ -542,6 +600,24 @@ class PowTensorScalar(torch.nn.Module):
 
     def forward(self, x):
         return torch.pow(x, 2)
+
+
+class PReLUDefault(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.prelu = torch.nn.PReLU()
+
+    def forward(self, x):
+        return self.prelu(x)
+
+
+class PReLUPerChannel(torch.nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.prelu = torch.nn.PReLU(channels)
+
+    def forward(self, x):
+        return self.prelu(x)
 
 
 class Relu(torch.nn.Module):
@@ -593,6 +669,33 @@ class ResidualBlockModule(torch.nn.Module):
         x5 = self.hardtanh(x4)
         x6 = torch.add(x5, x2)
         return x6
+
+
+class ResizeBilinear2D(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        output_shape = [dim * 2 for dim in x.shape[-2:]]
+        return torch.nn.functional.interpolate(
+            x,
+            size=list(torch.randn(output_shape).shape),
+            mode="bilinear",
+            align_corners=False,
+        )
+
+
+class ResizeNearest2D(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        output_shape = [dim * 2 for dim in x.shape[-2:]]
+        return torch.nn.functional.interpolate(
+            x,
+            size=list(torch.randn(output_shape).shape),
+            mode="nearest",
+        )
 
 
 class Rsqrt(torch.nn.Module):
@@ -723,20 +826,6 @@ class Stack(torch.nn.Module):
 
     def forward(self, x, y):
         return torch.stack((x, y))
-
-
-class StaticResizeBilinear2DSizeModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        output_shape = [dim * 2 for dim in x.shape[-2:]]
-        return torch.nn.functional.interpolate(
-            x,
-            size=list(torch.randn(output_shape).shape),
-            mode="bilinear",
-            align_corners=False,
-        )
 
 
 class Sub(torch.nn.Module):
