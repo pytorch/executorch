@@ -6,6 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#ifndef INDEXING_UTILS_H
+#define INDEXING_UTILS_H
+
 // Width Dim Index, assuming (W, H, C, N) order
 #define W_DIM 0
 // Height, assuming (W, H, C, N) order
@@ -74,10 +77,10 @@ ivec4 from_nchw_buffer_i(int buf_i, ivec4 sizes) {
 /*
  * Input: Texel buffer index, (W, H, C, N) strides of a tensor, which dim is
  *        packed along a texel
- * Returns: The (w, h, c, n) tensor index corresponding to the first element of
- *          the texel at the specified buffer index
+ * Returns: The (x, y, z, n) texel position corresponding to the first element
+ *          of the texel at the specified buffer index
  */
-ivec4 from_texel_buf_i(int buf_i, ivec4 strides, int packed_dim) {
+ivec4 to_texel_pos(int buf_i, ivec4 strides, int packed_dim) {
   ivec4 idx;
   for (int i = 3; i >= 0; i--) {
     if (i != packed_dim) {
@@ -85,8 +88,13 @@ ivec4 from_texel_buf_i(int buf_i, ivec4 strides, int packed_dim) {
       buf_i %= strides[i];
     }
   }
-  idx[packed_dim] = buf_i * 4;
+  idx[packed_dim] = buf_i;
   return idx;
+}
+
+int to_texel_idx(const ivec4 texel_pos, ivec4 strides) {
+  return texel_pos.x * strides.x + texel_pos.y * strides.y +
+      texel_pos.z * strides.z + texel_pos.w * strides.w;
 }
 
 //
@@ -178,19 +186,35 @@ ivec4 to_texture_elem_pos(ivec4 idx, ivec4 sizes, int packed_dim) {
 //
 
 #ifdef USING_BUFFER
-#define load_texel(buf, idx) buf[idx];
+#define FP_IN_TENSOR_T buffer
 #elif defined(USING_TEXTURE2D)
-#define load_texel(im, pos) texelFetch(im, pos.xy, 0);
+#define FP_IN_TENSOR_T sampler2D
 #else // defined(USING_TEXTURE3D)
-#define load_texel(im, pos) texelFetch(im, pos, 0);
+#define FP_IN_TENSOR_T sampler3D
 #endif
 
 #ifdef USING_BUFFER
-#define write_texel(buf, idx, texel) buf[idx] = texel;
+#define INT_IN_TENSOR_T buffer
 #elif defined(USING_TEXTURE2D)
-#define write_texel(im, pos, texel) imageStore(im, pos.xy, texel);
+#define INT_IN_TENSOR_T isampler2D
 #else // defined(USING_TEXTURE3D)
-#define write_texel(im, pos, texel) imageStore(im, pos, texel);
+#define INT_IN_TENSOR_T isampler3D
+#endif
+
+#ifdef USING_BUFFER
+#define load_texel(buf, idx) buf[idx]
+#elif defined(USING_TEXTURE2D)
+#define load_texel(im, pos) texelFetch(im, pos.xy, 0)
+#else // defined(USING_TEXTURE3D)
+#define load_texel(im, pos) texelFetch(im, pos, 0)
+#endif
+
+#ifdef USING_BUFFER
+#define write_texel(buf, idx, texel) buf[idx] = texel
+#elif defined(USING_TEXTURE2D)
+#define write_texel(im, pos, texel) imageStore(im, pos.xy, texel)
+#else // defined(USING_TEXTURE3D)
+#define write_texel(im, pos, texel) imageStore(im, pos, texel)
 #endif
 
 //
@@ -216,3 +240,5 @@ ivec4 get_channel_packed_pos_from_index(ivec4 nchw, ivec4 sizes) {
 
   return ivec4(nchw.w, nchw.z, nchw.x * c_stride + nchw.y / 4, nchw.y % 4);
 }
+
+#endif // INDEXING_UTILS_H
