@@ -146,9 +146,10 @@ def get_weight_int8pack_mm_inputs():
     inputs_list = [((M, K), (N, K), (N)) for M, K, N in MKN_list]
 
     test_suite = VkTestSuite(inputs_list)
-    test_suite.dtypes = ["at::kFloat"]
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
     test_suite.layouts = ["api::kWidthPacked"]
     test_suite.storage_types = ["api::kTexture3D", "api::kBuffer"]
+    test_suite.prepacked_args = ["mat2"]
 
     test_suite.arg_dtype["mat2"] = "at::kChar"
     test_suite.arg_data_range["mat2"] = (0, 100)
@@ -348,6 +349,25 @@ def get_full_inputs():
             ([S1, S2], 42.0),
             ([M, M1, M2], 3.14),
             ([L, M, M1, M2], 2.72),
+        ]
+    )
+    return test_suite
+
+
+@register_test_suite(
+    [
+        "aten.zeros.default",
+        "aten.zeros_like.default",
+        "aten.ones.default",
+        "aten.ones_like.default",
+    ]
+)
+def get_ones_inputs():
+    test_suite = VkTestSuite(
+        [
+            ([S1, S2]),
+            ([M, M1, M2]),
+            ([L, M, M1, M2]),
         ]
     )
     return test_suite

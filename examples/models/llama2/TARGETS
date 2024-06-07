@@ -47,7 +47,7 @@ runtime.python_library(
 
 runtime.python_binary(
     name = "export_llama",
-    main_module = "executorch.examples.models.llama2.export_llama",
+    main_function = "executorch.examples.models.llama2.export_llama.main",
     # visibility = ["//executorch/examples/..."],
     preload_deps = [
         "//executorch/examples/models/llama2/custom_ops:custom_ops_aot_lib",

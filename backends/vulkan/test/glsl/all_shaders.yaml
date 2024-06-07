@@ -70,8 +70,8 @@ scalar_add_buffer:
     DTYPE: float
   generate_variant_forall:
     DTYPE:
-      - VALUE: half
       - VALUE: float
+      - VALUE: half
       - VALUE: int8
   shader_variants:
     - NAME: scalar_add_buffer

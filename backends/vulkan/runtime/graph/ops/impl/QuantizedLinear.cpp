@@ -71,10 +71,12 @@ void add_q_8w_linear_node(
     ComputeGraph& graph,
     const ValueRef mat1,
     const ValueRef q_mat2_data,
-    const ValueRef scales,
+    const ValueRef scales_data,
     const ValueRef out) {
   ValueRef q_mat2 =
-      prepack_if_tensor_ref(graph, q_mat2_data, api::kHeightPacked);
+      prepack_if_tensor_ref(graph, q_mat2_data, api::kWidthPacked);
+  ValueRef scales =
+      prepack_if_tensor_ref(graph, scales_data, api::kWidthPacked);
 
   std::string kernel_name = "q_8w_linear";
   kernel_name.reserve(kShaderNameReserve);
