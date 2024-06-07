@@ -37,5 +37,5 @@ void main() {
     return;
   }
 
-  buffer_in[t_id] = buffer_in[t_id] + scalar;
+  buffer_in[t_id] = buffer_in[t_id] + VEC4_T(scalar);// buffer_in[t_id];
 }

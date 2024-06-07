@@ -26,12 +26,17 @@
 using namespace vkcompute::api;
 
 std::vector<std::vector<int64_t>> standard_sizes_to_test = {
+    // 2D
+    {7, 11},
+    {13, 6},
     // 3D
+    {2, 9, 7},
     {9, 15, 19},
     {7, 11, 24},
     {13, 8, 11},
     {12, 11, 19},
     // 4D
+    {2, 2, 3, 5},
     {9, 13, 11, 17},
     {17, 14, 18, 20},
     {7, 13, 12, 21},
@@ -125,6 +130,9 @@ std::vector<int64_t> get_reference_strides(
 
 TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
   for (const auto& sizes : standard_sizes_to_test) {
+    if (sizes.size() < 3) {
+      continue;
+    }
     for (const auto& layout :
          {api::kWidthPacked, api::kHeightPacked, api::kChannelsPacked}) {
       // texel_strides = true
@@ -390,6 +398,7 @@ TEST_F(VulkanComputeAPITest, test_zero_size_tensor) {
   }
 }
 
+template <typename T>
 void run_buffer_tensor_sanity_check(vTensor& tensor) {
   fill_vtensor(tensor, 0.0f, true);
 
@@ -404,11 +413,38 @@ void run_buffer_tensor_sanity_check(vTensor& tensor) {
 
 TEST_F(VulkanComputeAPITest, buffer_tensor_sanity_check) {
   for (const auto& sizes : standard_sizes_to_test) {
-    for (const auto& layout :
-         {api::kWidthPacked, api::kHeightPacked, api::kChannelsPacked}) {
-      vTensor a =
-          vTensor(api::context(), sizes, api::kFloat, api::kBuffer, layout);
-      run_buffer_tensor_sanity_check(a);
+    for (const auto& dtype : {api::kFloat, api::kHalf, api::kChar}) {
+      if (dtype == api::kHalf &&
+          !api::context()->adapter_ptr()->has_full_float16_buffers_support()) {
+        continue;
+      }
+      if (dtype == api::kHalf && api::utils::multiply_integers(sizes) >= 2048) {
+        continue;
+      }
+      if (dtype == api::kChar &&
+          !api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
+        continue;
+      }
+      if (dtype == api::kChar && api::utils::multiply_integers(sizes) >= 128) {
+        continue;
+      }
+      for (const auto& layout :
+           {api::kWidthPacked, api::kHeightPacked, api::kChannelsPacked}) {
+        vTensor a = vTensor(api::context(), sizes, dtype, api::kBuffer, layout);
+        switch (dtype) {
+          case api::kFloat:
+            run_buffer_tensor_sanity_check<float>(a);
+            break;
+          case api::kHalf:
+            run_buffer_tensor_sanity_check<torch::executor::Half>(a);
+            break;
+          case api::kChar:
+            run_buffer_tensor_sanity_check<int8_t>(a);
+            break;
+          default:
+            VK_THROW("Unsupported dtype");
+        }
+      }
     }
   }
 }
@@ -1512,6 +1548,10 @@ void run_from_gpu_test(
       !api::context()->adapter_ptr()->has_16bit_storage()) {
     return;
   }
+  if ((dtype == api::kChar || dtype == api::kQInt8) &&
+      !api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
+    return;
+  }
   vTensor vten =
       vTensor(api::context(), sizes, dtype, storage_type, memory_layout);
 
@@ -1559,6 +1599,10 @@ void run_to_gpu_test(
     api::StorageType storage_type = api::StorageType::TEXTURE_3D) {
   if (dtype == api::kHalf &&
       !api::context()->adapter_ptr()->has_16bit_storage()) {
+    return;
+  }
+  if ((dtype == api::kChar || dtype == api::kQInt8) &&
+      !api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
     return;
   }
 
@@ -1625,6 +1669,19 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
       {3, 1, 7, 13},
   };
 
+  // These sizes are set such that the total number of elements is less than
+  // 128 which is the maximum representable value for int8.
+  std::vector<std::vector<int64_t>> to_test_int8 = {
+      // 2D sizes
+      {14, 7},
+      // 3D sizes
+      {3, 7, 5},
+      {4, 2, 11},
+      // 4D sizes
+      {3, 3, 3, 3},
+      {7, 1, 6, 3},
+  };
+
 #define RUN_TESTS(ctype, dtype)                                    \
   run_to_gpu_test<ctype>(                                          \
       sizes, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, dtype); \
@@ -1637,6 +1694,11 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
     RUN_TESTS(float, api::kFloat)
     RUN_TESTS(torch::executor::Half, api::kHalf)
   }
+
+  for (auto& sizes : to_test_int8) {
+    RUN_TESTS(int8_t, api::kChar);
+  }
+
 #undef RUN_TESTS
 }
 

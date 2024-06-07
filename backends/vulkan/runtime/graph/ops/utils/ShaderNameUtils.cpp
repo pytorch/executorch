@@ -41,6 +41,10 @@ void add_dtype_suffix(std::string& kernel_name, const api::ScalarType dtype) {
     case api::kInt:
       kernel_name += "_int";
       break;
+    case api::kChar:
+    case api::kQInt8:
+      kernel_name += "_int8";
+      break;
     default:
       break;
   }
