@@ -96,6 +96,7 @@ runtime.python_library(
     ],
     visibility = [
         "//executorch/backends/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         "//caffe2:torch",
