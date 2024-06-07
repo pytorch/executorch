@@ -29,6 +29,7 @@ python_library(
     ],
     deps = [
         ":passes",
+        ":utils",
         "//caffe2:torch",
         "//executorch/exir:lib",
     ],

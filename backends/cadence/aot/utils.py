@@ -14,6 +14,27 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from tabulate import tabulate
 
+quant_ops = {
+    torch.ops.quantized_decomposed.quantize_per_tensor.default,
+    torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+    torch.ops.quantized_decomposed.quantize_per_channel.default,
+    torch.ops.quantized_decomposed.dequantize_per_channel.default,
+}
+
+
+# Check if the model is quantized, by looking at the graph and finding quant/dequant ops
+def model_is_quantized(model: torch.nn.Module) -> bool:
+    # Quantized models have to be GraphModules already, from prepare/convert calls.
+    # Return false if the model is not a GraphModule.
+    if not isinstance(model, torch.fx.GraphModule):
+        return False
+
+    # Walk through the graph and look for quant/dequant ops
+    for op in quant_ops:
+        if model.graph.find_nodes(op="call_function", target=op):
+            return True
+    return False
+
 
 # Get the output size of a 1D convolution given the input size and parameters
 def get_conv1d_output_size(
