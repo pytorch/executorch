@@ -385,6 +385,10 @@ void ComputeGraph::prepare() {
     context_->descriptor_pool().init(config);
   }
 #undef MERGE_FIELD
+
+  if (config_.enable_querypool) {
+    context_->initialize_querypool();
+  }
 }
 
 void ComputeGraph::encode_prepack() {
@@ -405,6 +409,8 @@ void ComputeGraph::prepack() const {
 void ComputeGraph::encode_execute() {
   context_->flush();
   context_->set_cmd(/*reusable = */ true);
+
+  context_->cmd_reset_querypool();
 
   for (SharedObject& shared_object : shared_objects_) {
     shared_object.allocate(this);

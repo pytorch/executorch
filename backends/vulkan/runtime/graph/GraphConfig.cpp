@@ -56,6 +56,10 @@ GraphConfig::GraphConfig() {
   // settings will be serialized as part of the graph.
   enable_memory_layout_override = true;
   memory_layout_override = api::kWidthPacked;
+
+  // QueryPool objects are used to measure execution times of individual shader
+  // dispatches. By default, this functionality is disabled.
+  enable_querypool = false;
 }
 
 void GraphConfig::set_storage_type_override(api::StorageType storage_type) {

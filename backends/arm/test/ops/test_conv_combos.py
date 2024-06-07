@@ -157,10 +157,10 @@ class TestConvCombos(unittest.TestCase):
     def _test_conv_combo_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .export()
@@ -169,13 +169,8 @@ class TestConvCombos(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(list(module.edge_op_list))
             .to_executorch()
+            .run_method_and_compare_outputs()
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs()
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_conv_combo_tosa_BI_pipeline(
         self,
@@ -184,10 +179,10 @@ class TestConvCombos(unittest.TestCase):
         atol: float = 1e-3,
         rtol: float = 1e-3,
     ):
-        tester = (
+        (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
@@ -197,13 +192,8 @@ class TestConvCombos(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(list(module.edge_op_list))
             .to_executorch()
+            .run_method_and_compare_outputs(atol=atol, rtol=rtol, qtol=1)
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(atol=atol, rtol=rtol, qtol=1)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_conv_combo_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
@@ -211,7 +201,7 @@ class TestConvCombos(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
@@ -234,10 +224,6 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConv2dMeandim()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     def test_conv_meandim_u55_BI(self):
         model = ComboConv2dMeandim()
         self._test_conv_combo_u55_BI_pipeline(model, model.get_inputs())
@@ -253,10 +239,6 @@ class TestConvCombos(unittest.TestCase):
         model = ComboConvBatchnormRelu()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     def test_conv_batchnorm_relu_u55_BI(self):
         model = ComboConvBatchnormRelu()
         self._test_conv_combo_u55_BI_pipeline(model, model.get_inputs())
@@ -277,10 +259,6 @@ class TestConvCombos(unittest.TestCase):
         self._test_conv_combo_tosa_BI_pipeline(model, test_data)
 
     @parameterized.expand(ComboConvRelu6.test_data)
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     def test_conv_relu6_u55_BI(self, test_data: torch.Tensor):
         model = ComboConvRelu6()
         test_data = (test_data,)
@@ -297,10 +275,6 @@ class TestConvCombos(unittest.TestCase):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_tosa_BI_pipeline(model, model.get_inputs())
 
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     def test_block_bottleneck_residual_u55_BI(self):
         model = ComboBlockBottleneckResidual()
         self._test_conv_combo_u55_BI_pipeline(model, model.get_inputs())

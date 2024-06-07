@@ -56,9 +56,7 @@ dependencies {
   implementation("androidx.camera:camera-core:1.3.0-rc02")
   implementation("androidx.constraintlayout:constraintlayout:2.2.0-alpha12")
   implementation("com.facebook.fbjni:fbjni:0.5.1")
-  implementation("org.pytorch.executorch:executorch") {
-    exclude("com.facebook.fbjni", "fbjni-java-only")
-  }
+  implementation(files("libs/executorch-llama.aar"))
   testImplementation("junit:junit:4.13.2")
   androidTestImplementation("androidx.test.ext:junit:1.1.5")
   androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
@@ -81,6 +79,15 @@ tasks.register("setupQnn") {
   doFirst {
     exec {
       commandLine("sh", "examples/demo-apps/android/LlamaDemo/setup-with-qnn.sh")
+      workingDir("../../../../../")
+    }
+  }
+}
+
+tasks.register("download_prebuilt_lib") {
+  doFirst {
+    exec {
+      commandLine("sh", "examples/demo-apps/android/LlamaDemo/download_prebuilt_lib.sh")
       workingDir("../../../../../")
     }
   }

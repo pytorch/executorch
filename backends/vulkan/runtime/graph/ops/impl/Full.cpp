@@ -20,14 +20,20 @@ void resize_full_node(
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
   vTensorPtr out = graph->get_tensor(args[0].refs[0]);
-  std::vector<int64_t> out_sizes = *graph->get_int_list(extra_args[0]);
+  std::vector<int64_t> out_sizes;
+  if (graph->val_is_tensor(extra_args[0])) {
+    out_sizes = graph->get_tensor(extra_args[0])->sizes();
+  } else {
+    out_sizes = *graph->get_int_list(extra_args[0]);
+  }
 
   out->virtual_resize(out_sizes);
 }
 
+// size_or_in is IntListPtr when op is full and vTensorPtr if op is full_like
 void add_full_node(
     ComputeGraph& graph,
-    const ValueRef size,
+    const ValueRef size_or_in,
     const ValueRef fill_value,
     const ValueRef out) {
   float fill_value_val = graph.extract_scalar<float>(fill_value);
@@ -54,15 +60,30 @@ void add_full_node(
       {SV(t_out->packed_dim_whcn_idx())},
       // Resizing Logic
       resize_full_node,
-      {size}));
+      {size_or_in}));
 }
 
 void full(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  return add_full_node(graph, args[0], args[1], args[6]);
+  return add_full_node(graph, args[0], args[1], args[args.size() - 1]);
+}
+
+void zeros(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_full_node(
+      graph, args[0], graph.add_scalar<int64_t>(0), args[args.size() - 1]);
+}
+
+void ones(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_full_node(
+      graph, args[0], graph.add_scalar<int64_t>(1), args[args.size() - 1]);
 }
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.full.default, full);
+  VK_REGISTER_OP(aten.full_like.default, full);
+  VK_REGISTER_OP(aten.zeros.default, zeros);
+  VK_REGISTER_OP(aten.zeros_like.default, zeros);
+  VK_REGISTER_OP(aten.ones.default, ones);
+  VK_REGISTER_OP(aten.ones_like.default, ones);
 }
 
 } // namespace vkcompute

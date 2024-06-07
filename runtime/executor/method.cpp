@@ -998,6 +998,28 @@ Method::get_outputs(EValue* output_evalues, size_t length) {
   return Error::Ok;
 }
 
+__ET_NODISCARD Error Method::get_inputs(EValue* input_evalues, size_t length) {
+  ET_CHECK_OR_RETURN_ERROR(
+      initialized(),
+      InvalidState,
+      "Inputs can not be retrieved until method has been initialized.");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      length >= inputs_size(),
+      InvalidArgument,
+      "The given array is not large enough to hold all inputs.");
+
+  for (size_t i = 0; i < inputs_size(); i++) {
+    input_evalues[i] = values_[get_input_index(i)];
+  }
+
+  for (size_t i = inputs_size(); i < length; i++) {
+    input_evalues[i] = EValue();
+  }
+
+  return Error::Ok;
+}
+
 Error Method::execute_instruction() {
   auto& chain = chains_[step_state_.chain_idx];
   auto instructions = chain.s_chain_->instructions();

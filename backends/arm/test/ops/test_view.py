@@ -32,9 +32,11 @@ class TestSimpleView(unittest.TestCase):
     def _test_view_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: torch.Tensor
     ):
-        tester = (
+        (
             ArmTester(
-                module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
             .check_count({"torch.ops.aten.view.default": 1})
@@ -42,21 +44,17 @@ class TestSimpleView(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(qtol=1)
         )
-
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(qtol=1)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_view_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
-                module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
             .export()
@@ -65,21 +63,17 @@ class TestSimpleView(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(qtol=1)
         )
-
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(qtol=1)
-        else:
-            raise RuntimeError(
-                "TOSA ref model tool not installed and the test is an expected fail"
-            )
 
     def _test_view_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
         (
             ArmTester(
-                module, inputs=test_data, compile_spec=common.get_u55_compile_spec()
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
             .export()
@@ -105,9 +99,5 @@ class TestSimpleView(unittest.TestCase):
     # TODO MLETROCH-125
     @parameterized.expand(View.test_parameters)
     @unittest.expectedFailure
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     def test_view_u55_BI(self, test_tensor: torch.Tensor):
         self._test_view_u55_BI_pipeline(self.View(), (test_tensor,))

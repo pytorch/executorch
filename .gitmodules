@@ -49,10 +49,6 @@
 [submodule "backends/vulkan/third-party/Vulkan-Headers"]
 	path = backends/vulkan/third-party/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers
-[submodule "third-party/lm-evaluation-harness"]
-	path = third-party/lm-evaluation-harness
-	url = https://github.com/EleutherAI/lm-evaluation-harness
-	branch = v0.4.1
 [submodule "kernels/optimized/third-party/eigen"]
 	path = kernels/optimized/third-party/eigen
 	url = https://gitlab.com/libeigen/eigen.git

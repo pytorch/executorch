@@ -64,4 +64,8 @@ gen_operators_lib(
   LIB_NAME "portable_ops_lib" KERNEL_LIBS portable_kernels DEPS executorch
 )
 
-install(TARGETS portable_kernels portable_ops_lib DESTINATION lib)
+install(
+  TARGETS portable_kernels portable_ops_lib
+  DESTINATION lib
+  PUBLIC_HEADER DESTINATION include/portable
+)
