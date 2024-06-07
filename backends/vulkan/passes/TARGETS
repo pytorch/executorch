@@ -1,0 +1,29 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "custom_ops_defs",
+    srcs = [
+        "custom_ops_defs.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_unittest(
+    name = "test_custom_ops",
+    srcs = [
+        "test_custom_ops.py",
+    ],
+    deps = [
+        ":custom_ops_defs",
+        "//caffe2:torch",
+    ],
+)
