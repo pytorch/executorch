@@ -6,7 +6,7 @@
 
 import ctypes
 import unittest
-from typing import List, Optional, Tuple
+from typing import Tuple
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
@@ -18,7 +18,6 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
-from executorch.exir.pass_base import ExportPass
 from torch.export import Dim, export, ExportedProgram
 
 ctypes.CDLL("libvulkan.so.1")
