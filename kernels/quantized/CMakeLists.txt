@@ -100,4 +100,8 @@ gen_operators_lib(
   LIB_NAME "quantized_ops_lib" KERNEL_LIBS quantized_kernels DEPS executorch
 )
 
-install(TARGETS quantized_kernels quantized_ops_lib DESTINATION lib)
+install(
+  TARGETS quantized_kernels quantized_ops_lib
+  DESTINATION lib
+  PUBLIC_HEADER DESTINATION include/executorch/kernels/quantized/
+)
