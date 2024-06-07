@@ -31,7 +31,7 @@ foreach(kernel ${_kernels})
   add_custom_command(
     OUTPUT "${_wrapper_path}"
     COMMAND mkdir -p ${_wrapper_dir}
-    COMMAND echo "#include <${kernel}/Functions.h>" > "${_wrapper_path}"
+    COMMAND echo "#include <executorch/kernels/${kernel}/Functions.h>" > "${_wrapper_path}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     COMMENT "Generating ${_wrapper_path}"
     VERBATIM
