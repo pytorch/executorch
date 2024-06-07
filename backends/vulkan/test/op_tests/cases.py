@@ -331,6 +331,25 @@ def get_full_inputs():
     return test_suite
 
 
+@register_test_suite(
+    [
+        "aten.zeros.default",
+        "aten.zeros_like.default",
+        "aten.ones.default",
+        "aten.ones_like.default",
+    ]
+)
+def get_ones_inputs():
+    test_suite = VkTestSuite(
+        [
+            ([S1, S2]),
+            ([M, M1, M2]),
+            ([L, M, M1, M2]),
+        ]
+    )
+    return test_suite
+
+
 @register_test_suite(["aten.select.int", "aten.select_copy.int"])
 def get_select_int_inputs():
     test_suite = VkTestSuite(
