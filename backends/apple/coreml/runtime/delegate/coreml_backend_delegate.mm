@@ -11,6 +11,7 @@
 #import <backend_delegate.h>
 #import <coreml_backend/delegate.h>
 #import <executorch/runtime/core/evalue.h>
+#import <executorch/runtime/platform/log.h>
 #import <memory>
 #import <model_event_logger.h>
 #import <model_logging_options.h>
@@ -235,4 +236,3 @@ static auto success_with_compiler = register_backend(backend);
 
 } // namespace executor
 } // namespace torch
-

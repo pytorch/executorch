@@ -44,7 +44,6 @@ def define_common_targets():
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
             ":repeat_util",
-            "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
@@ -114,7 +113,6 @@ def define_common_targets():
         deps = [
             ":broadcast_util",
             "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/kernels/portable/cpu:scalar_utils",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
     )
@@ -151,7 +149,6 @@ def define_common_targets():
             "transpose_util.h",
         ],
         deps = [
-            "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],

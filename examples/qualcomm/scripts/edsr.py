@@ -215,11 +215,11 @@ if __name__ == "__main__":
         psnr_list.append(piq.psnr(hr, output_raws[i]))
         ssim_list.append(piq.ssim(hr, output_raws[i]))
 
-    avg_PNSR = sum(psnr_list).item() / len(psnr_list)
+    avg_PSNR = sum(psnr_list).item() / len(psnr_list)
     avg_SSIM = sum(ssim_list).item() / len(ssim_list)
     if args.ip and args.port != -1:
         with Client((args.ip, args.port)) as conn:
-            conn.send(json.dumps({"PNSR": avg_PNSR, "SSIM": avg_SSIM}))
+            conn.send(json.dumps({"PSNR": avg_PSNR, "SSIM": avg_SSIM}))
     else:
-        print(f"Average of PNSR is: {avg_PNSR}")
+        print(f"Average of PNSR is: {avg_PSNR}")
         print(f"Average of SSIM is: {avg_SSIM}")

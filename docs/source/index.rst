@@ -70,8 +70,9 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    intro-overview
-   concepts
    intro-how-it-works
+   getting-started-architecture
+   concepts
 
 .. toctree::
    :glob:
@@ -79,17 +80,10 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Getting Started
    :hidden:
 
-   getting-started-architecture
    getting-started-setup
+   export-overview
    runtime-build-and-cross-compilation
 
-.. toctree::
-   :glob:
-   :maxdepth: 2
-   :caption: Working with LLMs
-   :hidden:
-
-   llm/getting-started
 
 .. toctree::
    :glob:
@@ -99,7 +93,9 @@ Topics in this section will help you get started with ExecuTorch.
 
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
+   extension-module
    tutorials/sdk-integration-tutorial
+   apple-runtime
    demo-apps-ios
    demo-apps-android
    examples-end-to-end-to-lower-model-to-delegate
@@ -116,11 +112,11 @@ Topics in this section will help you get started with ExecuTorch.
 
 .. toctree::
    :glob:
-   :maxdepth: 1
-   :caption: Exporting to ExecuTorch
+   :maxdepth: 2
+   :caption: Working with LLMs
    :hidden:
 
-   export-overview
+   llm/getting-started
 
 .. toctree::
    :glob:
@@ -232,11 +228,25 @@ ExecuTorch tutorials.
    :tags:
 
 .. customcarditem::
+   :header: Simplified Runtime APIs Tutorial
+   :card_description: A simplified tutorial for executing the model on device.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: extension-module.html
+   :tags:
+
+.. customcarditem::
    :header: Using the ExecuTorch SDK to Profile a Model
    :card_description: A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.
    :image: _static/img/generic-pytorch-logo.png
    :link: tutorials/sdk-integration-tutorial.html
    :tags: SDK
+
+.. customcarditem::
+   :header: Integrating and Running ExecuTorch on Apple Platforms
+   :card_description: A tutorial on integrating, using, and troubleshooting the ExecuTorch runtime on iOS.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: apple-runtime.html
+   :tags: iOS, macOS
 
 .. customcarditem::
    :header: Building an ExecuTorch iOS Demo App

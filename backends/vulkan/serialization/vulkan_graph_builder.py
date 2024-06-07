@@ -54,9 +54,7 @@ class VkGraphBuilder:
             return vk_graph_schema.VkDataType.FLOAT16
         elif torch_dtype == torch.float32:
             return vk_graph_schema.VkDataType.FLOAT32
-        # Even with I64ToI32DtypePass, the SpecPropPass will revert to i64 for
-        # output tensors: https://fburl.com/code/ojei0xq2. This narrowing
-        # conversion resolves that case.
+        # Narrowing conversion for index tensor produced by max_poolNd_with_indices.
         elif torch_dtype == torch.int64:
             return vk_graph_schema.VkDataType.INT32
         else:
@@ -249,6 +247,9 @@ class VkGraphBuilder:
             # pyre-ignore[6]
             return self.create_scalar_list_value(arg)
         elif isinstance(arg, list) and isinstance(arg[0], Node):
+            return self.create_value_list_value(arg)
+        elif isinstance(arg, torch.fx.immutable_collections.immutable_list):
+            # pyre-ignore[6]
             return self.create_value_list_value(arg)
         elif isinstance(arg, str):
             return self.create_string_value(arg)

@@ -7,13 +7,16 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    runtime.cxx_test(
-        name = "sgd_test",
-        srcs = [
-            "sgd_test.cpp",
-        ],
-        deps = [
-            "//executorch/extension/training/optimizer:optimizer",
-            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
-        ],
-    )
+    for aten_mode in (True, False):
+        aten_suffix = "_aten" if aten_mode else ""
+        runtime.cxx_test(
+            name = "sgd_test" + aten_suffix,
+            srcs = [
+                "sgd_test.cpp",
+            ],
+            deps = [
+                "//executorch/extension/training/optimizer:optimizer" + aten_suffix,
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            ],
+        )

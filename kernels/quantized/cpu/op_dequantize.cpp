@@ -91,15 +91,19 @@ Tensor& dequantize_per_tensor_out(
 
   // calculate the dequantized output, cast scale to float to match fbgemm
   // behavior
-#define DEQUANTIZE_IMPL(IN_CTYPE, OUT_CTYPE, out_dtype)              \
-  case ScalarType::out_dtype:                                        \
-    for (size_t i = 0; i < input.numel(); i++) {                     \
-      out.mutable_data_ptr<OUT_CTYPE>()[i] = static_cast<OUT_CTYPE>( \
-          (input.const_data_ptr<IN_CTYPE>()[i] -                     \
-           static_cast<int32_t>(zero_point)) *                       \
-          static_cast<float>(scale));                                \
-    }                                                                \
-    break;
+#define DEQUANTIZE_IMPL(IN_CTYPE, OUT_CTYPE, out_dtype)                        \
+  case ScalarType::out_dtype: {                                                \
+    /* Hoist these function calls out of our inner loop because they might not \
+     * get inlined without LTO, particularly in ATen mode. */                  \
+    auto* out_data_ptr = out.mutable_data_ptr<OUT_CTYPE>();                    \
+    const auto* input_data_ptr = input.const_data_ptr<IN_CTYPE>();             \
+    const auto input_numel = input.numel();                                    \
+    for (size_t i = 0; i < input_numel; i++) {                                 \
+      out_data_ptr[i] = static_cast<OUT_CTYPE>(                                \
+          (input_data_ptr[i] - static_cast<int32_t>(zero_point)) *             \
+          static_cast<float>(scale));                                          \
+    }                                                                          \
+  } break;
 #define CALCULATE_INT_TYPE(IN_CTYPE, in_dtype)               \
   case ScalarType::in_dtype:                                 \
     switch (out.scalar_type()) {                             \
@@ -255,11 +259,12 @@ Tensor& dequantize_per_channel_out(
       if (zero_point_data != nullptr) {                                        \
         _zero_point = zero_point_data[channel_ix];                             \
       }                                                                        \
+      auto* out_data_ptr = out.mutable_data_ptr<CTYPE_OUT>();                  \
+      const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();           \
       apply_over_dim_list(                                                     \
-          [input, out, _scale, _zero_point](size_t in_ix) {                    \
-            out.mutable_data_ptr<CTYPE_OUT>()[in_ix] = static_cast<CTYPE_OUT>( \
-                (input.const_data_ptr<CTYPE_IN>()[in_ix] - _zero_point) *      \
-                _scale);                                                       \
+          [input_data_ptr, out_data_ptr, _scale, _zero_point](size_t in_ix) {  \
+            out_data_ptr[in_ix] = static_cast<CTYPE_OUT>(                      \
+                (input_data_ptr[in_ix] - _zero_point) * _scale);               \
           },                                                                   \
           input,                                                               \
           optional_dim_list,                                                   \

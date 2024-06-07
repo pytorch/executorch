@@ -1,0 +1,12 @@
+embedding:
+  parameter_names_with_default_values:
+    DTYPE: float
+    NDIM: 3
+    STORAGE: texture3d
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+      - VALUE: int
+  shader_variants:
+    - NAME: embedding

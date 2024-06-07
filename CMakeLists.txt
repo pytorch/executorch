@@ -343,6 +343,23 @@ else()
   set(CMAKE_TOOLCHAIN_ANDROID OFF)
 endif()
 
+# Add code coverage flags to supported compilers
+if(EXECUTORCH_USE_CPP_CODE_COVERAGE)
+  if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    string(APPEND CMAKE_C_FLAGS " --coverage -fprofile-abs-path")
+    string(APPEND CMAKE_CXX_FLAGS " --coverage -fprofile-abs-path")
+  elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+    string(APPEND CMAKE_C_FLAGS " -fprofile-instr-generate -fcoverage-mapping")
+    string(APPEND CMAKE_CXX_FLAGS
+           " -fprofile-instr-generate -fcoverage-mapping"
+    )
+  else()
+    message(ERROR
+            "Code coverage for compiler ${CMAKE_CXX_COMPILER_ID} is unsupported"
+    )
+  endif()
+endif()
+
 # EXECUTORCH_BUILD_HOST_TARGETS: Option to control the building of host-only
 # tools like `flatc`, along with example executables like `executor_runner` and
 # libraries that it uses, like `gflags`. Disabling this can be helpful when

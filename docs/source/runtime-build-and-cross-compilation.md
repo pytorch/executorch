@@ -146,6 +146,7 @@ cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/25.2.951
 cd  ..
 cmake --build  cmake-android-out  -j9
 
+adb shell mkdir -p /data/local/tmp/executorch
 # push the binary to an Android device
 adb push  cmake-android-out/executor_runner  /data/local/tmp/executorch
 # push the model file

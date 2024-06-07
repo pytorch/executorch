@@ -7,6 +7,9 @@ on:
       - release/*
     tags:
       - ciflow/trunk/*
+  pull_request:
+    paths:
+      - .ci/scripts/**
   workflow_dispatch:
 
 concurrency:
@@ -142,17 +145,13 @@ jobs:
         install_flatc_from_source
         install_executorch
 
-        # Setup arm example environment (including TOSA tools)
-        git config --global user.email "github_executorch@arm.com"
-        git config --global user.name "Github Executorch"
-        bash examples/arm/setup.sh --i-agree-to-the-contained-eula
+        install_arm
 
         # Increase number of files user can monitor to bypass buck failures.
         # Hopefully this is high enough for this setup.
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
         # Test ethos-u delegate examples with run.sh
-        source examples/arm/ethos-u-scratch/setup_path.sh
         PYTHON_EXECUTABLE=python bash examples/arm/run.sh examples/arm/ethos-u-scratch/ buck2
 
   test-arm-reference-delegation:
@@ -172,19 +171,10 @@ jobs:
         install_flatc_from_source
         install_executorch
 
-        # Setup arm example environment (including TOSA tools)
-        git config --global user.email "github_executorch@arm.com"
-        git config --global user.name "Github Executorch"
-        bash examples/arm/setup.sh --i-agree-to-the-contained-eula
+        install_arm
 
         # Test tosa_reference flow
-        source examples/arm/ethos-u-scratch/setup_path.sh
         PYTHON_EXECUTABLE=python bash backends/arm/test/run_tosa_reference.sh
-
-        # Run Arm specific unit-tests
-        # Run pytest only on specified folders. These test should migrate into
-        # the _unittest.yml once that test env is fixed
-        pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test/ops/ backends/arm/test/models
 
   test-coreml-delegate:
     name: test-coreml-delegate
