@@ -68,6 +68,12 @@ Note that the cross-compilable core runtime code supports a wider range of
 toolchains, down to C++11. See the [Runtime Overview](./runtime-overview.md) for
 portability details.
 
+## Quick Setup: Colab/Jupyter Notebook Prototype
+
+To utilize ExecuTorch to its fullest extent, please follow the setup instructions provided below. Alternatively, if you would like to experiment with ExecuTorch quickly and easily, we recommend using the following [colab notebook](https://colab.research.google.com/drive/1qpxrXC3YdJQzly3mRg-4ayYiOjC6rue3?usp=sharing) for prototyping purposes.
+
+
+
 ## Environment Setup
 
 ### Create a Virtual Environment
