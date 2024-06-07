@@ -31,7 +31,7 @@ foreach(kernel ${_kernels})
   add_custom_command(
     OUTPUT "${_wrapper_path}"
     COMMAND mkdir -p ${_wrapper_dir}
-    COMMAND echo "#include <${kernel}/Functions.h>" > "${_wrapper_path}"
+    COMMAND echo "#include <executorch/kernels/${kernel}/Functions.h>" > "${_wrapper_path}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     COMMENT "Generating ${_wrapper_path}"
     VERBATIM
@@ -257,4 +257,30 @@ add_dependencies(optimized_kernels_test generate_wrapper)
 target_include_directories(
   optimized_kernels_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/include/optimized"
                                  "${CMAKE_INSTALL_PREFIX}/include"
+)
+
+set(_quantized_kernels_test_sources
+    ../quantized/test/op_add_test.cpp
+    ../quantized/test/op_choose_qparams_test.cpp
+    ../quantized/test/op_dequantize_test.cpp
+    ../quantized/test/op_embedding4b_test.cpp
+    ../quantized/test/op_embedding_test.cpp
+    ../quantized/test/op_mixed_linear_test.cpp
+    ../quantized/test/op_mixed_mm_test.cpp
+    ../quantized/test/op_quantize_test.cpp
+)
+
+et_cxx_test(
+  quantized_kernels_test
+  SOURCES
+  ${_quantized_kernels_test_sources}
+  EXTRA_LIBS
+  quantized_kernels
+  quantized_ops_lib
+  portable_kernels
+  portable_ops_lib
+)
+target_include_directories(
+  quantized_kernels_test
+  PRIVATE "${CMAKE_INSTALL_PREFIX}/include"
 )
