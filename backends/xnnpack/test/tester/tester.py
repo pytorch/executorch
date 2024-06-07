@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -341,13 +342,13 @@ class Tester:
     def __init__(
         self,
         module: torch.nn.Module,
-        inputs: Tuple[torch.Tensor],
+        example_inputs: Tuple[torch.Tensor],
         dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         module.eval()
 
         self.original_module = module
-        self.inputs = inputs
+        self.example_inputs = example_inputs
         self.dynamic_shapes = dynamic_shapes
         self.stages: Dict[str, Stage] = OrderedDict.fromkeys(list(_stages_.keys()))
         self.pipeline = {
@@ -385,15 +386,15 @@ class Tester:
         # Get shapes of inputs
         input_shapes = []
         if self.dynamic_shapes is None:
-            for tensor_arg in self.inputs:
+            for tensor_arg in self.example_inputs:
                 assert isinstance(tensor_arg, torch.Tensor)
                 input_shapes.append(tensor_arg.shape)
         else:
             # Random shapes depending on dynamic shape constraint
             dim_name_to_size = {}
-            for arg_idx in range(len(self.inputs)):
-                assert isinstance(self.inputs[arg_idx], torch.Tensor)
-                ex_shape = list(self.inputs[arg_idx].shape)
+            for arg_idx in range(len(self.example_inputs)):
+                assert isinstance(self.example_inputs[arg_idx], torch.Tensor)
+                ex_shape = list(self.example_inputs[arg_idx].shape)
                 dynamic_dim_spec = self.dynamic_shapes[arg_idx]
                 for dim_idx, dim_spec in dynamic_dim_spec.items():
                     assert dim_idx < len(ex_shape)
@@ -427,9 +428,11 @@ class Tester:
                 input_shapes.append(torch.Size(ex_shape))
         # create random tensor inputs with the shapes given above:
         random_inputs = []
-        for arg_idx in range(len(self.inputs)):
+        for arg_idx in range(len(self.example_inputs)):
             random_inputs.append(
-                torch.randn(input_shapes[arg_idx]).to(dtype=self.inputs[arg_idx].dtype)
+                torch.randn(input_shapes[arg_idx]).to(
+                    dtype=self.example_inputs[arg_idx].dtype
+                )
             )
 
         yield tuple(random_inputs)
@@ -466,11 +469,12 @@ class Tester:
 
     # Stages
     def quantize(self, quantize_stage: Optional[Quantize] = None):
-        return self._run_stage(quantize_stage or Quantize(), self.inputs)
+        return self._run_stage(quantize_stage or Quantize(), self.example_inputs)
 
     def export(self, export_stage: Optional[Export] = None):
         return self._run_stage(
-            export_stage or Export(dynamic_shapes=self.dynamic_shapes), self.inputs
+            export_stage or Export(dynamic_shapes=self.dynamic_shapes),
+            self.example_inputs,
         )
 
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):

@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>

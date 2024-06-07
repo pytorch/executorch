@@ -356,16 +356,38 @@ python_unittest(
 )
 
 python_unittest(
-    name = "memory_format_ops_pass",
+    name = "test_memory_format_ops_pass_aten",
+    srcs = [
+        "test_memory_format_ops_pass_aten.py",
+    ],
+    deps = [
+        ":test_memory_format_ops_pass_utils",
+        "//caffe2:torch",
+        "//executorch/extension/pybindings:aten_lib",  # @manual
+    ],
+)
+
+python_unittest(
+    name = "test_memory_format_ops_pass",
     srcs = [
         "test_memory_format_ops_pass.py",
+    ],
+    deps = [
+        ":test_memory_format_ops_pass_utils",
+        "//caffe2:torch",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+    ],
+)
+
+python_library(
+    name = "test_memory_format_ops_pass_utils",
+    srcs = [
+        "test_memory_format_ops_pass_utils.py",
     ],
     deps = [
         "//caffe2:torch",
         "//executorch/exir:dim_order_utils",
         "//executorch/exir:lib",
-        "//executorch/extension/pybindings:aten_lib",  # @manual
-        "//executorch/extension/pybindings:portable_lib",  # @manual
     ],
 )
 

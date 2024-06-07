@@ -8,7 +8,6 @@
 
 #include <cstring>
 
-#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/matmul_ops_util.h>
 

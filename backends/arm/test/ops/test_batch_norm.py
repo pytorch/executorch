@@ -527,10 +527,10 @@ class TestBatchNorm2d(unittest.TestCase):
     def _test_batchnorm2d_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
@@ -552,21 +552,16 @@ class TestBatchNorm2d(unittest.TestCase):
                 ]
             )
             .to_executorch()
+            .run_method_and_compare_outputs(test_data)
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(test_data)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_batchnorm2d_no_stats_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
@@ -586,21 +581,16 @@ class TestBatchNorm2d(unittest.TestCase):
                 ]
             )
             .to_executorch()
+            .run_method_and_compare_outputs(test_data)
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(test_data)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_batchnorm2d_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
@@ -623,14 +613,8 @@ class TestBatchNorm2d(unittest.TestCase):
                 ]
             )
             .to_executorch()
+            .run_method_and_compare_outputs(test_data)
         )
-
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(test_data)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_batchnorm2d_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
@@ -638,7 +622,7 @@ class TestBatchNorm2d(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
@@ -723,10 +707,6 @@ class TestBatchNorm2d(unittest.TestCase):
     @parameterized.expand(test_data_suite)
     @unittest.skip(
         reason="Expected to fail since ArmQuantizer cannot quantize a BatchNorm layer"
-    )
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
     )
     @unittest.expectedFailure
     def test_batchnorm2d_u55_BI(

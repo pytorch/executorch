@@ -37,47 +37,60 @@ We recommend using the latest release tag from the
 executorch
 ├── backends                        #  Backend delegate implementations.
 ├── build                           #  Utilities for managing the build system.
-├── bundled_program                 #  Utilities for attaching reference inputs and outputs to models.
 ├── codegen                         #  Tooling to autogenerate bindings between kernels and the runtime.
 ├── configurations
-├── docs                            #  Static docs tooling
+├── docs                            #  Static docs tooling.
 ├── examples                        #  Examples of various user flows, such as model export, delegates, and runtime execution.
-├── exir                            #  Ahead of time library, model capture and lowering apis.
+├── exir                            #  Ahead-of-time library: model capture and lowering APIs.
 |   ├── _serialize                  #  Serialize final export artifact.
 |   ├── backend                     #  Backend delegate ahead of time APIs
 |   ├── capture                     #  Program capture.
 |   ├── dialects                    #  Op sets for various dialects in the export process.
 |   ├── emit                        #  Conversion from ExportedProgram to ExecuTorch execution instructions.
+|   ├── operator                    #  Operator node manipulation utilities.
 |   ├── passes                      #  Built-in compiler passes.
 |   ├── program                     #  Export artifacts.
+|   ├── serde                       #  Graph module
+serialization/deserialization.
 |   ├── verification                #  IR verification.
 ├── extension                       #  Extensions built on top of the runtime.
-|   ├── aten_util
+|   ├── android                     #  ExecuTorch wrappers for Android apps.
+|   ├── apple                       #  ExecuTorch wrappers for iOS apps.
+|   ├── aten_util                   #  Converts to and from PyTorch ATen types.
 |   ├── data_loader                 #  1st party data loader implementations.
+|   ├── evalue_util                 #  Helpers for working with EValue objects.
+|   ├── gguf_util                   #  Tools to convert from the GGUF format.
+|   ├── kernel_util                 #  Helpers for registering kernels.
 |   ├── memory_allocator            #  1st party memory allocator implementations.
-|   ├── pybindings                  #  Python api for executorch runtime.
+|   ├── module                      #  A simplified C++ wrapper for the runtime.
+|   ├── parallel                    #  C++ threadpool integration.
+|   ├── pybindings                  #  Python API for executorch runtime.
 |   ├── pytree                      #  C++ and Python flattening and unflattening lib for pytrees.
-|   ├── testing_util
+|   ├── runner_util                 #  Helpers for writing C++ PTE-execution
+tools.
+|   ├── testing_util                #  Helpers for writing C++ tests.
+|   ├── training                    #  Experimental libraries for on-device training
 ├── kernels                         #  1st party kernel implementations.
 |   ├── aten
 |   ├── optimized
 |   ├── portable                    #  Reference implementations of ATen operators.
 |   ├── prim_ops                    #  Special ops used in executorch runtime for control flow and symbolic primitives.
 |   ├── quantized
-├── profiler                        #  Utilities for profiling.
-├── runtime                         #  Core cpp runtime
-|   ├── backend                     #  Backend delegate runtime APIs
-|   ├── core                        #  Core structures used across all levels of the runtime
+├── profiler                        #  Utilities for profiling runtime execution.
+├── runtime                         #  Core C++ runtime.
+|   ├── backend                     #  Backend delegate runtime APIs.
+|   ├── core                        #  Core structures used across all levels of the runtime.
 |   ├── executor                    #  Model loading, initalization, and execution.
 |   ├── kernel                      #  Kernel registration and management.
-|   ├── platform                    #  Layer between architecture specific code and user calls.
-├── schema                          #  ExecuTorch program definition
+|   ├── platform                    #  Layer between architecture specific code and portable C++.
+├── schema                          #  ExecuTorch PTE file format flatbuffer
+schemas.
 ├── scripts                         #  Utility scripts for size management, dependency management, etc.
 ├── sdk                             #  Model profiling, debugging, and introspection.
 ├── shim                            #  Compatibility layer between OSS and Internal builds
-├── test                            #  Broad scoped end2end tests
-├── third-party                     #  Third-party dependencies
-├── util
+├── test                            #  Broad scoped end-to-end tests.
+├── third-party                     #  Third-party dependencies.
+├── util                            #  Various helpers and scripts.
 ```
 
 ## License

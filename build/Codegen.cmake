@@ -176,6 +176,10 @@ function(gen_operators_lib)
   endif()
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
+  set(_generated_headers ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
+  set_target_properties(
+    ${GEN_LIB_NAME} PROPERTIES PUBLIC_HEADER "${_generated_headers}"
+  )
 endfunction()
 
 # Merge two kernel yaml files, prioritizing functions from FUNCTIONS_YAML and

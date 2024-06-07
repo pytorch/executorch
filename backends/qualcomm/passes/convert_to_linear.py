@@ -14,6 +14,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload as edge_op
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
+
 from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
     SourcePartition,
@@ -92,6 +93,7 @@ class ConvertToLinear(ExportPass):
         if bias_node:
             args.append(bias_node)
 
+        # We need a view copy node after linear op
         with gm.graph.inserting_before(output):
             linear_node = gm.graph.create_node(
                 "call_function", self.linear, tuple(args)
@@ -103,6 +105,52 @@ class ConvertToLinear(ExportPass):
                 )
             for user in fn_node.users.copy():
                 user.replace_input_with(fn_node, linear_node)
+
+        # Since QNN has no keep dims for linear op, we will need to add squeeze and unsqueeze around linear node
+        # TODO: Find a more general conditional statement.
+        if (
+            fn_node.target == self.add
+            and linear_node.meta["val"].dim() == 3
+            and linear_node.meta["val"].shape[0] == 1
+        ):
+            squeeze_dim = linear_node.meta["val"].shape[1:]
+            linear_node.meta["val"] = torch.squeeze(linear_node.meta["val"], 0)
+            with gm.graph.inserting_after(input_node):
+                input_users = list(input_node.users.keys())
+                squeeze_dim = linear_node.meta["val"].shape
+                squeeze_view_copy_node = gm.graph.create_node(
+                    "call_function",
+                    self.view_copy,
+                    (
+                        input_node,
+                        squeeze_dim,
+                    ),
+                )
+                squeeze_view_copy_node.meta = linear_node.meta
+                for user in input_users:
+                    if user == linear_node:
+                        user.replace_input_with(input_node, squeeze_view_copy_node)
+            with gm.graph.inserting_after(output):
+                output_users = list(linear_node.users.keys())
+                unsqueeze_dim = output.args[0].meta["val"].shape
+                unsqueeze_view_copy_node = gm.graph.create_node(
+                    "call_function",
+                    self.view_copy,
+                    (
+                        linear_node,
+                        unsqueeze_dim,
+                    ),
+                )
+                unsqueeze_view_copy_node.meta = output.args[0].meta
+                for user in output_users:
+                    user.replace_input_with(linear_node, unsqueeze_view_copy_node)
+            if "quant_attrs" in linear_node.meta:
+                squeeze_view_copy_node.meta["quant_attrs"] = linear_node.meta[
+                    "quant_attrs"
+                ]
+                unsqueeze_view_copy_node.meta["quant_attrs"] = linear_node.meta[
+                    "quant_attrs"
+                ]
 
     def _extract_mm_ops(self, partitioned_nodes: List[edge_op]) -> List[torch.fx.Node]:
         mm_node = [n for n in partitioned_nodes if n.target == self.mm][0]
@@ -133,7 +181,10 @@ class ConvertToLinear(ExportPass):
         ret = [input_node, weight_node, bmm_node]
         if add_node:
             bias_node = add_node[0].args[1]
-            ret += bias_node
+            ret = [input_node, weight_node, add_node[0], bias_node]
+        else:
+            ret = [input_node, weight_node, bmm_node]
+
         return ret
 
     def _convert(self, graph_module: torch.fx.GraphModule):

@@ -30,6 +30,31 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
 
 
+def get_model_and_inputs_from_name(model_name: str):
+    """Given the name of an example pytorch model, return it and example inputs.
+
+    Raises RuntimeError if there is no example model corresponding to the given name.
+    """
+    # Case 1: Model is defined in this file
+    if model_name in models.keys():
+        model = models[model_name]()
+        example_inputs = models[model_name].example_input
+    # Case 2: Model is defined in examples/models/
+    elif model_name in MODEL_NAME_TO_MODEL.keys():
+        logging.warning(
+            "Using a model from examples/models not all of these are currently supported"
+        )
+        model, example_inputs, _ = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL[model_name]
+        )
+    else:
+        raise RuntimeError(
+            f"Model '{model_name}' is not a valid name. Use --help for a list of available models."
+        )
+
+    return model, example_inputs
+
+
 def quantize(model, example_inputs):
     """This is the official recommended flow for quantization in pytorch 2.0 export"""
     logging.info("Quantizing Model...")
@@ -138,20 +163,25 @@ if __name__ == "__main__":
         default=None,
         help="Provide path to so library. E.g., cmake-out/examples/portable/custom_ops/libcustom_ops_aot_lib.so",
     )
+    parser.add_argument(
+        "--debug", action="store_true", help="Set the logging level to debug."
+    )
 
     args = parser.parse_args()
+
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG, format=FORMAT, force=True)
+
+    if args.quantize and not args.so_library:
+        logging.warning(
+            "Quantization enabled without supplying path to libcustom_ops_aot_lib using -s flag."
+            + "This is required for running quantized models with unquantized input."
+        )
 
     # if we have custom ops, register them before processing the model
     if args.so_library is not None:
         logging.info(f"Loading custom ops from {args.so_library}")
         torch.ops.load_library(args.so_library)
-
-    # support models defined within this file or examples/models/ lists
-    if (
-        args.model_name not in models.keys()
-        and args.model_name not in MODEL_NAME_TO_MODEL.keys()
-    ):
-        raise RuntimeError(f"Model {args.model_name} is not a valid name.")
 
     if (
         args.model_name in models.keys()
@@ -161,23 +191,7 @@ if __name__ == "__main__":
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
 
     # 1. pick model from one of the supported lists
-    model = None
-    example_inputs = None
-
-    # 1.a. models in this file
-    if args.model_name in models.keys():
-        model = models[args.model_name]()
-        example_inputs = models[args.model_name].example_input
-    # 1.b. models in the examples/models/
-    # IFF the model is not in our local models
-    elif args.model_name in MODEL_NAME_TO_MODEL.keys():
-        logging.warning(
-            "Using a model from examples/models not all of these are currently supported"
-        )
-        model, example_inputs, _ = EagerModelFactory.create_model(
-            *MODEL_NAME_TO_MODEL[args.model_name]
-        )
-
+    model, example_inputs = get_model_and_inputs_from_name(args.model_name)
     model = model.eval()
 
     # pre-autograd export. eventually this will become torch.export
@@ -195,24 +209,33 @@ if __name__ == "__main__":
         ),
     )
     logging.debug(f"Exported graph:\n{edge.exported_program().graph}")
-
     if args.delegate is True:
         edge = edge.to_backend(
             ArmPartitioner(
                 generate_ethosu_compile_spec(
                     "ethos-u55-128",
-                    permute_memory_to_nhwc=True,
+                    permute_memory_to_nhwc=args.model_name
+                    in MODEL_NAME_TO_MODEL.keys(),
                     quantize_io=True,
                 )
             )
         )
         logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
 
-    exec_prog = edge.to_executorch(
-        config=ExecutorchBackendConfig(
-            extract_delegate_segments=False, extract_constant_segment=False
+    try:
+        exec_prog = edge.to_executorch(
+            config=ExecutorchBackendConfig(
+                extract_delegate_segments=False, extract_constant_segment=False
+            )
         )
-    )
+    except RuntimeError as e:
+        if "Missing out variants" in str(e.args[0]):
+            raise RuntimeError(
+                e.args[0]
+                + ".\nThis likely due to an external so library not being loaded. Supply a path to it with the -s flag."
+            ).with_traceback(e.__traceback__) from None
+        else:
+            raise e
 
     model_name = f"{args.model_name}" + (
         "_arm_delegate" if args.delegate is True else ""

@@ -307,3 +307,37 @@ jobs:
     uses: ./.github/workflows/_unittest.yml
     with:
       docker-image: executorch-ubuntu-22.04-clang12
+
+  unittest-arm:
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: buck2
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-arm-sdk
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL=${{ matrix.build-tool }}
+
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python \
+        EXECUTORCH_BUILD_PYBIND=ON \
+        EXECUTORCH_BUILD_ARM_BAREMETAL=ON \
+        .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+
+        source .ci/scripts/utils.sh
+        # Install Arm dependencies
+        install_arm
+
+        # Run pytest with coverage
+        pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test

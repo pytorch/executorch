@@ -254,6 +254,17 @@ def annotate_permute(node: Node, quantization_config: QuantizationConfig) -> Non
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator(
+    [
+        torch.ops.aten.leaky_relu.default,
+        torch.ops.aten.leaky_relu_.default,
+        torch.ops.aten.prelu.default,
+    ]
+)
+def annotate_prelu(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.view.default])
 def annotate_view(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -266,8 +277,22 @@ def annotate_pixel_shuffle_default(
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.pixel_unshuffle.default])
+def annotate_pixel_unshuffle_default(
+    node: Node, quantization_config: QuantizationConfig
+) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.upsample_bilinear2d.vec])
 def annotate_upsample_bilinear2d(
+    node: Node, quantization_config: QuantizationConfig
+) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.upsample_nearest2d.vec])
+def annotate_upsample_nearest2d(
     node: Node, quantization_config: QuantizationConfig
 ) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -637,3 +662,25 @@ def annotate_unbind(node: Node, quantization_config: QuantizationConfig) -> None
         input_qspec_map=input_qspec_map,
         _annotated=True,
     )
+
+
+@register_annotator([torch.ops.aten.chunk.default])
+def annotate_chunk(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+
+    input_qspec_map = {}
+    input_act = node.args[0]
+    assert isinstance(input_act, Node)
+    input_qspec_map[input_act] = quantization_config.input_activation
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        _annotated=True,
+    )
+
+    for user in node.users:
+        user.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            output_qspec=quantization_config.output_activation,
+            _annotated=True,
+        )
