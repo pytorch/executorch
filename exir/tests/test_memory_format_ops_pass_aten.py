@@ -16,13 +16,13 @@ from executorch.exir.tests.test_memory_format_ops_pass_utils import (
     SimpleToCopyContiguousModule,
 )
 
-from executorch.extension.pybindings.portable_lib import (  # @manual
+from executorch.extension.pybindings.aten_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 
 
 class TestMemoryFormatOpsPass(unittest.TestCase):
-    def test_op_to_copy_replacement_2d(self) -> None:
+    def test_op_to_copy_replacement_2d_aten(self) -> None:
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
             MemoryFormatTestSet(
@@ -33,7 +33,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             ),
         )
 
-    def test_op_to_copy_replacement_4d(self) -> None:
+    def test_op_to_copy_replacement_4d_aten(self) -> None:
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
             MemoryFormatTestSet(
@@ -44,7 +44,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             ),
         )
 
-    def test_op_dim_order_update(self) -> None:
+    def test_op_dim_order_update_aten(self) -> None:
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
             MemoryFormatTestSet(
@@ -61,7 +61,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             ),
         )
 
-    def test_op_dim_order_propagation(self) -> None:
+    def test_op_dim_order_propagation_aten(self) -> None:
         MemoryFormatOpsPassTestUtils.memory_format_test_runner(
             self,
             MemoryFormatTestSet(

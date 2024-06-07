@@ -70,7 +70,7 @@ gen_operators_lib(
 install(
   TARGETS cpublas optimized_kernels optimized_ops_lib
   DESTINATION lib
-  PUBLIC_HEADER DESTINATION include/optimized
+  PUBLIC_HEADER DESTINATION include/executorch/kernels/optimized/
 )
 
 install(TARGETS cpublas DESTINATION lib)
