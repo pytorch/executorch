@@ -217,28 +217,6 @@ set(_portable_kernels_test_sources
     ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
 )
 
-list(
-  REMOVE_ITEM
-  _portable_kernels_test_sources
-  "op_amax_test.cpp"
-  "op_as_strided_copy_test.cpp"
-  "op_amin_test.cpp"
-  "op_bitwise_not_test.cpp"
-  "op_detach_copy_test.cpp"
-  "op_div_test.cpp"
-  "op_full_like_test.cpp"
-  "op_logit_test.cpp"
-  "op_max_test.cpp"
-  "op_mean_test.cpp"
-  "op_min_test.cpp"
-  "op_slice_copy_test.cpp"
-)
-
-set(_optimized_kernels_test_sources
-    op_neg_test.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
-)
-
 et_cxx_test(
   portable_kernels_test SOURCES ${_portable_kernels_test_sources} EXTRA_LIBS
   portable_kernels portable_ops_lib
@@ -249,9 +227,27 @@ target_include_directories(
                                 "${CMAKE_INSTALL_PREFIX}/include"
 )
 
+set(_optimized_kernels_test_sources
+    "op_add_test.cpp"
+    "op_bmm_test.cpp"
+    "op_div_test.cpp"
+    "op_exp_test.cpp"
+    "op_gelu_test.cpp"
+    "op_le_test.cpp"
+    "op_log_softmax_test.cpp"
+    "op_mul_test.cpp"
+    "op_native_layer_norm_test.cpp"
+    "op_neg_test.cpp"
+    "op_sub_test.cpp"
+    ${CMAKE_CURRENT_BINARY_DIR}/include/portable/executorch/kernels/test/supported_features.cpp
+)
+
+# We don't have sleef on OSS so we don't have gelu and log_softmax
+list(REMOVE_ITEM _optimized_kernels_test_sources "op_gelu_test.cpp" "op_log_softmax_test.cpp")
+
 et_cxx_test(
   optimized_kernels_test SOURCES ${_optimized_kernels_test_sources} EXTRA_LIBS
-  optimized_kernels optimized_ops_lib
+  optimized_kernels optimized_ops_lib portable_kernels eigen_blas
 )
 add_dependencies(optimized_kernels_test generate_wrapper)
 target_include_directories(
