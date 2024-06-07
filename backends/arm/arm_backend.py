@@ -166,43 +166,6 @@ def get_intermediate_path(compile_spec: List[CompileSpec]) -> str:
     return None
 
 
-def generate_ethosu_compile_spec(
-    config: str,
-    permute_memory_to_nhwc: Optional[bool] = None,
-    quantize_io: Optional[bool] = None,
-    system_config: Optional[str] = None,
-    memory_mode: Optional[str] = None,
-    extra_flags: Optional[str] = None,
-    config_ini: Optional[str] = "Arm/vela.ini",
-) -> List[CompileSpec]:
-    return (
-        ArmCompileSpecBuilder()
-        .ethosu_compile_spec(
-            config,
-            system_config=system_config,
-            memory_mode=memory_mode,
-            extra_flags=extra_flags,
-            config_ini=config_ini,
-        )
-        .set_permute_memory_format(permute_memory_to_nhwc)
-        .set_quantize_io(quantize_io)
-        .build()
-    )
-
-
-def generate_tosa_compile_spec(
-    permute_memory_to_nhwc: Optional[bool] = None,
-    output_path: Optional[str] = None,
-) -> List[CompileSpec]:
-    return (
-        ArmCompileSpecBuilder()
-        .tosa_compile_spec()
-        .set_permute_memory_format(permute_memory_to_nhwc)
-        .dump_intermediate_tosa(output_path)
-        .build()
-    )
-
-
 @final
 class ArmBackend(BackendDetails):
     @staticmethod

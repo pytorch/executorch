@@ -13,7 +13,7 @@ from typing import List, Optional, Tuple
 import executorch.exir as exir
 
 import numpy as np
-from executorch.backends.arm.arm_backend import generate_tosa_compile_spec
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.backends.arm.test.test_tosa import prepare_model_and_ref
@@ -178,8 +178,12 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
     # Debug flags for compilers
     # - Emit some debug files into /tmp
     # - output_format TOSA for this test (and pure tosa flows)
-    compile_spec = generate_tosa_compile_spec(
-        model.permute_memory_to_nhwc, TOSA_OUT_PATH
+    compile_spec = (
+        ArmCompileSpecBuilder()
+        .tosa_compile_spec()
+        .set_permute_memory_format(model.permute_memory_to_nhwc)
+        .dump_intermediate_tosa(TOSA_OUT_PATH)
+        .build()
     )
 
     if inputs is None:

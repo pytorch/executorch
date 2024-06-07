@@ -11,7 +11,7 @@ import copy
 import unittest
 
 import executorch.exir as exir
-from executorch.backends.arm.arm_backend import generate_tosa_compile_spec
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 
 ## For quantization
@@ -43,7 +43,9 @@ class TestBasicNN(unittest.TestCase):
                 print("  Skipping, no inputs for this profile")
                 continue
             model_edge, exec_prog = export_model(
-                model, inputs, generate_tosa_compile_spec()
+                model,
+                inputs,
+                ArmCompileSpecBuilder().tosa_compile_spec().build(),
             )
 
     def test_minimal_BI(self):
@@ -54,7 +56,9 @@ class TestBasicNN(unittest.TestCase):
                 print("  Skipping, no inputs for this profile")
                 continue
             model_edge, exec_prog = export_model(
-                model, inputs, generate_tosa_compile_spec()
+                model,
+                inputs,
+                ArmCompileSpecBuilder().tosa_compile_spec().build(),
             )
 
     def test_minimal_BI_INT(self):
@@ -67,7 +71,9 @@ class TestBasicNN(unittest.TestCase):
                 print("  Skipping, no inputs for this profile")
                 continue
             model_edge, exec_prog = export_model(
-                model, inputs, generate_tosa_compile_spec()
+                model,
+                inputs,
+                ArmCompileSpecBuilder().tosa_compile_spec().build(),
             )
 
 
