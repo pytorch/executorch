@@ -17,9 +17,7 @@ ${define_active_storage_type(STORAGE)}
 
 #include "indexing_utils.h"
 
-$if DTYPE == "half":
-  #extension GL_EXT_shader_16bit_storage : require
-  #extension GL_EXT_shader_explicit_arithmetic_types_float16: require
+${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
