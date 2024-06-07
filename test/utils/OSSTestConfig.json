@@ -25,6 +25,12 @@
         ]
     },
     {
+        "directory": "extension/memory_allocator/test",
+        "sources": [
+            "malloc_memory_allocator_test.cpp"
+        ]
+    },
+    {
         "directory": "extension/module/test",
         "sources": [
             "module_test.cpp"

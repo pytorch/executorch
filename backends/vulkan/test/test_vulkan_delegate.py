@@ -963,10 +963,36 @@ class TestBackends(unittest.TestCase):
             def forward(self, x):
                 return torch.full(x.shape, 42.0)
 
+        class ZerosModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.zeros(x.shape)
+
+        class OnesModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.ones(x.shape)
+
         sample_inputs = (torch.randn(size=(2, 3, 4, 5), dtype=torch.float32),)
 
         self.lower_module_and_test_output(
             FullModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+        self.lower_module_and_test_output(
+            ZerosModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+        self.lower_module_and_test_output(
+            OnesModule(),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
@@ -979,10 +1005,36 @@ class TestBackends(unittest.TestCase):
             def forward(self, x):
                 return torch.full_like(x, 42.0)
 
+        class ZerosLikeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.zeros_like(x)
+
+        class OnesLikeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.ones_like(x)
+
         sample_inputs = (torch.randn(size=(2, 3, 4, 5), dtype=torch.float32),)
 
         self.lower_module_and_test_output(
             FullLikeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+        self.lower_module_and_test_output(
+            ZerosLikeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+        self.lower_module_and_test_output(
+            OnesLikeModule(),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
