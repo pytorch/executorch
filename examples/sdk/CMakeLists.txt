@@ -38,6 +38,9 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 # Find prebuilt libraries. executorch package should contain
 # portable_ops_lib, etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
+target_link_options_shared_lib(executorch)
+target_link_options_shared_lib(portable_ops_lib)
+
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
 find_package(
@@ -48,18 +51,6 @@ add_executable(sdk_example_runner
                sdk_example_runner/sdk_example_runner.cpp)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 
-# portable_ops_lib
-gen_selected_ops("" "" "ON")
-# Expect gen_selected_ops output file to be selected_operators.yaml
-generate_bindings_for_kernels(
-  FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
-)
-gen_operators_lib(
-  "portable_ops_lib"
-  KERNEL_LIBS portable_kernels
-  DEPS executorch)
-
-target_compile_options(portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED)
 target_include_directories(
   etdump
   INTERFACE
@@ -72,6 +63,8 @@ target_link_libraries(
   gflags
   etdump
   extension_data_loader
-  flatcc
   bundled_program
-  portable_ops_lib)
+  flatccrt
+  portable_ops_lib
+  portable_kernels
+)
