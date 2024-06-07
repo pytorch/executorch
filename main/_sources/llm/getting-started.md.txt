@@ -344,7 +344,8 @@ curl -O https://raw.githubusercontent.com/pytorch/executorch/main/examples/llm_m
 curl -O https://raw.githubusercontent.com/pytorch/executorch/main/examples/llm_manual/managed_tensor.h
 ```
 
-To learn more, see the [Runtime APIs Tutorial](../extension-module.md).
+To learn more, see [Running an ExecuTorch Model in C++](../running-a-model-cpp-tutorial.md)
+and the [ExecuTorch Runtime API Reference](../executorch-runtime-api-reference.md).
 
 ### Building and Running
 
@@ -366,7 +367,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Set options for executorch build.
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
-option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
+option(EXECUTORCH_BUILD_OPTIMIZED "" ON)
 
 # Include the executorch subdirectory.
 add_subdirectory(
@@ -520,7 +521,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Set options for executorch build.
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
-option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
+option(EXECUTORCH_BUILD_OPTIMIZED "" ON)
 option(EXECUTORCH_BUILD_XNNPACK "" ON) # Build with Xnnpack backend
 
 # Include the executorch subdirectory.
@@ -720,12 +721,12 @@ Number  of  non-delegated  nodes:  430
 |  26  |  Total  |  473  |  430  |
 
 From the table, the operator `aten_view_copy_default` appears 170 times in delegate graphs and 48 times in non-delegated graphs.
-To see a more detailed view, use the `format_delegated_graph()` method to get a formatted str of printout of the whole graph or use `print_delegated_graph()` to print directly:
+To see a more detailed view, use the `print_delegated_graph()` method to display a printout of the whole graph.
 
 ```python
-from executorch.exir.backend.utils import format_delegated_graph
+from executorch.exir.backend.utils import print_delegated_graph
 graph_module = edge_manager.exported_program().graph_module
-print(format_delegated_graph(graph_module))
+print(print_delegated_graph(graph_module))
 ```
 This may generate a large amount of output for large models. Consider using "Control+F" or "Command+F" to locate the operator you’re interested in
 (e.g. “aten_view_copy_default”). Observe which instances are not under lowered graphs.

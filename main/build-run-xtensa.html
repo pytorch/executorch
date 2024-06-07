@@ -5,12 +5,11 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
-  <meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building and Running ExecuTorch on Xtensa HiFi4 DSP &mdash; ExecuTorch main documentation</title>
+  <title>Building and Running ExecuTorch on Xtensa HiFi4 DSP &mdash; ExecuTorch 0.2 documentation</title>
   
 
   
@@ -42,7 +41,7 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Getting Started with LLMs via ExecuTorch" href="llm/getting-started.html" />
+    <link rel="next" title="Exporting to ExecuTorch" href="export-overview.html" />
     <link rel="prev" title="Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend" href="build-run-qualcomm-ai-engine-direct-backend.html" />
 
 <link rel="stylesheet" href="../_static/css/progress-bar.css">
@@ -91,170 +90,132 @@
 
       <div class="main-menu">
         <ul>
+          <li>
+            <a href="https://pytorch.org/get-started">Get Started</a>
+          </li>
 
-          <li class="main-menu-item">
-          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-                Learn
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/get-started">
-                  <span class=dropdown-title>Get Started</span>
-                  <p>Run PyTorch locally or get started quickly with one of the supported cloud platforms</p>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials">
-                  <span class="dropdown-title">Tutorials</span>
-                  <p>Whats new in PyTorch tutorials</p>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
-                  <span class="dropdown-title">Learn the Basics</span>
-                  <p>Familiarize yourself with PyTorch concepts and modules</p>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
-                  <span class="dropdown-title">PyTorch Recipes</span>
-                  <p>Bite-size, ready-to-deploy PyTorch code examples</p>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
-                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
-                  <p>Master PyTorch basics with our engaging YouTube tutorial series</p>
-                </a>
-              </div>
-            </div>
+          <li>
+            <a href="https://pytorch.org/ecosystem">Ecosystem</a>
           </li>
 
           <li>
           <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-                Ecosystem
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem">
-                  <span class="dropdown-title">Tools</span>
-                  <p>Learn about the tools and frameworks in the PyTorch Ecosystem</p>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
-                  <span class=dropdown-title>Community</span>
-                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered</p>
-                </a>
-                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
-                  <span class=dropdown-title>Forums</span>
-                  <p>A place to discuss PyTorch code, issues, install, research</p>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
-                  <span class=dropdown-title>Developer Resources</span>
-                  <p>Find resources and get questions answered</p>
-                </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem/contributor-awards-2023">
-                  <span class="dropdown-title">Contributor Awards - 2023</span>
-                  <p>Award winners announced at this year's PyTorch Conference</p>
-                </a>
-              </div>
-            </div>
-          </li>
-
-          <li>
-          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
+              <a class="resource-option with-down-arrow">
                 Edge
               </a>
               <div class="resources-dropdown-menu">
                 <a class="nav-dropdown-item" href="https://pytorch.org/edge">
                   <span class="dropdown-title">About PyTorch Edge</span>
-                  <p>Build innovative and privacy-aware AI experiences for edge devices</p>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/executorch-overview">
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch">
                   <span class="dropdown-title">ExecuTorch</span>
-                  <p>End-to-end solution for enabling on-device inference capabilities across mobile and edge devices</p>
                 </a>
               </div>
             </div>  
           </li>
 
-          <li class="main-menu-item">
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/tutorials">Tutorials</a>
+          </li>
+
+          <li>
             <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
+              <a class="resource-option with-down-orange-arrow">
                 Docs
               </a>
               <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
                   <span class="dropdown-title">PyTorch</span>
-                  <p>Explore the documentation for comprehensive guidance on how to use PyTorch</p>
+                  <p></p>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/pytorch-domains">
-                  <span class="dropdown-title">PyTorch Domains</span>
-                  <p>Read the PyTorch Domains documentation to learn more about domain-specific libraries</p>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/audio/stable/index.html">
+                  <span class="dropdown-title">torchaudio</span>
+                  <p></p>
                 </a>
-              </div>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/text/stable/index.html">
+                  <span class="dropdown-title">torchtext</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/vision/stable/index.html">
+                  <span class="dropdown-title">torchvision</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/torcharrow">
+                  <span class="dropdown-title">torcharrow</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/data">
+                  <span class="dropdown-title">TorchData</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/torchrec">
+                  <span class="dropdown-title">TorchRec</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/serve/">
+                  <span class="dropdown-title">TorchServe</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/torchx/">
+                  <span class="dropdown-title">TorchX</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/xla">
+                  <span class="dropdown-title">PyTorch on XLA Devices</span>
+                  <p></p>
+                </a>
             </div>
           </li>
 
           <li>
             <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-                Blogs & News 
+              <a class="resource-option with-down-arrow">
+                Resources
               </a>
               <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
-                  <span class="dropdown-title">PyTorch Blog</span>
-                  <p>Catch up on the latest technical news and happenings</p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/features">
+                  <span class="dropdown-title">About</span>
+                  <p>Learn about PyTorch’s features and capabilities</p>
                 </a>
-                 <a class="nav-dropdown-item" href="https://pytorch.org/community-blog">
-                  <span class="dropdown-title">Community Blog</span>
-                  <p>Stories from the PyTorch ecosystem</p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                  <p>Learn about the PyTorch foundation</p>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/videos">
-                  <span class="dropdown-title">Videos</span>
-                  <p>Learn about the latest PyTorch tutorials, new, and more </p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
+                  <span class="dropdown-title">Community</span>
+                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered.</p>
+                </a>
                 <a class="nav-dropdown-item" href="https://pytorch.org/community-stories">
                   <span class="dropdown-title">Community Stories</span>
-                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch</p>
+                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch.</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class="dropdown-title">Developer Resources</span>
+                  <p>Find resources and get questions answered</p>
                 </a>
                 <a class="nav-dropdown-item" href="https://pytorch.org/events">
                   <span class="dropdown-title">Events</span>
                   <p>Find events, webinars, and podcasts</p>
                 </a>
-            </div>
-          </li>
-
-          <li>
-            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
-              <a class="with-down-arrow">
-                About
-              </a>
-              <div class="resources-dropdown-menu">
-                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
-                  <span class="dropdown-title">PyTorch Foundation</span>
-                  <p>Learn more about the PyTorch Foundation</p>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
+                  <span class="dropdown-title">Forums</span>
+                  <p>A place to discuss PyTorch code, issues, install, research</p>
                 </a>
-                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
-                  <span class="dropdown-title">Governing Board</span>
-                  <p></p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/hub">
+                  <span class="dropdown-title">Models (Beta)</span>
+                  <p>Discover, publish, and reuse pre-trained models</p>
                 </a>
               </div>
             </div>
           </li>
 
-          <li class="main-menu-item">
-            <div class="no-dropdown">
-              <a href="https://pytorch.org/join" data-cta="join">
-                Become a Member
-              </a>
-            </div>
-          </li>
           <li>
-           <div class="main-menu-item">
-             <a href="https://github.com/pytorch/pytorch" class="github-icon">
-             </a>
-           </div>
+            <a href="https://github.com/pytorch/pytorch">GitHub</a>
           </li>
-          <!--- TODO: This block adds the search icon to the nav bar. We will enable it later. 
-          <li>
-            <div class="main-menu-item">
-             <a href="https://github.com/pytorch/pytorch" class="search-icon">
-             </a>
-            </div>
-          </li>
-          --->
         </ul>
       </div>
 
@@ -280,7 +241,7 @@
           <div class="pytorch-left-menu-search">
             
     <div class="version">
-      <a href='https://pytorch.org/executorch/versions.html'>main &#x25BC</a>
+      <a href='https://pytorch.org/executorch/versions.html'>0.2 &#x25BC</a>
     </div>
     
 
@@ -306,23 +267,24 @@
               <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
@@ -334,9 +296,9 @@
 <li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<p class="caption" role="heading"><span class="caption-text">Exporting to ExecuTorch</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -560,31 +522,16 @@ Tutorials we recommend you complete before this:</div>
 <div class="section" id="working-tree-description">
 <h2>Working Tree Description<a class="headerlink" href="#working-tree-description" title="Permalink to this heading">¶</a></h2>
 <p>The working tree is:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>executorch
-├── backends
-│   └── cadence
-│       ├── aot
-│       ├── ops_registration
-│       ├── tests
-│       ├── utils
-│       ├── hifi
-│       │   ├── kernels
-│       │   ├── operators
-│       │   └── third-party
-│       │       └── hifi4-nnlib
-│       └── [other cadence DSP families]
-│           ├── kernels
-│           ├── operators
-│           └── third-party
-│               └── [any required lib]
-└── examples
-    └── cadence
-        ├── models
-        └── operators
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>examples/xtensa/
+├── aot
+├── kernels
+├── ops
+├── third-party
+└── utils
 </pre></div>
 </div>
 <p><em><strong>AoT (Ahead-of-Time) Components</strong></em>:</p>
-<p>The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. In our case, <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/export_example.py">export_example.py</a> is an API that takes a model (nn.Module) and representative inputs and runs it through the quantizer (from <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer.py">quantizer.py</a>). Then a few compiler passes, also defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/quantizer.py">quantizer.py</a>, will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/aot/ops_registrations.py">ops_registrations.py</a> and have corresponding implemetations in the other folders.</p>
+<p>The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. In our case, <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/export_example.py">export_example.py</a> defines a model and some example inputs (set to a vector of ones), and runs it through the quantizer (from <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py">quantizer.py</a>). Then a few compiler passes, also defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py">quantizer.py</a>, will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/meta_registrations.py">meta_registrations.py</a> and have corresponding implemetations in the other folders.</p>
 <p><em><strong>Operators</strong></em>:</p>
 <p>The operators folder contains two kinds of operators: existing operators from the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/kernels/portable/cpu">ExecuTorch portable library</a> and new operators that define custom computations. The former is simply dispatching the operator to the relevant ExecuTorch implementation, while the latter acts as an interface, setting up everything needed for the custom kernels to compute the outputs.</p>
 <p><em><strong>Kernels</strong></em>:</p>
@@ -599,32 +546,20 @@ Tutorials we recommend you complete before this:</div>
 python3<span class="w"> </span>-m<span class="w"> </span>examples.portable.scripts.export<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span>
 </pre></div>
 </div>
-<p><em><strong>Quantized Operators</strong></em>:</p>
-<p>The other, more complex model are custom operators, including:</p>
-<ul class="simple">
-<li><p>a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html">linear</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/quantized_linear_op.py#L28">here</a>. Linear is the backbone of most Automatic Speech Recognition (ASR) models.</p></li>
-<li><p>a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html">conv1d</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/operators/quantized_conv1d_op.py#L36">here</a>. Convolutions are important in wake word and many denoising models.</p></li>
-</ul>
-<p>In both cases the generated file is called <code class="docutils literal notranslate"><span class="pre">CadenceDemoModel.pte</span></code>.</p>
+<p><em><strong>Quantized Linear</strong></em>:</p>
+<p>The second, more complex model is a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html">linear</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/export_example.py#L88">here</a>. Linear is the backbone of most Automatic Speech Recognition (ASR) models.</p>
+<p>The generated file is called <code class="docutils literal notranslate"><span class="pre">XtensaDemoModel.pte</span></code>.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-python3<span class="w"> </span>-m<span class="w"> </span>examples.cadence.operators.quantized_&lt;linear,conv1d&gt;_op
+python3<span class="w"> </span>-m<span class="w"> </span>examples.xtensa.aot.export_example
 </pre></div>
 </div>
-<p><em><strong>Small Model: RNNT predictor</strong></em>:</p>
-<p>The torchaudio <a class="reference external" href="https://pytorch.org/audio/stable/tutorials/online_asr_tutorial.html">RNNT-emformer</a> model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels: an encoder, a predictor and a joiner.
-The <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/models/rnnt_predictor.py">predictor</a> is a sequence of basic ops (embedding, ReLU, linear, layer norm) and can be exported using:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-python3<span class="w"> </span>-m<span class="w"> </span>examples.cadence.models.rnnt_predictor
-</pre></div>
-</div>
-<p>The generated file is called <code class="docutils literal notranslate"><span class="pre">CadenceDemoModel.pte</span></code>.</p>
 <div class="section" id="runtime">
 <h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
 <p><strong>Building the DSP firmware image</strong>
 In this step, you’ll be building the DSP firmware image that consists of the sample ExecuTorch runner along with the Program generated from the previous step. This image when loaded onto the DSP will run through the model that this Program consists of.</p>
 <p><em><strong>Step 1</strong></em>. Configure the environment variables needed to point to the Xtensa toolchain that you have installed in the previous step. The three environment variables that need to be set include:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Directory in which the Xtensa toolchain was installed</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">XTENSA_TOOLCHAIN</span><span class="o">=</span>/home/user_name/cadence/XtDevTools/install/tools
+<span class="nb">export</span><span class="w"> </span><span class="nv">XTENSA_TOOLCHAIN</span><span class="o">=</span>/home/user_name/xtensa/XtDevTools/install/tools
 <span class="c1"># The version of the toolchain that was installed. This is essentially the name of the directory</span>
 <span class="c1"># that is present in the XTENSA_TOOLCHAIN directory from above.</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">TOOLCHAIN_VER</span><span class="o">=</span>RI-2021.8-linux
@@ -642,32 +577,30 @@ In order to run the CMake build, you need the path to the following:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
 rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out
 <span class="c1"># prebuild and install executorch library</span>
-cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/backends/cadence/cadence.cmake<span class="w"> </span><span class="se">\</span>
+cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/cadence/cadence.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_HOST_TARGETS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_EXECUTOR_RUNNER<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_PTHREADPOOL<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_CPUINFO<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-Bcmake-out<span class="w"> </span>.
 
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j&lt;num_cores&gt;<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Debug
-<span class="c1"># build cadence runner</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j8<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Debug
+<span class="c1"># build xtensa runner</span>
 cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/backends/cadence.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/xtensa/xtensa.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_PREFIX_PATH<span class="o">=</span>&lt;path_to_executorch&gt;/cmake-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DMODEL_PATH<span class="o">=</span>&lt;path_to_program_file_generated_in_previous_step&gt;<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DNXP_SDK_ROOT_DIR<span class="o">=</span>&lt;path_to_nxp_sdk_root&gt;<span class="w"> </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span><span class="m">0</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DNN_LIB_BASE_DIR<span class="o">=</span>&lt;path_to_nnlib_cloned_in_step_2&gt;<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-Bcmake-out/examples/cadence<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>examples/cadence
+<span class="w">    </span>-Bcmake-out/examples/xtensa<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>examples/xtensa
 
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out/examples/cadence<span class="w"> </span>-j8<span class="w"> </span>-t<span class="w"> </span>cadence_executorch_example
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out/examples/xtensa<span class="w"> </span>-j8<span class="w"> </span>-t<span class="w"> </span>xtensa_executorch_example
 </pre></div>
 </div>
 <p>After having succesfully run the above step you should see two binary files in their CMake output directory.</p>
@@ -699,7 +632,7 @@ First<span class="w"> </span><span class="m">20</span><span class="w"> </span>el
 <div class="section" id="conclusion-and-future-work">
 <h2>Conclusion and Future Work<a class="headerlink" href="#conclusion-and-future-work" title="Permalink to this heading">¶</a></h2>
 <p>In this tutorial, you have learned how to export a quantized operation, build the ExecuTorch runtime and run this model on the Xtensa HiFi4 DSP chip.</p>
-<p>The (quantized linear) model in this tutorial is a typical operation appearing in ASR models, and can be extended to a complete ASR model by creating the model as a new test and adding the needed operators/kernels to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/hifi/operators">operators</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/cadence/hifi/kernels">kernels</a>.</p>
+<p>The model in this tutorial is a typical operation appearing in ASR models, and can be extended to a complete ASR model by creating the model in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/export_example.py">export_example.py</a> and adding the needed operators/kernels to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/ops">operators</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/kernels">kernels</a>.</p>
 <p>Other models can be created following the same structure, always assuming that operators and kernels are available.</p>
 </div>
 </div>
@@ -712,7 +645,7 @@ First<span class="w"> </span><span class="m">20</span><span class="w"> </span>el
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="llm/getting-started.html" class="btn btn-neutral float-right" title="Getting Started with LLMs via ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="export-overview.html" class="btn btn-neutral float-right" title="Exporting to ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
         <a href="build-run-qualcomm-ai-engine-direct-backend.html" class="btn btn-neutral" title="Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
@@ -989,111 +922,114 @@ for (var i = 0; i < menuItems.length; i++) {
     <div class="mobile-main-menu-links-container">
       <div class="main-menu">
         <ul>
-           <li class="resources-mobile-menu-title">
-             <a>Learn</a>
-           </li>
-           <ul class="resources-mobile-menu-items">
-             <li>
-               <a href="https://pytorch.org/get-started">Get Started</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/tutorials">Tutorials</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
-             </li>
-           </ul>
-           <li class="resources-mobile-menu-title">
-             <a>Ecosystem</a>
-           </li>
-           <ul class="resources-mobile-menu-items">
-             <li>
-               <a href="https://pytorch.org/ecosystem">Tools</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/#community-module">Community</a>
-             </li>
-             <li>
-               <a href="https://discuss.pytorch.org/">Forums</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/resources">Developer Resources</a>
-             </li>
-             <li>
-               <a href="https://pytorch.org/ecosystem/contributor-awards-2023">Contributor Awards - 2023</a>
-             </li>
-           </ul>
+          <li>
+            <a href="https://pytorch.org/get-started">Get Started</a>
+          </li>
 
-           <li class="resources-mobile-menu-title">
-             <a>Edge</a>
-           </li>
+          <li>
+            <a href="https://pytorch.org/ecosystem">Ecosystem</a>
+          </li>
+            
+          <li>
+            <a href="">Mobile</a>
+          </li>
 
-           <ul class="resources-mobile-menu-items">
-             <li>
-               <a href="https://pytorch.org/edge">About PyTorch Edge</a>
-             </li>
-             
-             <li>
-               <a href="https://pytorch.org/executorch-overview">ExecuTorch</a>
-             </li>
-           </ul>
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
 
-           <li class="resources-mobile-menu-title">
-             <a>Docs</a>
-           </li>
+          <li>
+            <a href="https://pytorch.org/tutorials">Tutorials</a>
+          </li>
 
-           <ul class="resources-mobile-menu-items">
+          <li class="resources-mobile-menu-title">
+            Docs
+          </li>
+
+          <ul class="resources-mobile-menu-items">
             <li>
               <a href="https://pytorch.org/docs/stable/index.html">PyTorch</a>
             </li>
 
             <li>
-              <a href="https://pytorch.org/pytorch-domains">PyTorch Domains</a>
+              <a href="https://pytorch.org/audio/stable/index.html">torchaudio</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/text/stable/index.html">torchtext</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/vision/stable/index.html">torchvision</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/torcharrow">torcharrow</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/data">TorchData</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/torchrec">TorchRec</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/serve/">TorchServe</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/torchx/">TorchX</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/xla">PyTorch on XLA Devices</a>
             </li>
           </ul>
 
           <li class="resources-mobile-menu-title">
-            <a>Blog & News</a>
+            Resources
           </li>
             
            <ul class="resources-mobile-menu-items">
+
             <li>
-              <a href="https://pytorch.org/blog/">PyTorch Blog</a>
-            </li>
-            <li>
-              <a href="https://pytorch.org/community-blog">Community Blog</a>
+              <a href="https://pytorch.org/features">About</a>
             </li>
 
             <li>
-              <a href="https://pytorch.org/videos">Videos</a>
+              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/#community-module">Community</a>
             </li>
 
             <li>
               <a href="https://pytorch.org/community-stories">Community Stories</a>
             </li>
+
+            <li>
+              <a href="https://pytorch.org/resources">Developer Resources</a>
+            </li>
+
             <li>
               <a href="https://pytorch.org/events">Events</a>
             </li>
-          </ul>
-          
-          <li class="resources-mobile-menu-title">
-            <a>About</a>
-          </li>
 
-          <ul class="resources-mobile-menu-items">
             <li>
-              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+              <a href="https://discuss.pytorch.org/">Forums</a>
             </li>
+
             <li>
-              <a href="https://pytorch.org/governing-board">Governing Board</a>
+              <a href="https://pytorch.org/hub">Models (Beta)</a>
             </li>
           </ul>
+
+          <li>
+            <a href="https://github.com/pytorch/pytorch">Github</a>
+          </li>
         </ul>
       </div>
     </div>
