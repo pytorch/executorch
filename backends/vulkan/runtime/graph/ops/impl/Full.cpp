@@ -64,16 +64,26 @@ void add_full_node(
 }
 
 void full(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  return add_full_node(graph, args[0], args[1], args[6]);
+  return add_full_node(graph, args[0], args[1], args[args.size() - 1]);
 }
 
-void full_like(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  return add_full_node(graph, args[0], args[1], args[7]);
+void zeros(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_full_node(
+      graph, args[0], graph.add_scalar<int64_t>(0), args[args.size() - 1]);
+}
+
+void ones(ComputeGraph& graph, const std::vector<ValueRef>& args) {
+  return add_full_node(
+      graph, args[0], graph.add_scalar<int64_t>(1), args[args.size() - 1]);
 }
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.full.default, full);
-  VK_REGISTER_OP(aten.full_like.default, full_like);
+  VK_REGISTER_OP(aten.full_like.default, full);
+  VK_REGISTER_OP(aten.zeros.default, zeros);
+  VK_REGISTER_OP(aten.zeros_like.default, zeros);
+  VK_REGISTER_OP(aten.ones.default, ones);
+  VK_REGISTER_OP(aten.ones_like.default, ones);
 }
 
 } // namespace vkcompute

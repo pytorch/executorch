@@ -118,6 +118,10 @@ CREATION_OPS = [
     exir_ops.edge.aten.clone.default,
     exir_ops.edge.aten.full.default,
     exir_ops.edge.aten.full_like.default,
+    exir_ops.edge.aten.ones.default,
+    exir_ops.edge.aten.ones_like.default,
+    exir_ops.edge.aten.zeros.default,
+    exir_ops.edge.aten.zeros_like.default,
 ]
 
 
