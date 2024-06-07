@@ -22,8 +22,8 @@ lib.define(
 
 
 def _op_impl(target, *args, **kwargs):
-    kwargs["memory_format"] = get_memory_format(kwargs["dim_order"])
-    _ = kwargs.pop("dim_order")
+    kwargs["memory_format"] = get_memory_format(kwargs.get("dim_order", None))
+    _ = kwargs.pop("dim_order", None)
     res = target(*args, **kwargs)
     # assert list(res.dim_order()) == dim_order
     return res
