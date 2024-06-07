@@ -64,7 +64,7 @@ jobs:
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
         BUILD_TOOL=cmake
-        VERSION="0.2.0"
+        VERSION="0.2.1"
         FRAMEWORKS=(
           "executorch"
           "coreml_backend"
