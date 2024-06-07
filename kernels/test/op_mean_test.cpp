@@ -228,17 +228,19 @@ class OpMeanOutTest : public OperatorTest {
         out,
         tf_float.make({1, 1, 4}, {0.333333, 0.333333, 0.666667, 0.333333}));
   }
-
-  template <>
-  void test_mean_dim_out_dtype<ScalarType::Bool, ScalarType::Float>() {
-    test_mean_dim_out_bool<ScalarType::Float>();
-  }
-
-  template <>
-  void test_mean_dim_out_dtype<ScalarType::Bool, ScalarType::Double>() {
-    test_mean_dim_out_bool<ScalarType::Double>();
-  }
 };
+
+template <>
+void OpMeanOutTest::
+    test_mean_dim_out_dtype<ScalarType::Bool, ScalarType::Float>() {
+  test_mean_dim_out_bool<ScalarType::Float>();
+}
+
+template <>
+void OpMeanOutTest::
+    test_mean_dim_out_dtype<ScalarType::Bool, ScalarType::Double>() {
+  test_mean_dim_out_bool<ScalarType::Double>();
+}
 
 TEST_F(OpMeanOutTest, InvalidDimensionListDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
