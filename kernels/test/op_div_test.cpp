@@ -49,49 +49,6 @@ class OpDivOutTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(out, tf_out.make(sizes, /*data=*/{0.125, 0.5, 2, 8}));
   }
 
-  template <>
-  void test_div<ScalarType::Float, ScalarType::Float, ScalarType::Float>() {
-    TensorFactory<ScalarType::Float> tf;
-
-    const std::vector<int32_t> sizes = {2, 5};
-
-    // Invalid divisor input zero should die
-    Tensor out = tf.zeros(sizes);
-
-    // Valid input should give the expected output
-    op_div_out(
-        tf.make(
-            sizes, /*data=*/{1, 2, 4, 8, INFINITY, -INFINITY, NAN, 1, 1, 1}),
-        tf.make(
-            sizes,
-            /*data=*/
-            {8, 0, 2, 1, INFINITY, -INFINITY, NAN, INFINITY, -INFINITY, NAN}),
-        out);
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf.make(
-            sizes, /*data=*/{0.125, INFINITY, 2, 8, NAN, NAN, NAN, 0, 0, NAN}));
-  }
-
-  template <>
-  void test_div<ScalarType::Bool, ScalarType::Float, ScalarType::Float>() {
-    TensorFactory<ScalarType::Bool> tf_b;
-    TensorFactory<ScalarType::Float> tf;
-
-    const std::vector<int32_t> sizes = {2, 2};
-
-    // Invalid divisor input zero should die
-    Tensor out = tf.zeros(sizes);
-
-    // Valid input should give the expected output
-    op_div_out(
-        tf_b.make(sizes, /*data=*/{1, 1, 1, 1}),
-        tf.make(sizes, /*data=*/{4, 4, 2, 1}),
-        out);
-
-    EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{0.25, 0.25, 0.5, 1.0}));
-  }
-
   template <ScalarType DTYPE_A, ScalarType DTYPE_B>
   void test_div_enumerate_out_types() {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
@@ -129,17 +86,63 @@ class OpDivOutTest : public OperatorTest {
   /**
    * Common testing for div operator, for float output types
    */
-  void test_div_enumerate_a_types() {
+  void test_div_enumerate_a_types();
+};
+
+template <>
+void OpDivOutTest::
+    test_div<ScalarType::Float, ScalarType::Float, ScalarType::Float>() {
+  TensorFactory<ScalarType::Float> tf;
+
+  const std::vector<int32_t> sizes = {2, 5};
+
+  // Invalid divisor input zero should die
+  Tensor out = tf.zeros(sizes);
+
+  // Valid input should give the expected output
+  op_div_out(
+      tf.make(sizes, /*data=*/{1, 2, 4, 8, INFINITY, -INFINITY, NAN, 1, 1, 1}),
+      tf.make(
+          sizes,
+          /*data=*/
+          {8, 0, 2, 1, INFINITY, -INFINITY, NAN, INFINITY, -INFINITY, NAN}),
+      out);
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf.make(
+          sizes, /*data=*/{0.125, INFINITY, 2, 8, NAN, NAN, NAN, 0, 0, NAN}));
+}
+
+template <>
+void OpDivOutTest::
+    test_div<ScalarType::Bool, ScalarType::Float, ScalarType::Float>() {
+  TensorFactory<ScalarType::Bool> tf_b;
+  TensorFactory<ScalarType::Float> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  // Invalid divisor input zero should die
+  Tensor out = tf.zeros(sizes);
+
+  // Valid input should give the expected output
+  op_div_out(
+      tf_b.make(sizes, /*data=*/{1, 1, 1, 1}),
+      tf.make(sizes, /*data=*/{4, 4, 2, 1}),
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{0.25, 0.25, 0.5, 1.0}));
+}
+
+void OpDivOutTest::test_div_enumerate_a_types() {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_div_enumerate_b_types<ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+  ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
 
-    test_div<ScalarType::Bool, ScalarType::Float, ScalarType::Float>();
+  test_div<ScalarType::Bool, ScalarType::Float, ScalarType::Float>();
 
 #undef ENUMERATE_TEST_ENTRY
-  }
-};
+}
 
 class OpDivScalarOutTest : public OperatorTest {
  protected:
