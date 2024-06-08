@@ -10,6 +10,7 @@ from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTrans
 from executorch.backends.transforms.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
+from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
@@ -44,6 +45,7 @@ class VulkanBackend(BackendDetails):
         passes = [
             AddmmToLinearTransform(),
             FuseBatchNormWithConvPass(program),
+            FuseClampPass(),
             SpecPropPass(),
             ConstraintBasedSymShapeEvalPass(),
             MemoryPlanningPass("greedy"),
