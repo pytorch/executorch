@@ -128,7 +128,8 @@ api::ShaderInfo get_conv2d_shader(
     const vTensor& t_out,
     const bool prepack_weights,
     const Conv2dMethod method,
-    const ValueRef weight) {
+    const ValueRef weight,
+    const bool clamp_out = false) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
   switch (method) {
@@ -160,6 +161,8 @@ api::ShaderInfo get_conv2d_shader(
   }
   if (prepack_weights) {
     kernel_name += "_prepack_weights";
+  } else if (clamp_out) {
+    kernel_name += "_clamp";
   }
   add_dtype_suffix(kernel_name, t_out);
 
@@ -232,6 +235,11 @@ struct Conv2dParams final {
   int in_group_size;
 };
 
+struct OutputParams final {
+  float out_min;
+  float out_max;
+};
+
 Conv2dParams create_conv2d_params(
     ComputeGraph& graph,
     const ValueRef weight,
@@ -298,8 +306,21 @@ void add_conv2d_node(
     const ValueRef transposed,
     const ValueRef output_padding,
     const ValueRef groups,
-    const ValueRef out) {
+    const ValueRef out_min,
+    const ValueRef out_max,
+    const ValueRef out,
+    const bool clamp_out) {
   const bool transposed_val = graph.get_bool(transposed);
+
+  float out_min_val = 0.0f;
+  float out_max_val = 0.0f;
+  if (out_min != kDummyValueRef) {
+    out_min_val = graph.extract_scalar<float>(out_min);
+  }
+  if (out_max != kDummyValueRef) {
+    out_max_val = graph.extract_scalar<float>(out_max);
+  }
+
   const int64_t groups_val = graph.get_int(groups);
 
   const Conv2dMethod method =
@@ -335,10 +356,12 @@ void add_conv2d_node(
   Conv2dParams extra_params =
       create_conv2d_params(graph, weight, kernel_params, transposed_val);
 
+  OutputParams out_params = {out_min_val, out_max_val};
+
   check_conv2d_params(kernel_params, transposed_val);
 
   api::ShaderInfo shader = get_conv2d_shader(
-      graph, *t_out, /*prepack_weights = */ false, method, weight);
+      graph, *t_out, /*prepack_weights = */ false, method, weight, clamp_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
@@ -354,6 +377,7 @@ void add_conv2d_node(
           t_in->sizes_ubo(),
           graph.create_params_buffer(kernel_params),
           graph.create_params_buffer(extra_params),
+          graph.create_params_buffer(out_params),
       },
       // Specialization Constants
       {},
@@ -371,7 +395,10 @@ void add_conv1d_node(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef groups,
-    const ValueRef out) {
+    const ValueRef out_min,
+    const ValueRef out_max,
+    const ValueRef out,
+    const bool clamp_out) {
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
   ValueRef arg_weight = prepack_if_tensor_ref(graph, weight, api::kWidthPacked);
   ValueRef arg_bias = prepack_biases(
@@ -381,6 +408,15 @@ void add_conv1d_node(
       /*transposed = */ false,
       /*storage_type = */ api::kTexture3D,
       /*memory_layout = */ api::kChannelsPacked);
+
+  float out_min_val = 0.0f;
+  float out_max_val = 0.0f;
+  if (out_min != kDummyValueRef) {
+    out_min_val = graph.extract_scalar<float>(out_min);
+  }
+  if (out_max != kDummyValueRef) {
+    out_max_val = graph.extract_scalar<float>(out_max);
+  }
 
   vTensorPtr t_in = graph.get_tensor(arg_in);
   vTensorPtr t_weight = graph.get_tensor(arg_weight);
@@ -414,7 +450,12 @@ void add_conv1d_node(
       in_group_size,
       out_group_size};
 
+  OutputParams out_params = {out_min_val, out_max_val};
+
   std::string kernel_name("conv1d");
+  if (clamp_out) {
+    kernel_name += "_clamp";
+  }
   kernel_name.reserve(kShaderNameReserve);
 
   add_dtype_suffix(kernel_name, *t_out);
@@ -432,6 +473,7 @@ void add_conv1d_node(
           t_out->texture_limits_ubo(),
           t_in->sizes_ubo(),
           graph.create_params_buffer(kernel_params),
+          graph.create_params_buffer(out_params),
       },
       // Specialization Constants
       {},
@@ -443,34 +485,79 @@ void add_conv1d_node(
 void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   int64_t in_ndim = graph.get_tensor(args[0])->sizes().size();
   if (in_ndim == 4) {
-    return add_conv2d_node(
-        graph,
-        args[0],
-        args[1],
-        args[2],
-        args[3],
-        args[4],
-        args[5],
-        args[6],
-        args[7],
-        args[8],
-        args[9]);
+    if (args.size() == 10) {
+      // ordinary conv2d
+      return add_conv2d_node(
+          graph,
+          args[0],
+          args[1],
+          args[2],
+          args[3],
+          args[4],
+          args[5],
+          args[6],
+          args[7],
+          args[8],
+          /*out_min = */ kDummyValueRef,
+          /*out_max = */ kDummyValueRef,
+          args[9],
+          false);
+    } else {
+      // conv2d with clamp
+      return add_conv2d_node(
+          graph,
+          args[0],
+          args[1],
+          args[2],
+          args[3],
+          args[4],
+          args[5],
+          args[6],
+          args[7],
+          args[8],
+          args[9],
+          args[10],
+          args[11],
+          true);
+    }
   } else {
-    return add_conv1d_node(
-        graph,
-        args[0],
-        args[1],
-        args[2],
-        args[3],
-        args[4],
-        args[5],
-        args[8],
-        args[9]);
+    if (args.size() == 10) {
+      // ordinary conv1d
+      return add_conv1d_node(
+          graph,
+          args[0],
+          args[1],
+          args[2],
+          args[3],
+          args[4],
+          args[5],
+          args[8],
+          /*out_min = */ kDummyValueRef,
+          /*out_max = */ kDummyValueRef,
+          args[9],
+          false);
+    } else {
+      // conv1d with clamp
+      return add_conv1d_node(
+          graph,
+          args[0],
+          args[1],
+          args[2],
+          args[3],
+          args[4],
+          args[5],
+          args[8],
+          args[9],
+          args[10],
+          args[11],
+          true);
+    }
   }
 }
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.convolution.default, conv);
+  VK_REGISTER_OP(conv_with_clamp.default, conv);
 }
 
 } // namespace vkcompute

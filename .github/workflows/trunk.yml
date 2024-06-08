@@ -173,8 +173,8 @@ jobs:
 
         install_arm
 
-        # Test tosa_reference flow
-        PYTHON_EXECUTABLE=python bash backends/arm/test/run_tosa_reference.sh
+        # Run arm unit tests
+        pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test
 
   test-coreml-delegate:
     name: test-coreml-delegate

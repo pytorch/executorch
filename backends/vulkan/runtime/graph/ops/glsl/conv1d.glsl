@@ -12,6 +12,8 @@
 
 #define VEC4_T ${texel_type(DTYPE)}
 
+#define op(X, A, B) ${OPERATOR}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;
@@ -36,6 +38,11 @@ layout(set = 0, binding = 6) uniform PRECISION restrict Params {
   int dilation;
   int in_group_size;
   int out_group_size;
+};
+
+layout(set = 0, binding = 7) uniform PRECISION restrict OutputParams {
+  float out_min;
+  float out_max;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -118,7 +125,7 @@ void main() {
       }
 
       ivec3 out_pos = ivec3(out_l, out_c, n / 4);
-      imageStore(image_out, out_pos, sum + bias.x);
+      imageStore(image_out, out_pos, op(sum + bias.x, out_min, out_max));
     }
   }
 }
