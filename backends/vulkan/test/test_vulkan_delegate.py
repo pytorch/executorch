@@ -12,6 +12,7 @@ import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_
 
 import torch
 
+from executorch.backends.transforms.i64_to_i32 import I64toI32
 from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
@@ -118,7 +119,7 @@ class TestBackends(unittest.TestCase):
             )
             edge_program: EdgeProgramManager = to_edge(program)
 
-            edge_program = edge_program.transform([MeanToSumDiv()])
+            edge_program = edge_program.transform([I64toI32(), MeanToSumDiv()])
 
             edge_program = edge_program.to_backend(VulkanPartitioner(compile_options))
 
@@ -403,6 +404,20 @@ class TestBackends(unittest.TestCase):
 
         sample_inputs = (
             torch.randint(low=-100, high=100, size=(5, 5), dtype=torch.int32),
+        )
+
+        self.lower_module_and_test_output(ClampModule(), sample_inputs)
+
+    def test_vulkan_backend_clamp_int64(self):
+        class ClampModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.clamp(x, min=-3)
+
+        sample_inputs = (
+            torch.randint(low=-100, high=100, size=(5, 5), dtype=torch.int64),
         )
 
         self.lower_module_and_test_output(ClampModule(), sample_inputs)
@@ -1372,12 +1387,12 @@ class TestBackends(unittest.TestCase):
             def __init__(self, dim, indices):
                 super().__init__()
                 self.dim = dim
-                self.index = torch.tensor(indices, dtype=torch.int32)
+                self.index = torch.tensor(indices)
 
             def forward(self, x):
                 return torch.index_select(x, self.dim, self.index)
 
-        sample_inputs = (torch.arange(96).reshape(2, 8, 2, 3).int(),)
+        sample_inputs = (torch.arange(96).reshape(2, 8, 2, 3),)
 
         self.lower_module_and_test_output(
             IndexSelectModule(dim=1, indices=[2, 3, 5, 6, 7]),
@@ -1390,7 +1405,7 @@ class TestBackends(unittest.TestCase):
             def __init__(self, dim, indices):
                 super().__init__()
                 self.dim = dim
-                self.index = torch.tensor(indices, dtype=torch.int32)
+                self.index = torch.tensor(indices)
 
             def forward(self, x):
                 return torch.index_select(x, self.dim, self.index)
@@ -1425,9 +1440,9 @@ class TestBackends(unittest.TestCase):
             [1, 11, 2],
             [12, 1, -2],
         ]
-        for input in inputs:
+        for i in inputs:
             self.lower_module_and_test_output(
-                ArangeModule(input),
+                ArangeModule(i),
                 (torch.randn(size=(1,), dtype=torch.float32),),  # dummy input
                 memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
             )
@@ -1447,10 +1462,41 @@ class TestBackends(unittest.TestCase):
             [1.0, 11, 2],
             [12, 1, -2.0],
         ]
-        for input in inputs:
+        for i in inputs:
             self.lower_module_and_test_output(
-                ArangeModule(input),
+                ArangeModule(i),
                 (torch.randn(size=(1,), dtype=torch.float32),),  # dummy input
+                memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            )
+
+    def test_vulkan_backend_arange_int64(self):
+        class ArangeModule(torch.nn.Module):
+            def __init__(self, input):
+                super().__init__()
+                self.input = input
+
+            def forward(self, x):
+                return torch.arange(*self.input)
+
+        inputs = [
+            [1],
+            [-3, 5],
+            [1, 11, 2],
+            [12, 1, -2],
+            [1.5],
+            [-3, 5.0],
+            [1.0, 11, 2],
+            [12, 1, -2.0],
+        ]
+        for i in inputs:
+            self.lower_module_and_test_output(
+                ArangeModule(i),
+                (torch.randn(size=(1,), dtype=torch.float32),),  # dummy input
+                memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            )
+            self.lower_module_and_test_output(
+                ArangeModule(i),
+                (torch.randint(low=-100, high=100, size=(5, 5)),),  # dummy input
                 memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
             )
 
@@ -1465,7 +1511,7 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(
             EmbeddingModule(torch.nn.Embedding(5, 4)),
-            (torch.tensor([0, 1, 0, 4, 2, 0], dtype=torch.int32),),
+            (torch.tensor([0, 1, 0, 4, 2, 0]),),
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
@@ -1480,7 +1526,7 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(
             EmbeddingModule(torch.nn.Embedding(5, 4)),
-            (torch.tensor([[0, 1, 0], [4, 2, 0]], dtype=torch.int32),),
+            (torch.tensor([[0, 1, 0], [4, 2, 0]]),),
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
@@ -1495,6 +1541,6 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(
             EmbeddingModule(torch.nn.Embedding(5, 4)),
-            (torch.tensor([[[0, 1], [0, 1]], [[4, 2], [3, 3]]], dtype=torch.int32),),
+            (torch.tensor([[[0, 1], [0, 1]], [[4, 2], [3, 3]]]),),
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
