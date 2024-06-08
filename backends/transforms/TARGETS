@@ -50,6 +50,23 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "fuse_conv_with_clamp",
+    srcs = ["fuse_conv_with_clamp.py"],
+    visibility = [
+        "//executorch/backends/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/backends/vulkan/passes:custom_ops_defs",
+        "//executorch/exir:pass_base",
+        "//executorch/exir:sym_util",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
     name = "mean_to_sum_div",
     srcs = ["mean_to_sum_div.py"],
     visibility = [
@@ -86,6 +103,21 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
+    ],
+)
+
+runtime.python_library(
+    name = "i64_to_i32",
+    srcs = [
+        "i64_to_i32.py",
+    ],
+    visibility = [
+        "//executorch/backends/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
     ],
 )
 

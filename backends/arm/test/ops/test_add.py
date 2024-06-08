@@ -58,10 +58,10 @@ class TestSimpleAdd(unittest.TestCase):
     def _test_add_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
@@ -71,21 +71,16 @@ class TestSimpleAdd(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs()
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs()
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_add_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
@@ -96,14 +91,8 @@ class TestSimpleAdd(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(qtol=1)
         )
-
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(qtol=1)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_add_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
@@ -111,7 +100,7 @@ class TestSimpleAdd(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
@@ -135,10 +124,6 @@ class TestSimpleAdd(unittest.TestCase):
         self._test_add_tosa_BI_pipeline(self.Add(), test_data)
 
     @parameterized.expand(Add.test_parameters)
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     def test_add_u55_BI(self, test_data: torch.Tensor):
         test_data = (test_data,)
         self._test_add_u55_BI_pipeline(self.Add(), test_data)
@@ -154,10 +139,6 @@ class TestSimpleAdd(unittest.TestCase):
         self._test_add_tosa_BI_pipeline(self.Add2(), test_data)
 
     @parameterized.expand(Add2.test_parameters)
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     def test_add2_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
         self._test_add_u55_BI_pipeline(self.Add2(), test_data)

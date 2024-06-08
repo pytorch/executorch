@@ -6,7 +6,7 @@
 
 import ctypes
 import unittest
-from typing import List, Optional, Tuple
+from typing import Tuple
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
@@ -18,7 +18,6 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
-from executorch.exir.pass_base import ExportPass
 from torch.export import Dim, export, ExportedProgram
 
 ctypes.CDLL("libvulkan.so.1")
@@ -98,7 +97,6 @@ class TestBackends(unittest.TestCase):
         test_inputs=None,
         memory_layouts=None,
         first_output_only=False,
-        custom_pass: Optional[List[ExportPass]] = None,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
@@ -120,8 +118,7 @@ class TestBackends(unittest.TestCase):
             )
             edge_program: EdgeProgramManager = to_edge(program)
 
-            if custom_pass is not None:
-                edge_program = edge_program.transform(custom_pass)
+            edge_program = edge_program.transform([MeanToSumDiv()])
 
             edge_program = edge_program.to_backend(VulkanPartitioner(compile_options))
 
@@ -527,6 +524,40 @@ class TestBackends(unittest.TestCase):
             first_output_only=True,
         )
 
+    def test_vulkan_backend_avg_pool2d(self):
+        class AvgPool2dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.avg_pool = torch.nn.AvgPool2d(
+                    kernel_size=(4, 4),
+                    stride=(4, 4),
+                    padding=(0, 0),
+                    ceil_mode=True,
+                    count_include_pad=True,
+                    divisor_override=None,
+                )
+
+            def forward(self, x):
+                return self.avg_pool(x)
+
+        avg_pool2d_module = AvgPool2dModule()
+        sample_inputs = (torch.randn(5, 13, 55, 68),)
+
+        batch = Dim("batch", max=8)
+        dynamic_shapes = {"x": {0: batch}}
+        test_inputs = [
+            (torch.randn(3, 14, 15, 9),),
+            (torch.randn(1, 1, 4, 6),),
+            (torch.randn(5, 10, 50, 40),),
+        ]
+        self.lower_module_and_test_output(
+            avg_pool2d_module,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_abs(self):
         class AbsModule(torch.nn.Module):
             def __init__(self):
@@ -929,10 +960,78 @@ class TestBackends(unittest.TestCase):
             def forward(self, x):
                 return torch.full(x.shape, 42.0)
 
+        class ZerosModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.zeros(x.shape)
+
+        class OnesModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.ones(x.shape)
+
         sample_inputs = (torch.randn(size=(2, 3, 4, 5), dtype=torch.float32),)
 
         self.lower_module_and_test_output(
             FullModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+        self.lower_module_and_test_output(
+            ZerosModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+        self.lower_module_and_test_output(
+            OnesModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_full_like(self):
+        class FullLikeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.full_like(x, 42.0)
+
+        class ZerosLikeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.zeros_like(x)
+
+        class OnesLikeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.ones_like(x)
+
+        sample_inputs = (torch.randn(size=(2, 3, 4, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            FullLikeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+        self.lower_module_and_test_output(
+            ZerosLikeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+        self.lower_module_and_test_output(
+            OnesLikeModule(),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
@@ -1242,35 +1341,30 @@ class TestBackends(unittest.TestCase):
             MeanModule(dims=[-1, -2]),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
-            custom_pass=[MeanToSumDiv()],
         )
 
         self.lower_module_and_test_output(
             MeanModule(dims=[1]),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
-            custom_pass=[MeanToSumDiv()],
         )
 
         self.lower_module_and_test_output(
             MeanModule(dims=[0, 1, 2, 3]),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
-            custom_pass=[MeanToSumDiv()],
         )
 
         self.lower_module_and_test_output(
             MeanModule(dims=[-1, -2], keepdim=False),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
-            custom_pass=[MeanToSumDiv()],
         )
 
         self.lower_module_and_test_output(
             MeanModule(dims=[1], keepdim=False),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
-            custom_pass=[MeanToSumDiv()],
         )
 
     def test_vulkan_backend_index_select_int(self):

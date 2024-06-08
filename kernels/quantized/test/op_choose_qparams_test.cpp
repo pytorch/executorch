@@ -48,6 +48,6 @@ void test_dtype() {
   EXPECT_TENSOR_EQ(zero_point_out, expected_zero_point);
 }
 
-TEST(OpQuantizeOutTest, AllDtypesSupported) {
+TEST(OpChooseQparamsTensorOutTest, AllDtypesSupported) {
   test_dtype<ScalarType::Byte>();
 }

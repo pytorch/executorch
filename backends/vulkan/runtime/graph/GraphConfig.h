@@ -28,6 +28,8 @@ struct GraphConfig final {
   bool enable_memory_layout_override;
   api::GPUMemoryLayout memory_layout_override;
 
+  bool enable_querypool;
+
   // Generate a default graph config with pre-configured settings
   explicit GraphConfig();
 

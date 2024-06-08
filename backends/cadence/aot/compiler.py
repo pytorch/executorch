@@ -10,10 +10,15 @@ from typing import Any, Tuple
 import torch
 
 from executorch.backends.cadence.aot.passes import (
-    ReplacePT2DequantWithCadenceDequant,
-    ReplacePT2QuantWithCadenceQuant,
+    RemoveZeroSizedCatArgsPass,
+    ReplacePT2DequantWithCadenceDequantPass,
+    ReplacePT2QuantWithCadenceQuantPass,
+    ReplaceScalarTensorWithFullPass,
+    ReplaceSqueezeAndUnsqueezeWithViewPass,
 )
+from executorch.backends.cadence.aot.utils import model_is_quantized
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
+from torch.ao.quantization.pt2e.export_utils import model_is_exported
 
 from torch.export import export
 from torch.export.exported_program import ExportedProgram
@@ -26,14 +31,21 @@ def export_program(
 ) -> ExportedProgram:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
-    # If the model is already a GraphModule (most likely from quantization), call the
-    # suggested torch.ao.quantization API instead, which only does dropout and batchnorm.
-    if isinstance(model, torch.fx.GraphModule):
-        torch.ao.quantization.move_exported_model_to_eval(model)
-    else:
-        # We don't support training mode. Make it eval
+    # We don't support training mode. Make the model inference mode by
+    # calling model.eval() or an equivalent call for quantized models.
+    # GraphModules cannot call eval(), so we skip them.
+    if not isinstance(model, torch.fx.GraphModule):
         if hasattr(model, "eval"):
             model.eval()
+    else:
+        # If the model is quantized, call the suggested torch.ao.quantization API
+        # which only does dropout and batchnorm.
+        if model_is_quantized(model):
+            torch.ao.quantization.move_exported_model_to_eval(model)
+        else:
+            # If we get a GraphModule which is _not_ quantized, then it should already
+            # have been exported.
+            assert model_is_exported(model), "model should be from an ExportedProgram"
 
     # Prevent mkldnn decompositions
     torch._C._set_mkldnn_enabled(False)
@@ -84,7 +96,13 @@ def export_to_cadence(
 
     # Run a couple required passes for quant/dequant ops
     cadence_program_manager = edge_program_manager.transform(
-        [ReplacePT2QuantWithCadenceQuant(), ReplacePT2DequantWithCadenceDequant()]
+        [
+            RemoveZeroSizedCatArgsPass(),
+            ReplaceScalarTensorWithFullPass(),
+            ReplaceSqueezeAndUnsqueezeWithViewPass(),
+            ReplacePT2QuantWithCadenceQuantPass(),
+            ReplacePT2DequantWithCadenceDequantPass(),
+        ]
     )
 
     return cadence_program_manager

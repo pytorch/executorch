@@ -352,6 +352,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation
 }
 
 @property (nonatomic, readonly, strong) NSFileManager *fileManager;
+@property (strong, readonly, nonatomic) ETCoreMLAssetManager* assetManager;
 @property (nonatomic, readonly, strong) NSMutableDictionary<NSValue *, id<ETCoreMLModelExecutor>> *handleToExecutorMap;
 @property (nonatomic, readonly, strong) NSMapTable<NSString *, dispatch_queue_t> *modelIdentifierToLoadingQueueMap;
 @property (nonatomic, readonly, strong) NSMutableDictionary<NSString *, ETCoreMLAsset *> *modelIdentifierToPrewarmedAssetMap;
@@ -830,6 +831,10 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation
     }
     
     return result;
+}
+
+- (BOOL)purgeModelsCacheAndReturnError:(NSError *__autoreleasing *)error {
+    return [self.assetManager purgeAndReturnError:error];
 }
 
 @end

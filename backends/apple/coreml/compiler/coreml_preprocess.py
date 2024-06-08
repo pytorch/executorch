@@ -289,7 +289,7 @@ class CoreMLBackend(BackendDetails):
     def preprocess_model(
         mlmodel: ct.models.MLModel, model_type: MODEL_TYPE
     ) -> PreprocessResult:
-        identifier = str(uuid.uuid4())
+        identifier = "executorch_" + str(uuid.uuid4())
         dir_path: Path = Path("tmp") / identifier
         model_dir_path: Path = dir_path / "lowered_module"
         model_spec: ct.proto.Model_pb2 = mlmodel.get_spec()

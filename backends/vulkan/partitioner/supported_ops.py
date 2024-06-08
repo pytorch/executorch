@@ -73,6 +73,7 @@ MATMUL_OPS = [
 ]
 
 POOLING_OPS = [
+    exir_ops.edge.aten.avg_pool2d.default,
     exir_ops.edge.aten.max_pool2d_with_indices.default,
 ]
 
@@ -116,6 +117,11 @@ CREATION_OPS = [
     exir_ops.edge.aten.arange.start_step,
     exir_ops.edge.aten.clone.default,
     exir_ops.edge.aten.full.default,
+    exir_ops.edge.aten.full_like.default,
+    exir_ops.edge.aten.ones.default,
+    exir_ops.edge.aten.ones_like.default,
+    exir_ops.edge.aten.zeros.default,
+    exir_ops.edge.aten.zeros_like.default,
 ]
 
 
