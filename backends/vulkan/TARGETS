@@ -24,6 +24,7 @@ runtime.python_library(
     deps = [
         "//executorch/backends/transforms:addmm_mm_to_linear",
         "//executorch/backends/transforms:fuse_batch_norm_with_conv",
+        "//executorch/backends/transforms:fuse_conv_with_clamp",
         "//executorch/exir:graph_module",
         "//executorch/exir/_serialize:_bindings",
         "//executorch/exir/_serialize:lib",
