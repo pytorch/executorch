@@ -49,6 +49,11 @@ def truediv(a: _SymScalar, b: _SymScalar) -> _SymScalar:
     return a / b  # pyre-ignore
 
 
+@bind_pattern_to_op(executorch_prims_lib, "sym_float.Scalar(Scalar a) -> Scalar")
+def sym_float(a: _SymScalar) -> _SymScalar:
+    return float(a)  # pyre-ignore
+
+
 # TODO: ideally we should return SymBool in the schema, but it seems
 # the schema parser does not recognize SymBool yet: P629748075
 @bind_pattern_to_op(executorch_prims_lib, "gt.Scalar(Scalar a, Scalar b) -> bool")
@@ -87,6 +92,7 @@ _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[OpOverload, OpOverload] = {
     operator.lt: ops.backend.executorch_prim.lt.Scalar,
     operator.ge: ops.backend.executorch_prim.ge.Scalar,
     operator.le: ops.backend.executorch_prim.le.Scalar,
+    torch.sym_float: ops.backend.executorch_prim.sym_float.Scalar,
 }
 
 
