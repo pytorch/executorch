@@ -5,9 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import os
 import pickle
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import BinaryIO, Dict, IO, List, Optional, Union
 from zipfile import BadZipFile, ZipFile
 
 from executorch import exir
@@ -140,7 +141,7 @@ def _get_reference_outputs(
 
 
 def generate_etrecord(
-    etrecord_path: str,
+    et_record: Union[str, os.PathLike, BinaryIO, IO[bytes]],
     edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram],
     executorch_program: Union[
         ExecutorchProgram,
@@ -180,7 +181,10 @@ def generate_etrecord(
         None
     """
 
-    etrecord_zip = ZipFile(etrecord_path, "w")
+    if isinstance(et_record, (str, os.PathLike)):
+        et_record = os.fspath(et_record)  # pyre-ignore
+
+    etrecord_zip = ZipFile(et_record, "w")
     # Write the magic file identifier that will be used to verify that this file
     # is an etrecord when it's used later in the SDK tooling.
     etrecord_zip.writestr(ETRecordReservedFileNames.ETRECORD_IDENTIFIER, "")

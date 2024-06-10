@@ -47,6 +47,13 @@ class TestSuite:
         self.prepacked_args: List[str] = []
         self.requires_prepack: bool = False
         self.dtypes: List[str] = ["at::kFloat", "at::kHalf"]
+
+        self.data_gen: str = "make_rand_tensor"
+        self.data_range = (0, 1)
+
+        self.arg_dtype = {}
+        self.arg_data_range = {}
+
         self.atol: str = "1e-5"
         self.rtol: str = "1e-5"
 
@@ -143,6 +150,25 @@ class TestSuiteGen:
         name_str = name_str.replace("-", "n")
         return name_str
 
+    def call_data_gen_fn(self, arg: Argument, data: Any, terminate: bool = True) -> str:
+        tensor_dtype = (
+            "test_dtype"
+            if arg.name not in self.suite_def.arg_dtype
+            else self.suite_def.arg_dtype[arg.name]
+        )
+
+        data_range = (
+            self.suite_def.data_range
+            if arg.name not in self.suite_def.arg_data_range
+            else self.suite_def.arg_data_range[arg.name]
+        )
+
+        ret_str = f"{self.suite_def.data_gen}({init_list_str(data)}, {tensor_dtype}, {data_range[0]}, {data_range[1]})"
+        if terminate:
+            ret_str += ";"
+
+        return ret_str
+
     def create_input_data(self, arg: Argument, data: Any) -> str:  # noqa: C901
         ctype = cpp.argumenttype_type(arg.type, mutable=arg.is_write, binds=arg.name)
         cpp_type = ctype.cpp_type(strip_ref=True)
@@ -152,7 +178,7 @@ class TestSuiteGen:
         if cpp_type == AT_TENSOR_LIST:
             ret_str = f"std::vector<{AT_TENSOR}> tensor_vec;\n"
             for elem in data:
-                ret_str += f"tensor_vec.emplace_back({self.suite_def.data_gen}({init_list_str(elem)}, test_dtype));\n"
+                ret_str += f"tensor_vec.emplace_back({self.call_data_gen_fn(arg, elem, False)});\n"
             ret_str += f"{cpp_type} {arg.name} = tensor_vec;\n"
             return ret_str + "\n"
 
@@ -169,14 +195,12 @@ class TestSuiteGen:
             if arg.name == "index" or arg.name == "indices":
                 ret_str += f"make_index_tensor({init_list_str(data)});"
             else:
-                ret_str += (
-                    f"{self.suite_def.data_gen}({init_list_str(data)}, test_dtype);"
-                )
+                ret_str += self.call_data_gen_fn(arg, data)
         elif cpp_type == OPT_AT_TENSOR:
             if str(data) == "None":
                 ret_str += "std::nullopt;"
             else:
-                ret_str += f"make_rand_tensor({init_list_str(data)}, test_dtype);"
+                ret_str += self.call_data_gen_fn(arg, data)
         elif cpp_type == AT_SCALAR:
             ret_str += f"{data};"
         elif cpp_type == AT_INT_ARRAY_REF:
@@ -273,10 +297,13 @@ cpp_test_template = """
 at::Tensor make_rand_tensor(
         std::vector<int64_t> sizes,
         at::ScalarType dtype = at::kFloat,
-        float high = 1.0,
-        float low = 0.0) {{
+        float low = 0.0,
+        float high = 1.0) {{
     if (high == 1.0 && low == 0.0)
         return at::rand(sizes, at::device(at::kCPU).dtype(dtype));
+    
+    if (dtype == at::kChar)
+        return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
 
     return at::rand(sizes, at::device(at::kCPU).dtype(dtype)) * (high - low) + low;
 }}
@@ -284,7 +311,12 @@ at::Tensor make_rand_tensor(
 
 at::Tensor make_seq_tensor(
     std::vector<int64_t> sizes,
-    at::ScalarType dtype = at::kFloat) {{
+    at::ScalarType dtype = at::kFloat,
+    float low = 0.0,
+    float high = 1.0) {{
+  (void)low;
+  (void)high;
+
   int64_t n = 1;
   for (auto size: sizes) {{
     n *= size;

@@ -740,7 +740,7 @@ get_assets_to_remove(ModelAssetsStore& store,
     return static_cast<BOOL>(status);
 }
 
-- (BOOL)purge:(NSError * __autoreleasing *)error {
+- (BOOL)purgeAndReturnError:(NSError * __autoreleasing *)error {
     __block BOOL result = 0;
     dispatch_sync(self.syncQueue, ^{
         result = [self _purge:error];

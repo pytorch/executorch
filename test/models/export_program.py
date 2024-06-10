@@ -13,9 +13,10 @@ from typing import Any, Dict, List, Type
 import torch
 from executorch.exir import CaptureConfig
 from executorch.exir.passes import MemoryPlanningPass
-from executorch.test.end2end.exported_module import ExportedModule
 from torch import nn
 from torch.export import Dim
+
+from ..end2end.exported_module import ExportedModule
 
 """Traces and exports nn.Modules to ExecuTorch .pte program files.
 

@@ -130,10 +130,10 @@ class TestDepthwiseConv2D(unittest.TestCase):
     def _test_dw_conv2d_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .export()
@@ -142,21 +142,16 @@ class TestDepthwiseConv2D(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs()
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs()
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_dw_conv2d_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
@@ -166,13 +161,8 @@ class TestDepthwiseConv2D(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(qtol=1)
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(qtol=1)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_dw_conv2d_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
@@ -180,7 +170,7 @@ class TestDepthwiseConv2D(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
@@ -201,9 +191,5 @@ class TestDepthwiseConv2D(unittest.TestCase):
         self._test_dw_conv2d_tosa_BI_pipeline(model, model.get_inputs())
 
     @parameterized.expand(testsuite_u55)
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     def test_dw_conv2d_u55_BI(self, test_name, model):
         self._test_dw_conv2d_u55_BI_pipeline(model, model.get_inputs())

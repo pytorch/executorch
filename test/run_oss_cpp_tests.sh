@@ -31,10 +31,12 @@ build_executorch() {
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
     -DEXECUTORCH_BUILD_VULKAN=$BUILD_VULKAN \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
 }
@@ -48,10 +50,30 @@ build_gtest() {
   popd
 }
 
-export_test_add_model() {
-  if ! test -f cmake-out/add.pte; then
-    python3 -m examples.portable.scripts.export --model_name="add" --output_dir="cmake-out"
-  fi
+export_test_model() {
+  python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry" --outdir "cmake-out" 2> /dev/null
+  python3 -m test.models.export_delegated_program --modules "ModuleAddMul" --backend_id "StubBackend" --outdir "cmake-out" || true
+
+  ET_MODULE_ADD_HALF_PATH="$(realpath cmake-out/ModuleAddHalf.pte)"
+  ET_MODULE_ADD_PATH="$(realpath cmake-out/ModuleAdd.pte)"
+  ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH="$(realpath cmake-out/ModuleDynamicCatUnallocatedIO.pte)"
+  ET_MODULE_INDEX_PATH="$(realpath cmake-out/ModuleIndex.pte)"
+  ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH="$(realpath cmake-out/ModuleLinear-no-constant-segment.pte)"
+  ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH="$(realpath cmake-out/ModuleLinear.pte)"
+  ET_MODULE_MULTI_ENTRY_PATH="$(realpath cmake-out/ModuleMultipleEntry.pte)"
+  ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH="$(realpath cmake-out/ModuleAddMul-nosegments-da1024.pte)"
+  ET_MODULE_ADD_MUL_NOSEGMENTS_PATH="$(realpath cmake-out/ModuleAddMul-nosegments.pte)"
+  ET_MODULE_ADD_MUL_PATH="$(realpath cmake-out/ModuleAddMul.pte)"
+  export ET_MODULE_ADD_HALF_PATH
+  export ET_MODULE_ADD_PATH
+  export ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH
+  export ET_MODULE_INDEX_PATH
+  export ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH
+  export ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH
+  export ET_MODULE_MULTI_ENTRY_PATH
+  export ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH
+  export ET_MODULE_ADD_MUL_NOSEGMENTS_PATH
+  export ET_MODULE_ADD_MUL_PATH
 }
 
 build_and_run_test() {
@@ -65,8 +87,6 @@ build_and_run_test() {
 
   RESOURCES_PATH=$(realpath extension/module/test/resources)
   export RESOURCES_PATH
-  ET_MODULE_ADD_PATH=$(realpath cmake-out/add.pte)
-  export ET_MODULE_ADD_PATH
 
   for t in cmake-out/"${test_dir}"/*test; do
     if [ -e "$t" ]; then
@@ -103,7 +123,7 @@ probe_tests() {
 
 build_executorch
 build_gtest
-export_test_add_model
+export_test_model
 
 if [ -z "$1" ]; then
   echo "Running all directories:"

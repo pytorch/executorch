@@ -47,12 +47,16 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "half": "image3D",
             "int": "iimage3D",
             "uint": "uimage3D",
+            "int8": "iimage3D",
+            "uint8": "uimage3D",
         },
         2: {
             "float": "image2D",
             "half": "image2D",
             "int": "iimage2D",
             "uint": "uimage2D",
+            "int8": "iimage2D",
+            "uint8": "uimage2D",
         },
     },
     "SAMPLER_T": {
@@ -61,12 +65,16 @@ TYPE_MAPPINGS: Dict[str, Any] = {
             "half": "sampler3D",
             "int": "isampler3D",
             "uint": "usampler3D",
+            "int8": "isampler3D",
+            "uint8": "usampler3D",
         },
         2: {
             "float": "sampler2D",
             "half": "sampler2D",
             "int": "isampler2D",
             "uint": "usampler2D",
+            "int8": "isampler2D",
+            "uint8": "usampler2D",
         },
     },
     "IMAGE_FORMAT": {
@@ -277,6 +285,25 @@ def define_active_storage_type(storage_type: str):
         raise AssertionError(f"Invalid storage type: {storage_type}")
 
 
+def define_required_extensions(dtype: str):
+    out_str = "\n"
+    nbit = None
+    glsl_type = None
+
+    if dtype == "half":
+        nbit = "16bit"
+        glsl_type = "float16"
+    if dtype == "int8":
+        nbit = "8bit"
+        glsl_type = "int8"
+
+    if nbit is not None and glsl_type is not None:
+        out_str += f"#extension GL_EXT_shader_{nbit}_storage : require\n"
+        out_str += f"#extension GL_EXT_shader_explicit_arithmetic_types_{glsl_type} : require\n"
+
+    return out_str
+
+
 UTILITY_FNS: Dict[str, Any] = {
     "macro_define": define_variable,
     "get_pos": {
@@ -296,6 +323,7 @@ UTILITY_FNS: Dict[str, Any] = {
     "layout_declare_tensor": layout_declare_tensor,
     "layout_declare_ubo": layout_declare_ubo,
     "define_active_storage_type": define_active_storage_type,
+    "define_required_extensions": define_required_extensions,
 }
 
 

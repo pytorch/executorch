@@ -6,14 +6,12 @@
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import <XCTest/XCTest.h>
-
-#import <string>
-
 #import <executorch/runtime/core/data_loader.h>
 #import <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #import <executorch/runtime/executor/method.h>
 #import <executorch/runtime/executor/program.h>
 #import <executorch/runtime/platform/runtime.h>
+#import <string>
 
 static constexpr size_t kRuntimeMemorySize = 50 * 1024U * 1024U; // 50 MB
 
@@ -128,7 +126,7 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
 @implementation CoreMLBackendDelegateTests
 
 + (void)setUp {
-    runtime_init();
+    torch::executor::runtime_init();
 }
 
 + (nullable NSURL *)bundledResourceWithName:(NSString *)name extension:(NSString *)extension {

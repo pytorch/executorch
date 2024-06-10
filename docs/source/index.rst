@@ -95,6 +95,7 @@ Topics in this section will help you get started with ExecuTorch.
    running-a-model-cpp-tutorial
    extension-module
    tutorials/sdk-integration-tutorial
+   apple-runtime
    demo-apps-ios
    demo-apps-android
    examples-end-to-end-to-lower-model-to-delegate
@@ -239,6 +240,13 @@ ExecuTorch tutorials.
    :image: _static/img/generic-pytorch-logo.png
    :link: tutorials/sdk-integration-tutorial.html
    :tags: SDK
+
+.. customcarditem::
+   :header: Integrating and Running ExecuTorch on Apple Platforms
+   :card_description: A tutorial on integrating, using, and troubleshooting the ExecuTorch runtime on iOS.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: apple-runtime.html
+   :tags: iOS, macOS
 
 .. customcarditem::
    :header: Building an ExecuTorch iOS Demo App

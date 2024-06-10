@@ -9,12 +9,27 @@ load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 oncall("odai_jarvis")
 
 python_library(
+    name = "utils",
+    srcs = [
+        "utils.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/tabulate:tabulate",
+        "//caffe2:torch",
+        "//executorch/exir:memory",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+    ],
+)
+
+python_library(
     name = "compiler",
     srcs = [
         "compiler.py",
     ],
     deps = [
         ":passes",
+        ":utils",
         "//caffe2:torch",
         "//executorch/exir:lib",
     ],
@@ -26,6 +41,8 @@ python_library(
         "passes.py",
     ],
     deps = [
+        ":utils",
+        "//caffe2:torch",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
     ],

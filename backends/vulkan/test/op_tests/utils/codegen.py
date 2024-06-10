@@ -565,10 +565,25 @@ for (int i=0; i<out.size(); i++) {{
         return graph_exec
 
     def gen_conditional_skips(self) -> str:
-        skips = "if (test_dtype == at::kHalf && "
-        skips += f"!{self.graph}{self.dot}context()->adapter_ptr()->has_16bit_storage()) {{\n"
-        skips += "  GTEST_SKIP();"
+        fp16_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_float16_buffers_support()) {{\n"
+        fp16_skip += "  GTEST_SKIP();"
+        fp16_skip += "}\n"
+
+        int8_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_int8_buffers_support()) {{\n"
+        int8_skip += "  GTEST_SKIP();"
+        int8_skip += "}\n"
+
+        skips = ""
+
+        skips = "if (test_dtype == at::kHalf) {\n"
+        skips += fp16_skip
         skips += "}\n"
+
+        for _, dtype in self.suite_def.arg_dtype.items():
+            if dtype == "at::kChar" or dtype == "at::kQInt8":
+                skips += int8_skip
+                continue
+
         return skips
 
     def gen_op_check_fn(self) -> str:
@@ -695,6 +710,8 @@ api::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
             return api::kInt;
         case c10::kLong:
             return api::kInt;
+        case c10::kChar:
+            return api::kChar;
         default:
             VK_THROW("Unsupported at::ScalarType!");
     }
