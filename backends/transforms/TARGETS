@@ -2,8 +2,6 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-# adding `EXECUTORCH_CLIENTS` to extend visibility for other code bases
-# to use "custom pass" when exporting models
 runtime.python_library(
     name = "lib",
     srcs = [
@@ -11,7 +9,6 @@ runtime.python_library(
     ],
     visibility = [
         "//executorch/backends/...",
-        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         ":addmm_mm_to_linear",
@@ -23,7 +20,6 @@ runtime.python_library(
     srcs = ["addmm_mm_to_linear.py"],
     visibility = [
         "//executorch/backends/...",
-        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         "//caffe2:torch",
@@ -38,7 +34,6 @@ runtime.python_library(
     srcs = ["fuse_batch_norm_with_conv.py"],
     visibility = [
         "//executorch/backends/...",
-        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         ":utils",
@@ -71,7 +66,6 @@ runtime.python_library(
     srcs = ["mean_to_sum_div.py"],
     visibility = [
         "//executorch/backends/...",
-        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         "//caffe2:torch",
@@ -113,7 +107,6 @@ runtime.python_library(
     ],
     visibility = [
         "//executorch/backends/...",
-        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         "//caffe2:torch",
