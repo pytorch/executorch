@@ -186,22 +186,6 @@ ivec4 to_texture_elem_pos(ivec4 idx, ivec4 sizes, int packed_dim) {
 //
 
 #ifdef USING_BUFFER
-#define FP_IN_TENSOR_T buffer
-#elif defined(USING_TEXTURE2D)
-#define FP_IN_TENSOR_T sampler2D
-#else // defined(USING_TEXTURE3D)
-#define FP_IN_TENSOR_T sampler3D
-#endif
-
-#ifdef USING_BUFFER
-#define INT_IN_TENSOR_T buffer
-#elif defined(USING_TEXTURE2D)
-#define INT_IN_TENSOR_T isampler2D
-#else // defined(USING_TEXTURE3D)
-#define INT_IN_TENSOR_T isampler3D
-#endif
-
-#ifdef USING_BUFFER
 #define load_texel(buf, idx) buf[idx]
 #elif defined(USING_TEXTURE2D)
 #define load_texel(im, pos) texelFetch(im, pos.xy, 0)
