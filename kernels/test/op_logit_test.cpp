@@ -44,24 +44,6 @@ class OpLogitOutTest : public OperatorTest {
         tf_out.make(sizes, /*data=*/{INFINITY, INFINITY, INFINITY, INFINITY}));
   }
 
-  template <>
-  void test_integer_logit_out<ScalarType::Float, ScalarType::Float>() {
-    TensorFactory<ScalarType::Float> tf;
-    TensorFactory<ScalarType::Float> tf_out;
-
-    const std::vector<int32_t> sizes = {2, 2};
-
-    // Destination for the logit operator.
-    Tensor out = tf_out.zeros(sizes);
-
-    // Check that it matches (or close to) the expected output.
-    op_logit_out(tf.make(sizes, /*data=*/{.1, .2, .4, .8}), 0, out);
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf_out.make(
-            sizes, /*data=*/{-2.197224, -1.386294, -0.405465, 1.3862943}));
-  }
-
   // Common testing for logit operator
   template <ScalarType DTYPE, ScalarType OUTPUT_DTYPE>
   void test_integer_logit_out_eps_set() {
@@ -95,6 +77,25 @@ class OpLogitOutTest : public OperatorTest {
     ET_EXPECT_KERNEL_FAILURE(context_, op_logit_out(in, 0, out));
   }
 };
+
+template <>
+void OpLogitOutTest::
+    test_integer_logit_out<ScalarType::Float, ScalarType::Float>() {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Float> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  // Destination for the logit operator.
+  Tensor out = tf_out.zeros(sizes);
+
+  // Check that it matches (or close to) the expected output.
+  op_logit_out(tf.make(sizes, /*data=*/{.1, .2, .4, .8}), 0, out);
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf_out.make(
+          sizes, /*data=*/{-2.197224, -1.386294, -0.405465, 1.3862943}));
+}
 
 TEST_F(OpLogitOutTest, AllRealInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \

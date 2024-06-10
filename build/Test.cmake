@@ -26,7 +26,9 @@ enable_testing()
 find_package(GTest CONFIG REQUIRED)
 
 target_link_options_shared_lib(extension_data_loader)
+target_link_options_shared_lib(portable_kernels)
 target_link_options_shared_lib(portable_ops_lib)
+target_link_options_shared_lib(quantized_ops_lib)
 
 # Add code coverage flags to supported compilers
 if(EXECUTORCH_USE_CPP_CODE_COVERAGE)

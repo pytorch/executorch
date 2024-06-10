@@ -53,24 +53,6 @@ class OpFullLikeTest : public OperatorTest {
     EXPECT_TENSOR_EQ(out, tf.ones(sizes));
   }
 
-  template <>
-  void test_full_like_out<ScalarType::Bool>() {
-    TensorFactory<ScalarType::Bool> tf;
-    const std::vector<int32_t> sizes = {2, 2};
-    Tensor in = tf.zeros(sizes);
-    Tensor out = tf.zeros(sizes);
-    Scalar value = true;
-    MemoryFormat memory_format = MemoryFormat::Contiguous;
-
-    // Check that it matches the expected output.
-    op_full_like_out(in, value, memory_format, out);
-    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, true, true, true}));
-
-    value = false;
-    op_full_like_out(in, value, memory_format, out);
-    EXPECT_TENSOR_EQ(out, tf.zeros(sizes));
-  }
-
   template <ScalarType DTYPE>
   void test_full_like_out_mismatched_shape() {
     TensorFactory<DTYPE> tf;
@@ -84,6 +66,24 @@ class OpFullLikeTest : public OperatorTest {
         context_, op_full_like_out(in, value, memory_format, out));
   }
 };
+
+template <>
+void OpFullLikeTest::test_full_like_out<ScalarType::Bool>() {
+  TensorFactory<ScalarType::Bool> tf;
+  const std::vector<int32_t> sizes = {2, 2};
+  Tensor in = tf.zeros(sizes);
+  Tensor out = tf.zeros(sizes);
+  Scalar value = true;
+  MemoryFormat memory_format = MemoryFormat::Contiguous;
+
+  // Check that it matches the expected output.
+  op_full_like_out(in, value, memory_format, out);
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, true, true, true}));
+
+  value = false;
+  op_full_like_out(in, value, memory_format, out);
+  EXPECT_TENSOR_EQ(out, tf.zeros(sizes));
+}
 
 TEST_F(OpFullLikeTest, AllRealOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_full_like_out<ScalarType::dtype>();
