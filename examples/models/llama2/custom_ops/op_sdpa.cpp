@@ -5,7 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-
+// #include <iostream>
+// #include <fstream>
 #include <executorch/examples/models/llama2/custom_ops/op_sdpa.h>
 
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
@@ -570,7 +571,9 @@ bool validate_cache_params(
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       start_pos < k_cache.size(1),
-      "start_pos must be less than key cache at dim 1");
+      "start_pos: %" PRId64 ", must be less than key cache at dim 1: %" PRId64 ".",
+      start_pos,
+      k_cache.size(1));
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       start_pos < v_cache.size(1),
@@ -856,6 +859,13 @@ Tensor& sdpa_with_kv_cache_out(
               true);
         }
       });
+  // std::ofstream logfile("logfile_no_backend.txt", std::ios_base::app);
+  // if (logfile.is_open()) {
+  //   logfile << "sdpa output: " << output.const_data_ptr() << ", values [" << output.const_data_ptr<float>()[0] << ", " << output.const_data_ptr<float>()[1] << ", " << output.const_data_ptr<float>()[2] << ", " << output.const_data_ptr<float>()[3] << ", ...]" << std::endl;
+  //   logfile.close();
+  // } else {
+  //   std::cerr << "Unable to open log file" << std::endl;
+  // }
   return output;
 }
 } // namespace native

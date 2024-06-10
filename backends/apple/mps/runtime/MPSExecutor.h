@@ -30,6 +30,7 @@ class MPSExecutor {
   NSMutableArray<MPSGraphTensorData *>* _inputsArray;
   NSMutableArray<MPSGraphTensorData *>* _outputsArray;
 
+  std::vector<const Tensor*> _inputTensors;
   // Flag whatever to use shared memory or not
   // Shared memory flag will be set as following (based on HW and target config):
   //   - True: Apple Silicon and macOS15+/iOS17+/iPadOS17+

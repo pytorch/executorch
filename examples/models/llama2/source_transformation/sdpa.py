@@ -39,7 +39,7 @@ class SDPACustom(torch.nn.Module):
             v,
             self.kv_cache.k_cache,
             self.kv_cache.v_cache,
-            input_pos[-1].item(),
+            input_pos.item(),
             seqlen,
         )
         return output.view(bsz, seqlen, self.dim)

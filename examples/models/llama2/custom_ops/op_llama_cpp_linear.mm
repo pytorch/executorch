@@ -4,7 +4,8 @@
 //
 //  Created by Mengwei Liu on 5/10/24.
 //
-
+// #include <iostream>
+// #include <fstream>
 #include <executorch/backends/apple/mps/runtime/operations/OperationUtils.h>
 #include <executorch/backends/apple/mps/runtime/MPSStream.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -47,6 +48,7 @@ Tensor& _llama_cpp_mm_int8_out(
   std::array<uint32_t, 3> sizes = {static_cast<uint32_t>(M), static_cast<uint32_t>(K), static_cast<uint32_t>(N)};
   dispatch_sync(mpsStream->queue(), ^() {
     @autoreleasepool {
+      // mpsStream->endKernelCoalescing();
       NSError *error = nil;
       id<MTLDevice> device = mpsStream->device();
       id<MTLComputeCommandEncoder> computeEncoder = mpsStream->commandEncoder();
@@ -55,8 +57,14 @@ Tensor& _llama_cpp_mm_int8_out(
                                                                   options:nil
                                                                     error:&error];
       ET_CHECK_MSG(customKernelLibrary, "Error creating custom kernel library: ", error.localizedDescription.UTF8String);
-      const std::string kernel = "kernel_mul_mm_" + mps::delegate::scalarToMetalTypeString(A.scalar_type()) + "_char";
-
+      std::string kernel;
+      if (M == 1) {
+        kernel = "int8pack_mv_" + mps::delegate::scalarToMetalTypeString(A.scalar_type());
+      } else if (M < 4) {
+        kernel = "int8pack_mm_" + mps::delegate::scalarToMetalTypeString(A.scalar_type());
+      } else {
+        kernel = "large_m_int8pack_mm_" + mps::delegate::scalarToMetalTypeString(A.scalar_type());
+      }
       // Create a function
       id<MTLFunction> customQuantizedLinearFunction = [customKernelLibrary newFunctionWithName:[NSString stringWithUTF8String:kernel.c_str()]];
       ET_CHECK_MSG(customQuantizedLinearFunction, "Error creating custom kernel function: %s", kernel.c_str());
@@ -70,12 +78,29 @@ Tensor& _llama_cpp_mm_int8_out(
       [computeEncoder setBuffer:mps::delegate::getMTLBufferStorage(scales) offset:0 atIndex:2];
       [computeEncoder setBuffer:mps::delegate::getMTLBufferStorage(C) offset:0 atIndex:3];
       [computeEncoder setBytes:sizes.data() length:16 atIndex:4];
+      if (M == 1) {
+        [computeEncoder setThreadgroupMemoryLength:32 atIndex:0];
+        [computeEncoder dispatchThreadgroups:MTLSizeMake((N + 7) / 8, 1, 1)
+                       threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+      } else if (M < 4) {
+        [computeEncoder dispatchThreads:MTLSizeMake(M * N / 4, 8, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+      } else {
         [computeEncoder setThreadgroupMemoryLength:12288 atIndex:0];
-        [computeEncoder dispatchThreadgroups:MTLSizeMake( (M + 31)/32, (N + 63)/64, 1) threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
-        mpsStream->synchronize(mps::delegate::SyncType::COMMIT_AND_WAIT);
+        [computeEncoder dispatchThreadgroups:MTLSizeMake((M + 31) / 32, (N + 63) / 64, 1)
+                       threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+      }
+        ET_CHECK(mpsStream->synchronize(mps::delegate::SyncType::COMMIT_AND_WAIT) == Error::Ok);
     }
   });
+  // std::ofstream logfile("logfile_no_backend.txt", std::ios_base::app);
+  // if (logfile.is_open()) {
+  //     logfile << "A address: " << A.const_data_ptr() << ", values [" << A.const_data_ptr<float>()[0] << ", " << A.const_data_ptr<float>()[1] << ", " << A.const_data_ptr<float>()[2] << ", " << A.const_data_ptr<float>()[3] << ", ...]" << std::endl;
+  //     logfile << "C address: " << C.const_data_ptr() << ", values [" << C.const_data_ptr<float>()[0] << ", " << C.const_data_ptr<float>()[1] << ", " << C.const_data_ptr<float>()[2] << ", " << C.const_data_ptr<float>()[3] << ", ...]" << std::endl;
 
+  //     logfile.close();
+  // } else {
+  //     std::cerr << "Unable to open log file" << std::endl;
+  // }
   return C;
 }
 

@@ -2,7 +2,8 @@
 //  Copyright (c) 2023 Apple Inc. All rights reserved.
 //  Provided subject to the LICENSE file in the top level directory.
 //
-
+// #include <iostream>
+// #include <fstream>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/backends/apple/mps/schema_generated.h>
@@ -51,7 +52,7 @@ MPSExecutor::set_inputs_outputs(std::vector<const Tensor*>& inputs, std::vector<
                                                                           dataType:[_inputShapes[i] dataType]] autorelease];
     _inputsArray[i] = tensorData;
   }
-
+  _inputTensors = inputs;
   for (int i = 0; i < outputs.size(); i++) {
     MPSGraphTensorData* tensorData = [[[MPSGraphTensorData alloc] initWithMTLBuffer:_outputGPUBuffers[i]
                                                                               shape:[_outputShapes[i] shape]
@@ -62,6 +63,10 @@ MPSExecutor::set_inputs_outputs(std::vector<const Tensor*>& inputs, std::vector<
 }
 
 __ET_NODISCARD Error MPSExecutor::forward(std::vector<const Tensor*>& outputs) {
+  // std::ofstream logfile("logfile_no_backend.txt", std::ios_base::app);
+  // if (logfile.is_open()) {
+  //   logfile << "delegate input 0 before forward: " << _inputTensors[0]->const_data_ptr() << ", values [" << _inputTensors[0]->const_data_ptr<float>()[0] << ", " << _inputTensors[0]->const_data_ptr<float>()[1] << ", " << _inputTensors[0]->const_data_ptr<float>()[2] << ", " << _inputTensors[0]->const_data_ptr<float>()[3] << ", ...]" << std::endl;
+  // }
   Error err = Error::Ok;
   MPSStream* mpsStream = getDefaultMPSStream();
   if (mpsStream->commitAndContinueEnabled() || mpsStream->hasLiveCommandBuffer()) {
@@ -91,7 +96,13 @@ __ET_NODISCARD Error MPSExecutor::forward(std::vector<const Tensor*>& outputs) {
     Internal,
     "Could not synchronize on the MPSStream");
 #endif
-
+  // if (logfile.is_open()) {
+  //   logfile << "delegate input 0 after forward: " << _inputTensors[0]->const_data_ptr() << ", values [" << _inputTensors[0]->const_data_ptr<float>()[0] << ", " << _inputTensors[0]->const_data_ptr<float>()[1] << ", " << _inputTensors[0]->const_data_ptr<float>()[2] << ", " << _inputTensors[0]->const_data_ptr<float>()[3] << ", ...]" << std::endl;
+  //   logfile << "delegate output 0: " << outputs[0]->const_data_ptr() << ", values [" << outputs[0]->const_data_ptr<float>()[0] << ", " << outputs[0]->const_data_ptr<float>()[1] << ", " << outputs[0]->const_data_ptr<float>()[2] << ", " << outputs[0]->const_data_ptr<float>()[3] << ", ...]" << std::endl;
+  //   logfile.close();
+  // } else {
+  //   std::cerr << "Unable to open log file" << std::endl;
+  // }
   return Error::Ok;
 }
 
