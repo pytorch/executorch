@@ -115,12 +115,15 @@ def get_addmm_inputs():
     return test_suite
 
 
+common_MKN_list = [
+    (S2, M2, M1),
+    (L, L, M1),
+]
+
+
 @register_test_suite("aten.linear.default")
 def get_linear_inputs():
-    MKN_list = [
-        (S2, M2, M1),
-        (L, L, M1),
-    ]
+    MKN_list = common_MKN_list
 
     inputs_list = [((M, K), (N, K), None) for M, K, N in MKN_list]
     inputs_list += [((M, K), (N, K), (N)) for M, K, N in MKN_list]
@@ -133,6 +136,26 @@ def get_linear_inputs():
         "api::kWidthPacked",
         "api::kChannelsPacked",
     ]
+    return test_suite
+
+
+@register_test_suite("aten._weight_int8pack_mm.default")
+def get_weight_int8pack_mm_inputs():
+    MKN_list = common_MKN_list
+
+    inputs_list = [((M, K), (N, K), (N)) for M, K, N in MKN_list]
+
+    test_suite = VkTestSuite(inputs_list)
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
+    test_suite.layouts = ["api::kWidthPacked"]
+    test_suite.storage_types = ["api::kTexture3D", "api::kBuffer"]
+    test_suite.prepacked_args = ["mat2"]
+
+    test_suite.arg_dtype["mat2"] = "at::kChar"
+    test_suite.arg_data_range["mat2"] = (0, 100)
+
+    test_suite.arg_data_range["scales"] = (0.0008, 0.001)
+
     return test_suite
 
 

@@ -85,23 +85,29 @@ ValueRef prepack(
     const ValueRef vref,
     const api::GPUMemoryLayout layout) {
   ValueRef v = graph.add_tensor_like(vref, layout);
-  vTensorPtr t = graph.get_tensor(v);
 
-  api::ShaderInfo shader = get_nchw_to_tensor_shader(*t);
+  api::ShaderInfo shader = get_nchw_to_tensor_shader(*graph.get_tensor(v));
 
-  api::utils::uvec3 global_size = t->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  api::ParamsBindList ubos({graph.sizes_ubo(v)});
+  if (graph.is_buffer_storage(v)) {
+    ubos.append({
+        graph.texel_strides_ubo(v),
+        graph.ntexels_ubo(v),
+    });
+  }
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      global_size,
-      local_size,
+      graph.create_global_wg_size(v),
+      graph.create_local_wg_size(v),
+      // Input and Outputs
       vref,
       v,
-      {t->sizes_ubo()},
+      // Parameter Buffers
+      ubos,
       // Specialization Constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {SV(graph.packed_dim_whcn_idx_of(v))}));
 
   return v;
 }
