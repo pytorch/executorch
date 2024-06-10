@@ -23,5 +23,16 @@ include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
 set(_test_srcs etdump_test.cpp)
 
-et_cxx_test(sdk_etdump_tests SOURCES ${_test_srcs} EXTRA_LIBS bundled_program etdump flatccrt_d)
-target_include_directories(sdk_etdump_tests PRIVATE ${CMAKE_INSTALL_PREFIX}/sdk/include ${EXECUTORCH_ROOT}/third-party/flatcc/include)
+et_cxx_test(
+  sdk_etdump_tests
+  SOURCES
+  ${_test_srcs}
+  EXTRA_LIBS
+  bundled_program
+  etdump
+  flatccrt_d
+)
+target_include_directories(
+  sdk_etdump_tests PRIVATE ${CMAKE_INSTALL_PREFIX}/sdk/include
+                           ${EXECUTORCH_ROOT}/third-party/flatcc/include
+)
