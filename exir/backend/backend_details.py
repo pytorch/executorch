@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.runtime_info_schema import RuntimeInfo
 from torch.export.exported_program import ExportedProgram
 
 
@@ -65,4 +66,24 @@ class BackendDetails(ABC):
     ) -> PreprocessResult:
         # Users should return a compiled blob - a binary that can run the desired
         # program in the backend.
+        pass
+
+    """
+    Args:
+        processed_bytes: The preprocessed binary result from preprocessed given the graph.
+        compile_spec: The same compile spec given to preprocess.
+        runtime_info: The runtime info provided by the backend runtime
+
+    Returns:
+        A boolean to indicated whether the preprocessed result is compatible with the backend runtime.
+    """
+
+    @staticmethod
+    @abstractmethod
+    def is_compatible(
+        processed_bytes: bytes,
+        compile_spec: List[CompileSpec],
+        runtime_info: List[RuntimeInfo],
+    ) -> bool:
+        # Users should return if the preprocesssed_blob is compatible with the runtime info.
         pass
