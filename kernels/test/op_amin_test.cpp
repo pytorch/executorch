@@ -189,44 +189,44 @@ class OpAminOutTest : public OperatorTest {
     op_amin_out(in, empty_dim_list, /*keepdim=*/false, out);
     EXPECT_TENSOR_CLOSE(out, tf.make({}, {2}));
   }
-
-  template <>
-  void test_amin_out_dtype<ScalarType::Bool>() {
-    TensorFactory<ScalarType::Bool> tf_bool;
-    // clang-format off
-    Tensor in = tf_bool.make(
-      {2, 3, 4},
-      {
-        true,  false, true,  false,
-        false, false, false, false,
-        false, true,  true,  false,
-
-        false, false, true,  false,
-        false, false, false, true,
-        true,  true,  true,  true,
-      });
-    // clang-format on
-
-    Tensor out = tf_bool.zeros({2, 3, 1});
-
-    // +/-inf and nan should work
-    op_amin_out(in, /*dim=*/-1, /*keepdim=*/true, out);
-    // clang-format off
-    EXPECT_TENSOR_CLOSE(
-        out, tf_bool.make(
-          {2, 3, 1},
-          {
-            false,
-            false,
-            false,
-
-            false,
-            false,
-            true
-          }));
-    // clang-format on
-  }
 };
+
+template <>
+void OpAminOutTest::test_amin_out_dtype<ScalarType::Bool>() {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  // clang-format off
+  Tensor in = tf_bool.make(
+    {2, 3, 4},
+    {
+      true,  false, true,  false,
+      false, false, false, false,
+      false, true,  true,  false,
+
+      false, false, true,  false,
+      false, false, false, true,
+      true,  true,  true,  true,
+    });
+  // clang-format on
+
+  Tensor out = tf_bool.zeros({2, 3, 1});
+
+  // +/-inf and nan should work
+  op_amin_out(in, /*dim=*/-1, /*keepdim=*/true, out);
+  // clang-format off
+  EXPECT_TENSOR_CLOSE(
+      out, tf_bool.make(
+        {2, 3, 1},
+        {
+          false,
+          false,
+          false,
+
+          false,
+          false,
+          true
+        }));
+  // clang-format on
+}
 
 TEST_F(OpAminOutTest, InvalidDimensionListDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {

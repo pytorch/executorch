@@ -40,6 +40,9 @@ $else:
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+// This header file must be defined after the layout descriptors have been
+// declared because the functions in the header assume some variables have been
+// declared as layout descriptors.
 #include "q_linear.h"
 
 #ifdef USING_BUFFER
@@ -59,13 +62,13 @@ void main() {
 #else // USING_TEXTURE
 
 void main() {
-  const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  if (any(greaterThanEqual(pos, out_limits))) {
+  const ivec3 out_pos = ivec3(gl_GlobalInvocationID);
+  if (any(greaterThanEqual(out_pos, out_limits))) {
     return;
   }
 
-  VEC4_T outtex = q_8w_linear(pos, mat1_sizes.x);
-  write_texel(t_out, pos, outtex);
+  VEC4_T outtex = q_8w_linear(out_pos, mat1_sizes.x);
+  write_texel(t_out, out_pos, outtex);
 }
 
 #endif

@@ -12,6 +12,8 @@
 
 #define VEC4_T ${texel_type(DTYPE)}
 
+#define op(X, A, B) ${OPERATOR}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;
@@ -40,6 +42,11 @@ layout(set = 0, binding = 6) uniform PRECISION restrict Params {
 layout(set = 0, binding = 7) uniform PRECISION restrict ExtraParams {
   ivec2 overlay_region;
   int in_group_size;
+};
+
+layout(set = 0, binding = 8) uniform PRECISION restrict OutputParams {
+  float out_min;
+  float out_max;
 };
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
@@ -145,7 +152,7 @@ void main() {
 
   for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
     if (all(lessThan(pos[i], out_limits))) {
-      imageStore(image_out, pos[i], sum[i]);
+      imageStore(image_out, pos[i], op(sum[i], out_min, out_max));
     }
   }
 }

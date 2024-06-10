@@ -32,7 +32,7 @@ Other:
 - `test/` - Unit test and test support functions
 
 ## Unit tests
-We're currently transitioning to use the generic Tester class.
+This is the structure of the test directory
 
 ```
 test                            #  Root test folder
@@ -40,9 +40,7 @@ test                            #  Root test folder
 ├── ops                         #  Single op tests
 ├── tester                      #  Arm Tester class
 ├── tosautil                    #  Utility functions for TOSA artifacts
-├ arm_tosa_reference.py         #  Legacy test runner. Keep until all tests are ported to new test structure.
-├ test_models.py                #  Legacy test definitions. Port these tests to new test structure.
-├ test_tosa.py                  #  Legacy unit test. Keep until tests are ported to new test structure.
+├ common.py                     #  Common functions and definitions used by many tests
 ```
 
 Some example commands to run these tests follow. Run a single test:
