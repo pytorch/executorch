@@ -35,6 +35,7 @@ build_executorch() {
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
+    -DEXECUTORCH_BUILD_SDK=ON \
     -DEXECUTORCH_BUILD_VULKAN=$BUILD_VULKAN \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
@@ -78,6 +79,7 @@ export_test_model() {
 build_and_run_test() {
   local test_dir=$1
   cmake "${test_dir}" \
+    -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DCMAKE_PREFIX_PATH="$(pwd)/third-party/googletest/build" \
