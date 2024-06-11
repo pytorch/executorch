@@ -41,7 +41,6 @@ class ManagedTensor {
 
   explicit ManagedTensor(
       void* data,
-      ssize_t numel,
       const std::vector<SizesType>& sizes,
       ScalarType dtype)
       : dtype_(dtype), sizes_(sizes), data_ptr_(data) {
