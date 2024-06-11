@@ -49,7 +49,10 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.models import Mul
-from executorch.extension.pybindings.aten_lib import _load_for_executorch_from_buffer
+from executorch.extension.pybindings.portable_lib import (
+    _load_for_executorch_from_buffer,
+)
+
 from functorch.experimental import control_flow
 from torch import nn
 
