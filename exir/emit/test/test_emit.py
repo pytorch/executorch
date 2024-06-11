@@ -6,7 +6,6 @@
 
 # pye-strict
 
-import pytest
 import typing
 import unittest
 from contextlib import contextmanager
@@ -16,6 +15,7 @@ import executorch.exir as exir
 
 import executorch.exir.schema as schema
 import executorch.exir.tests.models as models
+import pytest
 import torch
 from executorch.exir import (
     EdgeCompileConfig,
