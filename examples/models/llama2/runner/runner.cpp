@@ -283,17 +283,13 @@ Error Runner::generate(
 
   // initialize tensor wrappers
   ManagedTensor tokens_managed(
-      token_data.data(),
-      128, // TODO clean up unused 128 here as ManagedTensor ignores this arg in
-           // ctor
-      token_shape,
-      ScalarType::Long);
+      token_data.data(), token_shape, ScalarType::Long);
   // Create with the max shape to approapriately set the capacity of this
   // tensor, then resize back to 1 for first input.
   tokens_managed.resize({1, 1});
 
   ManagedTensor start_pos_managed(
-      start_pos_data.data(), 128, start_pos_shape, ScalarType::Long);
+      start_pos_data.data(), start_pos_shape, ScalarType::Long);
 
   int64_t prev_token;
   int64_t cur_token = prompt_tokens[0];
