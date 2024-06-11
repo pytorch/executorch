@@ -13,6 +13,7 @@ import torch.fx
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp, TosaSerializerTensor
+from torch.fx import Node
 
 q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
@@ -202,6 +203,68 @@ def build_rescale_from_int32(
     )
 
     return
+
+
+def rescale_nodes_to_int32(
+    nodes: list[Node], tosa_graph: ts.TosaSerializer, permute_memory_to_nhwc: bool
+) -> tuple[list[TosaSerializerTensor], float]:
+    """Rescales all 'nodes' to int32, adding suitable RESCALE ops to 'tosa_graph'.
+    The scales are adjusted using the smallest scale of all 'nodes'.
+
+    Returns a list of the rescaled nodes and the scale factor used,
+    needed by rescale_node_back_to_int8.
+    """
+
+    tensors = [TosaArg(node.args[0]) for node in nodes]
+    if permute_memory_to_nhwc:
+        NHWC_Order = [0, 2, 3, 1]
+        for tensor in tensors:
+            tensor.shape = [tensor.shape[i] for i in NHWC_Order]
+
+    qargs = [get_quant_node_args(node) for node in nodes]
+
+    # Scale the int8 quantized input to a common scale in the integer
+    # domain
+    min_scale = min([qarg.scale for qarg in qargs])
+    scales = [qarg.scale / min_scale for qarg in qargs]
+
+    rescaled_nodes: list[TosaSerializerTensor] = []
+    for tensor, qarg, scale in zip(tensors, qargs, scales):
+        rescaled_nodes.append(
+            build_rescale_to_int32(
+                tosa_graph,
+                tensor,
+                qarg.zp,
+                scale,
+            )
+        )
+    return rescaled_nodes, min_scale
+
+
+def rescale_node_back_to_int8(
+    node: Node,
+    last_tensor: TosaSerializerTensor,
+    scale: float,
+    tosa_graph: ts.TosaSerializer,
+):
+    """Rescales the node back to int8, adding a suitable RESCALE op to 'tosa_graph'.
+    Parameters:
+        node: The original node that is being handled by the rescales.
+        last_tensor:the tosa tensor to rescale back.
+        scale: the scaling factor used to rescale to int32, from the function 'rescale_nodes_to_int32'
+        tosa_graph: the tosa_graph to manipulate.
+    """
+    qargs_out = get_quant_node_args(list(node.users)[0])
+    output_rescale_scale = scale / qargs_out.scale
+
+    # Rescale Back to INT8
+    build_rescale_from_int32(
+        tosa_graph,
+        last_tensor.name,
+        node.name,
+        qargs_out.zp,
+        output_rescale_scale,
+    )
 
 
 """ Creates a TOSA rescale op based on conv2d parameters. """

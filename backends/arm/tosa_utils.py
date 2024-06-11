@@ -14,6 +14,7 @@ from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import get_quant_node_args, q_op
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
+from torch.fx import Node
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -108,8 +109,16 @@ def transpose_helper(tosa_fb, input, new_order, out_dtype):
     return input_transposed
 
 
-def getNodeArgs(node):
+def getNodeArgs(node: Node) -> list[TosaArg]:
     return [TosaArg(arg) for arg in node.args]
+
+
+def get_input_tensor(node: Node) -> TosaArg:
+    return TosaArg(node.args[0])
+
+
+def get_output_node(node: Node) -> Node:
+    return list(node.users)[0]
 
 
 # Helper function to do broadcasting
@@ -232,3 +241,27 @@ def build_avg_pool_2d_common(
         [output.name],
         attr,
     )
+
+
+def get_two_inputs(node: Node, check: bool = False) -> tuple[Node, Node]:
+    """Returns two input nodes to 'node' in order. If 'node' only has one input,
+    it is returned twice.
+
+    Fails if there are no input nodes.
+    Fails if there are >2 input nodes and 'check' is True,
+    """
+
+    num_inputs = len(node.all_input_nodes)
+    assert num_inputs > 0, f"Node '{node.name}' requires >0 input, got {num_inputs}."
+
+    input1 = node.all_input_nodes[0]
+    if num_inputs == 1:
+        input2 = node.all_input_nodes[0]
+    else:
+        input2 = node.all_input_nodes[1]
+    if check:
+        assert (
+            num_inputs <= 2
+        ), f"Node '{node.name}' requires <=2 inputs, got {num_inputs}."
+
+    return input1, input2

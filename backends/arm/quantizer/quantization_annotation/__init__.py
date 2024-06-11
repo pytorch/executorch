@@ -53,4 +53,5 @@ from . import (  # noqa
     linear_annotator,
     max_pool2d_annotator,
     mul_annotator,
+    sub_annotator,
 )
