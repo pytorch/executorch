@@ -45,7 +45,6 @@
 # other computer software, distribute, and sublicense such enhancements or
 # derivative works thereof, in binary and source code form.
 
-import contextlib
 import os
 import re
 import sys
@@ -383,31 +382,6 @@ class CustomBuildPy(build_py):
             self.copy_file(src, dst, preserve_mode=False)
 
 
-class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
-    """Removes HOME from the environment when running as root.
-
-    This script is sometimes run as root in docker containers. buck2 doesn't
-    allow running as root unless $HOME is owned by root or is not set.
-
-    TODO(pytorch/test-infra#5091): Remove this once the CI jobs stop running as
-    root.
-    """
-
-    def __init__(self):
-        self.saved_env = {}
-
-    def __enter__(self):
-        if os.geteuid() == 0 and "HOME" in os.environ:
-            log.info("temporarily unsetting HOME while running as root")
-            self.saved_env["HOME"] = os.environ.pop("HOME")
-        return self
-
-    def __exit__(self, *args, **kwargs):
-        if "HOME" in self.saved_env:
-            log.info("restored HOME")
-            os.environ["HOME"] = self.saved_env["HOME"]
-
-
 # TODO(dbort): For editable wheels, may need to update get_source_files(),
 # get_outputs(), and get_output_mapping() to satisfy
 # https://setuptools.pypa.io/en/latest/userguide/extension.html#setuptools.command.build.SubCommand.get_output_mapping
@@ -516,13 +490,8 @@ class CustomBuild(build):
         if not self.dry_run:
             # Dry run should log the command but not actually run it.
             (Path(cmake_cache_dir) / "CMakeCache.txt").unlink(missing_ok=True)
-        with Buck2EnvironmentFixer():
-            # The context manager may patch the environment while running this
-            # cmake command, which happens to run buck2 to get some source
-            # lists.
-
-            # Generate the build system files.
-            self.spawn(["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args])
+        # Generate the build system files.
+        self.spawn(["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args])
 
         # Build the system.
         self.spawn(["cmake", "--build", cmake_cache_dir, *build_args])
