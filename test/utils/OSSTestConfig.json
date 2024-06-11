@@ -45,7 +45,8 @@
     {
         "directory": "extension/runner_util/test",
         "sources": [
-            "inputs_test.cpp"
+            "inputs_test.cpp",
+            "managed_tensor_test.cpp"
         ],
         "additional_libs": [
             "extension_data_loader",
