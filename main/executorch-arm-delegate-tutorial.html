@@ -731,6 +731,18 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 <p>We need to be aware of data types for running networks on the Ethos-U55 as it is an integer only processor. For this example we use integer types explicitly, for typical use of such a flow networks are built and trained in floating point, and then are quantized from floating point to integer for efficient inference.</p>
 </div>
 </div>
+<div class="section" id="mobilenetv2-module">
+<h4>MobileNetV2 Module<a class="headerlink" href="#mobilenetv2-module" title="Permalink to this heading">¶</a></h4>
+<p><a class="reference external" href="https://arxiv.org/abs/1801.04381">MobileNetV2</a> is a commonly in-production used network for edge and mobile devices.
+It’s also available as a default model in <a class="reference external" href="https://github.com/pytorch/vision">torchvision</a>, so we can load it with the sample code below.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torchvision.models</span> <span class="kn">import</span> <span class="n">mobilenet_v2</span>  <span class="c1"># @manual</span>
+<span class="kn">from</span> <span class="nn">torchvision.models.mobilenetv2</span> <span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+
+<span class="n">mv2</span> <span class="o">=</span> <span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>For more details, you can refer to the code snippet <a class="reference external" href="https://github.com/pytorch/executorch/blob/2354945d47f67f60d9a118ea1a08eef8ba2364b5/examples/models/mobilenet_v2/model.py#L18">here</a>.</p>
+</div>
 </div>
 <div class="section" id="non-delegated-workflow">
 <h3>Non-delegated Workflow<a class="headerlink" href="#non-delegated-workflow" title="Permalink to this heading">¶</a></h3>
@@ -763,7 +775,41 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 <span class="c1"># should produce ./add_arm_delegate.pte</span>
 </pre></div>
 </div>
-<p>At the end of this, we should have two different <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files. First one with the <a class="reference internal" href="#softmaxmodule"><span class="std std-doc">SoftmaxModule</span></a>, without any backend delegates. And the second one with the <a class="reference internal" href="#addmodule"><span class="std std-doc">AddModule</span></a>, and with Arm Ethos-U backend delegate enabled. Now let’s try to run these <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files on a Corstone-300 platform in a bare-metal environment.</p>
+</div>
+<div class="section" id="delegated-quantized-workflow">
+<h3>Delegated Quantized Workflow<a class="headerlink" href="#delegated-quantized-workflow" title="Permalink to this heading">¶</a></h3>
+<p>Before generating the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file for delegated quantized networks like MobileNetV2, we need to build the <code class="docutils literal notranslate"><span class="pre">quantized_ops_aot_lib</span></code></p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">SITE_PACKAGES</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;from distutils.sysconfig import get_python_lib; print(get_python_lib())&#39;</span><span class="k">)</span><span class="s2">&quot;</span>
+<span class="nv">CMAKE_PREFIX_PATH</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">SITE_PACKAGES</span><span class="si">}</span><span class="s2">/torch&quot;</span>
+
+<span class="nb">cd</span><span class="w"> </span><span class="nv">$et_root_dir</span>
+mkdir<span class="w"> </span>-p<span class="w"> </span>cmake-out-aot-lib
+cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$CMAKE_PREFIX_PATH</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
+-Bcmake-out-aot-lib<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">et_root_dir</span><span class="si">}</span><span class="s2">&quot;</span>
+
+<span class="nv">n</span><span class="o">=</span><span class="k">$(</span>nproc<span class="k">)</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out-aot-lib<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((</span><span class="nv">n</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="m">5</span><span class="k">))</span><span class="s2">&quot;</span><span class="w"> </span>--<span class="w"> </span>quantized_ops_aot_lib
+</pre></div>
+</div>
+<p>After the <code class="docutils literal notranslate"><span class="pre">quantized_ops_aot_lib</span></code> build, we can run the following script to generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.arm.aot_arm_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv2&quot;</span><span class="w"> </span>--delegate<span class="w"> </span>--quantize<span class="w"> </span>--so_library<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>find<span class="w"> </span>cmake-out-aot-lib<span class="w"> </span>-name<span class="w"> </span>libquantized_ops_aot_lib.so<span class="k">)</span><span class="s2">&quot;</span>
+<span class="c1"># should produce ./mv2_arm_delegate.pte.pte</span>
+</pre></div>
+</div>
+<br />
+<p>At the end of this, we should have three different <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files.</p>
+<ul class="simple">
+<li><p>The first one contains the <a class="reference internal" href="#softmaxmodule"><span class="std std-doc">SoftmaxModule</span></a>, without any backend delegates.</p></li>
+<li><p>The second one contains the <a class="reference internal" href="#addmodule"><span class="std std-doc">AddModule</span></a>, with Arm Ethos-U backend delegate enabled.</p></li>
+<li><p>The third one contains the <span class="xref myst">quantized MV2Model</span>, with the Arm Ethos-U backend delegate enabled as well.</p></li>
+</ul>
+<p>Now let’s try to run these <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files on a Corstone-300 platform in a bare-metal environment.</p>
 </div>
 </div>
 <div class="section" id="getting-a-bare-metal-executable">
@@ -919,6 +965,37 @@ FVP_Corstone_SSE-300_Ethos-U55<span class="w">                          </span><
 <span class="go">Info: Simulation is stopping. Reason: CPU time has been exceeded.</span>
 </pre></div>
 </div>
+<p>Similarily we can get the following output for running the <span class="xref myst">MV2Model</span></p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>    Ethos-U rev 136b7d75 --- Apr 12 2023 13:44:01
+    (C) COPYRIGHT 2019-2023 Arm Limited
+    ALL RIGHTS RESERVED
+
+I executorch:arm_executor_runner.cpp:60] Model in 0x70000000 $
+I executorch:arm_executor_runner.cpp:66] Model PTE file loaded. Size: 4556832 bytes.
+I executorch:arm_executor_runner.cpp:77] Model buffer loaded, has 1 methods
+I executorch:arm_executor_runner.cpp:85] Running method forward
+I executorch:arm_executor_runner.cpp:109] Setting up planned buffer 0, size 752640.
+I executorch:ArmBackendEthosU.cpp:49] ArmBackend::init 0x70000060
+I executorch:arm_executor_runner.cpp:130] Method loaded.
+I executorch:arm_executor_runner.cpp:132] Preparing inputs...
+I executorch:arm_executor_runner.cpp:141] Input prepared.
+I executorch:arm_executor_runner.cpp:143] Starting the model execution...
+I executorch:ArmBackendEthosU.cpp:87] ArmBackend::execute 0x70000060
+I executorch:ArmBackendEthosU.cpp:234] Tensor input 0 will be permuted
+I executorch:arm_executor_runner.cpp:152] Model executed successfully.
+I executorch:arm_executor_runner.cpp:156] 1 outputs:
+Output[0][0]: -0.639322
+Output[0][1]: 0.169232
+Output[0][2]: -0.451286
+...(Skipped)
+Output[0][996]: 0.150429
+Output[0][997]: -0.488894
+Output[0][998]: 0.037607
+Output[0][999]: 1.203430
+I executorch:arm_executor_runner.cpp:177] Program complete, exiting.
+I executorch:arm_executor_runner.cpp:179]
+</pre></div>
+</div>
 </div>
 <div class="section" id="takeaways">
 <h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this heading">¶</a></h2>
@@ -1009,10 +1086,12 @@ Describe what common errors users may see and how to resolve them.
 <li><a class="reference internal" href="#pytorch-example-modules">PyTorch Example Modules</a><ul>
 <li><a class="reference internal" href="#softmaxmodule">SoftmaxModule</a></li>
 <li><a class="reference internal" href="#addmodule">AddModule</a></li>
+<li><a class="reference internal" href="#mobilenetv2-module">MobileNetV2 Module</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#non-delegated-workflow">Non-delegated Workflow</a></li>
 <li><a class="reference internal" href="#delegated-workflow">Delegated Workflow</a></li>
+<li><a class="reference internal" href="#delegated-quantized-workflow">Delegated Quantized Workflow</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#getting-a-bare-metal-executable">Getting a Bare-Metal Executable</a><ul>
