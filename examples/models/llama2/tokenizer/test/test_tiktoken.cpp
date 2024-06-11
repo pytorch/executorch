@@ -21,7 +21,7 @@ class TiktokenExtensionTest : public Test {
  public:
   void SetUp() override {
     torch::executor::runtime_init();
-    tokenizer_ = std::make_unique<Tiktoken>(128256, 128000, 128001);
+    tokenizer_ = std::make_unique<Tiktoken>();
     modelPath_ =
         std::getenv("RESOURCES_PATH") + std::string("/tokenizer.model");
   }
