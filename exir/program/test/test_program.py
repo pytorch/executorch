@@ -47,7 +47,7 @@ class WrapperModule(torch.nn.Module):
         return self.fn(*args, **kwargs)
 
 
-lib = Library("test_op", "DEF")
+lib = Library("exir_program_test_op", "DEF")
 
 # Fake a operator for testing.
 # This operator takes two tensors as input and returns the first one.
@@ -474,7 +474,7 @@ class TestProgramManagers(unittest.TestCase):
 
     def test_edge_dialect_custom_op(self):
         def _use_foo_add(a: torch.Tensor, b: torch.Tensor):
-            return torch.ops.test_op.foo(a, b)
+            return torch.ops.exir_program_test_op.foo(a, b)
 
         from torch._export.verifier import SpecViolationError
 
