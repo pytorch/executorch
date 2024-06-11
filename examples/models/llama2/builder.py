@@ -343,6 +343,7 @@ class LlamaEdgeManager:
         if partitioners is None:
             logging.info("No partitioner provided, passing...")
         else:
+            print(f"DX Number of partitioners: {len(partitioners)}")
             for partitioner in partitioners:
                 if partitioner is not None:
                     assert (

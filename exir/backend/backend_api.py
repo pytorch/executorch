@@ -111,6 +111,7 @@ def _(
     for cls in BackendDetails.__subclasses__():
         if backend_id == cls.__name__:
             copied_edge_program = copy.deepcopy(edge_program)
+            print("DX calling cls.preprocess()")
             preprocess_result: PreprocessResult = cls.preprocess(
                 copied_edge_program,
                 compile_specs,
@@ -197,7 +198,9 @@ def _partition_and_lower_one_graph_module(
     """
     Partitioned and lowered the graph module based on the partition tag, this is to handle one graph module.
     """
+    print("DX START _partition_and_lower_one_graph_module()")
     for tag, delegation_spec in partition_result.partition_tags.items():
+        print(f"DX  partition_tags loop, tag: {tag}")
         # Create partition with nodes containing this tag. There should only be
         # one contained submodule per tag
         node_list = _get_node_list_with_same_tag(
