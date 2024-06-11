@@ -9,6 +9,7 @@ from typing import List, Optional, Set, Union
 import sympy
 
 import torch
+from torch.utils._sympy.numbers import int_oo
 from torch.utils._sympy.value_ranges import bound_sympy, ValueRanges
 
 
@@ -47,8 +48,8 @@ def eval_upper_bound(maybe_symint: Union[int, torch.SymInt]) -> Optional[int]:
             concrete_upper, int
         ), f"Expect upper bound to be a concrete int but got {concrete_upper}"
         return concrete_upper
-    elif isinstance(upper_bound, sympy.oo):
-        return None
+    elif upper_bound in (sympy.oo, int_oo):
+        return int_oo
     else:
         raise RuntimeError(
             f"Expect upper bound to be sympy.Integer or sympy.oo. but got {upper_bound}"
