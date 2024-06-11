@@ -23,7 +23,7 @@ class TiktokenExtensionTest : public Test {
     torch::executor::runtime_init();
     tokenizer_ = std::make_unique<Tiktoken>(128256, 128000, 128001);
     modelPath_ =
-        std::getenv("RESOURCES_PATH") + std::string("/fb/tokenizer.model");
+        std::getenv("RESOURCES_PATH") + std::string("/tokenizer.model");
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;
