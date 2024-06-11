@@ -6,6 +6,18 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
+
+    # Note: add all portable_op dependencies to all_deps. This is used for dtype selective
+    # build, where the portable ops are built from source and linked with :all_deps
+    runtime.cxx_library(
+        name = "all_deps",
+        deps = [
+            "//executorch/kernels/portable/cpu/pattern:pattern",
+            "//executorch/kernels/portable/cpu/pattern:bitwise_op",
+        ],
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+    )
+
     runtime.cxx_library(
         name = "bitwise_op",
         exported_headers = [

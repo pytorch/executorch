@@ -1141,3 +1141,47 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             ],
         )
+
+    # Used for dtype selective build. Collect source and header files.
+    runtime.filegroup(
+        name = "portable_source_files",
+        srcs = native.glob(["*.cpp"]),
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+    )
+
+    runtime.filegroup(
+        name = "portable_header_files",
+        srcs = native.glob(["*.h"]),
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+    )
+
+# Used for dtype selective build. Genrules to copy source and header files.
+def portable_source_list():
+    return [op["name"] + ".cpp" for op in _ATEN_OPS + _CUSTOM_OPS]
+
+def portable_header_list():
+    return ["selective_build.h", "scalar_utils.h", "math_constants.h"]
+
+def portable_outs(target_name, file_list):
+    outs = {}
+    for file in file_list:
+        outs[file] = ["{}/{}".format(target_name, file)]
+    return outs
+
+def copy_portable_source_files(name):
+    target_name = "portable_source_files"
+    runtime.genrule(
+        name = name,
+        cmd = "cp -f -r $(location //executorch/kernels/portable/cpu:{}) $OUT/".format(target_name),
+        outs = portable_outs(target_name, portable_source_list()),
+        default_outs = ["."],
+    )
+
+def copy_portable_header_files(name):
+    target_name = "portable_header_files"
+    runtime.genrule(
+        name = name,
+        cmd = "cp -f -r $(location //executorch/kernels/portable/cpu:{}) $OUT/".format(target_name),
+        outs = portable_outs(target_name, portable_header_list()),
+        default_outs = ["."],
+    )

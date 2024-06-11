@@ -9,6 +9,7 @@ python_unittest(
         "test_emit.py",
     ],
     deps = [
+        "fbsource//third-party/pypi/pytest:pytest",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
         "//executorch/exir:error",
