@@ -137,7 +137,8 @@ the checkpoint format to avoid generating faulty models.
         # get checkpoint dtype
         self.dtype = None
         if len(checkpoint) > 0:
-            first = checkpoint[next(iter(checkpoint))]
+            first_key = next(iter(checkpoint))
+            first = checkpoint[first_key]
             self.dtype = first.dtype
             mismatched_dtypes = [
                 (key, value.dtype)
@@ -146,7 +147,7 @@ the checkpoint format to avoid generating faulty models.
             ]
             if len(mismatched_dtypes) > 0:
                 print(
-                    f"Mixed dtype model. Dtype of {first.key}: {first.dtype}. Mismatches in the checkpoint: {mismatched_dtypes}"
+                    f"Mixed dtype model. Dtype of {first_key}: {first.dtype}. Mismatches in the checkpoint: {mismatched_dtypes}"
                 )
         with open(params_path, "r") as f:
             params = json.loads(f.read())
