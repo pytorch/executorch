@@ -21,6 +21,6 @@ python_unittest(
         "//executorch/exir/passes:constant_prop_pass",
         "//executorch/exir/tests:lib",
         "//executorch/exir/tests:models",
-        "//executorch/extension/pybindings:aten_lib",
+        "//executorch/extension/pybindings:portable_lib",
     ],
 )

@@ -61,11 +61,12 @@ void main() {
   }
 
   const VEC4_T intex = t_in[t_id];
-  const ivec4 tensor_idx = from_texel_buf_i(t_id, gpu_strides, packed_dim);
+  ivec4 tensor_idx = to_texel_pos(t_id, gpu_strides, packed_dim);
+  tensor_idx[packed_dim] *= 4;
   write_out_texel(intex, tensor_idx);
 }
 
-#else
+#else // USING_TEXTURE
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);

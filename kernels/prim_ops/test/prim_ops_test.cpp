@@ -111,6 +111,9 @@ TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
 
   getOpsFn("executorch_prim::truediv.Scalar")(context, stack);
   EXPECT_FLOAT_EQ(stack[2]->toDouble(), 0.75);
+
+  getOpsFn("executorch_prim::sym_float.Scalar")(context, stack);
+  EXPECT_FLOAT_EQ(stack[1]->toDouble(), 3.0);
 }
 
 TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
