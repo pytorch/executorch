@@ -17,7 +17,7 @@ def define_common_targets():
         name = "scalar_utils_test",
         srcs = ["scalar_utils_test.cpp"],
         deps = [
-            "//executorch/kernels/portable/cpu:scalar_utils_TEST_ONLY",
+            "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     )
