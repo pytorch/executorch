@@ -115,7 +115,7 @@ class Conv2d(torch.nn.Module):
 
 
 conv2d_2x2_3x1x40x40_nobias = Conv2d(
-    in_channels=1,
+    in_channels=2,
     out_channels=3,
     kernel_size=(2, 2),
     stride=1,

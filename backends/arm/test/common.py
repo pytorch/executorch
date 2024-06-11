@@ -85,7 +85,7 @@ def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
             return False
 
 
-def get_tosa_compile_spec(permute_memory_to_nhwc=False, custom_path=None):
+def get_tosa_compile_spec(permute_memory_to_nhwc=True, custom_path=None):
     """
     Default compile spec for TOSA tests.
     """
