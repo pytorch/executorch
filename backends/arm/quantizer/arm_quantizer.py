@@ -241,7 +241,15 @@ class ArmQuantizer(Quantizer):
     # A list of supported static quantization ops (both PTQ and QAT)
     # The name must match the name used when registering the annotator.
     # Preserve the order that fusions come before singular ops
-    STATIC_OPS = ["linear", "conv", "adaptive_avg_pool2d", "max_pool2d", "add", "mul"]
+    STATIC_OPS = [
+        "linear",
+        "conv",
+        "adaptive_avg_pool2d",
+        "max_pool2d",
+        "add",
+        "mul",
+        "sigmoid",
+    ]
 
     def __init__(self):
         super().__init__()
