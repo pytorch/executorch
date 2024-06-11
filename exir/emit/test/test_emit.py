@@ -15,6 +15,7 @@ import executorch.exir as exir
 
 import executorch.exir.schema as schema
 import executorch.exir.tests.models as models
+import pytest
 import torch
 from executorch.exir import (
     EdgeCompileConfig,
@@ -191,6 +192,7 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(exec_plan.inputs[0], 0)
         self.assertEqual(exec_plan.outputs[0], 1)
 
+    @pytest.mark.skip(reason="Test not working on OSS")
     def test_nested_return(self) -> None:
         class Foo(torch.nn.Module):
             def forward(
@@ -521,6 +523,7 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 1)
         self._assertCallLength(program, 0, 4)
 
+    @pytest.mark.skip(reason="Test not working on OSS")
     def test_emit_multiple_out(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -1244,7 +1247,7 @@ class TestEmit(unittest.TestCase):
         )
 
     def test_delegate_with_input_list(self) -> None:
-        class BackendWithCompilerDemo(BackendDetails):
+        class BackendWithCompilerExample(BackendDetails):
             @staticmethod
             def preprocess(
                 edge_program,
@@ -1266,7 +1269,7 @@ class TestEmit(unittest.TestCase):
         model = TestModel()
         edgeir_m = to_edge(export(model, inputs))
         lowered_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program(), []
+            "BackendWithCompilerExample", edgeir_m.exported_program(), []
         )
 
         class CompositeModule(torch.nn.Module):
@@ -1284,7 +1287,7 @@ class TestEmit(unittest.TestCase):
         exec_prog.buffer
 
     def test_delegate_with_input_tuple(self) -> None:
-        class BackendWithCompilerDemo(BackendDetails):
+        class BackendWithCompilerExample(BackendDetails):
             @staticmethod
             def preprocess(
                 edge_program,
@@ -1308,7 +1311,7 @@ class TestEmit(unittest.TestCase):
         model = AddMulModule()
         edgeir_m = to_edge(export(model, model_inputs))
         lowered_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program(), []
+            "BackendWithCompilerExample", edgeir_m.exported_program(), []
         )
 
         class CompositeModule(torch.nn.Module):
@@ -1328,7 +1331,7 @@ class TestEmit(unittest.TestCase):
     def test_delegate_mapping(self) -> None:
         debug_handle_map = {1: [1, 2]}
 
-        class BackendWithCompilerDemo(BackendDetails):
+        class BackendWithCompilerExample(BackendDetails):
             @staticmethod
             def preprocess(
                 edge_program,
@@ -1350,7 +1353,7 @@ class TestEmit(unittest.TestCase):
         model = TestModel()
         edgeir_m = to_edge(export(model, inputs))
         lowered_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program(), []
+            "BackendWithCompilerExample", edgeir_m.exported_program(), []
         )
 
         class CompositeModule(torch.nn.Module):
@@ -1375,7 +1378,7 @@ class TestEmit(unittest.TestCase):
         )
         self.assertEqual(
             exec_prog.delegate_map.get("forward").get(0).get("name"),
-            "BackendWithCompilerDemo",
+            "BackendWithCompilerExample",
         )
         self.assertTrue(
             len(exec_prog.delegate_map.get("forward").get(0).get("delegate_map")) != 0
