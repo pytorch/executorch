@@ -221,10 +221,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
             dataCapacity);
       }
       return ManagedTensor(
-          jni->GetDirectBufferAddress(jbuffer.get()),
-          numel,
-          shape_vec,
-          scalar_type);
+          jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type);
     }
     facebook::jni::throwNewJavaException(
         facebook::jni::gJavaLangIllegalArgumentException,
