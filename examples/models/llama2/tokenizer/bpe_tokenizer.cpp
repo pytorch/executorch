@@ -23,14 +23,13 @@ static int compare_tokens(const void* a, const void* b) {
   return strcmp(((TokenIndex*)a)->str, ((TokenIndex*)b)->str);
 }
 
-BPETokenizer::BPETokenizer(
-    int32_t vocab_size,
-    uint64_t bos_tok,
-    uint64_t eos_tok)
-    : Tokenizer(vocab_size, bos_tok, eos_tok),
-      vocab_(std::make_unique<char*[]>(vocab_size)),
-      vocab_scores_(std::make_unique<float[]>(vocab_size)),
-      sorted_vocab_(std::make_unique<TokenIndex[]>(vocab_size)) {
+BPETokenizer::BPETokenizer() : Tokenizer() {
+  vocab_size_ = kVocabSize;
+  vocab_ = std::make_unique<char*[]>(kVocabSize);
+  vocab_scores_ = std::make_unique<float[]>(kVocabSize);
+  sorted_vocab_ = std::make_unique<TokenIndex[]>(kVocabSize);
+  bos_tok_ = 1;
+  eos_tok_ = 2;
   for (int i = 0; i < 256; i++) {
     byte_pieces_[i * 2] = (unsigned char)i;
     byte_pieces_[i * 2 + 1] = '\0';
@@ -72,19 +71,7 @@ Error BPETokenizer::load(const std::string& tokenizer_path) {
   // now we have two vocab_sizes one from the model and another from the
   // tokenizer file.
   int32_t tokenizer_vocab_size = metadata[0];
-  if (tokenizer_vocab_size < vocab_size_) {
-    ET_LOG(
-        Info,
-        "The tokenizer vocab size %d is smaller than the model vocab size %d, will add padding tokens.",
-        tokenizer_vocab_size,
-        vocab_size_);
-  } else if (tokenizer_vocab_size > vocab_size_) {
-    ET_LOG(
-        Info,
-        "The tokenizer vocab size %d is larger than the model vocab size %d.",
-        tokenizer_vocab_size,
-        vocab_size_);
-  }
+  vocab_size_ = tokenizer_vocab_size;
 
   max_token_length_ = metadata[1];
 
