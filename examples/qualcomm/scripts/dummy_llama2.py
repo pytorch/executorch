@@ -27,7 +27,7 @@ def create_device_inputs(example_inputs, use_kv_cache):
     input_list = ""
     if use_kv_cache:
         for i, d in enumerate(inputs[0]):
-            if type(d) == list:
+            if isinstance(d, list):
                 d = torch.stack(d)
             d.numpy().tofile(f"{args.artifact}/input_0_0.raw")
             input_list = f"input_0_{i}.raw "

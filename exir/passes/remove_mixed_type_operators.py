@@ -61,7 +61,7 @@ class RemoveMixedTypeOperators(ExportPass):
         )[1]
 
         def try_coerce(value: PyTree, arg: torch.Argument) -> PyTree:
-            if type(arg.type) != torch.TensorType:
+            if not isinstance(arg.type, torch.TensorType):
                 return value
 
             if isinstance(value, ProxyValue):
