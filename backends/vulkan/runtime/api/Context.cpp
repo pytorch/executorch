@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <sstream>
@@ -68,10 +69,12 @@ void Context::cmd_reset_querypool() {
 void Context::report_shader_dispatch_start(
     const std::string& shader_name,
     const utils::uvec3& global_wg_size,
-    const utils::uvec3& local_wg_size) {
+    const utils::uvec3& local_wg_size,
+    const uint32_t dispatch_id) {
   if (querypool_) {
     querypool_.shader_profile_begin(
         cmd_,
+        dispatch_id,
         shader_name,
         create_extent3d(global_wg_size),
         create_extent3d(local_wg_size));
