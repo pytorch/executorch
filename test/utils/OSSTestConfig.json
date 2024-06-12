@@ -43,6 +43,13 @@
         ]
     },
     {
+        "directory": "extension/pytree/test",
+        "sources": [
+            "function_ref_test.cpp",
+            "test_pytree.cpp"
+        ]
+    },
+    {
         "directory": "extension/runner_util/test",
         "sources": [
             "inputs_test.cpp",
