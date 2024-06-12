@@ -6,6 +6,7 @@ namespace vkgraph;
 file_identifier "VK00";
 
 table OperatorCall {
+  node_id:uint;
   name:string;
   args:[int];
 }
