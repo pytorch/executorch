@@ -37,18 +37,6 @@ def define_common_targets():
         define_static_targets = True,
     )
 
-    executorch_generated_lib(
-        name = "test_generated_lib_1",
-        deps = [
-            ":executorch_all_ops",
-            "//executorch/kernels/portable:operators",
-        ],
-        functions_yaml_target = "//executorch/kernels/portable:functions.yaml",
-        visibility = [
-            "//executorch/...",
-        ],
-    )
-
     runtime.export_file(
         name = "functions.yaml",
     )
