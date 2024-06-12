@@ -42,7 +42,10 @@ void ExecuteNode::encode(ComputeGraph* graph) {
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
   context->report_shader_dispatch_start(
-      shader_.kernel_name, global_workgroup_size_, local_workgroup_size_);
+      shader_.kernel_name,
+      global_workgroup_size_,
+      local_workgroup_size_,
+      node_id_);
 
   api::DescriptorSet descriptor_set =
       context->get_descriptor_set(shader_, local_workgroup_size_, spec_vars_);
