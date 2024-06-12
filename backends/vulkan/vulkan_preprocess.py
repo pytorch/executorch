@@ -23,6 +23,7 @@ from executorch.exir.backend.backend_details import (
     ExportedProgram,
     PreprocessResult,
 )
+from executorch.exir.backend.utils import DelegateMappingBuilder
 
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
 
@@ -66,11 +67,14 @@ class VulkanBackend(BackendDetails):
 
         _copy_module(program.graph_module, new_gm)
 
-        graph_builder = VkGraphBuilder(program)
+        graph_builder = VkGraphBuilder(
+            program, DelegateMappingBuilder(generated_identifiers=True)
+        )
         vk_graph = graph_builder.build_graph()
 
         return PreprocessResult(
             processed_bytes=serialize_vulkan_graph(
                 vk_graph, graph_builder.const_tensors, []
             ),
+            debug_handle_map=graph_builder.delegate_mapping_builder.get_delegate_mapping(),
         )
