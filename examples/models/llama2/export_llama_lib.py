@@ -394,6 +394,11 @@ def get_quantizer_and_quant_params(args):
 def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
+    llmManager = _prepare_for_llama_export(modelname, args)
+    
+    import pdb; pdb.set_trace()
+    # llmManager.example_inputs
+
     # export_to_edge
     builder_exported_to_edge = (
         _prepare_for_llama_export(modelname, args)

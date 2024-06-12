@@ -26,6 +26,8 @@ except ImportError:
 
 from ..model_base import EagerModelBase
 
+INPUT_TOKEN_LEN = 48
+BATCH_PREFILL_INPUTS = [x for x in range(1,INPUT_TOKEN_LEN+1)]
 
 class Llama2Model(EagerModelBase):
     def __init__(self, **kwargs):
@@ -214,7 +216,7 @@ the checkpoint format to avoid generating faulty models.
         else:
             return (
                 torch.tensor(
-                    [[1, 2, 3]], dtype=torch.long
+                    [BATCH_PREFILL_INPUTS], dtype=torch.long
                 ),  # tokens, with kv cache our input token length is always just 1 token.
             )
 
