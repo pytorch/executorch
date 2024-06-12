@@ -97,6 +97,8 @@ class QueryPool final {
 
   void extract_results();
 
+  std::vector<std::tuple<std::string, uint32_t, uint64_t, uint64_t>>
+  get_shader_timestamp_data();
   std::string generate_string_report();
   void print_results();
 
