@@ -175,6 +175,23 @@ std::string stringize(const VkExtent3D& extents) {
      << "}";
   return ss.str();
 }
+std::vector<std::tuple<std::string, uint32_t, uint64_t, uint64_t>>
+QueryPool::get_shader_timestamp_data() {
+  if (VK_NULL_HANDLE == querypool_) {
+    return {};
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  std::vector<std::tuple<std::string, uint32_t, uint64_t, uint64_t>>
+      shader_timestamp_data;
+  for (ShaderDuration& entry : shader_durations_) {
+    shader_timestamp_data.emplace_back(std::make_tuple(
+        entry.kernel_name,
+        entry.dispatch_id,
+        entry.start_time_ns,
+        entry.end_time_ns));
+  }
+  return shader_timestamp_data;
+}
 
 std::string QueryPool::generate_string_report() {
   std::lock_guard<std::mutex> lock(mutex_);
