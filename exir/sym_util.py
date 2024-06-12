@@ -41,17 +41,24 @@ def eval_upper_bound(maybe_symint: Union[int, torch.SymInt]) -> Optional[int]:
     expr = node.expr
     var_range: ValueRanges = bound_sympy(expr, shape_env.var_to_range)
     upper_bound = var_range.upper
+    # This import is needed temporarily until we update the pinned torch version.
+
+    try:
+        from torch.utils._sympy.numbers import int_oo  # @manual
+    except ImportError:
+        int_oo = None
+
     if isinstance(upper_bound, sympy.Integer):
         concrete_upper = int(var_range.upper)
         assert isinstance(
             concrete_upper, int
         ), f"Expect upper bound to be a concrete int but got {concrete_upper}"
         return concrete_upper
-    elif isinstance(upper_bound, sympy.oo):
-        return None
+    elif int_oo is not None and upper_bound is int_oo:
+        return int_oo
     else:
         raise RuntimeError(
-            f"Expect upper bound to be sympy.Integer or sympy.oo. but got {upper_bound}"
+            f"Expect upper bound to be sympy.Integer or int_oo. but got {upper_bound}"
         )
 
 
