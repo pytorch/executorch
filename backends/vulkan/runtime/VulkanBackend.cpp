@@ -16,6 +16,9 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/runtime/core/event_tracer_hooks_delegate.h>
+#endif // ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -515,6 +518,22 @@ class VulkanBackend final : public PyTorchBackendInterface {
           args[num_inputs + i]->toTensor().mutable_data_ptr(),
           args[num_inputs + i]->toTensor().numel());
     }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    EventTracer* event_tracer = context.event_tracer();
+    compute_graph->context()->querypool().extract_results();
+    for (const auto& tup :
+         compute_graph->context()->querypool().get_shader_timestamp_data()) {
+      std::string event_name =
+          std::get<0>(tup) + "_" + std::to_string(std::get<1>(tup));
+      event_tracer_log_profiling_delegate(
+          event_tracer,
+          event_name.c_str(),
+          -1,
+          std::get<2>(tup),
+          std::get<3>(tup));
+    }
+#endif // ET_EVENT_TRACER_ENABLED
 
     return Error::Ok;
   }
