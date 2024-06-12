@@ -7,11 +7,6 @@
 # This file contains util functions to generate code for kernel registration for
 # both AOT and runtime.
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
-endif()
-
 # Selective build. See codegen/tools/gen_oplist.py for how to use these
 # arguments.
 function(gen_selected_ops)
@@ -151,6 +146,8 @@ function(gen_custom_ops_aot_lib)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
   target_link_libraries(${GEN_LIB_NAME} PRIVATE torch executorch)
+
+  include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
 endfunction()
