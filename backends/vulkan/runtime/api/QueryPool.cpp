@@ -101,6 +101,7 @@ void QueryPool::reset_state() {
 
 void QueryPool::shader_profile_begin(
     const CommandBuffer& cmd,
+    const uint32_t dispatch_id,
     const std::string& kernel_name,
     const VkExtent3D global_workgroup_size,
     const VkExtent3D local_workgroup_size) {
@@ -112,6 +113,7 @@ void QueryPool::shader_profile_begin(
   ShaderDuration log_entry{
       api::utils::safe_downcast<uint32_t>(shader_durations_.size()),
       // Execution Properties
+      dispatch_id,
       kernel_name,
       global_workgroup_size,
       local_workgroup_size,

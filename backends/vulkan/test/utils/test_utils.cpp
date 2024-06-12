@@ -32,6 +32,7 @@ void record_nchw_to_buffer_op(
       {64, 1, 1},
       specialization_constants,
       VK_NULL_HANDLE,
+      0,
       v_dst.buffer(
           pipeline_barrier,
           api::PipelineStage::COMPUTE,
@@ -56,6 +57,7 @@ void record_buffer_to_nchw_op(
       {64, 1, 1},
       specialization_constants,
       VK_NULL_HANDLE,
+      0,
       v_src.buffer(pipeline_barrier, api::PipelineStage::COMPUTE),
       dst_buffer,
       v_src.sizes_ubo(),
@@ -77,6 +79,7 @@ void record_nchw_to_image_op(
       adaptive_work_group_size(v_dst.image_extents()),
       specialization_constants,
       VK_NULL_HANDLE,
+      0,
       v_dst.image(
           pipeline_barrier,
           api::PipelineStage::COMPUTE,
@@ -99,6 +102,7 @@ void record_image_to_nchw_op(
       adaptive_work_group_size(v_src.image_extents()),
       specialization_constants,
       VK_NULL_HANDLE,
+      0,
       v_src.image(pipeline_barrier, api::PipelineStage::COMPUTE),
       dst_buffer,
       v_src.sizes_ubo());
@@ -133,6 +137,7 @@ void record_conv2d_prepack_weights_op(
       adaptive_work_group_size(v_dst.image_extents()),
       specialization_constants,
       VK_NULL_HANDLE,
+      0,
       v_dst.image(
           pipeline_barrier,
           api::PipelineStage::COMPUTE,
@@ -160,6 +165,7 @@ void record_binary_op(
       adaptive_work_group_size(v_dst.image_extents()),
       specialization_constants,
       VK_NULL_HANDLE,
+      0,
       v_dst.image(
           pipeline_barrier,
           api::PipelineStage::COMPUTE,
@@ -223,6 +229,7 @@ void record_index_fill_buffer(api::Context* context, vTensor& v_ten) {
         {64, 1, 1},
         specialization_constants,
         VK_NULL_HANDLE,
+        0,
         v_ten.buffer(
             pipeline_barrier,
             api::PipelineStage::COMPUTE,
@@ -246,6 +253,7 @@ void record_scalar_add_buffer(
       {64, 1, 1},
       specialization_constants,
       VK_NULL_HANDLE,
+      0,
       v_ten.buffer(
           pipeline_barrier,
           api::PipelineStage::COMPUTE,
