@@ -69,7 +69,12 @@ class ExecuteNode final {
     }
   }
 
+  inline void set_node_id(uint32_t node_id) {
+    node_id_ = node_id;
+  }
+
  protected:
+  uint32_t node_id_;
   const api::ShaderInfo shader_;
   const api::utils::uvec3 global_workgroup_size_;
   const api::utils::uvec3 local_workgroup_size_;
