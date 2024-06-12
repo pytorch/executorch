@@ -40,7 +40,12 @@ class PrepackNode final {
 
   void encode(ComputeGraph* graph);
 
+  inline void set_node_id(uint32_t node_id) {
+    node_id_ = node_id;
+  }
+
  protected:
+  uint32_t node_id_;
   const api::ShaderInfo shader_;
   api::ShaderInfo noop_shader_;
   const api::utils::uvec3 global_workgroup_size_;

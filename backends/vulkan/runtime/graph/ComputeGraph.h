@@ -131,6 +131,10 @@ class ComputeGraph final {
     return execute_nodes_;
   }
 
+  inline GraphConfig& graphconfig() {
+    return config_;
+  }
+
   //
   // Value Extraction
   //
