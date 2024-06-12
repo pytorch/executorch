@@ -126,6 +126,9 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
       config.set_memory_layout_override(memory_layout);
     }
   }
+#ifdef ET_EVENT_TRACER_ENABLED
+  config.enable_querypool = true;
+#endif // ET_EVENT_TRACER_ENABLED
   return config;
 }
 
@@ -301,6 +304,9 @@ class GraphBuilder {
     }
 
     // Parse the operators
+    uint32_t last_prepack_node_ct = 0;
+    uint32_t last_execute_node_ct = 0;
+
     for (OpCallPtr op_call : *(flatbuffer_->chain())) {
       std::string op_name = op_call->name()->str();
       ET_CHECK_MSG(VK_HAS_OP(op_name), "Missing operator: %s", op_name.c_str());
@@ -315,6 +321,22 @@ class GraphBuilder {
 
       auto vkFn = VK_GET_OP_FN(op_name);
       vkFn(*compute_graph_, args);
+      if (compute_graph_->graphconfig().enable_querypool) {
+        for (uint32_t idx_prepack = last_prepack_node_ct;
+             idx_prepack < compute_graph_->prepack_nodes().size();
+             idx_prepack++) {
+          compute_graph_->prepack_nodes()[idx_prepack]->set_node_id(
+              op_call->node_id());
+        }
+        for (uint32_t idx_execute = last_execute_node_ct;
+             idx_execute < compute_graph_->execute_nodes().size();
+             idx_execute++) {
+          compute_graph_->execute_nodes()[idx_execute]->set_node_id(
+              op_call->node_id());
+        }
+        last_prepack_node_ct = compute_graph_->prepack_nodes().size();
+        last_execute_node_ct = compute_graph_->execute_nodes().size();
+      }
     }
 
     // Parse the outputs
