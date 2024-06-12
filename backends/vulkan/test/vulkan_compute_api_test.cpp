@@ -227,6 +227,7 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
         {len_div4, 1, 1},
         {SV(scale), SV(offset)},
         VK_NULL_HANDLE,
+        0,
         buffer.buffer(),
         params.buffer());
   }
@@ -273,6 +274,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
         {4, 4, 4},
         specialization_constants,
         VK_NULL_HANDLE,
+        0,
         a.image(
             pipeline_barrier,
             api::PipelineStage::COMPUTE,
@@ -334,6 +336,7 @@ void test_storage_buffer_type(const size_t len) {
         {len_div4, 1, 1},
         specialization_constants,
         VK_NULL_HANDLE,
+        0,
         buffer.buffer(),
         params.buffer());
   }
@@ -1569,6 +1572,7 @@ void run_from_gpu_test(
         {4, 4, 4},
         specialization_constants,
         VK_NULL_HANDLE,
+        0,
         vten.image(
             pipeline_barrier,
             api::PipelineStage::COMPUTE,

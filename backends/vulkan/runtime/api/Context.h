@@ -148,7 +148,8 @@ class Context final {
   void report_shader_dispatch_start(
       const std::string& shader_name,
       const utils::uvec3& global_wg_size,
-      const utils::uvec3& local_wg_size);
+      const utils::uvec3& local_wg_size,
+      const uint32_t dispatch_id = UINT32_MAX);
 
   /*
    * Encodes a vkCmdWriteTimstamp command to the current command buffer to
@@ -217,6 +218,7 @@ class Context final {
       const utils::uvec3&,
       const SpecVarList&,
       VkFence fence_handle,
+      const uint32_t dispatch_id,
       Arguments&&...);
 
   void submit_cmd_to_gpu(
@@ -509,6 +511,7 @@ inline bool Context::submit_compute_job(
     const utils::uvec3& local_work_group_size,
     const SpecVarList& specialization_constants,
     VkFence fence_handle,
+    const uint32_t dispatch_id,
     Arguments&&... arguments) {
   // If any of the provided arguments does not have memory associated with it,
   // then exit early as there is no work to be done. However, if a fence has
@@ -539,7 +542,10 @@ inline bool Context::submit_compute_job(
   set_cmd();
 
   report_shader_dispatch_start(
-      shader.kernel_name, global_work_group, local_work_group_size);
+      shader.kernel_name,
+      global_work_group,
+      local_work_group_size,
+      dispatch_id);
 
   // Factor out template parameter independent code to minimize code bloat.
   DescriptorSet descriptor_set = get_descriptor_set(
