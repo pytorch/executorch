@@ -250,7 +250,8 @@ class ArmTester(Tester):
                 test_input = reference_input
 
             input_shapes = [
-                generated_input.shape for generated_input in reference_input
+                generated_input.shape if hasattr(generated_input, "shape") else (1,)
+                for generated_input in reference_input
             ]
             print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
@@ -267,7 +268,7 @@ class ArmTester(Tester):
 
     def transpose_data_format(self, input, to: Literal["NHWC", "NCHW"]):
         if len(input.shape) != 4:
-            return input
+            return (input,)
         if to == "NCHW":
             NCHW_Order = (0, 3, 1, 2)
             return (np.transpose(input, NCHW_Order),)
