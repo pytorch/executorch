@@ -360,6 +360,8 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_causal_mask)
+
+    print(f"DX dtype_override: {dtype_override}")
     return (
         load_llama_model(
             modelname=modelname,
@@ -374,7 +376,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
         )
         .set_output_dir(output_dir_path)
         .set_metadata(args.metadata)
-        .to_dtype(DType["fp32"])
+        .to_dtype(dtype_override)
         .source_transform(transforms)
     )
 
