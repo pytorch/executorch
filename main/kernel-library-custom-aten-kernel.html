@@ -544,9 +544,10 @@
 <h3>Custom Ops C++ API<a class="headerlink" href="#custom-ops-c-api" title="Permalink to this heading">¶</a></h3>
 <p>For a custom kernel that implements a custom operator, we provides 2 ways to register it into ExecuTorch runtime:</p>
 <ol class="arabic simple">
-<li><p>Using <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_LIBRARY</span></code> and <code class="docutils literal notranslate"><span class="pre">WRAP_TO_ATEN</span></code> C++ macros.</p></li>
-<li><p>Using <code class="docutils literal notranslate"><span class="pre">functions.yaml</span></code> and codegen’d C++ libraries.</p></li>
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_LIBRARY</span></code> and <code class="docutils literal notranslate"><span class="pre">WRAP_TO_ATEN</span></code> C++ macros, covered by this section.</p></li>
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">functions.yaml</span></code> and codegen’d C++ libraries, covered by <a class="reference internal" href="#custom-ops-yaml-entry"><span class="std std-doc">next section</span></a>.</p></li>
 </ol>
+<p>Please refer to <a class="reference internal" href="#custom-ops-api-best-practices"><span class="std std-doc">Custom Ops Best Practices</span></a> on which API to use.</p>
 <p>The first option requires C++17 and doesn’t have selective build support yet, but it’s faster than the second option where we have to go through yaml authoring and build system tweaking.</p>
 <p>The first option is particularly suitable for fast prototyping but can also be used in production.</p>
 <p>Similar to <code class="docutils literal notranslate"><span class="pre">TORCH_LIBRARY</span></code>, <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_LIBRARY</span></code> takes the operator name and the C++ function name and register them into ExecuTorch runtime.</p>
@@ -738,6 +739,50 @@
 </div>
 </div>
 </div>
+<div class="section" id="custom-ops-api-best-practices">
+<h3>Custom Ops API Best Practices<a class="headerlink" href="#custom-ops-api-best-practices" title="Permalink to this heading">¶</a></h3>
+<p>Given that we have 2 kernel registration APIs for custom ops, which API should we use? Here are some pros and cons for each API:</p>
+<ul class="simple">
+<li><p>C++ API:</p>
+<ul>
+<li><p>Pros:</p>
+<ul>
+<li><p>Only C++ code changes are needed</p></li>
+<li><p>Resembles PyTorch custom ops C++ API</p></li>
+<li><p>Low maintenance cost</p></li>
+</ul>
+</li>
+<li><p>Cons:</p>
+<ul>
+<li><p>No selective build support</p></li>
+<li><p>No centralized bookkeepping</p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>Yaml entry API:</p>
+<ul>
+<li><p>Pros:</p>
+<ul>
+<li><p>Has selective build support</p></li>
+<li><p>Provides a centralized place for custom ops</p>
+<ul>
+<li><p>It shows what ops are being registered and what kernels are bound to these ops, for an application</p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>Cons:</p>
+<ul>
+<li><p>User needs to create and maintain yaml files</p></li>
+<li><p>Relatively inflexible to change the op definition</p></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>Overall if we are building an application and it uses custom ops, during the development phase it’s recommended to use the C++ API since it’s low-cost to use and flexible to change. Once the application moves to production phase where the custom ops definitions and the build systems are quite stable and binary size is to be considered, it is recommended to use the Yaml entry API.</p>
+</div>
 </div>
 </div>
 
@@ -812,6 +857,7 @@
 <li><a class="reference internal" href="#buck2">Buck2</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#custom-ops-api-best-practices">Custom Ops API Best Practices</a></li>
 </ul>
 </li>
 </ul>
