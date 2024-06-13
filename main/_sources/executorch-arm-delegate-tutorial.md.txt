@@ -404,7 +404,6 @@ cd <executorch_source_root_dir>
 toolchain_cmake=<executorch_source_root_dir>/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
 
 cmake                                                 \
-    -DBUCK2=${buck2}                                  \
     -DCMAKE_INSTALL_PREFIX=<executorch_build_dir>     \
     -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
     -DCMAKE_BUILD_TYPE=Release                        \
