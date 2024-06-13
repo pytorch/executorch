@@ -14,6 +14,14 @@ from torch._subclasses.fake_tensor import FakeTensor
 
 class I64toI32(ExportPass):
 
+    def __init__(self, _skip_dim_order=False):
+        super(I64toI32, self).__init__()
+        self.copy_op = (
+            exir_ops.edge.aten._to_copy.default
+            if _skip_dim_order
+            else exir_ops.edge.dim_order_ops._to_dim_order_copy.default
+        )
+
     def _is_i64_tensor(self, node_val):
         return isinstance(node_val, FakeTensor) and node_val.dtype == torch.int64
 
@@ -34,7 +42,7 @@ class I64toI32(ExportPass):
                         args = (node,)
                         node_i32 = graph.create_node(
                             "call_function",
-                            exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+                            self.copy_op,
                             args,
                             {"dtype": torch.int32},
                         )
@@ -62,7 +70,7 @@ class I64toI32(ExportPass):
                             args = (node.args[0][i],)
                             node_i64 = graph.create_node(
                                 "call_function",
-                                exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+                                self.copy_op,
                                 args,
                                 {"dtype": torch.int64},
                             )
