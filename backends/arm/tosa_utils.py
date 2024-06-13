@@ -33,7 +33,7 @@ def dbg_node(node):
     logger.info("  node.meta = ")
     for k, v in node.meta.items():
         logger.info(f"    '{k}' = {v}")
-        if type([]) == type(v):
+        if isinstance(v, list):
             for i in v:
                 logger.info(f"      {i} ")
 

@@ -31,10 +31,8 @@ class TestConfig(unittest.TestCase):
     ) -> None:
         self.assertEqual(len(tl1), len(tl2))
         for t1, t2 in zip(tl1, tl2):
-            if type(t1) == torch.Tensor:
-                assert type(t1) == type(t2)
-                # pyre-fixme[6]: For 2nd argument expected `Tensor` but got
-                #  `Union[bool, float, int, Tensor]`.
+            if isinstance(t1, torch.Tensor):
+                assert isinstance(t2, torch.Tensor)
                 self.assertTensorEqual(t1, t2)
             else:
                 self.assertTrue(t1 == t2)

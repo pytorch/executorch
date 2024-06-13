@@ -295,7 +295,7 @@ class QnnQuantizer(Quantizer):
             1. is one of use_per_channel_weight_quant_ops
             2. int8 / int16 config
         """
-        if type(op) == str:
+        if isinstance(op, str):
             return
 
         if op in self.use_per_channel_weight_quant_ops:
