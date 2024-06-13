@@ -53,7 +53,7 @@ python_unittest(
         "//executorch/exir/tests:transformer",
         "//executorch/extension/pybindings:portable_lib",
         "//executorch/extension/pytree:pybindings",
-        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/portable:python_preload_generated_lib",
         "//executorch/sdk/bundled_program:config",
         "//executorch/sdk/bundled_program:core",
         "//executorch/sdk/bundled_program/serialize:lib",

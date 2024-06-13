@@ -428,7 +428,7 @@ def executorch_generated_lib(
     Generates
     * `<name>` C++ library responsible to register both ATen operators and custom ops
         into Executorch runtime.
-    * `custom_ops_<name>` C++ library responsible to register custom ops into PyTorch
+    * `python_preload_<name>` C++ library responsible to register custom ops into PyTorch python
         runtime.
     Args:
         name: The name of the C++ library target to emit. Also emits a
@@ -436,7 +436,7 @@ def executorch_generated_lib(
             the signatures for the C++ functions that map to the entries in
             `functions.yaml` and `custom_ops.yaml`.
             If `custom_ops_yaml_target` is specified, also emits:
-            - `custom_ops_<name>`: A host-only C++ library that declares and
+            - `python_preload_<name>`: A host-only C++ library that declares and
               registers the ops defined in that file. Clients can load this
               library into local PyTorch using `torch.ops.load_library()` to
               make them visible while authoring models.
@@ -628,7 +628,7 @@ def executorch_generated_lib(
 
     if custom_ops_yaml_target and custom_ops_requires_aot_registration:
         exir_custom_ops_aot_lib(
-            name = "custom_ops_" + name,
+            name = "python_preload_" + name,
             yaml_target = custom_ops_yaml_target,
             visibility = visibility,
             kernels = custom_ops_aten_kernel_deps,

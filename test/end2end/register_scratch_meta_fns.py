@@ -22,7 +22,7 @@ from executorch.exir.operator.manip import (
 )
 from executorch.exir.tensor import TensorSpec
 
-torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
+torch.ops.load_library("//executorch/kernels/portable:python_preload_generated_lib")
 
 
 @attach_get_scratch_metas_fn(torch.ops.aten.linear.out)

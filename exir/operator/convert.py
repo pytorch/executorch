@@ -259,7 +259,7 @@ def to_out_variant(op_overload: OpOverload) -> Tuple[OpOverload, Tuple[str]]:
         out_var = _func_to_out_variant_map.get(op_overload)
 
     if not out_var:
-        msg = f"Missing out variant for functional op: {schema} . Make sure you have loaded your custom operator library for compiler. E.g., custom_ops_generated_lib"
+        msg = f"Missing out variant for functional op: {schema} . Make sure you have loaded your custom operator library for compiler. E.g., python_preload_generated_lib"
         if op_overload in _schema_mismatch_map:
             if _schema_mismatch_map[op_overload]:
                 msg += (

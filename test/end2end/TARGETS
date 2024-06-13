@@ -37,7 +37,7 @@ python_unittest(
     srcs = [
         "test_end2end.py",
     ],
-    preload_deps = ["//executorch/kernels/portable:custom_ops_generated_lib"],
+    preload_deps = ["//executorch/kernels/portable:python_preload_generated_lib"],
     deps = [
         ":exported_module",
         ":register_scratch_meta_fns",
@@ -68,7 +68,7 @@ python_unittest(
     srcs = [
         "test_end2end.py",
     ],
-    preload_deps = ["//executorch/kernels/portable:custom_ops_generated_lib"],
+    preload_deps = ["//executorch/kernels/portable:python_preload_generated_lib"],
     deps = [
         ":exported_module",
         ":register_scratch_meta_fns",
