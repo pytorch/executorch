@@ -315,6 +315,24 @@ class TestConv2D(unittest.TestCase):
             .to_executorch()
         )
 
+    def _test_conv2d_u85_BI_pipeline(
+        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    ):
+        (
+            ArmTester(
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_u85_compile_spec(permute_memory_to_nhwc=True),
+            )
+            .quantize()
+            .export()
+            .to_edge()
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+            .to_executorch()
+        )
+
     @parameterized.expand(testsuite)
     def test_conv2d_tosa_MI(self, test_name, model):
         self._test_conv2d_tosa_MI_pipeline(model, model.get_inputs())
@@ -326,3 +344,7 @@ class TestConv2D(unittest.TestCase):
     @parameterized.expand(testsuite_u55)
     def test_conv2d_u55_BI(self, test_name, model):
         self._test_conv2d_u55_BI_pipeline(model, model.get_inputs())
+
+    @parameterized.expand(testsuite_u55)
+    def test_conv2d_u85_BI(self, test_name, model):
+        self._test_conv2d_u85_BI_pipeline(model, model.get_inputs())
