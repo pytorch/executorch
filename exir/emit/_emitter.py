@@ -285,18 +285,17 @@ class _Emitter(torch.fx.Interpreter):
 
         NOTE: When symbool and symfloat are supported bool and float lists will be stored boxed.
         """
-        elem_type = type(val_type)
 
-        if elem_type == torch.BoolType:
+        if isinstance(val_type, torch.BoolType):
             return EValue(BoolList(typing.cast(List[bool], val)))
 
-        if elem_type == torch.IntType:
+        if isinstance(val_type, torch.IntType):
             return self._emit_int_list(val)
 
-        if elem_type == torch.FloatType:
+        if isinstance(val_type, torch.FloatType):
             return EValue(DoubleList(typing.cast(List[float], val)))
 
-        if elem_type == torch.TensorType:
+        if isinstance(val_type, torch.TensorType):
             values = []
             for v in val:
                 assert isinstance(v, _AbstractValue)
@@ -308,10 +307,10 @@ class _Emitter(torch.fx.Interpreter):
                 values.append(v.id)
             return EValue(TensorList(values))
 
-        if elem_type == torch.OptionalType:
+        if isinstance(val_type, torch.OptionalType):
             # refine further
-            actual_type = typing.cast(torch.OptionalType, val_type).getElementType()
-            if type(actual_type) == torch.TensorType:
+            actual_type = val_type.getElementType()
+            if isinstance(actual_type, torch.TensorType):
                 vals = []
                 for v in val:
                     if v is None:
@@ -437,9 +436,9 @@ class _Emitter(torch.fx.Interpreter):
                 val_type = torch.ListType(
                     self._get_list_tuple_jit_type(val)  # pyre-ignore
                 )
-            if type(val_type) == torch.OptionalType:
+            if isinstance(val_type, torch.OptionalType):
                 val_type = val_type.getElementType()
-            assert type(val_type) == torch.ListType
+            assert isinstance(val_type, torch.ListType)
             return self._emit_list(
                 typing.cast(List[_Argument], val),
                 typing.cast(_SchemaType, val_type.getElementType()),
