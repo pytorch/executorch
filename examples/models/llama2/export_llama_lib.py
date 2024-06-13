@@ -374,7 +374,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
         )
         .set_output_dir(output_dir_path)
         .set_metadata(args.metadata)
-        .to_dtype(dtype_override)
+        .to_dtype(DType["fp32"])
         .source_transform(transforms)
     )
 
@@ -400,7 +400,7 @@ def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
     input_names = ['input_ids']
     import torch
     # torch.onnx.export(llmManager.model, inputs, "~/models/odllm0b5_prefill.onnx", input_names=input_names)
-    output_path = "/home/dixu/models/onnx/odllm0b5_prefill.onnx"
+    output_path = "/home/dixu/models/bolt_onnx/cria_test/onnx_export/odllm0b5_prefill.onnx"
     torch.onnx.export(llmManager.model, llmManager.example_inputs, output_path, input_names=input_names)
     print(f"Saved onnx file to {output_path}")
     assert False, "exit early"
