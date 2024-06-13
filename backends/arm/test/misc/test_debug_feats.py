@@ -120,3 +120,28 @@ class TestNumericalDiffPrints(unittest.TestCase):
             pass  # Implicit pass test
         else:
             self.fail()
+
+
+class TestDumpOperatorsAndDtypes(unittest.TestCase):
+    def test_dump_ops_and_dtypes(self):
+        model = Linear(20, 30)
+        (
+            ArmTester(
+                model,
+                example_inputs=model.get_inputs(),
+                compile_spec=common.get_tosa_compile_spec(),
+            )
+            .quantize()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .export()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .to_edge()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .partition()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+        )
+        # Just test that there are no execeptions.

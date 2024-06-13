@@ -85,6 +85,22 @@ class TosaTestUtils:
         with open(os.path.join(tmp, "output.json"), "r") as f:
             json_out = json.load(f)
 
+        # Cast float tensors to proper dtype.
+        try:
+            for region in json_out["regions"]:
+                for block in region["blocks"]:
+                    for tensor in block["tensors"]:
+                        if "data" in tensor:
+                            if tensor["type"] == "FP32":
+                                data = np.array(tensor["data"])
+                                data = data.astype(np.int8)
+                                data = np.frombuffer(data, dtype=np.float32)
+                            data = data.reshape(tensor["shape"])
+                            tensor["data"] = data
+        except Exception:
+            # This is just nice-to-have if it works, don't care if it fails.
+            pass
+
         return json_out
 
     def run_tosa_ref_model(
