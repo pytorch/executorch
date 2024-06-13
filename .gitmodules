@@ -64,3 +64,6 @@
 [submodule "third-party/ios-cmake"]
 	path = third-party/ios-cmake
 	url = https://github.com/leetal/ios-cmake
+[submodule "examples/models/phi-3-mini/third-party/sentencepiece"]
+	path = examples/models/phi-3-mini/third-party/sentencepiece
+	url = https://github.com/google/sentencepiece.git
