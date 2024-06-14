@@ -490,6 +490,7 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.schema</span> <span class="kn">import</span> <span class="n">Program</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir.tracer</span> <span class="kn">import</span> <span class="n">Value</span>
+<span class="kn">from</span> <span class="nn">torch._library.fake_class_registry</span> <span class="kn">import</span> <span class="n">FakeScriptObject</span>
 
 <span class="kn">from</span> <span class="nn">torch._subclasses</span> <span class="kn">import</span> <span class="n">FakeTensor</span>
 <span class="kn">from</span> <span class="nn">torch.export.exported_program</span> <span class="kn">import</span> <span class="p">(</span>
@@ -896,7 +897,7 @@
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span>
     <span class="n">ExportGraphSignature</span><span class="p">,</span>
     <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">]],</span>
-    <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">ScriptObject</span><span class="p">]],</span>
+    <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">FakeScriptObject</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">ScriptObject</span><span class="p">]],</span>
 <span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Args:</span>
