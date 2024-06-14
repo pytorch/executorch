@@ -58,9 +58,7 @@ Tensor& _llama_cpp_mm_int8_out(
                                                                     error:&error];
       ET_CHECK_MSG(customKernelLibrary, "Error creating custom kernel library: ", error.localizedDescription.UTF8String);
       std::string kernel;
-      if (M == 1) {
-        kernel = "int8pack_mv_" + mps::delegate::scalarToMetalTypeString(A.scalar_type());
-      } else if (M < 4) {
+      if (M < 12) {
         kernel = "int8pack_mm_" + mps::delegate::scalarToMetalTypeString(A.scalar_type());
       } else {
         kernel = "large_m_int8pack_mm_" + mps::delegate::scalarToMetalTypeString(A.scalar_type());
@@ -78,12 +76,10 @@ Tensor& _llama_cpp_mm_int8_out(
       [computeEncoder setBuffer:mps::delegate::getMTLBufferStorage(scales) offset:0 atIndex:2];
       [computeEncoder setBuffer:mps::delegate::getMTLBufferStorage(C) offset:0 atIndex:3];
       [computeEncoder setBytes:sizes.data() length:16 atIndex:4];
-      if (M == 1) {
+      if (M < 12) {
         [computeEncoder setThreadgroupMemoryLength:32 atIndex:0];
-        [computeEncoder dispatchThreadgroups:MTLSizeMake((N + 7) / 8, 1, 1)
+        [computeEncoder dispatchThreadgroups:MTLSizeMake((N + 7) / 8, M, 1)
                        threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-      } else if (M < 4) {
-        [computeEncoder dispatchThreads:MTLSizeMake(M * N / 4, 8, 1) threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
       } else {
         [computeEncoder setThreadgroupMemoryLength:12288 atIndex:0];
         [computeEncoder dispatchThreadgroups:MTLSizeMake((M + 31) / 32, (N + 63) / 64, 1)
