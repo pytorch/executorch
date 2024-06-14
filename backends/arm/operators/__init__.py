@@ -17,6 +17,7 @@ from . import (  # noqa
     op_hardtanh,
     op_mean_dim,
     op_mm,
+    op_mul,
     op_permute,
     op_quant,
     op_repeat,
