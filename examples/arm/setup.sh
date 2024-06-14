@@ -152,7 +152,7 @@ function setup_ethos_u() {
         git clone ${ethos_u_repo_url}
     cd ethos-u
     git reset --hard ${ethos_u_base_rev}
-    python3 ./fetch_externals.py fetch
+    python3 ./fetch_externals.py -c ${ethos_u_base_rev}.json fetch
     pip install pyelftools
     echo "[${FUNCNAME[0]}] Done @ $(git describe --all --long 3> /dev/null) in ${root_dir}/ethos-u dir."
 }
