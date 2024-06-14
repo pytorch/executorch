@@ -192,7 +192,11 @@ class ConvertToLinear(ExportPass):
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
                 op_cnt = Counter(
-                    [n.target for n in src_partition.nodes if type(n.target) == edge_op]
+                    [
+                        n.target
+                        for n in src_partition.nodes
+                        if isinstance(n.target, edge_op)
+                    ]
                 )
                 if self.linear in op_cnt:
                     continue

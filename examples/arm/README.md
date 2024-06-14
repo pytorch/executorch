@@ -18,8 +18,6 @@ There are two main scripts, setup.sh and run.sh. Each takes one optional,
 positional argument. It is a path to a scratch dir to download and generate
 build artifacts. If supplied, the same argument must be supplied to both the scripts.
 
-run.sh also takes a second optional positional arg to specify a buck2 command.
-
 To run these scripts. On a Linux system, in a terminal, with a working internet connection,
 ```
 # Step [1] - setup necessary tools

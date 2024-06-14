@@ -48,7 +48,7 @@ class TestQuantization(unittest.TestCase):
         with override_quantized_engine("qnnpack"):
             torch.backends.quantized.engine = "qnnpack"
             example_inputs = (torch.randn(1, 3, 224, 224),)
-            m = torchvision.models.resnet18().eval()  # pyre-ignore[16]
+            m = torchvision.models.resnet18().eval()
             m_copy = copy.deepcopy(m)
             # program capture
             m = torch._export.capture_pre_autograd_graph(

@@ -345,7 +345,7 @@ class PythonTensor(torch.Tensor):
 
         # Kind of a hacky way to test if an op is in-place or not
         if func.__name__[-1] == "_" and func.__name__[0] != "_":
-            if type(args[0]) == PythonTensor:
+            if isinstance(args[0], PythonTensor):
                 args[0].proxy = proxy_out
 
         if not torch.fx.traceback.has_preserved_node_meta():
@@ -361,13 +361,13 @@ class PythonTensor(torch.Tensor):
             if e is None:
                 e = torch.empty(())
 
-            if type(e) == torch.Tensor:
+            if isinstance(e, torch.Tensor):
                 return PythonTensor(e, proxy)
 
             # Inplace and out-variant ops may return one of their arguments, which is already
             # a PythonTensor. In this case, we need to update the PythonTensor's associated
             # proxy to the newly created proxy.
-            if type(e) == PythonTensor:
+            if isinstance(e, PythonTensor):
                 e.update_proxy(proxy)
                 return e
 

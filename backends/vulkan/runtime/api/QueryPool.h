@@ -10,6 +10,7 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
+#include <cstdint>
 #include <functional>
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
@@ -34,6 +35,7 @@ struct ShaderDuration final {
   uint32_t idx;
 
   // Execution Properties
+  uint32_t dispatch_id;
   std::string kernel_name;
   VkExtent3D global_workgroup_size;
   VkExtent3D local_workgroup_size;
@@ -86,6 +88,7 @@ class QueryPool final {
 
   void shader_profile_begin(
       const CommandBuffer&,
+      const uint32_t,
       const std::string&,
       const VkExtent3D,
       const VkExtent3D);
@@ -94,6 +97,8 @@ class QueryPool final {
 
   void extract_results();
 
+  std::vector<std::tuple<std::string, uint32_t, uint64_t, uint64_t>>
+  get_shader_timestamp_data();
   std::string generate_string_report();
   void print_results();
 

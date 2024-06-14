@@ -57,8 +57,12 @@ def get_coreml_partitioner(args):
     ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
     try:
         import coremltools as ct
-        from executorch.backends.apple.coreml.compiler import CoreMLBackend
-        from executorch.backends.apple.coreml.partition import CoreMLPartitioner
+        from executorch.backends.apple.coreml.compiler import (  # pyre-ignore
+            CoreMLBackend,
+        )
+        from executorch.backends.apple.coreml.partition import (  # pyre-ignore
+            CoreMLPartitioner,
+        )
     except ImportError:
         raise ImportError(
             "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"

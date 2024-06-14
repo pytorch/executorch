@@ -208,6 +208,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             ":vk_delegate_schema",
             ":vulkan_graph_runtime",
+            "//executorch/runtime/core:event_tracer",
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],

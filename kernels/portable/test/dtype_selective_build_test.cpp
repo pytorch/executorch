@@ -22,6 +22,7 @@ TEST(DtypeSelectiveBuildTest, UnknownOp) {
           exec_aten::ScalarType::Float,
           ctx,
           "unknown.out",
+          // @lint-ignore CLANGTIDY clang-diagnostic-unused-local-typedef
           CTYPE_OUT,
           [&] { return true; }),
       "");
@@ -35,6 +36,7 @@ TEST(DtypeSelectiveBuildTest, OpWithoutDtype) {
           exec_aten::ScalarType::Int,
           ctx,
           "add.out",
+          // @lint-ignore CLANGTIDY clang-diagnostic-unused-local-typedef
           CTYPE_OUT,
           [&] { return true; }),
       "");
@@ -48,6 +50,7 @@ TEST(DtypeSelectiveBuildTest, OpWithDtype) {
           exec_aten::ScalarType::Float,
           ctx,
           "add.out",
+          // @lint-ignore CLANGTIDY clang-diagnostic-unused-local-typedef
           CTYPE_OUT,
           [&] { return true; }),
       true);

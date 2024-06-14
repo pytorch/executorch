@@ -70,9 +70,6 @@ Error Runner::load() {
   const auto method_names = module_->method_names();
   ET_CHECK_MSG(method_names.ok(), "Failed to read method names from model");
   model_methods_ = method_names.get();
-  vocab_size_ = getMetadataHelper<int64_t>("get_vocab_size", 32000);
-  bos_id_ = getMetadataHelper<int64_t>("get_bos_id", 1);
-  eos_id_ = getMetadataHelper<int64_t>("get_eos_id", 2);
   n_bos_ = getMetadataHelper<int64_t>("get_n_bos", 1);
   n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
   max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
@@ -82,27 +79,17 @@ Error Runner::load() {
 
   // Load tokenizer
 #if ET_USE_TIKTOKEN
-  tokenizer_ = std::make_unique<Tiktoken>(vocab_size_, bos_id_, eos_id_);
+  tokenizer_ = std::make_unique<Tiktoken>();
 #else
-  tokenizer_ = std::make_unique<BPETokenizer>(vocab_size_, bos_id_, eos_id_);
+  tokenizer_ = std::make_unique<BPETokenizer>();
 #endif
   tokenizer_->load(tokenizer_path_);
-  if (tokenizer_->bos_tok() != bos_id_) {
-    ET_LOG(
-        Error,
-        "Tokenizer's BOS id %" PRIu64
-        " does not match model's BOS id %d, will override tokenizer's BOS.",
-        tokenizer_->bos_tok(),
-        bos_id_);
-  }
-  if (tokenizer_->eos_tok() != eos_id_) {
-    ET_LOG(
-        Error,
-        "Tokenizer's EOS id %" PRIu64
-        " does not match model's EOS id %d, will override tokenizer's EOS.",
-        tokenizer_->eos_tok(),
-        eos_id_);
-  }
+
+  vocab_size_ =
+      getMetadataHelper<int64_t>("get_vocab_size", tokenizer_->vocab_size());
+  bos_id_ = getMetadataHelper<int64_t>("get_bos_id", tokenizer_->bos_tok());
+  eos_id_ = getMetadataHelper<int64_t>("get_eos_id", tokenizer_->eos_tok());
+
   // Create sampler
   sampler_ = std::make_unique<Sampler>(
       vocab_size_,
@@ -283,17 +270,13 @@ Error Runner::generate(
 
   // initialize tensor wrappers
   ManagedTensor tokens_managed(
-      token_data.data(),
-      128, // TODO clean up unused 128 here as ManagedTensor ignores this arg in
-           // ctor
-      token_shape,
-      ScalarType::Long);
+      token_data.data(), token_shape, ScalarType::Long);
   // Create with the max shape to approapriately set the capacity of this
   // tensor, then resize back to 1 for first input.
   tokens_managed.resize({1, 1});
 
   ManagedTensor start_pos_managed(
-      start_pos_data.data(), 128, start_pos_shape, ScalarType::Long);
+      start_pos_data.data(), start_pos_shape, ScalarType::Long);
 
   int64_t prev_token;
   int64_t cur_token = prompt_tokens[0];

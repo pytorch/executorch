@@ -26,8 +26,7 @@ using Re2UPtr = std::unique_ptr<re2::RE2>;
 
 class Tiktoken : public Tokenizer {
  public:
-  explicit Tiktoken(int32_t vocab_size, uint64_t bos_tok, uint64_t eos_tok)
-      : Tokenizer(vocab_size, bos_tok, eos_tok){};
+  explicit Tiktoken() : Tokenizer() {}
   ~Tiktoken(){};
 
   Error load(const std::string& tokenizer_path);
