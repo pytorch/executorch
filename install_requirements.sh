@@ -62,12 +62,12 @@ done
 NIGHTLY_VERSION=dev20240507
 
 # The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL="https://download.pytorch.org/whl/nightly/cpu"
+TORCH_URL="https://download.pytorch.org/whl/test/cpu"
 
 # pip packages needed by exir.
 EXIR_REQUIREMENTS=(
-  torch=="2.4.0.${NIGHTLY_VERSION}"
-  torchvision=="0.19.0.${NIGHTLY_VERSION}"  # For testing.
+  torch=="2.4.0"
+  torchvision=="0.19.0"  # For testing.
 )
 
 # pip packages needed for development.
@@ -85,7 +85,7 @@ DEVEL_REQUIREMENTS=(
 # TODO(dbort): Make each example publish its own requirements.txt
 EXAMPLES_REQUIREMENTS=(
   timm==0.6.13
-  torchaudio=="2.2.0.${NIGHTLY_VERSION}"
+  torchaudio=="2.4.0"
   torchsr==1.0.4
   transformers==4.38.2
 )
@@ -100,7 +100,7 @@ REQUIREMENTS_TO_INSTALL=(
 
 # Install the requirements. `--extra-index-url` tells pip to look for package
 # versions on the provided URL if they aren't available on the default URL.
-$PIP_EXECUTABLE install --extra-index-url "${TORCH_NIGHTLY_URL}" \
+$PIP_EXECUTABLE install --extra-index-url "${TORCH_URL}" \
     "${REQUIREMENTS_TO_INSTALL[@]}"
 
 #
