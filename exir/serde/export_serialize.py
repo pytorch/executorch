@@ -150,6 +150,7 @@ _SYM_INT_OPS = {
     operator.mod,
     torch.sym_sqrt,
     torch.sym_int,
+    torch.sym_float,
     torch.sym_ite,
     torch.sym_max,
     torch.sym_min,
@@ -1660,7 +1661,7 @@ class GraphModuleDeserializer:
         elif x.type == "as_sym_int":
             return PySymIntArgument(name=x.as_sym_int.as_name)
         else:
-            return PyConstantArgument(value=self.deserialize_input(x))
+            return PyConstantArgument(name="", value=self.deserialize_input(x))
 
     def deserialize_module_call_signature(
         self, module_call_signature: ModuleCallSignature

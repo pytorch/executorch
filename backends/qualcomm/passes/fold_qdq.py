@@ -45,7 +45,7 @@ class FoldQDQ(ExportPass):
 
             # collecting quant nodes to be removed
             for i in range(1, len(n.args)):
-                if type(n.args[i]) == torch.fx.node.Node:
+                if isinstance(n.args[i], torch.fx.node.Node):
                     to_be_removed.append(n.args[i])
                     # could be a commonly shared attribute between q & dq
                     if n.args[i].target == exir_ops.edge.aten._to_copy.default:

@@ -39,10 +39,10 @@ class TestSoftmax(unittest.TestCase):
     def _test_softmax_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
     ):
-        tester = (
+        (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
@@ -53,20 +53,17 @@ class TestSoftmax(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs()
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs()
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_softmax_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
     ):
-        tester = (
+        (
             ArmTester(
-                module, inputs=test_data, compile_spec=common.get_tosa_compile_spec()
+                module,
+                example_inputs=test_data,
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
             .export()
@@ -77,13 +74,8 @@ class TestSoftmax(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
+            .run_method_and_compare_outputs(qtol=1)
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method_and_compare_outputs(qtol=1)
-        else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
 
     def _test_softmax_tosa_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.tensor]
@@ -91,7 +83,7 @@ class TestSoftmax(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=test_data,
+                example_inputs=test_data,
                 compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
@@ -129,10 +121,6 @@ class TestSoftmax(unittest.TestCase):
     # Expected to fail since ArmQuantizer cannot quantize a SoftMax layer
     # TODO(MLETORCH-92)
     @parameterized.expand(test_data_suite)
-    @unittest.skipIf(
-        not common.VELA_INSTALLED,
-        "There is no point in running U55 tests if the Vela tool is not installed",
-    )
     @unittest.expectedFailure
     def test_softmax_tosa_u55_BI(
         self,

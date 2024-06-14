@@ -166,57 +166,57 @@ class OpMinOutTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(min, tf_in.make({2, 3, 1}, {0, 0, 0, 0, 0, 0}));
     EXPECT_TENSOR_EQ(min_indices, tf_long.make({2, 3, 1}, {0, 3, 1, 3, 0, 1}));
   }
-
-  template <>
-  void test_min_out_dtype<ScalarType::Bool>() {
-    TensorFactory<ScalarType::Bool> tf_bool;
-    TensorFactory<ScalarType::Long> tf_long;
-    // clang-format off
-  Tensor in = tf_bool.make(
-    {2, 3, 4},
-    {
-      true,  false, true,  false,
-      false, false, false, false,
-      false, true,  true,  false,
-
-      false, false, true,  false,
-      false, false, false, true,
-      true,  true,  true,  true,
-    });
-    // clang-format on
-
-    Tensor min = tf_bool.zeros({2, 3, 1});
-    Tensor min_indices = tf_long.zeros({2, 3, 1});
-
-    // +/-inf and nan should work
-    op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices);
-    // clang-format off
-  EXPECT_TENSOR_CLOSE(
-      min, tf_bool.make(
-        {2, 3, 1},
-        {
-          false,
-          false,
-          false,
-
-          false,
-          false,
-          true
-        }));
-  EXPECT_TENSOR_EQ(min_indices, tf_long.make(
-    {2, 3, 1},
-    {
-      1,
-      0,
-      0,
-
-      0,
-      0,
-      0
-    }));
-    // clang-format on
-  }
 };
+
+template <>
+void OpMinOutTest::test_min_out_dtype<ScalarType::Bool>() {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  TensorFactory<ScalarType::Long> tf_long;
+  // clang-format off
+Tensor in = tf_bool.make(
+  {2, 3, 4},
+  {
+    true,  false, true,  false,
+    false, false, false, false,
+    false, true,  true,  false,
+
+    false, false, true,  false,
+    false, false, false, true,
+    true,  true,  true,  true,
+  });
+  // clang-format on
+
+  Tensor min = tf_bool.zeros({2, 3, 1});
+  Tensor min_indices = tf_long.zeros({2, 3, 1});
+
+  // +/-inf and nan should work
+  op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices);
+  // clang-format off
+EXPECT_TENSOR_CLOSE(
+    min, tf_bool.make(
+      {2, 3, 1},
+      {
+        false,
+        false,
+        false,
+
+        false,
+        false,
+        true
+      }));
+EXPECT_TENSOR_EQ(min_indices, tf_long.make(
+  {2, 3, 1},
+  {
+    1,
+    0,
+    0,
+
+    0,
+    0,
+    0
+  }));
+  // clang-format on
+}
 
 TEST_F(OpMinOutTest, MismatchedDimensionsDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {

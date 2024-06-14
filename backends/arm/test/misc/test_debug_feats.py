@@ -45,7 +45,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=module.get_inputs(),
+                example_inputs=module.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
@@ -59,7 +59,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=module.get_inputs(),
+                example_inputs=module.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
@@ -101,7 +101,7 @@ class TestNumericalDiffPrints(unittest.TestCase):
         tester = (
             ArmTester(
                 model,
-                inputs=model.get_inputs(),
+                example_inputs=model.get_inputs(),
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
@@ -110,18 +110,13 @@ class TestNumericalDiffPrints(unittest.TestCase):
             .partition()
             .to_executorch()
         )
-        if common.TOSA_REF_MODEL_INSTALLED:
-            # We expect an assertion error here. Any other issues will cause the
-            # test to fail. Likewise the test will fail if the assertion error is
-            # not present.
-            try:
-                # Tolerate 0 difference => we want to trigger a numerical diff
-                tester.run_method_and_compare_outputs(atol=0, rtol=0, qtol=0)
-            except AssertionError:
-                pass  # Implicit pass test
-            else:
-                self.fail()
+        # We expect an assertion error here. Any other issues will cause the
+        # test to fail. Likewise the test will fail if the assertion error is
+        # not present.
+        try:
+            # Tolerate 0 difference => we want to trigger a numerical diff
+            tester.run_method_and_compare_outputs(atol=0, rtol=0, qtol=0)
+        except AssertionError:
+            pass  # Implicit pass test
         else:
-            logger.warning(
-                "TOSA ref model tool not installed, skip numerical correctness tests"
-            )
+            self.fail()

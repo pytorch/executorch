@@ -16,6 +16,9 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/runtime/core/event_tracer_hooks_delegate.h>
+#endif // ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -126,6 +129,9 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
       config.set_memory_layout_override(memory_layout);
     }
   }
+#ifdef ET_EVENT_TRACER_ENABLED
+  config.enable_querypool = true;
+#endif // ET_EVENT_TRACER_ENABLED
   return config;
 }
 
@@ -301,6 +307,9 @@ class GraphBuilder {
     }
 
     // Parse the operators
+    uint32_t last_prepack_node_ct = 0;
+    uint32_t last_execute_node_ct = 0;
+
     for (OpCallPtr op_call : *(flatbuffer_->chain())) {
       std::string op_name = op_call->name()->str();
       ET_CHECK_MSG(VK_HAS_OP(op_name), "Missing operator: %s", op_name.c_str());
@@ -315,6 +324,22 @@ class GraphBuilder {
 
       auto vkFn = VK_GET_OP_FN(op_name);
       vkFn(*compute_graph_, args);
+      if (compute_graph_->graphconfig().enable_querypool) {
+        for (uint32_t idx_prepack = last_prepack_node_ct;
+             idx_prepack < compute_graph_->prepack_nodes().size();
+             idx_prepack++) {
+          compute_graph_->prepack_nodes()[idx_prepack]->set_node_id(
+              op_call->node_id());
+        }
+        for (uint32_t idx_execute = last_execute_node_ct;
+             idx_execute < compute_graph_->execute_nodes().size();
+             idx_execute++) {
+          compute_graph_->execute_nodes()[idx_execute]->set_node_id(
+              op_call->node_id());
+        }
+        last_prepack_node_ct = compute_graph_->prepack_nodes().size();
+        last_execute_node_ct = compute_graph_->execute_nodes().size();
+      }
     }
 
     // Parse the outputs
@@ -493,6 +518,22 @@ class VulkanBackend final : public PyTorchBackendInterface {
           args[num_inputs + i]->toTensor().mutable_data_ptr(),
           args[num_inputs + i]->toTensor().numel());
     }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    EventTracer* event_tracer = context.event_tracer();
+    compute_graph->context()->querypool().extract_results();
+    for (const auto& tup :
+         compute_graph->context()->querypool().get_shader_timestamp_data()) {
+      std::string event_name =
+          std::get<0>(tup) + "_" + std::to_string(std::get<1>(tup));
+      event_tracer_log_profiling_delegate(
+          event_tracer,
+          event_name.c_str(),
+          -1,
+          std::get<2>(tup),
+          std::get<3>(tup));
+    }
+#endif // ET_EVENT_TRACER_ENABLED
 
     return Error::Ok;
   }

@@ -259,6 +259,6 @@ class ConstraintBasedSymShapeEvalPass(PassBase):
                                 "Please use export's constrain_as_size() or constrain_as_value() apis and set a concrete upper bound to resolve this."
                             )
 
-                        spec.shape = concrete_shape  # pyre-ignore[8]: Attribute `stride` declared in class `TensorSpec` has type `Tuple[int]` but is used as type `List[Optional[int]]`
-                        spec.stride = concrete_stride  # pyre-ignore[8]: Attribute `stride` declared in class `TensorSpec` has type `Tuple[int]` but is used as type `List[Optional[int]]`
+                        spec.shape = concrete_shape
+                        spec.stride = concrete_stride  # pyre-ignore[8]: Attribute `stride` declared in class `TensorSpec` has type `Tuple[int]` but is used as type `List[int]`
         return PassResult(graph_module, True)

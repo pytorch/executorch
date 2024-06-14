@@ -13,6 +13,7 @@ tensor_to_nchw:
       - VALUE: half
       - VALUE: float
       - VALUE: int
+      - VALUE: int8
     STORAGE:
       - VALUE: texture3d
       - VALUE: texture2d

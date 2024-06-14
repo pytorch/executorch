@@ -23,7 +23,7 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
-set(_test_srcs inputs_test.cpp)
+set(_test_srcs inputs_test.cpp managed_tensor_test.cpp)
 
 et_cxx_test(
   extension_runner_util_test

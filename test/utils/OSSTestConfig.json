@@ -25,6 +25,12 @@
         ]
     },
     {
+        "directory": "extension/memory_allocator/test",
+        "sources": [
+            "malloc_memory_allocator_test.cpp"
+        ]
+    },
+    {
         "directory": "extension/module/test",
         "sources": [
             "module_test.cpp"
@@ -37,9 +43,17 @@
         ]
     },
     {
+        "directory": "extension/pytree/test",
+        "sources": [
+            "function_ref_test.cpp",
+            "test_pytree.cpp"
+        ]
+    },
+    {
         "directory": "extension/runner_util/test",
         "sources": [
-            "inputs_test.cpp"
+            "inputs_test.cpp",
+            "managed_tensor_test.cpp"
         ],
         "additional_libs": [
             "extension_data_loader",

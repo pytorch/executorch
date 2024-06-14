@@ -756,7 +756,7 @@ def deserialize(
 
 def save(
     ep_save: ep.ExportedProgram,
-    f: Union[str, os.PathLike, io.BytesIO],
+    f: Union[str, os.PathLike[str], io.BytesIO],
     *,
     extra_files: Optional[Dict[str, Any]] = None,
     opset_version: Optional[Dict[str, int]] = None,
@@ -767,7 +767,7 @@ def save(
     artifact: export_serialize.SerializedArtifact = serialize(ep_save, opset_version)
 
     if isinstance(f, (str, os.PathLike)):
-        f = os.fspath(f)
+        f = os.fspath(str(f))
 
     with zipfile.ZipFile(f, "w") as zipf:
         # Save every field in the SerializedArtifact to a file.
@@ -786,13 +786,13 @@ def save(
 
 
 def load(
-    f: Union[str, os.PathLike, io.BytesIO],
+    f: Union[str, os.PathLike[str], io.BytesIO],
     *,
     extra_files: Optional[Dict[str, Any]] = None,
     expected_opset_version: Optional[Dict[str, int]] = None,
 ) -> ep.ExportedProgram:
     if isinstance(f, (str, os.PathLike)):
-        f = os.fspath(f)
+        f = os.fspath(str(f))
 
     extra_files = extra_files or {}
 

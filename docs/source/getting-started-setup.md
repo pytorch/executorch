@@ -68,6 +68,12 @@ Note that the cross-compilable core runtime code supports a wider range of
 toolchains, down to C++11. See the [Runtime Overview](./runtime-overview.md) for
 portability details.
 
+## Quick Setup: Colab/Jupyter Notebook Prototype
+
+To utilize ExecuTorch to its fullest extent, please follow the setup instructions provided below. Alternatively, if you would like to experiment with ExecuTorch quickly and easily, we recommend using the following [colab notebook](https://colab.research.google.com/drive/1qpxrXC3YdJQzly3mRg-4ayYiOjC6rue3?usp=sharing) for prototyping purposes.
+
+
+
 ## Environment Setup
 
 ### Create a Virtual Environment
@@ -183,7 +189,7 @@ Output 0: tensor(sizes=[1], [2.])
   ```
   :::
 
-To learn how to build a similar program, visit the [ExecuTorch in C++ Tutorial](running-a-model-cpp-tutorial.md).
+To learn how to build a similar program, visit the [Runtime APIs Tutorial](extension-module.md).
 
 ### [Optional] Setting Up Buck2
 **Buck2** is an open-source build system that some of our examples currently utilize for building and running.
