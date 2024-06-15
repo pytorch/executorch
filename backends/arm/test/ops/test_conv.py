@@ -256,7 +256,7 @@ class TestConv2D(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_conv2d_tosa_BI_pipeline(
@@ -277,7 +277,7 @@ class TestConv2D(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .to_executorch()
-            .run_method_and_compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
     def _test_conv2d_u55_BI_pipeline(

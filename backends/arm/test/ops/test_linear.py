@@ -129,7 +129,7 @@ class TestLinear(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_linear_tosa_BI_pipeline(
@@ -149,7 +149,7 @@ class TestLinear(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(qtol=True)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=True)
         )
 
     def _test_linear_tosa_u55_BI_pipeline(

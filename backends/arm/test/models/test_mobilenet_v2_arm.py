@@ -60,7 +60,7 @@ class TestMobileNetV2(unittest.TestCase):
             .check(list(self.all_operators))
             .partition()
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=self.model_inputs)
         )
 
     def test_mv2_tosa_BI(self):
