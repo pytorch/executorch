@@ -99,14 +99,11 @@ ValueRef prepack_biases(
 
   api::ShaderInfo shader = get_nchw_to_tensor_shader(*t);
 
-  api::utils::uvec3 global_size = t->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      global_size,
-      local_size,
+      graph.create_global_wg_size(v),
+      graph.create_local_wg_size(v),
       vref,
       v,
       {t->sizes_ubo()},
@@ -203,17 +200,14 @@ ValueRef prepack_weights(
       final_sizes, graph.dtype_of(vref), api::kTexture2D, api::kChannelsPacked);
   vTensorPtr t = graph.get_tensor(v);
 
-  api::utils::uvec3 global_size = t->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   api::ShaderInfo shader =
       get_conv2d_shader(graph, *t, /*prepack_weights = */ true, method, vref);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      global_size,
-      local_size,
+      graph.create_global_wg_size(v),
+      graph.create_local_wg_size(v),
       vref,
       v,
       {t->sizes_ubo(),
@@ -343,9 +337,6 @@ void add_conv2d_node(
   }
   check_conv_args(*t_in, *t_out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   Kernel2dParams kernel_params = create_kernel2d_params(
       graph,
       weight,
@@ -366,8 +357,8 @@ void add_conv2d_node(
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       shader,
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE},
        {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
