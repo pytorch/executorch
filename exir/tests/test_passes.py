@@ -1134,7 +1134,10 @@ class TestPasses(unittest.TestCase):
 
         add = Add()
 
-        edge = to_edge(export(add, (torch.ones(1),)))
+        edge = to_edge(
+            export(add, (torch.ones(1),)),
+            compile_config=EdgeCompileConfig(_skip_dim_order=False),
+        )
         edge = edge.transform([ScalarToTensorPass(), RemoveMixedTypeOperators()])
         exported_program = lift_constant_tensor_pass(edge.exported_program())
 
