@@ -199,19 +199,22 @@ std::string QueryPool::generate_string_report() {
   std::stringstream ss;
 
   int kernel_name_w = 40;
-  int global_size_w = 15;
+  int global_size_w = 25;
+  int local_size_w = 25;
   int duration_w = 25;
 
   ss << std::left;
   ss << std::setw(kernel_name_w) << "Kernel Name";
-  ss << std::setw(global_size_w) << "Workgroup Size";
+  ss << std::setw(global_size_w) << "Global Workgroup Size";
+  ss << std::setw(local_size_w) << "Local Workgroup Size";
   ss << std::right << std::setw(duration_w) << "Duration (ns)";
   ss << std::endl;
 
   ss << std::left;
   ss << std::setw(kernel_name_w) << "===========";
-  ss << std::setw(global_size_w) << "==============";
-  ss << std::right << std::setw(duration_w) << "===========";
+  ss << std::setw(global_size_w) << "=====================";
+  ss << std::setw(local_size_w) << "====================";
+  ss << std::right << std::setw(duration_w) << "=============";
   ss << std::endl;
 
   for (ShaderDuration& entry : shader_durations_) {
@@ -221,6 +224,7 @@ std::string QueryPool::generate_string_report() {
     ss << std::left;
     ss << std::setw(kernel_name_w) << entry.kernel_name;
     ss << std::setw(global_size_w) << stringize(entry.global_workgroup_size);
+    ss << std::setw(local_size_w) << stringize(entry.local_workgroup_size);
     ss << std::right << std::setw(duration_w) << exec_duration_ns.count();
     ss << std::endl;
   }
