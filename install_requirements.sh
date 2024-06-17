@@ -85,7 +85,7 @@ DEVEL_REQUIREMENTS=(
 # TODO(dbort): Make each example publish its own requirements.txt
 EXAMPLES_REQUIREMENTS=(
   timm==0.6.13
-  torchaudio=="2.2.0.${NIGHTLY_VERSION}"
+  torchaudio=="2.4.0.${NIGHTLY_VERSION}"
   torchsr==1.0.4
   transformers==4.38.2
 )
