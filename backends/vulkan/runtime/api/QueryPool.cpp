@@ -212,9 +212,9 @@ std::string QueryPool::generate_string_report() {
 
   ss << std::left;
   ss << std::setw(kernel_name_w) << "===========";
-  ss << std::setw(global_size_w) << "====================";
+  ss << std::setw(global_size_w) << "=====================";
   ss << std::setw(local_size_w) << "====================";
-  ss << std::right << std::setw(duration_w) << "===========";
+  ss << std::right << std::setw(duration_w) << "=============";
   ss << std::endl;
 
   for (ShaderDuration& entry : shader_durations_) {
