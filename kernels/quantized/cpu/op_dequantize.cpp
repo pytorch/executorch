@@ -196,8 +196,8 @@ Tensor& dequantize_per_channel_out(
       "Failed to resize out Tensor in dequantize_per_channel_out");
 
   ET_CHECK_MSG(
-      scale.scalar_type() == ScalarType::Double,
-      "scale.scalar_type() %" PRId8 " is not double type",
+      scale.scalar_type() == ScalarType::Float,
+      "scale.scalar_type() %" PRId8 " is not float type",
       static_cast<int8_t>(scale.scalar_type()));
 
   ET_CHECK_MSG(
@@ -224,15 +224,15 @@ Tensor& dequantize_per_channel_out(
       input, quant_min, quant_max, dtype, out_dtype, out);
 
   // a list contains all dimensions except axis
-  int64_t dims[input.dim() - 1];
+  int64_t dims[kTensorDimensionLimit];
   for (int64_t i = 0; i < input.dim() - 1; i++) {
     if (i < axis) {
       dims[i] = i;
     } else {
-      dims[i] = i - 1;
+      dims[i] = i + 1;
     }
   }
-  const double* scale_data = scale.const_data_ptr<double>();
+  const float* scale_data = scale.const_data_ptr<float>();
   const int64_t* zero_point_data;
   if (opt_zero_points.has_value()) {
     zero_point_data = opt_zero_points.value().const_data_ptr<int64_t>();
@@ -253,8 +253,34 @@ Tensor& dequantize_per_channel_out(
   //   in other words you are dequantizing in_data[in_ix]
 #define DEQUANTIZE_IMPL(CTYPE_IN, CTYPE_OUT, out_dtype)                        \
   case ScalarType::out_dtype:                                                  \
+    if (input.dim() == 1) {                                                    \
+      auto* out_data_ptr = out.mutable_data_ptr<CTYPE_OUT>();                  \
+      const auto* input_data_ptr = input.const_data_ptr<CTYPE_IN>();           \
+      ET_CHECK_MSG(                                                            \
+          axis == 0, "Axis must be 0 for a single dimensional tensors");       \
+      const optional<int64_t> dim;                                             \
+      apply_over_dim(                                                          \
+          [input_data_ptr, out_data_ptr, scale_data, zero_point_data](         \
+              size_t numel, size_t stride, size_t base_ix) {                   \
+            for (size_t i = 0; i < numel; i++) {                               \
+              size_t current_ix = base_ix * stride + i;                        \
+              float _scale = scale_data[current_ix];                           \
+              int64_t zero_point = 0;                                          \
+              if (zero_point_data != nullptr) {                                \
+                zero_point = zero_point_data[current_ix];                      \
+              }                                                                \
+              out_data_ptr[current_ix] =                                       \
+                  static_cast<CTYPE_OUT>(                                      \
+                      input_data_ptr[current_ix] - zero_point) *               \
+                  _scale;                                                      \
+            }                                                                  \
+          },                                                                   \
+          input,                                                               \
+          dim);                                                                \
+      break;                                                                   \
+    }                                                                          \
     for (size_t channel_ix = 0; channel_ix < input.size(axis); ++channel_ix) { \
-      double _scale = scale_data[channel_ix];                                  \
+      float _scale = scale_data[channel_ix];                                   \
       int64_t _zero_point = 0;                                                 \
       if (zero_point_data != nullptr) {                                        \
         _zero_point = zero_point_data[channel_ix];                             \
