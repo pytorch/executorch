@@ -89,7 +89,7 @@ To utilize ExecuTorch to its fullest extent, please follow the setup instruction
 
    ```bash
    # Clone the ExecuTorch repo from GitHub
-   git clone --branch v0.3.0 https://github.com/pytorch/executorch.git
+   git clone https://github.com/pytorch/executorch.git
    cd executorch
 
    # Update and pull submodules
