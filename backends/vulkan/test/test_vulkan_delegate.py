@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import ctypes
 import unittest
 from typing import Tuple
@@ -117,7 +119,9 @@ class TestBackends(unittest.TestCase):
             program: ExportedProgram = export(
                 model, sample_inputs, dynamic_shapes=dynamic_shapes
             )
-            edge_program: EdgeProgramManager = to_edge(program)
+            edge_program: EdgeProgramManager = to_edge(
+                program, compile_config=self._edge_compile_config
+            )
 
             edge_program = edge_program.transform([I64toI32(), MeanToSumDiv()])
 

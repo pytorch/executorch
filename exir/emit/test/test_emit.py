@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pye-strict
+# pyre-unsafe
 
 import typing
 import unittest
@@ -866,7 +866,9 @@ class TestEmit(unittest.TestCase):
         # Success if you use dim_order
         to_edge(
             export(model, inputs),
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _skip_dim_order=False
+            ),
         ).to_executorch()
 
     def test_emit_multiple_entry_points(self) -> None:
