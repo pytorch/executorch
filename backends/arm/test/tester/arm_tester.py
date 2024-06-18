@@ -267,7 +267,7 @@ class ArmTester(Tester):
 
     def transpose_data_format(self, input, to: Literal["NHWC", "NCHW"]):
         if len(input.shape) != 4:
-            return input
+            return (input,)
         if to == "NCHW":
             NCHW_Order = (0, 3, 1, 2)
             return (np.transpose(input, NCHW_Order),)
