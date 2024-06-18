@@ -205,6 +205,7 @@ class Module final {
   MlockConfig mlock_config_{MlockConfig::NoMlock};
   std::unique_ptr<DataLoader> data_loader_;
   std::unique_ptr<MemoryAllocator> memory_allocator_;
+  std::unique_ptr<MemoryAllocator> temp_allocator_;
   std::unique_ptr<EventTracer> event_tracer_;
   std::unique_ptr<Program> program_;
   std::unordered_map<std::string, MethodHolder> methods_;

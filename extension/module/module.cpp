@@ -41,6 +41,7 @@ Module::Module(
     : file_path_(file_path),
       mlock_config_(mlock_config),
       memory_allocator_(std::make_unique<util::MallocMemoryAllocator>()),
+      temp_allocator_(std::make_unique<util::MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
   runtime_init();
 }
@@ -53,6 +54,7 @@ Module::Module(
       memory_allocator_(
           memory_allocator ? std::move(memory_allocator)
                            : std::make_unique<util::MallocMemoryAllocator>()),
+      temp_allocator_(std::make_unique<util::MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
   runtime_init();
 }
@@ -118,7 +120,9 @@ Error Module::load_method(const std::string& method_name) {
         method_holder.planned_spans.data(),
         method_holder.planned_spans.size()));
     method_holder.memory_manager = std::make_unique<MemoryManager>(
-        memory_allocator_.get(), method_holder.planned_memory.get());
+        memory_allocator_.get(),
+        method_holder.planned_memory.get(),
+        temp_allocator_.get());
     method_holder.method = ET_UNWRAP_UNIQUE(program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
