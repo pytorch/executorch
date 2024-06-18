@@ -989,3 +989,20 @@ def get_arange_inputs():
         "api::kChannelsPacked",
     ]
     return test_suite
+
+
+@register_test_suite("aten.constant_pad_nd.default")
+def get_constant_pad_nd_inputs():
+    test_suite = VkTestSuite(
+        [
+            ([S1, S2], [1, 1], 24.0),
+            ([M, M1, M2], [2, 2], 23.2),
+            ([L, M, M1, M2], [3, 5], 12.2),
+            ([S1, S2], [1, 1, 1, 1], 24.0),
+            ([M, M1, M2], [2, 2, 2, 2], 23.2),
+            ([L, M, M1, M2], [3, 5, 3, 5], 12.2),
+            ([M, M1, M2], [1, 2, 3, 4, 5, 6], 23.2),
+            ([L, M, M1, M2], [3, 3, 3, 3, 3, 3], 12.2),
+        ]
+    )
+    return test_suite
