@@ -19,12 +19,12 @@ on:
 
 jobs:
   generate-matrix:
-    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@main
+    uses: pytorch/test-infra/.github/workflows/generate_binary_build_matrix.yml@release/2.4
     with:
       package-type: wheel
       os: linux
       test-infra-repository: pytorch/test-infra
-      test-infra-ref: main
+      test-infra-ref: release/2.4
       with-cuda: disabled
       with-rocm: disabled
 
@@ -43,12 +43,12 @@ jobs:
             smoke-test-script: build/packaging/smoke_test.py
             package-name: executorch
     name: ${{ matrix.repository }}
-    uses: pytorch/test-infra/.github/workflows/build_wheels_linux.yml@main
+    uses: pytorch/test-infra/.github/workflows/build_wheels_linux.yml@release/2.4
     with:
       repository: ${{ matrix.repository }}
       ref: ""
       test-infra-repository: pytorch/test-infra
-      test-infra-ref: main
+      test-infra-ref: release/2.4
       build-matrix: ${{ needs.generate-matrix.outputs.matrix }}
       # ExecuTorch only needs the first layer of submodules; override the
       # "recursive" default to do less work, and to give the buck daemon fewer
