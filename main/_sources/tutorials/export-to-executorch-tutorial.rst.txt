@@ -99,11 +99,11 @@ in the example), and a list of dynamic shapes (covered later).
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, p_conv_weight: "f32[16, 3, 3, 3]", p_conv_bias: "f32[16]", x: "f32[1, 3, 256, 256]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
-                convolution: "f32[1, 16, 256, 256]" = torch.ops.aten.convolution.default(x, p_conv_weight, p_conv_bias, [1, 1], [1, 1], [1, 1], False, [0, 0], 1);  x = p_conv_weight = p_conv_bias = None
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
+                conv2d: "f32[1, 16, 256, 256]" = torch.ops.aten.conv2d.default(x, p_conv_weight, p_conv_bias, [1, 1], [1, 1]);  x = p_conv_weight = p_conv_bias = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:65 in forward, code: return self.relu(a)
-                relu: "f32[1, 16, 256, 256]" = torch.ops.aten.relu.default(convolution);  convolution = None
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:65 in forward, code: return self.relu(a)
+                relu: "f32[1, 16, 256, 256]" = torch.ops.aten.relu.default(conv2d);  conv2d = None
                 return (relu,)
             
     Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_weight'), target='conv.weight', persistent=None), InputSpec(kind=<InputKind.PARAMETER: 2>, arg=TensorArgument(name='p_conv_bias'), target='conv.bias', persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='relu'), target=None)])
@@ -177,23 +177,21 @@ different than the ones we used while tracing, we will run into an error:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 111, in <module>
         print(aten_dialect.module()(torch.ones(3, 2), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 735, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 738, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 315, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 316, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 302, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 303, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1657, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1561, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1698, in _call_impl
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 416, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 600, in _fn
         return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/external_utils.py", line 36, in inner
-        return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 32, in _check_input_constraints_pre_hook
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 33, in _check_input_constraints_pre_hook
         return _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 147, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 155, in _check_input_constraints_for_graph
         raise RuntimeError(
     RuntimeError: Expected input at *args[0].shape[1] to be equal to 3, but got 2
 
@@ -240,12 +238,12 @@ To express that some input shapes are dynamic, we can insert dynamic
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, x: "f32[3, s0]", y: "f32[3, s0]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:127 in forward, code: return x + y
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:127 in forward, code: return x + y
                 add: "f32[3, s0]" = torch.ops.aten.add.Tensor(x, y);  x = y = None
                 return (add,)
             
     Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None), InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='y'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='add'), target=None)])
-    Range constraints: {s0: ValueRanges(lower=1, upper=10, is_bool=False)}
+    Range constraints: {s0: VR[1, 10]}
 
 
 
@@ -301,45 +299,41 @@ Now let's try running the model with different shapes:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 154, in <module>
         print(aten_dialect.module()(torch.ones(3, 15), torch.ones(3, 15)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 735, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 738, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 315, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 316, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 302, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 303, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1657, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1561, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1698, in _call_impl
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 416, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 600, in _fn
         return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/external_utils.py", line 36, in inner
-        return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 32, in _check_input_constraints_pre_hook
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 33, in _check_input_constraints_pre_hook
         return _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 141, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 145, in _check_input_constraints_for_graph
         raise RuntimeError(
     RuntimeError: Expected input at *args[0].shape[1] to be <= 10, but got 15
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 160, in <module>
         print(aten_dialect.module()(torch.ones(3, 3), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 735, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 738, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 315, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 316, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 302, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 303, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1657, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1561, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1698, in _call_impl
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 416, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 600, in _fn
         return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/external_utils.py", line 36, in inner
-        return fn(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 32, in _check_input_constraints_pre_hook
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 33, in _check_input_constraints_pre_hook
         return _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 103, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 107, in _check_input_constraints_for_graph
         raise RuntimeError(
     RuntimeError: Expected input at *args[1].shape[1] to be equal to 3, but got 2
 
@@ -431,9 +425,9 @@ model properly for a specific backend.
         return pytree.tree_unflatten([relu], self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/observer.py:1288: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/observer.py:1289: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
       warnings.warn(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/utils.py:356: UserWarning: must run observer before calling calculate_qparams. Returning default values.
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/utils.py:376: UserWarning: must run observer before calling calculate_qparams. Returning default values.
       warnings.warn(
     Quantized Graph
     GraphModule()
@@ -455,23 +449,27 @@ model properly for a specific backend.
         return pytree.tree_unflatten([dequantize_per_tensor_default_2], self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_subclasses/functional_tensor.py:362: UserWarning: At pre-dispatch tracing, we will assume that any custom op that is marked with CompositeImplicitAutograd and functional are safe to not decompose. We found quantized_decomposed.quantize_per_tensor.default to be one such op.
+      warnings.warn(
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_subclasses/functional_tensor.py:362: UserWarning: At pre-dispatch tracing, we will assume that any custom op that is marked with CompositeImplicitAutograd and functional are safe to not decompose. We found quantized_decomposed.dequantize_per_tensor.default to be one such op.
+      warnings.warn(
     ATen Dialect Graph
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, p_conv_bias: "f32[16]", b__frozen_param0: "i8[16, 3, 3, 3]", x: "f32[1, 3, 256, 256]"):
-                # File: <eval_with_key>.164:7 in forward, code: quantize_per_tensor_default = torch.ops.quantized_decomposed.quantize_per_tensor.default(arg0_1, 1.0, 0, -128, 127, torch.int8);  arg0_1 = None
+                 # File: <eval_with_key>.169:7 in forward, code: quantize_per_tensor_default = torch.ops.quantized_decomposed.quantize_per_tensor.default(arg0_1, 1.0, 0, -128, 127, torch.int8);  arg0_1 = None
                 quantize_per_tensor: "i8[1, 3, 256, 256]" = torch.ops.quantized_decomposed.quantize_per_tensor.default(x, 1.0, 0, -128, 127, torch.int8);  x = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
                 dequantize_per_tensor: "f32[1, 3, 256, 256]" = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor = None
                 dequantize_per_tensor_1: "f32[16, 3, 3, 3]" = torch.ops.quantized_decomposed.dequantize_per_tensor.default(b__frozen_param0, 1.0, 0, -127, 127, torch.int8);  b__frozen_param0 = None
-                convolution: "f32[1, 16, 256, 256]" = torch.ops.aten.convolution.default(dequantize_per_tensor, dequantize_per_tensor_1, p_conv_bias, [1, 1], [1, 1], [1, 1], False, [0, 0], 1);  dequantize_per_tensor = dequantize_per_tensor_1 = p_conv_bias = None
+                conv2d: "f32[1, 16, 256, 256]" = torch.ops.aten.conv2d.default(dequantize_per_tensor, dequantize_per_tensor_1, p_conv_bias, [1, 1], [1, 1]);  dequantize_per_tensor = dequantize_per_tensor_1 = p_conv_bias = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:65 in forward, code: return self.relu(a)
-                relu: "f32[1, 16, 256, 256]" = torch.ops.aten.relu.default(convolution);  convolution = None
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:65 in forward, code: return self.relu(a)
+                relu: "f32[1, 16, 256, 256]" = torch.ops.aten.relu.default(conv2d);  conv2d = None
                 quantize_per_tensor_1: "i8[1, 16, 256, 256]" = torch.ops.quantized_decomposed.quantize_per_tensor.default(relu, 1.0, 0, -128, 127, torch.int8);  relu = None
             
-                # File: <eval_with_key>.164:15 in forward, code: dequantize_per_tensor_default_2 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_2, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_2 = None
+                 # File: <eval_with_key>.169:15 in forward, code: dequantize_per_tensor_default_2 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_2, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_2 = None
                 dequantize_per_tensor_2: "f32[1, 16, 256, 256]" = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_1, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_1 = None
                 return (dequantize_per_tensor_2,)
             
@@ -533,10 +531,10 @@ The lowering is done through the ``to_edge`` API.
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, p_conv_weight: "f32[16, 3, 3, 3]", p_conv_bias: "f32[16]", x: "f32[1, 3, 256, 256]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
                 aten_convolution_default: "f32[1, 16, 256, 256]" = executorch_exir_dialects_edge__ops_aten_convolution_default(x, p_conv_weight, p_conv_bias, [1, 1], [1, 1], [1, 1], False, [0, 0], 1);  x = p_conv_weight = p_conv_bias = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:65 in forward, code: return self.relu(a)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:65 in forward, code: return self.relu(a)
                 aten_relu_default: "f32[1, 16, 256, 256]" = executorch_exir_dialects_edge__ops_aten_relu_default(aten_convolution_default);  aten_convolution_default = None
                 return (aten_relu_default,)
             
@@ -591,27 +589,27 @@ there is only one program, it will by default be saved to the name "forward".
 
  .. code-block:: none
 
-    Edge Dialect graph of decode
+    Edge Dialect graph of encode
     ExportedProgram:
         class GraphModule(torch.nn.Module):
-            def forward(self, x: "f32[1, 5]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:266 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
-                aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
-                aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
-                aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
+            def forward(self, x: "f32[1, 10]"):
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:261 in forward, code: return torch.nn.functional.linear(x, torch.randn(5, 10))
+                aten_randn_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
+                aten_permute_copy_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
+                aten_mm_default: "f32[1, 5]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
                 return (aten_mm_default,)
             
     Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
     Range constraints: {}
 
-    Edge Dialect graph of encode
+    Edge Dialect graph of decode
     ExportedProgram:
         class GraphModule(torch.nn.Module):
-            def forward(self, x: "f32[1, 10]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:261 in forward, code: return torch.nn.functional.linear(x, torch.randn(5, 10))
-                aten_randn_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
-                aten_permute_copy_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
-                aten_mm_default: "f32[1, 5]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
+            def forward(self, x: "f32[1, 5]"):
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:266 in forward, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
+                aten_randn_default: "f32[10, 5]" = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
+                aten_permute_copy_default: "f32[5, 10]" = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
+                aten_mm_default: "f32[1, 10]" = executorch_exir_dialects_edge__ops_aten_mm_default(x, aten_permute_copy_default);  x = aten_permute_copy_default = None
                 return (aten_mm_default,)
             
     Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='x'), target=None, persistent=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
@@ -674,10 +672,10 @@ rather than the ``torch.ops.aten`` namespace.
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, p_conv_weight: "f32[16, 3, 3, 3]", p_conv_bias: "f32[16]", x: "f32[1, 3, 256, 256]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
                 aten_convolution_default: "f32[1, 16, 256, 256]" = executorch_exir_dialects_edge__ops_aten_convolution_default(x, p_conv_weight, p_conv_bias, [1, 1], [1, 1], [1, 1], False, [0, 0], 1);  x = p_conv_weight = p_conv_bias = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:65 in forward, code: return self.relu(a)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:65 in forward, code: return self.relu(a)
                 aten_relu_default: "f32[1, 16, 256, 256]" = executorch_exir_dialects_edge__ops_aten_relu_default(aten_convolution_default);  aten_convolution_default = None
                 return (aten_relu_default,)
             
@@ -688,10 +686,10 @@ rather than the ``torch.ops.aten`` namespace.
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, p_conv_weight: "f32[16, 3, 3, 3]", p_conv_bias: "f32[16]", x: "f32[1, 3, 256, 256]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
                 aten_convolution_default: "f32[1, 16, 256, 256]" = executorch_exir_dialects_edge__ops_aten_convolution_default(x, p_conv_weight, p_conv_bias, [1, 1], [1, 1], [1, 1], False, [0, 0], 1);  x = p_conv_weight = p_conv_bias = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:65 in forward, code: return self.relu(a)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:65 in forward, code: return self.relu(a)
                 aten_sigmoid_default: "f32[1, 16, 256, 256]" = executorch_exir_dialects_edge__ops_aten_sigmoid_default(aten_convolution_default);  aten_convolution_default = None
                 return (aten_sigmoid_default,)
             
@@ -791,7 +789,7 @@ lowering process.
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, x: "f32[1]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:355 in forward, code: return torch.sin(x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:355 in forward, code: return torch.sin(x)
                 aten_sin_default: "f32[1]" = executorch_exir_dialects_edge__ops_aten_sin_default(x);  x = None
                 return (aten_sin_default,)
             
@@ -872,15 +870,15 @@ can compose this lowered module with another module.
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, c_non_lowerable_bias: "f32[1]", x: "f32[1]"):
-                # File: /opt/conda/envs/py_3.10/lib/python3.10/site-packages/executorch/exir/lowered_backend_module.py:337 in forward, code: return executorch_call_delegate(self, *args)
+                 # File: /opt/conda/envs/py_3.10/lib/python3.10/site-packages/executorch/exir/lowered_backend_module.py:337 in forward, code: return executorch_call_delegate(self, *args)
                 lowered_module_0 = self.lowered_module_0
                 executorch_call_delegate: "f32[1]" = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, x);  lowered_module_0 = x = None
             
-                # File: /opt/conda/envs/py_3.10/lib/python3.10/site-packages/executorch/exir/lowered_backend_module.py:337 in forward, code: return executorch_call_delegate(self, *args)
+                 # File: /opt/conda/envs/py_3.10/lib/python3.10/site-packages/executorch/exir/lowered_backend_module.py:337 in forward, code: return executorch_call_delegate(self, *args)
                 lowered_module_1 = self.lowered_module_0
                 executorch_call_delegate_1: "f32[1]" = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, executorch_call_delegate);  lowered_module_1 = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:409 in forward, code: return torch.add(torch.add(a, b), self.bias)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:409 in forward, code: return torch.add(torch.add(a, b), self.bias)
                 aten_add_tensor: "f32[1]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(executorch_call_delegate, executorch_call_delegate_1)
                 aten_add_tensor_1: "f32[1]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_add_tensor, c_non_lowerable_bias);  aten_add_tensor = c_non_lowerable_bias = None
                 return (executorch_call_delegate, executorch_call_delegate_1, aten_add_tensor_1)
@@ -894,7 +892,7 @@ can compose this lowered module with another module.
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, x: "f32[1]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:355 in forward, code: return torch.sin(x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:355 in forward, code: return torch.sin(x)
                 aten_sin_default: "f32[1]" = executorch_exir_dialects_edge__ops_aten_sin_default(x);  x = None
                 return (aten_sin_default,)
             
@@ -966,19 +964,19 @@ partition those nodes into subgraphs, and then create a
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, a: "f32[2, 2]", x: "f32[2, 2]", b: "f32[2, 2]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:455 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:455 in forward, code: y = torch.mm(a, x)
                 aten_mm_default: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_mm_default(a, x)
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:456 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:456 in forward, code: z = y + b
                 aten_add_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_mm_default, b);  aten_mm_default = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:457 in forward, code: a = z - a
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:457 in forward, code: a = z - a
                 aten_sub_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_sub_Tensor(aten_add_tensor, a);  aten_add_tensor = a = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:458 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:458 in forward, code: y = torch.mm(a, x)
                 aten_mm_default_1: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_mm_default(aten_sub_tensor, x);  aten_sub_tensor = x = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:459 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:459 in forward, code: z = y + b
                 aten_add_tensor_1: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_mm_default_1, b);  aten_mm_default_1 = b = None
                 return (aten_add_tensor_1,)
             
@@ -994,7 +992,7 @@ partition those nodes into subgraphs, and then create a
                 executorch_call_delegate = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, a, x, b);  lowered_module_0 = None
                 getitem: "f32[2, 2]" = executorch_call_delegate[0];  executorch_call_delegate = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:457 in forward, code: a = z - a
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:457 in forward, code: a = z - a
                 aten_sub_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_sub_Tensor(getitem, a);  getitem = a = None
             
                 # No stacktrace found for following nodes
@@ -1009,10 +1007,10 @@ partition those nodes into subgraphs, and then create a
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, a: "f32[2, 2]", x: "f32[2, 2]", b: "f32[2, 2]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:455 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:455 in forward, code: y = torch.mm(a, x)
                 aten_mm_default: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_mm_default(a, x);  a = x = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:456 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:456 in forward, code: z = y + b
                 aten_add_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_mm_default, b);  aten_mm_default = b = None
                 return (aten_add_tensor,)
             
@@ -1022,10 +1020,10 @@ partition those nodes into subgraphs, and then create a
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, aten_sub_tensor: "f32[2, 2]", x: "f32[2, 2]", b: "f32[2, 2]"):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:458 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:458 in forward, code: y = torch.mm(a, x)
                 aten_mm_default_1: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_mm_default(aten_sub_tensor, x);  aten_sub_tensor = x = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:459 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:459 in forward, code: z = y + b
                 aten_add_tensor_1: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_add_Tensor(aten_mm_default_1, b);  aten_mm_default_1 = b = None
                 return (aten_add_tensor_1,)
             
@@ -1087,7 +1085,7 @@ call ``to_backend`` on it:
                 executorch_call_delegate = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, a, x, b);  lowered_module_0 = None
                 getitem: "f32[2, 2]" = executorch_call_delegate[0];  executorch_call_delegate = None
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:491 in forward, code: a = z - a
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:491 in forward, code: a = z - a
                 aten_sub_tensor: "f32[2, 2]" = executorch_exir_dialects_edge__ops_aten_sub_Tensor(getitem, a);  getitem = a = None
             
                 # No stacktrace found for following nodes
@@ -1155,31 +1153,31 @@ writing a custom memory planning pass can be found
                 # No stacktrace found for following nodes
                 alloc: "f32[2, 2]" = executorch_exir_memory_alloc(((2, 2), torch.float32))
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:489 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:489 in forward, code: y = torch.mm(a, x)
                 aten_mm_default: "f32[2, 2]" = torch.ops.aten.mm.out(a, x, out = alloc);  alloc = None
             
                 # No stacktrace found for following nodes
                 alloc_1: "f32[2, 2]" = executorch_exir_memory_alloc(((2, 2), torch.float32))
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:490 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:490 in forward, code: z = y + b
                 aten_add_tensor: "f32[2, 2]" = torch.ops.aten.add.out(aten_mm_default, b, out = alloc_1);  aten_mm_default = alloc_1 = None
             
                 # No stacktrace found for following nodes
                 alloc_2: "f32[2, 2]" = executorch_exir_memory_alloc(((2, 2), torch.float32))
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:491 in forward, code: a = z - a
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:491 in forward, code: a = z - a
                 aten_sub_tensor: "f32[2, 2]" = torch.ops.aten.sub.out(aten_add_tensor, a, out = alloc_2);  aten_add_tensor = a = alloc_2 = None
             
                 # No stacktrace found for following nodes
                 alloc_3: "f32[2, 2]" = executorch_exir_memory_alloc(((2, 2), torch.float32))
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:492 in forward, code: y = torch.mm(a, x)
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:492 in forward, code: y = torch.mm(a, x)
                 aten_mm_default_1: "f32[2, 2]" = torch.ops.aten.mm.out(aten_sub_tensor, x, out = alloc_3);  aten_sub_tensor = x = alloc_3 = None
             
                 # No stacktrace found for following nodes
                 alloc_4: "f32[2, 2]" = executorch_exir_memory_alloc(((2, 2), torch.float32))
             
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:493 in forward, code: z = y + b
+                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:493 in forward, code: z = y + b
                 aten_add_tensor_1: "f32[2, 2]" = torch.ops.aten.add.out(aten_mm_default_1, b, out = alloc_4);  aten_mm_default_1 = b = alloc_4 = None
                 return (aten_add_tensor_1,)
             
@@ -1284,7 +1282,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.633 seconds)
+   **Total running time of the script:** (0 minutes 1.462 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
