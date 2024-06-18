@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
 
@@ -38,7 +40,8 @@ class EdgeCompileConfig:
     _use_edge_ops: bool = True
     _skip_type_promotion: bool = False
     # TODO(gasoonjia): remove this
-    _skip_dim_order: bool = False
+    # TODO(T192537614): reenanle dim order as default
+    _skip_dim_order: bool = True
 
 
 @compatibility(is_backward_compatible=False)
