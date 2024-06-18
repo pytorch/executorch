@@ -201,6 +201,22 @@ cmake_dependent_option(
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
 )
 
+#
+# portable_ops_lib: build portable_ops library. Disable, if not required
+#
+cmake_dependent_option(
+  BUILD_EXECUTORCH_PORTABLE_OPS "Build portable_ops library." ON
+  "NOT EXECUTORCH_BUILD_CADENCE" OFF
+)
+
+#
+# libdl: use libdl library. Disable on unsupported platforms
+#
+cmake_dependent_option(
+  EXECUTORCH_USE_DL "Use libdl library." ON
+  "NOT EXECUTORCH_BUILD_CADENCE" OFF
+)
+
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   set(EXECUTORCH_BUILD_KERNELS_CUSTOM ON)
 endif()
@@ -414,11 +430,13 @@ add_subdirectory(schema)
 #
 add_library(executorch_no_prim_ops ${_executorch_no_prim_ops__srcs})
 target_link_libraries(executorch_no_prim_ops PRIVATE program_schema)
-# Check if dl exists for this toolchain and only then link it.
-find_library(DL_LIBRARY_EXISTS NAMES dl)
-# Check if the library was found
-if(DL_LIBRARY_EXISTS AND NOT EXECUTORCH_BUILD_CADENCE)
-  target_link_libraries(executorch_no_prim_ops PRIVATE dl) # For dladdr()
+if(EXECUTORCH_USE_DL)
+  # Check if dl exists for this toolchain and only then link it.
+  find_library(DL_LIBRARY_EXISTS NAMES dl)
+  # Check if the library was found
+  if(DL_LIBRARY_EXISTS)
+    target_link_libraries(executorch_no_prim_ops PRIVATE dl) # For dladdr()
+  endif()
 endif()
 target_include_directories(
   executorch_no_prim_ops PUBLIC ${_common_include_directories}
@@ -443,7 +461,7 @@ target_link_options_shared_lib(executorch)
 # Real integrations should supply their own YAML file that only lists the
 # operators necessary for the models that will run.
 #
-if(NOT EXECUTORCH_BUILD_CADENCE)
+if(BUILD_EXECUTORCH_PORTABLE_OPS)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 endif()
 
