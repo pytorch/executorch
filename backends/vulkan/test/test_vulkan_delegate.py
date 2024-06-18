@@ -1275,6 +1275,22 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_constant_pad_nd(self):
+        class TestModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.nn.functional.pad(x, (1, 2, 3, 4, 5, 6), "constant", 24.2)
+
+        sample_inputs = (torch.randn(size=(3, 7, 5, 11), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            TestModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_repeat(self):
         class TestModule(torch.nn.Module):
             def __init__(self):
