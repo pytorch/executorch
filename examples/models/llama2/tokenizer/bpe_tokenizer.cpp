@@ -132,7 +132,8 @@ BPETokenizer::~BPETokenizer() {
  * @return Result<std::string> A pointer to the string representation of the
  * token.
  */
-Result<std::string> BPETokenizer::decode(uint64_t prev_token, uint64_t token) {
+Result<std::string> BPETokenizer::decode(uint64_t prev_token, uint64_t token)
+    const {
   ET_CHECK_OK_OR_RETURN_ERROR(Tokenizer::decode_verify(token));
   const char* piece = vocab_[token];
   // following BOS token, sentencepiece decoder strips any leading
@@ -171,7 +172,7 @@ str_lookup(const char* str, TokenIndex* sorted_vocab, int32_t vocab_size) {
  * @return Result<std::vector<uint64_t>>
  */
 Result<std::vector<uint64_t>>
-BPETokenizer::encode(const std::string& text, int8_t bos, int8_t eos) {
+BPETokenizer::encode(const std::string& text, int8_t bos, int8_t eos) const {
   if (!initialized_) {
     ET_LOG(Error, "Tokenizer not initialized");
     return Error::NotSupported;
