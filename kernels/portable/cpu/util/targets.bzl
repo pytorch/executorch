@@ -39,7 +39,7 @@ def define_common_targets():
         exported_headers = [
             "activation_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -57,7 +57,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
@@ -67,7 +67,7 @@ def define_common_targets():
         exported_headers = [
             "broadcast_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         deps = [
             ":repeat_util",
             "//executorch/runtime/kernel:kernel_includes",
@@ -82,7 +82,7 @@ def define_common_targets():
         exported_headers = [
             "advanced_index_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         deps = [
             ":broadcast_util",
             "//executorch/runtime/kernel:kernel_includes",
@@ -96,7 +96,7 @@ def define_common_targets():
         exported_headers = [
             "copy_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -109,7 +109,7 @@ def define_common_targets():
         exported_headers = [
             "distance_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -122,7 +122,7 @@ def define_common_targets():
         exported_headers = [
             "kernel_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -135,7 +135,7 @@ def define_common_targets():
         exported_headers = [
             "matmul_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         deps = [
             ":broadcast_util",
             "//executorch/runtime/kernel:kernel_includes",
@@ -149,7 +149,7 @@ def define_common_targets():
         exported_headers = [
             "padding_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -162,7 +162,7 @@ def define_common_targets():
         exported_headers = [
             "normalization_ops_util.h",
         ],
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -178,6 +178,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
@@ -190,6 +191,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
     )
 
@@ -204,6 +206,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":broadcast_util",
         ],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
     )
 
@@ -211,6 +214,7 @@ def define_common_targets():
         name = "math_util",
         srcs = [],
         exported_headers = ["math_util.h"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
     )
 
@@ -223,6 +227,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
@@ -237,6 +242,7 @@ def define_common_targets():
                 "//executorch/runtime/kernel:kernel_includes{}".format(suffix),
                 "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
             ],
+            compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
         )
