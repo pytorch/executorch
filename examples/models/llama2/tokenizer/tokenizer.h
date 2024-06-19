@@ -34,7 +34,7 @@ class Tokenizer {
   virtual Error load(const std::string& tokenizer_path) = 0;
 
   virtual Result<std::vector<uint64_t>>
-  encode(const std::string& input, int8_t bos, int8_t eos) = 0;
+  encode(const std::string& input, int8_t bos, int8_t eos) const = 0;
 
   Error decode_verify(uint64_t token) const {
     if (!initialized_) {
@@ -52,7 +52,8 @@ class Tokenizer {
     return Error::Ok;
   }
 
-  virtual Result<std::string> decode(uint64_t prev_token, uint64_t token) = 0;
+  virtual Result<std::string> decode(uint64_t prev_token, uint64_t token)
+      const = 0;
 
   // getters
   int32_t vocab_size() const {
