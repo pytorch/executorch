@@ -127,11 +127,13 @@ class AddAttributePartitionerDemo(Partitioner):
 ops_not_to_decompose = [
     torch.ops.aten.linear.default,
     torch.ops.aten.scaled_dot_product_attention.default,
+    torch.ops.aten.upsample_nearest2d.vec,
 ]
 
 edge_ops_non_decomposed = [
     exir_ops.edge.aten.linear.default,
     exir_ops.edge.aten.scaled_dot_product_attention.default,
+    exir_ops.edge.aten.upsample_nearest2d.vec,
 ]
 
 
