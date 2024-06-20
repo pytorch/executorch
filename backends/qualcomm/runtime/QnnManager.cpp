@@ -370,14 +370,17 @@ Error QnnManager::Compile(
 } // namespace qnn
 } // namespace executor
 } // namespace torch
-void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment) {
+
+#define EXPORT __attribute__((visibility("default")))
+
+EXPORT void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment) {
   using torch::executor::qnn::SharedBuffer;
   void* buffer_ptr =
       SharedBuffer::GetSharedBufferManager().AllocMem(bytes, alignment);
   return buffer_ptr;
 }
 
-void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
+EXPORT void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
   using torch::executor::qnn::SharedBuffer;
   SharedBuffer::GetSharedBufferManager().FreeMem(buffer_ptr);
 }

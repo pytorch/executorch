@@ -8,7 +8,11 @@
 
 #pragma once
 #include <stdio.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <time.h>
+#endif
 #include <cctype>
 
 namespace torch {
@@ -39,9 +43,13 @@ void inline safe_printf(const char* piece) {
 
 long inline time_in_ms() {
   // return time in milliseconds, for benchmarking the model speed
+#ifdef _WIN32
+  return GetTickCount();
+#else
   struct timespec time;
   clock_gettime(CLOCK_REALTIME, &time);
   return time.tv_sec * 1000 + time.tv_nsec / 1000000;
+#endif
 }
 
 } // namespace util

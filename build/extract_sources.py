@@ -96,7 +96,13 @@ class Target:
             else:
                 self._config[k] = v
 
-    def get_sources(self, graph: "Graph", runner: Buck2Runner) -> frozenset[str]:
+    def get_sources(
+        self,
+        graph: "Graph",
+        runner: Buck2Runner,
+        platform: str = "default",
+        arch: str = "default"
+    ) -> frozenset[str]:
         if self._state == Target._InitState.READY:
             return self._sources
         # Detect cycles.
@@ -113,7 +119,7 @@ class Target:
         )
 
         # Get the complete list of source files that this target depends on.
-        sources: set[str] = set(runner.run(["cquery", query]))
+        sources: set[str] = set(runner.run(["cquery", query, "--fake-host", platform, "--fake-arch", arch]))
 
         # Keep entries that match all of the filters.
         filters = [re.compile(p) for p in self._config.get("filters", [])]
@@ -128,7 +134,7 @@ class Target:
         # its deps. Remove entries that are already covered by the transitive
         # set of dependencies.
         for dep in self._config.get("deps", []):
-            sources.difference_update(graph.by_name[dep].get_sources(graph, runner))
+            sources.difference_update(graph.by_name[dep].get_sources(graph, runner, platform, arch))
 
         self._sources = frozenset(sources)
         self._state = Target._InitState.READY
@@ -173,6 +179,16 @@ def parse_args() -> argparse.Namespace:
         metavar="file",
         help="Path to the file to generate.",
     )
+    parser.add_argument(
+        "--platform",
+        default="default",
+        help="Target platform for the build system",
+    )
+    parser.add_argument(
+        "--arch",
+        default="default",
+        help="Target architecture for the build system",
+    )
     return parser.parse_args()
 
 
@@ -200,7 +216,7 @@ def main():
     target_to_srcs: dict[str, list[str]] = {}
     runner: Buck2Runner = Buck2Runner(args.buck2)
     for name, target in graph.by_name.items():
-        target_to_srcs[name] = sorted(target.get_sources(graph, runner))
+        target_to_srcs[name] = sorted(target.get_sources(graph, runner, args.platform, args.arch))
 
     # Generate the requested format.
     output: bytes

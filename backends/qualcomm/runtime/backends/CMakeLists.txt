@@ -44,8 +44,17 @@ target_sources(
 )
 
 # qnn_device
+set(BACKEND_ARCH ${CMAKE_SYSTEM_PROCESSOR})
+if(BACKEND_ARCH STREQUAL "arm64" OR BACKEND_ARCH STREQUAL "aarch64" OR
+  BACKEND_ARCH STREQUAL "arm64-v8a")
+  set(BACKEND_ARCH "aarch64")
+elseif(BACKEND_ARCH STREQUAL "x86_64")
+  set(BACKEND_ARCH "x86_64")
+else()
+  message(FATAL_ERROR "Unsupported architecture: ${BACKEND_ARCH}")
+endif()
 set(HOST_ARCHITECTURE
-    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/${CMAKE_SYSTEM_PROCESSOR}
+    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/${BACKEND_ARCH}
 )
 
 target_sources(

@@ -6,7 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 #include <executorch/backends/qualcomm/runtime/backends/QnnSysImplementation.h>
 namespace torch {
 namespace executor {
@@ -14,6 +18,28 @@ namespace qnn {
 Error QnnSystemImplementation::Load() {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
+#ifdef _WIN32
+  HMODULE lib_handle_ = LoadLibrary(lib_path_.c_str());
+  if (lib_handle_ == nullptr) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Cannot Open QNN library %s, with error: %d",
+        lib_path_.c_str(),
+        GetLastError());
+    return Error::Internal;
+  }
+
+  auto* get_providers =
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+      reinterpret_cast<QnnSystemInterfaceGetProvidersFn*>(
+          GetProcAddress(lib_handle_, "QnnSystemInterface_getProviders"));
+  if (get_providers == nullptr) {
+    QNN_EXECUTORCH_LOG_ERROR(
+        "QnnSystemImplementation::Load Cannot load symbol "
+        "QnnSystemInterface_getProviders : %d",
+        GetLastError());
+    return Error::Internal;
+  }
+#else
   void* lib_handle_ = dlopen(lib_path_.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (lib_handle_ == nullptr) {
     QNN_EXECUTORCH_LOG_ERROR(
@@ -34,6 +60,7 @@ Error QnnSystemImplementation::Load() {
         dlerror());
     return Error::Internal;
   }
+#endif
 
   std::uint32_t num_providers;
   const QnnSystemInterface_t** provider_list = nullptr;
@@ -64,12 +91,20 @@ Error QnnSystemImplementation::Unload() {
   if (lib_handle_ == nullptr)
     return Error::Ok;
 
+#ifdef _WIN32
+  if (!FreeLibrary(reinterpret_cast<HMODULE>(lib_handle_))) {
+    QNN_EXECUTORCH_LOG_WARN(
+        "Failed to close QnnSystem library with error %d", GetLastError());
+    return Error::Internal;
+  }
+#else
   int dlclose_error = dlclose(lib_handle_);
   if (dlclose_error != 0) {
     QNN_EXECUTORCH_LOG_WARN(
         "Failed to close QnnSystem library with error %s", dlerror());
     return Error::Internal;
   }
+#endif
 
   lib_handle_ = nullptr;
 

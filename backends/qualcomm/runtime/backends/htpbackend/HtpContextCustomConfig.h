@@ -39,7 +39,7 @@ class HtpContextCustomConfig {
     return htp_context_config_.back().get();
   }
 
-  const QnnContext* context_;
+  [[maybe_unused]] const QnnContext* context_;
   std::vector<std::unique_ptr<QnnHtpContext_CustomConfig_t>>
       htp_context_config_;
   [[maybe_unused]] const QnnExecuTorchHtpBackendOptions* htp_options_;

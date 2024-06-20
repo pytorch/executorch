@@ -21,6 +21,9 @@
 #if defined(ET_USE_LIBDL)
 #include <dlfcn.h>
 #endif
+#if defined(ET_USE_WINAPI)
+#include <windows.h>
+#endif
 
 static constexpr const char* DYNAMIC_LIBRARY_NOT_SUPPORTED = "NOT_SUPPORTED";
 static constexpr const char* DYNAMIC_LIBRARY_NOT_FOUND = "NOT_FOUND";
@@ -41,6 +44,17 @@ inline const char* et_pal_get_shared_library_name(const void* addr) {
   } else {
     return DYNAMIC_LIBRARY_NOT_FOUND;
   }
+#endif
+#if defined(ET_USE_WINAPI)
+  HMODULE hModule = NULL;
+  if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         reinterpret_cast<LPCSTR>(addr), &hModule)) {
+    char path[MAX_PATH];
+    if (GetModuleFileNameA(hModule, path, sizeof(path))) {
+      return path;
+    }
+  }
+  return DYNAMIC_LIBRARY_NOT_FOUND;
 #endif
   return DYNAMIC_LIBRARY_NOT_SUPPORTED;
 }

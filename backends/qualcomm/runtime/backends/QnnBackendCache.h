@@ -58,7 +58,11 @@ class QnnBackendCache {
 
   QnnExecuTorchContextBinary qnn_context_blob_;
   QnnSystemContext_Handle_t sys_context_handle_{nullptr};
+#ifdef _WIN32
+  QnnSystemImplementation qnn_sys_impl_{ "QnnSystem.dll" };
+#else
   QnnSystemImplementation qnn_sys_impl_{"libQnnSystem.so"};
+#endif
   std::string graph_name_;
   std::vector<Qnn_Tensor_t> input_tensor_structs_;
   std::vector<Qnn_Tensor_t> output_tensor_structs_;

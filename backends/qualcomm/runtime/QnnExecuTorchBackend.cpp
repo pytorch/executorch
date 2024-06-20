@@ -26,7 +26,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     ArrayRef<CompileSpec> compile_specs) const {
   // covert SizedBuffer to qnn ExecuTorch option
   QnnExecuTorchContextBinary qnn_context_blob;
-  const qnn_delegate::QnnExecuTorchOptions* qnn_executorch_options;
+  const qnn_delegate::QnnExecuTorchOptions* qnn_executorch_options = nullptr;
 
   qnn_context_blob.buffer = const_cast<void*>(processed->data());
   qnn_context_blob.nbytes = processed->size();
