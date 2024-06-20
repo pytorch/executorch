@@ -481,7 +481,7 @@ environments to override operations like:</p>
 <div class="section" id="overriding-the-default-pal">
 <h2>Overriding the default PAL<a class="headerlink" href="#overriding-the-default-pal" title="Permalink to this heading">¶</a></h2>
 <p>The default PAL implementation is in
-<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/target/Posix.cpp"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/target/Posix.cpp</span></code></a>.
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/default/posix.cpp"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/default/posix.cpp</span></code></a>.
 It uses <code class="docutils literal notranslate"><span class="pre">std::chrono::steady_clock</span></code> for the time, prints log messages to
 <code class="docutils literal notranslate"><span class="pre">stderr</span></code>, and makes other default assumptions.</p>
 <p>But, if they don’t work for your system, you can override the default PAL by:</p>
@@ -499,11 +499,11 @@ definitions in the link order.</p>
 <div class="section" id="minimal-pal">
 <h2>Minimal PAL<a class="headerlink" href="#minimal-pal" title="Permalink to this heading">¶</a></h2>
 <p>If you run into build problems because your system doesn’t support the functions
-called by <code class="docutils literal notranslate"><span class="pre">Posix.cpp</span></code>, you can instead use the no-op minimal PAL at
-<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/target/Minimal.cpp"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/target/Minimal.cpp</span></code></a>
+called by <code class="docutils literal notranslate"><span class="pre">posix.cpp</span></code>, you can instead use the no-op minimal PAL at
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/default/minimal.cpp"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/default/minimal.cpp</span></code></a>
 by building with the <code class="docutils literal notranslate"><span class="pre">buck2</span></code> flag <code class="docutils literal notranslate"><span class="pre">-c</span> <span class="pre">executorch.pal_default=minimal</span></code>. This will
 avoid calling <code class="docutils literal notranslate"><span class="pre">fprintf()</span></code>, <code class="docutils literal notranslate"><span class="pre">std::chrono::steady_clock</span></code>, and anything else that
-<code class="docutils literal notranslate"><span class="pre">Posix.cpp</span></code> uses. But since the <code class="docutils literal notranslate"><span class="pre">Minimal.cpp</span></code> <code class="docutils literal notranslate"><span class="pre">et_pal_*()</span></code> functions are no-ops,
+<code class="docutils literal notranslate"><span class="pre">posix.cpp</span></code> uses. But since the <code class="docutils literal notranslate"><span class="pre">minimal.cpp</span></code> <code class="docutils literal notranslate"><span class="pre">et_pal_*()</span></code> functions are no-ops,
 you will need to override all of them.</p>
 </div>
 </div>
