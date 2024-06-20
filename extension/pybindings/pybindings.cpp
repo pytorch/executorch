@@ -57,7 +57,7 @@
   })
 
 // Our logs work by writing to stderr. By default this is done through fprintf
-// (as defined in Posix.cpp) which then does not show up in python environments.
+// (as defined in posix.cpp) which then does not show up in python environments.
 // Here we override the pal to use std::cerr which can be properly redirected by
 // scoped_estream_redirect.
 void et_pal_emit_log_message(
