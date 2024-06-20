@@ -31,6 +31,8 @@ python_library(
         ":passes",
         ":utils",
         "//caffe2:torch",
+        "//executorch/backends/cadence/aot/quantizer:fusion_pass",
+        "//executorch/backends/cadence/aot/quantizer:quantizer",
         "//executorch/exir:lib",
     ],
 )
