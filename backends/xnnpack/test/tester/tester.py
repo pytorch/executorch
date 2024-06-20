@@ -1,5 +1,4 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -12,7 +11,7 @@ import random
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import torch
 import torch.export._trace as export_trace
@@ -225,14 +224,30 @@ class ToEdge(Stage):
 
 @register_stage
 class RunPasses(Stage):
-    def __init__(self, pass_list: Optional[List[Type[PassType]]] = None):
+    def __init__(
+        self,
+        pass_list: Optional[List[Type[PassType]]] = None,
+        pass_functions: Optional[List[Callable]] = None,
+    ):
         self.pass_list = pass_list
+        self.pass_functions = pass_functions
         self.edge_dialect_program = None
 
     def run(self, artifact: EdgeProgramManager, inputs=None) -> None:
-        pass_manager = XNNPACKPassManager(artifact.exported_program(), self.pass_list)
         self.edge_dialect_program = artifact
-        self.edge_dialect_program._edge_programs["forward"] = pass_manager.transform()
+        if self.pass_list:
+            pass_manager = XNNPACKPassManager(
+                artifact.exported_program(), self.pass_list
+            )
+            self.edge_dialect_program._edge_programs["forward"] = (
+                pass_manager.transform()
+            )
+        if self.pass_functions:
+            assert isinstance(self.pass_functions, list)
+            for pass_function in self.pass_functions:
+                self.edge_dialect_program._edge_programs["forward"] = pass_function(
+                    self.edge_dialect_program.exported_program()
+                )
 
     @property
     def artifact(self) -> EdgeProgramManager:
