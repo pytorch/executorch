@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 from typing import final, List
 
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
@@ -11,6 +13,7 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
+from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
@@ -45,6 +48,7 @@ class VulkanBackend(BackendDetails):
     ) -> PreprocessResult:
         passes = [
             AddmmToLinearTransform(),
+            FuseViewCopyTransform(),
             FuseBatchNormWithConvPass(program),
             FuseClampPass(),
             SpecPropPass(),
