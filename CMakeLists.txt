@@ -519,13 +519,6 @@ target_link_options_shared_lib(executorch)
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops
-  )
-endif()
-
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
@@ -688,17 +681,6 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs quantized_kernels quantized_ops_lib)
   endif()
 
-  # TODO(larryliu): Fix macOS 2 dylibs having 2 sets of static variables issue
-  if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT AND NOT APPLE)
-    list(APPEND _dep_libs custom_ops_aot_lib)
-  endif()
-  # TODO(laryliu): Fix linux duplicate registation problem. In GH CI worker
-  # libcustom_ops.a doesn't dedup with the one indirectly linked from
-  # libcustom_ops_aot_lib.a
-  if(EXECUTORCH_BUILD_KERNELS_CUSTOM AND APPLE)
-    target_link_options_shared_lib(custom_ops)
-    list(APPEND _dep_libs custom_ops)
-  endif()
   # compile options for pybind
   set(_pybind_compile_options
       -Wno-deprecated-declarations
@@ -723,7 +705,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_link_libraries(util PRIVATE torch c10 executorch)
 
   # pybind portable_lib
-  pybind11_add_module(portable_lib extension/pybindings/pybindings.cpp)
+  pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
   # The actual output file needs a leading underscore so it can coexist with
   # portable_lib.py in the same python package.
   set_target_properties(portable_lib PROPERTIES OUTPUT_NAME "_portable_lib")
@@ -732,7 +714,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   )
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
-  target_link_libraries(portable_lib PUBLIC ${_dep_libs})
+  target_link_libraries(portable_lib PRIVATE ${_dep_libs})
   if(APPLE)
     # pip wheels will need to be able to find the torch libraries. On Linux, the
     # .so has non-absolute dependencies on libs like "libtorch.so" without
@@ -755,6 +737,13 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings
+  )
+endif()
+
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+  # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops
   )
 endif()
 
