@@ -1,0 +1,1821 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>ExecuTorch Runtime API Reference &mdash; ExecuTorch 0.3 documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="_static/ExecuTorch-Logo-cropped.svg"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/copybutton.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-binder.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-dataframe.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-rendered-html.css" type="text/css" />
+  <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
+  <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Export IR Specification" href="ir-exir.html" />
+    <link rel="prev" title="Export to ExecuTorch API Reference" href="export-to-executorch-api-reference.html" />
+
+
+  <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-T8XT4PS');</script>
+    <!-- End Google Tag Manager -->
+  
+
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.2/css/all.css" integrity="sha384-vSIIfh2YWi9wW0r9iZe7RJPrKwp6bG+s9QZMoITbCckVJqGCCRhc+ccxNcdpHuYu" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Learn
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started">
+                  <span class=dropdown-title>Get Started</span>
+                  <p>Run PyTorch locally or get started quickly with one of the supported cloud platforms</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                  <p>Whats new in PyTorch tutorials</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                  <p>Familiarize yourself with PyTorch concepts and modules</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                  <p>Bite-size, ready-to-deploy PyTorch code examples</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                  <p>Master PyTorch basics with our engaging YouTube tutorial series</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Ecosystem
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem">
+                  <span class="dropdown-title">Tools</span>
+                  <p>Learn about the tools and frameworks in the PyTorch Ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
+                  <span class=dropdown-title>Community</span>
+                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
+                  <span class=dropdown-title>Forums</span>
+                  <p>A place to discuss PyTorch code, issues, install, research</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                  <p>Find resources and get questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem/contributor-awards-2023">
+                  <span class="dropdown-title">Contributor Awards - 2023</span>
+                  <p>Award winners announced at this year's PyTorch Conference</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Edge
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
+                  <span class="dropdown-title">About PyTorch Edge</span>
+                  <p>Build innovative and privacy-aware AI experiences for edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch-overview">
+                  <span class="dropdown-title">ExecuTorch</span>
+                  <p>End-to-end solution for enabling on-device inference capabilities across mobile and edge devices</p>
+                </a>
+              </div>
+            </div>  
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Docs
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                  <p>Explore the documentation for comprehensive guidance on how to use PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/pytorch-domains">
+                  <span class="dropdown-title">PyTorch Domains</span>
+                  <p>Read the PyTorch Domains documentation to learn more about domain-specific libraries</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Blogs & News 
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">PyTorch Blog</span>
+                  <p>Catch up on the latest technical news and happenings</p>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/community-blog">
+                  <span class="dropdown-title">Community Blog</span>
+                  <p>Stories from the PyTorch ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/videos">
+                  <span class="dropdown-title">Videos</span>
+                  <p>Learn about the latest PyTorch tutorials, new, and more </p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-stories">
+                  <span class="dropdown-title">Community Stories</span>
+                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                  <p>Find events, webinars, and podcasts</p>
+                </a>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                About
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                  <p>Learn more about the PyTorch Foundation</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                  <p></p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown">
+              <a href="https://pytorch.org/join" data-cta="join">
+                Become a Member
+              </a>
+            </div>
+          </li>
+          <li>
+           <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="github-icon">
+             </a>
+           </div>
+          </li>
+          <!--- TODO: This block adds the search icon to the nav bar. We will enable it later. 
+          <li>
+            <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="search-icon">
+             </a>
+            </div>
+          </li>
+          --->
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+  </div>
+</div>
+
+<body class="pytorch-body">
+
+   
+
+    
+
+    <div class="table-of-contents-link-wrapper">
+      <span>Table of Contents</span>
+      <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+    </div>
+
+    <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+      <div class="pytorch-side-scroll">
+        <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          <div class="pytorch-left-menu-search">
+            
+    <div class="version">
+      <a href='https://pytorch.org/executorch/versions.html'>0.3 &#x25BC</a>
+    </div>
+    
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          </div>
+
+          
+    
+         
+         
+         
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-vulkan.html">Building and Running ExecuTorch with the Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch Runtime API Reference</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debug-backend-delegate.html">Debug Backend Delegate</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">SDK</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
+</ul>
+
+         
+
+        </div>
+      </div>
+    </nav>
+
+    <div class="pytorch-container">
+      <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+        <div class="pytorch-breadcrumbs-wrapper">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+      <li>ExecuTorch Runtime API Reference</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="_sources/executorch-runtime-api-reference.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+        </div>
+
+        <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+          Shortcuts
+        </div>
+      </div>
+
+      <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+        <div class="pytorch-content-left">
+
+        
+
+
+          <!-- Google Tag Manager (noscript) -->
+          <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
+          height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+          <!-- End Google Tag Manager (noscript) -->
+          
+          <div class="rst-content">
+          
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+             <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+              
+  <div class="section" id="executorch-runtime-api-reference">
+<h1>ExecuTorch Runtime API Reference<a class="headerlink" href="#executorch-runtime-api-reference" title="Permalink to this heading">¶</a></h1>
+<p>The ExecuTorch C++ API provides an on-device execution framework for exported PyTorch models.</p>
+<p>For a tutorial style introduction to the runtime API, check out the
+<a class="reference external" href="running-a-model-cpp-tutorial.html">runtime tutorial</a> and its <a class="reference external" href="extension-module.html">simplified</a> version.</p>
+<div class="section" id="model-loading-and-execution">
+<h2>Model Loading and Execution<a class="headerlink" href="#model-loading-and-execution" title="Permalink to this heading">¶</a></h2>
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor10DataLoaderE">
+<span id="_CPPv3N5torch8executor10DataLoaderE"></span><span id="_CPPv2N5torch8executor10DataLoaderE"></span><span id="torch::executor::DataLoader"></span><span class="target" id="classtorch_1_1executor_1_1DataLoader"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DataLoader</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor10DataLoaderE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Loads from a data source.</p>
+<p>See //executorch/util for common implementations. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1DataLoader_1ae1e2d721134592477404b821478d18fa"></span><span class="sig-name descname"><span class="pre">virtual</span> <span class="pre">__ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">FreeableBuffer</span> <span class="pre">&gt;</span> <span class="pre">Load</span> <span class="pre">(size_t</span> <span class="pre">offset,</span> <span class="pre">size_t</span> <span class="pre">size)=0</span></span></dt>
+<dd><p>Loads <code class="docutils literal notranslate"><span class="pre">size</span></code> bytes at byte offset <code class="docutils literal notranslate"><span class="pre">offset</span></code> from the underlying data source into a <code class="docutils literal notranslate"><span class="pre">FreeableBuffer</span></code>, which owns the memory.</p>
+<p>NOTE: This must be thread-safe. If this call modifies common state, the implementation must do its own locking. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1DataLoader_1a408e0ba3e0ecd218eaef72d36a4cf831"></span><span class="sig-name descname"><span class="pre">virtual</span> <span class="pre">__ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">size_t</span> <span class="pre">&gt;</span> <span class="pre">size</span> <span class="pre">()</span> <span class="pre">const</span> <span class="pre">=0</span></span></dt>
+<dd><p>Returns the length of the underlying data source, typically the file size. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor15MemoryAllocatorE">
+<span id="_CPPv3N5torch8executor15MemoryAllocatorE"></span><span id="_CPPv2N5torch8executor15MemoryAllocatorE"></span><span id="torch::executor::MemoryAllocator"></span><span class="target" id="classtorch_1_1executor_1_1MemoryAllocator"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MemoryAllocator</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor15MemoryAllocatorE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>A class that does simple allocation based on a size and returns the pointer to the memory address. It bookmarks a buffer with certain size. The allocation is simply checking space and growing the cur_ pointer with each allocation request.</p>
+<p>Simple example:</p>
+<p>// User allocates a 100 byte long memory in the heap. uint8_t* memory_pool = malloc(100 * sizeof(uint8_t)); <a class="reference internal" href="#classtorch_1_1executor_1_1MemoryAllocator"><span class="std std-ref">MemoryAllocator</span></a> allocator(100, memory_pool) // Pass allocator object in the Executor</p>
+<p>Underneath the hood, ExecuTorch will call allocator.allocate() to keep iterating cur_ pointer </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t">
+<span id="_CPPv3N5torch8executor15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t"></span><span id="_CPPv2N5torch8executor15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t"></span><span id="torch::executor::MemoryAllocator::MemoryAllocator__uint32_t.uint8_tP"></span><span class="target" id="classtorch_1_1executor_1_1MemoryAllocator_1a9bb4c798a5b14429e3ccb06b18497858"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MemoryAllocator</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">size</span></span>, <span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">base_address</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N5torch8executor15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Constructs a new memory allocator of a given <code class="docutils literal notranslate"><span class="pre">size</span></code>, starting at the provided <code class="docutils literal notranslate"><span class="pre">base_address</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>size</strong> – <strong>[in]</strong> The size in bytes of the buffer at <code class="docutils literal notranslate"><span class="pre">base_address</span></code>. </p></li>
+<li><p><strong>base_address</strong> – <strong>[in]</strong> The buffer to allocate from. Does not take ownership of this buffer, so it must be valid for the lifetime of of the <a class="reference internal" href="#classtorch_1_1executor_1_1MemoryAllocator"><span class="std std-ref">MemoryAllocator</span></a>. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor15MemoryAllocator8allocateE6size_t6size_t">
+<span id="_CPPv3N5torch8executor15MemoryAllocator8allocateE6size_t6size_t"></span><span id="_CPPv2N5torch8executor15MemoryAllocator8allocateE6size_t6size_t"></span><span id="torch::executor::MemoryAllocator::allocate__s.s"></span><span class="target" id="classtorch_1_1executor_1_1MemoryAllocator_1ac244444e5cec56858ed44b398517ec18"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">virtual</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">allocate</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">size</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">alignment</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N5torch8executor15MemoryAllocator17kDefaultAlignmentE" title="torch::executor::MemoryAllocator::kDefaultAlignment"><span class="n"><span class="pre">kDefaultAlignment</span></span></a><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N5torch8executor15MemoryAllocator8allocateE6size_t6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Allocates <code class="docutils literal notranslate"><span class="pre">size</span></code> bytes of memory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>size</strong> – <strong>[in]</strong> Number of bytes to allocate. </p></li>
+<li><p><strong>alignment</strong> – <strong>[in]</strong> Minimum alignment for the returned pointer. Must be a power of 2.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return values</dt>
+<dd class="field-even"><p><strong>nullptr</strong> – Not enough memory, or <code class="docutils literal notranslate"><span class="pre">alignment</span></code> was not a power of 2. </p>
+</dd>
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Aligned pointer to the allocated memory on success. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4I0EN5torch8executor15MemoryAllocator16allocateInstanceEP1T6size_t">
+<span id="_CPPv3I0EN5torch8executor15MemoryAllocator16allocateInstanceE6size_t"></span><span id="_CPPv2I0EN5torch8executor15MemoryAllocator16allocateInstanceE6size_t"></span><span class="k"><span class="pre">template</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">typename</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">T</span></span></span><span class="p"><span class="pre">&gt;</span></span><br /><span class="target" id="classtorch_1_1executor_1_1MemoryAllocator_1a0364e30f29375f9d438877dfc3d52f57"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4I0EN5torch8executor15MemoryAllocator16allocateInstanceEP1T6size_t" title="torch::executor::MemoryAllocator::allocateInstance::T"><span class="n"><span class="pre">T</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">allocateInstance</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">alignment</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">alignof</span></span><span class="p"><span class="pre">(</span></span><a class="reference internal" href="#_CPPv4I0EN5torch8executor15MemoryAllocator16allocateInstanceEP1T6size_t" title="torch::executor::MemoryAllocator::allocateInstance::T"><span class="n"><span class="pre">T</span></span></a><span class="p"><span class="pre">)</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4I0EN5torch8executor15MemoryAllocator16allocateInstanceEP1T6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Allocates a buffer large enough for an instance of type T. Note that the memory will not be initialized.</p>
+<p>Example: <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">auto</span> <span class="n">p</span> <span class="o">=</span> <span class="n">memory_allocator</span><span class="o">-&gt;</span><span class="n">allocateInstance</span><span class="o">&lt;</span><span class="n">MyType</span><span class="o">&gt;</span><span class="p">();</span>
+</pre></div>
+</div>
+</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>alignment</strong> – <strong>[in]</strong> Minimum alignment for the returned pointer. Must be a power of 2. Defaults to the natural alignment of T.</p>
+</dd>
+<dt class="field-even">Return values</dt>
+<dd class="field-even"><p><strong>nullptr</strong> – Not enough memory, or <code class="docutils literal notranslate"><span class="pre">alignment</span></code> was not a power of 2. </p>
+</dd>
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Aligned pointer to the allocated memory on success. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4I0EN5torch8executor15MemoryAllocator12allocateListEP1T6size_t6size_t">
+<span id="_CPPv3I0EN5torch8executor15MemoryAllocator12allocateListE6size_t6size_t"></span><span id="_CPPv2I0EN5torch8executor15MemoryAllocator12allocateListE6size_t6size_t"></span><span class="k"><span class="pre">template</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">typename</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">T</span></span></span><span class="p"><span class="pre">&gt;</span></span><br /><span class="target" id="classtorch_1_1executor_1_1MemoryAllocator_1a422440fb46c7538f36a81486f7e502f9"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4I0EN5torch8executor15MemoryAllocator12allocateListEP1T6size_t6size_t" title="torch::executor::MemoryAllocator::allocateList::T"><span class="n"><span class="pre">T</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">allocateList</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">size</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">alignment</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">alignof</span></span><span class="p"><span class="pre">(</span></span><a class="reference internal" href="#_CPPv4I0EN5torch8executor15MemoryAllocator12allocateListEP1T6size_t6size_t" title="torch::executor::MemoryAllocator::allocateList::T"><span class="n"><span class="pre">T</span></span></a><span class="p"><span class="pre">)</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4I0EN5torch8executor15MemoryAllocator12allocateListEP1T6size_t6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Allocates <code class="docutils literal notranslate"><span class="pre">size</span></code> number of chunks of type T, where each chunk is of size equal to sizeof(T) bytes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>size</strong> – <strong>[in]</strong> Number of memory chunks to allocate. </p></li>
+<li><p><strong>alignment</strong> – <strong>[in]</strong> Minimum alignment for the returned pointer. Must be a power of 2. Defaults to the natural alignment of T.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Return values</dt>
+<dd class="field-even"><p><strong>nullptr</strong> – Not enough memory, or <code class="docutils literal notranslate"><span class="pre">alignment</span></code> was not a power of 2. </p>
+</dd>
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Aligned pointer to the allocated memory on success. </p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-static-attributes">Public Static Attributes</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor15MemoryAllocator17kDefaultAlignmentE">
+<span id="_CPPv3N5torch8executor15MemoryAllocator17kDefaultAlignmentE"></span><span id="_CPPv2N5torch8executor15MemoryAllocator17kDefaultAlignmentE"></span><span id="torch::executor::MemoryAllocator::kDefaultAlignment__s"></span><span class="target" id="classtorch_1_1executor_1_1MemoryAllocator_1acee60513ae4ad8d00854a5e6ba779af9"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><span class="k"><span class="pre">constexpr</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">kDefaultAlignment</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">alignof</span></span><span class="p"><span class="pre">(</span></span><span class="kt"><span class="pre">void</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">)</span></span><a class="headerlink" href="#_CPPv4N5torch8executor15MemoryAllocator17kDefaultAlignmentE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Default alignment of memory returned by this class. Ensures that pointer fields of structs will be aligned. Larger types like <code class="docutils literal notranslate"><span class="pre">long</span> <span class="pre">double</span></code> may not be, however, depending on the toolchain and architecture. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor21HierarchicalAllocatorE">
+<span id="_CPPv3N5torch8executor21HierarchicalAllocatorE"></span><span id="_CPPv2N5torch8executor21HierarchicalAllocatorE"></span><span id="torch::executor::HierarchicalAllocator"></span><span class="target" id="classtorch_1_1executor_1_1HierarchicalAllocator"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HierarchicalAllocator</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor21HierarchicalAllocatorE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>A group of buffers that can be used to represent a device’s memory hierarchy. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE">
+<span id="_CPPv3N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE"></span><span id="_CPPv2N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE"></span><span id="torch::executor::HierarchicalAllocator::HierarchicalAllocator__Span:Span:uint8_t::"></span><span class="target" id="classtorch_1_1executor_1_1HierarchicalAllocator_1a2666c60a68e92a5b996f079ac8160348"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">explicit</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HierarchicalAllocator</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">Span</span></span><span class="p"><span class="pre">&lt;</span></span><span class="n"><span class="pre">Span</span></span><span class="p"><span class="pre">&lt;</span></span><span class="n"><span class="pre">uint8_t</span></span><span class="p"><span class="pre">&gt;</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">buffers</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Constructs a new hierarchical allocator with the given array of buffers.</p>
+<p><ul class="simple">
+<li><p>Memory IDs are based on the index into <code class="docutils literal notranslate"><span class="pre">buffers</span></code>: <code class="docutils literal notranslate"><span class="pre">buffers[N]</span></code> will have a memory ID of <code class="docutils literal notranslate"><span class="pre">N</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">buffers.size()</span></code> must be &gt;= <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta_1acb4a9a085097b06266f828c6d7ac4d8a"><span class="std std-ref"><span class="pre">MethodMeta::num_non_const_buffers()</span></span></a></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">buffers[N].size()</span></code> must be &gt;= <code class="docutils literal notranslate"><span class="pre">MethodMeta::non_const_buffer_size(N)</span></code>. </p></li>
+</ul>
+</p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator">
+<span id="_CPPv3N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator"></span><span id="_CPPv2N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator"></span><span id="torch::executor::HierarchicalAllocator::HierarchicalAllocator__uint32_t.MemoryAllocatorP"></span><span class="target" id="classtorch_1_1executor_1_1HierarchicalAllocator_1a52e0b42c410946fe5594dd9b5a870ed9"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">__ET_DEPRECATED</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HierarchicalAllocator</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">n_allocators</span></span>, <a class="reference internal" href="#_CPPv4N5torch8executor15MemoryAllocatorE" title="torch::executor::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">allocators</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>DEPRECATED: Use spans instead. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1HierarchicalAllocator_1ad2bef3c1424ca5bbcfc2f5b4c8b6da73"></span><span class="sig-name descname"><span class="pre">inline</span> <span class="pre">__ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">void</span> <span class="pre">*</span> <span class="pre">&gt;</span> <span class="pre">get_offset_address</span> <span class="pre">(uint32_t</span> <span class="pre">memory_id,</span> <span class="pre">size_t</span> <span class="pre">offset_bytes,</span> <span class="pre">size_t</span> <span class="pre">size_bytes)</span></span></dt>
+<dd><p>Returns the address at the byte offset <code class="docutils literal notranslate"><span class="pre">offset_bytes</span></code> from the given buffer’s base address, which points to at least <code class="docutils literal notranslate"><span class="pre">size_bytes</span></code> of memory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>memory_id</strong> – <strong>[in]</strong> The ID of the buffer in the hierarchy. </p></li>
+<li><p><strong>offset_bytes</strong> – <strong>[in]</strong> The offset in bytes into the specified buffer. </p></li>
+<li><p><strong>size_bytes</strong> – <strong>[in]</strong> The amount of memory that should be available at the offset.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>On success, the address of the requested byte offset into the specified buffer. On failure, a non-Ok Error. </p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor13MemoryManagerE">
+<span id="_CPPv3N5torch8executor13MemoryManagerE"></span><span id="_CPPv2N5torch8executor13MemoryManagerE"></span><span id="torch::executor::MemoryManager"></span><span class="target" id="classtorch_1_1executor_1_1MemoryManager"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MemoryManager</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor13MemoryManagerE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>A container class for allocators used during <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> load and execution.</p>
+<p>This class consolidates all dynamic memory needs for <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> load and execution. This can allow for heap-based as well as heap-less execution (relevant to some embedded scenarios), and overall provides more control over memory use.</p>
+<p>This class, however, cannot ensure all allocation is accounted for since kernel and backend implementations are free to use a separate way to allocate memory (e.g., for things like scratch space). But we do suggest that backends and kernels use these provided allocators whenever possible. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator">
+<span id="_CPPv3N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator"></span><span id="_CPPv2N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator"></span><span id="torch::executor::MemoryManager::MemoryManager__MemoryAllocatorP.HierarchicalAllocatorP.MemoryAllocatorP"></span><span class="target" id="classtorch_1_1executor_1_1MemoryManager_1a5bb20ab71f17a11b249dd6f24fe19a76"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">explicit</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MemoryManager</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv4N5torch8executor15MemoryAllocatorE" title="torch::executor::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">method_allocator</span></span>, <a class="reference internal" href="#_CPPv4N5torch8executor21HierarchicalAllocatorE" title="torch::executor::HierarchicalAllocator"><span class="n"><span class="pre">HierarchicalAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">planned_memory</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">nullptr</span></span>, <a class="reference internal" href="#_CPPv4N5torch8executor15MemoryAllocatorE" title="torch::executor::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">temp_allocator</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">nullptr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Constructs a new <a class="reference internal" href="#classtorch_1_1executor_1_1MemoryManager"><span class="std std-ref">MemoryManager</span></a>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>method_allocator</strong> – <strong>[in]</strong> The allocator to use when loading a <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> and allocating its internal structures. Must outlive the <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> that uses it. </p></li>
+<li><p><strong>planned_memory</strong> – <strong>[in]</strong> The memory-planned buffers to use for mutable tensor data when executing a <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a>. Must outlive the <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> that uses it. May be <code class="docutils literal notranslate"><span class="pre">nullptr</span></code> if the <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> does not use any memory-planned tensor data. The sizes of the buffers in this <a class="reference internal" href="#classtorch_1_1executor_1_1HierarchicalAllocator"><span class="std std-ref">HierarchicalAllocator</span></a> must agree with the corresponding <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta_1a0f5b79dbbd898a8b87ceb5b68ac85d1e"><span class="std std-ref"><span class="pre">MethodMeta::num_memory_planned_buffers()</span></span></a></code> and <code class="docutils literal notranslate"><span class="pre">MethodMeta::memory_planned_buffer_size(N)</span></code> values, which are embedded in the <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a>. </p></li>
+<li><p><strong>temp_allocator</strong> – <strong>[in]</strong> The allocator to use when allocating temporary data during kernel or delegate execution. Must outlive the <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> that uses it. May be <code class="docutils literal notranslate"><span class="pre">nullptr</span></code> if the <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> does not use kernels or delegates that allocate temporary data. This allocator will be reset after every kernel or delegate call during execution. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator">
+<span id="_CPPv3N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator"></span><span id="_CPPv2N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator"></span><span id="torch::executor::MemoryManager::MemoryManager__MemoryAllocatorP.HierarchicalAllocatorP.MemoryAllocatorP.MemoryAllocatorP"></span><span class="target" id="classtorch_1_1executor_1_1MemoryManager_1a9acb34fc4980cbe7380f7672df983641"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">__ET_DEPRECATED</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MemoryManager</span></span></span><span class="sig-paren">(</span><span class="pre">__attribute__((unused))</span><span class="w"> </span><a class="reference internal" href="#_CPPv4N5torch8executor15MemoryAllocatorE" title="torch::executor::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">constant_allocator</span></span>, <a class="reference internal" href="#_CPPv4N5torch8executor21HierarchicalAllocatorE" title="torch::executor::HierarchicalAllocator"><span class="n"><span class="pre">HierarchicalAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">non_constant_allocator</span></span>, <a class="reference internal" href="#_CPPv4N5torch8executor15MemoryAllocatorE" title="torch::executor::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">runtime_allocator</span></span>, <a class="reference internal" href="#_CPPv4N5torch8executor15MemoryAllocatorE" title="torch::executor::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">temporary_allocator</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>DEPRECATED: Use the constructor without <code class="docutils literal notranslate"><span class="pre">constant_allocator</span></code> instead.</p>
+<p>TODO(T162089316): Remove this once all users migrate to the new ctor. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor13MemoryManager16method_allocatorEv">
+<span id="_CPPv3NK5torch8executor13MemoryManager16method_allocatorEv"></span><span id="_CPPv2NK5torch8executor13MemoryManager16method_allocatorEv"></span><span id="torch::executor::MemoryManager::method_allocatorC"></span><span class="target" id="classtorch_1_1executor_1_1MemoryManager_1a91e8138279e80213c347ccddb78754d3"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N5torch8executor15MemoryAllocatorE" title="torch::executor::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">method_allocator</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor13MemoryManager16method_allocatorEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the allocator that the runtime will use to allocate internal structures while loading a <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a>. Must not be used after its associated <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> has been loaded. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor13MemoryManager14planned_memoryEv">
+<span id="_CPPv3NK5torch8executor13MemoryManager14planned_memoryEv"></span><span id="_CPPv2NK5torch8executor13MemoryManager14planned_memoryEv"></span><span id="torch::executor::MemoryManager::planned_memoryC"></span><span class="target" id="classtorch_1_1executor_1_1MemoryManager_1a5d37bc4612e850f76d620315d0f15e10"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N5torch8executor21HierarchicalAllocatorE" title="torch::executor::HierarchicalAllocator"><span class="n"><span class="pre">HierarchicalAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">planned_memory</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor13MemoryManager14planned_memoryEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the memory-planned buffers to use for mutable tensor data. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor13MemoryManager14temp_allocatorEv">
+<span id="_CPPv3NK5torch8executor13MemoryManager14temp_allocatorEv"></span><span id="_CPPv2NK5torch8executor13MemoryManager14temp_allocatorEv"></span><span id="torch::executor::MemoryManager::temp_allocatorC"></span><span class="target" id="classtorch_1_1executor_1_1MemoryManager_1a86c3c900f88154942705c96ec5bb349f"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N5torch8executor15MemoryAllocatorE" title="torch::executor::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">temp_allocator</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor13MemoryManager14temp_allocatorEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the allocator to use for allocating temporary data during kernel or delegate execution.</p>
+<p>This allocator will be reset after every kernel or delegate call during execution. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7ProgramE">
+<span id="_CPPv3N5torch8executor7ProgramE"></span><span id="_CPPv2N5torch8executor7ProgramE"></span><span id="torch::executor::Program"></span><span class="target" id="classtorch_1_1executor_1_1Program"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Program</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7ProgramE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>A deserialized ExecuTorch program binary. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-types">Public Types</p>
+<dl class="cpp enum-class">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12VerificationE">
+<span id="_CPPv3N5torch8executor7Program12VerificationE"></span><span id="_CPPv2N5torch8executor7Program12VerificationE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1abcac4520704552c8c0c0fad4653c9661"></span><span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Verification</span></span></span><span class="w"> </span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">uint8_t</span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12VerificationE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Types of validation that the <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a> can do before parsing the data. </p>
+<p><em>Values:</em></p>
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12Verification7MinimalE">
+<span id="_CPPv3N5torch8executor7Program12Verification7MinimalE"></span><span id="_CPPv2N5torch8executor7Program12Verification7MinimalE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1abcac4520704552c8c0c0fad4653c9661a30fc6bbba82125243ecf4ddb27fee645"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Minimal</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12Verification7MinimalE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Do minimal verification of the data, ensuring that the header appears correct.</p>
+<p>Has minimal runtime overhead. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12Verification19InternalConsistencyE">
+<span id="_CPPv3N5torch8executor7Program12Verification19InternalConsistencyE"></span><span id="_CPPv2N5torch8executor7Program12Verification19InternalConsistencyE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1abcac4520704552c8c0c0fad4653c9661af328209c0ae389f42d28386fa46959b0"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">InternalConsistency</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12Verification19InternalConsistencyE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Do full verification of the data, ensuring that internal pointers are self-consistent and that the data has not been truncated or obviously corrupted. May not catch all types of corruption, but should guard against illegal memory operations during parsing.</p>
+<p>Will have higher runtime overhead, scaling with the complexity of the proram data. </p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="cpp enum">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12HeaderStatusE">
+<span id="_CPPv3N5torch8executor7Program12HeaderStatusE"></span><span id="_CPPv2N5torch8executor7Program12HeaderStatusE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6d67eb94cc739cbd024d0099d6f874ff"></span><span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HeaderStatus</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12HeaderStatusE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Describes the presence of an ExecuTorch program header. </p>
+<p><em>Values:</em></p>
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12HeaderStatus17CompatibleVersionE">
+<span id="_CPPv3N5torch8executor7Program12HeaderStatus17CompatibleVersionE"></span><span id="_CPPv2N5torch8executor7Program12HeaderStatus17CompatibleVersionE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6d67eb94cc739cbd024d0099d6f874ffa502419575a45d8bed520de9ddfe9dfa7"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">CompatibleVersion</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12HeaderStatus17CompatibleVersionE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>An ExecuTorch program header is present, and its version is compatible with this version of the runtime. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12HeaderStatus19IncompatibleVersionE">
+<span id="_CPPv3N5torch8executor7Program12HeaderStatus19IncompatibleVersionE"></span><span id="_CPPv2N5torch8executor7Program12HeaderStatus19IncompatibleVersionE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6d67eb94cc739cbd024d0099d6f874ffa0119b5b9a5ccbdbbd8e2ea39e74e2b52"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IncompatibleVersion</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12HeaderStatus19IncompatibleVersionE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>An ExecuTorch program header is present, but its version is not compatible with this version of the runtime. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12HeaderStatus10NotPresentE">
+<span id="_CPPv3N5torch8executor7Program12HeaderStatus10NotPresentE"></span><span id="_CPPv2N5torch8executor7Program12HeaderStatus10NotPresentE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6d67eb94cc739cbd024d0099d6f874ffa636c115faac0a2d2e9af677d1ff772d4"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">NotPresent</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12HeaderStatus10NotPresentE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>An ExecuTorch program header is not present. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12HeaderStatus9ShortDataE">
+<span id="_CPPv3N5torch8executor7Program12HeaderStatus9ShortDataE"></span><span id="_CPPv2N5torch8executor7Program12HeaderStatus9ShortDataE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6d67eb94cc739cbd024d0099d6f874ffa54adb9335274fe4f3cffb85ef4876486"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">ShortData</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12HeaderStatus9ShortDataE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>The data provided was too short to find the program header. </p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor7Program24get_constant_buffer_dataE6size_t6size_t">
+<span id="_CPPv3NK5torch8executor7Program24get_constant_buffer_dataE6size_t6size_t"></span><span id="_CPPv2NK5torch8executor7Program24get_constant_buffer_dataE6size_t6size_t"></span><span id="torch::executor::Program::get_constant_buffer_data__s.sC"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a8c78da773d197b3d97e05b0ac1933509"></span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">get_constant_buffer_data</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">buffer_idx</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">nbytes</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor7Program24get_constant_buffer_dataE6size_t6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get the constant buffer inside <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a> with index buffer_idx. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>buffer_idx</strong> – <strong>[in]</strong> the index of the buffer in the constant_buffer. </p></li>
+<li><p><strong>nbytes</strong> – <strong>[in]</strong> the number of bytes to read from the buffer. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The buffer with corresponding index. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor7Program11num_methodsEv">
+<span id="_CPPv3NK5torch8executor7Program11num_methodsEv"></span><span id="_CPPv2NK5torch8executor7Program11num_methodsEv"></span><span id="torch::executor::Program::num_methodsC"></span><span class="target" id="classtorch_1_1executor_1_1Program_1ae18b55c0d765909cdb5ccdfc314d02b9"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">num_methods</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor7Program11num_methodsEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the number of methods in the program. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor7Program15get_method_nameE6size_t">
+<span id="_CPPv3NK5torch8executor7Program15get_method_nameE6size_t"></span><span id="_CPPv2NK5torch8executor7Program15get_method_nameE6size_t"></span><span id="torch::executor::Program::get_method_name__sC"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6daac3ad1d70b5c0f919b2409bfed62b"></span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">get_method_name</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">method_index</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor7Program15get_method_nameE6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the name of the method at particular index.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>method_index</strong> – <strong>[in]</strong> The index of the method name to retrieve. Must be less than the value returned by <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Program_1ae18b55c0d765909cdb5ccdfc314d02b9"><span class="std std-ref"><span class="pre">num_methods()</span></span></a></code>.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The name of the requested method. The pointer is owned by the <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a>, and has the same lifetime as the <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a>. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor7Program11load_methodEPKcP13MemoryManagerP11EventTracer">
+<span id="_CPPv3NK5torch8executor7Program11load_methodEPKcP13MemoryManagerP11EventTracer"></span><span id="_CPPv2NK5torch8executor7Program11load_methodEPKcP13MemoryManagerP11EventTracer"></span><span id="torch::executor::Program::load_method__cCP.MemoryManagerP.EventTracerPC"></span><span class="target" id="classtorch_1_1executor_1_1Program_1ac51bb8e9d1a6d0c91afd995b3fe68bf1"></span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><a class="reference internal" href="#_CPPv4N5torch8executor6MethodE" title="torch::executor::Method"><span class="n"><span class="pre">Method</span></span></a><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">load_method</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">method_name</span></span>, <a class="reference internal" href="#_CPPv4N5torch8executor13MemoryManagerE" title="torch::executor::MemoryManager"><span class="n"><span class="pre">MemoryManager</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">memory_manager</span></span>, <span class="n"><span class="pre">EventTracer</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">event_tracer</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">nullptr</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor7Program11load_methodEPKcP13MemoryManagerP11EventTracer" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Loads the named method and prepares it for execution.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>method_name</strong> – <strong>[in]</strong> The name of the method to load. </p></li>
+<li><p><strong>memory_manager</strong> – <strong>[in]</strong> The allocators to use during initialization and execution of the loaded method. </p></li>
+<li><p><strong>event_tracer</strong> – <strong>[in]</strong> The event tracer to use for this method run.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The loaded method on success, or an error on failure. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor7Program11method_metaEPKc">
+<span id="_CPPv3NK5torch8executor7Program11method_metaEPKc"></span><span id="_CPPv2NK5torch8executor7Program11method_metaEPKc"></span><span id="torch::executor::Program::method_meta__cCPC"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a8b2dd61d6ddbc4ef5ad885529be985c1"></span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><a class="reference internal" href="#_CPPv4N5torch8executor10MethodMetaE" title="torch::executor::MethodMeta"><span class="n"><span class="pre">MethodMeta</span></span></a><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">method_meta</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">method_name</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor7Program11method_metaEPKc" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Gathers metadata for the named method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>method_name</strong> – <strong>[in]</strong> The name of the method to get metadata for. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Program_1ab7611b834b5909c5280306d0031aaac2"></span><span class="sig-name descname"><span class="pre">__ET_DEPRECATED</span> <span class="pre">Result&lt;</span> <span class="pre">int64_t</span> <span class="pre">&gt;</span> <span class="pre">get_non_const_buffer_size</span> <span class="pre">(size_t</span> <span class="pre">buffer_index,</span> <span class="pre">const</span> <span class="pre">char</span> <span class="pre">*method_name=&quot;forward&quot;)</span> <span class="pre">const</span></span></dt>
+<dd><p>DEPRECATED: Use <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta"><span class="std std-ref">MethodMeta</span></a> instead.</p>
+<p>Get the size of the buffer with index buffer_index. Note that this function does not return the correct value for index 0 which denotes constant memory. Only index &gt;= 1 should be used to retrieve the size of non-constant pools. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>buffer_index</strong> – <strong>[in]</strong> the index of the buffer in the non_const_buffer list </p></li>
+<li><p><strong>method_name</strong> – <strong>[in]</strong> The name of the method to retrieve buffer information from. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The size of the non_constant buffer corresponding to buffer_index, or Error if it cannot be retrieved. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Program_1a8ad7f7d9dc0b2e7aae838ae7557b16c7"></span><span class="sig-name descname"><span class="pre">__ET_DEPRECATED</span> <span class="pre">Result&lt;</span> <span class="pre">size_t</span> <span class="pre">&gt;</span> <span class="pre">num_non_const_buffers</span> <span class="pre">(const</span> <span class="pre">char</span> <span class="pre">*method_name=&quot;forward&quot;)</span> <span class="pre">const</span></span></dt>
+<dd><p>DEPRECATED: Use <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta"><span class="std std-ref">MethodMeta</span></a> instead.</p>
+<p>Get the number of non_constant buffers. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>method_name</strong> – <strong>[in]</strong> The name of the method to get the buffer amounts for. </p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The number of non_constant buffers, or Error if it cannot be retrieved. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Program_1a1f22302b834274e7fd035c7e0e4983b2"></span><span class="sig-name descname"><span class="pre">__ET_DEPRECATED</span> <span class="pre">Result&lt;</span> <span class="pre">const</span> <span class="pre">char</span> <span class="pre">*</span> <span class="pre">&gt;</span> <span class="pre">get_output_flattening_encoding</span> <span class="pre">(const</span> <span class="pre">char</span> <span class="pre">*method_name=&quot;forward&quot;)</span> <span class="pre">const</span></span></dt>
+<dd><p>DEPRECATED: Get the pytree encoding string for the output. Deprecated as this functionality will eventually move out of the core program into a higher level structure, but that does not exist at this time. </p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>method_name</strong> – <strong>[in]</strong> The name of the method to get the encoding for.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The pytree encoding string for the output </p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-static-functions">Public Static Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Program_1a36a45996c267719c3b3851e24512842c"></span><span class="sig-name descname"><span class="pre">static</span> <span class="pre">__ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">Program</span> <span class="pre">&gt;</span> <span class="pre">load</span> <span class="pre">(DataLoader</span> <span class="pre">*loader,</span> <span class="pre">Verification</span> <span class="pre">verification=Verification::Minimal)</span></span></dt>
+<dd><p>Loads a <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a> from the provided loader. The <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a> will hold a pointer to the loader, which must outlive the returned <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a> instance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>loader</strong> – <strong>[in]</strong> The source to load program data from. The <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a> will hold a pointer to this loader, which must outlive the returned <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a> instance. </p></li>
+<li><p><strong>verification</strong> – <strong>[in]</strong> The type of verification to do before returning success. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Program_1a7d71e3dcbc68ee36bcfaac07d497bc0b"></span><span class="sig-name descname"><span class="pre">static</span> <span class="pre">inline</span> <span class="pre">__ET_DEPRECATED</span> <span class="pre">__ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">Program</span> <span class="pre">&gt;</span> <span class="pre">Load</span> <span class="pre">(DataLoader</span> <span class="pre">*loader,</span> <span class="pre">Verification</span> <span class="pre">verification=Verification::Minimal)</span></span></dt>
+<dd><p>DEPRECATED: Use the lowercase <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Program_1a36a45996c267719c3b3851e24512842c"><span class="std std-ref"><span class="pre">load()</span></span></a></code> instead. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12check_headerEPKv6size_t">
+<span id="_CPPv3N5torch8executor7Program12check_headerEPKv6size_t"></span><span id="_CPPv2N5torch8executor7Program12check_headerEPKv6size_t"></span><span id="torch::executor::Program::check_header__voidCP.s"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6ad4cff7549205d9b9703a7126c68e6e"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N5torch8executor7Program12HeaderStatusE" title="torch::executor::Program::HeaderStatus"><span class="n"><span class="pre">HeaderStatus</span></span></a><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">check_header</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">data</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">size</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12check_headerEPKv6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Looks for an ExecuTorch program header in the provided data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – <strong>[in]</strong> The data from the beginning of a file that might contain an ExecuTorch program. </p></li>
+<li><p><strong>size</strong> – <strong>[in]</strong> The size of <code class="docutils literal notranslate"><span class="pre">data</span></code> in bytes. Must be &gt;= <code class="docutils literal notranslate"><span class="pre">kMinHeadBytes</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A value describing the presence of a header in the data. </p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-static-attributes">Public Static Attributes</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program13kMinHeadBytesE">
+<span id="_CPPv3N5torch8executor7Program13kMinHeadBytesE"></span><span id="_CPPv2N5torch8executor7Program13kMinHeadBytesE"></span><span id="torch::executor::Program::kMinHeadBytes__s"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a48a2aa0b6e861c1d7e57219c004e827a"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><span class="k"><span class="pre">constexpr</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">kMinHeadBytes</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="m"><span class="pre">64</span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program13kMinHeadBytesE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>The minimum number of bytes necessary for calls to <code class="docutils literal notranslate"><span class="pre">check_header</span></code>. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor6MethodE">
+<span id="_CPPv3N5torch8executor6MethodE"></span><span id="_CPPv2N5torch8executor6MethodE"></span><span id="torch::executor::Method"></span><span class="target" id="classtorch_1_1executor_1_1Method"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Method</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor6MethodE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>An executable method of an executorch program. Maps to a python method like <code class="docutils literal notranslate"><span class="pre">forward()</span></code> on the original nn.Module. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor6Method6MethodERR6Method">
+<span id="_CPPv3N5torch8executor6Method6MethodERR6Method"></span><span id="_CPPv2N5torch8executor6Method6MethodERR6Method"></span><span id="torch::executor::Method::Method__MethodRR"></span><span class="target" id="classtorch_1_1executor_1_1Method_1a4afd6eae1200d3eaede94a9857ea3bf6"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Method</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv4N5torch8executor6Method6MethodERR6Method" title="torch::executor::Method::Method"><span class="n"><span class="pre">Method</span></span></a><span class="w"> </span><span class="p"><span class="pre">&amp;</span></span><span class="p"><span class="pre">&amp;</span></span><span class="n sig-param"><span class="pre">rhs</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">noexcept</span></span><a class="headerlink" href="#_CPPv4N5torch8executor6Method6MethodERR6Method" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Move ctor. Takes ownership of resources previously owned by <code class="docutils literal notranslate"><span class="pre">rhs</span></code>, and leaves <code class="docutils literal notranslate"><span class="pre">rhs</span></code> in an uninitialized state. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1a4bb25a1e40363d048bb8d94393706f52"></span><span class="sig-name descname"><span class="pre">__ET_NODISCARD</span> <span class="pre">Error</span> <span class="pre">set_input</span> <span class="pre">(const</span> <span class="pre">EValue</span> <span class="pre">&amp;input_evalue,</span> <span class="pre">size_t</span> <span class="pre">input_idx)</span></span></dt>
+<dd><p>Sets the internal input value to be equivalent to the to the provided value.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>input_evalue</strong> – <strong>[in]</strong> The evalue to copy into the method input. If the evalue is a tensor, the data is copied in most cases, so the tensor passed in here does not always need to outlive this call. But there is a case where the <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> will keep a pointer to the tensor’s data. Based on the memory plan of the method, the inputs may not have buffer space pre-allocated for them. In this case the executor will alias the memory of the tensors provided as inputs here rather then deepcopy the input into the memory planned arena.</p></li>
+<li><p><strong>input_idx</strong> – <strong>[in]</strong> Zero-based index of the input to set. Must be less than the value returned by <a class="reference internal" href="#classtorch_1_1executor_1_1Method_1a1274c6ddc3d710368ee5d9281c11ea36"><span class="std std-ref">inputs_size()</span></a>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Error::Ok on success, non-Ok on failure. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1afbc43847fa25458c691d99cc95122e53"></span><span class="sig-name descname"><span class="pre">__ET_NODISCARD</span> <span class="pre">Error</span> <span class="pre">set_inputs</span> <span class="pre">(const</span> <span class="pre">exec_aten::ArrayRef&lt;</span> <span class="pre">EValue</span> <span class="pre">&gt;</span> <span class="pre">&amp;input_evalues)</span></span></dt>
+<dd><p>Sets the values of all method inputs.</p>
+<p>See <a class="reference internal" href="#classtorch_1_1executor_1_1Method_1a4bb25a1e40363d048bb8d94393706f52"><span class="std std-ref">set_input()</span></a> for a more detailed description of the behavior.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>input_evalues</strong> – <strong>[in]</strong> The new values for all of the method inputs. The type of each element must match the type of corresponding input. If the value of an element is a tensor, attempts to allow dynamic shape, but the dtype must always agree.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Error::Ok on success, non-Ok on failure. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1a259830bf5f020e01c124d00cecf6c8ed"></span><span class="sig-name descname"><span class="pre">__ET_NODISCARD</span> <span class="pre">Error</span> <span class="pre">set_output_data_ptr</span> <span class="pre">(void</span> <span class="pre">*buffer,</span> <span class="pre">size_t</span> <span class="pre">size,</span> <span class="pre">size_t</span> <span class="pre">output_idx)</span></span></dt>
+<dd><p>Sets the data buffer of the specified method output to the provided value.</p>
+<p>NOTE: Based on the memory plan of the method, the output tensors may not have buffer space pre-allocated for them, in this case the executor will point those tensors to the buffer provided here, so the user should take care that the life span of this memory outlasts the executor forward.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>buffer</strong> – <strong>[in]</strong> The block of memory to point the specified tensor at.</p></li>
+<li><p><strong>size</strong> – <strong>[in]</strong> the length of buffer in bytes, must be &gt;= the nbytes of the specified tensor.</p></li>
+<li><p><strong>output_idx</strong> – <strong>[in]</strong> The index of the output to set the data_ptr for. Must correspond to a tensor, and that tensor must not have had a buffer allocated by the memory plan.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Error::Ok on success, non-Ok on failure. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1a9afa621b6ac6a556e32fecf49ac0c7e3"></span><span class="sig-name descname"><span class="pre">__ET_NODISCARD</span> <span class="pre">Error</span> <span class="pre">get_outputs</span> <span class="pre">(EValue</span> <span class="pre">*output_evalues,</span> <span class="pre">size_t</span> <span class="pre">length)</span></span></dt>
+<dd><p>Copies the method’s outputs into the provided array.</p>
+<p>WARNING: The output contains shallow copies of internal tensor outputs. Please do not mutate returned <a class="reference internal" href="#classtorch_1_1executor_1_1Tensor"><span class="std std-ref">Tensor</span></a> elements.</p>
+<p>TODO(T139259264): Add checks to detect output mutation, or deep-copy outputs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>output_evalues</strong> – <strong>[in]</strong> The array to copy the outputs into. The first <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Method_1a84656541dd0d425f24dd876f5a0b8740"><span class="std std-ref"><span class="pre">outputs_size()</span></span></a></code> elements will be set to the corresponding output values. The rest of the array will be set to the <a class="reference internal" href="#structtorch_1_1executor_1_1EValue"><span class="std std-ref">EValue</span></a> value None. </p></li>
+<li><p><strong>length</strong> – <strong>[in]</strong> The size of the <code class="docutils literal notranslate"><span class="pre">output_evalues</span></code> array in elements. Must be greater than or equal to <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Method_1a84656541dd0d425f24dd876f5a0b8740"><span class="std std-ref"><span class="pre">outputs_size()</span></span></a></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Error::Ok on success, non-Ok on failure. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1aad65ae293d991cee8754515423b2ef21"></span><span class="sig-name descname"><span class="pre">__ET_NODISCARD</span> <span class="pre">Error</span> <span class="pre">get_inputs</span> <span class="pre">(EValue</span> <span class="pre">*input_evalues,</span> <span class="pre">size_t</span> <span class="pre">length)</span></span></dt>
+<dd><p>Copies the method’s inputs into the provided array.</p>
+<p>WARNING: The input contains shallow copies of internal tensor inputs. Please do not mutate returned <a class="reference internal" href="#classtorch_1_1executor_1_1Tensor"><span class="std std-ref">Tensor</span></a> elements.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>input_evalues</strong> – <strong>[in]</strong> The array to copy the inputs into. The first <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Method_1a1274c6ddc3d710368ee5d9281c11ea36"><span class="std std-ref"><span class="pre">inputs_size()</span></span></a></code> elements will be set to the corresponding input values. The rest of the array will be set to the <a class="reference internal" href="#structtorch_1_1executor_1_1EValue"><span class="std std-ref">EValue</span></a> value None. </p></li>
+<li><p><strong>length</strong> – <strong>[in]</strong> The size of the <code class="docutils literal notranslate"><span class="pre">input_evalues</span></code> array in elements. Must be greater than or equal to <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Method_1a1274c6ddc3d710368ee5d9281c11ea36"><span class="std std-ref"><span class="pre">inputs_size()</span></span></a></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Error::Ok on success, non-Ok on failure. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1a82d8271805244454855638dfee96aec4"></span><span class="sig-name descname"><span class="pre">__ET_NODISCARD</span> <span class="pre">Error</span> <span class="pre">execute</span> <span class="pre">()</span></span></dt>
+<dd><p>Execute the method.</p>
+<p>NOTE: Will fail if the method has been partially executed using the <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Method_1afa90da9f1fd53b09c1aefc637cd223a5"><span class="std std-ref"><span class="pre">experimental_step()</span></span></a></code> api.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Error::Ok on success, non-Ok on failure. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1afa90da9f1fd53b09c1aefc637cd223a5"></span><span class="sig-name descname"><span class="pre">__ET_NODISCARD</span> <span class="pre">Error</span> <span class="pre">experimental_step</span> <span class="pre">()</span></span></dt>
+<dd><p>Advances/executes a single instruction in the method.</p>
+<p>NOTE: Prototype API; subject to change.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return values</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>Error::Ok</strong> – step succeeded </p></li>
+<li><p><strong>non-Ok</strong> – step failed </p></li>
+<li><p><strong>Error::EndOfMethod</strong> – method finished executing successfully </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1a0c99f55294a8805f09b2d3fcb6f3b084"></span><span class="sig-name descname"><span class="pre">__ET_NODISCARD</span> <span class="pre">Error</span> <span class="pre">experimental_reset_execution</span> <span class="pre">()</span></span></dt>
+<dd><p>Resets execution state to the start of the <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a>. For use with the <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Method_1afa90da9f1fd53b09c1aefc637cd223a5"><span class="std std-ref"><span class="pre">experimental_step()</span></span></a></code> API.</p>
+<p>NOTE: Prototype API; subject to change.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return values</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>Error:Ok</strong> – on success </p></li>
+<li><p><strong>Error::InvalidState</strong> – if called before step-based execution reached the end of the <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a>. This means it is not possible to recover a <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> that failed mid-execution. </p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Method11method_metaEv">
+<span id="_CPPv3NK5torch8executor6Method11method_metaEv"></span><span id="_CPPv2NK5torch8executor6Method11method_metaEv"></span><span id="torch::executor::Method::method_metaC"></span><span class="target" id="classtorch_1_1executor_1_1Method_1a8b889a7eb67e187920e65a097e65e219"></span><a class="reference internal" href="#_CPPv4N5torch8executor10MethodMetaE" title="torch::executor::MethodMeta"><span class="n"><span class="pre">MethodMeta</span></span></a><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">method_meta</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Method11method_metaEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta"><span class="std std-ref">MethodMeta</span></a> that corresponds to the calling <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a>. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Method11inputs_sizeEv">
+<span id="_CPPv3NK5torch8executor6Method11inputs_sizeEv"></span><span id="_CPPv2NK5torch8executor6Method11inputs_sizeEv"></span><span id="torch::executor::Method::inputs_sizeC"></span><span class="target" id="classtorch_1_1executor_1_1Method_1a1274c6ddc3d710368ee5d9281c11ea36"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">inputs_size</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Method11inputs_sizeEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the number of inputs the <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> expects. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Method12outputs_sizeEv">
+<span id="_CPPv3NK5torch8executor6Method12outputs_sizeEv"></span><span id="_CPPv2NK5torch8executor6Method12outputs_sizeEv"></span><span id="torch::executor::Method::outputs_sizeC"></span><span class="target" id="classtorch_1_1executor_1_1Method_1a84656541dd0d425f24dd876f5a0b8740"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">outputs_size</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Method12outputs_sizeEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the number of outputs the <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> returns. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Method10get_outputE6size_t">
+<span id="_CPPv3NK5torch8executor6Method10get_outputE6size_t"></span><span id="_CPPv2NK5torch8executor6Method10get_outputE6size_t"></span><span id="torch::executor::Method::get_output__sC"></span><span class="target" id="classtorch_1_1executor_1_1Method_1a5a10022ae8812b57a747d0b54bf7ac04"></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N5torch8executor6EValueE" title="torch::executor::EValue"><span class="n"><span class="pre">EValue</span></span></a><span class="w"> </span><span class="p"><span class="pre">&amp;</span></span><span class="sig-name descname"><span class="n"><span class="pre">get_output</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">i</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Method10get_outputE6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Retrieves the output at the specified index. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1a17a265a410ba3ce8f122da8aafe16a91"></span><span class="sig-name descname"><span class="pre">__ET_DEPRECATED</span> <span class="pre">const</span> <span class="pre">EValue</span> <span class="pre">&amp;</span> <span class="pre">get_input</span> <span class="pre">(size_t</span> <span class="pre">i)</span> <span class="pre">const</span></span></dt>
+<dd><p>DEPRECATED: Use <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta"><span class="std std-ref">MethodMeta</span></a> instead to access metadata, and set_input to update <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> inputs. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1a389f45f455a4b9f8d960b8776e67519d"></span><span class="sig-name descname"><span class="pre">__ET_DEPRECATED</span> <span class="pre">EValue</span> <span class="pre">&amp;</span> <span class="pre">mutable_input</span> <span class="pre">(size_t</span> <span class="pre">i)</span></span></dt>
+<dd><p>DEPRECATED: Use <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta"><span class="std std-ref">MethodMeta</span></a> instead to access metadata, and set_input to update <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> inputs. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Method_1a3fa76df31a9b457da75345755f14ca27"></span><span class="sig-name descname"><span class="pre">__ET_DEPRECATED</span> <span class="pre">EValue</span> <span class="pre">&amp;</span> <span class="pre">mutable_output</span> <span class="pre">(size_t</span> <span class="pre">i)</span></span></dt>
+<dd><p>DEPRECATED: Use <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta"><span class="std std-ref">MethodMeta</span></a> instead to access metadata, and get_output to retrieve <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> outputs. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor10MethodMetaE">
+<span id="_CPPv3N5torch8executor10MethodMetaE"></span><span id="_CPPv2N5torch8executor10MethodMetaE"></span><span id="torch::executor::MethodMeta"></span><span class="target" id="classtorch_1_1executor_1_1MethodMeta"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MethodMeta</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor10MethodMetaE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Describes a a method in an ExecuTorch program.</p>
+<p>The program used to create a <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta"><span class="std std-ref">MethodMeta</span></a> object must outlive the <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta"><span class="std std-ref">MethodMeta</span></a>. It is separate from <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a> so that this information can be accessed without paying the initialization cost of loading the full <a class="reference internal" href="#classtorch_1_1executor_1_1Method"><span class="std std-ref">Method</span></a>. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor10MethodMeta4nameEv">
+<span id="_CPPv3NK5torch8executor10MethodMeta4nameEv"></span><span id="_CPPv2NK5torch8executor10MethodMeta4nameEv"></span><span id="torch::executor::MethodMeta::nameC"></span><span class="target" id="classtorch_1_1executor_1_1MethodMeta_1a936c977eefa8257632f303bdc2382af1"></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">name</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor10MethodMeta4nameEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get the name of this method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The method name. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor10MethodMeta10num_inputsEv">
+<span id="_CPPv3NK5torch8executor10MethodMeta10num_inputsEv"></span><span id="_CPPv2NK5torch8executor10MethodMeta10num_inputsEv"></span><span id="torch::executor::MethodMeta::num_inputsC"></span><span class="target" id="classtorch_1_1executor_1_1MethodMeta_1a1886a0d5c0ed87b3fee55babeb94e46a"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">num_inputs</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor10MethodMeta10num_inputsEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get the number of inputs to this method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The number of inputs. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor10MethodMeta9input_tagE6size_t">
+<span id="_CPPv3NK5torch8executor10MethodMeta9input_tagE6size_t"></span><span id="_CPPv2NK5torch8executor10MethodMeta9input_tagE6size_t"></span><span id="torch::executor::MethodMeta::input_tag__sC"></span><span class="target" id="classtorch_1_1executor_1_1MethodMeta_1a27dc5baa66646f6473121f18feb20719"></span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><span class="n"><span class="pre">Tag</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">input_tag</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">index</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor10MethodMeta9input_tagE6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get the tag of the specified input.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>index</strong> – <strong>[in]</strong> The index of the input to look up. </p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The tag of input, can only be [<a class="reference internal" href="#classtorch_1_1executor_1_1Tensor"><span class="std std-ref">Tensor</span></a>, Int, Bool, Double, String]. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor10MethodMeta17input_tensor_metaE6size_t">
+<span id="_CPPv3NK5torch8executor10MethodMeta17input_tensor_metaE6size_t"></span><span id="_CPPv2NK5torch8executor10MethodMeta17input_tensor_metaE6size_t"></span><span id="torch::executor::MethodMeta::input_tensor_meta__sC"></span><span class="target" id="classtorch_1_1executor_1_1MethodMeta_1a027e22b1c6bba00ee05119d63621a64d"></span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><span class="n"><span class="pre">TensorInfo</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">input_tensor_meta</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">index</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor10MethodMeta17input_tensor_metaE6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get metadata about the specified input.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>index</strong> – <strong>[in]</strong> The index of the input to look up. </p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The metadata on success, or an error on failure. Only valid for tag::Tensor </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor10MethodMeta11num_outputsEv">
+<span id="_CPPv3NK5torch8executor10MethodMeta11num_outputsEv"></span><span id="_CPPv2NK5torch8executor10MethodMeta11num_outputsEv"></span><span id="torch::executor::MethodMeta::num_outputsC"></span><span class="target" id="classtorch_1_1executor_1_1MethodMeta_1a130079cbe4339dbe6434bcaae4b6f44b"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">num_outputs</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor10MethodMeta11num_outputsEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get the number of outputs to this method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The number of outputs. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor10MethodMeta10output_tagE6size_t">
+<span id="_CPPv3NK5torch8executor10MethodMeta10output_tagE6size_t"></span><span id="_CPPv2NK5torch8executor10MethodMeta10output_tagE6size_t"></span><span id="torch::executor::MethodMeta::output_tag__sC"></span><span class="target" id="classtorch_1_1executor_1_1MethodMeta_1a441f137f67cc11c677bc4618489585ae"></span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><span class="n"><span class="pre">Tag</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">output_tag</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">index</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor10MethodMeta10output_tagE6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get the tag of the specified output.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>index</strong> – <strong>[in]</strong> The index of the output to look up. </p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The tag of output, can only be [<a class="reference internal" href="#classtorch_1_1executor_1_1Tensor"><span class="std std-ref">Tensor</span></a>, Int, Bool, Double, String]. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor10MethodMeta18output_tensor_metaE6size_t">
+<span id="_CPPv3NK5torch8executor10MethodMeta18output_tensor_metaE6size_t"></span><span id="_CPPv2NK5torch8executor10MethodMeta18output_tensor_metaE6size_t"></span><span id="torch::executor::MethodMeta::output_tensor_meta__sC"></span><span class="target" id="classtorch_1_1executor_1_1MethodMeta_1a8edf08da5669672e84639a4e3e8a7dc1"></span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><span class="n"><span class="pre">TensorInfo</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">output_tensor_meta</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">index</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor10MethodMeta18output_tensor_metaE6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get metadata about the specified output.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>index</strong> – <strong>[in]</strong> The index of the output to look up. </p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The metadata on success, or an error on failure. Only valid for tag::Tensor </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor10MethodMeta26num_memory_planned_buffersEv">
+<span id="_CPPv3NK5torch8executor10MethodMeta26num_memory_planned_buffersEv"></span><span id="_CPPv2NK5torch8executor10MethodMeta26num_memory_planned_buffersEv"></span><span id="torch::executor::MethodMeta::num_memory_planned_buffersC"></span><span class="target" id="classtorch_1_1executor_1_1MethodMeta_1a0f5b79dbbd898a8b87ceb5b68ac85d1e"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">num_memory_planned_buffers</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor10MethodMeta26num_memory_planned_buffersEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get the number of memory-planned buffers this method requires.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The number of memory-planned buffers. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor10MethodMeta26memory_planned_buffer_sizeE6size_t">
+<span id="_CPPv3NK5torch8executor10MethodMeta26memory_planned_buffer_sizeE6size_t"></span><span id="_CPPv2NK5torch8executor10MethodMeta26memory_planned_buffer_sizeE6size_t"></span><span id="torch::executor::MethodMeta::memory_planned_buffer_size__sC"></span><span class="target" id="classtorch_1_1executor_1_1MethodMeta_1a3b468a769d42f5157d306c12cb7e4453"></span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><span class="n"><span class="pre">int64_t</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">memory_planned_buffer_size</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">index</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor10MethodMeta26memory_planned_buffer_sizeE6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get the size in bytes of the specified memory-planned buffer.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>index</strong> – <strong>[in]</strong> The index of the buffer to look up. </p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The size in bytes on success, or an error on failure. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1MethodMeta_1acb4a9a085097b06266f828c6d7ac4d8a"></span><span class="sig-name descname"><span class="pre">inline</span> <span class="pre">__ET_DEPRECATED</span> <span class="pre">size_t</span> <span class="pre">num_non_const_buffers</span> <span class="pre">()</span> <span class="pre">const</span></span></dt>
+<dd><p>DEPRECATED: Use <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta_1a0f5b79dbbd898a8b87ceb5b68ac85d1e"><span class="std std-ref">num_memory_planned_buffers()</span></a> instead. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor10MethodMeta21non_const_buffer_sizeE6size_t">
+<span id="_CPPv3NK5torch8executor10MethodMeta21non_const_buffer_sizeE6size_t"></span><span id="_CPPv2NK5torch8executor10MethodMeta21non_const_buffer_sizeE6size_t"></span><span id="torch::executor::MethodMeta::non_const_buffer_size__sC"></span><span class="target" id="classtorch_1_1executor_1_1MethodMeta_1ada1ba6ea228a4de574af24ca344337ba"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><span class="n"><span class="pre">int64_t</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">non_const_buffer_size</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">index</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor10MethodMeta21non_const_buffer_sizeE6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>DEPRECATED: Use <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta_1a3b468a769d42f5157d306c12cb7e4453"><span class="std std-ref">memory_planned_buffer_size()</span></a> instead. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+</div>
+<div class="section" id="values">
+<h2>Values<a class="headerlink" href="#values" title="Permalink to this heading">¶</a></h2>
+<dl class="cpp struct">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor6EValueE">
+<span id="_CPPv3N5torch8executor6EValueE"></span><span id="_CPPv2N5torch8executor6EValueE"></span><span id="torch::executor::EValue"></span><span class="target" id="structtorch_1_1executor_1_1EValue"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">EValue</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor6EValueE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor6EValue6EValueEN9exec_aten6ScalarE">
+<span id="_CPPv3N5torch8executor6EValue6EValueEN9exec_aten6ScalarE"></span><span id="_CPPv2N5torch8executor6EValue6EValueEN9exec_aten6ScalarE"></span><span id="torch::executor::EValue::EValue__exec_aten::Scalar"></span><span class="target" id="structtorch_1_1executor_1_1EValue_1a88ad5f989d8efff9039b9955e9dda2bf"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">EValue</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">exec_aten</span></span><span class="p"><span class="pre">::</span></span><span class="n"><span class="pre">Scalar</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">s</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N5torch8executor6EValue6EValueEN9exec_aten6ScalarE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Construct an <a class="reference internal" href="#structtorch_1_1executor_1_1EValue"><span class="std std-ref">EValue</span></a> using the implicit value of a Scalar. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4I0ENK5torch8executor6EValue10toOptionalEN9exec_aten8optionalI1TEEv">
+<span id="_CPPv3I0ENK5torch8executor6EValue10toOptionalEv"></span><span id="_CPPv2I0ENK5torch8executor6EValue10toOptionalEv"></span><span class="k"><span class="pre">template</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">typename</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">T</span></span></span><span class="p"><span class="pre">&gt;</span></span><br /><span class="target" id="structtorch_1_1executor_1_1EValue_1a575a81711678b6e83b0d1d6b5912e2f0"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">exec_aten</span></span><span class="p"><span class="pre">::</span></span><span class="n"><span class="pre">optional</span></span><span class="p"><span class="pre">&lt;</span></span><a class="reference internal" href="#_CPPv4I0ENK5torch8executor6EValue10toOptionalEN9exec_aten8optionalI1TEEv" title="torch::executor::EValue::toOptional::T"><span class="n"><span class="pre">T</span></span></a><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">toOptional</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4I0ENK5torch8executor6EValue10toOptionalEN9exec_aten8optionalI1TEEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Converts the <a class="reference internal" href="#structtorch_1_1executor_1_1EValue"><span class="std std-ref">EValue</span></a> to an optional object that can represent both T and an uninitialized state. </p>
+</dd></dl>
+
+</div>
+<dl class="cpp union">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor6EValue7PayloadE">
+<span id="_CPPv3N5torch8executor6EValue7PayloadE"></span><span id="_CPPv2N5torch8executor6EValue7PayloadE"></span><span class="target" id="uniontorch_1_1executor_1_1EValue_1_1Payload"></span><span class="k"><span class="pre">union</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Payload</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor6EValue7PayloadE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><dl class="cpp union">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor6EValue7Payload24TriviallyCopyablePayloadE">
+<span id="_CPPv3N5torch8executor6EValue7Payload24TriviallyCopyablePayloadE"></span><span id="_CPPv2N5torch8executor6EValue7Payload24TriviallyCopyablePayloadE"></span><span class="target" id="uniontorch_1_1executor_1_1EValue_1_1Payload_1_1TriviallyCopyablePayload"></span><span class="k"><span class="pre">union</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">TriviallyCopyablePayload</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor6EValue7Payload24TriviallyCopyablePayloadE" title="Permalink to this definition">¶</a><br /></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</dd></dl>
+
+<dl class="cpp class">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor6TensorE">
+<span id="_CPPv3N5torch8executor6TensorE"></span><span id="_CPPv2N5torch8executor6TensorE"></span><span id="torch::executor::Tensor"></span><span class="target" id="classtorch_1_1executor_1_1Tensor"></span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Tensor</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor6TensorE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>A minimal <a class="reference internal" href="#classtorch_1_1executor_1_1Tensor"><span class="std std-ref">Tensor</span></a> type whose API is a source compatible subset of at::Tensor.</p>
+<p>NOTE: Instances of this class do not own the TensorImpl given to it, which means that the caller must guarantee that the TensorImpl lives longer than any <a class="reference internal" href="#classtorch_1_1executor_1_1Tensor"><span class="std std-ref">Tensor</span></a> instances that point to it.</p>
+<p>See the documention on TensorImpl for details about the return/parameter types used here and how they relate to at::Tensor. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-types">Public Types</p>
+<dl class="cpp type">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor6Tensor9SizesTypeE">
+<span id="_CPPv3N5torch8executor6Tensor9SizesTypeE"></span><span id="_CPPv2N5torch8executor6Tensor9SizesTypeE"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a337ee3421afe9c9194eba3f94b4b7f1e"></span><span class="k"><span class="pre">using</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">SizesType</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="n"><span class="pre">TensorImpl</span></span><span class="p"><span class="pre">::</span></span><span class="n"><span class="pre">SizesType</span></span><a class="headerlink" href="#_CPPv4N5torch8executor6Tensor9SizesTypeE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>The type used for elements of <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Tensor_1a8f60ad98218012fee38314feb87bbe39"><span class="std std-ref"><span class="pre">sizes()</span></span></a></code>. </p>
+</dd></dl>
+
+<dl class="cpp type">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor6Tensor12DimOrderTypeE">
+<span id="_CPPv3N5torch8executor6Tensor12DimOrderTypeE"></span><span id="_CPPv2N5torch8executor6Tensor12DimOrderTypeE"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a07445ae9fe610e154dfdac758d89f089"></span><span class="k"><span class="pre">using</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DimOrderType</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="n"><span class="pre">TensorImpl</span></span><span class="p"><span class="pre">::</span></span><span class="n"><span class="pre">DimOrderType</span></span><a class="headerlink" href="#_CPPv4N5torch8executor6Tensor12DimOrderTypeE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>The type used for elements of <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Tensor_1a296fde571ad2768e6ff478dfc055b770"><span class="std std-ref"><span class="pre">dim_order()</span></span></a></code>. </p>
+</dd></dl>
+
+<dl class="cpp type">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor6Tensor11StridesTypeE">
+<span id="_CPPv3N5torch8executor6Tensor11StridesTypeE"></span><span id="_CPPv2N5torch8executor6Tensor11StridesTypeE"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a76dc6affc13ae7fce5c7c792f2ccc0cd"></span><span class="k"><span class="pre">using</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">StridesType</span></span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="n"><span class="pre">TensorImpl</span></span><span class="p"><span class="pre">::</span></span><span class="n"><span class="pre">StridesType</span></span><a class="headerlink" href="#_CPPv4N5torch8executor6Tensor11StridesTypeE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>The type used for elements of <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1Tensor_1a93b2708ddc61d9bacc69a35ab66c7d79"><span class="std std-ref"><span class="pre">strides()</span></span></a></code>. </p>
+</dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor19unsafeGetTensorImplEv">
+<span id="_CPPv3NK5torch8executor6Tensor19unsafeGetTensorImplEv"></span><span id="_CPPv2NK5torch8executor6Tensor19unsafeGetTensorImplEv"></span><span id="torch::executor::Tensor::unsafeGetTensorImplC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1ac557fe9131f9eb0db771293aea12ad90"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">TensorImpl</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">unsafeGetTensorImpl</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor19unsafeGetTensorImplEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns a pointer to the underlying TensorImpl.</p>
+<p>NOTE: Clients should be wary of operating on the TensorImpl directly instead of the <a class="reference internal" href="#classtorch_1_1executor_1_1Tensor"><span class="std std-ref">Tensor</span></a>. It is easy to break things. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor6nbytesEv">
+<span id="_CPPv3NK5torch8executor6Tensor6nbytesEv"></span><span id="_CPPv2NK5torch8executor6Tensor6nbytesEv"></span><span id="torch::executor::Tensor::nbytesC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1ab36ccfd4a2d15fe6a06a9ed410dc0885"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">nbytes</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor6nbytesEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the size of the tensor in bytes.</p>
+<p>NOTE: Only the alive space is returned not the total capacity of the underlying data blob. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor4sizeE7ssize_t">
+<span id="_CPPv3NK5torch8executor6Tensor4sizeE7ssize_t"></span><span id="_CPPv2NK5torch8executor6Tensor4sizeE7ssize_t"></span><span id="torch::executor::Tensor::size__ssize_tC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a4b3c616d00938ce202bc1719228345ca"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">size</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">dim</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor4sizeE7ssize_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the size of the tensor at the given dimension.</p>
+<p>NOTE: that <a class="reference internal" href="#classtorch_1_1executor_1_1Tensor_1a4b3c616d00938ce202bc1719228345ca"><span class="std std-ref">size()</span></a> intentionally does not return SizeType even though it returns an element of an array of SizeType. This is to help make calls of this method more compatible with at::Tensor, and more consistent with the rest of the methods on this class and in ETensor. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor3dimEv">
+<span id="_CPPv3NK5torch8executor6Tensor3dimEv"></span><span id="_CPPv2NK5torch8executor6Tensor3dimEv"></span><span id="torch::executor::Tensor::dimC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a6256303398fd5837579bf07e4ef63f34"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dim</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor3dimEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the tensor’s number of dimensions. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor5numelEv">
+<span id="_CPPv3NK5torch8executor6Tensor5numelEv"></span><span id="_CPPv2NK5torch8executor6Tensor5numelEv"></span><span id="torch::executor::Tensor::numelC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a36e99a6b6da4fcc77952041cd818dd38"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">numel</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor5numelEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the number of elements in the tensor. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor11scalar_typeEv">
+<span id="_CPPv3NK5torch8executor6Tensor11scalar_typeEv"></span><span id="_CPPv2NK5torch8executor6Tensor11scalar_typeEv"></span><span id="torch::executor::Tensor::scalar_typeC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a18788f77a5243e41a0f0603d767bc4fd"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ScalarType</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">scalar_type</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor11scalar_typeEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the type of the elements in the tensor (int32, float, bool, etc). </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor12element_sizeEv">
+<span id="_CPPv3NK5torch8executor6Tensor12element_sizeEv"></span><span id="_CPPv2NK5torch8executor6Tensor12element_sizeEv"></span><span id="torch::executor::Tensor::element_sizeC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a67dd7bef4a20b34e8a249139e1f88a6b"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="n"><span class="pre">ssize_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">element_size</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor12element_sizeEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the size in bytes of one element of the tensor. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor5sizesEv">
+<span id="_CPPv3NK5torch8executor6Tensor5sizesEv"></span><span id="_CPPv2NK5torch8executor6Tensor5sizesEv"></span><span id="torch::executor::Tensor::sizesC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a8f60ad98218012fee38314feb87bbe39"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">ArrayRef</span></span><span class="p"><span class="pre">&lt;</span></span><a class="reference internal" href="#_CPPv4N5torch8executor6Tensor9SizesTypeE" title="torch::executor::Tensor::SizesType"><span class="n"><span class="pre">SizesType</span></span></a><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">sizes</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor5sizesEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the sizes of the tensor at each dimension. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor9dim_orderEv">
+<span id="_CPPv3NK5torch8executor6Tensor9dim_orderEv"></span><span id="_CPPv2NK5torch8executor6Tensor9dim_orderEv"></span><span id="torch::executor::Tensor::dim_orderC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a296fde571ad2768e6ff478dfc055b770"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">ArrayRef</span></span><span class="p"><span class="pre">&lt;</span></span><a class="reference internal" href="#_CPPv4N5torch8executor6Tensor12DimOrderTypeE" title="torch::executor::Tensor::DimOrderType"><span class="n"><span class="pre">DimOrderType</span></span></a><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dim_order</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor9dim_orderEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the order the dimensions are laid out in memory. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor7stridesEv">
+<span id="_CPPv3NK5torch8executor6Tensor7stridesEv"></span><span id="_CPPv2NK5torch8executor6Tensor7stridesEv"></span><span id="torch::executor::Tensor::stridesC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a93b2708ddc61d9bacc69a35ab66c7d79"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">ArrayRef</span></span><span class="p"><span class="pre">&lt;</span></span><a class="reference internal" href="#_CPPv4N5torch8executor6Tensor11StridesTypeE" title="torch::executor::Tensor::StridesType"><span class="n"><span class="pre">StridesType</span></span></a><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">strides</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor7stridesEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns the strides of the tensor at each dimension. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4I0ENK5torch8executor6Tensor14const_data_ptrEPK1Tv">
+<span id="_CPPv3I0ENK5torch8executor6Tensor14const_data_ptrEv"></span><span id="_CPPv2I0ENK5torch8executor6Tensor14const_data_ptrEv"></span><span class="k"><span class="pre">template</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">typename</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">T</span></span></span><span class="p"><span class="pre">&gt;</span></span><br /><span class="target" id="classtorch_1_1executor_1_1Tensor_1a80da942876d061a6566c673fe5eb14d9"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4I0ENK5torch8executor6Tensor14const_data_ptrEPK1Tv" title="torch::executor::Tensor::const_data_ptr::T"><span class="n"><span class="pre">T</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">const_data_ptr</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4I0ENK5torch8executor6Tensor14const_data_ptrEPK1Tv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns a pointer of type T to the constant underlying data blob. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor14const_data_ptrEv">
+<span id="_CPPv3NK5torch8executor6Tensor14const_data_ptrEv"></span><span id="_CPPv2NK5torch8executor6Tensor14const_data_ptrEv"></span><span id="torch::executor::Tensor::const_data_ptrC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a745fb890f7db80d9dd4b706c65d4909b"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">const_data_ptr</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor14const_data_ptrEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns a pointer to the constant underlying data blob. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4I0ENK5torch8executor6Tensor16mutable_data_ptrEP1Tv">
+<span id="_CPPv3I0ENK5torch8executor6Tensor16mutable_data_ptrEv"></span><span id="_CPPv2I0ENK5torch8executor6Tensor16mutable_data_ptrEv"></span><span class="k"><span class="pre">template</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">typename</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">T</span></span></span><span class="p"><span class="pre">&gt;</span></span><br /><span class="target" id="classtorch_1_1executor_1_1Tensor_1a657997a33177df42788e6ed69955cd5c"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4I0ENK5torch8executor6Tensor16mutable_data_ptrEP1Tv" title="torch::executor::Tensor::mutable_data_ptr::T"><span class="n"><span class="pre">T</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">mutable_data_ptr</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4I0ENK5torch8executor6Tensor16mutable_data_ptrEP1Tv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns a pointer of type T to the mutable underlying data blob. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor6Tensor16mutable_data_ptrEv">
+<span id="_CPPv3NK5torch8executor6Tensor16mutable_data_ptrEv"></span><span id="_CPPv2NK5torch8executor6Tensor16mutable_data_ptrEv"></span><span id="torch::executor::Tensor::mutable_data_ptrC"></span><span class="target" id="classtorch_1_1executor_1_1Tensor_1a46e2f3a65adb8cf86b8c5ce29da22fba"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">mutable_data_ptr</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor6Tensor16mutable_data_ptrEv" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Returns a pointer to the mutable underlying data blob. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Tensor_1a80fa89d40e96190b6467c31330b87bf4"></span><span class="sig-name descname"><span class="pre">template&lt;typename</span> <span class="pre">T&gt;</span> <span class="pre">inline</span> <span class="pre">__ET_DEPRECATED</span> <span class="pre">T</span> <span class="pre">*</span> <span class="pre">data_ptr</span> <span class="pre">()</span> <span class="pre">const</span></span></dt>
+<dd><p>DEPRECATED: Use const_data_ptr or mutable_data_ptr instead. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Tensor_1a931813bf8526af8de271104ba64e51cd"></span><span class="sig-name descname"><span class="pre">inline</span> <span class="pre">__ET_DEPRECATED</span> <span class="pre">void</span> <span class="pre">*</span> <span class="pre">data_ptr</span> <span class="pre">()</span> <span class="pre">const</span></span></dt>
+<dd><p>DEPRECATED: Use const_data_ptr or mutable_data_ptr instead. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1Tensor_1aec6323f4e78f03e98bdde81c543866c5"></span><span class="sig-name descname"><span class="pre">inline</span> <span class="pre">__ET_DEPRECATED</span> <span class="pre">void</span> <span class="pre">set_data</span> <span class="pre">(void</span> <span class="pre">*ptr)</span> <span class="pre">const</span></span></dt>
+<dd><p>DEPRECATED: Changes the data_ptr the tensor aliases. Does not free the previously pointed to data, does not assume ownership semantics of the new ptr. This api does not exist in at::Tensor so kernel developers should avoid it. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+</div>
+</div>
+
+
+             </article>
+             
+            </div>
+            <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="ir-exir.html" class="btn btn-neutral float-right" title="Export IR Specification" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="export-to-executorch-api-reference.html" class="btn btn-neutral" title="Export to ExecuTorch API Reference" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2024, ExecuTorch.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+
+
+        </div>
+
+        <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">ExecuTorch Runtime API Reference</a><ul>
+<li><a class="reference internal" href="#model-loading-and-execution">Model Loading and Execution</a></li>
+<li><a class="reference internal" href="#values">Values</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  
+
+
+  
+
+     
+       <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+         <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+         <script src="_static/jquery.js"></script>
+         <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
+         <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
+         <script src="_static/clipboard.min.js"></script>
+         <script src="_static/copybutton.js"></script>
+         <script src="_static/design-tabs.js"></script>
+         <script src="_static/js/progress-bar.js"></script>
+     
+
+  
+
+  <script type="text/javascript" src="_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(false);
+      });
+  </script>
+ 
+<script script type="text/javascript">
+  var collapsedSections = ['Introduction', 'Getting Started', 'Working with LLMs', 'Exporting to ExecuTorch',  'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'Backend Delegates', 'SDK', 'Tutorials']
+</script>
+
+ 
+<script type="text/javascript">
+// Handle the right navigation in third level pages. Without this
+// in third level, only the last item always selected. This is a hacky
+// way and we should revise it eventually.
+// #side-scroll-highlight is disabled in .css.
+// Get all menu items
+var menuItems = document.querySelectorAll('.pytorch-right-menu a.reference.internal');
+// Add a click event listener to each menu item
+for (var i = 0; i < menuItems.length; i++) {
+  menuItems[i].addEventListener('click', function(event) {
+    // Remove the 'side-scroll-highlight-local' class from all menu items
+    for (var j = 0; j < menuItems.length; j++) {
+      menuItems[j].classList.remove('side-scroll-highlight-local');
+    }
+    // Add the 'side-scroll-highlight-local' class to the clicked item
+    event.target.classList.add('side-scroll-highlight-local');
+  });
+}
+</script>
+
+ 
+<script type="text/javascript">
+  $(document).ready(function () {
+    // Patch links on interactive tutorial pages to point
+    // to the correct ExecuTorch URLs.
+    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
+    if (downloadNote.length >= 1) {
+      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
+      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
+        notebookLink = $(".reference.download")[1].href,
+        notebookDownloadPath = notebookLink.split('_downloads')[1],
+        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
+
+      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
+      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
+    }
+
+    // Patch the "GitHub" link at the top of the page
+    // to point to the ExecuTorch repo.
+    var overwrite = function (_) {
+      if ($(this).length > 0) {
+        $(this)[0].href = "https://github.com/pytorch/executorch"
+      }
+    }
+    // PC
+    $(".main-menu a:contains('GitHub')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+    // Mobile
+    $(".mobile-menu a:contains('Github')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+
+  });
+</script>
+
+
+  <!-- Begin Footer -->
+
+  <div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4 text-center">
+          <h2>Docs</h2>
+          <p>Access comprehensive developer documentation for PyTorch</p>
+          <a class="with-right-arrow" href="https://pytorch.org/docs/stable/index.html">View Docs</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Tutorials</h2>
+          <p>Get in-depth tutorials for beginners and advanced developers</p>
+          <a class="with-right-arrow" href="https://pytorch.org/tutorials">View Tutorials</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Resources</h2>
+          <p>Find development resources and get your questions answered</p>
+          <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://pytorch.org/" class="footer-logo"></a>
+      </div>
+
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/">PyTorch</a></li>
+            <li><a href="https://pytorch.org/get-started">Get Started</a></li>
+            <li><a href="https://pytorch.org/features">Features</a></li>
+            <li><a href="https://pytorch.org/ecosystem">Ecosystem</a></li>
+            <li><a href="https://pytorch.org/blog/">Blog</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/resources">Resources</a></li>
+            <li><a href="https://pytorch.org/tutorials">Tutorials</a></li>
+            <li><a href="https://pytorch.org/docs/stable/index.html">Docs</a></li>
+            <li><a href="https://discuss.pytorch.org" target="_blank">Discuss</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://pytorch.org/assets/brand-guidelines/PyTorch-Brand-Guidelines.pdf" target="_blank">Brand Guidelines</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">Stay up to date</li>
+            <li><a href="https://www.facebook.com/pytorch" target="_blank">Facebook</a></li>
+            <li><a href="https://twitter.com/pytorch" target="_blank">Twitter</a></li>
+            <li><a href="https://www.youtube.com/pytorch" target="_blank">YouTube</a></li>
+            <li><a href="https://www.linkedin.com/company/pytorch" target="_blank">LinkedIn</a></li>
+          </ul>  
+          </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">PyTorch Podcasts</li>
+            <li><a href="https://open.spotify.com/show/6UzHKeiy368jKfQMKKvJY5" target="_blank">Spotify</a></li>
+            <li><a href="https://podcasts.apple.com/us/podcast/pytorch-developer-podcast/id1566080008" target="_blank">Apple</a></li>
+            <li><a href="https://www.google.com/podcasts?feed=aHR0cHM6Ly9mZWVkcy5zaW1wbGVjYXN0LmNvbS9PQjVGa0lsOA%3D%3D" target="_blank">Google</a></li>
+            <li><a href="https://music.amazon.com/podcasts/7a4e6f0e-26c2-49e9-a478-41bd244197d0/PyTorch-Developer-Podcast?" target="_blank">Amazon</a></li>
+          </ul>
+         </div>
+        </div>
+        
+        <div class="privacy-policy">
+          <ul>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/terms/" target="_blank">Terms</a></li>
+            <li class="privacy-policy-links">|</li>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/privacy-policy/" target="_blank">Privacy</a></li>
+          </ul>
+        </div>
+        <div class="copyright">
+        <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
+          For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
+          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
+          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+      </div>
+     </div>
+
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+           <li class="resources-mobile-menu-title">
+             <a>Learn</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/get-started">Get Started</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials">Tutorials</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+             </li>
+           </ul>
+           <li class="resources-mobile-menu-title">
+             <a>Ecosystem</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/ecosystem">Tools</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/#community-module">Community</a>
+             </li>
+             <li>
+               <a href="https://discuss.pytorch.org/">Forums</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/resources">Developer Resources</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/ecosystem/contributor-awards-2023">Contributor Awards - 2023</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Edge</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/edge">About PyTorch Edge</a>
+             </li>
+             
+             <li>
+               <a href="https://pytorch.org/executorch-overview">ExecuTorch</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Docs</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/docs/stable/index.html">PyTorch</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/pytorch-domains">PyTorch Domains</a>
+            </li>
+          </ul>
+
+          <li class="resources-mobile-menu-title">
+            <a>Blog & News</a>
+          </li>
+            
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/blog/">PyTorch Blog</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/community-blog">Community Blog</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/videos">Videos</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/community-stories">Community Stories</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/events">Events</a>
+            </li>
+          </ul>
+          
+          <li class="resources-mobile-menu-title">
+            <a>About</a>
+          </li>
+
+          <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/governing-board">Governing Board</a>
+            </li>
+          </ul>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function() {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function(e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+</html>

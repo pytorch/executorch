@@ -1,0 +1,1823 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Getting Started with LLMs via ExecuTorch &mdash; ExecuTorch 0.3 documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="../_static/ExecuTorch-Logo-cropped.svg"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="../_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery-binder.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery-dataframe.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery-rendered-html.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Export to ExecuTorch API Reference" href="../export-to-executorch-api-reference.html" />
+    <link rel="prev" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" href="../build-run-xtensa.html" />
+
+
+  <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-T8XT4PS');</script>
+    <!-- End Google Tag Manager -->
+  
+
+
+  
+  <script src="../_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.2/css/all.css" integrity="sha384-vSIIfh2YWi9wW0r9iZe7RJPrKwp6bG+s9QZMoITbCckVJqGCCRhc+ccxNcdpHuYu" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+
+          <li class="main-menu-item">
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Learn
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/get-started">
+                  <span class=dropdown-title>Get Started</span>
+                  <p>Run PyTorch locally or get started quickly with one of the supported cloud platforms</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials">
+                  <span class="dropdown-title">Tutorials</span>
+                  <p>Whats new in PyTorch tutorials</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/basics/intro.html">
+                  <span class="dropdown-title">Learn the Basics</span>
+                  <p>Familiarize yourself with PyTorch concepts and modules</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/recipes/recipes_index.html">
+                  <span class="dropdown-title">PyTorch Recipes</span>
+                  <p>Bite-size, ready-to-deploy PyTorch code examples</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/tutorials/beginner/introyt.html">
+                  <span class="dropdown-title">Intro to PyTorch - YouTube Series</span>
+                  <p>Master PyTorch basics with our engaging YouTube tutorial series</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Ecosystem
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem">
+                  <span class="dropdown-title">Tools</span>
+                  <p>Learn about the tools and frameworks in the PyTorch Ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
+                  <span class=dropdown-title>Community</span>
+                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
+                  <span class=dropdown-title>Forums</span>
+                  <p>A place to discuss PyTorch code, issues, install, research</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class=dropdown-title>Developer Resources</span>
+                  <p>Find resources and get questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/ecosystem/contributor-awards-2023">
+                  <span class="dropdown-title">Contributor Awards - 2023</span>
+                  <p>Award winners announced at this year's PyTorch Conference</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Edge
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
+                  <span class="dropdown-title">About PyTorch Edge</span>
+                  <p>Build innovative and privacy-aware AI experiences for edge devices</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch-overview">
+                  <span class="dropdown-title">ExecuTorch</span>
+                  <p>End-to-end solution for enabling on-device inference capabilities across mobile and edge devices</p>
+                </a>
+              </div>
+            </div>  
+          </li>
+
+          <li class="main-menu-item">
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Docs
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                  <p>Explore the documentation for comprehensive guidance on how to use PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/pytorch-domains">
+                  <span class="dropdown-title">PyTorch Domains</span>
+                  <p>Read the PyTorch Domains documentation to learn more about domain-specific libraries</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                Blogs & News 
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/blog/">
+                  <span class="dropdown-title">PyTorch Blog</span>
+                  <p>Catch up on the latest technical news and happenings</p>
+                </a>
+                 <a class="nav-dropdown-item" href="https://pytorch.org/community-blog">
+                  <span class="dropdown-title">Community Blog</span>
+                  <p>Stories from the PyTorch ecosystem</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/videos">
+                  <span class="dropdown-title">Videos</span>
+                  <p>Learn about the latest PyTorch tutorials, new, and more </p>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-stories">
+                  <span class="dropdown-title">Community Stories</span>
+                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                  <p>Find events, webinars, and podcasts</p>
+                </a>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="with-down-arrow">
+                About
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                  <p>Learn more about the PyTorch Foundation</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/governing-board">
+                  <span class="dropdown-title">Governing Board</span>
+                  <p></p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li class="main-menu-item">
+            <div class="no-dropdown">
+              <a href="https://pytorch.org/join" data-cta="join">
+                Become a Member
+              </a>
+            </div>
+          </li>
+          <li>
+           <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="github-icon">
+             </a>
+           </div>
+          </li>
+          <!--- TODO: This block adds the search icon to the nav bar. We will enable it later. 
+          <li>
+            <div class="main-menu-item">
+             <a href="https://github.com/pytorch/pytorch" class="search-icon">
+             </a>
+            </div>
+          </li>
+          --->
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+  </div>
+</div>
+
+<body class="pytorch-body">
+
+   
+
+    
+
+    <div class="table-of-contents-link-wrapper">
+      <span>Table of Contents</span>
+      <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+    </div>
+
+    <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+      <div class="pytorch-side-scroll">
+        <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          <div class="pytorch-left-menu-search">
+            
+    <div class="version">
+      <a href='https://pytorch.org/executorch/versions.html'>0.3 &#x25BC</a>
+    </div>
+    
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          </div>
+
+          
+    
+         
+         
+         
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../intro-overview.html">ExecuTorch Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../intro-how-it-works.html">How ExecuTorch Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../concepts.html">ExecuTorch Concepts</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../getting-started-setup.html">Setting Up ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../export-overview.html">Exporting to ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-build-and-cross-compilation.html">Building with CMake</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extension-module.html">Running an ExecuTorch Model Using the Module Extension in C++</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../apple-runtime.html">Integrating and Running ExecuTorch on Apple Platforms</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../build-run-vulkan.html">Building and Running ExecuTorch with the Vulkan Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#table-of-contents">Table Of Contents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#running-a-large-language-model-locally">Running a Large Language Model Locally</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#delegation">Delegation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#quantization">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#profiling-and-debugging">Profiling and Debugging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#custom-kernels">Custom Kernels</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-build-mobile-apps">How to Build Mobile Apps</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-memory-planning.html">Memory Planning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../quantization-overview.html">Quantization Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../native-delegates-executorch-vulkan-delegate.html">ExecuTorch Vulkan Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../debug-backend-delegate.html">Debug Backend Delegate</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">SDK</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">SDK Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-tutorial.html">SDK usage tutorial</a></li>
+</ul>
+
+         
+
+        </div>
+      </div>
+    </nav>
+
+    <div class="pytorch-container">
+      <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+        <div class="pytorch-breadcrumbs-wrapper">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="../index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+      <li>Getting Started with LLMs via ExecuTorch</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="../_sources/llm/getting-started.md.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+        </div>
+
+        <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+          Shortcuts
+        </div>
+      </div>
+
+      <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+        <div class="pytorch-content-left">
+
+        
+
+
+          <!-- Google Tag Manager (noscript) -->
+          <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
+          height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+          <!-- End Google Tag Manager (noscript) -->
+          
+          <div class="rst-content">
+          
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+             <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+              
+  <div class="section" id="getting-started-with-llms-via-executorch">
+<h1>Getting Started with LLMs via ExecuTorch<a class="headerlink" href="#getting-started-with-llms-via-executorch" title="Permalink to this heading">¶</a></h1>
+<p>Welcome to LLM Manual! This manual is designed to provide a practical example to leverage
+ExecuTorch in onboarding your own Large Language Models (LLMs). Our primary goal is to offer
+a clear and concise guideline on how to integrate our system with your own LLMs.</p>
+<p>Please note that this project is intended as a demonstration and not as a fully functional
+example with optimal performance. As such, certain components such as the sampler, tokenizer,
+and others are provided in their bare minimum versions solely for demonstration purposes.
+Consequently, the results produced by the model may vary and might not always be optimal.</p>
+<p>We encourage users to use this project as a starting point and adapt it to their specific needs,
+which includes creating your own versions of the tokenizer, sampler, acceleration backends, and
+other components. We hope this project serves as a useful guide in your journey with LLMs and ExecuTorch.</p>
+<div class="section" id="table-of-contents">
+<h2>Table Of Contents<a class="headerlink" href="#table-of-contents" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Prerequisites</p></li>
+<li><p>Hello World Example</p></li>
+<li><p>Quantization</p></li>
+<li><p>Using Mobile Acceleration</p></li>
+<li><p>Debugging and Profiling</p></li>
+<li><p>How to use custom kernels</p></li>
+<li><p>How to build mobile apps</p></li>
+</ol>
+</div>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+<p>To follow this guide, you’ll need to clone the ExecuTorch repository and install dependencies.
+ExecuTorch recommends Python 3.10 and the use of Conda to manage your environment. Conda is not
+required, though be aware that you may need to replace the use of python/pip with python3/pip3
+depending on your environment.</p>
+<div class="sd-tab-set docutils">
+<input checked="checked" id="sd-tab-item-0" name="sd-tab-set-0" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-0">
+conda</label><div class="sd-tab-content docutils">
+<p>Instructions on installing miniconda can be <a class="reference external" href="https://docs.anaconda.com/free/miniconda">found here</a>.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Create a directory for this example.</span>
+<span class="n">mkdir</span> <span class="n">et</span><span class="o">-</span><span class="n">nanogpt</span>
+<span class="n">cd</span> <span class="n">et</span><span class="o">-</span><span class="n">nanogpt</span>
+
+<span class="c1"># Clone the ExecuTorch repository and submodules.</span>
+<span class="n">mkdir</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span>
+<span class="n">git</span> <span class="n">clone</span> <span class="o">-</span><span class="n">b</span> <span class="n">release</span><span class="o">/</span><span class="mf">0.2</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">git</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span><span class="o">/</span><span class="n">executorch</span>
+<span class="n">cd</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span><span class="o">/</span><span class="n">executorch</span>
+<span class="n">git</span> <span class="n">submodule</span> <span class="n">update</span> <span class="o">--</span><span class="n">init</span>
+
+<span class="c1"># Create a conda environment and install requirements.</span>
+<span class="n">conda</span> <span class="n">create</span> <span class="o">-</span><span class="n">yn</span> <span class="n">executorch</span> <span class="n">python</span><span class="o">=</span><span class="mf">3.10.0</span>
+<span class="n">conda</span> <span class="n">activate</span> <span class="n">executorch</span>
+<span class="n">pip</span> <span class="n">install</span> <span class="n">cmake</span> <span class="n">zstd</span>
+<span class="o">./</span><span class="n">install_requirements</span><span class="o">.</span><span class="n">sh</span>
+
+<span class="n">cd</span> <span class="o">../..</span>
+</pre></div>
+</div>
+</div>
+<input id="sd-tab-item-1" name="sd-tab-set-0" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-1">
+pyenv-virtualenv</label><div class="sd-tab-content docutils">
+<p>Instructions on installing pyenv-virtualenv can be <a class="reference external" href="https://github.com/pyenv/pyenv-virtualenv?tab=readme-ov-file#installing-with-homebrew-for-macos-users">found here</a>.</p>
+<p>Importantly, if installing pyenv through brew, it does not automatically enable pyenv in the terminal, leading to errors. Run the following commands to enable.
+See the pyenv-virtualenv installation guide above on how to add this to your .bashrc or .zshrc to avoid needing to run these commands manually.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="nb">eval</span> <span class="s2">&quot;$(pyenv init -)&quot;</span>
+<span class="nb">eval</span> <span class="s2">&quot;$(pyenv virtualenv-init -)&quot;</span>
+</pre></div>
+</div>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Create a directory for this example.</span>
+<span class="n">mkdir</span> <span class="n">et</span><span class="o">-</span><span class="n">nanogpt</span>
+<span class="n">cd</span> <span class="n">et</span><span class="o">-</span><span class="n">nanogpt</span>
+
+<span class="n">pyenv</span> <span class="n">install</span> <span class="o">-</span><span class="n">s</span> <span class="mf">3.10</span>
+<span class="n">pyenv</span> <span class="n">virtualenv</span> <span class="mf">3.10</span> <span class="n">executorch</span>
+<span class="n">pyenv</span> <span class="n">activate</span> <span class="n">executorch</span>
+
+<span class="c1"># Clone the ExecuTorch repository and submodules.</span>
+<span class="n">mkdir</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span>
+<span class="n">git</span> <span class="n">clone</span> <span class="o">-</span><span class="n">b</span> <span class="n">release</span><span class="o">/</span><span class="mf">0.2</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">git</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span><span class="o">/</span><span class="n">executorch</span>
+<span class="n">cd</span> <span class="n">third</span><span class="o">-</span><span class="n">party</span><span class="o">/</span><span class="n">executorch</span>
+<span class="n">git</span> <span class="n">submodule</span> <span class="n">update</span> <span class="o">--</span><span class="n">init</span>
+
+<span class="c1"># Install requirements.</span>
+<span class="n">pip</span> <span class="n">install</span> <span class="n">cmake</span> <span class="n">zstd</span>
+<span class="n">PYTHON_EXECUTABLE</span><span class="o">=</span><span class="n">python</span> <span class="o">./</span><span class="n">install_requirements</span><span class="o">.</span><span class="n">sh</span>
+
+<span class="n">cd</span> <span class="o">../..</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>For more information, see <a class="reference internal" href="../getting-started-setup.html"><span class="doc std std-doc">Setting Up ExecuTorch</span></a>.</p>
+</div>
+<div class="section" id="running-a-large-language-model-locally">
+<h2>Running a Large Language Model Locally<a class="headerlink" href="#running-a-large-language-model-locally" title="Permalink to this heading">¶</a></h2>
+<p>This example uses Karpathy’s <a class="reference external" href="https://github.com/karpathy/nanoGPT">nanoGPT</a>, which is a minimal implementation of
+GPT-2 124M. This guide is applicable to other language models, as ExecuTorch is model-invariant.</p>
+<p>There are two steps to running a model with ExecuTorch:</p>
+<ol class="arabic simple">
+<li><p>Export the model. This step preprocesses it into a format suitable for runtime execution.</p></li>
+<li><p>At runtime, load the model file and run with the ExecuTorch runtime.</p></li>
+</ol>
+<br />
+<p>The export step happens ahead of time, typically as part of the application build or when the model changes. The resultant
+.pte file is distributed with the application. At runtime, the application loads the .pte file and passes it to the
+ExecuTorch runtime.</p>
+<div class="section" id="step-1-exporting-to-executorch">
+<h3>Step 1. Exporting to ExecuTorch<a class="headerlink" href="#step-1-exporting-to-executorch" title="Permalink to this heading">¶</a></h3>
+<p>Exporting takes a PyTorch model and converts it into a format that can run efficiently on consumer devices.</p>
+<p>For this example, you will need the nanoGPT model and the corresponding tokenizer vocabulary.</p>
+<div class="sd-tab-set docutils">
+<input checked="checked" id="sd-tab-item-2" name="sd-tab-set-1" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-2">
+curl</label><div class="sd-tab-content docutils">
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">karpathy</span><span class="o">/</span><span class="n">nanoGPT</span><span class="o">/</span><span class="n">master</span><span class="o">/</span><span class="n">model</span><span class="o">.</span><span class="n">py</span> <span class="o">-</span><span class="n">O</span>
+<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">huggingface</span><span class="o">.</span><span class="n">co</span><span class="o">/</span><span class="n">openai</span><span class="o">-</span><span class="n">community</span><span class="o">/</span><span class="n">gpt2</span><span class="o">/</span><span class="n">resolve</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">vocab</span><span class="o">.</span><span class="n">json</span> <span class="o">-</span><span class="n">O</span>
+</pre></div>
+</div>
+</div>
+<input id="sd-tab-item-3" name="sd-tab-set-1" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-3">
+wget</label><div class="sd-tab-content docutils">
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">wget</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">karpathy</span><span class="o">/</span><span class="n">nanoGPT</span><span class="o">/</span><span class="n">master</span><span class="o">/</span><span class="n">model</span><span class="o">.</span><span class="n">py</span>
+<span class="n">wget</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">huggingface</span><span class="o">.</span><span class="n">co</span><span class="o">/</span><span class="n">openai</span><span class="o">-</span><span class="n">community</span><span class="o">/</span><span class="n">gpt2</span><span class="o">/</span><span class="n">resolve</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">vocab</span><span class="o">.</span><span class="n">json</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>To convert the model into a format optimized for standalone execution, there are two steps. First, use the PyTorch
+<code class="docutils literal notranslate"><span class="pre">export</span></code> function to convert the PyTorch model into an intermediate, platform-independent intermediate representation. Then
+use the ExecuTorch <code class="docutils literal notranslate"><span class="pre">to_edge</span></code> and <code class="docutils literal notranslate"><span class="pre">to_executorch</span></code> methods to prepare the model for on-device execution. This creates a .pte
+file which can be loaded by a desktop or mobile application at runtime.</p>
+<p>Create a file called export_nanogpt.py with the following contents:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
+
+<span class="kn">import</span> <span class="nn">torch</span>
+
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge</span>
+<span class="kn">from</span> <span class="nn">torch.nn.attention</span> <span class="kn">import</span> <span class="n">sdpa_kernel</span><span class="p">,</span> <span class="n">SDPBackend</span>
+<span class="kn">from</span> <span class="nn">torch._export</span> <span class="kn">import</span> <span class="n">capture_pre_autograd_graph</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+
+<span class="kn">from</span> <span class="nn">model</span> <span class="kn">import</span> <span class="n">GPT</span>
+
+<span class="c1"># Load the model.</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s1">&#39;gpt2&#39;</span><span class="p">)</span>
+
+<span class="c1"># Create example inputs. This is used in the export process to provide</span>
+<span class="c1"># hints on the expected shape of the model input.</span>
+<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">block_size</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">),</span> <span class="p">)</span>
+
+<span class="c1"># Set up dynamic shape configuration. This allows the sizes of the input tensors</span>
+<span class="c1"># to differ from the sizes of the tensors in `example_inputs` during runtime, as</span>
+<span class="c1"># long as they adhere to the rules specified in the dynamic shape configuration.</span>
+<span class="c1"># Here we set the range of 0th model input&#39;s 1st dimension as</span>
+<span class="c1"># [0, model.config.block_size].</span>
+<span class="c1"># See https://pytorch.org/executorch/main/concepts.html#dynamic-shapes</span>
+<span class="c1"># for details about creating dynamic shapes.</span>
+<span class="n">dynamic_shape</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="p">{</span><span class="mi">1</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;token_dim&quot;</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">block_size</span><span class="p">)},</span>
+<span class="p">)</span>
+
+<span class="c1"># Trace the model, converting it to a portable intermediate representation.</span>
+<span class="c1"># The torch.no_grad() call tells PyTorch to exclude training-specific logic.</span>
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">sdpa_kernel</span><span class="p">([</span><span class="n">SDPBackend</span><span class="o">.</span><span class="n">MATH</span><span class="p">]),</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">capture_pre_autograd_graph</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shape</span><span class="p">)</span>
+    <span class="n">traced_model</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shape</span><span class="p">)</span>
+
+<span class="c1"># Convert the model into a runnable ExecuTorch program.</span>
+<span class="n">edge_config</span> <span class="o">=</span> <span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">traced_model</span><span class="p">,</span>  <span class="n">compile_config</span><span class="o">=</span><span class="n">edge_config</span><span class="p">)</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Save the ExecuTorch program to a file.</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;nanogpt.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">et_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>To export, run the script with <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">export_nanogpt.py</span></code> (or python3, as appropriate for your environment). It will generate a <code class="docutils literal notranslate"><span class="pre">nanogpt.pte</span></code> file in the current directory.</p>
+<p>For more information, see <a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Exporting to ExecuTorch</span></a> and
+<a class="reference external" href="https://pytorch.org/docs/stable/export.html">torch.export</a>.</p>
+</div>
+<div class="section" id="step-2-invoking-the-runtime">
+<h3>Step 2. Invoking the Runtime<a class="headerlink" href="#step-2-invoking-the-runtime" title="Permalink to this heading">¶</a></h3>
+<p>ExecuTorch provides a set of runtime APIs and types to load and run models.</p>
+<p>Create a file called main.cpp with the following contents:</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// main.cpp</span>
+
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;cstdint&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;functional&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;memory&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;unordered_map&gt;</span>
+
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;basic_tokenizer.h&quot;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;basic_sampler.h&quot;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;managed_tensor.h&quot;</span>
+
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/evalue_util/print_evalue.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/exec_aten/exec_aten.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/exec_aten/util/dim_order_util.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/exec_aten/util/tensor_util.h&gt;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">torch</span><span class="o">::</span><span class="nn">executor</span><span class="p">;</span>
+
+<span class="k">using</span><span class="w"> </span><span class="n">SizesType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">exec_aten</span><span class="o">::</span><span class="n">SizesType</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">DimOrderType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">exec_aten</span><span class="o">::</span><span class="n">DimOrderType</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">StridesType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">exec_aten</span><span class="o">::</span><span class="n">StridesType</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>The model inputs and outputs take the form of tensors. A tensor can be thought of as an multi-dimensional array.
+The ExecuTorch <code class="docutils literal notranslate"><span class="pre">EValue</span></code> class provides a wrapper around tensors and other ExecuTorch data types.</p>
+<p>Since the LLM generates one token at a time, the driver code needs to repeatedly invoke the model, building the
+output token by token. Each generated token is passed as input for the next run.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// main.cpp</span>
+
+<span class="c1">// The value of the gpt2 `&lt;|endoftext|&gt;` token.</span>
+<span class="cp">#define ENDOFTEXT_TOKEN 50256</span>
+
+<span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
+<span class="w">    </span><span class="n">Module</span><span class="o">&amp;</span><span class="w"> </span><span class="n">llm_model</span><span class="p">,</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="o">&amp;</span><span class="w"> </span><span class="n">prompt</span><span class="p">,</span>
+<span class="w">    </span><span class="n">BasicTokenizer</span><span class="o">&amp;</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">,</span>
+<span class="w">    </span><span class="n">BasicSampler</span><span class="o">&amp;</span><span class="w"> </span><span class="n">sampler</span><span class="p">,</span>
+<span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">max_input_length</span><span class="p">,</span>
+<span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">max_output_length</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="c1">// Convert the input text into a list of integers (tokens) that represents</span>
+<span class="w">    </span><span class="c1">// it, using the string-to-token mapping that the model was trained on.</span>
+<span class="w">    </span><span class="c1">// Each token is an integer that represents a word or part of a word.</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">int64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">input_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">.</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt</span><span class="p">);</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">int64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">output_tokens</span><span class="p">;</span>
+
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0u</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">max_output_length</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Convert the input_tokens from a vector of int64_t to EValue.</span>
+<span class="w">        </span><span class="c1">// EValue is a unified data type in the ExecuTorch runtime.</span>
+<span class="w">        </span><span class="n">ManagedTensor</span><span class="w"> </span><span class="n">tensor_tokens</span><span class="p">(</span>
+<span class="w">            </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span>
+<span class="w">            </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;</span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">size</span><span class="p">())},</span>
+<span class="w">            </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Long</span><span class="p">);</span>
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">EValue</span><span class="o">&gt;</span><span class="w"> </span><span class="n">inputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="n">tensor_tokens</span><span class="p">.</span><span class="n">get_tensor</span><span class="p">()};</span>
+
+<span class="w">        </span><span class="c1">// Run the model. It will return a tensor of logits (log-probabilities).</span>
+<span class="w">        </span><span class="n">Result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">EValue</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">logits_evalue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">llm_model</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">inputs</span><span class="p">);</span>
+
+<span class="w">        </span><span class="c1">// Convert the output logits from EValue to std::vector, which is what</span>
+<span class="w">        </span><span class="c1">// the sampler expects.</span>
+<span class="w">        </span><span class="n">Tensor</span><span class="w"> </span><span class="n">logits_tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">logits_evalue</span><span class="p">.</span><span class="n">get</span><span class="p">()[</span><span class="mi">0</span><span class="p">].</span><span class="n">toTensor</span><span class="p">();</span>
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="w"> </span><span class="n">logits</span><span class="p">(</span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">numel</span><span class="p">());</span>
+
+<span class="w">        </span><span class="c1">// Sample the next token from the logits.</span>
+<span class="w">        </span><span class="kt">int64_t</span><span class="w"> </span><span class="n">next_token</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sampler</span><span class="p">.</span><span class="n">sample</span><span class="p">(</span><span class="n">logits</span><span class="p">);</span>
+
+<span class="w">        </span><span class="c1">// Break if we reached the end of the text.</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">next_token</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">ENDOFTEXT_TOKEN</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">break</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="c1">// Add the next token to the output.</span>
+<span class="w">        </span><span class="n">output_tokens</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">next_token</span><span class="p">);</span>
+
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">.</span><span class="n">decode</span><span class="p">({</span><span class="w"> </span><span class="n">next_token</span><span class="w"> </span><span class="p">});</span>
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="p">.</span><span class="n">flush</span><span class="p">();</span>
+
+<span class="w">        </span><span class="c1">// Update next input.</span>
+<span class="w">        </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">next_token</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">size</span><span class="p">()</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="n">max_input_length</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">erase</span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">begin</span><span class="p">());</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">endl</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// Convert the output tokens into a human-readable string.</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="w"> </span><span class="n">output_string</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">.</span><span class="n">decode</span><span class="p">(</span><span class="n">output_tokens</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">output_string</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">Module</span></code> class handles loading the .pte file and preparing for execution.</p>
+<p>The tokenizer is responsible for converting from a human-readable string representation of the prompt to the
+numerical form expected by the model. To do this, the tokenzier associates short substrings with a given token ID.
+The tokens can be thought of as representing words or parts of words, though, in-practice, they may be arbitrary
+sequences of characters.</p>
+<p>The tokenizer loads the vocabulary from a file, which contains the mapping between each token ID and the text it
+represents. Call <code class="docutils literal notranslate"><span class="pre">tokenizer.encode()</span></code> and <code class="docutils literal notranslate"><span class="pre">tokenizer.decode()</span></code> to convert between string and token representations.</p>
+<p>The sampler is responsible for selecting the next token, based on the logits, or log-probabilties, output by the
+model. The LLM returns a logit value for each possible next token. The sampler chooses which token to use based
+on some strategy. The simplest approach, used here, is to take the token with the highest logit value.</p>
+<p>Samplers may provide configurable options, such as configurable amount of randomness to the outputs selection,
+penalties for repeated tokens, and biases to prioritize or de-prioritize specific tokens.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// main.cpp</span>
+
+<span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Set up the prompt. This provides the seed text for the model to elaborate.</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="s">&quot;Enter model prompt: &quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="w"> </span><span class="n">prompt</span><span class="p">;</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">getline</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">cin</span><span class="p">,</span><span class="w"> </span><span class="n">prompt</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// The tokenizer is used to convert between tokens (used by the model) and</span>
+<span class="w">    </span><span class="c1">// human-readable strings.</span>
+<span class="w">    </span><span class="n">BasicTokenizer</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">(</span><span class="s">&quot;vocab.json&quot;</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// The sampler is used to sample the next token from the logits.</span>
+<span class="w">    </span><span class="n">BasicSampler</span><span class="w"> </span><span class="n">sampler</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BasicSampler</span><span class="p">();</span>
+
+<span class="w">    </span><span class="c1">// Load the exported nanoGPT program, which was generated via the previous steps.</span>
+<span class="w">    </span><span class="n">Module</span><span class="w"> </span><span class="n">model</span><span class="p">(</span><span class="s">&quot;nanogpt.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">Module</span><span class="o">::</span><span class="n">MlockConfig</span><span class="o">::</span><span class="n">UseMlockIgnoreErrors</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">max_input_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1024</span><span class="p">;</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">max_output_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">30</span><span class="p">;</span>
+<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">cout</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="n">prompt</span><span class="p">;</span>
+<span class="w">    </span><span class="n">generate</span><span class="p">(</span><span class="n">model</span><span class="p">,</span><span class="w"> </span><span class="n">prompt</span><span class="p">,</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">,</span><span class="w"> </span><span class="n">sampler</span><span class="p">,</span><span class="w"> </span><span class="n">max_input_tokens</span><span class="p">,</span><span class="w"> </span><span class="n">max_output_tokens</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Finally, download the following files into the same directory as main.h:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">curl</span> <span class="o">-</span><span class="n">O</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">llm_manual</span><span class="o">/</span><span class="n">basic_sampler</span><span class="o">.</span><span class="n">h</span>
+<span class="n">curl</span> <span class="o">-</span><span class="n">O</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">llm_manual</span><span class="o">/</span><span class="n">basic_tokenizer</span><span class="o">.</span><span class="n">h</span>
+<span class="n">curl</span> <span class="o">-</span><span class="n">O</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">llm_manual</span><span class="o">/</span><span class="n">managed_tensor</span><span class="o">.</span><span class="n">h</span>
+</pre></div>
+</div>
+<p>To learn more, see the <a class="reference internal" href="../extension-module.html"><span class="doc std std-doc">Runtime APIs Tutorial</span></a>.</p>
+</div>
+<div class="section" id="building-and-running">
+<h3>Building and Running<a class="headerlink" href="#building-and-running" title="Permalink to this heading">¶</a></h3>
+<p>ExecuTorch uses the CMake build system. To compile and link against the ExecuTorch runtime,
+include the ExecuTorch project via <code class="docutils literal notranslate"><span class="pre">add_directory</span></code> and link against <code class="docutils literal notranslate"><span class="pre">executorch</span></code> and additional
+dependencies.</p>
+<p>Create a file named CMakeLists.txt with the following content:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span># CMakeLists.txt
+
+cmake_minimum_required(VERSION 3.19)
+project(nanogpt_runner)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+# Set options for executorch build.
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER &quot;&quot; ON)
+option(EXECUTORCH_BUILD_EXTENSION_MODULE &quot;&quot; ON)
+option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED &quot;&quot; ON)
+
+# Include the executorch subdirectory.
+add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
+    ${CMAKE_BINARY_DIR}/third-party/executorch)
+
+add_executable(nanogpt_runner main.cpp)
+target_link_libraries(
+    nanogpt_runner
+    PRIVATE
+    executorch
+    extension_module_static # Provides the Module class
+    optimized_native_cpu_ops_lib) # Provides baseline cross-platform kernels
+</pre></div>
+</div>
+<p>At this point, the working directory should contain the following files:</p>
+<ul class="simple">
+<li><p>CMakeLists.txt</p></li>
+<li><p>main.cpp</p></li>
+<li><p>basic_tokenizer.h</p></li>
+<li><p>basic_sampler.h</p></li>
+<li><p>managed_tensor.h</p></li>
+<li><p>export_nanogpt.py</p></li>
+<li><p>model.py</p></li>
+<li><p>vocab.json</p></li>
+<li><p>nanogpt.pte</p></li>
+</ul>
+<p>If all of these are present, you can now build and run:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j10
+./cmake-out/nanogpt_runner
+</pre></div>
+</div>
+<p>You should see the message:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Enter</span> <span class="n">model</span> <span class="n">prompt</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Type some seed text for the model and press enter. Here we use “Hello world!” as
+an example prompt:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>Enter model prompt: Hello world!
+Hello world!
+
+I&#39;m not sure if you&#39;ve heard of the &quot;Curse of the Dragon&quot; or not, but it&#39;s a very popular game in
+</pre></div>
+</div>
+<p>At this point, it is likely to run very slowly. This is because ExecuTorch hasn’t been told to optimize for
+specific hardware (delegation), and because it is doing all of the calculations in 32-bit floating point (no quantization).</p>
+</div>
+</div>
+<div class="section" id="delegation">
+<h2>Delegation<a class="headerlink" href="#delegation" title="Permalink to this heading">¶</a></h2>
+<p>While ExecuTorch provides a portable, cross-platform implementation for all
+operators, it also provides specialized backends for a number of different
+targets. These include, but are not limited to, x86 and ARM CPU acceleration via
+the XNNPACK backend, Apple acceleration via the Core ML backend and Metal
+Performance Shader (MPS) backend, and GPU acceleration via the Vulkan backend.</p>
+<p>Because optimizations are specific to a given backend, each pte file is specific
+to the backend(s) targeted at export. To support multiple devices, such as
+XNNPACK acceleration for Android and Core ML for iOS, export a separate PTE file
+for each backend.</p>
+<p>To delegate to a backend at export time, ExecuTorch provides the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code>
+function in the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> object, which takes a backend-specific
+partitioner object. The partitioner is responsible for finding parts of the
+computation graph that can be accelerated by the target backend，and
+<code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> function will delegate matched part to given backend for
+acceleration and optimization. Any portions of the computation graph not
+delegated will be executed by the ExecuTorch operator implementations.</p>
+<p>To delegate the exported model to a specific backend, we need to import its
+partitioner as well as edge compile config from ExecuTorch codebase first, then
+call <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> with an instance of partitioner on the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>
+object <code class="docutils literal notranslate"><span class="pre">to_edge</span></code> function created.</p>
+<p>Here’s an example of how to delegate nanoGPT to XNNPACK (if you’re deploying to an Android phone for instance):</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
+
+<span class="c1"># Load partitioner for Xnnpack backend</span>
+<span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span> <span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+
+<span class="c1"># Model to be delegated to specific backend should use specific edge compile config</span>
+<span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.utils.configs</span> <span class="kn">import</span> <span class="n">get_xnnpack_edge_compile_config</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge</span>
+
+<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+<span class="kn">from</span> <span class="nn">torch.nn.attention</span> <span class="kn">import</span> <span class="n">sdpa_kernel</span><span class="p">,</span> <span class="n">SDPBackend</span>
+<span class="kn">from</span> <span class="nn">torch._export</span> <span class="kn">import</span> <span class="n">capture_pre_autograd_graph</span>
+
+<span class="kn">from</span> <span class="nn">model</span> <span class="kn">import</span> <span class="n">GPT</span>
+
+<span class="c1"># Load the nanoGPT model.</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s1">&#39;gpt2&#39;</span><span class="p">)</span>
+
+<span class="c1"># Create example inputs. This is used in the export process to provide</span>
+<span class="c1"># hints on the expected shape of the model input.</span>
+<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">block_size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">),</span>
+    <span class="p">)</span>
+
+<span class="c1"># Set up dynamic shape configuration. This allows the sizes of the input tensors</span>
+<span class="c1"># to differ from the sizes of the tensors in `example_inputs` during runtime, as</span>
+<span class="c1"># long as they adhere to the rules specified in the dynamic shape configuration.</span>
+<span class="c1"># Here we set the range of 0th model input&#39;s 1st dimension as</span>
+<span class="c1"># [0, model.config.block_size].</span>
+<span class="c1"># See https://pytorch.org/executorch/main/concepts.html#dynamic-shapes</span>
+<span class="c1"># for details about creating dynamic shapes.</span>
+<span class="n">dynamic_shape</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="p">{</span><span class="mi">1</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">Dim</span><span class="p">(</span><span class="s2">&quot;token_dim&quot;</span><span class="p">,</span> <span class="nb">max</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">block_size</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)},</span>
+<span class="p">)</span>
+
+<span class="c1"># Trace the model, converting it to a portable intermediate representation.</span>
+<span class="c1"># The torch.no_grad() call tells PyTorch to exclude training-specific logic.</span>
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">sdpa_kernel</span><span class="p">([</span><span class="n">SDPBackend</span><span class="o">.</span><span class="n">MATH</span><span class="p">]),</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">capture_pre_autograd_graph</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shape</span><span class="p">)</span>
+    <span class="n">traced_model</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">,</span> <span class="n">dynamic_shapes</span><span class="o">=</span><span class="n">dynamic_shape</span><span class="p">)</span>
+
+<span class="c1"># Convert the model into a runnable ExecuTorch program.</span>
+<span class="c1"># To be further lowered to Xnnpack backend, `traced_model` needs xnnpack-specific edge compile config</span>
+<span class="n">edge_config</span> <span class="o">=</span> <span class="n">get_xnnpack_edge_compile_config</span><span class="p">()</span>
+<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">traced_model</span><span class="p">,</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">edge_config</span><span class="p">)</span>
+
+<span class="c1"># Delegate exported model to Xnnpack backend by invoking `to_backend` function with Xnnpack partitioner.</span>
+<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">())</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Save the Xnnpack-delegated ExecuTorch program to a file.</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;nanogpt.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">et_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+
+
+</pre></div>
+</div>
+<p>Additionally, update CMakeLists.txt to build and link the XNNPACK backend to
+ExecuTorch runner.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>cmake_minimum_required(VERSION 3.19)
+project(nanogpt_runner)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+# Set options for executorch build.
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER &quot;&quot; ON)
+option(EXECUTORCH_BUILD_EXTENSION_MODULE &quot;&quot; ON)
+option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED &quot;&quot; ON)
+option(EXECUTORCH_BUILD_XNNPACK &quot;&quot; ON) # Build with Xnnpack backend
+
+# Include the executorch subdirectory.
+add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
+    ${CMAKE_BINARY_DIR}/executorch)
+
+# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+add_executable(nanogpt_runner main.cpp)
+target_link_libraries(
+    nanogpt_runner
+    PRIVATE
+    executorch
+    extension_module_static # Provides the Module class
+    optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
+    xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
+</pre></div>
+</div>
+<p>Keep the rest of the code the same. For more details refer to <a class="reference internal" href="#step-1-exporting-to-executorch"><span class="std std-doc">Exporting
+to ExecuTorch</span></a> and <a class="reference internal" href="#step-2-invoking-the-runtime"><span class="std std-doc">Invoking the
+Runtime</span></a> for more details</p>
+<p>At this point, the working directory should contain the following files:</p>
+<ul class="simple">
+<li><p>CMakeLists.txt</p></li>
+<li><p>main.cpp</p></li>
+<li><p>basic_tokenizer.h</p></li>
+<li><p>basic_sampler.h</p></li>
+<li><p>managed_tensor.h</p></li>
+<li><p>export_nanogpt.py</p></li>
+<li><p>model.py</p></li>
+<li><p>vocab.json</p></li>
+</ul>
+<p>If all of these are present, you can now export Xnnpack delegated pte model:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>export_nanogpt.py
+</pre></div>
+</div>
+<p>It will generate <code class="docutils literal notranslate"><span class="pre">nanogpt.pte</span></code>, under the same working directory.</p>
+<p>Then we can build and run the model by:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j10
+./cmake-out/nanogpt_runner
+</pre></div>
+</div>
+<p>You should see the message:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Enter</span> <span class="n">model</span> <span class="n">prompt</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Type some seed text for the model and press enter. Here we use “Hello world!” as
+an example prompt:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>Enter model prompt: Hello world!
+Hello world!
+
+I&#39;m not sure if you&#39;ve heard of the &quot;Curse of the Dragon&quot; or not, but it&#39;s a very popular game in
+</pre></div>
+</div>
+<p>The delegated model should be noticeably faster compared to the non-delegated model.</p>
+<p>For more information regarding backend delegateion, see the ExecuTorch guides
+for the <a class="reference internal" href="../tutorial-xnnpack-delegate-lowering.html"><span class="doc std std-doc">XNNPACK Backend</span></a> and <a class="reference internal" href="../build-run-coreml.html"><span class="doc std std-doc">Core ML
+Backend</span></a>.</p>
+</div>
+<div class="section" id="quantization">
+<h2>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h2>
+<p>Quantization refers to a set of techniques for running calculations and storing tensors using lower precision types.
+Compared to 32-bit floating point, using 8-bit integers can provide both a significant speedup and reduction in
+memory usage. There are many approaches to quantizing a model, varying in amount of pre-processing required, data
+types used, and impact on model accuracy and performance.</p>
+<p>Because compute and memory are highly constrained on mobile devices, some form of quantization is necessary to ship
+large models on consumer electronics. In particular, large language models, such as Llama2, may require quantizing
+model weights to 4 bits or less.</p>
+<p>Leveraging quantization requires transforming the model before export. PyTorch provides the pt2e (PyTorch 2 Export)
+API for this purpose. This example targets CPU acceleration using the XNNPACK delegate. As such, it needs to use the
+XNNPACK-specific quantizer. Targeting a different backend will require use of the corresponding quantizer.</p>
+<p>To use 8-bit integer dynamic quantization with the XNNPACK delegate, call <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code>, calibrate the model by
+running with a representative input, and then call <code class="docutils literal notranslate"><span class="pre">convert_pt2e</span></code>. This updates the computational graph to use
+quantized operators where available.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
+
+<span class="kn">from</span> <span class="nn">executorch.backends.transforms.duplicate_dynamic_quant_chain</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DuplicateDynamicQuantChainPass</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
+    <span class="n">XNNPACKQuantizer</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">torch.ao.quantization.quantize_pt2e</span> <span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+</pre></div>
+</div>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Use dynamic, per-channel quantization.</span>
+<span class="n">xnnpack_quant_config</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span>
+    <span class="n">is_per_channel</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">is_dynamic</span><span class="o">=</span><span class="kc">True</span>
+<span class="p">)</span>
+<span class="n">xnnpack_quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>
+<span class="n">xnnpack_quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">xnnpack_quant_config</span><span class="p">)</span>
+
+<span class="n">m</span> <span class="o">=</span> <span class="n">capture_pre_autograd_graph</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+
+<span class="c1"># Annotate the model for quantization. This prepares the model for calibration.</span>
+<span class="n">m</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">xnnpack_quantizer</span><span class="p">)</span>
+
+<span class="c1"># Calibrate the model using representative inputs. This allows the quantization</span>
+<span class="c1"># logic to determine the expected range of values in each tensor.</span>
+<span class="n">m</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span>
+
+<span class="c1"># Perform the actual quantization.</span>
+<span class="n">m</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">fold_quantize</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">DuplicateDynamicQuantChainPass</span><span class="p">()(</span><span class="n">m</span><span class="p">)</span>
+
+<span class="n">traced_model</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Additionally, add or update the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> call to use <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. This instructs ExecuTorch to
+optimize the model for CPU execution via the XNNPACK backend.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">XnnpackPartitioner</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">traced_model</span><span class="p">,</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">edge_config</span><span class="p">)</span>
+<span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">())</span> <span class="c1"># Lower to XNNPACK.</span>
+<span class="n">et_program</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Finally, ensure that the runner links against the <code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code> target in CMakeLists.txt.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">add_executable</span><span class="p">(</span><span class="n">nanogpt_runner</span> <span class="n">main</span><span class="o">.</span><span class="n">cpp</span><span class="p">)</span>
+<span class="n">target_link_libraries</span><span class="p">(</span>
+    <span class="n">nanogpt_runner</span>
+    <span class="n">PRIVATE</span>
+    <span class="n">executorch</span>
+    <span class="n">extension_module_static</span> <span class="c1"># Provides the Module class</span>
+    <span class="n">optimized_native_cpu_ops_lib</span> <span class="c1"># Provides baseline cross-platform kernels</span>
+    <span class="n">xnnpack_backend</span><span class="p">)</span> <span class="c1"># Provides the XNNPACK CPU acceleration backend</span>
+</pre></div>
+</div>
+<p>For more information, see <a class="reference internal" href="../quantization-overview.html"><span class="doc std std-doc">Quantization in ExecuTorch</span></a>.</p>
+</div>
+<div class="section" id="profiling-and-debugging">
+<h2>Profiling and Debugging<a class="headerlink" href="#profiling-and-debugging" title="Permalink to this heading">¶</a></h2>
+<p>After lowering a model by calling <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code>, you may want to see what got delegated and what didn’t. ExecuTorch
+provides utility methods to give insight on the delegation. You can use this information to gain visibility into
+the underlying computation and diagnose potential performance issues. Model authors can use this information to
+structure the model in a way that is compatible with the target backend.</p>
+<div class="section" id="visualizing-the-delegation">
+<h3>Visualizing the Delegation<a class="headerlink" href="#visualizing-the-delegation" title="Permalink to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">get_delegation_info()</span></code> method provides a summary of what happened to the model after the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> call:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.utils</span> <span class="kn">import</span> <span class="n">get_delegation_info</span>
+<span class="kn">from</span> <span class="nn">tabulate</span> <span class="kn">import</span> <span class="n">tabulate</span>
+
+<span class="c1"># ... After call to to_backend(), but before to_executorch()</span>
+<span class="n">graph_module</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
+<span class="n">delegation_info</span> <span class="o">=</span> <span class="n">get_delegation_info</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">delegation_info</span><span class="o">.</span><span class="n">get_summary</span><span class="p">())</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">delegation_info</span><span class="o">.</span><span class="n">get_operator_delegation_dataframe</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">tabulate</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="s2">&quot;keys&quot;</span><span class="p">,</span> <span class="n">tablefmt</span><span class="o">=</span><span class="s2">&quot;fancy_grid&quot;</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>For nanoGPT targeting the XNNPACK backend, you might see the following:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Total</span>  <span class="n">delegated</span>  <span class="n">subgraphs</span><span class="p">:</span>  <span class="mi">86</span>
+<span class="n">Number</span>  <span class="n">of</span>  <span class="n">delegated</span>  <span class="n">nodes</span><span class="p">:</span>  <span class="mi">473</span>
+<span class="n">Number</span>  <span class="n">of</span>  <span class="n">non</span><span class="o">-</span><span class="n">delegated</span>  <span class="n">nodes</span><span class="p">:</span>  <span class="mi">430</span>
+</pre></div>
+</div>
+<table class="colwidths-auto docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p></p></th>
+<th class="head"><p>op_type</p></th>
+<th class="head"><p># in_delegated_graphs</p></th>
+<th class="head"><p># in_non_delegated_graphs</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>0</p></td>
+<td><p>aten__softmax_default</p></td>
+<td><p>12</p></td>
+<td><p>0</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>aten_add_tensor</p></td>
+<td><p>37</p></td>
+<td><p>0</p></td>
+</tr>
+<tr class="row-even"><td><p>2</p></td>
+<td><p>aten_addmm_default</p></td>
+<td><p>48</p></td>
+<td><p>0</p></td>
+</tr>
+<tr class="row-odd"><td><p>3</p></td>
+<td><p>aten_arange_start_step</p></td>
+<td><p>0</p></td>
+<td><p>25</p></td>
+</tr>
+<tr class="row-even"><td><p></p></td>
+<td><p>…</p></td>
+<td><p></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p>23</p></td>
+<td><p>aten_view_copy_default</p></td>
+<td><p>170</p></td>
+<td><p>48</p></td>
+</tr>
+<tr class="row-even"><td><p></p></td>
+<td><p>…</p></td>
+<td><p></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p>26</p></td>
+<td><p>Total</p></td>
+<td><p>473</p></td>
+<td><p>430</p></td>
+</tr>
+</tbody>
+</table>
+<p>From the table, the operator <code class="docutils literal notranslate"><span class="pre">aten_view_copy_default</span></code> appears 170 times in delegate graphs and 48 times in non-delegated graphs.
+To see a more detailed view, use the <code class="docutils literal notranslate"><span class="pre">format_delegated_graph()</span></code> method to get a formatted str of printout of the whole graph or use <code class="docutils literal notranslate"><span class="pre">print_delegated_graph()</span></code> to print directly:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.utils</span> <span class="kn">import</span> <span class="n">format_delegated_graph</span>
+<span class="n">graph_module</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">format_delegated_graph</span><span class="p">(</span><span class="n">graph_module</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>This may generate a large amount of output for large models. Consider using “Control+F” or “Command+F” to locate the operator you’re interested in
+(e.g. “aten_view_copy_default”). Observe which instances are not under lowered graphs.</p>
+<p>In the fragment of the output for nanoGPT below, observe that embedding and add operators are delegated to XNNPACK while the sub operator is not.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">%</span><span class="n">aten_unsqueeze_copy_default_22</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">unsqueeze_copy</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_arange_start_step_23</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+  <span class="o">%</span><span class="n">aten_unsqueeze_copy_default_23</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">unsqueeze_copy</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_arange_start_step_24</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+  <span class="o">%</span><span class="n">lowered_module_0</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">get_attr</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">lowered_module_0</span><span class="p">]</span>
+    <span class="n">backend_id</span><span class="p">:</span> <span class="n">XnnpackBackend</span>
+    <span class="n">lowered</span> <span class="n">graph</span><span class="p">():</span>
+      <span class="o">%</span><span class="n">aten_embedding_default</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">aten_embedding_default</span><span class="p">]</span>
+      <span class="o">%</span><span class="n">aten_embedding_default_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">aten_embedding_default_1</span><span class="p">]</span>
+      <span class="o">%</span><span class="n">aten_add_tensor</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_embedding_default</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_embedding_default_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+      <span class="k">return</span> <span class="p">(</span><span class="n">aten_add_tensor</span><span class="p">,)</span>
+  <span class="o">%</span><span class="n">executorch_call_delegate</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">higher_order</span><span class="o">.</span><span class="n">executorch_call_delegate</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">lowered_module_0</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_embedding_default</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_embedding_default_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+  <span class="o">%</span><span class="n">aten_sub_tensor</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">sub</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_unsqueeze_copy_default</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_unsqueeze_copy_default_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="performance-analysis">
+<h3>Performance Analysis<a class="headerlink" href="#performance-analysis" title="Permalink to this heading">¶</a></h3>
+<p>Through the ExecuTorch SDK, users are able to profile model execution, giving timing information for each operator in the model.</p>
+<div class="section" id="id1">
+<h4>Prerequisites<a class="headerlink" href="#id1" title="Permalink to this heading">¶</a></h4>
+<div class="section" id="etrecord-generation-optional">
+<h5>ETRecord generation (Optional)<a class="headerlink" href="#etrecord-generation-optional" title="Permalink to this heading">¶</a></h5>
+<p>An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see <a class="reference internal" href="../sdk-etrecord.html"><span class="doc std std-doc">the ETRecord docs</span></a>.</p>
+<p>In your export script, after calling <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, call <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> with the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and the <code class="docutils literal notranslate"><span class="pre">ExecuTorchProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>. Make sure to copy the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>, as the call to <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> mutates the graph in-place.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">generate_etrecord</span>
+
+<span class="c1"># Make the deep copy immediately after to to_edge()</span>
+<span class="n">edge_manager_copy</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_manager</span><span class="p">)</span>
+
+<span class="c1"># ...</span>
+<span class="c1"># Generate ETRecord right after to_executorch()</span>
+<span class="n">etrecord_path</span> <span class="o">=</span> <span class="s2">&quot;etrecord.bin&quot;</span>
+<span class="n">generate_etrecord</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">,</span> <span class="n">edge_manager_copy</span><span class="p">,</span> <span class="n">et_program</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Run the export script and the ETRecord will be generated as <code class="docutils literal notranslate"><span class="pre">etrecord.bin</span></code>.</p>
+</div>
+<div class="section" id="etdump-generation">
+<h5>ETDump generation<a class="headerlink" href="#etdump-generation" title="Permalink to this heading">¶</a></h5>
+<p>An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see <a class="reference internal" href="../sdk-etdump.html"><span class="doc std std-doc">the ETDump docs</span></a>.</p>
+<p>Include the ETDump header in your code.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// main.cpp</span>
+
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/sdk/etdump/etdump_flatcc.h&gt;</span>
+</pre></div>
+</div>
+<p>Create an Instance of the ETDumpGen class and pass it to the Module constructor.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">unique_ptr</span><span class="o">&lt;</span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="w"> </span><span class="n">etdump_gen_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="n">Module</span><span class="w"> </span><span class="n">model</span><span class="p">(</span><span class="s">&quot;nanogpt.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">Module</span><span class="o">::</span><span class="n">MlockConfig</span><span class="o">::</span><span class="n">UseMlockIgnoreErrors</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">etdump_gen_</span><span class="p">));</span>
+</pre></div>
+</div>
+<p>After calling <code class="docutils literal notranslate"><span class="pre">generate()</span></code>, save the ETDump to a file. You can capture multiple
+model runs in a single trace, if desired.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="o">*</span><span class="w"> </span><span class="n">etdump_gen</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="o">*&gt;</span><span class="p">(</span><span class="n">model</span><span class="p">.</span><span class="n">event_tracer</span><span class="p">());</span>
+
+<span class="n">ET_LOG</span><span class="p">(</span><span class="n">Info</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;ETDump size: %zu blocks&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">etdump_gen</span><span class="o">-&gt;</span><span class="n">get_num_blocks</span><span class="p">());</span>
+<span class="n">etdump_result</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump_gen</span><span class="o">-&gt;</span><span class="n">get_etdump_data</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="k">nullptr</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">size</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// On a device with a file system, users can just write it to a file.</span>
+<span class="w">    </span><span class="kt">FILE</span><span class="o">*</span><span class="w"> </span><span class="n">f</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">fopen</span><span class="p">(</span><span class="s">&quot;etdump.etdp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;w+&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="n">fwrite</span><span class="p">((</span><span class="kt">uint8_t</span><span class="o">*</span><span class="p">)</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="n">f</span><span class="p">);</span>
+<span class="w">    </span><span class="n">fclose</span><span class="p">(</span><span class="n">f</span><span class="p">);</span>
+<span class="w">    </span><span class="n">free</span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Additionally, update CMakeLists.txt to build with SDK and enable events to be traced and logged into ETDump:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">option</span><span class="p">(</span><span class="n">EXECUTORCH_BUILD_SDK</span> <span class="s2">&quot;&quot;</span> <span class="n">ON</span><span class="p">)</span>
+
+<span class="c1"># ...</span>
+
+<span class="n">target_link_libraries</span><span class="p">(</span>
+    <span class="n">nanogpt_runner</span>
+    <span class="n">PRIVATE</span>
+    <span class="n">executorch</span>
+    <span class="n">extension_module_static</span> <span class="c1"># Provides the Module class</span>
+    <span class="n">optimized_native_cpu_ops_lib</span> <span class="c1"># Provides baseline cross-platform kernels</span>
+    <span class="n">xnnpack_backend</span> <span class="c1"># Provides the XNNPACK CPU acceleration backend</span>
+    <span class="n">etdump</span><span class="p">)</span> <span class="c1"># Provides event tracing and logging</span>
+
+<span class="n">target_compile_options</span><span class="p">(</span><span class="n">executorch</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
+<span class="n">target_compile_options</span><span class="p">(</span><span class="n">portable_ops_lib</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Run the runner, you will see “etdump.etdp” generated.</p>
+</div>
+</div>
+<div class="section" id="analyze-with-inspector-apis">
+<h4>Analyze with Inspector APIs<a class="headerlink" href="#analyze-with-inspector-apis" title="Permalink to this heading">¶</a></h4>
+<p>Once you’ve collected debug artifacts ETDump (and optionally an ETRecord), you can use the Inspector API to view performance information.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">Inspector</span>
+
+<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;etdump.etdp&quot;</span><span class="p">)</span>
+<span class="c1"># If you also generated an ETRecord, then pass that in as well: `inspector = Inspector(etdump_path=&quot;etdump.etdp&quot;, etrecord=&quot;etrecord.bin&quot;)`</span>
+
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;inspector_out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">inspector</span><span class="o">.</span><span class="n">print_data_tabular</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This prints the performance data in a tabular format in “inspector_out.txt”, with each row being a profiling event. Top rows look like this:
+<img alt="" src="../_images/llm_manual_print_data_tabular.png" />
+<a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a></p>
+<p>To learn more about the Inspector and the rich functionality it provides, see the <a class="reference internal" href="../sdk-inspector.html"><span class="doc std std-doc">Inspector API Reference</span></a>.</p>
+</div>
+</div>
+</div>
+<div class="section" id="custom-kernels">
+<h2>Custom Kernels<a class="headerlink" href="#custom-kernels" title="Permalink to this heading">¶</a></h2>
+<p>With the ExecuTorch custom operator APIs, custom operator and kernel authors can easily bring in their kernel into PyTorch/ExecuTorch.</p>
+<p>There are three steps to use custom kernels in ExecuTorch:</p>
+<ol class="arabic simple">
+<li><p>Write the custom kernel using ExecuTorch types.</p></li>
+<li><p>Compile and link the custom kernel to both AOT Python environment as well as the runtime binary.</p></li>
+<li><p>Source-to-source transformation to swap an operator with a custom op.</p></li>
+</ol>
+<div class="section" id="writing-a-custom-kernel">
+<h3>Writing a Custom Kernel<a class="headerlink" href="#writing-a-custom-kernel" title="Permalink to this heading">¶</a></h3>
+<p>Define your custom operator schema for both functional variant (used in AOT compilation) and out variant (used in ExecuTorch runtime). The schema needs to follow PyTorch ATen convention (see <a class="reference external" href="https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/native_functions.yaml">native_functions.yaml</a>).</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -&gt; Tensor
+
+custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -&gt; Tensor(a!)
+</pre></div>
+</div>
+<p>Write your custom kernel according to the schema defined above. Use the <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_LIBRARY</span></code> macro to make the kernel available to the ExecuTorch runtime.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// custom_linear.h / custom_linear.cpp</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/kernel/kernel_includes.h&gt;</span>
+
+<span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="nf">custom_linear_out</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">weight</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">optional</span><span class="o">&lt;</span><span class="n">Tensor</span><span class="o">&gt;</span><span class="w"> </span><span class="n">bias</span><span class="p">,</span><span class="w"> </span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">out</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// calculation</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">out</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="c1">// Register as myop::custom_linear.out</span>
+<span class="n">EXECUTORCH_LIBRARY</span><span class="p">(</span><span class="n">myop</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;custom_linear.out&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">custom_linear_out</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>To make this operator available in PyTorch, you can define a wrapper around the ExecuTorch custom kernel. Note that the ExecuTorch
+implementation uses ExecuTorch tensor types, while the PyTorch wrapper uses ATen tensors.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// custom_linear_pytorch.cpp</span>
+
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;custom_linear.h&quot;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;torch/library.h&gt;</span>
+
+<span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="w"> </span><span class="nf">custom_linear</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">weight</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="o">&amp;</span><span class="w"> </span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">optional</span><span class="o">&lt;</span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="o">&gt;</span><span class="w"> </span><span class="n">bias</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="c1">// initialize out</span>
+<span class="w">    </span><span class="n">at</span><span class="o">::</span><span class="n">Tensor</span><span class="w"> </span><span class="n">out</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">at</span><span class="o">::</span><span class="n">empty</span><span class="p">({</span><span class="n">weight</span><span class="p">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span><span class="w"> </span><span class="n">input</span><span class="p">.</span><span class="n">size</span><span class="p">(</span><span class="mi">1</span><span class="p">)});</span>
+
+<span class="w">    </span><span class="c1">// wrap kernel in custom_linear.cpp into ATen kernel</span>
+<span class="w">    </span><span class="n">WRAP_TO_ATEN</span><span class="p">(</span><span class="n">custom_linear_out</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">)(</span><span class="n">weight</span><span class="p">,</span><span class="w"> </span><span class="n">input</span><span class="p">,</span><span class="w"> </span><span class="n">bias</span><span class="p">,</span><span class="w"> </span><span class="n">out</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">out</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="c1">// Register the operator with PyTorch.</span>
+<span class="n">TORCH_LIBRARY</span><span class="p">(</span><span class="n">myop</span><span class="p">,</span><span class="w">  </span><span class="n">m</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">m</span><span class="p">.</span><span class="n">def</span><span class="p">(</span><span class="s">&quot;custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -&gt; Tensor&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">custom_linear</span><span class="p">);</span>
+<span class="w">    </span><span class="n">m</span><span class="p">.</span><span class="n">def</span><span class="p">(</span><span class="s">&quot;custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -&gt; Tensor(a!)&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">WRAP_TO_ATEN</span><span class="p">(</span><span class="n">custom_linear_out</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">));</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="compile-and-link-the-custom-kernel">
+<h3>Compile and Link the Custom Kernel<a class="headerlink" href="#compile-and-link-the-custom-kernel" title="Permalink to this heading">¶</a></h3>
+<p>To make it available to the ExecuTorch runtime, compile custom_linear.h/cpp into the binary target. You can also build the kernel as a dynamically loaded library (.so or .dylib) and link it as well.</p>
+<p>To make it available to PyTorch, package custom_linear.h, custom_linear.cpp and custom_linear_pytorch.cpp into a dynamically loaded library (.so or .dylib) and load it into the python environment.
+This is needed to make PyTorch aware of the custom operator at the time of export.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
+<span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">load_library</span><span class="p">(</span><span class="s2">&quot;libcustom_linear.so&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Once loaded, you can use the custom operator in PyTorch code.</p>
+<p>For more information, see <a class="reference external" href="https://pytorch.org/tutorials/advanced/torch_script_custom_ops.html">PyTorch Custom Operators</a> and
+and <a class="reference internal" href="../kernel-library-custom-aten-kernel.html"><span class="doc std std-doc">ExecuTorch Kernel Registration</span></a>.</p>
+</div>
+<div class="section" id="using-a-custom-operator-in-a-model">
+<h3>Using a Custom Operator in a Model<a class="headerlink" href="#using-a-custom-operator-in-a-model" title="Permalink to this heading">¶</a></h3>
+<p>The custom operator can explicitly used in the PyTorch model, or you can write a transformation to replace instances of a core operator with the custom variant. For this example, you could find
+all instances of <code class="docutils literal notranslate"><span class="pre">torch.nn.Linear</span></code> and replace them with <code class="docutils literal notranslate"><span class="pre">CustomLinear</span></code>.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span>  <span class="nf">replace_linear_with_custom_linear</span><span class="p">(</span><span class="n">module</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">module</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="n">nn</span><span class="o">.</span><span class="n">Linear</span><span class="p">):</span>
+            <span class="nb">setattr</span><span class="p">(</span>
+                <span class="n">module</span><span class="p">,</span>
+                <span class="n">name</span><span class="p">,</span>
+                <span class="n">CustomLinear</span><span class="p">(</span><span class="n">child</span><span class="o">.</span><span class="n">in_features</span><span class="p">,</span>  <span class="n">child</span><span class="o">.</span><span class="n">out_features</span><span class="p">,</span> <span class="n">child</span><span class="o">.</span><span class="n">bias</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">replace_linear_with_custom_linear</span><span class="p">(</span><span class="n">child</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The remaining steps are the same as the normal flow. Now you can run this module in eager mode as well as export to ExecuTorch.</p>
+</div>
+</div>
+<div class="section" id="how-to-build-mobile-apps">
+<h2>How to Build Mobile Apps<a class="headerlink" href="#how-to-build-mobile-apps" title="Permalink to this heading">¶</a></h2>
+<p>See the instructions for building and running LLMs using ExecuTorch on iOS and Android.</p>
+<ul class="simple">
+<li><p><strong><a class="reference internal" href="llama-demo-ios.html"><span class="doc std std-doc">iOS ExecuTorch LLaMA Demo App</span></a></strong></p></li>
+<li><p><strong><a class="reference internal" href="llama-demo-android.html"><span class="doc std std-doc">Android ExecuTorch LLaMA Demo App</span></a></strong></p></li>
+</ul>
+</div>
+</div>
+
+
+             </article>
+             
+            </div>
+            <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="../export-to-executorch-api-reference.html" class="btn btn-neutral float-right" title="Export to ExecuTorch API Reference" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="../build-run-xtensa.html" class="btn btn-neutral" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2024, ExecuTorch.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+
+
+        </div>
+
+        <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
+<li><a class="reference internal" href="#table-of-contents">Table Of Contents</a></li>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li><a class="reference internal" href="#running-a-large-language-model-locally">Running a Large Language Model Locally</a><ul>
+<li><a class="reference internal" href="#step-1-exporting-to-executorch">Step 1. Exporting to ExecuTorch</a></li>
+<li><a class="reference internal" href="#step-2-invoking-the-runtime">Step 2. Invoking the Runtime</a></li>
+<li><a class="reference internal" href="#building-and-running">Building and Running</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#delegation">Delegation</a></li>
+<li><a class="reference internal" href="#quantization">Quantization</a></li>
+<li><a class="reference internal" href="#profiling-and-debugging">Profiling and Debugging</a><ul>
+<li><a class="reference internal" href="#visualizing-the-delegation">Visualizing the Delegation</a></li>
+<li><a class="reference internal" href="#performance-analysis">Performance Analysis</a><ul>
+<li><a class="reference internal" href="#id1">Prerequisites</a><ul>
+<li><a class="reference internal" href="#etrecord-generation-optional">ETRecord generation (Optional)</a></li>
+<li><a class="reference internal" href="#etdump-generation">ETDump generation</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#analyze-with-inspector-apis">Analyze with Inspector APIs</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#custom-kernels">Custom Kernels</a><ul>
+<li><a class="reference internal" href="#writing-a-custom-kernel">Writing a Custom Kernel</a></li>
+<li><a class="reference internal" href="#compile-and-link-the-custom-kernel">Compile and Link the Custom Kernel</a></li>
+<li><a class="reference internal" href="#using-a-custom-operator-in-a-model">Using a Custom Operator in a Model</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#how-to-build-mobile-apps">How to Build Mobile Apps</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  
+
+
+  
+
+     
+       <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+         <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+         <script src="../_static/jquery.js"></script>
+         <script src="../_static/underscore.js"></script>
+         <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+         <script src="../_static/doctools.js"></script>
+         <script src="../_static/sphinx_highlight.js"></script>
+         <script src="../_static/clipboard.min.js"></script>
+         <script src="../_static/copybutton.js"></script>
+         <script src="../_static/design-tabs.js"></script>
+         <script src="../_static/js/progress-bar.js"></script>
+     
+
+  
+
+  <script type="text/javascript" src="../_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="../_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(false);
+      });
+  </script>
+ 
+<script script type="text/javascript">
+  var collapsedSections = ['Introduction', 'Getting Started', 'Working with LLMs', 'Exporting to ExecuTorch',  'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'Backend Delegates', 'SDK', 'Tutorials']
+</script>
+
+ 
+<script type="text/javascript">
+// Handle the right navigation in third level pages. Without this
+// in third level, only the last item always selected. This is a hacky
+// way and we should revise it eventually.
+// #side-scroll-highlight is disabled in .css.
+// Get all menu items
+var menuItems = document.querySelectorAll('.pytorch-right-menu a.reference.internal');
+// Add a click event listener to each menu item
+for (var i = 0; i < menuItems.length; i++) {
+  menuItems[i].addEventListener('click', function(event) {
+    // Remove the 'side-scroll-highlight-local' class from all menu items
+    for (var j = 0; j < menuItems.length; j++) {
+      menuItems[j].classList.remove('side-scroll-highlight-local');
+    }
+    // Add the 'side-scroll-highlight-local' class to the clicked item
+    event.target.classList.add('side-scroll-highlight-local');
+  });
+}
+</script>
+
+ 
+<script type="text/javascript">
+  $(document).ready(function () {
+    // Patch links on interactive tutorial pages to point
+    // to the correct ExecuTorch URLs.
+    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
+    if (downloadNote.length >= 1) {
+      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
+      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
+        notebookLink = $(".reference.download")[1].href,
+        notebookDownloadPath = notebookLink.split('_downloads')[1],
+        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
+
+      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
+      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
+    }
+
+    // Patch the "GitHub" link at the top of the page
+    // to point to the ExecuTorch repo.
+    var overwrite = function (_) {
+      if ($(this).length > 0) {
+        $(this)[0].href = "https://github.com/pytorch/executorch"
+      }
+    }
+    // PC
+    $(".main-menu a:contains('GitHub')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+    // Mobile
+    $(".mobile-menu a:contains('Github')").each(overwrite);
+    // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
+    // this overrides need to be updated.
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
+
+  });
+</script>
+
+
+  <!-- Begin Footer -->
+
+  <div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4 text-center">
+          <h2>Docs</h2>
+          <p>Access comprehensive developer documentation for PyTorch</p>
+          <a class="with-right-arrow" href="https://pytorch.org/docs/stable/index.html">View Docs</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Tutorials</h2>
+          <p>Get in-depth tutorials for beginners and advanced developers</p>
+          <a class="with-right-arrow" href="https://pytorch.org/tutorials">View Tutorials</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Resources</h2>
+          <p>Find development resources and get your questions answered</p>
+          <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://pytorch.org/" class="footer-logo"></a>
+      </div>
+
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/">PyTorch</a></li>
+            <li><a href="https://pytorch.org/get-started">Get Started</a></li>
+            <li><a href="https://pytorch.org/features">Features</a></li>
+            <li><a href="https://pytorch.org/ecosystem">Ecosystem</a></li>
+            <li><a href="https://pytorch.org/blog/">Blog</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/resources">Resources</a></li>
+            <li><a href="https://pytorch.org/tutorials">Tutorials</a></li>
+            <li><a href="https://pytorch.org/docs/stable/index.html">Docs</a></li>
+            <li><a href="https://discuss.pytorch.org" target="_blank">Discuss</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://pytorch.org/assets/brand-guidelines/PyTorch-Brand-Guidelines.pdf" target="_blank">Brand Guidelines</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">Stay up to date</li>
+            <li><a href="https://www.facebook.com/pytorch" target="_blank">Facebook</a></li>
+            <li><a href="https://twitter.com/pytorch" target="_blank">Twitter</a></li>
+            <li><a href="https://www.youtube.com/pytorch" target="_blank">YouTube</a></li>
+            <li><a href="https://www.linkedin.com/company/pytorch" target="_blank">LinkedIn</a></li>
+          </ul>  
+          </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">PyTorch Podcasts</li>
+            <li><a href="https://open.spotify.com/show/6UzHKeiy368jKfQMKKvJY5" target="_blank">Spotify</a></li>
+            <li><a href="https://podcasts.apple.com/us/podcast/pytorch-developer-podcast/id1566080008" target="_blank">Apple</a></li>
+            <li><a href="https://www.google.com/podcasts?feed=aHR0cHM6Ly9mZWVkcy5zaW1wbGVjYXN0LmNvbS9PQjVGa0lsOA%3D%3D" target="_blank">Google</a></li>
+            <li><a href="https://music.amazon.com/podcasts/7a4e6f0e-26c2-49e9-a478-41bd244197d0/PyTorch-Developer-Podcast?" target="_blank">Amazon</a></li>
+          </ul>
+         </div>
+        </div>
+        
+        <div class="privacy-policy">
+          <ul>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/terms/" target="_blank">Terms</a></li>
+            <li class="privacy-policy-links">|</li>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/privacy-policy/" target="_blank">Privacy</a></li>
+          </ul>
+        </div>
+        <div class="copyright">
+        <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
+          For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
+          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
+          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+      </div>
+     </div>
+
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="../_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+           <li class="resources-mobile-menu-title">
+             <a>Learn</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/get-started">Get Started</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials">Tutorials</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/basics/intro.html">Learn the Basics</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/recipes/recipes_index.html">PyTorch Recipes</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/tutorials/beginner/introyt.html">Introduction to PyTorch - YouTube Series</a>
+             </li>
+           </ul>
+           <li class="resources-mobile-menu-title">
+             <a>Ecosystem</a>
+           </li>
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/ecosystem">Tools</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/#community-module">Community</a>
+             </li>
+             <li>
+               <a href="https://discuss.pytorch.org/">Forums</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/resources">Developer Resources</a>
+             </li>
+             <li>
+               <a href="https://pytorch.org/ecosystem/contributor-awards-2023">Contributor Awards - 2023</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Edge</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+             <li>
+               <a href="https://pytorch.org/edge">About PyTorch Edge</a>
+             </li>
+             
+             <li>
+               <a href="https://pytorch.org/executorch-overview">ExecuTorch</a>
+             </li>
+           </ul>
+
+           <li class="resources-mobile-menu-title">
+             <a>Docs</a>
+           </li>
+
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/docs/stable/index.html">PyTorch</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/pytorch-domains">PyTorch Domains</a>
+            </li>
+          </ul>
+
+          <li class="resources-mobile-menu-title">
+            <a>Blog & News</a>
+          </li>
+            
+           <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/blog/">PyTorch Blog</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/community-blog">Community Blog</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/videos">Videos</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/community-stories">Community Stories</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/events">Events</a>
+            </li>
+          </ul>
+          
+          <li class="resources-mobile-menu-title">
+            <a>About</a>
+          </li>
+
+          <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+            </li>
+            <li>
+              <a href="https://pytorch.org/governing-board">Governing Board</a>
+            </li>
+          </ul>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="../_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function() {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function(e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+</html>
