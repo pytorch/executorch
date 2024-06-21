@@ -1202,7 +1202,9 @@
     <span class="c1"># Iterate through the graph and replace the aten ops with the corresponding</span>
     <span class="c1"># transformed ops.</span>
     <span class="k">for</span> <span class="n">partitioner</span> <span class="ow">in</span> <span class="n">partitioners</span><span class="p">:</span>
-        <span class="n">ops_set_to_not_decompose</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">()</span>
+        <span class="n">ops_set_to_not_decompose</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span>
+            <span class="n">program</span>
+        <span class="p">)</span>
 
         <span class="k">for</span> <span class="n">op_aten</span> <span class="ow">in</span> <span class="n">ops_set_to_not_decompose</span><span class="p">:</span>
             <span class="n">_register_no_decomp_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">)</span>
@@ -1274,7 +1276,12 @@
         <span class="n">lib</span><span class="o">.</span><span class="n">define</span><span class="p">(</span><span class="n">op_schema</span><span class="p">)</span>
         <span class="c1"># Define the implementation of the op in the edge_no_decomp_namespace namespace.</span>
         <span class="c1"># Important to note that the implementation of the op is the same as the aten op.</span>
+
+        <span class="n">overload_name</span> <span class="o">=</span> <span class="n">op_aten</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">overload_name</span>
+        <span class="k">if</span> <span class="n">overload_name</span> <span class="o">!=</span> <span class="s2">&quot;&quot;</span><span class="p">:</span>
+            <span class="n">op_name</span> <span class="o">+=</span> <span class="s2">&quot;.&quot;</span> <span class="o">+</span> <span class="n">overload_name</span>
         <span class="n">lib</span><span class="o">.</span><span class="n">impl</span><span class="p">(</span><span class="n">op_name</span><span class="p">,</span> <span class="n">op_aten</span><span class="p">,</span> <span class="s2">&quot;CompositeExplicitAutograd&quot;</span><span class="p">)</span>
+
         <span class="c1"># Cache the aten op and transformed op in their corresponding tables for future use.</span>
         <span class="n">aten_op_to_transform_op</span><span class="p">[</span><span class="n">op_aten</span><span class="p">]</span> <span class="o">=</span> <span class="n">_get_transformed_op</span><span class="p">(</span><span class="n">op_aten</span><span class="p">)</span>
         <span class="n">transform_op_to_aten_op</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">aten_op_to_transform_op</span><span class="p">[</span><span class="n">op_aten</span><span class="p">])]</span> <span class="o">=</span> <span class="n">op_aten</span>
@@ -1316,15 +1323,6 @@
                     <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="n">warning_str</span><span class="p">)</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">warning_str</span><span class="p">)</span>
-
-
-<span class="k">def</span> <span class="nf">_get_ops_to_not_decompose</span><span class="p">(</span><span class="n">partitioners</span><span class="p">,</span> <span class="n">ops_set_to_not_decompose_by_partitioner</span><span class="p">):</span>
-    <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
-    <span class="k">for</span> <span class="n">partitioner</span> <span class="ow">in</span> <span class="n">partitioners</span><span class="p">:</span>
-        <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="n">ops_set_to_not_decompose</span><span class="o">.</span><span class="n">union</span><span class="p">(</span>
-            <span class="n">ops_set_to_not_decompose_by_partitioner</span><span class="p">[</span><span class="n">partitioner</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
-        <span class="p">)</span>
-    <span class="k">return</span> <span class="n">ops_set_to_not_decompose</span>
 
 
 <span class="k">def</span> <span class="nf">_to_edge_transform_and_lower</span><span class="p">(</span>
@@ -1425,7 +1423,6 @@
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">partitioner_list</span> <span class="ow">in</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioner_list</span><span class="p">:</span>
                 <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">({</span><span class="n">name</span><span class="p">:</span> <span class="n">curr_partitioner</span><span class="p">})</span>
-                <span class="n">curr_op_set</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">()</span>
 
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
@@ -1437,7 +1434,9 @@
         <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="n">partitioners</span> <span class="o">=</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[])</span>
         <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioners</span><span class="p">:</span>
-            <span class="n">curr_op_set</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">()</span>
+            <span class="n">curr_op_set</span><span class="p">,</span> <span class="n">check_op_support</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span>
+                <span class="n">program</span>
+            <span class="p">)</span>
             <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="n">ops_set_to_not_decompose</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">curr_op_set</span><span class="p">)</span>
             <span class="n">_sanity_check_graph_for_non_decomp_ops</span><span class="p">(</span>
                 <span class="n">name</span><span class="p">,</span>
