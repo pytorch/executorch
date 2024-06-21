@@ -17,6 +17,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/util/util.h>
@@ -142,9 +143,17 @@ class ExecutorBackend final : public PyTorchBackendInterface {
     // Execute client executor
     status = client_method->execute();
 
-    // Send the client executor output
-    status = client_method->get_outputs(
-        args[num_inputs], client_method->outputs_size());
+    auto output_sizes = client_method->outputs_size();
+    // Send the client executor output, we'd need to copy the data instead of
+    // assigning the Evalue pointer
+    for (int i = 0; i < output_sizes; i++) {
+      EValue output = client_method->get_output(i);
+      if (output.tag == Tag::Tensor) {
+        Tensor t_src = output.toTensor();
+        Tensor t_dst = args[num_inputs + i]->toTensor();
+        status = internal::copy_tensor_data(t_dst, t_src);
+      }
+    }
 
     return status;
   }
