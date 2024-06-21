@@ -12,7 +12,11 @@
 
 // we avoid mat4 and vec4 usage here as they compile to much less efficient
 // SPIR-V
-struct FloatMatrix {
+struct FloatMatrix_2d {
+  float data[FOUR][FOUR];
+};
+
+struct FloatMatrix_3d {
   float data[FOUR][FOUR][FOUR];
 };
 
@@ -146,13 +150,56 @@ vec4 get_texel_C_packed(
   return self_texel;
 }
 
-FloatMatrix matmul_partial_4x4(
+FloatMatrix_2d matmul_partial_4x4(
     sampler3D im_mat1,
     sampler3D im_mat2,
     const ivec3 pos,
     const int batch_size,
     const int K_texel_len) {
-  FloatMatrix results;
+  FloatMatrix_2d results;
+  for (int i = 0; i < FOUR; i++) {
+    for (int j = 0; j < FOUR; j++) {
+      results.data[i][j] = 0.0f;
+    }
+  }
+  vec4 im_mat1_partial_load[FOUR];
+  vec4 im_mat2_partial_load[FOUR];
+
+  for (int mat1_x = 0; mat1_x < K_texel_len; mat1_x++) {
+    for (int offset = 0; offset < FOUR; offset++) {
+      // read and cache 4x4 tile of im_mat1
+      const int mat1_y = (FOUR * pos.y) + offset;
+      const ivec3 mat1_pos = ivec3(mat1_x, mat1_y, 0);
+      im_mat1_partial_load[offset] = texelFetch(im_mat1, mat1_pos, 0);
+      // read and cache 4x4 tile of im_mat2
+#ifdef MAT2_IS_TRANSPOSED
+      const int mat2_y = (FOUR * pos.x) + offset;
+      const ivec3 mat2_pos = ivec3(mat1_x, mat2_y, 0);
+      im_mat2_partial_load[offset] = texelFetch(im_mat2, mat2_pos, 0);
+#else
+      const int mat2_x = (FOUR * pos.x) + offset;
+      const ivec3 mat2_pos = ivec3(mat2_x, mat1_x, 0);
+      im_mat2_partial_load[offset] = texelFetch(im_mat2, mat2_pos, 0);
+#endif
+    }
+    // perform partial dot products and add partial result to results
+    for (int out_row = 0; out_row < FOUR; out_row++) {
+      for (int out_col = 0; out_col < FOUR; out_col++) {
+        results.data[out_row][out_col] +=
+            dot(im_mat1_partial_load[out_row], im_mat2_partial_load[out_col]);
+      }
+    }
+  }
+  return results;
+}
+
+FloatMatrix_3d matmul_partial_4x4x4(
+    sampler3D im_mat1,
+    sampler3D im_mat2,
+    const ivec3 pos,
+    const int batch_size,
+    const int K_texel_len) {
+  FloatMatrix_3d results;
   for (int i = 0; i < FOUR; i++) {
     for (int j = 0; j < FOUR; j++) {
       for (int k = 0; k < FOUR; k++) {
