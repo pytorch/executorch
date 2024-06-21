@@ -526,7 +526,7 @@ def get_slice_inputs():
 
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
-    test_suite.dtypes = ["at::kFloat"]
+    test_suite.dtypes = ["at::kFloat", "at::kHalf"]
     test_suite.layouts = ["api::kChannelsPacked"]
     test_suite.data_gen = "make_seq_tensor"
     return test_suite
