@@ -808,7 +808,12 @@ def _register_no_decomp_op(op_aten):
         lib.define(op_schema)
         # Define the implementation of the op in the edge_no_decomp_namespace namespace.
         # Important to note that the implementation of the op is the same as the aten op.
+
+        overload_name = op_aten._schema.overload_name
+        if overload_name != "":
+            op_name += "." + overload_name
         lib.impl(op_name, op_aten, "CompositeExplicitAutograd")
+
         # Cache the aten op and transformed op in their corresponding tables for future use.
         aten_op_to_transform_op[op_aten] = _get_transformed_op(op_aten)
         transform_op_to_aten_op[str(aten_op_to_transform_op[op_aten])] = op_aten
