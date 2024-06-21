@@ -45,6 +45,13 @@ class BackendExecutionContext final {
     return temp_allocator_->allocate(size, alignment);
   }
 
+  /**
+   * Returns the temp allocator. This allocator will be reset every instruction.
+   */
+  MemoryAllocator* get_temp_allocator() {
+    return temp_allocator_;
+  }
+
  private:
   EventTracer* event_tracer_ = nullptr;
   MemoryAllocator* temp_allocator_ = nullptr;
