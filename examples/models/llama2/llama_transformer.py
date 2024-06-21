@@ -196,6 +196,11 @@ class KVCache(nn.Module):
         else:
             cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
 
+        self.max_batch_size = max_batch_size
+        self.max_seq_length = max_seq_length
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.dtype = dtype
         self.transpose_cache = transpose_cache
         self.register_buffer(
             "k_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")

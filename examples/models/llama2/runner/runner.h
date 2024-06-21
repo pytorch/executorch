@@ -74,7 +74,7 @@ class Runner {
   int32_t
   logitsToToken(const exec_aten::Tensor& logits_tensor, int64_t pos, T _);
   Result<torch::executor::Tensor> run_model_step(
-      int64_t input_token,
+      int32_t input_token,
       ManagedTensor& tokens,
       ManagedTensor& start_pos,
       size_t max_seq_len);

@@ -40,6 +40,11 @@ class OpConv2d:
 
 
 @dataclass(init=False, frozen=True)
+class OpConvert:
+    op_name: str = "Convert"
+
+
+@dataclass(init=False, frozen=True)
 class OpDepthToSpace:
     op_name: str = "DepthToSpace"
     param_block_size: str = "block_size"
@@ -130,6 +135,12 @@ class OpFullyConnected:
 class OpGather:
     op_name: str = "Gather"
     param_axis: str = "axis"
+
+
+@dataclass(init=False, frozen=True)
+class OpGatherND:
+    op_name: str = "GatherNd"
+    param_batch_dims: str = "batch_dims"
 
 
 @dataclass(init=False, frozen=True)
@@ -264,6 +275,12 @@ class OpResizeNearestNeighbor:
     op_name: str = "ResizeNearestNeighbor"
     param_align_corners: str = "align_corners"
     param_half_pixel_centers: str = "half_pixel_centers"
+
+
+@dataclass(init=False, frozen=True)
+class OpScatterNd:
+    op_name: str = "ScatterNd"
+    param_reduction: str = "reduction"
 
 
 @dataclass(init=False, frozen=True)

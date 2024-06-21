@@ -113,14 +113,14 @@ def get_qnn_partitioner(args, quant_dtype):
         use_fp16 = False
         # TODO: fix the lowering error without skipping nodes
 
-        if quant_dtype == QuantDtype.use_8a8w:
-            raise NotImplementedError("8a8w for llama is still under development")
+        # if quant_dtype == QuantDtype.use_8a8w:
+        #     raise NotImplementedError("8a8w for llama is still under development")
 
-        elif quant_dtype == QuantDtype.use_16a16w:
-            raise NotImplementedError("16a16w for llama is still under development")
+        # elif quant_dtype == QuantDtype.use_16a16w:
+        #     raise NotImplementedError("16a16w for llama is still under development")
 
-        elif quant_dtype == QuantDtype.use_16a4w:
-            raise NotImplementedError("16a4w for llama is still under development")
+        # elif quant_dtype == QuantDtype.use_16a4w:
+        #     raise NotImplementedError("16a4w for llama is still under development")
 
     return QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
