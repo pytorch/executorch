@@ -134,6 +134,12 @@ void add_matmul_optimized_node(
   std::string kernel_name = mat2_is_transposed_val
       ? "matmul_transposed_optimized"
       : "matmul_optimized";
+
+  int mat1_dims = graph.sizes_of(mat1_W_packed).size();
+  if (mat1_dims == 3) {
+    kernel_name = "batch_" + kernel_name;
+  }
+
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   graph.execute_nodes().emplace_back(new ExecuteNode(

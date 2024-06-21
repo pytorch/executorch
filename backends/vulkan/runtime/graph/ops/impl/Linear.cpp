@@ -169,6 +169,12 @@ void add_addmm_optimized_node(
   std::string kernel_name = graph.get_bool(mat2_is_transposed)
       ? "linear_optimized"
       : "addmm_optimized";
+
+  int mat1_dims = graph.sizes_of(mat1_W_packed).size();
+  if (mat1_dims == 3) {
+    kernel_name = "batch_" + kernel_name;
+  }
+
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
