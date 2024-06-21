@@ -156,7 +156,7 @@ class NonDecompTestPartitioner(Partitioner):
         )
 
     def ops_to_not_decompose(
-        self,
+        self, ep: ExportedProgram
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         def filter_ops(node: torch.fx.Node) -> bool:
             if node.op == "call_function" and node.target in ops_not_to_decompose:
