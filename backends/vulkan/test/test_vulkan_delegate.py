@@ -123,7 +123,9 @@ class TestBackends(unittest.TestCase):
                 program, compile_config=self._edge_compile_config
             )
 
-            edge_program = edge_program.transform([I64toI32(), MeanToSumDiv()])
+            edge_program = edge_program.transform(
+                [I64toI32(self._edge_compile_config._skip_dim_order), MeanToSumDiv()]
+            )
 
             edge_program = edge_program.to_backend(VulkanPartitioner(compile_options))
 
