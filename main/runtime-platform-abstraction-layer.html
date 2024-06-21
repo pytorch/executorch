@@ -501,8 +501,8 @@ definitions in the link order.</p>
 <p>If you run into build problems because your system doesn’t support the functions
 called by <code class="docutils literal notranslate"><span class="pre">posix.cpp</span></code>, you can instead use the no-op minimal PAL at
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/default/minimal.cpp"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/default/minimal.cpp</span></code></a>
-by building with the <code class="docutils literal notranslate"><span class="pre">buck2</span></code> flag <code class="docutils literal notranslate"><span class="pre">-c</span> <span class="pre">executorch.pal_default=minimal</span></code>. This will
-avoid calling <code class="docutils literal notranslate"><span class="pre">fprintf()</span></code>, <code class="docutils literal notranslate"><span class="pre">std::chrono::steady_clock</span></code>, and anything else that
+by passing <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_PAL_DEFAULT=minimal</span></code> to <code class="docutils literal notranslate"><span class="pre">cmake</span></code>. This will avoid
+calling <code class="docutils literal notranslate"><span class="pre">fprintf()</span></code>, <code class="docutils literal notranslate"><span class="pre">std::chrono::steady_clock</span></code>, and anything else that
 <code class="docutils literal notranslate"><span class="pre">posix.cpp</span></code> uses. But since the <code class="docutils literal notranslate"><span class="pre">minimal.cpp</span></code> <code class="docutils literal notranslate"><span class="pre">et_pal_*()</span></code> functions are no-ops,
 you will need to override all of them.</p>
 </div>
