@@ -90,6 +90,7 @@ class BackendWithCompilerDemo(BackendDetails):
             torch.ops.aten.sin.default,
             exir_ops.edge.aten.linear.default,
             exir_ops.edge.aten.scaled_dot_product_attention.default,
+            exir_ops.edge.aten.upsample_nearest2d.vec,
         ]
 
         for node in edge_program.graph.nodes:
