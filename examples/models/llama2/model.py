@@ -203,7 +203,7 @@ the checkpoint format to avoid generating faulty models.
         else:
             return (
                 torch.tensor(
-                    [[1, 2, 3]], dtype=torch.long
+                    [[1, 2, 3]], dtype=torch.int32
                 ),  # tokens, with kv cache our input token length is always just 1 token.
             )
 
@@ -211,15 +211,15 @@ the checkpoint format to avoid generating faulty models.
     def get_example_inputs_kvcache_sdpa(self):
         if self.enable_dynamic_shape:
             return (
-                torch.tensor([[2, 3, 4]], dtype=torch.long),
-                torch.tensor([0], dtype=torch.long),
+                torch.tensor([[2, 3, 4]], dtype=torch.int32),
+                torch.tensor([0, 1, 2], dtype=torch.int32),
             )
         else:
             return (
                 torch.tensor(
-                    [[1]], dtype=torch.long
+                    [[1]], dtype=torch.int32
                 ),  # tokens, with kv cache our input token length is always just 1 token.
                 torch.tensor(
-                    [0], dtype=torch.long
+                    [0], dtype=torch.int32
                 ),  # start_pos, what token of output are we on.
             )

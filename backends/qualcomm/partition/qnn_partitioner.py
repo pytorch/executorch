@@ -40,16 +40,7 @@ class QnnOperatorSupport(OperatorSupportBase):
     ):
         self.node_visitors = node_visitor.get_node_visitors(edge_program)
 
-        self.skip_node_op_builder_set = set()
-        if skip_node_op_set is not None:
-            self.skip_node_op_builder_set = set(
-                [
-                    self.node_visitors[val]
-                    for val in skip_node_op_set
-                    if val in self.node_visitors
-                ]
-            )
-
+        self.skip_node_op_set = skip_node_op_set
         self.skip_node_id_set = skip_node_id_set
         self.nodes_to_wrappers = defaultdict(dict)
         self.qnn_manager = PyQnnManager.QnnManager(
@@ -69,11 +60,7 @@ class QnnOperatorSupport(OperatorSupportBase):
             print(f"[QNN Partitioner Op Support]: {node.target.__name__} | Skipped")
             return False
 
-        if (
-            self.skip_node_op_builder_set is not None
-            and self.node_visitors[node.target.__name__]
-            in self.skip_node_op_builder_set
-        ):
+        if node.target.__name__ in self.skip_node_op_set:
             print(f"[QNN Partitioner Op Support]: {node.target.__name__} | Skipped")
             return False
 

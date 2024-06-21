@@ -166,7 +166,33 @@ class LLMEdgeManager:
             )
         return self
 
-    def pt2e_quantize(self, quantizers: Optional[List[Quantizer]]) -> "LLMEdgeManager":
+    def calibrate(self, module: torch.fx.GraphModule):
+        from sentencepiece import SentencePieceProcessor
+
+        sp_model = SentencePieceProcessor(model_file="tokenizer.model")
+
+        # TODO: change criteria & support batch inputs if necessary
+        pos = torch.tensor(0, dtype=torch.int32)
+        token_list = [sp_model.bos_id()]
+        user_prompts = ["Once", "upon", "a", "time"]
+        for prompt in user_prompts:
+            token_list += sp_model.encode(prompt)
+
+        with torch.no_grad():
+            while token_list[-1] != sp_model.eos_id() and pos < 128:
+                logits = module(
+                    torch.full((1, 1), token_list[pos]),
+                    torch.full((1, 1), pos),
+                )
+                pos += 1
+                if pos >= len(token_list):
+                    token_list.append(torch.argmax(logits[:, -1], dim=-1).item())
+
+        print(f"calibration data:\n{sp_model.decode(token_list)}")
+
+    def pt2e_quantize(
+        self, quantizers: Optional[List[Quantizer]]
+    ) -> "LlamaEdgeManager":
         """
         Quantize the model via pt2e flow and retrieve LLMEdgeManager including the quantized model.
         Args:
@@ -189,7 +215,8 @@ class LLMEdgeManager:
                 ), "Please run capture_pre_autograd_graph first"
                 m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
                 # Calibrate
-                m(*self.example_inputs)
+                self.calibrate(m)
+                # m(*self.example_inputs)
                 m = convert_pt2e(m)
                 DuplicateDynamicQuantChainPass()(m)
                 self.pre_autograd_graph_module = m

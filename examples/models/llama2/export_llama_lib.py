@@ -52,7 +52,9 @@ from .source_transformation.quantize import (
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
+    replace_kv_cache_with_simple_kv_cache,
     replace_sdpa_with_custom_op,
+    replace_sdpa_with_flex_sdpa,
     replace_sdpa_with_simple_sdpa,
 )
 
@@ -196,6 +198,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="Whether to use sdpa_with_kv_cache update op when using kv cache",
+    )
+    parser.add_argument(
+        "--num_sharding",
+        type=int,
+        default=None,
+        help="Specify the number of splits which is generated with custom op. Expect to be able to divide num layer.",
     )
     parser.add_argument(
         "--disable_dynamic_shape",
@@ -385,7 +393,12 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
         transforms.append(replace_sdpa_with_custom_op)
 
     if args.use_kv_cache:
-        if args.qnn or args.coreml or args.mps:
+        if args.qnn:
+            transforms.append(replace_kv_cache_with_simple_kv_cache)
+            transforms.append(replace_sdpa_with_flex_sdpa)
+            transforms.append(replace_causal_mask)
+
+        elif args.coreml or args.mps:
             # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
@@ -486,11 +499,11 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
+        from executorch.examples.models.llama2.custom_ops import model_sharding
+
         partitioners.append(
             get_qnn_partitioner(
-                quant_dtype,
-                args.use_kv_cache,
-                args.pt2e_quantize,
+                args.use_kv_cache, args.pt2e_quantize, args.num_sharding
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
@@ -498,6 +511,12 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`, Optional type has no attribute `exported_program`
         _transform(builder_exported_to_edge.edge_manager.exported_program())
+        if args.num_sharding is not None:
+            model_sharding.split_graph(
+                builder_exported_to_edge.edge_manager.exported_program(),
+                builder_exported_to_edge.metadata["get_n_layers"],
+                shares=args.num_sharding,
+            )
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
@@ -506,7 +525,12 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         logging.info("Generating etrecord")
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners)
+        if args.num_sharding is not None:
+            from executorch.backends.qualcomm.utils.utils import canonicalize_program
+
+            canonicalize_program(builder.edge_manager.exported_program())
+        builder = builder.to_executorch()
 
         # Generate ETRecord
         if edge_manager_copy:
@@ -517,7 +541,12 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
             )
             logging.info("Generated etrecord.bin")
     else:
-        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners)
+        if args.num_sharding is not None:
+            from executorch.backends.qualcomm.utils.utils import canonicalize_program
+
+            canonicalize_program(builder.edge_manager.exported_program())
+        builder = builder.to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
