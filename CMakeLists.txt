@@ -70,6 +70,16 @@ else()
   set(_default_release_disabled_options ON)
 endif()
 
+# Let users override which PAL defaults to use.
+#
+# TODO(dbort): Add another option that lets users point to a specific source
+# file; if set, would override the default option.
+set(EXECUTORCH_PAL_DEFAULT
+    "posix"
+    CACHE STRING
+          "Which PAL default implementation to use: one of {posix, minimal}"
+)
+
 option(EXECUTORCH_ENABLE_LOGGING "Build with ET_LOG_ENABLED"
        ${_default_release_disabled_options}
 )
@@ -424,11 +434,31 @@ endif()
 add_subdirectory(schema)
 
 #
-# executorch: Core runtime library
+# executorch_no_prim_ops: Minimal runtime library
 #
-# Only contains primitive operators; does not contain portable kernels or other
-# full operators. Does not contain any backends.
+# The bare-minimum runtime library, supporting the Program and Method
+# interfaces. Does not contain any operators, including primitive ops. Does not
+# contain any backends.
 #
+
+# Remove any PAL-definition files from the sources.
+list(FILTER _executorch_no_prim_ops__srcs EXCLUDE REGEX
+     "runtime/platform/default/[^/]*.cpp$"
+)
+
+# Add the source file that maps to the requested default PAL implementation.
+if(EXECUTORCH_PAL_DEFAULT MATCHES "^(posix|minimal)$")
+  message(STATUS "executorch: Using PAL default '${EXECUTORCH_PAL_DEFAULT}'")
+  list(APPEND _executorch_no_prim_ops__srcs
+       "runtime/platform/default/${EXECUTORCH_PAL_DEFAULT}.cpp"
+  )
+else()
+  message(
+    FATAL_ERROR "Unknown EXECUTORCH_PAL_DEFAULT \"${EXECUTORCH_PAL_DEFAULT}\". "
+                "Expected one of {posix, minimal}."
+  )
+endif()
+
 add_library(executorch_no_prim_ops ${_executorch_no_prim_ops__srcs})
 target_link_libraries(executorch_no_prim_ops PRIVATE program_schema)
 # Check if dl exists for this toolchain and only then link it.
@@ -447,6 +477,13 @@ if(MAX_KERNEL_NUM)
   )
 endif()
 
+#
+# executorch: Primary runtime library with primitive operators.
+#
+# Provides the Program and Method interfaces, along with primitive operators.
+# Does not contain portable kernels or other full operators. Does not contain
+# any backends.
+#
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE executorch_no_prim_ops)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
