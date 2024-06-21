@@ -40,7 +40,12 @@ include(${EXECUTORCH_SRCS_FILE})
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 # Custom op libraries
-set(custom_ops_libs executorch_no_prim_ops)
+set(custom_ops_libs)
+if(APPLE)
+  list(APPEND executorch_no_prim_ops_shared)
+else()
+  list(APPEND executorch_no_prim_ops)
+endif()
 list(APPEND custom_ops_libs pthreadpool)
 list(APPEND custom_ops_libs cpuinfo)
 list(APPEND custom_ops_libs cpublas)
