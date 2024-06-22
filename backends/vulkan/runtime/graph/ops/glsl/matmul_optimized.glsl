@@ -16,6 +16,9 @@ $if MAT2_IS_TRANSPOSED:
 $if BATCH_MODE:
   #define BATCH_MODE
 
+$if TILE_ROW == "tile_row_2":
+  #define TILE_ROW_2
+
 #include "indexing_utils.h"
 #include "matmul.h"
 
@@ -45,24 +48,24 @@ void main() {
   }
 
   $if BATCH_MODE:
-    FloatMatrix_3d results = matmul_partial_4x4x4(
+    FloatMatrix_3d results = matmul_partial_3d(
         im_mat1,
         im_mat2,
         pos,
         out_sizes[2],
         in_limits[0]);
   $else:
-    FloatMatrix_2d results = matmul_partial_4x4(
+    FloatMatrix_2d results = matmul_partial_2d(
         im_mat1,
         im_mat2,
         pos,
         out_sizes[2],
         in_limits[0]);
 
-  for (int idx_c = 0; idx_c < FOUR; idx_c++) {
+  for (int idx_c = 0; idx_c < TILE_ROWS; idx_c++) {
     for (int idx_r = 0; idx_r < FOUR; idx_r++) {
       const ivec3 out_pos =
-          ivec3(idx_r + FOUR * pos.x, idx_c + FOUR * pos.y, pos.z);
+          ivec3(idx_r + FOUR * pos.x, idx_c + TILE_ROWS * pos.y, pos.z);
 
       // results is in transposed order w.r.t. the desired output
       $if BATCH_MODE:

@@ -11,7 +11,11 @@ matmul_optimized:
     PACKING: C_packed
     MAT2_IS_TRANSPOSED: false
     BATCH_MODE: false
+    TILE_ROW: tile_row_4
   generate_variant_forall:
+    TILE_ROW:
+      - VALUE: tile_row_4
+      - VALUE: tile_row_2
     DTYPE:
       - VALUE: float
       - VALUE: half
