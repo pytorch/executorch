@@ -656,8 +656,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       etdump
       executorch
       extension_data_loader
-      portable_ops_lib
-      quantized_ops_aot_lib
       util
       torch
   )

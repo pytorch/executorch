@@ -11,7 +11,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 option(EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT
-       "Build the optimized ops library for AOT export usage" OFF
+       "Build the quantized ops library for AOT export usage" OFF
 )
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
