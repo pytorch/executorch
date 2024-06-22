@@ -127,20 +127,30 @@ void add_matmul_optimized_node(
     viewFn(graph, {mat2, graph.add_none(), mat2_packed});
   }
 
-  api::utils::uvec3 global_size =
-      api::utils::divup_vec(graph.image_extents_of(out), {4, 4, 1});
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   std::string kernel_name = mat2_is_transposed_val
       ? "matmul_transposed_optimized"
       : "matmul_optimized";
 
-  int mat1_dims = graph.sizes_of(mat1_W_packed).size();
+  std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1_W_packed);
+  int mat1_dims = mat1_sizes.size();
   if (mat1_dims == 3) {
     kernel_name = "batch_" + kernel_name;
   }
+  if (mat1_sizes.at(mat1_dims - 2) < 8) {
+    kernel_name += "_tile_row_2";
+  } else {
+    kernel_name += "_tile_row_4";
+  }
 
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  api::utils::uvec3 global_size;
+  if (mat1_sizes.at(mat1_dims - 2) < 8) {
+    global_size = api::utils::divup_vec(graph.image_extents_of(out), {4, 2, 1});
+  } else {
+    global_size = api::utils::divup_vec(graph.image_extents_of(out), {4, 4, 1});
+  }
+  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
