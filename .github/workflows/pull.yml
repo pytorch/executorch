@@ -234,6 +234,8 @@ jobs:
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_XNNPACK=ON \
         EXECUTORCH_BUILD_PYBIND=ON \
+        EXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+        EXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
         bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
 
         # see if we can import the module successfully
