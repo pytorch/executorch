@@ -626,6 +626,8 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL)
 endif()
 
 if(EXECUTORCH_BUILD_MPS)
+  # MPS requires bundled_program to be built.
+  set(EXECUTORCH_BUILD_SDK ON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
 endif()
 

@@ -194,7 +194,7 @@ add_library(
 target_link_libraries(
   etdump
   PUBLIC etdump_schema flatccrt
-  PRIVATE executorch
+  PRIVATE executorch_no_prim_ops
 )
 
 add_custom_command(
@@ -214,7 +214,7 @@ add_library(
   bundled_program
   ${CMAKE_CURRENT_SOURCE_DIR}/bundled_program/bundled_program.cpp
 )
-target_link_libraries(bundled_program executorch bundled_program_schema)
+target_link_libraries(bundled_program executorch_no_prim_ops bundled_program_schema)
 
 set_target_properties(bundled_program PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
