@@ -29,8 +29,6 @@ class IndexPutVisitor(NodeVisitor):
             is_input_tensor=True,
         )
         indicies_node = node.args[1]
-
-        print("indicies_node: ", indicies_node)
         indices_list = [self.get_tensor(idx, idx) for idx in indicies_node if idx is not None]
 
         # Unpack the tuple
@@ -38,7 +36,6 @@ class IndexPutVisitor(NodeVisitor):
 
         # Convert to 2-D tensor
         indices_qnn = torch.cat(indices_unpacked).unsqueeze(0)
-        print("indices_qnn: ", indices_qnn, " indices_qnn.shape: ", indices_qnn.shape)
         indice_node = None
         for candidate_index_node in indicies_node:
             if candidate_index_node is not None and isinstance(candidate_index_node, torch.fx.Node):
@@ -76,19 +73,8 @@ class IndexPutVisitor(NodeVisitor):
             QNN_OP_PACKAGE_NAME_QTI_AISW,
             OpScatterNd.op_name,
         )
-        # axis = 0
-        # if len(node.args) == 2:
-        #     axis = cast(int, node.args[1])
-
-        # if axis < 0:
-        #     axis += node.meta["val"].dim()
         index_put_op.AddInputTensors([input_tensor_wrapper, indices_tensor_wrapper, value_tensor_wrapper])
         index_put_op.AddOutputTensors([output_tensor_wrapper])
-        # index_put_op.AddScalarParam(
-        #     OpScatterElements.param_axis,
-        #     PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-        #     {"data": np.uint32(axis)},
-        # )
 
         return index_put_op
 

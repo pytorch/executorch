@@ -837,7 +837,7 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_index_put(self):
         module = IndexPut()  # noqa: F405
-        sample_input = (torch.tensor([0], dtype=torch.int32), torch.randn([1, 1, 12, 64]),)
+        sample_input = (torch.tensor([2], dtype=torch.int32), torch.randn([1, 1, 12, 64]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 

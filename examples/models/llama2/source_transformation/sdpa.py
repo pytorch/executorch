@@ -195,8 +195,8 @@ class KVCacheQNN(torch.nn.Module):
     def update(
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:     
-        k_out = torch.ops.aten.index_put_(self.past_k_caches,  [input_pos], k_val)
-        v_out = torch.ops.aten.index_put_(self.past_v_caches, [input_pos], v_val)
+        k_out = torch.ops.aten.index_put_(self.past_k_caches,  [None, input_pos], k_val)
+        v_out = torch.ops.aten.index_put_(self.past_v_caches, [None, input_pos], v_val)
 
         k_out = k_out.transpose(1,2)
         v_out = v_out.transpose(1,2)
@@ -233,7 +233,7 @@ def replace_causal_mask(module: torch.nn.Module):
             )
 
             mask = torch.triu(mask, diagonal=1)
-            module.register_buffer(buffer_name, mask, persistent=False)
+            module.register_buffer(buffer_name, mask)
     for _, child in module.named_children():
         replace_causal_mask(child)
     return module
