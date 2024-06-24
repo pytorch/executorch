@@ -12,6 +12,8 @@
 
 #define VEC4_T ${texel_type(DTYPE)}
 
+#define TILE_SIZE ${TILE_SIZE}
+
 #define op(X, A, B) ${OPERATOR}
 
 #include "indexing_utils.h"
@@ -73,8 +75,8 @@ void main() {
 
   VEC4_T sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
   int kx = 0;
-  for (int y = start.y, i = 0; i < ${TILE_SIZE}; y += dilation.y, i++) {
-    for (int x = start.x, j = 0; j < ${TILE_SIZE}; x += dilation.x, j++) {
+  for (int y = start.y, i = 0; i < TILE_SIZE; y += dilation.y, i++) {
+    for (int x = start.x, j = 0; j < TILE_SIZE; x += dilation.x, j++) {
       // The weight kernel was rearranged such that every NxN filter is
       // flattened to fit in one row. Each filter was then stacked on top of
       // each other vertically.
