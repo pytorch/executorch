@@ -310,13 +310,15 @@ class ComputeGraphGen:
             ret_str = f"std::vector<IOValueRef> {ref.name}_io_value_refs;\n"
             ret_str += f"std::vector<ValueRef> {ref.name}_value_refs;\n"
             ret_str += f"for (int i=0; i < {ref.src_cpp_name}.size(); i++) {{\n"
-            ret_str += f"    {cpp_type} io_value_ref = {self.graph}{self.dot}add_input_tensor(\n"
-            ret_str += f"        {ref.src_cpp_name}[i].sizes().vec(),\n"
             ret_str += (
-                f"        from_at_scalartype({ref.src_cpp_name}[i].scalar_type())); \n"
+                f"  {cpp_type} io_value_ref = {self.graph}{self.dot}add_input_tensor(\n"
             )
-            ret_str += f"    {ref.name}_value_refs.emplace_back(io_value_ref.value);\n"
-            ret_str += f"    {ref.name}_io_value_refs.emplace_back(io_value_ref);\n"
+            ret_str += f"      {ref.src_cpp_name}[i].sizes().vec(),\n"
+            ret_str += (
+                f"      from_at_scalartype({ref.src_cpp_name}[i].scalar_type())); \n"
+            )
+            ret_str += f"  {ref.name}_value_refs.emplace_back(io_value_ref.value);\n"
+            ret_str += f"  {ref.name}_io_value_refs.emplace_back(io_value_ref);\n"
             ret_str += "}\n"
             ret_str += f"ValueRef {ref.name} = {self.graph}{self.dot}add_value_list(std::move({ref.name}_value_refs));\n"
             return ret_str
@@ -428,7 +430,9 @@ for (int i=0; i<out.size(); i++) {{
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             ret_str = ""
             ret_str += f"for (int i=0; i < {ref.name}_io_value_refs.size(); i++) {{\n"
-            ret_str += f"    {self.graph}{self.dot}get_tensor({ref.name}_io_value_refs[i].value)"
+            ret_str += (
+                f"  {self.graph}{self.dot}get_tensor({ref.name}_io_value_refs[i].value)"
+            )
             ret_str += f"->virtual_resize({ref.src_cpp_name}[i].sizes().vec());\n"
             ret_str += "}\n"
         else:
@@ -451,7 +455,7 @@ for (int i=0; i<out.size(); i++) {{
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             ret_str = ""
             ret_str += f"for (int i=0; i < {ref.name}_io_value_refs.size(); i++) {{\n"
-            ret_str += f"    {self.graph}{self.dot}copy_into_staging("
+            ret_str += f"  {self.graph}{self.dot}copy_into_staging("
             ret_str += f"{ref.name}_io_value_refs[i].staging, "
             ret_str += f"{ref.src_cpp_name}[i].const_data_ptr(), "
             ret_str += f"{ref.src_cpp_name}[i].numel());\n"
@@ -522,7 +526,9 @@ for (int i=0; i<out.size(); i++) {{
 """
             return ret_str
 
-        return f"EXPECT_TRUE(check_close({ref.src_cpp_name}, vk_{ref.name}, rtol, atol));\n"
+        return (
+            f"EXPECT_TRUE(check_close({ref.src_cpp_name}, vk_{ref.name}, rtol, atol));"
+        )
 
     ## Top level code generation
 
@@ -541,13 +547,11 @@ for (int i=0; i<out.size(); i++) {{
         graph_build += f"{self.graph}{self.dot}prepack();\n"
         graph_build += f"{self.graph}{self.dot}encode_execute();\n"
 
+        graph_build += "\n"
         return graph_build
 
-    def gen_graph_exec_code(self, loop_range: int = 1) -> str:
+    def gen_graph_exec_code(self) -> str:
         graph_exec = ""
-        if loop_range > 1:
-            graph_exec += f"for (int i = 0; i < {loop_range} ; ++i) "
-        graph_exec += "{\n"
         for aten_arg in self.args:
             ref = self.refs[aten_arg.name]
             if ref.is_in:
@@ -560,17 +564,20 @@ for (int i=0; i<out.size(); i++) {{
         graph_exec += self.declare_vk_out_for(self.refs["out"])
         graph_exec += self.copy_from_staging(self.refs["out"])
         graph_exec += self.check_graph_out(self.refs["out"])
-        graph_exec += "}\n"
+
+        graph_exec = re.sub(r"^", "  ", graph_exec, flags=re.M)
+        graph_exec = "{\n" + graph_exec + "\n}"
 
         return graph_exec
 
     def gen_conditional_skips(self) -> str:
         fp16_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_float16_buffers_support()) {{\n"
-        fp16_skip += "  GTEST_SKIP();"
-        fp16_skip += "}\n"
+        fp16_skip += "  GTEST_SKIP();\n"
+        fp16_skip += "}"
+        fp16_skip = re.sub(r"^", "  ", fp16_skip, flags=re.M) + "\n"
 
         int8_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_int8_buffers_support()) {{\n"
-        int8_skip += "  GTEST_SKIP();"
+        int8_skip += "  GTEST_SKIP();\n"
         int8_skip += "}\n"
 
         skips = ""
@@ -584,24 +591,24 @@ for (int i=0; i<out.size(); i++) {{
                 skips += int8_skip
                 continue
 
+        skips += "\n"
         return skips
 
     def gen_op_check_fn(self) -> str:
         op_name = self.f.func.name.unambiguous_name()
         op_check_fn = self.gen_decl(f"check_{op_name}") + " {\n"
         if self.should_prepack:
-            op_check_fn = self.gen_decl(f"prepacked_check_{op_name}") + " {"
+            op_check_fn = self.gen_decl(f"prepacked_check_{op_name}") + " {\n"
 
         op_check_fn_body = ""
         op_check_fn_body += self.gen_conditional_skips()
         op_check_fn_body += self.gen_graph_build_code()
         op_check_fn_body += self.gen_graph_exec_code()
 
-        # Add two level of indent for readability
-        op_check_fn_body = re.sub(r"^", "        ", op_check_fn_body, flags=re.M)
+        op_check_fn_body = re.sub(r"^", "    ", op_check_fn_body, flags=re.M)
 
-        op_check_fn += op_check_fn_body + "\n"
-        op_check_fn += "    }\n"
+        op_check_fn += op_check_fn_body
+        op_check_fn += "\n  }"
 
         return op_check_fn
 
@@ -639,8 +646,6 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
   }}
 
   {check_fn}
-
-  {prepacked_check_fn}
 }};
 """
 
@@ -660,11 +665,12 @@ class VkTestSuiteGen(TestSuiteGen):
         if self.suite_def.supports_prepack():
             self.generator.should_prepack = True
             prepacked_check_fn = self.generator.gen_op_check_fn()
+            check_fn += "\n\n  "
+            check_fn += prepacked_check_fn
 
         return test_fixture_template.format(
             op_name=self.op_name,
             check_fn=check_fn,
-            prepacked_check_fn=prepacked_check_fn,
             rtol=self.suite_def.rtol,
             atol=self.suite_def.atol,
         )
