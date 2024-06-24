@@ -289,6 +289,21 @@ Conv2dMethod get_conv2d_method(
   return Conv2dMethod::SlidingWindow;
 }
 
+api::utils::uvec3 create_conv2d_global_wg_size(
+    ComputeGraph& graph,
+    const Conv2dMethod method,
+    const ValueRef out) {
+  if (method == Conv2dMethod::Pointwise) {
+    const api::utils::uvec3 image_extents = graph.image_extents_of(out);
+    return {
+        api::utils::div_up(image_extents.data[0u], 2u),
+        api::utils::div_up(image_extents.data[1u], 2u),
+        image_extents.data[2u]};
+  } else {
+    return graph.create_global_wg_size(out);
+  }
+}
+
 void add_conv2d_node(
     ComputeGraph& graph,
     const ValueRef in,
@@ -357,7 +372,7 @@ void add_conv2d_node(
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       shader,
-      graph.create_global_wg_size(out),
+      create_conv2d_global_wg_size(graph, method, out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE},

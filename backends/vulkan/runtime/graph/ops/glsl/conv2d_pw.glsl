@@ -66,10 +66,10 @@ void main() {
   // | pos[2] | pos[3] |
   // +--------+--------+
   ivec3 pos[${TILE_SIZE * TILE_SIZE}];
-  for (int y = 0, i = 0; y < 2; ++y) {
-    for (int x = 0; x < 2; ++x) {
+  for (int y = 0, i = 0; y < ${TILE_SIZE}; ++y) {
+    for (int x = 0; x < ${TILE_SIZE}; ++x) {
       pos[i] = ivec3(
-          gpos.x * 2 + x, gpos.y * ${TILE_SIZE} + y, gpos.z);
+          gpos.x * ${TILE_SIZE} + x, gpos.y * ${TILE_SIZE} + y, gpos.z);
       i++;
     }
   }
