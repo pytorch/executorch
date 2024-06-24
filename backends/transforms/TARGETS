@@ -113,9 +113,9 @@ runtime.python_library(
 )
 
 runtime.python_library(
-    name = "i64_to_i32",
+    name = "convert_dtype_pass",
     srcs = [
-        "i64_to_i32.py",
+        "convert_dtype_pass.py",
     ],
     visibility = [
         "//executorch/backends/...",
