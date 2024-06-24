@@ -14,7 +14,7 @@ import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_
 
 import torch
 
-from executorch.backends.transforms.i64_to_i32 import I64toI32
+from executorch.backends.transforms.convert_dtype_pass import I64toI32
 from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
