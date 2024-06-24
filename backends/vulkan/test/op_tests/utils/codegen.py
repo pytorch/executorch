@@ -612,36 +612,35 @@ for (int i=0; i<out.size(); i++) {{
 
 test_fixture_template = """
 class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple<at::ScalarType, api::StorageType, api::GPUMemoryLayout>> {{
-  protected:
-    ComputeGraph* graph;
-    at::ScalarType test_dtype = at::kFloat;
-    float rtol = {rtol};
-    float atol = {atol};
+ protected:
+  ComputeGraph* graph;
+  at::ScalarType test_dtype = at::kFloat;
+  float rtol = {rtol};
+  float atol = {atol};
 
-    void SetUp() override {{
-        GraphConfig config;
-        api::StorageType default_storage_type;
-        api::GPUMemoryLayout default_memory_layout;
-        std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();
-        config.set_storage_type_override(default_storage_type);
-        config.set_memory_layout_override(default_memory_layout);
-        graph = new ComputeGraph(config);
+  void SetUp() override {{
+    GraphConfig config;
+    api::StorageType default_storage_type;
+    api::GPUMemoryLayout default_memory_layout;
+    std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();
+    config.set_storage_type_override(default_storage_type);
+    config.set_memory_layout_override(default_memory_layout);
+    graph = new ComputeGraph(config);
 
-        if (test_dtype == at::kHalf) {{
-            rtol = 1e-2;
-            atol = 1e-2;
-        }}
+    if (test_dtype == at::kHalf) {{
+      rtol = 1e-2;
+      atol = 1e-2;
     }}
+  }}
 
-    void TearDown() override {{
-        delete graph;
-        graph = nullptr;
-    }}
+  void TearDown() override {{
+    delete graph;
+    graph = nullptr;
+  }}
 
-    {check_fn}
+  {check_fn}
 
-    {prepacked_check_fn}
-
+  {prepacked_check_fn}
 }};
 """
 
@@ -676,13 +675,13 @@ class VkTestSuiteGen(TestSuiteGen):
         layouts = self.suite_def.layouts
 
         return f"""
-        INSTANTIATE_TEST_SUITE_P(
-            Combos_{self.op_name},
-            GeneratedOpsTest_{self.op_name},
-            ::testing::Combine(
-                ::testing::Values({', '.join(dtypes)}),
-                ::testing::Values({', '.join(storage_types)}),
-                ::testing::Values({', '.join(layouts)})));
+INSTANTIATE_TEST_SUITE_P(
+  Combos_{self.op_name},
+  GeneratedOpsTest_{self.op_name},
+    ::testing::Combine(
+      ::testing::Values({', '.join(dtypes)}),
+      ::testing::Values({', '.join(storage_types)}),
+      ::testing::Values({', '.join(layouts)})));
         """
 
 
@@ -701,20 +700,20 @@ using namespace vkcompute;
 using TensorOptions = at::TensorOptions;
 
 api::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
-    switch(at_scalartype) {
-        case c10::kFloat:
-            return api::kFloat;
-        case c10::kHalf:
-            return api::kHalf;
-        case c10::kInt:
-            return api::kInt;
-        case c10::kLong:
-            return api::kInt;
-        case c10::kChar:
-            return api::kChar;
-        default:
-            VK_THROW("Unsupported at::ScalarType!");
-    }
+  switch (at_scalartype) {
+    case c10::kFloat:
+      return api::kFloat;
+    case c10::kHalf:
+      return api::kHalf;
+    case c10::kInt:
+      return api::kInt;
+    case c10::kLong:
+      return api::kInt;
+    case c10::kChar:
+      return api::kChar;
+    default:
+      VK_THROW("Unsupported at::ScalarType!");
+  }
 }
 
 #ifdef USE_VULKAN_FP16_INFERENCE
@@ -722,20 +721,20 @@ bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-2, float atol=1e-
 #else
 bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-5, float atol=1e-5) {
 #endif
-    // Skip checking index tensors
-    if (t1.scalar_type() == at::kLong || t2.scalar_type() == at::kLong) {
-        return true;
-    }
-    bool is_close = at::allclose(t1, t2, rtol, atol);
-    if (!is_close && t1.numel() < 500) {
-        std::cout << "reference: " << std::endl;
-        print(t1, 150);
-        std::cout << std::endl;
-        std::cout << "vulkan: " << std::endl;
-        print(t2, 150);
-        std::cout << std::endl;
-    }
-    return is_close;
+  // Skip checking index tensors
+  if (t1.scalar_type() == at::kLong || t2.scalar_type() == at::kLong) {
+    return true;
+  }
+  bool is_close = at::allclose(t1, t2, rtol, atol);
+  if (!is_close && t1.numel() < 500) {
+    std::cout << "reference: " << std::endl;
+    print(t1, 150);
+    std::cout << std::endl;
+    std::cout << "vulkan: " << std::endl;
+    print(t2, 150);
+    std::cout << std::endl;
+  }
+  return is_close;
 }
 """
 
