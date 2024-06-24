@@ -74,6 +74,19 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "remove_clone_ops",
+    srcs = ["remove_clone_ops.py"],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
     name = "mean_to_sum_div",
     srcs = ["mean_to_sum_div.py"],
     visibility = [
