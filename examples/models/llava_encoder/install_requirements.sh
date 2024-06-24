@@ -17,6 +17,9 @@ pip install protobuf
 # Reinstall bitsandbytes to make it compatible.
 pip install bitsandbytes -I
 
+# numpy needs to be pin to 1.24. 1.26.4 will error out
+pip install numpy==1.24
+
 # The deps of llava can have different versions than deps of ExecuTorch.
 # For example, torch version required from llava is older than ExecuTorch.
 # To make both work, recover ExecuTorch's original dependencies by rerunning
