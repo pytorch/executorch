@@ -12,6 +12,8 @@
 
 #define VEC4_T ${texel_type(DTYPE)}
 
+#define TILE_SIZE ${TILE_SIZE}
+
 #define op(X, A, B) ${OPERATOR}
 
 #include "indexing_utils.h"
@@ -65,11 +67,11 @@ void main() {
   // +--------+--------+
   // | pos[2] | pos[3] |
   // +--------+--------+
-  ivec3 pos[${TILE_SIZE * TILE_SIZE}];
-  for (int y = 0, i = 0; y < ${TILE_SIZE}; ++y) {
-    for (int x = 0; x < ${TILE_SIZE}; ++x) {
+  ivec3 pos[TILE_SIZE * TILE_SIZE];
+  for (int y = 0, i = 0; y < TILE_SIZE; ++y) {
+    for (int x = 0; x < TILE_SIZE; ++x) {
       pos[i] = ivec3(
-          gpos.x * ${TILE_SIZE} + x, gpos.y * ${TILE_SIZE} + y, gpos.z);
+          gpos.x * TILE_SIZE + x, gpos.y * TILE_SIZE + y, gpos.z);
       i++;
     }
   }
@@ -83,14 +85,14 @@ void main() {
   // Compute the index of the input texture that needs to be loaded for each
   // output position. Note that negative indices can be produced indicating that
   // the top-left element is in a region added by padding.
-  ivec2 ipos[${TILE_SIZE * TILE_SIZE}];
-  for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
+  ivec2 ipos[TILE_SIZE * TILE_SIZE];
+  for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
     ipos[i] = pos[i].xy * stride - padding;
   }
 
-  vec4 sum[${TILE_SIZE * TILE_SIZE}];
+  vec4 sum[TILE_SIZE * TILE_SIZE];
   sum[0] = texelFetch(bias_in, ivec2(gpos.z, 0), 0);
-  for (int i = 1; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
+  for (int i = 1; i < TILE_SIZE * TILE_SIZE; ++i) {
     sum[i] = sum[0];
   }
 
@@ -99,17 +101,17 @@ void main() {
     // During prepacking, the weight tensor has been permuted so that the
     // channel (IC) dim is along the x-axis, and the batch (OC) dim is along
     // the z-axis.
-    vec4 in_tex[${TILE_SIZE * TILE_SIZE}];
+    vec4 in_tex[TILE_SIZE * TILE_SIZE];
     const vec4 ktex_0 = texelFetch(kernel_in, ivec2(z + 0, gpos.z), 0);
     const vec4 ktex_1 = texelFetch(kernel_in, ivec2(z + 1, gpos.z), 0);
     const vec4 ktex_2 = texelFetch(kernel_in, ivec2(z + 2, gpos.z), 0);
     const vec4 ktex_3 = texelFetch(kernel_in, ivec2(z + 3, gpos.z), 0);
 
-    for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
+    for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
       in_tex[i] = texelFetch(image_in, ivec3(ipos[i], z4), 0);
     }
 
-    for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
+    for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
       // For 2x2 tile size algorithm works as follows.
       // To explain the calculations below, the contents of one in_tex and the
       // group of 4 texels loaded from kernel_in are shown:
@@ -150,7 +152,7 @@ void main() {
     }
   }
 
-  for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
+  for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
     if (all(lessThan(pos[i], out_limits))) {
       imageStore(image_out, pos[i], op(sum[i], out_min, out_max));
     }
