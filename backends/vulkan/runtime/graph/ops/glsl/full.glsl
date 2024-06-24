@@ -12,6 +12,8 @@
 
 #define VEC4_T ${texel_type(DTYPE)}
 
+#define POS ${get_pos[NDIM]("pos")}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;
@@ -48,5 +50,5 @@ void main() {
     outtex = outtex * valid_idx;
   }
 
-  imageStore(image_out, ${get_pos[NDIM]("pos")}, outtex);
+  imageStore(image_out, POS, outtex);
 }
