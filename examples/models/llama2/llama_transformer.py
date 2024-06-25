@@ -479,13 +479,14 @@ class Transformer(nn.Module):
             # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
             input_pos_item = input_pos[-1].item()
             torch._check_is_size(input_pos_item)
-            # Setting this to max_seq_len but the resulting
-            # asserts from export are ignore anyway, so the particular
-            # value doesn't matter.
-            # Also in future when we want to support infinite generation
-            # input_pos can take any value until eos is encountered.
+            # Setting this value to 32 for no particular reason.
+            # It is mainly to make export happy as the resulting
+            # asserts are ignored anyway.
+            # We really need unbounded start_pos
             torch._check(input_pos_item < self.max_seq_len)
+            # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
             freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
+            # pyre-ignore: Incompatible parameter type [6]
             freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seqlen)
         else:
             assert input_pos is None, "input_pos is unused when use_kv_cache is False"

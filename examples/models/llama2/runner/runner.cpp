@@ -204,16 +204,16 @@ Result<torch::executor::Tensor> Runner::prefill(
     int64_t pos = 0; // position in the sequence
     int64_t cur_token = tokens[0];
     int64_t prev_token;
-    exec_aten::TensorImpl* logits_tensor_impl = nullptr;
+    // This is a hack to enable returning a logits tensor from prefill
+    auto logits_tensor = managed_tokens.get_aliasing_tensor();
     while (pos < num_tokens) {
       // Run the model
       Result<torch::executor::Tensor> logits_res = run_model_step(
           cur_token, managed_tokens, managed_start_pos, num_tokens);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
-      exec_aten::Tensor& logits_tensor = logits_res.get();
+      logits_tensor = logits_res.get();
       // Hack to enable returning a logits tensor from prefill
-      logits_tensor_impl = logits_tensor.unsafeGetTensorImpl();
 
       prev_token = cur_token;
 
@@ -240,7 +240,7 @@ Result<torch::executor::Tensor> Runner::prefill(
     start_pos.mutable_data_ptr<int64_t>()[0] = num_tokens;
     stats_.first_token_ms = util::time_in_ms();
     stats_.prompt_eval_end_ms = util::time_in_ms();
-    return exec_aten::Tensor(logits_tensor_impl);
+    return logits_tensor;
   }
 }
 
