@@ -72,9 +72,6 @@ void add_matmul_naive_node(
     const ValueRef mat2_is_transposed) {
   ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, api::kHeightPacked);
 
-  api::utils::uvec3 global_size = graph.image_extents_of(out);
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   std::string kernel_name = graph.get_bool(mat2_is_transposed)
       ? "matmul_transposed_naive"
       : "matmul_naive";
@@ -86,8 +83,8 @@ void add_matmul_naive_node(
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE},
        {{mat1, mat2}, api::MemoryAccessType::READ}},
