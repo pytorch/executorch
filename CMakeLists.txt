@@ -185,6 +185,12 @@ option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 
 option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
 
+option(BUILD_EXECUTORCH_PORTABLE_OPS "Build portable_ops library" ON)
+
+option(EXECUTORCH_USE_DL "Use libdl library" ON)
+
+option(EXECUTORCH_BUILD_CADENCE "Build the Cadence DSP backend" OFF)
+
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
 #
@@ -199,22 +205,6 @@ cmake_dependent_option(
 cmake_dependent_option(
   EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
   "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF
-)
-
-#
-# portable_ops_lib: build portable_ops library. Disable, if not required
-#
-cmake_dependent_option(
-  BUILD_EXECUTORCH_PORTABLE_OPS "Build portable_ops library." ON
-  "NOT EXECUTORCH_BUILD_CADENCE" OFF
-)
-
-#
-# libdl: use libdl library. Disable on unsupported platforms
-#
-cmake_dependent_option(
-  EXECUTORCH_USE_DL "Use libdl library." ON
-  "NOT EXECUTORCH_BUILD_CADENCE" OFF
 )
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
