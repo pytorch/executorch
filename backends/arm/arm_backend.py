@@ -244,13 +244,13 @@ class ArmBackend(BackendDetails):
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
         tosa_graph = ts.TosaSerializer(path)
-        edge_program = ArmPassManager(
-            exported_program=edge_program
-        ).transform_to_backend_pipeline(compile_spec=compile_spec)
+        graph_module = ArmPassManager().transform_to_backend_pipeline(
+            graph_module=edge_program.graph_module, compile_spec=compile_spec
+        )
 
         node_visitors = get_node_visitors(edge_program)
 
-        for node in edge_program.graph.nodes:
+        for node in graph_module.graph.nodes:
             if node.op == "call_function":
                 # Unpack arguments and convert
                 inputs = []

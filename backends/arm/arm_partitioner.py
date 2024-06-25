@@ -80,12 +80,13 @@ class ArmPartitioner(Partitioner):
         # subgraphs containing the nodes with the tags
         logger.info("ArmPartitioner::partition")
         partition_tags = {}
-        exported_program = ArmPassManager(
-            exported_program=exported_program
-        ).transform_partition_pipeline(compile_spec=self.delegation_spec.compile_specs)
+        graph_module = ArmPassManager().transform_partition_pipeline(
+            graph_module=exported_program.graph_module,
+            compile_spec=self.delegation_spec.compile_specs,
+        )
 
         capability_partitioner = CapabilityBasedPartitioner(
-            exported_program.graph_module,
+            graph_module,
             TOSASupportedOperators(),
             allows_single_node_partition=True,
         )

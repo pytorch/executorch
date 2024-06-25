@@ -5,12 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.arm.passes.arm_pass import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class RemoveClone(ArmPass):
+class RemoveClone(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:

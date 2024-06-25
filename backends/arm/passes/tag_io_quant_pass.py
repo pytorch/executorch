@@ -5,12 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.arm.passes.arm_pass import ArmPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import PassResult
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class TagIOQuant(ArmPass):
+class TagIOQuant(ExportPass):
     """
     Pass run before partitioning to tag Q/DQ on any placeholder and output
     to ensure we don't greedily partition them for device. Float conversion
