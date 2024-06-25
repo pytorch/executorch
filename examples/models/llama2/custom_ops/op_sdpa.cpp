@@ -401,6 +401,20 @@ void cpu_flash_attention(
             qk_data,
             kvBlockSize);
         // Apply causal mask, fill unused with -inf
+        // Apply causal mask, fill unused, i.e. future values, with -inf
+        // Say you have q @ k.T size = [16, 32]
+        // With qblock size = 4, say you are processing
+        // q seq len dim = 8:11.
+        // Say kvSplitSize = 4
+        // Then for causal mask, the entries that needs to be
+        // ignored are
+        // [8, 9:31], [9, 10:31], [10, 10:31], [11, 11:31]
+        // Following condition says that num_keys = 8 + 4 =12
+        // (num_keys - n) <= kvSplitSize
+        // num_keys <= n + kvSplitSize
+        // If n + kvSplitSize is larger than 12, then some
+        // entries need masked out. In our example n = 4
+        // will qualify for that
         if (is_causal && num_keys - n <= kvSplitSize) {
           for (int32_t row = 0; row < qBlockSize; ++row) {
             int64_t last_col = m + row - n;
