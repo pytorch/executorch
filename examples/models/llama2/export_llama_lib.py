@@ -175,6 +175,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether to use sdpa_with_kv_cache update op when using kv cache",
     )
     parser.add_argument(
+        "--disable_dynamic_shape",
+        dest="enable_dynamic_shape",
+        default=True,  # Enable this by default
+        action="store_false",
+        help="Enable dynamic shape along seq dim. Used for faster prefill",
+    )
+    parser.add_argument(
         "-p",
         "--params",
         default=f"{ckpt_dir}/params/demo_config.json",
@@ -369,6 +376,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             use_kv_cache=args.use_kv_cache,
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             weight_type=weight_type,
+            enable_dynamic_shape=args.enable_dynamic_shape,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
         )
@@ -391,7 +399,19 @@ def get_quantizer_and_quant_params(args):
     return pt2e_quant_params, quantizers, quant_dtype
 
 
+def _validate_args(args):
+    """
+    TODO: Combine all the backends under --backend args
+    """
+    if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
+        raise ValueError(
+            "Dynamic shape is not supported with coreml, MPS or qnn backends."
+            " Please us --disble_dynamic_shape."
+        )
+
+
 def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
+    _validate_args(args)
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
     # export_to_edge

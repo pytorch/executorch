@@ -447,6 +447,7 @@ class Transformer(nn.Module):
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
+        self.max_seq_len = params.max_seq_len
 
         freqs_cos, freqs_sin = precompute_freqs_cis(
             params.dim // params.n_heads,
@@ -476,8 +477,16 @@ class Transformer(nn.Module):
             ), "input_pos must be provided when use_kv_cache is True"
 
             # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
-            freqs_cos = self.freqs_cos[input_pos]
-            freqs_sin = self.freqs_sin[input_pos]
+            input_pos_item = input_pos[-1].item()
+            torch._check_is_size(input_pos_item)
+            # Setting this to max_seq_len but the resulting
+            # asserts from export are ignore anyway, so the particular
+            # value doesn't matter.
+            # Also in future when we want to support infinite generation
+            # input_pos can take any value until eos is encountered.
+            torch._check(input_pos_item < self.max_seq_len)
+            freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
+            freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seqlen)
         else:
             assert input_pos is None, "input_pos is unused when use_kv_cache is False"
             freqs_cos = self.freqs_cos[:seqlen]
