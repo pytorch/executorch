@@ -73,7 +73,6 @@ attn_mask=attn_mask)
 
 /*
 Missing tests:
-1. Add back tests with attention masks
 2. Add different seq lengths on Q
 3. Test for different batch sizes
 4. Apply causal attention
