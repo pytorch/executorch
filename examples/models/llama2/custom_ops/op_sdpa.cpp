@@ -665,7 +665,6 @@ void update_cache(
     const Tensor& cache,
     int64_t start_pos,
     int64_t seq_length) {
-  ET_CHECK_MSG(seq_length == 1, "seq_length must be 1");
   ET_CHECK_MSG(
       projected_value.size(0) == 1,
       "projected_value must have batch size of 1");
