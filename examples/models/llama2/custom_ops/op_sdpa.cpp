@@ -400,7 +400,6 @@ void cpu_flash_attention(
             static_cast<accum_t>(0),
             qk_data,
             kvBlockSize);
-        // Apply causal mask, fill unused with -inf
         // Apply causal mask, fill unused, i.e. future values, with -inf
         // Say you have q @ k.T size = [16, 32]
         // With qblock size = 4, say you are processing
