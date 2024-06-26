@@ -109,9 +109,25 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
     const char* kSignLiteral = "#";
     // The first number is the number of total instruction
     const char* start = static_cast<const char*>(processed->data());
-    char* instruction_number_end =
+
+    const char* kVersion = "version:";
+    const long int kRuntimeVersion = 0;
+    char* version_start =
+        const_cast<char*>(strstr(start, kVersion)) + strlen(kVersion);
+    char* version_end;
+    char* instruction_set_start =
         const_cast<char*>(strstr(start, kSignLiteral));
+
+    long int version = strtol(version_start, &version_end, 10);
+    ET_CHECK_OR_RETURN_ERROR(
+        version == kRuntimeVersion,
+        DelegateInvalidCompatibility,
+        "The version of BackendWithCompiler runtime is %ld, but received an incompatible version %ld instead.",
+        kRuntimeVersion,
+        version);
+    char* instruction_number_end;
     long int instruction_number = strtol(start, &instruction_number_end, 10);
+
     ET_CHECK_OR_RETURN_ERROR(
         instruction_number >= 0,
         InvalidArgument,
@@ -124,7 +140,7 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
         runtime_allocator, DemoOp, instruction_number);
     op_list->numops = static_cast<size_t>(instruction_number);
 
-    parse_delegate(instruction_number_end + 1, kSignLiteral, op_list->ops);
+    parse_delegate(instruction_set_start + 1, kSignLiteral, op_list->ops);
 
     // Can't call `processed->Free()` because op_list points into it.
 
