@@ -138,6 +138,24 @@ int32_t Runner::logitsToToken(
   return sampler_->sample(logits_last);
 }
 
+void Runner::warmup() {
+  std::vector<int64_t> token_data = {1}; // allocate space for the tokens
+  ManagedTensor tokens_managed(
+      token_data.data(), {1, 1}, ScalarType::Long);
+  std::vector<int64_t> start_pos_data = {0}; // allocate space for the tokens
+  ManagedTensor start_pos_managed(
+      start_pos_data.data(), {1}, ScalarType::Long);
+  std::vector<EValue> inputs;
+  auto tokens_tensor = tokens_managed.get_aliasing_tensor();
+  auto start_pos = start_pos_managed.get_aliasing_tensor();
+
+  // inputs:[tokens, start_pos]
+  inputs.push_back(tokens_tensor);
+  inputs.push_back(start_pos);
+
+  Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
+}
+
 // Given an input token. Set up the inputs for the model and execute a single
 // step. Returning the logits tensor.
 Result<torch::executor::Tensor> Runner::run_model_step(
@@ -222,6 +240,7 @@ Error Runner::generate(
   // First token time only measures the time it takes to encode the prompt and
   // return a response token.
 
+  warmup();
   stats_.inference_start_ms = util::time_in_ms();
   shouldStop_ = false;
 
