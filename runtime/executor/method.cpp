@@ -729,6 +729,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
 
   // Validate input values and get tensor pre-allocation info.
   pre_allocated_input_ = false;
+  int num_pre_allocated_inputs = 0;
   for (int i = 0; i < inputs_size(); i++) {
     // get_input() will panic if the index is invalid, so do this manually.
     size_t index = get_input_index(i);
@@ -740,12 +741,34 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
         n_value_);
     const EValue& input = values_[index];
     if (input.isTensor()) {
-      pre_allocated_input_ |= input.toTensor().const_data_ptr() != nullptr;
+      const bool is_preallocated = input.toTensor().const_data_ptr() != nullptr;
+      if (is_preallocated) {
+        // If at least one output is pre-allocated, then all outputs must be
+        // pre-allocated.
+        ET_CHECK_OR_RETURN_ERROR(
+            num_pre_allocated_inputs == i,
+            InvalidProgram,
+            "All inputs must be pre-allocated if any input is pre-allocated, "
+            "input %zu is pre-allocated",
+            index);
+        num_pre_allocated_inputs++;
+        pre_allocated_input_ = true;
+      } else {
+        // If at least one output is *not* pre-allocated, then all outputs must
+        // not be pre-allocated.
+        ET_CHECK_OR_RETURN_ERROR(
+            num_pre_allocated_inputs == 0,
+            InvalidProgram,
+            "All inputs must not be pre-allocated if any input is not pre-allocated, "
+            "input %zu is not pre-allocated",
+            index);
+      }
     }
   }
 
   // Validate output values and get tensor pre-allocation info.
   pre_allocated_output_ = false;
+  int num_pre_allocated_outputs = 0;
   for (int i = 0; i < outputs_size(); i++) {
     // get_output() will panic if the index is invalid, so do this manually.
     size_t index = get_output_index(i);
@@ -757,7 +780,29 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
         n_value_);
     const EValue& output = values_[index];
     if (output.isTensor()) {
-      pre_allocated_output_ |= output.toTensor().const_data_ptr() != nullptr;
+      const bool is_preallocated =
+          output.toTensor().const_data_ptr() != nullptr;
+      if (is_preallocated) {
+        // If at least one output is pre-allocated, then all outputs must be
+        // pre-allocated.
+        ET_CHECK_OR_RETURN_ERROR(
+            num_pre_allocated_outputs == i,
+            InvalidProgram,
+            "All outputs must be pre-allocated if any output is pre-allocated, "
+            "output %d is pre-allocated",
+            i);
+        num_pre_allocated_outputs++;
+        pre_allocated_output_ = true;
+      } else {
+        // If at least one output is *not* pre-allocated, then all outputs must
+        // not be pre-allocated.
+        ET_CHECK_OR_RETURN_ERROR(
+            num_pre_allocated_outputs == 0,
+            InvalidProgram,
+            "All outputs must not be pre-allocated if any output is not pre-allocated, "
+            "output %d is not pre-allocated",
+            i);
+      }
     }
   }
 
@@ -959,11 +1004,6 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       (size_t)output.tag);
 
   auto& t = output.toTensor();
-  ET_CHECK_OR_RETURN_ERROR(
-      output.isTensor(),
-      InvalidArgument,
-      "output type: %zu is not tensor",
-      (size_t)output.tag);
   ET_CHECK_OR_RETURN_ERROR(
       t.nbytes() <= size,
       InvalidArgument,
