@@ -75,6 +75,7 @@ class Runner {
       const std::vector<uint64_t>& tokens,
       ManagedTensor& managed_tokens,
       ManagedTensor& managed_start_pos);
+  void warmup();
   Result<torch::executor::Tensor> run_model_step(
       int64_t input_token,
       ManagedTensor& tokens,

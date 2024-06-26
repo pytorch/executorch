@@ -40,7 +40,14 @@ class SDPATest(unittest.TestCase):
         value = torch.randn(1, 1, n_local_heads, head_dim)
         mask = torch.randn(max_seq_length, max_seq_length)
         sdpa_output = sdpa(
-            input_pos, query, key, value, bsz=bsz, seqlen=seqlen, mask=mask
+            input_pos,
+            query,
+            key,
+            value,
+            bsz=bsz,
+            seqlen=seqlen,
+            mask=mask,
+            max_seq_length=max_seq_length,
         )
 
         simple_sdpa = SDPASimple(
