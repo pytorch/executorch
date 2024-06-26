@@ -1057,6 +1057,23 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_upsample_nearest2d(self):
+        class UpsampleNearest2d(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.upsample = torch.nn.Upsample(scale_factor=2, mode="nearest")
+
+            def forward(self, x):
+                return self.upsample(x)
+
+        sample_inputs = (torch.arange(1, 5, dtype=torch.float32).view(1, 1, 2, 2),)
+
+        self.lower_module_and_test_output(
+            UpsampleNearest2d(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_reshape(self):
         class ReshapeModule(torch.nn.Module):
             def __init__(self):
