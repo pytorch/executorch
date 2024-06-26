@@ -63,6 +63,7 @@ SUPPORTED_OPS = [
     exir_ops.edge.aten.avg_pool2d.default,
     exir_ops.edge.aten.leaky_relu.default,
     exir_ops.edge.aten.addmm.default,  # TODO(T163877189) add constraint for addmm
+    exir_ops.edge.aten.convolution.default,
 ]
 
 SUPPORTED_MODULES = [
@@ -99,6 +100,7 @@ SUPPORTED_QUANT_OPS = [
     exir_ops.edge.aten.t_copy.default,
     exir_ops.edge.aten.leaky_relu.default,
     exir_ops.edge.aten.addmm.default,  # TODO(T163877189) add constraint for addmm
+    exir_ops.edge.aten.convolution.default,
 ]
 
 SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET = {
