@@ -73,7 +73,6 @@ class Runner {
   template <typename T>
   int32_t
   logitsToToken(const exec_aten::Tensor& logits_tensor, int64_t pos, T _);
-  void warmup();
   Result<torch::executor::Tensor> run_model_step(
       int64_t input_token,
       ManagedTensor& tokens,
