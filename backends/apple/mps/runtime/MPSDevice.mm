@@ -134,7 +134,7 @@ MPSDevice::compilePSO(LibraryType libraryType, const char* kernelName) {
     ET_CHECK_OR_RETURN_ERROR(
       err == Error::Ok,
       Internal,
-      "An error occured occured while compiling library %d", libraryType
+      "An error occurred while compiling library %d", libraryType
     );
   }
   if (_m_pso_cache.find(kernelName) == _m_pso_cache.end()) {
