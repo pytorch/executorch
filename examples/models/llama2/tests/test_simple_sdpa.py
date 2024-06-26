@@ -32,7 +32,11 @@ class SDPATest(unittest.TestCase):
             transpose_cache=True,
         )
         sdpa = SDPA(
-            kv_cache=copy.deepcopy(kv_cache), dim=dim, head_dim=head_dim, n_rep=n_rep
+            kv_cache=copy.deepcopy(kv_cache),
+            dim=dim,
+            head_dim=head_dim,
+            n_rep=n_rep,
+            max_seq_length=max_seq_length,
         )
         input_pos = torch.tensor([0])
         query = torch.randn(1, 1, n_local_heads, head_dim)
@@ -47,7 +51,6 @@ class SDPATest(unittest.TestCase):
             bsz=bsz,
             seqlen=seqlen,
             mask=mask,
-            max_seq_length=max_seq_length,
         )
 
         simple_sdpa = SDPASimple(
