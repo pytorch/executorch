@@ -195,6 +195,12 @@ Result<torch::executor::Tensor> Runner::prefill(
       fflush(stdout);
       prev = cur;
     }
+    cur = logitsToToken(outputs_res.get()[0].toTensor());
+    auto piece_res = tokenizer_->decode(prev, cur);
+    ET_CHECK(piece_res.ok());
+    const char* piece = piece_res.get().c_str();
+    util::safe_printf(piece);
+    fflush(stdout);
 
     // Return the logits tensor
     stats_.first_token_ms = util::time_in_ms();
