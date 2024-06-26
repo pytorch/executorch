@@ -208,11 +208,8 @@ class KVCache(nn.Module):
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # input_pos: [S], k_val: [B, H, S, D] or [B, S, H, D] depending on transpose_cache
-        k_out = self.k_cache
-        v_out = self.v_cache
-        k_out[:, :, input_pos] = k_val
-        v_out[:, :, input_pos] = v_val
-
+        k_out = torch.ops.aten.index_put_(self.k_cache, [None, None, input_pos], k_val)
+        v_out = torch.ops.aten.index_put_(self.v_cache, [None, None, input_pos], v_val)
         return k_out, v_out
 
 
