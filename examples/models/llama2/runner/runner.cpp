@@ -152,7 +152,8 @@ int32_t Runner::logitsToToken(const exec_aten::Tensor& logits_tensor) {
 Result<torch::executor::Tensor> Runner::prefill(
     const std::vector<uint64_t>& tokens,
     ManagedTensor& managed_tokens,
-    ManagedTensor& managed_start_pos) {
+    ManagedTensor& managed_start_pos,
+    std::function<void(const std::string&)> token_callback) {
   // enable_parallel_prefill_ maybe set even when not using kv cache
   // When kv cache is not used, start pos is ignored
   int32_t num_tokens = tokens.size();
@@ -194,6 +195,9 @@ Result<torch::executor::Tensor> Runner::prefill(
       util::safe_printf(piece_res.get().c_str());
       fflush(stdout);
       prev = cur;
+      if (token_callback) {
+        token_callback(piece_res.get().c_str());
+      }
     }
     cur = logitsToToken(outputs_res.get()[0].toTensor());
     auto piece_res = tokenizer_->decode(prev, cur);
@@ -201,6 +205,9 @@ Result<torch::executor::Tensor> Runner::prefill(
     const char* piece = piece_res.get().c_str();
     util::safe_printf(piece);
     fflush(stdout);
+    if (token_callback) {
+      token_callback(piece_res.get().c_str());
+    }
 
     // Return the logits tensor
     stats_.first_token_ms = util::time_in_ms();
@@ -241,6 +248,9 @@ Result<torch::executor::Tensor> Runner::prefill(
       const char* piece = piece_res.get().c_str();
       util::safe_printf(piece);
       fflush(stdout);
+      if (token_callback) {
+        token_callback(piece_res.get().c_str());
+      }
     }
     auto start_pos = managed_start_pos.get_aliasing_tensor();
     start_pos.mutable_data_ptr<int64_t>()[0] = num_tokens;
@@ -248,24 +258,6 @@ Result<torch::executor::Tensor> Runner::prefill(
     stats_.prompt_eval_end_ms = util::time_in_ms();
     return logits_tensor;
   }
-}
-
-void Runner::warmup() {
-  std::vector<int64_t> token_data = {1}; // allocate space for the tokens
-  ManagedTensor tokens_managed(
-      token_data.data(), {1, 1}, ScalarType::Long);
-  std::vector<int64_t> start_pos_data = {0}; // allocate space for the tokens
-  ManagedTensor start_pos_managed(
-      start_pos_data.data(), {1}, ScalarType::Long);
-  std::vector<EValue> inputs;
-  auto tokens_tensor = tokens_managed.get_aliasing_tensor();
-  auto start_pos = start_pos_managed.get_aliasing_tensor();
-
-  // inputs:[tokens, start_pos]
-  inputs.push_back(tokens_tensor);
-  inputs.push_back(start_pos);
-
-  Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
 }
 
 // Given an input token. Set up the inputs for the model and execute a single
@@ -355,7 +347,6 @@ Error Runner::generate(
   // First token time only measures the time it takes to encode the prompt and
   // return a response token.
 
-  warmup();
   stats_.inference_start_ms = util::time_in_ms();
   shouldStop_ = false;
 
@@ -413,7 +404,8 @@ Error Runner::generate(
   // Prefill first
   // Here feed all tokens to the model and get the next predicted token
   // after the prompt. After that we will enter generate loop.
-  auto prefill_res = prefill(prompt_tokens, tokens_managed, start_pos_managed);
+  auto prefill_res =
+      prefill(prompt_tokens, tokens_managed, start_pos_managed, token_callback);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   exec_aten::Tensor& prefill_res_tensor = prefill_res.get();
   cur_token = logitsToToken(prefill_res_tensor);

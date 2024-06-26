@@ -74,8 +74,8 @@ class Runner {
   Result<torch::executor::Tensor> prefill(
       const std::vector<uint64_t>& tokens,
       ManagedTensor& managed_tokens,
-      ManagedTensor& managed_start_pos);
-  void warmup();
+      ManagedTensor& managed_start_pos,
+      std::function<void(const std::string&)> token_callback);
   Result<torch::executor::Tensor> run_model_step(
       int64_t input_token,
       ManagedTensor& tokens,
