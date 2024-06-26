@@ -191,6 +191,7 @@ class KVCache(nn.Module):
         dtype=torch.float32,
     ):
         super().__init__()
+        self.max_seq_length = max_seq_length
         if transpose_cache:
             cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
         else:
@@ -208,12 +209,23 @@ class KVCache(nn.Module):
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # input_pos: [S], k_val: [B, H, S, D] or [B, S, H, D] depending on transpose_cache
-        k_out = self.k_cache
-        v_out = self.v_cache
-        k_out[:, :, input_pos] = k_val
-        v_out[:, :, input_pos] = v_val
+        start_pos = input_pos[-1].item()
+        torch._check_is_size(start_pos)
+        torch._check(start_pos < self.max_seq_length)
+        seq_length = k_val.size(2)
+        # Replace the entry in the cache for this token
+        # The following lines are equivalent to:
+        # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+        # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+        # We use .narrow() here to make the compiler happy
+        # pyre-ignore: Incompatible parameter type [6]
+        narrowed_k = self.k_cache.narrow(2, start_pos, seq_length)
+        # pyre-ignore: Incompatible parameter type [6]
+        narrowed_v = self.v_cache.narrow(2, start_pos, seq_length)
 
-        return k_out, v_out
+        narrowed_k.copy_(k_val)
+        narrowed_v.copy_(v_val)
+        return self.k_cache, self.v_cache
 
 
 class SDPA(nn.Module):
@@ -223,12 +235,14 @@ class SDPA(nn.Module):
         dim: int,
         head_dim: int,
         n_rep: int,
+        max_seq_len: int,
     ):
         super().__init__()
         self.kv_cache = kv_cache
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
+        self.max_seq_len = max_seq_len
 
     def forward(
         self,
@@ -245,7 +259,12 @@ class SDPA(nn.Module):
         v = v.transpose(1, 2)
 
         k, v = self.kv_cache.update(input_pos, k, v)
-        attn_mask = mask[None, None, input_pos]
+        start_pos = input_pos[-1].item()
+        torch._check_is_size(start_pos)
+        torch._check(start_pos < self.max_seq_len)
+        seq_length = q.size(2)
+        # pyre-ignore: Incompatible parameter type [6]
+        attn_mask = mask.narrow(0, start_pos, seq_length)
 
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
@@ -299,6 +318,7 @@ class Attention(nn.Module):
                 dim=self.dim,
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
+                max_seq_len=self.max_seq_len,
             )
 
     def forward(
@@ -483,7 +503,7 @@ class Transformer(nn.Module):
             # It is mainly to make export happy as the resulting
             # asserts are ignored anyway.
             # We really need unbounded start_pos
-            torch._check(input_pos_item < self.max_seq_len)
+            torch._check(input_pos_item < self.params.max_seq_len)
             # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
             freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
             # pyre-ignore: Incompatible parameter type [6]
