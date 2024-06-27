@@ -10,10 +10,20 @@
 // macro
 #define FOUR 4
 
+#ifdef TILE_ROW_2
+#define TILE_ROWS 2
+#else
+#define TILE_ROWS 4
+#endif
+
 // we avoid mat4 and vec4 usage here as they compile to much less efficient
 // SPIR-V
-struct FloatMatrix {
-  float data[FOUR][FOUR][FOUR];
+struct FloatMatrix_2d {
+  float data[TILE_ROWS][FOUR];
+};
+
+struct FloatMatrix_3d {
+  float data[TILE_ROWS][FOUR][FOUR];
 };
 
 #ifdef MAT2_IS_TRANSPOSED
@@ -146,21 +156,80 @@ vec4 get_texel_C_packed(
   return self_texel;
 }
 
-FloatMatrix matmul_partial_4x4(
+FloatMatrix_2d matmul_partial_2d(
     sampler3D im_mat1,
     sampler3D im_mat2,
     const ivec3 pos,
     const int batch_size,
     const int K_texel_len) {
-  FloatMatrix results;
-  for (int i = 0; i < FOUR; i++) {
+  FloatMatrix_2d results;
+  for (int i = 0; i < TILE_ROWS; i++) {
+    for (int j = 0; j < FOUR; j++) {
+      results.data[i][j] = 0.0f;
+    }
+  }
+  vec4 im_mat1_partial_load[TILE_ROWS];
+  vec4 im_mat2_partial_load[FOUR];
+
+  for (int mat1_x = 0; mat1_x < K_texel_len; mat1_x++) {
+    for (int offset = 0; offset < TILE_ROWS; offset++) {
+      // read and cache 2x4 (or 4x4) tile of im_mat1
+      const int mat1_y = (TILE_ROWS * pos.y) + offset;
+      const ivec3 mat1_pos = ivec3(mat1_x, mat1_y, 0);
+      im_mat1_partial_load[offset] = texelFetch(im_mat1, mat1_pos, 0);
+      // read and cache 4x4 tile of im_mat2
+#ifdef MAT2_IS_TRANSPOSED
+      const int mat2_y = (FOUR * pos.x) + offset;
+      const ivec3 mat2_pos = ivec3(mat1_x, mat2_y, 0);
+      im_mat2_partial_load[offset] = texelFetch(im_mat2, mat2_pos, 0);
+#else
+      const int mat2_x = (FOUR * pos.x) + offset;
+      const ivec3 mat2_pos = ivec3(mat2_x, mat1_x, 0);
+      im_mat2_partial_load[offset] = texelFetch(im_mat2, mat2_pos, 0);
+#endif
+    }
+
+#ifdef TILE_ROW_2
+// column 3 and 4 of im_mat2
+#ifdef MAT2_IS_TRANSPOSED
+    im_mat2_partial_load[2] =
+        texelFetch(im_mat2, ivec3(mat1_x, (FOUR * pos.x) + 2, 0), 0);
+    im_mat2_partial_load[3] =
+        texelFetch(im_mat2, ivec3(mat1_x, (FOUR * pos.x) + 3, 0), 0);
+#else
+    im_mat2_partial_load[2] =
+        texelFetch(im_mat2, ivec3((FOUR * pos.x) + 2, mat1_x, 0), 0);
+    im_mat2_partial_load[3] =
+        texelFetch(im_mat2, ivec3((FOUR * pos.x) + 3, mat1_x, 0), 0);
+#endif
+#endif
+
+    // perform partial dot products and add partial result to results
+    for (int out_row = 0; out_row < TILE_ROWS; out_row++) {
+      for (int out_col = 0; out_col < FOUR; out_col++) {
+        results.data[out_row][out_col] +=
+            dot(im_mat1_partial_load[out_row], im_mat2_partial_load[out_col]);
+      }
+    }
+  }
+  return results;
+}
+
+FloatMatrix_3d matmul_partial_3d(
+    sampler3D im_mat1,
+    sampler3D im_mat2,
+    const ivec3 pos,
+    const int batch_size,
+    const int K_texel_len) {
+  FloatMatrix_3d results;
+  for (int i = 0; i < TILE_ROWS; i++) {
     for (int j = 0; j < FOUR; j++) {
       for (int k = 0; k < FOUR; k++) {
         results.data[i][j][k] = 0.0f;
       }
     }
   }
-  vec4 im_mat1_partial_load[FOUR];
+  vec4 im_mat1_partial_load[TILE_ROWS];
   vec4 im_mat2_partial_load[FOUR];
 
   for (int batch_idx = 0; batch_idx < FOUR; batch_idx++) {
@@ -169,9 +238,9 @@ FloatMatrix matmul_partial_4x4(
     }
     int mat_z = FOUR * pos.z + batch_idx;
     for (int mat1_x = 0; mat1_x < K_texel_len; mat1_x++) {
-      for (int offset = 0; offset < FOUR; offset++) {
-        // read and cache 4x4 tile of im_mat1
-        const int mat1_y = (FOUR * pos.y) + offset;
+      for (int offset = 0; offset < TILE_ROWS; offset++) {
+        // read and cache 2x4 (or 4x4) tile of im_mat1
+        const int mat1_y = (TILE_ROWS * pos.y) + offset;
         const ivec3 mat1_pos = ivec3(mat1_x, mat1_y, mat_z);
         im_mat1_partial_load[offset] = texelFetch(im_mat1, mat1_pos, 0);
         // read and cache 4x4 tile of im_mat2
@@ -185,8 +254,24 @@ FloatMatrix matmul_partial_4x4(
         im_mat2_partial_load[offset] = texelFetch(im_mat2, mat2_pos, 0);
 #endif
       }
+
+#ifdef TILE_ROW_2
+// column 3, and 4 of im_mat2
+#ifdef MAT2_IS_TRANSPOSED
+      im_mat2_partial_load[2] =
+          texelFetch(im_mat2, ivec3(mat1_x, (FOUR * pos.x) + 2, 0), 0);
+      im_mat2_partial_load[3] =
+          texelFetch(im_mat2, ivec3(mat1_x, (FOUR * pos.x) + 3, 0), 0);
+#else
+      im_mat2_partial_load[2] =
+          texelFetch(im_mat2, ivec3((FOUR * pos.x) + 2, mat1_x, mat_z), 0);
+      im_mat2_partial_load[3] =
+          texelFetch(im_mat2, ivec3((FOUR * pos.x) + 3, mat1_x, mat_z), 0);
+#endif
+#endif
+
       // perform partial dot products and add partial result to results
-      for (int out_row = 0; out_row < FOUR; out_row++) {
+      for (int out_row = 0; out_row < TILE_ROWS; out_row++) {
         for (int out_col = 0; out_col < FOUR; out_col++) {
           results.data[out_row][out_col][batch_idx] +=
               dot(im_mat1_partial_load[out_row], im_mat2_partial_load[out_col]);

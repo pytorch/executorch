@@ -320,6 +320,10 @@ api::utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
 }
 
 api::utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
+  if (config_.enable_local_wg_size_override) {
+    return config_.local_wg_size_override;
+  }
+
   if (is_buffer_storage(idx)) {
     return {64u, 1u, 1u};
   }

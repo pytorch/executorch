@@ -78,6 +78,8 @@ class SpecPropPass(ExportPass):
                     node.target in exported_program.graph_signature.inputs_to_buffers
                     and not _is_mutable_buffer(node, exported_program.graph_signature)
                 )
+                or node.target
+                in exported_program.graph_signature.inputs_to_lifted_tensor_constants
             ):
                 spec.const = True
 

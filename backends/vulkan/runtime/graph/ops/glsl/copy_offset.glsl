@@ -12,8 +12,8 @@
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
+${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
 
 layout(set = 0, binding = 2) uniform PRECISION restrict CopyArgs {
   ivec3 range;
@@ -36,5 +36,5 @@ void main() {
     return;
   }
 
-  imageStore(image_out, out_pos, texelFetch(image_in, in_pos, 0));
+  imageStore(t_out, out_pos, texelFetch(t_in, in_pos, 0));
 }
