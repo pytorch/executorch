@@ -12,49 +12,30 @@
 
 #define VEC4_T ${texel_type(DTYPE)}
 
+#define TILE_SIZE ${TILE_SIZE}
+
 #define op(X, A, B) ${OPERATOR}
 
 #include "indexing_utils.h"
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
-layout(set = 0, binding = 2) uniform PRECISION sampler2D kernel_in;
-layout(set = 0, binding = 3) uniform PRECISION sampler2D bias_in;
-
-layout(set = 0, binding = 4) uniform PRECISION restrict OutLimits {
-  ivec3 out_limits;
-};
-
-layout(set = 0, binding = 5) uniform PRECISION restrict InSizes {
-  ivec4 data;
-};
-
-layout(set = 0, binding = 6) uniform PRECISION restrict Params {
-  ivec2 kernel_size;
-  ivec2 stride;
-  ivec2 padding;
-  ivec2 dilation;
-};
-
-// If fields are separated, SwiftShader cannot identify in_group_size.
-layout(set = 0, binding = 7) uniform PRECISION restrict ExtraParams {
-  ivec2 overlay_region;
-  int in_group_size;
-};
-
-layout(set = 0, binding = 8) uniform PRECISION restrict OutputParams {
-  float out_min;
-  float out_max;
-};
+${layout_declare_tensor(0, "w", "t_out", DTYPE, "texture3d")}
+${layout_declare_tensor(1, "r", "t_in", DTYPE, "texture3d")}
+${layout_declare_tensor(2, "r", "t_kernel", DTYPE, "texture2d")}
+${layout_declare_tensor(3, "r", "t_bias", DTYPE, "texture2d")}
+${layout_declare_ubo(4, "ivec3", "out_limits")}
+${layout_declare_ubo(5, "ivec4", "in_sizes")}
+${layout_declare_ubo(6, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
+${layout_declare_ubo(7, "ivec2", "overlay_region", "int", "in_group_size")}
+${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 /*
  * Computes a 2D pointwise convolution of an NxN output tile. Calculating an
  * output tile for pointwise convolution is more efficient because the kernel
- * size is only 1x1, making it easier to re-use loaded texels from kernel_in.
+ * size is only 1x1, making it easier to re-use loaded texels from t_kernel.
  */
 void main() {
   const ivec3 gpos = ivec3(gl_GlobalInvocationID);
@@ -65,11 +46,11 @@ void main() {
   // +--------+--------+
   // | pos[2] | pos[3] |
   // +--------+--------+
-  ivec3 pos[${TILE_SIZE * TILE_SIZE}];
-  for (int y = 0, i = 0; y < 2; ++y) {
-    for (int x = 0; x < 2; ++x) {
+  ivec3 pos[TILE_SIZE * TILE_SIZE];
+  for (int y = 0, i = 0; y < TILE_SIZE; ++y) {
+    for (int x = 0; x < TILE_SIZE; ++x) {
       pos[i] = ivec3(
-          gpos.x * 2 + x, gpos.y * ${TILE_SIZE} + y, gpos.z);
+          gpos.x * TILE_SIZE + x, gpos.y * TILE_SIZE + y, gpos.z);
       i++;
     }
   }
@@ -83,14 +64,14 @@ void main() {
   // Compute the index of the input texture that needs to be loaded for each
   // output position. Note that negative indices can be produced indicating that
   // the top-left element is in a region added by padding.
-  ivec2 ipos[${TILE_SIZE * TILE_SIZE}];
-  for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
+  ivec2 ipos[TILE_SIZE * TILE_SIZE];
+  for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
     ipos[i] = pos[i].xy * stride - padding;
   }
 
-  vec4 sum[${TILE_SIZE * TILE_SIZE}];
-  sum[0] = texelFetch(bias_in, ivec2(gpos.z, 0), 0);
-  for (int i = 1; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
+  vec4 sum[TILE_SIZE * TILE_SIZE];
+  sum[0] = texelFetch(t_bias, ivec2(gpos.z, 0), 0);
+  for (int i = 1; i < TILE_SIZE * TILE_SIZE; ++i) {
     sum[i] = sum[0];
   }
 
@@ -99,22 +80,22 @@ void main() {
     // During prepacking, the weight tensor has been permuted so that the
     // channel (IC) dim is along the x-axis, and the batch (OC) dim is along
     // the z-axis.
-    vec4 in_tex[${TILE_SIZE * TILE_SIZE}];
-    const vec4 ktex_0 = texelFetch(kernel_in, ivec2(z + 0, gpos.z), 0);
-    const vec4 ktex_1 = texelFetch(kernel_in, ivec2(z + 1, gpos.z), 0);
-    const vec4 ktex_2 = texelFetch(kernel_in, ivec2(z + 2, gpos.z), 0);
-    const vec4 ktex_3 = texelFetch(kernel_in, ivec2(z + 3, gpos.z), 0);
+    vec4 in_tex[TILE_SIZE * TILE_SIZE];
+    const vec4 ktex_0 = texelFetch(t_kernel, ivec2(z + 0, gpos.z), 0);
+    const vec4 ktex_1 = texelFetch(t_kernel, ivec2(z + 1, gpos.z), 0);
+    const vec4 ktex_2 = texelFetch(t_kernel, ivec2(z + 2, gpos.z), 0);
+    const vec4 ktex_3 = texelFetch(t_kernel, ivec2(z + 3, gpos.z), 0);
 
-    for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
-      in_tex[i] = texelFetch(image_in, ivec3(ipos[i], z4), 0);
+    for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
+      in_tex[i] = texelFetch(t_in, ivec3(ipos[i], z4), 0);
     }
 
-    for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
+    for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
       // For 2x2 tile size algorithm works as follows.
       // To explain the calculations below, the contents of one in_tex and the
-      // group of 4 texels loaded from kernel_in are shown:
+      // group of 4 texels loaded from t_kernel are shown:
       //
-      //   in_tex                 kernel_in
+      //   in_tex                 t_kernel
       //    -x->                   ---x--->
       //   +---+              +----+----+----+----+
       // ^ | w |           ^  | D0 | D1 | D2 | D3 |
@@ -126,7 +107,7 @@ void main() {
       //   | x |              | A0 | A1 | A2 | A3 |
       //   +---+              +----+----+----+----+
       //
-      // In the kernel_in graphic, cells sharing the same letter are from
+      // In the t_kernel graphic, cells sharing the same letter are from
       // the same batch/output channel index, and the number denotes a unique
       // channel index. To calculate the output texel, the following
       // calculation is performed:
@@ -150,9 +131,9 @@ void main() {
     }
   }
 
-  for (int i = 0; i < ${TILE_SIZE * TILE_SIZE}; ++i) {
+  for (int i = 0; i < TILE_SIZE * TILE_SIZE; ++i) {
     if (all(lessThan(pos[i], out_limits))) {
-      imageStore(image_out, pos[i], op(sum[i], out_min, out_max));
+      imageStore(t_out, pos[i], op(sum[i], out_min, out_max));
     }
   }
 }
