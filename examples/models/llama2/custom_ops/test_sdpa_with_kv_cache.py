@@ -50,6 +50,7 @@ class SDPATest(unittest.TestCase):
         )
         self.mask = torch.triu(self.mask, diagonal=1)
         self.use_mask_with_custom_op = False
+        self.is_causal = False
 
     def test_sdpa_with_cache_no_mqa_1(self):
         q = torch.rand((1, 1, 8, 4))
@@ -78,7 +79,16 @@ class SDPATest(unittest.TestCase):
             )
         else:
             op_output = torch.ops.llama.sdpa_with_kv_cache(
-                q, k, v, self.k_cache, self.v_cache, start_pos, seq_len, None, 0, False
+                q,
+                k,
+                v,
+                self.k_cache,
+                self.v_cache,
+                start_pos,
+                seq_len,
+                None,
+                0,
+                self.is_causal,
             )
         self.assertTrue(torch.allclose(ref_output, op_output))
 
@@ -110,7 +120,16 @@ class SDPATest(unittest.TestCase):
             )
         else:
             op_output = torch.ops.llama.sdpa_with_kv_cache(
-                q, k, v, self.k_cache, self.v_cache, start_pos, seq_len, None, 0, False
+                q,
+                k,
+                v,
+                self.k_cache,
+                self.v_cache,
+                start_pos,
+                seq_len,
+                None,
+                0,
+                self.is_causal,
             )
 
         self.assertTrue(torch.allclose(ref_output, op_output))
@@ -143,7 +162,16 @@ class SDPATest(unittest.TestCase):
             )
         else:
             op_output = torch.ops.llama.sdpa_with_kv_cache(
-                q, k, v, self.k_cache, self.v_cache, start_pos, seq_len, None, 0, False
+                q,
+                k,
+                v,
+                self.k_cache,
+                self.v_cache,
+                start_pos,
+                seq_len,
+                None,
+                0,
+                self.is_causal,
             )
         self.assertTrue(torch.allclose(ref_output, op_output))
 
@@ -175,7 +203,16 @@ class SDPATest(unittest.TestCase):
             )
         else:
             op_output = torch.ops.llama.sdpa_with_kv_cache(
-                q, k, v, self.k_cache, self.v_cache, start_pos, seq_len, None, 0, False
+                q,
+                k,
+                v,
+                self.k_cache,
+                self.v_cache,
+                start_pos,
+                seq_len,
+                None,
+                0,
+                self.is_causal,
             )
         self.assertTrue(torch.allclose(ref_output, op_output))
 
@@ -183,14 +220,19 @@ class SDPATest(unittest.TestCase):
 class SDPAWithAttentionMaskTest(SDPATest):
 
     def setUp(self):
-        torch.manual_seed(42)
-        self.k_cache = torch.zeros((1, 10, 8, 4))
-        self.v_cache = torch.zeros((1, 10, 8, 4))
+        SDPATest.setUp(self)
         self.mask = torch.full(
             (10, 10),
             100.642,
         )
         self.use_mask_with_custom_op = True
+
+
+class SDPAWithCausalTest(SDPATest):
+
+    def setUp(self):
+        SDPATest.setUp(self)
+        self.is_causal = True
 
 
 class SDPATestWithMQA(unittest.TestCase):
