@@ -88,33 +88,6 @@ def promote_shape(tosa_fb, arg, promoted_shape, out_dtype):
     return reshape_res
 
 
-# Helper transpose function to match TOSA's shape requirements
-# E.g., TOSA 0.80.0 specification - 2.3.3 CONV2D shapes:
-# https://www.mlplatform.org/tosa/tosa_spec.html#_conv2d
-def transpose_helper(tosa_fb, input, new_order, out_dtype):
-    # Check new_order's length is equal to input rank
-    assert len(input.shape) == len(new_order), "Wrong shape order length"
-
-    # Check no duplications
-    assert len(set(new_order)) == len(new_order), "Contain duplicated dim numbers"
-
-    # Check all dims are valid
-    for idx in new_order:
-        if idx < 0:
-            assert True, "Negative dim number"
-        elif idx >= len(input.shape):
-            assert True, "Dim is greater than input rank"
-
-    input_shape_transpoed = [input.shape[i] for i in new_order]
-    attr = ts.TosaSerializerAttribute()
-    attr.TransposeAttribute(new_order)
-    input_transposed = tosa_fb.addIntermediate(input_shape_transpoed, out_dtype)
-    tosa_fb.addOperator(
-        TosaOp.Op().TRANSPOSE, [input.name], [input_transposed.name], attr
-    )
-    return input_transposed
-
-
 def getNodeArgs(node):
     return [TosaArg(arg) for arg in node.args]
 

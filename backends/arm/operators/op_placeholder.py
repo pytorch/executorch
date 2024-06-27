@@ -25,6 +25,7 @@ def process_inputs(
     node: torch.fx.Node,
     tosa_graph: ts.TosaSerializer,
 ):
+    """Serialize an input node"""
     inputs = [TosaArg(node)]
     input_shape = inputs[0].shape
     input_dim_order = inputs[0].dim_order
@@ -43,6 +44,10 @@ def process_quantized_bias(
     tosa_graph: ts.TosaSerializer,
     parameter_values,
 ):
+    """
+    Serialize bias node that needs to be quantized.
+    This can be either an addmm or conv bias node.
+    """
     consumer_node = list(node.users)[0]
     if is_bias_node_for_quantized_addmm(node):
         (
@@ -77,17 +82,12 @@ def process_quantized_bias(
     )
 
 
-def permute(data, dim_order):
-    if len(data.shape) == 4:
-        data = np.transpose(data, dim_order)
-    return data
-
-
 def process_inputs_to_parameters(
     node: torch.fx.Node,
     tosa_graph: ts.TosaSerializer,
     edge_program: ExportedProgram,
 ):
+    """Serialize bias and non-quantized weights"""
     inputs = [TosaArg(node)]
     parameter_name = edge_program.graph_signature.inputs_to_parameters[node.name]
     parameter_data = edge_program.state_dict[parameter_name]
@@ -96,17 +96,11 @@ def process_inputs_to_parameters(
     parameter_values = parameter_data.detach().numpy()
 
     if is_bias_node_for_quantized_addmm(node) or is_bias_node_for_quantized_conv(node):
+        # BI bias
         process_quantized_bias(node, tosa_graph, parameter_values)
     else:
-        # Cases for:
-        # - MI_AddMM_bias
-        # - MI_AddMM_weight
-        # - MI_Conv2d_non_bias_weight
-        # - MI_Conv2d_weight
-        # - MI_Conv2d_bias
-        # - MI_DepthwiseConv2d_weight
-        # - MI_DepthwiseConv2d_bias
-        parameter_values = permute(parameter_values, inputs[0].dim_order)
+        # MI weights or bias
+        parameter_values = np.transpose(parameter_values, inputs[0].dim_order)
 
         tosa_graph.addConst(
             parameter_values.shape, inputs[0].dtype, parameter_values, name=node.name
@@ -118,6 +112,7 @@ def process_inputs_to_buffers(
     tosa_graph: ts.TosaSerializer,
     edge_program: ExportedProgram,
 ):
+    """Serialize quantized weights"""
     inputs = [TosaArg(node)]
     buffer_name = edge_program.graph_signature.inputs_to_buffers[node.name]
     buffer_data = edge_program.state_dict[buffer_name]
@@ -128,7 +123,7 @@ def process_inputs_to_buffers(
     # TODO: fragile code for temporary fix
     # the mean and var tensors are also stored here but they have shape (1, )
     # we only transpose weights here
-    buffer_values = permute(buffer_values, inputs[0].dim_order)
+    buffer_values = np.transpose(buffer_values, inputs[0].dim_order)
 
     tosa_graph.addConst(
         buffer_values.shape, inputs[0].dtype, buffer_values, name=node.name
@@ -140,6 +135,7 @@ def process_placeholder(
     tosa_graph: ts.TosaSerializer,
     edge_program: ExportedProgram,
 ):
+    """Wrapper for processing and serializing all types of placeholders"""
     assert node.name == node.target, "Expect placeholder name and target to match"
     assert 0 == len(node.args), "Can't handle default input values"
 

@@ -18,7 +18,9 @@ from executorch.backends.arm.arm_vela import vela_compile
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm.operators.op_output import process_output
 from executorch.backends.arm.operators.op_placeholder import process_placeholder
-from executorch.backends.arm.passes.permute_memory_pass import PermuteMemoryPass
+from executorch.backends.arm.passes.annotate_channels_last_dim_order_pass import (
+    AnnotateChannelsLastDimOrder,
+)
 from executorch.backends.arm.tosa_utils import (
     dbg_fail,
     dbg_tosa_dump,
@@ -44,6 +46,7 @@ class ArmCompileSpecBuilder:
         self.compiler_flags = []
         self.output_format = None
         self.path_for_intermediates = None
+        # TODO MLETORCH-265 Remove permute_nhwc flag
         self.permute_nhwc = False
         self.quantize_io = False
 
@@ -243,7 +246,7 @@ class ArmBackend(BackendDetails):
         tosa_graph = ts.TosaSerializer(artifact_path)
         passes = PassManager()
         if permute_memory_to_nhwc:
-            passes.add_pass(PermuteMemoryPass(edge_program))
+            passes.add_pass(AnnotateChannelsLastDimOrder())
         passes(edge_program.graph_module)
 
         node_visitors = get_node_visitors(edge_program)

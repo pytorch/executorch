@@ -266,16 +266,16 @@ class ArmTester(Tester):
         return self
 
     def transpose_data_format(
-        self, inputs: Tuple[torch.Tensor], to: Literal["NHWC", "NCHW"]
+        self, data: Tuple[torch.Tensor], to: Literal["NHWC", "NCHW"]
     ):
         if to == "NCHW":
             dim_order = (0, 3, 1, 2)
         if to == "NHWC":
             dim_order = (0, 2, 3, 1)
-        inputs_transposed = list(inputs)
-        for i in range(len(inputs)):
-            if len(inputs[i].shape) == 4:
-                inputs_transposed[i] = np.transpose(inputs_transposed[i], dim_order)
+        inputs_transposed = list(data)
+        for i in range(len(data)):
+            if len(data[i].shape) == 4:
+                inputs_transposed[i] = np.transpose(data[i], dim_order)
         return tuple(inputs_transposed)
 
     def _compare_outputs(
