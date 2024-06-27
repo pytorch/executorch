@@ -82,6 +82,7 @@ class BackendWithCompilerDemo(BackendDetails):
     ) -> PreprocessResult:
         processed_bytes = ""
         number_of_instruction = 0
+        version = "0"
         debug_handle_map = {}
         match_ops = [
             exir_ops.edge.aten.sin.default,
@@ -129,7 +130,12 @@ class BackendWithCompilerDemo(BackendDetails):
             debug_handle_map[new_debug_id] = (original_debug_id,)
         return PreprocessResult(
             processed_bytes=bytes(
-                str(number_of_instruction) + "#" + processed_bytes, encoding="utf8"
+                str(number_of_instruction)
+                + "version:"
+                + version
+                + "#"
+                + processed_bytes,
+                encoding="utf8",
             ),
             debug_handle_map=debug_handle_map,
         )
