@@ -27,7 +27,12 @@ from llava.constants import (
     IMAGE_PLACEHOLDER,
 )
 
-from executorch.examples.models.llama2.llama_transformer import TransformerBlock, ModelArgs
+from llava.model.llava_arch import LlavaMetaForCausalLM
+from transformers import LlamaForCausalLM
+from dataclasses import dataclass
+import math
+from executorch.examples.models.llama2.llama_transformer import TransformerBlock, ModelArgs, RMSNorm, precompute_freqs_cis
+from typing import Optional, Dict, Any
 
 @dataclass
 class PreprocessConfig:
@@ -35,7 +40,6 @@ class PreprocessConfig:
     image_mean: list[float]
     image_std: list[float]
     rescale_factor: float
-
 
 class TextModelTransformer(nn.Module):
     """Mostly copied from examples/models/llama2/llama_transformer but taking a embedding"""
@@ -45,13 +49,14 @@ class TextModelTransformer(nn.Module):
         self.vocab_size = params.vocab_size
         self.n_layers = params.n_layers
 
-        self.tok_embeddings = nn.Embedding(params.vocab_size, params.dim)
+        # self.tok_embeddings = nn.Embedding(params.vocab_size, params.dim)
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params))
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
+        self.max_seq_len = params.max_seq_len
 
         freqs_cos, freqs_sin = precompute_freqs_cis(
             params.dim // params.n_heads,
@@ -82,8 +87,16 @@ class TextModelTransformer(nn.Module):
             ), "input_pos must be provided when use_kv_cache is True"
 
             # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
-            freqs_cos = self.freqs_cos[input_pos]
-            freqs_sin = self.freqs_sin[input_pos]
+            input_pos_item = input_pos[-1].item()
+            torch._check_is_size(input_pos_item)
+            # Setting this to max_seq_len but the resulting
+            # asserts from export are ignore anyway, so the particular
+            # value doesn't matter.
+            # Also in future when we want to support infinite generation
+            # input_pos can take any value until eos is encountered.
+            torch._check(input_pos_item < self.max_seq_len)
+            freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
+            freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seqlen)
         else:
             assert input_pos is None, "input_pos is unused when use_kv_cache is False"
             freqs_cos = self.freqs_cos[:seqlen]
@@ -107,7 +120,55 @@ class Llava(torch.nn.Module):
         super().__init__()
         self.config = config
         self.model_ = llava_model
-    
+        self.text_model_args = ModelArgs(
+            use_kv_cache=True, 
+            vocab_size=self.model_.config.vocab_size, 
+            hidden_dim=self.model_.config.intermediate_size
+        )
+        self.text_model = TextModelTransformer(self.text_model_args)
+        # load state dict
+        self.text_model.load_state_dict(
+            state_dict=self._translate_state_dict_for_text_model(),
+            strict=False,
+            assign=True,
+        )
+
+    def _translate_state_dict_for_text_model(self) -> Dict[str, Any]:
+        state_dict = self.model_.state_dict()
+        key_map = {
+            # fmt: off
+            r"model.layers.([0-9]+).self_attn.q_proj.": r"layers.\1.attention.wq.",
+            r"model.layers.([0-9]+).self_attn.k_proj.": r"layers.\1.attention.wk.",
+            r"model.layers.([0-9]+).self_attn.v_proj.": r"layers.\1.attention.wv.",
+            r"model.layers.([0-9]+).self_attn.o_proj.": r"layers.\1.attention.wo.",
+            r"model.layers.([0-9]+).input_layernorm.": r"layers.\1.attention_norm.",
+            r"model.layers.([0-9]+).mlp.gate_proj.": r"layers.\1.feed_forward.w1.",
+            r"model.layers.([0-9]+).mlp.down_proj.": r"layers.\1.feed_forward.w2.",
+            r"model.layers.([0-9]+).mlp.up_proj.": r"layers.\1.feed_forward.w3.",
+            r"model.layers.([0-9]+).post_attention_layernorm.": r"layers.\1.ffn_norm.",
+            r"model.norm.": r"norm.",
+            # r"model.embed_tokens.": r"tok_embeddings.", # not needed
+            r"lm_head.": r"output.",
+            # fmt: on
+        }
+
+        new_state_dict = {}
+
+        def get_new_key(old_key: str) -> str:
+            for old_pattern, replacement in key_map.items():
+                if (new_key := re.sub(old_pattern, replacement, old_key)) != old_key:
+                    return new_key
+
+            return old_key
+
+        # Convert module keys from hf transformer to Llama transformer.
+        for old_key in state_dict.keys():
+            new_key = get_new_key(old_key)
+
+            new_state_dict[new_key] = state_dict[old_key]
+
+        return new_state_dict
+
     def get_model(self):
         return self.model_.get_model()
 
@@ -157,14 +218,16 @@ class Llava(torch.nn.Module):
         result = torch.cat((embeds_before_img, image_embeds, embeds_after_img), dim=1)
         return result
     
-    def text_model_forward(self, embeds: torch.Tensor) -> torch.Tensor:
+    def forward(self, token: torch.Tensor, input_pos: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Input is embeddings from prompt and image (after image encoder). Return logits."""
+        token_embeds = self.get_model().embed_tokens(token).unsqueeze(0)
+        return self.text_model.forward(token_embeds, input_pos)
 
-
-    def forward(self, prompt_before_image: torch.Tensor, images: torch.Tensor, prompt_after_image: torch.Tensor) -> torch.Tensor:
+    def prefill(self, prompt_before_image: torch.Tensor, images: torch.Tensor, prompt_after_image: torch.Tensor) -> torch.Tensor:
+        """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
         preprocessed_img = self.image_preprocess(images)
         embeds = self.prepare_inputs_labels_for_multimodal_one_image(prompt_before_image, preprocessed_img, prompt_after_image)
-        return LlamaForCausalLM.forward(self.model_, inputs_embeds=embeds, return_dict=False, use_cache=False, output_hidden_states=False)
+        return self.text_model.forward(embeds, torch.tensor([0]))
 
 
 class LlavaModel(EagerModelBase):
