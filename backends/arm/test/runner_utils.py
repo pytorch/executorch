@@ -23,13 +23,24 @@ logger.setLevel(logging.WARNING)
 
 
 class QuantizationParams:
-    __slots__ = ["node_name", "zp", "scale"]
+    __slots__ = ["node_name", "zp", "scale", "qmin", "qmax", "dtype"]
 
     # todo: zps and scales can be per tensors or per channel => a list??
-    def __init__(self, node_name: str, zp: int, scale: float):
+    def __init__(
+        self,
+        node_name: str,
+        zp: int,
+        scale: float,
+        qmin: int,
+        qmax: int,
+        dtype: torch.dtype,
+    ):
         self.node_name = node_name  # not need I think, but good for error check
         self.zp = zp
         self.scale = scale
+        self.qmin = qmin
+        self.qmax = qmax
+        self.dtype = dtype
 
 
 def _get_input_names(program: ExportedProgram) -> list[str]:
@@ -74,7 +85,12 @@ def _get_input_quantization_params(
             and node.args[0].name in input_names
         ):
             qp = QuantizationParams(
-                node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
+                node_name=node.args[0].name,
+                scale=node.args[1],
+                zp=node.args[2],
+                qmin=node.args[3],
+                qmax=node.args[4],
+                dtype=node.args[5],
             )
             quant_params.append(qp)
             if (
@@ -122,7 +138,12 @@ def _get_output_quantization_params(
             and node == output_node.args[0][0]
         ):
             quant_params = QuantizationParams(
-                node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
+                node_name=node.args[0].name,
+                scale=node.args[1],
+                zp=node.args[2],
+                qmin=node.args[3],
+                qmax=node.args[4],
+                dtype=node.args[5],
             )
             break  # break early, there's only one output node
     if quant_params is None:
@@ -376,13 +397,13 @@ def prep_data_for_save(
         assert (
             quant_param.node_name == input_name
         ), "These quantization params do not match the input tensor name"
-        int8_max = np.iinfo(np.int8).max
-        int8_min = np.iinfo(np.int8).min
         data_np = (
             ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
             .round()
-            .clip(int8_min, int8_max)
-            .astype(np.int8)
+            .clip(quant_param.qmin, quant_param.qmax)
+            .astype(
+                f"{quant_param.dtype}".replace("torch.", "")
+            )  # Use string format of dtype to convert to numpy dtype
         )
     return data_np
 
