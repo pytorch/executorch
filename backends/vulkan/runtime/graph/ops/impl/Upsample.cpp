@@ -16,6 +16,29 @@
 
 namespace vkcompute {
 
+void resize_upsample_nearest2d_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
+  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
+  std::vector<int64_t> out_sizes = self->sizes(); // NCHW
+
+  const ValueRef output_sizes = extra_args[0]; // HW
+  const ValueRef scale_factors = extra_args[1]; // HW
+  if (!graph->val_is_none(output_sizes)) {
+    IntListPtr output_size_ref = graph->get_int_list(output_sizes);
+    out_sizes.at(2) = output_size_ref->at(0);
+    out_sizes.at(3) = output_size_ref->at(1);
+  } else {
+    DoubleListPtr scales = graph->get_double_list(scale_factors);
+    out_sizes.at(2) *= scales->at(0);
+    out_sizes.at(3) *= scales->at(1);
+  }
+
+  out->virtual_resize(out_sizes);
+}
+
 // ExecuTorch-Vulkan framework to add node
 // Args:
 //   in: will be converted from NCHW input tensor to 3D ARGB representation in
@@ -69,19 +92,16 @@ void add_upsample_nearest2d_node(
   }
 
   vTensorPtr t_out = graph.get_tensor(out);
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("upsample_nearest2d");
   kernel_name.reserve(kShaderNameReserve);
-
   add_dtype_suffix(kernel_name, *t_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE},
        {arg_in, api::MemoryAccessType::READ}},
@@ -90,7 +110,9 @@ void add_upsample_nearest2d_node(
        graph.create_params_buffer(input_size),
        graph.create_params_buffer(rev_scales)},
       // Specialization Constants
-      {}));
+      {},
+      resize_upsample_nearest2d_node,
+      {output_sizes, scale_factors}));
 }
 
 void upsample(ComputeGraph& graph, const std::vector<ValueRef>& args) {

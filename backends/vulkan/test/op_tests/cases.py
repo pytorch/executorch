@@ -64,6 +64,7 @@ def get_mm_inputs():
         [
             ((M1, L), (L, M2)),
             ((S1, S2), (S2, M)),
+            ((6, 32), (32, 64)),
         ],
     )
     test_suite.prepacked_args = ["mat2"]
@@ -82,6 +83,7 @@ def get_bmm_inputs():
         [
             ((S, M1, L), (S, L, M2)),
             ((M, S1, S2), (M, S2, M)),
+            ((4, 6, 32), (4, 32, 16)),
         ],
     )
     test_suite.prepacked_args = ["mat2"]
@@ -104,6 +106,7 @@ def get_addmm_inputs():
             ((M1, M2), (M1, M2), (M2, M2), 4.2, 2.3),
             ((M1, 1), (M1, L), (L, L), 2.0, 3.0),
             ((M2), (M1, M2), (M2, M2)),
+            ((6, M2), (6, M2), (M2, M2)),
         ]
     )
     # ATen matmul doesn't support half
@@ -129,6 +132,7 @@ def get_linear_inputs():
     inputs_list += [((M, K), (N, K), (N)) for M, K, N in MKN_list]
     inputs_list += [((3, M, K), (N, K), None) for M, K, N in MKN_list]
     inputs_list += [((3, M, K), (N, K), (N)) for M, K, N in MKN_list]
+    inputs_list += [((3, 6, K), (N, K), (N)) for M, K, N in MKN_list]
 
     test_suite = VkTestSuite(inputs_list)
     test_suite.dtypes = ["at::kFloat"]
@@ -307,6 +311,17 @@ def get_conv_inputs():
                 False,
                 [0],
                 5,
+            ),
+            (
+                (1, 16, 672, 512),
+                (64, 16, 1, 1),
+                (64,),
+                [1, 1],
+                [0, 0],
+                [1, 1],
+                False,
+                [0, 0],
+                1,
             ),
         ]
     )

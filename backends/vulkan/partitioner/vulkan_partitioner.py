@@ -7,7 +7,7 @@
 # pyre-strict
 
 import logging
-from typing import Any, Dict, final, List, Mapping, Optional
+from typing import Any, Callable, Dict, final, List, Mapping, Optional, Tuple
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
@@ -32,6 +32,11 @@ from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
 from torch.fx.passes.operator_support import OperatorSupportBase
+
+# pyre-ignore
+ops_not_to_decompose = [
+    torch.ops.aten.upsample_nearest2d.vec,
+]
 
 
 class VulkanSupportedOperators(OperatorSupportBase):
@@ -149,6 +154,11 @@ class VulkanPartitioner(Partitioner):
 
         compile_spec = parse_compile_options(self.options)
         self.delegation_spec = DelegationSpec(VulkanBackend.__name__, compile_spec)
+
+    def ops_to_not_decompose(
+        self, ep: ExportedProgram
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        return (ops_not_to_decompose, None)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
