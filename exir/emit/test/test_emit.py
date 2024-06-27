@@ -29,6 +29,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
@@ -769,6 +770,45 @@ class TestEmit(unittest.TestCase):
                     self.assertTrue(act_tensor.dim_order == act_dim_order)
                     self.assertTrue(weight_tensor.dim_order == weight_dim_order)
         self.assertTrue(addmm_found)
+
+    def test_non_const_buffer_sizes(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                b = 3 + 1
+                return x + b
+
+        f = Add()
+
+        edge_program_manager = to_edge(
+            export(
+                f,
+                (torch.ones(3, 2),),
+            )
+        )
+        edge_program_manager._edge_programs["forward"] = constant_prop_pass(
+            edge_program_manager.exported_program()
+        )
+        non_const_buffer_size_with_const_prop_pass = (
+            edge_program_manager.to_executorch()
+            .executorch_program.execution_plan[0]
+            .non_const_buffer_sizes
+        )
+
+        edge_program_manager = to_edge(
+            export(
+                f,
+                (torch.ones(3, 2),),
+            )
+        )
+        non_const_buffer_size_without_const_prop_pass = (
+            edge_program_manager.to_executorch()
+            .executorch_program.execution_plan[0]
+            .non_const_buffer_sizes
+        )
+        self.assertTrue(
+            non_const_buffer_size_with_const_prop_pass[1]
+            < non_const_buffer_size_without_const_prop_pass[1]
+        )
 
     # cant compare plans directly with __eq__ because of the plan names, and constant_buffer_idx in tensor values
     def _compare_execution_plans(
