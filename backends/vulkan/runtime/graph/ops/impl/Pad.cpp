@@ -65,9 +65,6 @@ void add_constant_pad_nd_node(
   vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   std::string kernel_name = "";
   PadParam pad_param = creat_pad_param(*pad_vec);
 
@@ -84,8 +81,8 @@ void add_constant_pad_nd_node(
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
       // Shader params buffers

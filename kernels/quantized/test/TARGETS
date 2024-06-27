@@ -14,5 +14,6 @@ python_unittest(
     deps = [
         "//caffe2:torch",
         "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:quant_fusion_pass",
     ],
 )
