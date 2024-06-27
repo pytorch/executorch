@@ -60,6 +60,9 @@ GraphConfig::GraphConfig() {
   // QueryPool objects are used to measure execution times of individual shader
   // dispatches. By default, this functionality is disabled.
   enable_querypool = false;
+
+  enable_local_wg_size_override = false;
+  local_wg_size_override = {};
 }
 
 void GraphConfig::set_storage_type_override(api::StorageType storage_type) {
@@ -71,6 +74,12 @@ void GraphConfig::set_memory_layout_override(
     api::GPUMemoryLayout memory_layout) {
   enable_memory_layout_override = true;
   memory_layout_override = memory_layout;
+}
+
+void GraphConfig::set_local_wg_size_override(
+    const api::utils::uvec3& local_wg_size) {
+  enable_local_wg_size_override = true;
+  local_wg_size_override = local_wg_size;
 }
 
 } // namespace vkcompute
