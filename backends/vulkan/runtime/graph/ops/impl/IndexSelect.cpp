@@ -41,14 +41,11 @@ void add_index_select_channel_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       {{out, api::MemoryAccessType::WRITE},
        {{in, idx}, api::MemoryAccessType::READ}},
       {t_out->sizes_ubo(), t_in->sizes_ubo()}));
@@ -93,14 +90,11 @@ void add_index_select_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       {{out, api::MemoryAccessType::WRITE},
        {{in, idx}, api::MemoryAccessType::READ}},
       {t_out->sizes_ubo(), graph.create_params_buffer(params)}));
