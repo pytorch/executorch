@@ -177,6 +177,42 @@ inline void fill_stub(scalar_t* data, scalar_t val, int64_t size) {
   }
 }
 
+/*
+Note on start_pos as a parameter:
+What is start_pos?
+- start_pos is the position of the first element of the current query. That is,
+in LLMs during generate phase, when we generate one token a time, the query
+will correspond to monotonically increasing start_pos. e.g. the first token
+is at start_pos = 0, the second token is at start_pos = 1, and so on.
+If we do prefill with prompt which has 4 tokens, then during the decode phase,
+start_pos = 4.
+
+Why is start_pos neded?
+- Attention should not need to know start_pos. However, to apply causal mask,
+we can use is_causal parameter (aten API for SDPA is thinking of getting rid
+of it). However, the current handling of is_causal assumes that start_pos = 0.
+Meaning when we have a query during decode at start_pos = 4, it will be a
+single vector of [1, head_dim] for a given head. Key param, derived from kv
+cache, will be of size [start_pos + 1, head_dim]. That is all the past tokens
+contained in kv cache. If we apply causal mask naively, then the query is
+assumed to be at start_pos = 0, and thus all the future tokens (indices 1...4)
+in q @ k.T = [1, start_pos], will be masked out for attention calculation.
+However, that is not right. Since query is at pos 4, that is 4th token, it
+should attend to all previous tokens in the cache. That is 0...start_pos. Thus
+we need to pass start_pos.
+
+Can we use attn_mask?
+- Yes. Attention mask can be used for the same, however, at the moment attention
+mask for our llama model is a boolean mask which requires conversion to -inf for
+masked out section. This requires change that may have perf implication, however
+we havent really validated this. It is possible that there is no perf
+implication. If the mask was float mask, thing will work out-of-the-box. In our
+llama definition each layer is storying mask and if we move to float mask, that
+can increase memory footprint, which is right now optimized away since
+sdpa_with_kv_cache does not use attn_mask.
+
+TODO: Just handle conversion of bool mask to float
+*/
 template <typename scalar_t, int64_t q_split_size, int64_t kv_split_size>
 void cpu_flash_attention(
     Tensor& output,
@@ -187,7 +223,8 @@ void cpu_flash_attention(
     bool is_causal,
     const optional<Tensor>& attn_mask,
     const optional<double>& scale,
-    bool is_with_kv_cache = false) {
+    bool is_with_kv_cache = false,
+    const int64_t start_pos = 0) {
   (void)dropout_p;
   // Query (Batch x Num_heads  x Q_seq_len  x Dim_per_head)
   // Key   (Batch x Num_heads  x KV_seq_len x Dim_per_head)
@@ -416,7 +453,7 @@ void cpu_flash_attention(
         // will qualify for that
         if (is_causal && num_keys - n <= kvSplitSize) {
           for (int32_t row = 0; row < qBlockSize; ++row) {
-            int64_t last_col = m + row - n;
+            int64_t last_col = m + (row + start_pos) - n;
             accum_t* row_ptr = qk_data + row * kvBlockSize;
             fill_stub(
                 row_ptr + last_col + 1,
@@ -760,6 +797,13 @@ Tensor& sdpa_with_kv_cache_out(
       InvalidArgument,
       output);
 
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      !attn_mask.has_value() || !is_causal,
+      InvalidArgument,
+      output,
+      "attn_mask and is_causal cannot be set at the same time");
+
   ET_CHECK_MSG(q_projected.dim() == 4, "query must be a 4D tensor");
 
   update_cache(k_projected, key_cache, start_pos, seq_len);
@@ -844,7 +888,8 @@ Tensor& sdpa_with_kv_cache_out(
               is_causal,
               attn_mask,
               scale,
-              true);
+              true,
+              start_pos);
         } else if (q_seq_len >= 192) {
           cpu_flash_attention<CTYPE, 64, 512>(
               output,
@@ -855,7 +900,8 @@ Tensor& sdpa_with_kv_cache_out(
               is_causal,
               attn_mask,
               scale,
-              true);
+              true,
+              start_pos);
         } else {
           cpu_flash_attention<CTYPE, 32, 512>(
               output,
@@ -866,7 +912,8 @@ Tensor& sdpa_with_kv_cache_out(
               is_causal,
               attn_mask,
               scale,
-              true);
+              true,
+              start_pos);
         }
       });
   return output;
