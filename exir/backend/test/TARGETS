@@ -106,8 +106,8 @@ python_unittest(
         "test_backends.py",
     ],
     preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/kernels/portable:python_preload_generated_lib",
+        "//executorch/kernels/quantized:python_preload_generated_lib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
     deps = [
@@ -155,8 +155,8 @@ python_unittest(
         "test_backends_lifted.py",
     ],
     preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/kernels/portable:python_preload_generated_lib",
+        "//executorch/kernels/quantized:python_preload_generated_lib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
     deps = [
@@ -201,8 +201,8 @@ python_unittest(
         "//executorch/exir/backend:compile_spec_schema",
         "//executorch/exir/tests:models",
         "//executorch/extension/pybindings:portable_lib",  # @manual
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/kernels/portable:python_preload_generated_lib",
+        "//executorch/kernels/quantized:python_preload_generated_lib",
     ],
 )
 
@@ -229,8 +229,8 @@ python_unittest(
         "test_backends_nested.py",
     ],
     preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/kernels/portable:python_preload_generated_lib",
+        "//executorch/kernels/quantized:python_preload_generated_lib",
     ],
     deps = [
         ":op_partitioner_demo",

@@ -33,7 +33,7 @@ from torch.testing import FileCheck
 from torch.testing._internal.common_quantized import override_quantized_engine
 
 # load executorch out variant ops
-torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
+torch.ops.load_library("//executorch/kernels/quantized:python_preload_generated_lib")
 
 
 class TestQuantization(unittest.TestCase):

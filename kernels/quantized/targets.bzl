@@ -30,7 +30,7 @@ def define_common_targets():
 
     # lib used to register quantized ops into EXIR
     exir_custom_ops_aot_lib(
-        name = "custom_ops_generated_lib",
+        name = "python_preload_generated_lib",
         yaml_target = ":quantized.yaml",
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
         kernels = [":quantized_operators_aten"],
@@ -40,7 +40,7 @@ def define_common_targets():
     )
 
     # lib used to register quantized ops into EXIR
-    # TODO: merge this with custom_ops_generated_lib
+    # TODO: merge this with python_preload_generated_lib
     exir_custom_ops_aot_lib(
         name = "aot_lib",
         yaml_target = ":quantized.yaml",

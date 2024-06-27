@@ -9,7 +9,7 @@ python_unittest(
     name = "test_out_variants",
     srcs = ["test_out_variants.py"],
     preload_deps = [
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:python_preload_generated_lib",
     ],
     deps = [
         "//caffe2:torch",

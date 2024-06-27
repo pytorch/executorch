@@ -6,8 +6,8 @@ python_unittest(
         "test_xnnpack_qnnpack.py",
     ],
     preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/kernels/portable:python_preload_generated_lib",
+        "//executorch/kernels/quantized:python_preload_generated_lib",
     ],
     deps = [
         "//caffe2:torch",
@@ -31,7 +31,7 @@ python_unittest(
         "test_delegate_aten_mode.py",
     ],
     preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib_aten",
+        "//executorch/kernels/portable:python_preload_generated_lib_aten",
     ],
     deps = [
         "//caffe2:torch",

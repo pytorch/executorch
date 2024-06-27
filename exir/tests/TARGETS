@@ -141,7 +141,7 @@ python_unittest(
         "test_op_convert.py",
     ],
     preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/portable:python_preload_generated_lib",
         ":test_lib",  # @manual
     ],
     deps = [
@@ -156,7 +156,7 @@ python_unittest(
         "test_memory_planning.py",
     ],
     preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/portable:python_preload_generated_lib",
     ],
     # Static listing does not support tests generated with parameterized
     supports_static_listing = False,
@@ -274,7 +274,7 @@ python_unittest(
         "test_quant_fusion_pass.py",
     ],
     preload_deps = [
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:python_preload_generated_lib",
     ],
     deps = [
         ":lib",
@@ -290,7 +290,7 @@ python_unittest(
         "test_quantization.py",
     ],
     preload_deps = [
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:python_preload_generated_lib",
     ],
     deps = [
         "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
