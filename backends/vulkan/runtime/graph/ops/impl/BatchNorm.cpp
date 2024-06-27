@@ -77,17 +77,14 @@ void add_native_batch_norm_node(
   std::string kernel_name = "batchnorm";
   add_dtype_suffix(kernel_name, *t_out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   int32_t num_texel_per_batch =
       api::utils::div_up_4((dim_at<kChannel4D>(t_in->sizes())));
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out_ref),
+      graph.create_local_wg_size(out_ref),
       {{out_ref, api::MemoryAccessType::WRITE},
        {{in_ref, arg_weight, arg_bias, arg_mean, arg_var},
         api::MemoryAccessType::READ}},

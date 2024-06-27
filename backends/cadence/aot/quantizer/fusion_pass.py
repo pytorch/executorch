@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 from typing import Any, Dict, List, Tuple
 
 import torch
@@ -31,6 +33,11 @@ from torch.fx.passes.infra.pass_base import PassResult
 from torch.fx.passes.utils.fuser_utils import legalize_graph
 
 
+# Use this to avoid pyre errors
+# pyre-ignore[33]: `_ModelInputsType` cannot alias to `Any`.
+ArgsType = Any
+
+
 # Helper function to get the args and kwargs for the linear replacement op
 def get_args_and_kwargs_linear(
     graph_module: GraphModule,
@@ -40,7 +47,7 @@ def get_args_and_kwargs_linear(
     dequants_weights: List[fx.Node],
     bias_inputs: List[fx.Node],
     quant_node: fx.Node,
-) -> Tuple[Tuple[Any], Dict[str, Any]]:
+) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
     """
     Returns the args and kwargs for the linear replacement op.
     """
@@ -98,7 +105,7 @@ def get_args_and_kwargs_layer_norm(
     dequants_inputs: List[fx.Node],
     other_inputs: List[fx.Node],
     quant_node: fx.Node,
-) -> Tuple[Tuple[Any], Dict[str, Any]]:
+) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
     """
     Returns the args and kwargs for the layer norm replacement op.
     """
@@ -167,7 +174,7 @@ def get_args_and_kwargs_matmul(
     inputs_inputs: List[fx.Node],
     dequants_inputs: List[fx.Node],
     quant_node: fx.Node,
-) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
+) -> Tuple[Tuple[ArgsType, ...], Dict[str, ArgsType]]:
     requantize_scale = (
         # pyre-ignore[58]: Unsupported operand
         dequants_inputs[0].args[1]
@@ -203,7 +210,7 @@ def get_args_and_kwargs_conv(
     bias_inputs: List[fx.Node],
     quant_node: fx.Node,
     op_node: fx.Node,
-):
+) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
     weight_scale = dequants_weights[0].args[1]
     weight_zero_point = dequants_weights[0].args[2]
     # pyre-fixme[58]: Unsupported operand types
@@ -277,12 +284,14 @@ def get_args_and_kwargs_relu(
     graph_module: GraphModule,
     inputs_inputs: List[fx.Node],
     dequants_inputs: List[fx.Node],
-):
+) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
     # Make the args and kwargs for the replacement op
     args = tuple(inputs_inputs)
 
     X_zero_point = graph_module.graph.call_function(
-        torch.ops.aten.full.default, ([1], dequants_inputs[0].args[2])
+        torch.ops.aten.full.default,
+        ([1], dequants_inputs[0].args[2]),
+        {"dtype": torch.int32},
     )
 
     kwargs = {
@@ -292,8 +301,10 @@ def get_args_and_kwargs_relu(
 
 
 class QuantFusion(ExportPass):
-    def __init__(self, patterns):
+    # pyre-ignore[2]: Parameter `patterns` has no type specified
+    def __init__(self, patterns) -> None:
         super().__init__()
+        # pyre-ignore[4]: Parameter `patterns` of class `QuantFusion` has no type specified
         self.patterns = patterns
 
     def call(self, graph_module: fx.GraphModule) -> PassResult:  # noqa: C901
@@ -427,10 +438,12 @@ class QuantFusion(ExportPass):
             graph_module.recompile()
 
     @classmethod
+    # pyre-ignore[2]: Parameter `nodes` has no type specified
     def is_fused(cls, nodes) -> bool:
         return any(cls.__qualname__ in n.meta for n in nodes)
 
     @classmethod
+    # pyre-ignore[2]: Parameter `nodes` has no type specified
     def mark_fused(cls, nodes) -> bool:
         for n in nodes:
             # pyre-fixme[7]: Incompatible return type
