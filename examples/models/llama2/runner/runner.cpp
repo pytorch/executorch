@@ -141,7 +141,7 @@ int32_t Runner::logitsToToken(
 // Given an input token. Set up the inputs for the model and execute a single
 // step. Returning the logits tensor.
 Result<torch::executor::Tensor> Runner::run_model_step(
-    int64_t input_token,
+    int32_t input_token,
     ManagedTensor& managed_tokens,
     ManagedTensor& managed_start_pos,
     size_t max_seq_len) {
@@ -153,7 +153,7 @@ Result<torch::executor::Tensor> Runner::run_model_step(
 
     // When using kv-cache our input is always 1 token, so just update to the
     // latest.
-    tokens.mutable_data_ptr<int64_t>()[0] = input_token;
+    tokens.mutable_data_ptr<int32_t>()[0] = input_token;
 
     // inputs:[tokens, start_pos]
     inputs.push_back(tokens);
@@ -169,7 +169,7 @@ Result<torch::executor::Tensor> Runner::run_model_step(
         "Non Tensor Output returned from executing LLM");
 
     // Bump start_pos by 1
-    start_pos.mutable_data_ptr<int64_t>()[0]++;
+    start_pos.mutable_data_ptr<int32_t>()[0]++;
 
     // Return the logits tensor
     return outputs_res.get()[0].toTensor();
@@ -181,7 +181,7 @@ Result<torch::executor::Tensor> Runner::run_model_step(
     // When not using kv-cache our input is the entire history of tokens we have
     // seen, so resize input to be 1 larger and append the new token to the end.
     // TODO does this work in ATen mode?
-    tokens.mutable_data_ptr<int64_t>()[tokens.size(1) - 1] = input_token;
+    tokens.mutable_data_ptr<int32_t>()[tokens.size(1) - 1] = input_token;
 
     // inputs:[tokens]
     inputs.push_back(tokens);
@@ -248,12 +248,12 @@ Error Runner::generate(
       "Sequence length exceeded - please increase the seq_len value passed to generate()");
 
   // start the main loop
-  int64_t pos = 0; // position in the sequence
+  int32_t pos = 0; // position in the sequence
 
-  std::vector<int64_t> token_data; // allocate space for the tokens
+  std::vector<int32_t> token_data; // allocate space for the tokens
   std::vector<exec_aten::SizesType> token_shape = {1, seq_len};
 
-  std::vector<int64_t> start_pos_data; // allocate space for the tokens
+  std::vector<int32_t> start_pos_data; // allocate space for the tokens
   std::vector<exec_aten::SizesType> start_pos_shape = {1};
 
   if (use_kv_cache_) {
@@ -270,22 +270,23 @@ Error Runner::generate(
 
   // initialize tensor wrappers
   ManagedTensor tokens_managed(
-      token_data.data(), token_shape, ScalarType::Long);
+      token_data.data(), token_shape, ScalarType::Int);
   // Create with the max shape to approapriately set the capacity of this
   // tensor, then resize back to 1 for first input.
   tokens_managed.resize({1, 1});
 
   ManagedTensor start_pos_managed(
-      start_pos_data.data(), start_pos_shape, ScalarType::Long);
 
-  int64_t prev_token;
-  int64_t cur_token = prompt_tokens[0];
+      start_pos_data.data(), start_pos_shape, ScalarType::Int);
+
+  int32_t prev_token;
+  int32_t cur_token = prompt_tokens[0];
 
   // If we arent using the kv cache then we can batch prefill the prompt
   if (!use_kv_cache_) {
     tokens_managed.resize({1, num_prompt_tokens});
     for (int i = 0; i < num_prompt_tokens - 1; i++) {
-      tokens_managed.get_aliasing_tensor().mutable_data_ptr<int64_t>()[i] =
+      tokens_managed.get_aliasing_tensor().mutable_data_ptr<int32_t>()[i] =
           prompt_tokens[i];
     }
     // prefill tokens up to the last prompt token and then enter the loop with
@@ -295,8 +296,8 @@ Error Runner::generate(
 
     // Print the prompt for consistent output between single token prefill and
     // batch prefill.
-    uint64_t prev = prompt_tokens[0];
-    uint64_t cur;
+    int32_t prev = prompt_tokens[0];
+    int32_t cur;
     for (int i = 1; i < num_prompt_tokens; i++) {
       cur = prompt_tokens[i];
       auto piece_res = tokenizer_->decode(prev, cur);

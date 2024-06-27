@@ -430,6 +430,28 @@ class HardTanh(torch.nn.Module):
         return self.hardtanh(x)
 
 
+class Index(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.idx0 = torch.tensor([[0, 1], [2, 3], [4, 5]])
+        self.idx1 = torch.tensor([[1, 2], [3, 4], [5, 6]])
+
+    def forward(self, x):
+        return x[self.idx0] + x[self.idx1]
+
+
+class IndexPut(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.register_buffer(
+            "past_k_caches", torch.zeros((1, 1024, 12, 64), dtype=torch.float32, device="cpu"), persistent=False
+        )
+
+    def forward(self, input_pos, k_val):
+        k_out = torch.ops.aten.index_put_(self.past_k_caches, [None, input_pos], k_val)
+        return k_out
+
+
 class LayerNorm(torch.nn.Module):
     def __init__(self):
         super().__init__()

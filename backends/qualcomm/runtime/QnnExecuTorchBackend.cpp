@@ -11,7 +11,7 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/schema_generated.h>
-
+#include <algorithm>
 #include <string>
 namespace torch {
 namespace executor {
@@ -19,6 +19,12 @@ namespace executor {
 using namespace qnn;
 using namespace qnn_delegate;
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
+
+bool CompareQnnInput(const std::shared_ptr<TensorWrapper>& a, const std::shared_ptr<TensorWrapper>& b) {
+    int numA = std::stoi(a->GetName().substr(a->GetName().find('_') + 1));
+    int numB = std::stoi(b->GetName().substr(b->GetName().find('_') + 1));
+    return numA < numB;
+}
 
 Result<DelegateHandle*> QnnExecuTorchBackend::init(
     BackendInitContext& context,
@@ -187,6 +193,9 @@ Error QnnExecuTorchBackend::execute(
       qnn_manager->GetGraphOutputs();
   std::vector<Qnn_Tensor_t> input_tensor_structs;
   std::vector<Qnn_Tensor_t> output_tensor_structs;
+  // Using the order of the nodes as external_id in AOT 
+  // to extract the right arg from *args at runtime
+  std::sort(input_tensors.begin(), input_tensors.end(), CompareQnnInput);
 
   input_tensor_structs.reserve(input_tensors.size());
   for (int i = 0; i < input_tensors.size(); ++i) {

@@ -297,6 +297,8 @@ class NodeVisitor:
         if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
             return cached
         tensor_name = node.name
+        if is_graph_input(node, self.edge_program):
+            tensor_name = "QnnInput_" + str(self.external_ids[node]) + "_" + tensor_name
         if is_graph_output(node):
             tensor_name = "output_" + tensor_name
         dims = [1] if len(tensor.size()) == 0 else tensor.size()
