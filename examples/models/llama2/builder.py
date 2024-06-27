@@ -76,6 +76,7 @@ def load_llama_model(
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
     weight_type: WeightType = WeightType.LLAMA,
+    enable_dynamic_shape: bool = False,
     verbose: bool = False,
     max_seq_len: int = 128,
 ) -> "LlamaEdgeManager":
@@ -101,6 +102,7 @@ def load_llama_model(
         use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
         fairseq2=weight_type == WeightType.FAIRSEQ2,
         max_seq_len=max_seq_len,
+        enable_dynamic_shape=enable_dynamic_shape,
     )
     state_dict = model.state_dict()
     dtype = state_dict[next(iter(state_dict))].dtype
@@ -128,6 +130,7 @@ def load_llama_model(
         use_kv_cache=use_kv_cache,
         use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
         example_inputs=example_inputs,
+        enable_dynamic_shape=enable_dynamic_shape,
         verbose=verbose,
     )
 
@@ -146,6 +149,7 @@ class LlamaEdgeManager:
         use_kv_cache,
         use_sdpa_with_kv_cache,
         example_inputs,
+        enable_dynamic_shape: bool = False,
         verbose: bool = False,
     ):
         self.model = model
@@ -156,6 +160,7 @@ class LlamaEdgeManager:
         self.dtype = dtype
         self.example_inputs = example_inputs
         self.use_kv_cache = use_kv_cache
+        self.enable_dynamic_shape = enable_dynamic_shape
         self.use_sdpa_with_kv_cache = use_sdpa_with_kv_cache
         self.metadata = None
         self.verbose = verbose
@@ -220,7 +225,10 @@ class LlamaEdgeManager:
     def _get_dynamic_shape(self) -> Any:
         dim = torch.export.Dim("token_dim", max=self.model.params.max_seq_len - 1)
         if self.use_kv_cache:
-            return None
+            if self.enable_dynamic_shape:
+                return ({1: dim}, {0: dim})
+            else:
+                None
         else:
             return ({1: dim},)
 
@@ -250,6 +258,7 @@ class LlamaEdgeManager:
             "get_vocab_size": params.vocab_size,
             "use_kv_cache": self.use_kv_cache,
             "use_sdpa_with_kv_cache": self.use_sdpa_with_kv_cache,
+            "enable_dynamic_shape": self.enable_dynamic_shape,
         }
         if self.metadata:
             try:

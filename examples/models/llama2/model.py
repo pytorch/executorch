@@ -74,6 +74,11 @@ class Llama2Model(EagerModelBase):
             if "use_sdpa_with_kv_cache" in kwargs
             else False
         )
+        self.enable_dynamic_shape = (
+            kwargs["enable_dynamic_shape"]
+            if "enable_dynamic_shape" in kwargs
+            else False
+        )
 
         self.max_seq_len = kwargs["max_seq_len"] if "max_seq_len" in kwargs else 128
         # The example is using a dummy small model with random weights for demo purpose only.
@@ -220,11 +225,17 @@ the checkpoint format to avoid generating faulty models.
 
     # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
     def get_example_inputs_kvcache_sdpa(self):
-        return (
-            torch.tensor(
-                [[1]], dtype=torch.long
-            ),  # tokens, with kv cache our input token length is always just 1 token.
-            torch.tensor(
-                [0], dtype=torch.long
-            ),  # start_pos, what token of output are we on.)
-        )
+        if self.enable_dynamic_shape:
+            return (
+                torch.tensor([[2, 3, 4]], dtype=torch.long),
+                torch.tensor([0, 1, 2], dtype=torch.long),
+            )
+        else:
+            return (
+                torch.tensor(
+                    [[1]], dtype=torch.long
+                ),  # tokens, with kv cache our input token length is always just 1 token.
+                torch.tensor(
+                    [0], dtype=torch.long
+                ),  # start_pos, what token of output are we on.
+            )

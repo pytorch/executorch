@@ -41,6 +41,9 @@ class SDPACustom(torch.nn.Module):
             self.kv_cache.v_cache,
             input_pos[-1].item(),
             seqlen,
+            None,  # Attention mask
+            0,  # dropout probability. Ignored by the code
+            True,  # is_causal
         )
         return output.view(bsz, seqlen, self.dim)
 

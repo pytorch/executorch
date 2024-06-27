@@ -1185,7 +1185,9 @@ class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
         partitions = [
             Partition(
                 id=next(partition_id),
-                nodes=set(match),
+                nodes=set(
+                    filter(lambda x: x.target != torch.ops.aten.sym_size.int, match)
+                ),
             )
             for match in self.get_module_partitions(exported_program)
         ]
