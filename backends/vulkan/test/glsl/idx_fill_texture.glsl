@@ -12,6 +12,8 @@
 
 #define VEC4_T ${texel_type(DTYPE)}
 
+#define POS ${get_pos[NDIM]("pos")}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;
@@ -36,5 +38,5 @@ void main() {
 
   const ivec4 buf_indices = get_texel_nchw_buffer_ixs(idx, sizes, packed_dim);
   VEC4_T texel = VEC4_T(buf_indices);
-  imageStore(image_out, ${get_pos[NDIM]("pos")}, texel);
+  imageStore(image_out, POS, texel);
 }
