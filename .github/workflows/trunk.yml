@@ -261,12 +261,8 @@ jobs:
         # Setup executorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
-        if [ "${MODE}" == "mps" ]; then
-            # Commands to execute if MODE is "mps"
-            echo "Running mps mode, install mps requiresments."
-            PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
-        fi
-        echo "Finishing installing requirements."
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
+        echo "Finishing installing mps."
 
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/models/llama2/install_requirements.sh
