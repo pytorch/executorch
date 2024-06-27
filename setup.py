@@ -484,6 +484,7 @@ class CustomBuild(build):
             cmake_args += [
                 "-DEXECUTORCH_BUILD_PYBIND=ON",
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
+                "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should

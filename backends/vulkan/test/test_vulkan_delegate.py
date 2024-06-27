@@ -14,18 +14,19 @@ import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_
 
 import torch
 
-from executorch.backends.transforms.i64_to_i32 import I64toI32
+from executorch.backends.transforms.convert_dtype_pass import I64toI32
 from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
-from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
+from executorch.exir import EdgeCompileConfig
 from torch.export import Dim, export, ExportedProgram
 
 ctypes.CDLL("libvulkan.so.1")
 
 
+from executorch.exir.program._program import _to_edge_transform_and_lower
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
@@ -119,16 +120,15 @@ class TestBackends(unittest.TestCase):
             program: ExportedProgram = export(
                 model, sample_inputs, dynamic_shapes=dynamic_shapes
             )
-            edge_program: EdgeProgramManager = to_edge(
-                program, compile_config=self._edge_compile_config
+
+            edge_program = _to_edge_transform_and_lower(
+                program,
+                transform_passes=[
+                    I64toI32(self._edge_compile_config._skip_dim_order),
+                    MeanToSumDiv(),
+                ],
+                partitioner=[VulkanPartitioner(compile_options)],
             )
-
-            edge_program = edge_program.transform(
-                [I64toI32(self._edge_compile_config._skip_dim_order), MeanToSumDiv()]
-            )
-
-            edge_program = edge_program.to_backend(VulkanPartitioner(compile_options))
-
             executorch_program = edge_program.to_executorch()
 
             self.assertEqual(
@@ -1053,6 +1053,23 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(
             OnesLikeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_upsample_nearest2d(self):
+        class UpsampleNearest2d(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.upsample = torch.nn.Upsample(scale_factor=2, mode="nearest")
+
+            def forward(self, x):
+                return self.upsample(x)
+
+        sample_inputs = (torch.arange(1, 5, dtype=torch.float32).view(1, 1, 2, 2),)
+
+        self.lower_module_and_test_output(
+            UpsampleNearest2d(),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )

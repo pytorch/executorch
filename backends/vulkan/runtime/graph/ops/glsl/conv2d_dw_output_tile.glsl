@@ -12,42 +12,23 @@
 
 #define VEC4_T ${texel_type(DTYPE)}
 
+#define TILE_SIZE ${TILE_SIZE}
+
 #define op(X, A, B) ${OPERATOR}
 
 #include "indexing_utils.h"
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
-layout(set = 0, binding = 2) uniform PRECISION sampler2D kernel_in;
-layout(set = 0, binding = 3) uniform PRECISION sampler2D bias_in;
-
-layout(set = 0, binding = 4) uniform PRECISION restrict OutLimits {
-  ivec3 out_limits;
-};
-
-layout(set = 0, binding = 5) uniform PRECISION restrict InSizes {
-  ivec4 in_sizes;
-};
-
-layout(set = 0, binding = 6) uniform PRECISION restrict Params {
-  ivec2 kernel_size;
-  ivec2 stride;
-  ivec2 padding;
-  ivec2 dilation;
-};
-
-// If fields are separated, SwiftShader cannot identify in_group_size.
-layout(set = 0, binding = 7) uniform PRECISION restrict ExtraParams {
-  ivec2 overlay_region;
-  int in_group_size;
-};
-
-layout(set = 0, binding = 8) uniform PRECISION restrict OutputParams {
-  float out_min;
-  float out_max;
-};
+${layout_declare_tensor(0, "w", "t_out", DTYPE, "texture3d")}
+${layout_declare_tensor(1, "r", "t_in", DTYPE, "texture3d")}
+${layout_declare_tensor(2, "r", "t_kernel", DTYPE, "texture2d")}
+${layout_declare_tensor(3, "r", "t_bias", DTYPE, "texture2d")}
+${layout_declare_ubo(4, "ivec3", "out_limits")}
+${layout_declare_ubo(5, "ivec4", "in_sizes")}
+${layout_declare_ubo(6, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
+${layout_declare_ubo(7, "ivec2", "overlay_region", "int", "in_group_size")}
+${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -71,18 +52,18 @@ void main() {
   const ivec2 start = ipos;
   const ivec2 end = ipos + overlay_region.xy;
 
-  VEC4_T sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
+  VEC4_T sum = texelFetch(t_bias, ivec2(pos.z, 0), 0);
   int kx = 0;
-  for (int y = start.y, i = 0; i < ${TILE_SIZE}; y += dilation.y, i++) {
-    for (int x = start.x, j = 0; j < ${TILE_SIZE}; x += dilation.x, j++) {
+  for (int y = start.y, i = 0; i < TILE_SIZE; y += dilation.y, i++) {
+    for (int x = start.x, j = 0; j < TILE_SIZE; x += dilation.x, j++) {
       // The weight kernel was rearranged such that every NxN filter is
       // flattened to fit in one row. Each filter was then stacked on top of
       // each other vertically.
-      const vec4 in_texel = texelFetch(image_in, ivec3(x, y, pos.z), 0);
-      sum = fma(in_texel, texelFetch(kernel_in, ivec2(kx, pos.z), 0), sum);
+      const vec4 in_texel = texelFetch(t_in, ivec3(x, y, pos.z), 0);
+      sum = fma(in_texel, texelFetch(t_kernel, ivec2(kx, pos.z), 0), sum);
       kx++;
     }
   }
 
-  imageStore(image_out, pos, op(sum, out_min, out_max));
+  imageStore(t_out, pos, op(sum, out_min, out_max));
 }
