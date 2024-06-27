@@ -785,7 +785,7 @@ lowering process.
 
     LoweredBackendModule()
     BackendWithCompilerDemo
-    b'1#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#'
+    b'1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#'
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, x: "f32[1]"):
@@ -888,7 +888,7 @@ can compose this lowered module with another module.
 
     Lowered Module within the graph
     BackendWithCompilerDemo
-    b'1#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#'
+    b'1version:0#op:demo::aten.sin.default, numel:1, dtype:torch.float32<debug_handle>1#'
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, x: "f32[1]"):
@@ -1282,7 +1282,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.436 seconds)
+   **Total running time of the script:** (0 minutes 1.499 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
