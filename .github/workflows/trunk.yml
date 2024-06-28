@@ -51,6 +51,14 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
+        if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+          # TODO: Will add more modes that don't support buck2
+          if [[ "${mode}" == "mps" ]]; then
+            echo "mps doesn't support buck2."
+            exit 0
+          fi
+        fi
+
         bash .ci/scripts/setup-conda.sh
 
         DTYPE=${{ matrix.dtype }}
@@ -61,10 +69,6 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
         if [[ "${MODE}" == "mps" ]]; then
-          if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-            echo "mps doesn't support buck2."
-            exit 0
-          fi
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
           echo "Finishing installing mps."
         else
