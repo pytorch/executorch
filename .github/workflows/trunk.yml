@@ -41,7 +41,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        build-tool: [cmake]
+        build-tool: [buck2, cmake]
         mode: [mps]
       fail-fast: false
     with:
@@ -61,6 +61,10 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
         if [[ "${MODE}" == "mps" ]]; then
+          if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+            echo "mps doesn't support buck2."
+            exit 0
+          fi
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
           echo "Finishing installing mps."
         else
