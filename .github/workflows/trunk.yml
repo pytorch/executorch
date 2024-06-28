@@ -51,19 +51,20 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
+
+        DTYPE=${{ matrix.dtype }}
+        BUILD_TOOL=${{ matrix.build-tool }}
+        MODE=${{ matrix.mode }}
+
         if [[ "${BUILD_TOOL}" == "buck2" ]]; then
           # TODO: Will add more modes that don't support buck2
-          if [[ "${mode}" == "mps" ]]; then
+          if [[ "${MODE}" == "mps" ]]; then
             echo "mps doesn't support buck2."
             exit 0
           fi
         fi
 
         bash .ci/scripts/setup-conda.sh
-
-        DTYPE=${{ matrix.dtype }}
-        BUILD_TOOL=${{ matrix.build-tool }}
-        MODE=${{ matrix.mode }}
 
         # Setup executorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
