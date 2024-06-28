@@ -17,6 +17,8 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     CppTestFileGen,
     DOUBLE,
     INT,
+    OPT_AT_DOUBLE_ARRAY_REF,
+    OPT_AT_INT_ARRAY_REF,
     OPT_AT_TENSOR,
     OPT_BOOL,
     OPT_DEVICE,
@@ -24,6 +26,7 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     OPT_LAYOUT,
     OPT_MEMORY_FORMAT,
     OPT_SCALAR_TYPE,
+    STRING,
     TENSOR_VECTOR,
     TestSuite,
     TestSuiteGen,
@@ -130,7 +133,14 @@ class ComputeGraphGen:
                 ATenArg(name=arg.name, cpp_type=cpp_type, default=arg.default)
             )
 
-            requires_prepack = "weight" in arg.name or "bias" in arg.name
+            # These are the argument will be passed as a "weight" tensor, the
+            # corresponding object will be TensorRef in the compute graph.
+            requires_prepack = (
+                "weight" in arg.name
+                or "bias" in arg.name
+                or "running_mean" in arg.name
+                or "running_var" in arg.name
+            )
             supports_prepack = False
             if arg.name in self.suite_def.prepacked_args:
                 supports_prepack = True
@@ -281,6 +291,16 @@ class ComputeGraphGen:
             ret_str += f"{self.graph}{self.dot}add_scalar<int64_t>"
             ret_str += f"({ref.src_cpp_name}.value());\n"
             return ret_str
+        elif (
+            ref.src_cpp_type == OPT_AT_DOUBLE_ARRAY_REF
+            or ref.src_cpp_type == OPT_AT_INT_ARRAY_REF
+        ):
+            ret_str = f"{cpp_type} {ref.name} = "
+            ret_str += f"!{ref.src_cpp_name}.has_value() ? "
+            ret_str += f"{self.graph}{self.dot}add_none() : "
+            ret_str += f"{self.graph}{self.dot}add_scalar_list"
+            ret_str += f"({ref.src_cpp_name}->vec());\n"
+            return ret_str
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             assert ref.is_in, "AT_TENSOR_LIST must be an input"
             # This logic is a bit convoluted. We need to create a IOValueRef for
@@ -290,13 +310,15 @@ class ComputeGraphGen:
             ret_str = f"std::vector<IOValueRef> {ref.name}_io_value_refs;\n"
             ret_str += f"std::vector<ValueRef> {ref.name}_value_refs;\n"
             ret_str += f"for (int i=0; i < {ref.src_cpp_name}.size(); i++) {{\n"
-            ret_str += f"    {cpp_type} io_value_ref = {self.graph}{self.dot}add_input_tensor(\n"
-            ret_str += f"        {ref.src_cpp_name}[i].sizes().vec(),\n"
             ret_str += (
-                f"        from_at_scalartype({ref.src_cpp_name}[i].scalar_type())); \n"
+                f"  {cpp_type} io_value_ref = {self.graph}{self.dot}add_input_tensor(\n"
             )
-            ret_str += f"    {ref.name}_value_refs.emplace_back(io_value_ref.value);\n"
-            ret_str += f"    {ref.name}_io_value_refs.emplace_back(io_value_ref);\n"
+            ret_str += f"      {ref.src_cpp_name}[i].sizes().vec(),\n"
+            ret_str += (
+                f"      from_at_scalartype({ref.src_cpp_name}[i].scalar_type())); \n"
+            )
+            ret_str += f"  {ref.name}_value_refs.emplace_back(io_value_ref.value);\n"
+            ret_str += f"  {ref.name}_io_value_refs.emplace_back(io_value_ref);\n"
             ret_str += "}\n"
             ret_str += f"ValueRef {ref.name} = {self.graph}{self.dot}add_value_list(std::move({ref.name}_value_refs));\n"
             return ret_str
@@ -344,6 +366,8 @@ ValueRef out_ref = {self.graph}{self.dot}add_value_list(std::move({ref.value_lis
             or ref.src_cpp_type == OPT_MEMORY_FORMAT
         ):
             ret_str += "add_none(); \n"
+        elif ref.src_cpp_type == STRING:
+            ret_str += f"add_string(std::string({ref.src_cpp_name})); \n"
         elif ref.src_cpp_type == TWO_TENSOR_TUPLE:
             ret_str += f"add_value_list({{{ref.name}_first, {ref.name}_second}}); \n"
         elif ref.src_cpp_type == THREE_TENSOR_TUPLE:
@@ -406,7 +430,9 @@ for (int i=0; i<out.size(); i++) {{
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             ret_str = ""
             ret_str += f"for (int i=0; i < {ref.name}_io_value_refs.size(); i++) {{\n"
-            ret_str += f"    {self.graph}{self.dot}get_tensor({ref.name}_io_value_refs[i].value)"
+            ret_str += (
+                f"  {self.graph}{self.dot}get_tensor({ref.name}_io_value_refs[i].value)"
+            )
             ret_str += f"->virtual_resize({ref.src_cpp_name}[i].sizes().vec());\n"
             ret_str += "}\n"
         else:
@@ -429,7 +455,7 @@ for (int i=0; i<out.size(); i++) {{
         elif ref.src_cpp_type == AT_TENSOR_LIST:
             ret_str = ""
             ret_str += f"for (int i=0; i < {ref.name}_io_value_refs.size(); i++) {{\n"
-            ret_str += f"    {self.graph}{self.dot}copy_into_staging("
+            ret_str += f"  {self.graph}{self.dot}copy_into_staging("
             ret_str += f"{ref.name}_io_value_refs[i].staging, "
             ret_str += f"{ref.src_cpp_name}[i].const_data_ptr(), "
             ret_str += f"{ref.src_cpp_name}[i].numel());\n"
@@ -500,7 +526,9 @@ for (int i=0; i<out.size(); i++) {{
 """
             return ret_str
 
-        return f"EXPECT_TRUE(check_close({ref.src_cpp_name}, vk_{ref.name}, rtol, atol));\n"
+        return (
+            f"EXPECT_TRUE(check_close({ref.src_cpp_name}, vk_{ref.name}, rtol, atol));"
+        )
 
     ## Top level code generation
 
@@ -519,6 +547,7 @@ for (int i=0; i<out.size(); i++) {{
         graph_build += f"{self.graph}{self.dot}prepack();\n"
         graph_build += f"{self.graph}{self.dot}encode_execute();\n"
 
+        graph_build += "\n"
         return graph_build
 
     def gen_graph_exec_code(self) -> str:
@@ -534,33 +563,52 @@ for (int i=0; i<out.size(); i++) {{
 
         graph_exec += self.declare_vk_out_for(self.refs["out"])
         graph_exec += self.copy_from_staging(self.refs["out"])
+        graph_exec += self.check_graph_out(self.refs["out"])
+
+        graph_exec = re.sub(r"^", "  ", graph_exec, flags=re.M)
+        graph_exec = "{\n" + graph_exec + "\n}"
 
         return graph_exec
 
     def gen_conditional_skips(self) -> str:
-        skips = "if (test_dtype == at::kHalf && "
-        skips += f"!{self.graph}{self.dot}context()->adapter_ptr()->has_16bit_storage()) {{\n"
-        skips += "  GTEST_SKIP();"
+        fp16_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_float16_buffers_support()) {{\n"
+        fp16_skip += "  GTEST_SKIP();\n"
+        fp16_skip += "}"
+        fp16_skip = re.sub(r"^", "  ", fp16_skip, flags=re.M) + "\n"
+
+        int8_skip = f"if (!{self.graph}{self.dot}context()->adapter_ptr()->has_full_int8_buffers_support()) {{\n"
+        int8_skip += "  GTEST_SKIP();\n"
+        int8_skip += "}\n"
+
+        skips = ""
+
+        skips = "if (test_dtype == at::kHalf) {\n"
+        skips += fp16_skip
         skips += "}\n"
+
+        for _, dtype in self.suite_def.arg_dtype.items():
+            if dtype == "at::kChar" or dtype == "at::kQInt8":
+                skips += int8_skip
+                continue
+
+        skips += "\n"
         return skips
 
     def gen_op_check_fn(self) -> str:
         op_name = self.f.func.name.unambiguous_name()
         op_check_fn = self.gen_decl(f"check_{op_name}") + " {\n"
         if self.should_prepack:
-            op_check_fn = self.gen_decl(f"prepacked_check_{op_name}") + " {"
+            op_check_fn = self.gen_decl(f"prepacked_check_{op_name}") + " {\n"
 
         op_check_fn_body = ""
         op_check_fn_body += self.gen_conditional_skips()
         op_check_fn_body += self.gen_graph_build_code()
         op_check_fn_body += self.gen_graph_exec_code()
-        op_check_fn_body += self.check_graph_out(self.refs["out"])
 
-        # Add two level of indent for readability
-        op_check_fn_body = re.sub(r"^", "        ", op_check_fn_body, flags=re.M)
+        op_check_fn_body = re.sub(r"^", "    ", op_check_fn_body, flags=re.M)
 
-        op_check_fn += op_check_fn_body + "\n"
-        op_check_fn += "    }\n"
+        op_check_fn += op_check_fn_body
+        op_check_fn += "\n  }"
 
         return op_check_fn
 
@@ -571,36 +619,33 @@ for (int i=0; i<out.size(); i++) {{
 
 test_fixture_template = """
 class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple<at::ScalarType, api::StorageType, api::GPUMemoryLayout>> {{
-  protected:
-    ComputeGraph* graph;
-    at::ScalarType test_dtype = at::kFloat;
-    float rtol = 1e-5;
-    float atol = 1e-5;
+ protected:
+  ComputeGraph* graph;
+  at::ScalarType test_dtype = at::kFloat;
+  float rtol = {rtol};
+  float atol = {atol};
 
-    void SetUp() override {{
-        GraphConfig config;
-        api::StorageType default_storage_type;
-        api::GPUMemoryLayout default_memory_layout;
-        std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();
-        config.setStorageTypeOverride(default_storage_type);
-        config.setMemoryLayoutOverride(default_memory_layout);
-        graph = new ComputeGraph(config);
+  void SetUp() override {{
+    GraphConfig config;
+    api::StorageType default_storage_type;
+    api::GPUMemoryLayout default_memory_layout;
+    std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();
+    config.set_storage_type_override(default_storage_type);
+    config.set_memory_layout_override(default_memory_layout);
+    graph = new ComputeGraph(config);
 
-        if (test_dtype == at::kHalf) {{
-            rtol = 1e-2;
-            atol = 1e-2;
-        }}
+    if (test_dtype == at::kHalf) {{
+      rtol = 1e-2;
+      atol = 1e-2;
     }}
+  }}
 
-    void TearDown() override {{
-        delete graph;
-        graph = nullptr;
-    }}
+  void TearDown() override {{
+    delete graph;
+    graph = nullptr;
+  }}
 
-    {check_fn}
-
-    {prepacked_check_fn}
-
+  {check_fn}
 }};
 """
 
@@ -620,11 +665,14 @@ class VkTestSuiteGen(TestSuiteGen):
         if self.suite_def.supports_prepack():
             self.generator.should_prepack = True
             prepacked_check_fn = self.generator.gen_op_check_fn()
+            check_fn += "\n\n  "
+            check_fn += prepacked_check_fn
 
         return test_fixture_template.format(
             op_name=self.op_name,
             check_fn=check_fn,
-            prepacked_check_fn=prepacked_check_fn,
+            rtol=self.suite_def.rtol,
+            atol=self.suite_def.atol,
         )
 
     def gen_parameterization(self) -> str:
@@ -633,13 +681,13 @@ class VkTestSuiteGen(TestSuiteGen):
         layouts = self.suite_def.layouts
 
         return f"""
-        INSTANTIATE_TEST_SUITE_P(
-            Combos_{self.op_name},
-            GeneratedOpsTest_{self.op_name},
-            ::testing::Combine(
-                ::testing::Values({', '.join(dtypes)}),
-                ::testing::Values({', '.join(storage_types)}),
-                ::testing::Values({', '.join(layouts)})));
+INSTANTIATE_TEST_SUITE_P(
+  Combos_{self.op_name},
+  GeneratedOpsTest_{self.op_name},
+    ::testing::Combine(
+      ::testing::Values({', '.join(dtypes)}),
+      ::testing::Values({', '.join(storage_types)}),
+      ::testing::Values({', '.join(layouts)})));
         """
 
 
@@ -658,18 +706,20 @@ using namespace vkcompute;
 using TensorOptions = at::TensorOptions;
 
 api::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
-    switch(at_scalartype) {
-        case c10::kFloat:
-            return api::kFloat;
-        case c10::kHalf:
-            return api::kHalf;
-        case c10::kInt:
-            return api::kInt;
-        case c10::kLong:
-            return api::kInt;
-        default:
-            VK_THROW("Unsupported at::ScalarType!");
-    }
+  switch (at_scalartype) {
+    case c10::kFloat:
+      return api::kFloat;
+    case c10::kHalf:
+      return api::kHalf;
+    case c10::kInt:
+      return api::kInt;
+    case c10::kLong:
+      return api::kInt;
+    case c10::kChar:
+      return api::kChar;
+    default:
+      VK_THROW("Unsupported at::ScalarType!");
+  }
 }
 
 #ifdef USE_VULKAN_FP16_INFERENCE
@@ -677,20 +727,20 @@ bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-2, float atol=1e-
 #else
 bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-5, float atol=1e-5) {
 #endif
-    // Skip checking index tensors
-    if (t1.scalar_type() == at::kLong || t2.scalar_type() == at::kLong) {
-        return true;
-    }
-    bool is_close = at::allclose(t1, t2, rtol, atol);
-    if (!is_close && t1.numel() < 500) {
-        std::cout << "reference: " << std::endl;
-        print(t1, 150);
-        std::cout << std::endl;
-        std::cout << "vulkan: " << std::endl;
-        print(t2, 150);
-        std::cout << std::endl;
-    }
-    return is_close;
+  // Skip checking index tensors
+  if (t1.scalar_type() == at::kLong || t2.scalar_type() == at::kLong) {
+    return true;
+  }
+  bool is_close = at::allclose(t1, t2, rtol, atol);
+  if (!is_close && t1.numel() < 500) {
+    std::cout << "reference: " << std::endl;
+    print(t1, 150);
+    std::cout << std::endl;
+    std::cout << "vulkan: " << std::endl;
+    print(t2, 150);
+    std::cout << std::endl;
+  }
+  return is_close;
 }
 """
 

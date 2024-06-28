@@ -12,8 +12,8 @@ import logging
 import torch
 from examples.apple.mps.scripts.bench_utils import bench_torch, compare_outputs
 from executorch import exir
-from executorch.backends.apple.mps.mps_preprocess import MPSBackend
-from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
+from executorch.backends.apple.mps import MPSBackend
+from executorch.backends.apple.mps.partition import MPSPartitioner
 
 from executorch.exir import (
     EdgeCompileConfig,
@@ -182,7 +182,9 @@ if __name__ == "__main__":
         logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
         executorch_program = edge.to_executorch(
-            config=ExecutorchBackendConfig(extract_constant_segment=False)
+            config=ExecutorchBackendConfig(
+                extract_delegate_segments=False, extract_constant_segment=False
+            )
         )
     else:
         lowered_module = to_backend(
@@ -192,7 +194,11 @@ if __name__ == "__main__":
             lowered_module,
             example_inputs,
             edge_compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
-        ).to_executorch(config=ExecutorchBackendConfig(extract_constant_segment=False))
+        ).to_executorch(
+            config=ExecutorchBackendConfig(
+                extract_delegate_segments=False, extract_constant_segment=False
+            )
+        )
 
     model_name = f"{args.model_name}_mps"
 

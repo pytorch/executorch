@@ -55,6 +55,13 @@ export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH
 export PYTHONPATH=$EXECUTORCH_ROOT/..
 ```
 
+Note: Since we set `PYTHONPATH`, we may have issue with finding `program.fbs`
+and `scalar_type.fbs` when we export a model, because they are installed into
+`pip-out` directory with the same package name pattern. A workaround is that
+we copy `$EXECUTORCH_ROOT/pip-out/lib.linux-x86_64-cpython-310/executorch/exir/_serialize/program.fbs`
+and `$EXECUTORCH_ROOT/pip-out/lib.linux-x86_64-cpython-310/executorch/exir/_serialize/scalar_type.fbs`
+to `$EXECUTORCH_ROOT/exir/_serialize/`.
+
 
 ## End to End Inference
 
@@ -95,6 +102,8 @@ cd build_android
 cmake .. \
     -DCMAKE_INSTALL_PREFIX=$PWD \
     -DEXECUTORCH_BUILD_QNN=ON \
+    -DEXECUTORCH_BUILD_SDK=ON \
+    -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
     -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \

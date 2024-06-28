@@ -43,6 +43,8 @@ set(lib_list
     qnn_executorch_backend
     portable_ops_lib
     extension_module
+    extension_module_static
+    extension_runner_util
     xnnpack_backend
     XNNPACK
     cpuinfo
@@ -55,6 +57,7 @@ set(lib_list
     optimized_native_cpu_ops_lib
     quantized_kernels
     quantized_ops_lib
+    quantized_ops_aot_lib
 )
 foreach(lib ${lib_list})
   # Name of the variable which stores result of the find_library search

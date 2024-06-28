@@ -9,12 +9,22 @@ matmul_optimized:
     DTYPE: float
     NDIM: 3
     PACKING: C_packed
-    IS_ADDMM: false
+    MAT2_IS_TRANSPOSED: false
+    BATCH_MODE: false
+    TILE_ROW: tile_row_4
   generate_variant_forall:
+    TILE_ROW:
+      - VALUE: tile_row_4
+      - VALUE: tile_row_2
     DTYPE:
       - VALUE: float
       - VALUE: half
   shader_variants:
     - NAME: matmul_optimized
-    - NAME: addmm_optimized
-      IS_ADDMM: true
+    - NAME: matmul_transposed_optimized
+      MAT2_IS_TRANSPOSED: true
+    - NAME: batch_matmul_optimized
+      BATCH_MODE: true
+    - NAME: batch_matmul_transposed_optimized
+      MAT2_IS_TRANSPOSED: true
+      BATCH_MODE: true

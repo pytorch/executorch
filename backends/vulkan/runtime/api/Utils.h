@@ -9,7 +9,9 @@
 #pragma once
 
 #include <cmath>
+#include <limits>
 #include <numeric>
+#include <type_traits>
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
@@ -56,8 +58,18 @@ inline constexpr Type align_up(const Type& number, const Type& multiple) {
 }
 
 template <typename Type>
+inline constexpr Type align_up_4(const Type& numerator) {
+  return (numerator + 3) & -4;
+}
+
+template <typename Type>
 inline constexpr Type div_up(const Type& numerator, const Type& denominator) {
   return (numerator + denominator - 1) / denominator;
+}
+
+template <typename Type>
+inline constexpr Type div_up_4(const Type& numerator) {
+  return (numerator + 3) / 4;
 }
 
 //
@@ -170,7 +182,9 @@ inline constexpr bool greater_than_max(const T& x) {
 #endif
 
 template <typename To, typename From>
-std::enable_if_t<std::is_integral_v<From> && !std::is_same_v<From, bool>, bool>
+std::enable_if_t<
+    std::is_integral<From>::value && !std::is_same<From, bool>::value,
+    bool>
 overflows(From f) {
   using limit = std::numeric_limits<To>;
   // Casting from signed to unsigned; allow for negative numbers to wrap using
@@ -186,7 +200,7 @@ overflows(From f) {
 }
 
 template <typename To, typename From>
-std::enable_if_t<std::is_floating_point_v<From>, bool> overflows(From f) {
+std::enable_if_t<std::is_floating_point<From>::value, bool> overflows(From f) {
   using limit = std::numeric_limits<To>;
   if (limit::has_infinity && std::isinf(static_cast<double>(f))) {
     return false;
@@ -277,6 +291,17 @@ inline std::ostream& operator<<(std::ostream& os, const ivec4& v) {
   os << "(" << v.data[0u] << ", " << v.data[1u] << ", " << v.data[2u] << ", "
      << v.data[3u] << ")";
   return os;
+}
+
+template <typename T, uint32_t N>
+inline detail::vec<T, N> divup_vec(
+    const detail::vec<T, N>& a,
+    const detail::vec<T, N>& b) {
+  detail::vec<T, N> result;
+  for (uint32_t i = 0; i < N; ++i) {
+    result.data[i] = api::utils::div_up(a.data[i], b.data[i]);
+  }
+  return result;
 }
 
 //
@@ -408,7 +433,7 @@ inline ivec4 make_whcn_ivec4(const std::vector<int64_t>& arr) {
  */
 template <
     typename C,
-    std::enable_if_t<std::is_integral_v<typename C::value_type>, int> = 0>
+    std::enable_if_t<std::is_integral<typename C::value_type>::value, int> = 0>
 inline int64_t multiply_integers(const C& container) {
   return std::accumulate(
       container.begin(),
@@ -424,7 +449,8 @@ inline int64_t multiply_integers(const C& container) {
 template <
     typename Iter,
     std::enable_if_t<
-        std::is_integral_v<typename std::iterator_traits<Iter>::value_type>,
+        std::is_integral<
+            typename std::iterator_traits<Iter>::value_type>::value,
         int> = 0>
 inline int64_t multiply_integers(Iter begin, Iter end) {
   // std::accumulate infers return type from `init` type, so if the `init` type

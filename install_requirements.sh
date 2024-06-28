@@ -59,20 +59,21 @@ done
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION=dev20240422
+NIGHTLY_VERSION=dev20240618
 
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL="https://download.pytorch.org/whl/nightly/cpu"
 
 # pip packages needed by exir.
 EXIR_REQUIREMENTS=(
-  torch=="2.4.0.${NIGHTLY_VERSION}"
-  torchvision=="0.19.0.${NIGHTLY_VERSION}"  # For testing.
+  torch=="2.5.0.${NIGHTLY_VERSION}"
+  torchvision=="0.20.0.${NIGHTLY_VERSION}"  # For testing.
 )
 
 # pip packages needed for development.
 DEVEL_REQUIREMENTS=(
   cmake  # For building binary targets.
+  "pip>=23" # For building the pip package.
   pyyaml  # Imported by the kernel codegen tools.
   "setuptools>=63"  # For building the pip package.
   tomli  # Imported by extract_sources.py when using python < 3.11.
@@ -84,7 +85,7 @@ DEVEL_REQUIREMENTS=(
 # TODO(dbort): Make each example publish its own requirements.txt
 EXAMPLES_REQUIREMENTS=(
   timm==0.6.13
-  torchaudio=="2.2.0.${NIGHTLY_VERSION}"
+  torchaudio=="2.4.0.${NIGHTLY_VERSION}"
   torchsr==1.0.4
   transformers==4.38.2
 )

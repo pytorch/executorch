@@ -19,8 +19,8 @@ namespace vkcompute {
 api::ShaderInfo get_noop_shader(ComputeGraph& graph, const ValueRef packed) {
   std::string noop_shader_name("no_op");
   vTensorPtr t_packed = graph.get_tensor(packed);
-  add_ndim_suffix(noop_shader_name, *t_packed);
   add_dtype_suffix(noop_shader_name, *t_packed);
+  add_storage_type_suffix(noop_shader_name, *t_packed);
   return VK_KERNEL_FROM_STR(noop_shader_name);
 }
 

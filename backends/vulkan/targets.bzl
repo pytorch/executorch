@@ -150,10 +150,10 @@ def define_common_targets(is_fbcode = False):
         name = "vulkan_compute_api",
         compiler_flags = get_vulkan_compiler_flags(),
         srcs = native.glob([
-            "runtime/api/*.cpp",
+            "runtime/api/**/*.cpp",
         ]),
         exported_headers = native.glob([
-            "runtime/api/*.h",
+            "runtime/api/**/*.h",
         ]),
         visibility = [
             "//executorch/backends/vulkan/...",
@@ -208,6 +208,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             ":vk_delegate_schema",
             ":vulkan_graph_runtime",
+            "//executorch/runtime/core:event_tracer",
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],

@@ -50,7 +50,7 @@ class TestMobileNetV2(unittest.TestCase):
         )
 
     @unittest.skip("T187799178: Debugging Numerical Issues with Calibration")
-    def test_qs8_mv2(self):
+    def _test_qs8_mv2(self):
         # Quantization fuses away batchnorm, so it is no longer in the graph
         ops_after_quantization = self.all_operators - {
             "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",

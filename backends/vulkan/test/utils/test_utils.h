@@ -33,7 +33,7 @@ using namespace vkcompute;
       sizes,                                        \
       api::kFloat,                                  \
       api::StorageType::BUFFER,                     \
-      api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, \
+      api::GPUMemoryLayout::TENSOR_WIDTH_PACKED,    \
       allocate_memory);
 
 #define DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(tensor) \
@@ -67,7 +67,7 @@ void record_nchw_to_buffer_op(
     api::VulkanBuffer& src_buffer,
     vTensor& v_dst);
 
-bool record_buffer_to_nchw_op(
+void record_buffer_to_nchw_op(
     api::Context* const context,
     vTensor& v_src,
     api::VulkanBuffer& dst_buffer);
@@ -103,6 +103,13 @@ void execute_and_check_add(
     float a_val,
     float b_val);
 
+void record_index_fill_buffer(api::Context* const context, vTensor& v_ten);
+
+void record_scalar_add_buffer(
+    api::Context* context,
+    vTensor& v_ten,
+    float offset);
+
 //
 // Input & Output Utilities
 //
@@ -119,12 +126,7 @@ fill_staging(api::StorageBuffer& staging, float val, int numel = -1) {
 
 void fill_vtensor(vTensor& vten, std::vector<float>& data);
 
-inline void fill_vtensor(vTensor& vten, float val) {
-  std::vector<float> vten_data(vten.gpu_numel());
-  std::fill(vten_data.begin(), vten_data.end(), val);
-
-  fill_vtensor(vten, vten_data);
-}
+void fill_vtensor(vTensor& vten, float val, bool iota = false);
 
 void fill_vtensor(
     ComputeGraph& graph,
@@ -179,7 +181,7 @@ inline int64_t get_buf_idx(
 
 void submit_to_gpu();
 
-api::MemoryAllocation allocate_memory_for(const vTensor& vten);
+api::Allocation allocate_memory_for(const vTensor& vten);
 
 VmaTotalStatistics get_vma_stats();
 
@@ -198,10 +200,10 @@ void execute_graph_and_check_output(
 // Debugging Utilities
 //
 
-#define PRINT_DATA(vec) \
-  do {                  \
-    std::cout << #vec;  \
-    print_vector(vec);  \
+#define PRINT_DATA(vec)        \
+  do {                         \
+    std::cout << #vec << ": "; \
+    print_vector(vec);         \
   } while (false);
 
 #define PRINT_DATA_RANGE(vec, start, range)                                \
@@ -211,7 +213,10 @@ void execute_graph_and_check_output(
   } while (false);
 
 template <typename T>
-void print_vector(std::vector<T>& data, size_t start = 0, size_t range = 20) {
+void print_vector(
+    const std::vector<T>& data,
+    size_t start = 0,
+    size_t range = 20) {
   size_t end = data.size();
   if (range >= 1) {
     end = std::min(data.size(), start + range);
@@ -219,5 +224,5 @@ void print_vector(std::vector<T>& data, size_t start = 0, size_t range = 20) {
   for (size_t i = start; i < end; ++i) {
     std::cout << data.at(i) << ", ";
   }
-  std::cout << std::endl << std::endl;
+  std::cout << std::endl;
 }

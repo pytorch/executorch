@@ -21,7 +21,7 @@ class TokenizerExtensionTest : public Test {
  public:
   void SetUp() override {
     torch::executor::runtime_init();
-    tokenizer_ = std::make_unique<BPETokenizer>(32000, 1, 2);
+    tokenizer_ = std::make_unique<BPETokenizer>();
     modelPath_ = std::getenv("RESOURCES_PATH") + std::string("/test.bin");
   }
 
@@ -39,12 +39,19 @@ TEST_F(TokenizerExtensionTest, DecodeWithoutLoadFails) {
   EXPECT_EQ(result.error(), Error::NotSupported);
 }
 
+TEST_F(TokenizerExtensionTest, DecodeOutOfRangeFails) {
+  Error res = tokenizer_->load(modelPath_.c_str());
+  EXPECT_EQ(res, Error::Ok);
+  auto result = tokenizer_->decode(0, 64000);
+  // The vocab size is 32000, and token 64000 is out of vocab range.
+  EXPECT_EQ(result.error(), Error::NotSupported);
+}
+
 TEST_F(TokenizerExtensionTest, TokenizerVocabSizeIsExpected) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
-  // test.bin has vocab size 0 but the tokenizer respects the vocab size being
-  // passed in and add placeholder tokens.
-  EXPECT_EQ(tokenizer_->vocab_size(), 32000);
+  // test.bin has vocab size 0.
+  EXPECT_EQ(tokenizer_->vocab_size(), 0);
   EXPECT_EQ(tokenizer_->bos_tok(), 1);
   EXPECT_EQ(tokenizer_->eos_tok(), 2);
 }

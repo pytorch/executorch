@@ -8,6 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <sstream>
@@ -30,13 +31,11 @@ Context::Context(size_t adapter_i, const ContextConfig& config)
       device_(adapter_p_->device_handle()),
       queue_(adapter_p_->request_queue()),
       // Resource pools
-      command_pool_(device_, queue_.family_index, config_.cmdPoolConfig),
-      descriptor_pool_(device_, config_.descriptorPoolConfig),
+      command_pool_(device_, queue_.family_index, config_.cmd_pool_config),
+      descriptor_pool_(device_, config_.descriptor_pool_config),
       fences_(device_),
-// Diagnostics
-#ifdef USE_VULKAN_GPU_DIAGNOSTICS
-      querypool_(config_.queryPoolConfig, adapter_p_),
-#endif /* USE_VULKAN_GPU_DIAGNOSTICS */
+      // Profiling
+      querypool_(config_.query_pool_config, nullptr),
       // Command buffer submission
       cmd_mutex_{},
       cmd_(VK_NULL_HANDLE, 0u),
@@ -45,8 +44,7 @@ Context::Context(size_t adapter_i, const ContextConfig& config)
       buffer_clearlist_mutex_{},
       buffers_to_clear_{},
       image_clearlist_mutex_{},
-      images_to_clear_{} {
-}
+      images_to_clear_{} {}
 
 Context::~Context() {
   try {
@@ -54,6 +52,38 @@ Context::~Context() {
     // Let the device know the context is done with the queue
     adapter_p_->return_queue(queue_);
   } catch (...) {
+  }
+}
+
+void Context::initialize_querypool() {
+  querypool_.initialize(adapter_p_);
+}
+
+void Context::cmd_reset_querypool() {
+  if (querypool_) {
+    set_cmd();
+    querypool_.reset_querypool(cmd_);
+  }
+}
+
+void Context::report_shader_dispatch_start(
+    const std::string& shader_name,
+    const utils::uvec3& global_wg_size,
+    const utils::uvec3& local_wg_size,
+    const uint32_t dispatch_id) {
+  if (querypool_) {
+    querypool_.shader_profile_begin(
+        cmd_,
+        dispatch_id,
+        shader_name,
+        create_extent3d(global_wg_size),
+        create_extent3d(local_wg_size));
+  }
+}
+
+void Context::report_shader_dispatch_end() {
+  if (querypool_) {
+    querypool_.shader_profile_end(cmd_);
   }
 }
 
@@ -91,16 +121,25 @@ void Context::register_shader_dispatch(
     const ShaderInfo& shader_descriptor,
     const utils::uvec3& global_workgroup_size) {
   // Adjust the global workgroup size based on the output tile size
+  uint32_t global_wg_w = utils::div_up(
+      global_workgroup_size.data[0u], shader_descriptor.out_tile_size.data[0u]);
+  uint32_t global_wg_h = utils::div_up(
+      global_workgroup_size.data[1u], shader_descriptor.out_tile_size.data[1u]);
+  uint32_t global_wg_d = utils::div_up(
+      global_workgroup_size.data[2u], shader_descriptor.out_tile_size.data[2u]);
+
+  // Submitting a global work group size of 0 is undefined behaviour. If this is
+  // detected then submit a single workgroup instead.
+  if (global_wg_w == 0u || global_wg_h == 0u || global_wg_d == 0u) {
+    global_wg_w = 1u;
+    global_wg_h = 1u;
+    global_wg_d = 1u;
+  }
+
   const utils::uvec3 effective_global_wg = {
-      utils::div_up(
-          global_workgroup_size.data[0u],
-          shader_descriptor.out_tile_size.data[0u]),
-      utils::div_up(
-          global_workgroup_size.data[1u],
-          shader_descriptor.out_tile_size.data[1u]),
-      utils::div_up(
-          global_workgroup_size.data[2u],
-          shader_descriptor.out_tile_size.data[2u]),
+      global_wg_w,
+      global_wg_h,
+      global_wg_d,
   };
 
   cmd_.bind_descriptors(descriptors.get_bind_handle());
@@ -143,7 +182,7 @@ bool available() {
 Context* context() {
   static const std::unique_ptr<Context> context([]() -> Context* {
     try {
-      const uint32_t submit_frequency = 16u;
+      const uint32_t cmd_submit_frequency = 16u;
 
       const CommandPoolConfig cmd_config{
           32u, // cmdPoolInitialSize
@@ -165,10 +204,10 @@ Context* context() {
       };
 
       const ContextConfig config{
-          submit_frequency, // cmdSubmitFrequency
-          cmd_config, // cmdPoolConfig
-          descriptor_pool_config, // descriptorPoolConfig
-          query_pool_config, // queryPoolConfig
+          cmd_submit_frequency,
+          cmd_config,
+          descriptor_pool_config,
+          query_pool_config,
       };
 
       return new Context(runtime()->default_adapter_i(), config);
@@ -236,9 +275,14 @@ UniformParamsBuffer& UniformParamsBuffer::operator=(
 }
 
 ParamsBindList::ParamsBindList(
-    std::initializer_list<const api::BufferBindInfo> init_list) {
+    std::initializer_list<const BufferBindInfo> init_list) {
   bind_infos.resize(init_list.size());
   std::copy(init_list.begin(), init_list.end(), bind_infos.begin());
+}
+
+void ParamsBindList::append(const ParamsBindList& other) {
+  bind_infos.insert(
+      bind_infos.end(), other.bind_infos.begin(), other.bind_infos.end());
 }
 
 } // namespace api

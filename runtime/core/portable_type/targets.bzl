@@ -24,6 +24,7 @@ def define_common_targets():
         # Only should be depended on by kernel_types:kernel_types, but various suffixes like Android and Static
         # mean I cant just expose visibility to a single rule.
         visibility = [
+            "//executorch/backends/...",
             "//executorch/runtime/core/exec_aten/...",
             "//executorch/runtime/core/portable_type/test/...",
         ],

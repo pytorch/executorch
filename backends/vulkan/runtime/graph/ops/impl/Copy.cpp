@@ -32,9 +32,6 @@ void add_copy_offset_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  uvec3 global_size = api::utils::make_uvec3(range);
-  uvec3 local_size = adaptive_work_group_size(global_size);
-
   const struct Block final {
     ivec3 range;
     int32_t unused0;
@@ -56,8 +53,8 @@ void add_copy_offset_node(
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
       {
           {out, api::MemoryAccessType::WRITE},
@@ -135,13 +132,12 @@ void add_copy_channel_offset_node(
     // the actual coordinate.
 
     ivec3 dst_offset{
-        0, 0, dst_first_z + batch_idx * api::utils::div_up(out_channels, 4)};
+        0, 0, dst_first_z + batch_idx * api::utils::div_up_4(out_channels)};
 
     uvec3 global_size{
         api::utils::safe_downcast<uint32_t>(dim_at<kWidth4D>(in_sizes)),
         api::utils::safe_downcast<uint32_t>(dim_at<kHeight4D>(in_sizes)),
         api::utils::safe_downcast<uint32_t>(dst_last_z - dst_first_z + 1)};
-
     uvec3 local_size = adaptive_work_group_size(global_size);
 
     const struct Block final {

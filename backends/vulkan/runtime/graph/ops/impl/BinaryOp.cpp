@@ -61,9 +61,6 @@ void add_binary_op_node(
 
   check_binary_op_args(*t_in1, *t_in2, *t_out);
 
-  api::utils::uvec3 global_size = t_out->extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   float alpha_val = 1.0f;
   // String is checked since floor_div passes in an unused string argument in
   // place of alpha
@@ -82,8 +79,8 @@ void add_binary_op_node(
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE},
        {{arg1, arg2}, api::MemoryAccessType::READ}},
@@ -94,7 +91,7 @@ void add_binary_op_node(
        graph.create_params_buffer(broadcast_params),
        graph.create_params_buffer(alpha_val)},
       // Specialization Constants
-      {SV(t_out->gpu_memory_layout_int())},
+      {SV(t_out->packed_dim_whcn_idx())},
       // Resizing Logic
       resize_binary_op_node,
       {}));

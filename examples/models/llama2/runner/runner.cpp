@@ -70,39 +70,27 @@ Error Runner::load() {
   const auto method_names = module_->method_names();
   ET_CHECK_MSG(method_names.ok(), "Failed to read method names from model");
   model_methods_ = method_names.get();
-  vocab_size_ = getMetadataHelper<int64_t>("get_vocab_size", 32000);
-  bos_id_ = getMetadataHelper<int64_t>("get_bos_id", 1);
-  eos_id_ = getMetadataHelper<int64_t>("get_eos_id", 2);
   n_bos_ = getMetadataHelper<int64_t>("get_n_bos", 1);
   n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
   max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
-  use_kv_cache_ = getMetadataHelper("use_kv_cache", false);
+  use_kv_cache_ = getMetadataHelper("use_kv_cache", true);
   use_sdpa_with_kv_cache_ = getMetadataHelper("use_sdpa_with_kv_cache", false);
   append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
+  enable_parallel_prefill_ = getMetadataHelper("enable_dynamic_shape", false);
 
   // Load tokenizer
 #if ET_USE_TIKTOKEN
-  tokenizer_ = std::make_unique<Tiktoken>(vocab_size_, bos_id_, eos_id_);
+  tokenizer_ = std::make_unique<Tiktoken>();
 #else
-  tokenizer_ = std::make_unique<BPETokenizer>(vocab_size_, bos_id_, eos_id_);
+  tokenizer_ = std::make_unique<BPETokenizer>();
 #endif
   tokenizer_->load(tokenizer_path_);
-  if (tokenizer_->bos_tok() != bos_id_) {
-    ET_LOG(
-        Error,
-        "Tokenizer's BOS id %" PRIu64
-        " does not match model's BOS id %d, will override tokenizer's BOS.",
-        tokenizer_->bos_tok(),
-        bos_id_);
-  }
-  if (tokenizer_->eos_tok() != eos_id_) {
-    ET_LOG(
-        Error,
-        "Tokenizer's EOS id %" PRIu64
-        " does not match model's EOS id %d, will override tokenizer's EOS.",
-        tokenizer_->eos_tok(),
-        eos_id_);
-  }
+
+  vocab_size_ =
+      getMetadataHelper<int64_t>("get_vocab_size", tokenizer_->vocab_size());
+  bos_id_ = getMetadataHelper<int64_t>("get_bos_id", tokenizer_->bos_tok());
+  eos_id_ = getMetadataHelper<int64_t>("get_eos_id", tokenizer_->eos_tok());
+
   // Create sampler
   sampler_ = std::make_unique<Sampler>(
       vocab_size_,
@@ -135,20 +123,141 @@ T Runner::getMetadataHelper(const std::string& method_name, T default_val) {
   return res;
 }
 
-template <typename T>
-int32_t Runner::logitsToToken(
-    const exec_aten::Tensor& logits_tensor,
-    int64_t pos,
-    T _) {
-  (void)_;
-  T* logits = logits_tensor.mutable_data_ptr<T>();
+int32_t Runner::logitsToToken(const exec_aten::Tensor& logits_tensor) {
+  ET_CHECK_MSG(logits_tensor.dim() == 3, "Logits tensor must be 3D");
+  auto num_tokens = logits_tensor.size(1);
 
-  // Since the logits are for all tokens, get the last token probabilities
-  T* logits_last = logits;
-  if (!use_kv_cache_) {
-    logits_last += pos * tokenizer_->vocab_size();
+  switch (logits_tensor.scalar_type()) {
+    case ScalarType::Float: {
+      float* logits = logits_tensor.mutable_data_ptr<float>();
+      float* logits_last = logits;
+      logits_last += (num_tokens - 1) * tokenizer_->vocab_size();
+      return sampler_->sample(logits_last);
+    }
+    case ScalarType::Half: {
+      exec_aten::Half* logits =
+          logits_tensor.mutable_data_ptr<exec_aten::Half>();
+      exec_aten::Half* logits_last = logits;
+      logits_last += (num_tokens - 1) * tokenizer_->vocab_size();
+      return sampler_->sample(logits_last);
+    }
+    default:
+      ET_CHECK_MSG(
+          false,
+          "Unsupported dtype output %hhd",
+          static_cast<int8_t>(logits_tensor.scalar_type()));
   }
-  return sampler_->sample(logits_last);
+}
+
+Result<torch::executor::Tensor> Runner::prefill(
+    const std::vector<uint64_t>& tokens,
+    ManagedTensor& managed_tokens,
+    ManagedTensor& managed_start_pos,
+    std::function<void(const std::string&)> token_callback) {
+  // enable_parallel_prefill_ maybe set even when not using kv cache
+  // When kv cache is not used, start pos is ignored
+  int32_t num_tokens = tokens.size();
+  if (enable_parallel_prefill_) {
+    managed_tokens.resize({1, num_tokens});
+    int64_t* tokens_ptr =
+        managed_tokens.get_aliasing_tensor().mutable_data_ptr<int64_t>();
+    for (int i = 0; i < num_tokens; i++) {
+      // The following assumes batch size = 1
+      tokens_ptr[i] = tokens[i];
+    }
+    std::vector<EValue> inputs;
+    auto tokens_tensor = managed_tokens.get_aliasing_tensor();
+    auto start_pos = managed_start_pos.get_aliasing_tensor();
+
+    // inputs:[tokens, start_pos]
+    inputs.push_back(tokens_tensor);
+    inputs.push_back(start_pos);
+
+    Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
+    ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
+    ET_CHECK_MSG(
+        outputs_res.get()[0].isTensor(),
+        "Non Tensor Output returned from executing LLM");
+    ET_CHECK_MSG(
+        outputs_res.get()[0].toTensor().size(1) == num_tokens,
+        "Expected number of output tokens %d does not match returned value %zu.",
+        num_tokens,
+        outputs_res.get()[0].toTensor().size(1));
+
+    start_pos.mutable_data_ptr<int64_t>()[0] = num_tokens;
+
+    uint64_t prev = tokens[0];
+    uint64_t cur;
+    for (int i = 1; i < num_tokens; i++) {
+      cur = tokens[i];
+      auto piece_res = tokenizer_->decode(prev, cur);
+      ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error());
+      util::safe_printf(piece_res.get().c_str());
+      fflush(stdout);
+      prev = cur;
+      if (token_callback) {
+        token_callback(piece_res.get().c_str());
+      }
+    }
+    cur = logitsToToken(outputs_res.get()[0].toTensor());
+    auto piece_res = tokenizer_->decode(prev, cur);
+    ET_CHECK(piece_res.ok());
+    const char* piece = piece_res.get().c_str();
+    util::safe_printf(piece);
+    fflush(stdout);
+    if (token_callback) {
+      token_callback(piece_res.get().c_str());
+    }
+
+    // Return the logits tensor
+    stats_.first_token_ms = util::time_in_ms();
+    stats_.prompt_eval_end_ms = util::time_in_ms();
+    return outputs_res.get()[0].toTensor();
+  } else { // sequential prefill
+    int64_t pos = 0; // position in the sequence
+    int64_t cur_token = tokens[0];
+    int64_t prev_token;
+    // This is a hack to enable returning a logits tensor from prefill
+    auto logits_tensor = managed_tokens.get_aliasing_tensor();
+    while (pos < num_tokens) {
+      // Run the model
+      Result<torch::executor::Tensor> logits_res = run_model_step(
+          cur_token, managed_tokens, managed_start_pos, num_tokens);
+
+      ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
+      logits_tensor = logits_res.get();
+      // Hack to enable returning a logits tensor from prefill
+
+      prev_token = cur_token;
+
+      long sample_start_time_ms = util::time_in_ms();
+      cur_token = logitsToToken(logits_tensor);
+      stats_.aggregate_sampling_time_ms +=
+          util::time_in_ms() - sample_start_time_ms;
+
+      // advance the state machine
+      if (pos < num_tokens - 1) {
+        // prefill, force the next token to be the next prompt token
+        cur_token = tokens[pos + 1];
+      }
+      pos++;
+
+      // print the token as string, decode it with the Tokenizer object
+      auto piece_res = tokenizer_->decode(prev_token, cur_token);
+      ET_CHECK(piece_res.ok());
+      const char* piece = piece_res.get().c_str();
+      util::safe_printf(piece);
+      fflush(stdout);
+      if (token_callback) {
+        token_callback(piece_res.get().c_str());
+      }
+    }
+    auto start_pos = managed_start_pos.get_aliasing_tensor();
+    start_pos.mutable_data_ptr<int64_t>()[0] = num_tokens;
+    stats_.first_token_ms = util::time_in_ms();
+    stats_.prompt_eval_end_ms = util::time_in_ms();
+    return logits_tensor;
+  }
 }
 
 // Given an input token. Set up the inputs for the model and execute a single
@@ -210,6 +319,9 @@ Result<torch::executor::Tensor> Runner::run_model_step(
 
     if (tokens.size(1) < max_seq_len) {
       // Resize the tokens tensor to be 1 larger for next step.
+      // Note that this relies on the fact that underlying memory is the same
+      // such that previous tokens stored there will still exist.
+      // Not a good thing to rely upon.
       managed_tokens.resize({1, static_cast<int>(tokens.size(1) + 1)});
     }
 
@@ -269,60 +381,55 @@ Error Runner::generate(
   std::vector<int64_t> start_pos_data; // allocate space for the tokens
   std::vector<exec_aten::SizesType> start_pos_shape = {1};
 
+  token_data.resize(seq_len);
   if (use_kv_cache_) {
     // hard code these to size 1 as kv cache is locked to static size right now.
-    token_data.resize(1);
-    token_shape[1] = 1;
     start_pos_data.resize(1);
     start_pos_data.push_back(0);
-  } else {
-    // reserve data for tokens, notice the size is still 0 but the capacity is
-    // seq_len.
-    token_data.resize(seq_len);
   }
 
   // initialize tensor wrappers
   ManagedTensor tokens_managed(
-      token_data.data(),
-      128, // TODO clean up unused 128 here as ManagedTensor ignores this arg in
-           // ctor
-      token_shape,
-      ScalarType::Long);
+      token_data.data(), token_shape, ScalarType::Long);
   // Create with the max shape to approapriately set the capacity of this
   // tensor, then resize back to 1 for first input.
   tokens_managed.resize({1, 1});
 
   ManagedTensor start_pos_managed(
-      start_pos_data.data(), 128, start_pos_shape, ScalarType::Long);
+      start_pos_data.data(), start_pos_shape, ScalarType::Long);
 
   int64_t prev_token;
   int64_t cur_token = prompt_tokens[0];
 
-  // If we arent using the kv cache then we can batch prefill the prompt
-  if (!use_kv_cache_) {
-    tokens_managed.resize({1, num_prompt_tokens});
-    for (int i = 0; i < num_prompt_tokens - 1; i++) {
-      tokens_managed.get_aliasing_tensor().mutable_data_ptr<int64_t>()[i] =
-          prompt_tokens[i];
-    }
-    // prefill tokens up to the last prompt token and then enter the loop with
-    // the last promp token as the current token.
-    cur_token = prompt_tokens[num_prompt_tokens - 1];
-    pos = num_prompt_tokens - 1;
-
-    // Print the prompt for consistent output between single token prefill and
-    // batch prefill.
-    uint64_t prev = prompt_tokens[0];
-    uint64_t cur;
-    for (int i = 1; i < num_prompt_tokens; i++) {
-      cur = prompt_tokens[i];
-      auto piece_res = tokenizer_->decode(prev, cur);
-      ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error());
-      util::safe_printf(piece_res.get().c_str());
-      fflush(stdout);
-      prev = cur;
-    }
+  // Prefill first
+  // Here feed all tokens to the model and get the next predicted token
+  // after the prompt. After that we will enter generate loop.
+  auto prefill_res =
+      prefill(prompt_tokens, tokens_managed, start_pos_managed, token_callback);
+  ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
+  exec_aten::Tensor& prefill_res_tensor = prefill_res.get();
+  cur_token = logitsToToken(prefill_res_tensor);
+  if (use_kv_cache_) {
+    // Prefill could be parallel or sequential.
+    // Parallel:
+    //  kv cache:
+    //    - tokens_managed should resized to 1 as inference expects one token at
+    //    a time.
+    //  no kv cache:
+    //    - tokens_managed should be resized to prompt length + 1, as inference
+    //    expects all tokens at once.
+    // Sequential prefill:
+    //  kv cache:
+    //     - tokens_managed should be resized to 1, as inference expects one
+    //     token at a time.
+    //  no kv cache:
+    //     - tokens_managed should be resized to prompt length + 1, as inference
+    //     expects all tokens at once.
+    tokens_managed.resize({1, 1});
+  } else {
+    tokens_managed.resize({1, num_prompt_tokens + 1});
   }
+  pos = num_prompt_tokens;
 
   // Generate our tokens
   while (pos < seq_len - 1) {
@@ -330,41 +437,16 @@ Error Runner::generate(
     Result<torch::executor::Tensor> logits_res =
         run_model_step(cur_token, tokens_managed, start_pos_managed, seq_len);
 
-    if (pos == num_prompt_tokens) {
-      stats_.first_token_ms = util::time_in_ms();
-    } else if (pos == num_prompt_tokens - 1) {
-      stats_.prompt_eval_end_ms = util::time_in_ms();
-    }
-
     ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
     exec_aten::Tensor& logits_tensor = logits_res.get();
 
     prev_token = cur_token;
 
     long sample_start_time_ms = util::time_in_ms();
-    switch (logits_tensor.scalar_type()) {
-      case ScalarType::Float: {
-        cur_token = logitsToToken<float>(logits_tensor, pos, 0);
-        break;
-      }
-      case ScalarType::Half: {
-        cur_token = logitsToToken<exec_aten::Half>(logits_tensor, pos, 0);
-        break;
-      }
-      default:
-        ET_CHECK_MSG(
-            false,
-            "Unsupported dtype output %hhd",
-            static_cast<int8_t>(logits_tensor.scalar_type()));
-    }
+    cur_token = logitsToToken(logits_tensor);
     stats_.aggregate_sampling_time_ms +=
         util::time_in_ms() - sample_start_time_ms;
 
-    // advance the state machine
-    if (pos < num_prompt_tokens - 1) {
-      // prefill, force the next token to be the next prompt token
-      cur_token = prompt_tokens[pos + 1];
-    }
     pos++;
 
     // print the token as string, decode it with the Tokenizer object

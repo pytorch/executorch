@@ -43,7 +43,6 @@ void add_softmax_node(
   softmax_dim = normalize(softmax_dim, in_dim);
 
   vTensorPtr t_out = graph.get_tensor(out);
-  uvec3 global_size = t_out->extents();
 
   api::ShaderInfo shader_descriptor;
   std::string kernel_name = in_dim - softmax_dim == 3
@@ -55,14 +54,12 @@ void add_softmax_node(
     kernel_name = "log_" + kernel_name;
   }
 
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       // shader_descriptor,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE},
        {in_arg, api::MemoryAccessType::READ}},

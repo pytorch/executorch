@@ -933,10 +933,15 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       InvalidState,
       "Outputs can not be retrieved until method has been initialized.");
 
-  ET_CHECK_OR_RETURN_ERROR(
-      !pre_allocated_output_,
-      InvalidState,
-      "Overriding output data pointer allocated by memory plan is not allowed.");
+  // ET_CHECK_OR_RETURN_ERROR(
+  //     !pre_allocated_output_,
+  //     InvalidState,
+  //     "Overriding output data pointer allocated by memory plan is not
+  //     allowed.");
+  // TODO(T188740925): for now, return error without logs.
+  if (pre_allocated_output_) {
+    return ::torch::executor::Error::InvalidState;
+  }
 
   // Check the args
   ET_CHECK_OR_RETURN_ERROR(
@@ -988,6 +993,28 @@ Method::get_outputs(EValue* output_evalues, size_t length) {
 
   for (size_t i = outputs_size(); i < length; i++) {
     output_evalues[i] = EValue();
+  }
+
+  return Error::Ok;
+}
+
+__ET_NODISCARD Error Method::get_inputs(EValue* input_evalues, size_t length) {
+  ET_CHECK_OR_RETURN_ERROR(
+      initialized(),
+      InvalidState,
+      "Inputs can not be retrieved until method has been initialized.");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      length >= inputs_size(),
+      InvalidArgument,
+      "The given array is not large enough to hold all inputs.");
+
+  for (size_t i = 0; i < inputs_size(); i++) {
+    input_evalues[i] = values_[get_input_index(i)];
+  }
+
+  for (size_t i = inputs_size(); i < length; i++) {
+    input_evalues[i] = EValue();
   }
 
   return Error::Ok;

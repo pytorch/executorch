@@ -15,21 +15,23 @@
 #include <executorch/backends/vulkan/runtime/api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/api/Command.h>
 #include <executorch/backends/vulkan/runtime/api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/api/Fence.h>
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
 #include <executorch/backends/vulkan/runtime/api/QueryPool.h>
-#include <executorch/backends/vulkan/runtime/api/Resource.h>
 #include <executorch/backends/vulkan/runtime/api/Runtime.h>
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
+
+#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
 
 namespace vkcompute {
 namespace api {
 
 struct ContextConfig final {
-  uint32_t cmdSubmitFrequency;
-  CommandPoolConfig cmdPoolConfig;
-  DescriptorPoolConfig descriptorPoolConfig;
-  QueryPoolConfig queryPoolConfig;
+  uint32_t cmd_submit_frequency;
+  CommandPoolConfig cmd_pool_config;
+  DescriptorPoolConfig descriptor_pool_config;
+  QueryPoolConfig query_pool_config;
 };
 
 //
@@ -65,11 +67,7 @@ class Context final {
   DescriptorPool descriptor_pool_;
   FencePool fences_;
   // Diagnostics
-  // TODO: remove USE_VULKAN_GPU_DIAGNOSTICS
-  bool enable_op_profiling_{false};
-#ifdef USE_VULKAN_GPU_DIAGNOSTICS
   QueryPool querypool_;
-#endif /* USE_VULKAN_GPU_DIAGNOSTICS */
   // Command buffers submission
   std::mutex cmd_mutex_;
   CommandBuffer cmd_;
@@ -85,18 +83,6 @@ class Context final {
 
   inline Adapter* adapter_ptr() {
     return adapter_p_;
-  }
-
-  inline void enable_op_profiling() {
-    enable_op_profiling_ = true;
-  }
-
-  inline void disable_op_profiling() {
-    enable_op_profiling_ = false;
-  }
-
-  inline bool op_profiling_enabled() {
-    return enable_op_profiling_;
   }
 
   inline VkDevice device() {
@@ -137,18 +123,43 @@ class Context final {
 
   // Diagnostics
 
-#ifdef USE_VULKAN_GPU_DIAGNOSTICS
   inline QueryPool& querypool() {
     return querypool_;
   }
 
-  inline void reset_querypool() {
-    set_cmd();
-    querypool_.reset(cmd_);
-  }
-#endif /* USE_VULKAN_GPU_DIAGNOSTICS */
+  /*
+   * By default, the querypool attached to a Context instance is uninitialized.
+   * This function triggers the querypool to be created via vkCreateQueryPool.
+   */
+  void initialize_querypool();
+
+  /*
+   * Encodes a vkResetQueryPool command to the current command buffer, and reset
+   * the internal state of the querypool. If the querypool is not initialized
+   * this function is a no-op.
+   */
+  void cmd_reset_querypool();
+
+  /*
+   * Encodes a vkCmdWriteTimestamp command to the current command buffer and
+   * record some metadata about the shader that will be dispatched. If the
+   * querypool is not initialized this function is a no-op.
+   */
+  void report_shader_dispatch_start(
+      const std::string& shader_name,
+      const utils::uvec3& global_wg_size,
+      const utils::uvec3& local_wg_size,
+      const uint32_t dispatch_id = UINT32_MAX);
+
+  /*
+   * Encodes a vkCmdWriteTimstamp command to the current command buffer to
+   * record when the last shader that was dispatched has completed execution.
+   * If the querypool is not initialized this function is a no-op.
+   */
+  void report_shader_dispatch_end();
 
   // Memory Management
+
   void register_buffer_cleanup(VulkanBuffer& buffer) {
     std::lock_guard<std::mutex> bufferlist_lock(buffer_clearlist_mutex_);
     buffers_to_clear_.emplace_back(std::move(buffer));
@@ -194,9 +205,9 @@ class Context final {
       PipelineBarrier&,
       const S&,
       const D&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&,
-      const api::utils::uvec3&,
+      const utils::uvec3&,
+      const utils::uvec3&,
+      const utils::uvec3&,
       VkFence fence_handle);
 
   template <typename... Arguments>
@@ -207,6 +218,7 @@ class Context final {
       const utils::uvec3&,
       const SpecVarList&,
       VkFence fence_handle,
+      const uint32_t dispatch_id,
       Arguments&&...);
 
   void submit_cmd_to_gpu(
@@ -265,9 +277,11 @@ class UniformParamsBuffer final {
 };
 
 struct ParamsBindList final {
-  std::vector<api::BufferBindInfo> bind_infos;
+  std::vector<BufferBindInfo> bind_infos;
 
-  ParamsBindList(std::initializer_list<const api::BufferBindInfo> init_list);
+  ParamsBindList(std::initializer_list<const BufferBindInfo> init_list);
+
+  void append(const ParamsBindList& other);
 };
 
 class StorageBuffer final {
@@ -374,18 +388,18 @@ inline void record_copy(
     CommandBuffer& cmd,
     const S& source,
     const D& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) = delete;
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) = delete;
 
 template <>
 inline void record_copy<VulkanBuffer, VulkanBuffer>(
     CommandBuffer& cmd,
     const VulkanBuffer& source,
     const VulkanBuffer& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   cmd.copy_buffer_to_buffer(
       source, destination, copy_range, src_offset, dst_offset);
 }
@@ -395,9 +409,9 @@ inline void record_copy<VulkanImage, VulkanImage>(
     CommandBuffer& cmd,
     const VulkanImage& source,
     const VulkanImage& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   cmd.copy_texture_to_texture(
       source, destination, copy_range, src_offset, dst_offset);
 }
@@ -407,9 +421,9 @@ inline void record_copy<VulkanImage, VulkanBuffer>(
     CommandBuffer& cmd,
     const VulkanImage& source,
     const VulkanBuffer& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   cmd.copy_texture_to_buffer(
       source, destination, copy_range, src_offset, dst_offset);
 }
@@ -419,9 +433,9 @@ inline void record_copy<VulkanBuffer, VulkanImage>(
     CommandBuffer& cmd,
     const VulkanBuffer& source,
     const VulkanImage& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset) {
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset) {
   cmd.copy_buffer_to_texture(
       source, destination, copy_range, src_offset, dst_offset);
 }
@@ -438,9 +452,9 @@ inline bool Context::submit_copy(
     PipelineBarrier& pipeline_barrier,
     const S& source,
     const D& destination,
-    const api::utils::uvec3& copy_range,
-    const api::utils::uvec3& src_offset,
-    const api::utils::uvec3& dst_offset,
+    const utils::uvec3& copy_range,
+    const utils::uvec3& src_offset,
+    const utils::uvec3& dst_offset,
     VkFence fence_handle) {
   // If any of the provided arguments does not have memory associated with it,
   // then exit early as there is no work to be done. However, if a fence has
@@ -464,28 +478,18 @@ inline bool Context::submit_copy(
 
   set_cmd();
 
-#ifdef USE_VULKAN_GPU_DIAGNOSTICS
-  uint32_t log_idx = UINT32_MAX;
-  if (enable_op_profiling_) {
-    std::string label = "cmd_copy";
-    log_idx = querypool_.shader_profile_begin(
-        cmd_, label, create_extent3d({0, 0, 0}), create_extent3d({0, 0, 0}));
-  }
-#endif /* USE_VULKAN_GPU_DIAGNOSTICS */
+  std::string label = "cmd_copy";
+  report_shader_dispatch_start(label, {0, 0, 0}, {0, 0, 0});
 
   cmd_.insert_barrier(pipeline_barrier);
 
   record_copy(cmd_, source, destination, copy_range, src_offset, dst_offset);
 
-#ifdef USE_VULKAN_GPU_DIAGNOSTICS
-  if (enable_op_profiling_) {
-    querypool_.shader_profile_end(cmd_, log_idx);
-  }
-#endif /* USE_VULKAN_GPU_DIAGNOSTICS */
+  report_shader_dispatch_end();
 
   submit_count_++;
   if (fence_handle != VK_NULL_HANDLE ||
-      submit_count_ >= config_.cmdSubmitFrequency) {
+      submit_count_ >= config_.cmd_submit_frequency) {
     submit_cmd_to_gpu(fence_handle);
     return true;
   }
@@ -507,6 +511,7 @@ inline bool Context::submit_compute_job(
     const utils::uvec3& local_work_group_size,
     const SpecVarList& specialization_constants,
     VkFence fence_handle,
+    const uint32_t dispatch_id,
     Arguments&&... arguments) {
   // If any of the provided arguments does not have memory associated with it,
   // then exit early as there is no work to be done. However, if a fence has
@@ -536,16 +541,11 @@ inline bool Context::submit_compute_job(
 
   set_cmd();
 
-#ifdef USE_VULKAN_GPU_DIAGNOSTICS
-  uint32_t log_idx = UINT32_MAX;
-  if (enable_op_profiling_) {
-    log_idx = querypool_.shader_profile_begin(
-        cmd_,
-        shader.kernel_name,
-        create_extent3d(global_work_group),
-        create_extent3d(local_work_group_size));
-  }
-#endif /* USE_VULKAN_GPU_DIAGNOSTICS */
+  report_shader_dispatch_start(
+      shader.kernel_name,
+      global_work_group,
+      local_work_group_size,
+      dispatch_id);
 
   // Factor out template parameter independent code to minimize code bloat.
   DescriptorSet descriptor_set = get_descriptor_set(
@@ -560,15 +560,11 @@ inline bool Context::submit_compute_job(
   register_shader_dispatch(
       descriptor_set, pipeline_barrier, shader, global_work_group);
 
-#ifdef USE_VULKAN_GPU_DIAGNOSTICS
-  if (enable_op_profiling_) {
-    querypool_.shader_profile_end(cmd_, log_idx);
-  }
-#endif /* USE_VULKAN_GPU_DIAGNOSTICS */
+  report_shader_dispatch_end();
 
   submit_count_++;
   if (fence_handle != VK_NULL_HANDLE ||
-      submit_count_ >= config_.cmdSubmitFrequency) {
+      submit_count_ >= config_.cmd_submit_frequency) {
     submit_cmd_to_gpu(fence_handle);
     return true;
   }

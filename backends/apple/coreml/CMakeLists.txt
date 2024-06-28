@@ -155,6 +155,8 @@ target_link_libraries(
           ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
 )
 
+target_link_options_shared_lib(coremldelegate)
+
 if(COREML_BUILD_EXECUTOR_RUNNER)
   target_link_libraries(
     coremldelegate PRIVATE portable_ops_lib portable_kernels

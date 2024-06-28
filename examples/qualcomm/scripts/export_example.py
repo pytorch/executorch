@@ -96,7 +96,9 @@ if __name__ == "__main__":
         )
 
     executorch_program = delegated_program.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=False, extract_constant_segment=False
+        )
     )
 
     if args.generate_etrecord:

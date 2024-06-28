@@ -250,7 +250,7 @@ template <typename T>
 std::pair<std::optional<std::string>, re2::StringPiece>
 Tiktoken::_split_with_allowed_special_token(
     re2::StringPiece& input,
-    const T& allowed_special) {
+    const T& allowed_special) const {
   if (!_special_token_regex) {
     return std::make_pair(std::nullopt, input);
   }
@@ -277,7 +277,7 @@ Tiktoken::_split_with_allowed_special_token(
 void Tiktoken::_encode(
     re2::StringPiece& input,
     std::vector<uint64_t>& ret,
-    uint64_t& last_piece_token_len) {
+    uint64_t& last_piece_token_len) const {
   std::string piece;
   assert(_regex);
   while (re2::RE2::FindAndConsume(&input, *_regex, &piece)) {
@@ -296,7 +296,7 @@ void Tiktoken::_encode(
 template <typename T>
 std::pair<std::vector<uint64_t>, uint64_t> Tiktoken::_encode_with_special_token(
     const std::string& text,
-    const T& allowed_special) {
+    const T& allowed_special) const {
   std::vector<uint64_t> tokens;
   uint64_t last_piece_token_len = 0;
   re2::StringPiece input(text);
@@ -343,12 +343,17 @@ Error Tiktoken::load(const std::string& path) {
 
   _special_token_regex = _build_special_token_regex(_special_token_encoder);
 
+  // initialize vocab_size, bos_tok, eos_tok
+  vocab_size_ = _encoder.size() + _special_token_encoder.size();
+  bos_tok_ = _special_token_encoder.at("<|begin_of_text|>");
+  eos_tok_ = _special_token_encoder.at("<|end_of_text|>");
+
   initialized_ = true;
   return Error::Ok;
 }
 
 Result<std::vector<uint64_t>>
-Tiktoken::encode(const std::string& text, int8_t bos, int8_t eos) {
+Tiktoken::encode(const std::string& text, int8_t bos, int8_t eos) const {
   if (!initialized_) {
     return Error::NotSupported;
   }
@@ -362,11 +367,9 @@ Tiktoken::encode(const std::string& text, int8_t bos, int8_t eos) {
   return Result(res);
 }
 
-Result<std::string> Tiktoken::decode(uint64_t prev, uint64_t cur) {
+Result<std::string> Tiktoken::decode(uint64_t prev, uint64_t cur) const {
   (void)prev;
-  if (!initialized_) {
-    return Error::NotSupported;
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(Tokenizer::decode_verify(cur));
   std::string ret;
 
   std::string token_bytes;

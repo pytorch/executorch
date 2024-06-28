@@ -190,7 +190,7 @@ struct ContentView: View {
             if let error {
               message.text = "Model loading failed: error \((error as NSError).code)"
             } else {
-              message.text = "Model loaded in \(String(format: "%.1f", loadTime)) s"
+              message.text = "Model loaded in \(String(format: "%.2f", loadTime)) s"
             }
             messages.append(message)
             if error == nil {
@@ -255,7 +255,7 @@ struct ContentView: View {
     case .model:
       return [UTType(filenameExtension: "pte")].compactMap { $0 }
     case .tokenizer:
-      return [UTType(filenameExtension: "bin")].compactMap { $0 }
+      return [UTType(filenameExtension: "bin"), UTType(filenameExtension: "model")].compactMap { $0 }
     }
   }
 

@@ -30,7 +30,7 @@ struct SharedObject {
   VkMemoryRequirements aggregate_memory_requirements;
   VmaAllocationCreateInfo aggregate_create_info;
   std::vector<ValueRef> users;
-  api::MemoryAllocation allocation;
+  api::Allocation allocation;
 
   void add_user(ComputeGraph* const graph, const ValueRef idx);
   void allocate(ComputeGraph* const graph);

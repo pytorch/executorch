@@ -26,16 +26,16 @@ using Re2UPtr = std::unique_ptr<re2::RE2>;
 
 class Tiktoken : public Tokenizer {
  public:
-  explicit Tiktoken(int32_t vocab_size, uint64_t bos_tok, uint64_t eos_tok)
-      : Tokenizer(vocab_size, bos_tok, eos_tok){};
+  explicit Tiktoken() : Tokenizer() {}
   ~Tiktoken(){};
 
-  Error load(const std::string& tokenizer_path);
+  Error load(const std::string& tokenizer_path) override;
 
   Result<std::vector<uint64_t>>
-  encode(const std::string& input, int8_t bos, int8_t eos);
+  encode(const std::string& input, int8_t bos, int8_t eos) const override;
 
-  Result<std::string> decode(uint64_t prev_token, uint64_t token);
+  Result<std::string> decode(uint64_t prev_token, uint64_t token)
+      const override;
 
  private:
   static inline const Encoder _get_special_tokens(ssize_t num_base_tokens) {
@@ -62,17 +62,17 @@ class Tiktoken : public Tokenizer {
   std::pair<std::optional<std::string>, re2::StringPiece>
   _split_with_allowed_special_token(
       re2::StringPiece& input,
-      const T& allowed_special);
+      const T& allowed_special) const;
 
   void _encode(
       re2::StringPiece& input,
       std::vector<uint64_t>& ret,
-      uint64_t& last_piece_token_len);
+      uint64_t& last_piece_token_len) const;
 
   template <typename T>
   std::pair<std::vector<uint64_t>, uint64_t> _encode_with_special_token(
       const std::string& text,
-      const T& allowed_special);
+      const T& allowed_special) const;
 
   // Removed negative lookahead \s+(?!\S) since it's not supported by RE2.
   const std::string _pattern =

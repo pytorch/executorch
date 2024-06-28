@@ -175,6 +175,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether to use sdpa_with_kv_cache update op when using kv cache",
     )
     parser.add_argument(
+        "--disable_dynamic_shape",
+        dest="enable_dynamic_shape",
+        default=True,  # Enable this by default
+        action="store_false",
+        help="Enable dynamic shape along seq dim. Used for faster prefill",
+    )
+    parser.add_argument(
         "-p",
         "--params",
         default=f"{ckpt_dir}/params/demo_config.json",
@@ -293,14 +300,22 @@ def export_llama(modelname, args) -> str:
             from executorch.util.python_profiler import CProfilerFlameGraph
 
             with CProfilerFlameGraph(args.profile_path):
-                return _export_llama(modelname, args)
+                builder = _export_llama(modelname, args)
+                assert (
+                    filename := builder.get_saved_pte_filename()
+                ) is not None, "Fail to get file name from builder"
+                return filename
         except ImportError:
             print(
                 "Please run `pip install snakeviz` to install required dependencies for cProfiler flamegraph."
             )
             return ""
     else:
-        return _export_llama(modelname, args)
+        builder = _export_llama(modelname, args)
+        assert (
+            filename := builder.get_saved_pte_filename()
+        ) is not None, "Fail to get file name from builder"
+        return filename
 
 
 def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
@@ -346,9 +361,12 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_sdpa_with_custom_op)
 
-    if args.qnn and args.use_kv_cache:
-        transforms.append(replace_sdpa_with_simple_sdpa)
-        transforms.append(replace_causal_mask)
+    if args.use_kv_cache:
+        if args.qnn or args.coreml or args.mps:
+            # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
+            # to get free perf gain.
+            transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_causal_mask)
     return (
         load_llama_model(
             modelname=modelname,
@@ -358,18 +376,18 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             use_kv_cache=args.use_kv_cache,
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             weight_type=weight_type,
+            enable_dynamic_shape=args.enable_dynamic_shape,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
         )
         .set_output_dir(output_dir_path)
         .set_metadata(args.metadata)
-        .source_transform(transforms)
         .to_dtype(dtype_override)
+        .source_transform(transforms)
     )
 
 
-def _export_llama(modelname, args) -> str:  # noqa: C901
-    # export_to_edge
+def get_quantizer_and_quant_params(args):
     pt2e_quant_params = _get_pt2e_quantization_params(args)
     quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
     quant_dtype = None
@@ -377,10 +395,32 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
         qnn_quantizer, quant_dtype = get_qnn_quantizer(args)
         quantizers.append(qnn_quantizer)
+    logging.info(f"Applying quantizers: {quantizers}")
+    return pt2e_quant_params, quantizers, quant_dtype
 
-    builder_exported_to_edge = _prepare_for_llama_export(
-        modelname, args
-    ).export_to_edge(quantizers)
+
+def _validate_args(args):
+    """
+    TODO: Combine all the backends under --backend args
+    """
+    if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
+        raise ValueError(
+            "Dynamic shape is not supported with coreml, MPS or qnn backends."
+            " Please us --disble_dynamic_shape."
+        )
+
+
+def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
+    _validate_args(args)
+    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
+
+    # export_to_edge
+    builder_exported_to_edge = (
+        _prepare_for_llama_export(modelname, args)
+        .capture_pre_autograd_graph()
+        .pt2e_quantize(quantizers)
+        .export_to_edge()
+    )
 
     modelname = builder_exported_to_edge.modelname
 
@@ -426,7 +466,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # Generate ETRecord
         if edge_manager_copy:
             generate_etrecord(
-                etrecord_path="etrecord.bin",
+                et_record="etrecord.bin",
                 edge_dialect_program=edge_manager_copy,
                 executorch_program=builder.export_program,
             )
@@ -456,4 +496,4 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
     builder.save_to_pte(output_file)
 
-    return output_file
+    return builder

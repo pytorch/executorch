@@ -15,6 +15,48 @@
 
 namespace vkcompute {
 
+/*
+ * Given the sizes of a tensor and the GPU memory layout, calculate the strides
+ * of the tensor in NCHW dimension order. The GPU memory layout will be used to
+ * determine which dimension is packed along a texel; that dimension will be
+ * used as the "fasted moving" dimension with a stride of 1.
+ *
+ * If texel_strides is true, then the strides will be calculated for a texel
+ * buffer (i.e. the size of the packed dimension will be modified by the
+ * div_up_4 function before being used in calculations). Otherwise, the strides
+ * will be calculated assuming a contiguous scalar buffer.
+ */
+std::vector<int64_t> calculate_strides(
+    const std::vector<int64_t>& sizes,
+    const api::GPUMemoryLayout memory_layout,
+    const bool texel_strides = true);
+
+/*
+ * When stored on the GPU, tensor data is stored using texels (i.e. a vector of
+ * 4 scalar values) in order to take advantage of the GPU's native vectorization
+ * capabilities. Furthermore, tensor metadata is passed in to shaders as ivec4
+ * types.
+ *
+ * To accommodate these vectorized types, the sizes of a tensor will be modified
+ * for GPU storage in the following ways:
+ *
+ *   1. The dimensionality of the tensor will be padded to a multiple of 4.
+ *   2. The size of the packed dimension will be padded to a multiple of 4.
+ *
+ * The "packed dimension" is determined based on the GPUMemoryLayout argument.
+ */
+std::vector<int64_t> calculate_padded_sizes(
+    const std::vector<int64_t>& sizes,
+    const api::GPUMemoryLayout memory_layout);
+
+/*
+ * Given the padded sizes of a tensor and the GPU memory layout, calculate the
+ * 3D image extents required to store the tensor data as an image texture.
+ */
+api::utils::uvec3 calculate_image_extents(
+    const std::vector<int64_t>& padded_sizes,
+    const api::GPUMemoryLayout memory_layout);
+
 struct LastAccess {
   api::PipelineStageFlags stage;
   api::MemoryAccessFlags access;
@@ -59,10 +101,10 @@ class vTensorStorage final {
   api::StorageType storage_type_;
 
   // Resource sizings
-  api::utils::uvec3 extents_{};
+  api::utils::uvec3 image_extents_{};
   int64_t buffer_length_{};
 
-  // Image Texture
+  // GPU Storage
   mutable api::VulkanImage image_;
   mutable api::VulkanBuffer buffer_;
 
@@ -88,7 +130,7 @@ class vTensorStorage final {
   }
 
   void discard_and_reallocate(
-      const std::vector<int64_t>& gpu_sizes,
+      const std::vector<int64_t>& padded_sizes,
       const api::GPUMemoryLayout gpu_memory_layout,
       const api::ScalarType dtype);
 };
@@ -120,19 +162,28 @@ class vTensor final {
   api::ScalarType dtype_;
   api::GPUMemoryLayout memory_layout_;
 
+  // sizes of the tensor in NCHW dimension order
   std::vector<int64_t> sizes_;
-  std::vector<int64_t> gpu_sizes_;
+  // padded sizes of the tensor in NCHW dimension order. See the
+  // calculate_padded_sizes() function for more context.
+  std::vector<int64_t> padded_sizes_;
+  // Contains the "virtual" texture extents of the tensor. See the
+  // texture_limits() function for more context.
   TextureLimits texture_limits_;
 
-  // A Vulkan uniform buffer containing the (W, H, C, N) tensor sizes that can
-  // be passed into a shader.
+  /*
+   * Utility GPU buffers that can be passed to shaders in order to convey tensor
+   * metadata. These buffers will be initialized the first time they are
+   * accessed via the corresponding *_ubo() function, and their contents will be
+   * updated whenever virtual_resize() is called.
+   *
+   * Refer to the comments for the corresponding *_ubo() functions for more
+   * context about the data contained in each buffer.
+   */
   api::UniformParamsBuffer sizes_uniform_;
-
-  // A Vulkan uniform buffer containing the texture limits derived from the
-  // tensor's current size information that can be passed into a shader. Note
-  // that the texture limits may be different from the texture's extents if the
-  // tensor has been resized with `virtual_resize()`.
   api::UniformParamsBuffer texture_limits_uniform_;
+  api::UniformParamsBuffer texel_strides_uniform_;
+  api::UniformParamsBuffer ntexels_uniform_;
 
   vTensorStorage storage_;
 
@@ -175,8 +226,12 @@ class vTensor final {
     return storage_.storage_type_;
   }
 
-  inline const api::utils::uvec3& extents() const {
-    return storage_.extents_;
+  inline bool has_buffer_storage() const {
+    return storage_.storage_type_ == api::kBuffer;
+  }
+
+  inline const api::utils::uvec3& image_extents() const {
+    return storage_.image_extents_;
   }
 
   /*
@@ -190,7 +245,7 @@ class vTensor final {
     return memory_layout_;
   }
 
-  inline int32_t gpu_memory_layout_int() const {
+  inline int32_t packed_dim_whcn_idx() const {
     return static_cast<int32_t>(memory_layout_);
   }
 
@@ -207,18 +262,33 @@ class vTensor final {
   }
 
   /*
-   * Get the binding information for the uniform buffer object containing the
-   * tensor sizes to use in a compute shader. Note that the GPU buffer will be
-   * allocated the first time this function is called.
+   * Returns a GPU buffer containing the sizes of the tensor in WHCN order.
+   * Note that dimensions that are not present in the tensor's sizes are set to
+   * a size of 1.
    */
   const api::BufferBindInfo sizes_ubo();
 
   /*
-   * Get the binding information for the uniform buffer object containing the
-   * texture limits to use in a compute shader. Note that the GPU buffer will be
-   * allocated the first time this function is called.
+   * Returns a GPU buffer containing the virtual image extents of the tensor.
+   * Since a tensor can be resized with the virtual_resize() function, this
+   * GPU buffer contains the image extents of the tensor calculated using the
+   * virtual_resize() function. This allows shaders to exit early if they are
+   * working outside the limits of the texture.
+   *
+   * This buffer should only be used to
    */
   const api::BufferBindInfo texture_limits_ubo();
+
+  /*
+   * Returns the strides of the texel buffer used to store the tensor, as
+   * calculated by calculate_strides().
+   */
+  const api::BufferBindInfo texel_strides_ubo();
+
+  /*
+   * Returns the number of texels in the texel buffer used to store the tensor.
+   */
+  const api::BufferBindInfo ntexels_ubo();
 
   inline const api::utils::ivec3 texture_limits() const {
     return texture_limits_.limits;
@@ -233,14 +303,22 @@ class vTensor final {
   }
 
   /*
-   * Returns numel but based on gpu_sizes_ instead of sizes_
+   * Returns numel but based on padded_sizes_ instead of sizes_
    */
   inline size_t gpu_numel() const {
-    return api::utils::multiply_integers(gpu_sizes_);
+    return api::utils::multiply_integers(padded_sizes_);
   }
 
   /*
-   * Return nbytes but based on gpu_sizes_ instead of sizes_
+   * Returns the number of texels in the image texture or texel buffer used to
+   * store the tensor's data.
+   */
+  inline int32_t texel_numel() const {
+    return api::utils::safe_downcast<int32_t>(gpu_numel() / 4);
+  }
+
+  /*
+   * Return nbytes but based on padded_sizes_ instead of sizes_
    */
   inline VkDeviceSize gpu_nbytes() const {
     return api::element_size(dtype()) * gpu_numel();
@@ -259,7 +337,7 @@ class vTensor final {
   /*
    * Binds the underlying resource to the given memory allocation
    */
-  void bind_allocation(const api::MemoryAllocation& allocation);
+  void bind_allocation(const api::Allocation& allocation);
 
  private:
   /*

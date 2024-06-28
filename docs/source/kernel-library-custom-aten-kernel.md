@@ -89,8 +89,10 @@ ATen operator with a dtype/dim order specialized kernel (works for `Double` dtyp
 ### Custom Ops C++ API
 
 For a custom kernel that implements a custom operator, we provides 2 ways to register it into ExecuTorch runtime:
-1. Using `EXECUTORCH_LIBRARY` and `WRAP_TO_ATEN` C++ macros.
-2. Using `functions.yaml` and codegen'd C++ libraries.
+1. Using `EXECUTORCH_LIBRARY` and `WRAP_TO_ATEN` C++ macros, covered by this section.
+2. Using `functions.yaml` and codegen'd C++ libraries, covered by [next section](#custom-ops-yaml-entry).
+
+Please refer to [Custom Ops Best Practices](#custom-ops-api-best-practices) on which API to use.
 
 The first option requires C++17 and doesn't have selective build support yet, but it's faster than the second option where we have to go through yaml authoring and build system tweaking.
 
@@ -301,3 +303,27 @@ cxx_binary(
 )
 
 ```
+
+### Custom Ops API Best Practices
+
+Given that we have 2 kernel registration APIs for custom ops, which API should we use? Here are some pros and cons for each API:
+
+* C++ API:
+  - Pros:
+    * Only C++ code changes are needed
+    * Resembles PyTorch custom ops C++ API
+    * Low maintenance cost
+  - Cons:
+    * No selective build support
+    * No centralized bookkeepping
+
+* Yaml entry API:
+  - Pros:
+    * Has selective build support
+    * Provides a centralized place for custom ops
+      - It shows what ops are being registered and what kernels are bound to these ops, for an application
+  - Cons:
+    * User needs to create and maintain yaml files
+    * Relatively inflexible to change the op definition
+
+Overall if we are building an application and it uses custom ops, during the development phase it's recommended to use the C++ API since it's low-cost to use and flexible to change. Once the application moves to production phase where the custom ops definitions and the build systems are quite stable and binary size is to be considered, it is recommended to use the Yaml entry API.

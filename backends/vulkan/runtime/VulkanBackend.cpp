@@ -16,6 +16,9 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/runtime/core/event_tracer_hooks_delegate.h>
+#endif // ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -48,7 +51,7 @@ using BytesVector =
     const flatbuffers::Vector<flatbuffers::Offset<vkgraph::VkBytes>>*;
 using UIntVector = const flatbuffers::Vector<uint32_t>*;
 
-const uint8_t* getConstantDataPtr(
+const uint8_t* get_constant_data_ptr(
     VkGraphPtr flatbuffer_graph,
     const int32_t buffer_idx,
     const uint8_t* constant_data) {
@@ -111,21 +114,24 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
     const size_t value_size = spec.value.nbytes;
     if (strcmp(spec.key, "storage_type_override") == 0) {
       ET_CHECK_MSG(value_size == sizeof(int32_t), "Unexpected value size!");
-      int value_as_int = static_cast<int>(GetUInt32LE(value_data));
+      int value_as_int = static_cast<int>(getUInt32LE(value_data));
       api::StorageType storage_type =
           static_cast<api::StorageType>(value_as_int);
 
-      config.setStorageTypeOverride(storage_type);
+      config.set_storage_type_override(storage_type);
     }
     if (strcmp(spec.key, "memory_layout_override") == 0) {
       ET_CHECK_MSG(value_size == sizeof(uint32_t), "Unexpected value size!");
-      uint32_t value_as_int = GetUInt32LE(value_data);
+      uint32_t value_as_int = getUInt32LE(value_data);
       api::GPUMemoryLayout memory_layout =
           static_cast<api::GPUMemoryLayout>(value_as_int);
 
-      config.setMemoryLayoutOverride(memory_layout);
+      config.set_memory_layout_override(memory_layout);
     }
   }
+#ifdef ET_EVENT_TRACER_ENABLED
+  config.enable_querypool = true;
+#endif // ET_EVENT_TRACER_ENABLED
   return config;
 }
 
@@ -181,7 +187,7 @@ class GraphBuilder {
 
     ValueRef ref;
     if (tensor_fb->constant_id() >= 0) {
-      const uint8_t* tensor_data = getConstantDataPtr(
+      const uint8_t* tensor_data = get_constant_data_ptr(
           flatbuffer_, tensor_fb->constant_id(), constant_data_);
 
       ref = compute_graph_->add_tensorref(dims_vector, dtype, tensor_data);
@@ -301,6 +307,9 @@ class GraphBuilder {
     }
 
     // Parse the operators
+    uint32_t last_prepack_node_ct = 0;
+    uint32_t last_execute_node_ct = 0;
+
     for (OpCallPtr op_call : *(flatbuffer_->chain())) {
       std::string op_name = op_call->name()->str();
       ET_CHECK_MSG(VK_HAS_OP(op_name), "Missing operator: %s", op_name.c_str());
@@ -315,6 +324,22 @@ class GraphBuilder {
 
       auto vkFn = VK_GET_OP_FN(op_name);
       vkFn(*compute_graph_, args);
+      if (compute_graph_->graphconfig().enable_querypool) {
+        for (uint32_t idx_prepack = last_prepack_node_ct;
+             idx_prepack < compute_graph_->prepack_nodes().size();
+             idx_prepack++) {
+          compute_graph_->prepack_nodes()[idx_prepack]->set_node_id(
+              op_call->node_id());
+        }
+        for (uint32_t idx_execute = last_execute_node_ct;
+             idx_execute < compute_graph_->execute_nodes().size();
+             idx_execute++) {
+          compute_graph_->execute_nodes()[idx_execute]->set_node_id(
+              op_call->node_id());
+        }
+        last_prepack_node_ct = compute_graph_->prepack_nodes().size();
+        last_execute_node_ct = compute_graph_->execute_nodes().size();
+      }
     }
 
     // Parse the outputs
@@ -399,7 +424,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
   __ET_NODISCARD Error
   compileModel(const void* buffer_pointer, ComputeGraph* compute_graph) const {
     Result<VulkanDelegateHeader> header =
-        VulkanDelegateHeader::Parse(buffer_pointer);
+        VulkanDelegateHeader::parse(buffer_pointer);
 
     const uint8_t* flatbuffer_data = nullptr;
     const uint8_t* constant_data = nullptr;
@@ -493,6 +518,22 @@ class VulkanBackend final : public PyTorchBackendInterface {
           args[num_inputs + i]->toTensor().mutable_data_ptr(),
           args[num_inputs + i]->toTensor().numel());
     }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    EventTracer* event_tracer = context.event_tracer();
+    compute_graph->context()->querypool().extract_results();
+    for (const auto& tup :
+         compute_graph->context()->querypool().get_shader_timestamp_data()) {
+      std::string event_name =
+          std::get<0>(tup) + "_" + std::to_string(std::get<1>(tup));
+      event_tracer_log_profiling_delegate(
+          event_tracer,
+          event_name.c_str(),
+          -1,
+          std::get<2>(tup),
+          std::get<3>(tup));
+    }
+#endif // ET_EVENT_TRACER_ENABLED
 
     return Error::Ok;
   }

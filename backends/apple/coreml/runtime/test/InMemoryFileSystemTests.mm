@@ -13,7 +13,7 @@
 
 #import <inmemory_filesystem_utils.hpp>
 #import <memory_stream.hpp>
-#import <json.hpp>
+#import <nlohmann/json.hpp>
 #import <json_util.hpp>
 
 using json = nlohmann::json;
@@ -25,11 +25,11 @@ struct Content {
     inline Content(std::string identifier, std::string value) noexcept
     :identifier(std::move(identifier)), value(std::move(value))
     {}
-    
+
     inline Content() noexcept
     :identifier(""), value("")
     {}
-    
+
     std::string identifier;
     std::string value;
 };
@@ -80,7 +80,7 @@ std::string generate_random_string(size_t length) {
     for (size_t i = 0; i < length; ++i) {
         result += chars[rand() % (sizeof(chars) - 1)];
     }
-    
+
     return result;
 }
 
@@ -178,12 +178,12 @@ using namespace inmemoryfs;
     Content content("abc", "xyz");
     std::shared_ptr<MemoryBuffer> buffer = to_memory_buffer(content);
     std::error_code error;
-    
+
     XCTAssertTrue(fs.make_directory({"dir1"}, InMemoryFileSystem::Attributes(), false, error));
     XCTAssertTrue(fs.make_file({"dir1", "content.json"}, buffer, InMemoryFileSystem::Attributes(), false  /*overwrite*/, error));
     XCTAssertTrue(fs.make_directory({"dir1", "dir2"}, InMemoryFileSystem::Attributes(), false, error));
     XCTAssertTrue(fs.make_file({"dir1", "dir2", "content.json"}, buffer, InMemoryFileSystem::Attributes(), false  /*overwrite*/, error));
-    
+
     NSURL *dirURL = [[NSURL fileURLWithPath:NSTemporaryDirectory()] URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
     NSFileManager *fm = [[NSFileManager alloc] init];
     NSError *localError = nil;
@@ -220,7 +220,7 @@ using namespace inmemoryfs;
     NSData *data = [NSData dataWithBytesNoCopy:buffer->data() length:buffer->size() freeWhenDone:NO];
     XCTAssertTrue([data writeToURL:[dirURL URLByAppendingPathComponent:@"dir1/content.json"] atomically:YES]);
     XCTAssertTrue([data writeToURL:[dirURL URLByAppendingPathComponent:@"dir2/content.json"] atomically:YES]);
-    
+
     std::filesystem::path dirPath(dirURL.path.UTF8String);
     std::error_code error;
     auto fs = InMemoryFileSystem::make_from_directory(dirPath,
@@ -256,7 +256,7 @@ using namespace inmemoryfs;
         }
         XCTAssertTrue(fs.write_item_to_disk({}, dirURL.path.UTF8String, true, error));
     }
-    
+
     // Verify serialization.
     std::shared_ptr<MemoryBuffer> buffer = nullptr;
     {
@@ -264,7 +264,7 @@ using namespace inmemoryfs;
         auto fs = InMemoryFileSystem::make_from_directory(dirURL.path.UTF8String,
                                                           config.file_load_option,
                                                           error);
-    
+
         XCTAssertTrue(fs != nullptr);
         size_t length = inmemoryfs::get_buffer_size_for_serialization(*fs, {}, config.alignment);
         switch (config.file_load_option) {
@@ -272,15 +272,15 @@ using namespace inmemoryfs;
                 buffer = MemoryBuffer::make_using_mmap(length);
                 break;
             }
-                
+
             default:
                 buffer = MemoryBuffer::make_using_malloc(length);
                 break;
         }
-        
+
         XCTAssertTrue(inmemoryfs::serialize(*fs, {}, config.alignment, buffer->data(), error));
     }
-    
+
     // Verify de-serialization.
     {
         auto fs = inmemoryfs::make_from_buffer(buffer);
@@ -290,7 +290,7 @@ using namespace inmemoryfs;
             XCTAssertEqual(from_memory_buffer<Content>(fs->get_file_content({"test", "dir", content.identifier}, error)), content);
         }
     }
-    
+
     [fm removeItemAtURL:dirURL error:nil];
 }
 
@@ -332,7 +332,7 @@ using namespace inmemoryfs;
         .file_base_length = 100,
         .alignment = 2 * (size_t)getpagesize(),
     });
-   
+
     for (const auto& config : configs) {
         [self _testSerdeWithConfig:config];
     }
@@ -349,7 +349,7 @@ using namespace inmemoryfs;
         auto j = json::parse(object.value().begin(), object.value().end());
         XCTAssertEqual(j["x"], 1, "The value must match");
     }
-    
+
     {
         std::stringstream ss;
         std::string fragment("{\"x\" : 1");
@@ -357,8 +357,8 @@ using namespace inmemoryfs;
         auto object = executorchcoreml::json::read_object_from_stream(ss);
         XCTAssertFalse(object.has_value(), "There is no closing brace, `read_json_object` must return nullopt");
     }
-    
-    
+
+
     {
         std::stringstream ss;
         std::string fragment("{\"x\" : \"\\\"1\"}xyz");
@@ -369,7 +369,7 @@ using namespace inmemoryfs;
         std::string value = j["x"];
         XCTAssertEqual(value, std::string("\"1"), "The value must match");
     }
-    
+
     {
         std::stringstream ss;
         std::string fragment("{sdhalskjks}");
@@ -384,7 +384,7 @@ using namespace inmemoryfs;
         }
         XCTAssertNotEqual(eptr, nullptr, "Parsing invalid json object must throw an exception");
     }
-    
+
 }
 
 @end

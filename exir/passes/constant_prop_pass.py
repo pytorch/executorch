@@ -112,11 +112,11 @@ def get_propagated_const_tensor_dict(
     # Initialize dict with all constant placeholders.
     const_node_to_tensor = get_constant_placeholder_dict(exported_program)
 
-    all_skip_targets: set[EdgeOpOverload] = set()
-    # Default set of targets to skip.
-    all_skip_targets.update(_DEFAULT_SKIP_TARGETS)
     if custom_skip_targets is not None:
-        all_skip_targets.update(custom_skip_targets)
+        all_skip_targets = custom_skip_targets
+    else:
+        # Default set of targets to skip.
+        all_skip_targets = _DEFAULT_SKIP_TARGETS
 
     for node in exported_program.graph.nodes:
         if node.op != "call_function" or node.target in all_skip_targets:
@@ -133,9 +133,11 @@ def get_propagated_const_tensor_dict(
             lambda x: get_data(x, exported_program, const_node_to_tensor),
             (node.args, node.kwargs),
         )
-
-        # Execute the `node.target` and create a new propagated constant tensor.
-        prop_constant_tensor = node.target(*args_data, **kwargs_data)
+        # Disable grad for constant propagation, otherwise the generated tensor can't be copied
+        # because of the grad_fn.
+        with torch.no_grad():
+            # Execute the `node.target` and create a new propagated constant tensor.
+            prop_constant_tensor = node.target(*args_data, **kwargs_data)
         const_node_to_tensor[node] = prop_constant_tensor
 
     return const_node_to_tensor

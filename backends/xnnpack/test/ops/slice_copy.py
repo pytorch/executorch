@@ -7,7 +7,8 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.test.tester import Partition, Tester
 
 
 class TestSliceCopy(unittest.TestCase):
@@ -112,10 +113,30 @@ class TestSliceCopy(unittest.TestCase):
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )
 
+    def test_fp32_static_slice_with_dynamic_dim(self):
+        """
+        XNNPACK does not support dynamic dims with static slice
+        """
+
+        class SliceCopy(torch.nn.Module):
+            def forward(self, x):
+                return x[1:3, -2:, :-1]
+
+        inputs = (torch.randn(5, 5, 5),)
+        (
+            Tester(SliceCopy(), inputs)
+            .export()
+            .to_edge()
+            .partition(
+                Partition(partitioner=XnnpackPartitioner(has_dynamic_shapes=True))
+            )
+            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
+        )
+
     # Note: Slice ends up as slice_copy later in the process, but during quantization,
     # it's still slice, which isn't supported by the XNNPACK quantizer.
     @unittest.skip("T156004676 - slice isn't propagated")
-    def test_qs8_slice_copy(self):
+    def _test_qs8_slice_copy(self):
         class SliceCopy(torch.nn.Module):
             def forward(self, x):
                 y = x + x

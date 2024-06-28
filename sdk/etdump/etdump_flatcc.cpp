@@ -112,11 +112,7 @@ ETDumpGen::ETDumpGen(Span<uint8_t> buffer) {
         builder != nullptr, "Failed to allocate memory for flatcc builder.");
     flatcc_builder_init(builder);
   }
-  flatbuffers_buffer_start(builder, etdump_ETDump_file_identifier);
-  etdump_ETDump_start_as_root_with_size(builder);
-  etdump_ETDump_version_add(builder, ETDUMP_VERSION);
-  etdump_ETDump_run_data_start(builder);
-  etdump_ETDump_run_data_push_start(builder);
+  reset();
 }
 
 ETDumpGen::~ETDumpGen() {
@@ -126,13 +122,22 @@ ETDumpGen::~ETDumpGen() {
   }
 }
 
-void ETDumpGen::clear_builder() {
-  flatcc_builder_clear(builder);
+void ETDumpGen::reset() {
+  etdump_gen_state = ETDumpGen_Init;
+  num_blocks = 0;
+  flatcc_builder_reset(builder);
+  flatbuffers_buffer_start(builder, etdump_ETDump_file_identifier);
+  etdump_ETDump_start_as_root_with_size(builder);
+  etdump_ETDump_version_add(builder, ETDUMP_VERSION);
+  etdump_ETDump_run_data_start(builder);
+  etdump_ETDump_run_data_push_start(builder);
 }
 
 void ETDumpGen::create_event_block(const char* name) {
   if (etdump_gen_state == ETDumpGen_Adding_Events) {
     etdump_RunData_events_end(builder);
+  } else if (etdump_gen_state == ETDumpGen_Done) {
+    reset();
   }
   if (num_blocks > 0) {
     etdump_ETDump_run_data_push_end(builder);
@@ -354,6 +359,7 @@ etdump_result ETDumpGen::get_etdump_data() {
           flatcc_builder_finalize_aligned_buffer(builder, &result.size);
     }
   }
+  etdump_gen_state = ETDumpGen_Done;
   return result;
 }
 

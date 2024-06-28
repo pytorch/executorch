@@ -7,6 +7,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <cstdio>
 
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/span.h>
@@ -526,6 +527,46 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
         -1);
     if (!etdump_gen[i]->is_static_etdump()) {
       free(result.buf);
+    }
+  }
+}
+
+TEST_F(ProfilerETDumpTest, WriteAfterGetETDumpData) {
+  for (size_t i = 0; i < 2; i++) {
+    for (size_t j = 0; j < 2; j++) {
+      etdump_gen[i]->create_event_block("test_block");
+      EventTracerEntry entry =
+          etdump_gen[i]->start_profiling("test_event", 0, 1);
+      etdump_gen[i]->end_profiling(entry);
+
+      etdump_result result = etdump_gen[i]->get_etdump_data();
+      ASSERT_TRUE(result.buf != nullptr);
+      ASSERT_TRUE(result.size != 0);
+
+      size_t size = 0;
+      void* buf = flatbuffers_read_size_prefix(result.buf, &size);
+      etdump_ETDump_table_t etdump = etdump_ETDump_as_root_with_identifier(
+          buf, etdump_ETDump_file_identifier);
+
+      ASSERT_NE(etdump, nullptr);
+      EXPECT_EQ(etdump_ETDump_version(etdump), ETDUMP_VERSION);
+
+      etdump_RunData_vec_t run_data_vec = etdump_ETDump_run_data(etdump);
+      EXPECT_EQ(
+          etdump_gen[i]->get_num_blocks(),
+          etdump_RunData_vec_len(run_data_vec));
+
+      etdump_RunData_table_t run_data_single_prof =
+          etdump_RunData_vec_at(run_data_vec, 0);
+      EXPECT_EQ(
+          std::string(
+              etdump_RunData_name(run_data_single_prof),
+              strlen(etdump_RunData_name(run_data_single_prof))),
+          "test_block");
+
+      if (!etdump_gen[i]->is_static_etdump()) {
+        free(result.buf);
+      }
     }
   }
 }

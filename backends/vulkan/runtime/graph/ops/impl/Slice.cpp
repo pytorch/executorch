@@ -17,6 +17,20 @@
 
 namespace vkcompute {
 
+inline int64_t normalize_idx(
+    const int64_t index,
+    const int64_t max,
+    const int64_t default_value) {
+  // INT64_MAX is passed when value is unspecified
+  if (index == INT64_MAX) {
+    return default_value;
+  }
+  if (index == default_value) {
+    return index;
+  }
+  return normalize(index, max);
+}
+
 void add_slice_tensor_out_node(
     ComputeGraph& graph,
     ValueRef in,
@@ -57,17 +71,14 @@ void add_slice_tensor_out_node(
   int64_t start = opt_start.value_or(0);
   int64_t end = opt_end.value_or(in_sizes[dim]);
 
-  VK_CHECK_COND((0 <= start) && (start < in_sizes[dim]));
-  VK_CHECK_COND((0 <= end) && (end <= in_sizes[dim]));
+  start = normalize_idx(start, in_sizes[dim], 0);
+  end = normalize_idx(end, in_sizes[dim], in_sizes[dim]);
 
   if (dim_index == kChannel4D) {
     // slice by channel
     std::string kernel_name = "slice_channel";
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
-
-    api::utils::uvec3 global_size = t_out->extents();
-    api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
     const struct Block final {
       int offset;
@@ -80,8 +91,8 @@ void add_slice_tensor_out_node(
     graph.execute_nodes().emplace_back(new ExecuteNode(
         graph,
         VK_KERNEL_FROM_STR(kernel_name),
-        global_size,
-        local_size,
+        graph.create_global_wg_size(out),
+        graph.create_local_wg_size(out),
         {{out, api::MemoryAccessType::WRITE},
          {in, api::MemoryAccessType::READ}},
         {t_out->sizes_ubo(),
@@ -103,7 +114,7 @@ void add_slice_tensor_out_node(
 
       // Due to channel packing, each batch value is span over stride planes
       int64_t n_channels = dim_at(in_sizes, kChannel4D);
-      stride = api::utils::div_up<int64_t>(n_channels, 4ll);
+      stride = api::utils::div_up_4(n_channels);
     } else {
       VK_THROW("Unexpected ncwh_dim!");
     }
@@ -112,7 +123,7 @@ void add_slice_tensor_out_node(
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
 
-    api::utils::uvec3 global_size = t_out->extents();
+    api::utils::uvec3 global_size = t_out->image_extents();
     api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
     const struct Block final {
@@ -151,6 +162,7 @@ void slice_tensor_out(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.slice_copy.Tensor, slice_tensor_out);
+  VK_REGISTER_OP(aten.slice.Tensor, slice_tensor_out);
 }
 
 } // namespace vkcompute

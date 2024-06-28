@@ -6,8 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cmath>
+// patternlint-disable-next-line executorch-cpp-nostdinc
+#include <functional>
 
+#include <executorch/kernels/portable/cpu/pattern/bitwise_op.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
@@ -17,20 +19,6 @@ namespace torch {
 namespace executor {
 namespace native {
 
-namespace {
-
-template <typename CTYPE>
-CTYPE bitwise_xor(CTYPE a, CTYPE b) {
-  return a ^ b;
-}
-
-template <>
-bool bitwise_xor<bool>(bool a, bool b) {
-  return a != b;
-}
-
-} // namespace
-
 using Tensor = exec_aten::Tensor;
 
 Tensor& bitwise_xor_Tensor_out(
@@ -38,7 +26,6 @@ Tensor& bitwise_xor_Tensor_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  // Determine output size and resize for dynamic shapes
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
@@ -56,38 +43,23 @@ Tensor& bitwise_xor_Tensor_out(
       Bool, a_type, ctx, "bitwise_xor.Tensor_out", CTYPE_A, [&]() {
         ET_SWITCH_INT_TYPES_AND(
             Bool, b_type, ctx, "bitwise_xor.Tensor_out", CTYPE_B, [&]() {
-              ET_SWITCH_INT_TYPES_AND(
+              using CTYPE_IN = typename torch::executor::
+                  promote_types<CTYPE_A, CTYPE_B>::type;
+              ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
+              ET_SWITCH_REAL_TYPES_AND(
                   Bool,
-                  common_type,
+                  out_type,
                   ctx,
                   "bitwise_xor.Tensor_out",
-                  CTYPE_IN,
+                  CTYPE_OUT,
                   [&]() {
-                    ET_SWITCH_REAL_TYPES_AND(
-                        Bool,
-                        out_type,
-                        ctx,
-                        "bitwise_xor.Tensor_out",
-                        CTYPE_OUT,
-                        [&]() {
-                          apply_binary_elementwise_fn<
-                              CTYPE_A,
-                              CTYPE_B,
-                              CTYPE_OUT>(
-                              [](const CTYPE_A val_a, const CTYPE_B val_b) {
-                                CTYPE_IN a_casted =
-                                    static_cast<CTYPE_IN>(val_a);
-                                CTYPE_IN b_casted =
-                                    static_cast<CTYPE_IN>(val_b);
-                                CTYPE_IN value =
-                                    bitwise_xor(a_casted, b_casted);
-
-                                return static_cast<CTYPE_OUT>(value);
-                              },
-                              a,
-                              b,
-                              out);
-                        });
+                    internal::BitwiseOpInner<
+                        can_cast<CTYPE_IN, CTYPE_OUT>::value,
+                        std::bit_xor,
+                        CTYPE_A,
+                        CTYPE_B,
+                        CTYPE_IN,
+                        CTYPE_OUT>::run(a, b, out);
                   });
             });
       });
@@ -143,8 +115,8 @@ Tensor& bitwise_xor_Scalar_out(
                                     static_cast<CTYPE_IN>(val_a);
                                 CTYPE_IN b_casted =
                                     static_cast<CTYPE_IN>(val_b);
-                                CTYPE_IN value =
-                                    bitwise_xor(a_casted, b_casted);
+                                CTYPE_IN value = std::bit_xor<CTYPE_IN>()(
+                                    a_casted, b_casted);
 
                                 return static_cast<CTYPE_OUT>(value);
                               },

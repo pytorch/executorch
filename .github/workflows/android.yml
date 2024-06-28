@@ -9,6 +9,8 @@ on:
     paths:
       - .ci/docker/**
       - .github/workflows/android.yml
+      - build/build_android_library.sh
+      - build/test_android_ci.sh
       - install_requirements.sh
       - examples/demo-apps/android/**
       - extension/android/**
@@ -45,6 +47,8 @@ jobs:
         BUILD_TOOL=${{ matrix.build-tool }}
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Build Android library
+        bash build/build_android_library.sh
         # Build Android demo app
         bash build/test_android_ci.sh
 
@@ -61,6 +65,9 @@ jobs:
         cp cmake-out-android-arm64-v8a/extension/android/*.so artifacts-to-be-uploaded/arm64-v8a/
         cp cmake-out-android-x86_64/lib/*.a artifacts-to-be-uploaded/x86_64/
         cp cmake-out-android-x86_64/extension/android/*.so artifacts-to-be-uploaded/x86_64/
+        # Copyp AAR to S3
+        cp executorch.aar artifacts-to-be-uploaded/
+        cp executorch-llama.aar artifacts-to-be-uploaded/
 
   # Upload the app and its test suite to S3 so that they can be downloaded by the test job
   upload-artifacts:
@@ -112,4 +119,4 @@ jobs:
       test-spec: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/abd86868-fa63-467e-a5c7-218194665a77
       # The exported llama2 model and its tokenizer, can be downloaded from https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b.zip.
       # Among the input, this is the biggest file and uploading it to AWS beforehand makes the test run much faster
-      extra-data: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/bd15825b-ddab-4e47-9fef-a9c8935778dd
+      extra-data: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/30168984-65d3-4637-a54d-908649e70141

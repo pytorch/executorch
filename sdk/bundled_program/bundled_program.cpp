@@ -73,12 +73,37 @@ TensorImpl impl_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
 #endif
 
 /**
- * Returns true if the two arrays are close according to the description on
+ * Returns true if the two elements are close according to the description on
  * `tensors_are_close()`.
  *
  * T must be a floating point type. Non-floating point data should be compared
  * directly.
  */
+template <
+    typename T,
+    typename = std::enable_if_t<std::is_floating_point<T>::value>>
+bool elem_is_close(const T& ai, const T& bi, double rtol, double atol) {
+  if (std::isnan(ai) && std::isnan(bi)) {
+    // NaN == NaN
+  } else if (
+      !std::isfinite(ai) && !std::isfinite(bi) && ((ai > 0) == (bi > 0))) {
+    // -Inf == -Inf
+    // +Inf == +Inf
+  } else if (rtol == 0 && atol == 0) {
+    // Exact comparison; avoid unnecessary math.
+    if (ai != bi) {
+      return false;
+    }
+  } else {
+    auto allowed_error = atol + std::abs(rtol * bi);
+    auto actual_error = std::abs(ai - bi);
+    if (!std::isfinite(actual_error) || actual_error > allowed_error) {
+      return false;
+    }
+  }
+  return true;
+}
+
 template <
     typename T,
     typename = std::enable_if_t<std::is_floating_point<T>::value>>
@@ -89,26 +114,23 @@ bool data_is_close(
     double rtol,
     double atol) {
   for (size_t i = 0; i < numel; i++) {
-    const auto ai = a[i];
-    const auto bi = b[i];
+    if (!elem_is_close(a[i], b[i], rtol, atol)) {
+      return false;
+    }
+  }
+  return true;
+}
 
-    if (std::isnan(ai) && std::isnan(bi)) {
-      // NaN == NaN
-    } else if (
-        !std::isfinite(ai) && !std::isfinite(bi) && ((ai > 0) == (bi > 0))) {
-      // -Inf == -Inf
-      // +Inf == +Inf
-    } else if (rtol == 0 && atol == 0) {
-      // Exact comparison; avoid unnecessary math.
-      if (ai != bi) {
-        return false;
-      }
-    } else {
-      auto allowed_error = atol + std::abs(rtol * bi);
-      auto actual_error = std::abs(ai - bi);
-      if (!std::isfinite(actual_error) || actual_error > allowed_error) {
-        return false;
-      }
+bool data_is_close_half(
+    const Half* a,
+    const Half* b,
+    size_t numel,
+    double rtol,
+    double atol) {
+  for (size_t i = 0; i < numel; i++) {
+    if (!elem_is_close(
+            static_cast<double>(a[i]), static_cast<double>(b[i]), rtol, atol)) {
+      return false;
     }
   }
   return true;
@@ -174,6 +196,13 @@ bool tensors_are_close(
     return data_is_close<double>(
         bundled_tensor.const_data_ptr<double>(),
         method_output_tensor.const_data_ptr<double>(),
+        bundled_tensor.numel(),
+        rtol,
+        atol);
+  } else if (bundled_tensor.scalar_type() == ScalarType::Half) {
+    return data_is_close_half(
+        bundled_tensor.const_data_ptr<Half>(),
+        method_output_tensor.const_data_ptr<Half>(),
         bundled_tensor.numel(),
         rtol,
         atol);

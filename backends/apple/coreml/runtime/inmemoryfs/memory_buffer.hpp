@@ -8,11 +8,12 @@
 #pragma once
 
 #include <memory>
-#include <range.hpp>
 #include <stdio.h>
 #include <string>
 #include <system_error>
 #include <vector>
+
+#include "range.hpp"
 
 namespace inmemoryfs {
 /// A class representing a memory buffer.
@@ -23,38 +24,38 @@ public:
         MMap = 0,  // If the buffer is memory mapped.
         Malloc ,   // If the buffer is heap allocated.
     };
-    
+
     enum class ReadOption: uint8_t {
         Malloc = 0,
         MMap,
         LazyMMap
     };
-    
+
     inline MemoryBuffer(void *data,
                         size_t size,
                         Kind kind = Kind::Malloc,
                         std::shared_ptr<MemoryBuffer> parent = nullptr) noexcept:
-    data_(data), 
+    data_(data),
     size_(size),
     kind_(kind),
     parent_(parent)
     {}
-    
+
     MemoryBuffer(const MemoryBuffer &) = delete;
     MemoryBuffer &operator=(const MemoryBuffer &) = delete;
-    
+
     virtual ~MemoryBuffer() noexcept {}
-    
+
     /// Returns the underlying data.
     virtual inline void *data() noexcept {
         return data_;
     }
-    
+
     /// Returns the size of the buffer.
     inline const size_t size() const noexcept {
         return size_;
     }
-    
+
     /// Loads the contents of the buffer.
     ///
     /// - For a malloced buffer, the method is a no op, content is loaded at the initialization time.
@@ -65,12 +66,12 @@ public:
     inline virtual bool load(std::error_code& error) noexcept {
         return true;
     }
-    
+
     /// Returns the kind of the buffer.
     inline const Kind kind() const noexcept {
         return kind_;
     }
-    
+
     /// Returns the offset range that would be used when writing the buffer content.
     ///
     /// @param proposed_offset The proposed offset.
@@ -78,7 +79,7 @@ public:
     inline virtual std::pair<size_t, size_t> get_offset_range(size_t proposed_offset) const noexcept {
         return {proposed_offset, proposed_offset};
     }
-    
+
     /// Returns the revised range that must be used for writing.
     ///
     /// @param dst  The destination pointer.
@@ -87,7 +88,7 @@ public:
     inline virtual Range get_revised_range_for_writing(void *dst, Range proposed_range) const noexcept {
         return proposed_range;
     }
-    
+
     /// Writes the contents of the buffer to the destination buffer at the given offset.
     ///
     /// @param dst The destination pointer.
@@ -97,13 +98,13 @@ public:
     virtual bool write(void *dst,
                        size_t offset,
                        std::error_code& error) noexcept;
-    
+
     /// Slices a buffer.
     ///
     /// @param range The memory range.
     /// @retval The sliced buffer if the region is inside the buffer otherwise `nullptr`.
     virtual std::shared_ptr<MemoryBuffer> slice(Range range) noexcept;
-    
+
     /// Reads the file content at the specified path.
     ///
     /// @param file_path The file path.
@@ -116,7 +117,7 @@ public:
                       const std::vector<Range>& ranges,
                       ReadOption option,
                       std::error_code& error);
-    
+
     /// Reads the whole file content at the specified path.
     ///
     /// @param file_path The file path.
@@ -127,28 +128,28 @@ public:
     read_file_content(const std::string& file_path,
                       ReadOption option,
                       std::error_code& error);
-    
+
     /// Constructs a `MemoryBuffer`.
     ///
     /// @param size The size of the buffer.
     /// @param alignment The address alignment.
     static std::unique_ptr<MemoryBuffer>
     make_using_malloc(size_t size, size_t alignment = 1);
-    
-    
+
+
     /// Constructs a `MemoryBuffer` from memory allocated using `mmap`.
     ///
     /// @param size The size of the buffer.
     static std::unique_ptr<MemoryBuffer>
     make_using_mmap(size_t size);
-    
+
     /// Constructs a `MemoryBuffer` without copying data.
     ///
     /// @param data The buffer content.
     /// @param size The size of the buffer.
     static std::unique_ptr<MemoryBuffer>
     make_unowned(void *data, size_t size);
-    
+
     /// Constructs a `MemoryBuffer` with copying data.
     ///
     /// @param data The buffer content.

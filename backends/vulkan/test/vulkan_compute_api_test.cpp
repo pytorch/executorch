@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include <c10/util/Half.h>
+#include <executorch/runtime/core/portable_type/half.h>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
@@ -24,6 +24,24 @@
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
 using namespace vkcompute::api;
+
+std::vector<std::vector<int64_t>> standard_sizes_to_test = {
+    // 2D
+    {7, 11},
+    {13, 6},
+    // 3D
+    {2, 9, 7},
+    {9, 15, 19},
+    {7, 11, 24},
+    {13, 8, 11},
+    {12, 11, 19},
+    // 4D
+    {2, 2, 3, 5},
+    {9, 13, 11, 17},
+    {17, 14, 18, 20},
+    {7, 13, 12, 21},
+    {3, 8, 13, 17},
+};
 
 //
 // Compute API Tests
@@ -46,6 +64,95 @@ class VulkanComputeAPITest : public ::testing::Test {
 
 TEST_F(VulkanComputeAPITest, print_adapter) {
   std::cout << *(api::context()->adapter_ptr()) << std::endl;
+}
+
+std::vector<int64_t> get_reference_strides(
+    const std::vector<int64_t>& sizes,
+    const api::GPUMemoryLayout layout,
+    const bool texel_strides) {
+  int64_t C = api::utils::val_at(-3, sizes);
+  int64_t H = api::utils::val_at(-2, sizes);
+  int64_t W = api::utils::val_at(-1, sizes);
+
+  switch (layout) {
+    case api::kWidthPacked:
+      if (texel_strides) {
+        W = api::utils::div_up(W, INT64_C(4));
+      }
+      switch (sizes.size()) {
+        case 1:
+          return {1};
+        case 2:
+          return {W, 1};
+        case 3:
+          return {H * W, W, 1};
+        case 4:
+          return {C * H * W, H * W, W, 1};
+        default:
+          return {};
+      }
+      break;
+    case api::kHeightPacked:
+      if (texel_strides) {
+        H = api::utils::div_up(H, INT64_C(4));
+      }
+      switch (sizes.size()) {
+        case 1:
+          return {1};
+        case 2:
+          return {1, H};
+        case 3:
+          return {W * H, 1, H};
+        case 4:
+          return {C * W * H, W * H, 1, H};
+        default:
+          return {};
+      }
+    case api::kChannelsPacked:
+      if (texel_strides) {
+        C = api::utils::div_up(C, INT64_C(4));
+      }
+      switch (sizes.size()) {
+        case 1:
+          return {1};
+        case 2:
+          return {W, 1};
+        case 3:
+          return {1, W * C, C};
+        case 4:
+          return {H * W * C, 1, W * C, C};
+        default:
+          return {};
+      }
+  }
+  return {};
+}
+
+TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
+  for (const auto& sizes : standard_sizes_to_test) {
+    if (sizes.size() < 3) {
+      continue;
+    }
+    for (const auto& layout :
+         {api::kWidthPacked, api::kHeightPacked, api::kChannelsPacked}) {
+      // texel_strides = true
+      {
+        std::vector<int64_t> strides = calculate_strides(sizes, layout);
+        std::vector<int64_t> ref_strides =
+            get_reference_strides(sizes, layout, true);
+
+        ASSERT_TRUE(strides == ref_strides);
+      }
+
+      // texel_strides = false
+      {
+        std::vector<int64_t> strides = calculate_strides(sizes, layout, false);
+        std::vector<int64_t> ref_strides =
+            get_reference_strides(sizes, layout, false);
+        ASSERT_TRUE(strides == ref_strides);
+      }
+    }
+  }
 }
 
 TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {
@@ -120,6 +227,7 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
         {len_div4, 1, 1},
         {SV(scale), SV(offset)},
         VK_NULL_HANDLE,
+        0,
         buffer.buffer(),
         params.buffer());
   }
@@ -166,6 +274,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
         {4, 4, 4},
         specialization_constants,
         VK_NULL_HANDLE,
+        0,
         a.image(
             pipeline_barrier,
             api::PipelineStage::COMPUTE,
@@ -227,6 +336,7 @@ void test_storage_buffer_type(const size_t len) {
         {len_div4, 1, 1},
         specialization_constants,
         VK_NULL_HANDLE,
+        0,
         buffer.buffer(),
         params.buffer());
   }
@@ -249,7 +359,7 @@ TEST_F(VulkanComputeAPITest, test_buffer_float16) {
   if (!api::context()->adapter_ptr()->has_full_float16_buffers_support()) {
     GTEST_SKIP();
   }
-  test_storage_buffer_type<c10::Half, api::kHalf>(16);
+  test_storage_buffer_type<torch::executor::Half, api::kHalf>(16);
 }
 
 TEST_F(VulkanComputeAPITest, test_buffer_int8) {
@@ -257,6 +367,89 @@ TEST_F(VulkanComputeAPITest, test_buffer_int8) {
     GTEST_SKIP();
   }
   test_storage_buffer_type<int8_t, api::kQInt8>(16);
+}
+
+TEST_F(VulkanComputeAPITest, test_zero_size_tensor) {
+  // Simple test that performs a + b -> c
+
+  std::vector<int64_t> sizes = {0, 5, 7};
+  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+
+  // Fill input tensors
+  fill_vtensor(a, 2.5f);
+  fill_vtensor(b, 1.5f);
+
+  // a + b -> c
+  record_binary_op(api::context(), "add", a, b, c);
+
+  // Extract output tensor
+  std::vector<float> data_out = extract_vtensor(c);
+
+  // Assert all tensors are empty
+  ASSERT_TRUE(a.numel() == 0);
+  ASSERT_TRUE(b.numel() == 0);
+  ASSERT_TRUE(c.numel() == 0);
+  ASSERT_TRUE(a.nbytes() == 0);
+  ASSERT_TRUE(b.nbytes() == 0);
+  ASSERT_TRUE(c.nbytes() == 0);
+
+  // Check output
+  for (size_t i = 0; i < data_out.size(); ++i) {
+    CHECK_VALUE(data_out, i, 4.0f);
+  }
+}
+
+template <typename T>
+void run_buffer_tensor_sanity_check(vTensor& tensor) {
+  fill_vtensor(tensor, 0.0f, true);
+
+  record_scalar_add_buffer(api::context(), tensor, 2.0f);
+  std::vector<float> data_out = extract_vtensor(tensor);
+
+  // Check output
+  for (size_t i = 0; i < tensor.numel(); ++i) {
+    CHECK_VALUE(data_out, i, i + 2.0f);
+  }
+}
+
+TEST_F(VulkanComputeAPITest, buffer_tensor_sanity_check) {
+  for (const auto& sizes : standard_sizes_to_test) {
+    for (const auto& dtype : {api::kFloat, api::kHalf, api::kChar}) {
+      if (dtype == api::kHalf &&
+          !api::context()->adapter_ptr()->has_full_float16_buffers_support()) {
+        continue;
+      }
+      if (dtype == api::kHalf && api::utils::multiply_integers(sizes) >= 2048) {
+        continue;
+      }
+      if (dtype == api::kChar &&
+          !api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
+        continue;
+      }
+      if (dtype == api::kChar && api::utils::multiply_integers(sizes) >= 128) {
+        continue;
+      }
+      for (const auto& layout :
+           {api::kWidthPacked, api::kHeightPacked, api::kChannelsPacked}) {
+        vTensor a = vTensor(api::context(), sizes, dtype, api::kBuffer, layout);
+        switch (dtype) {
+          case api::kFloat:
+            run_buffer_tensor_sanity_check<float>(a);
+            break;
+          case api::kHalf:
+            run_buffer_tensor_sanity_check<torch::executor::Half>(a);
+            break;
+          case api::kChar:
+            run_buffer_tensor_sanity_check<int8_t>(a);
+            break;
+          default:
+            VK_THROW("Unsupported dtype");
+        }
+      }
+    }
+  }
 }
 
 TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
@@ -301,11 +494,11 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   std::fill(data_b.begin(), data_b.end(), 1.5f);
 
   // Allocate memory at the last possible opportunity
-  api::MemoryAllocation a_mem = allocate_memory_for(a);
+  api::Allocation a_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_mem);
-  api::MemoryAllocation b_mem = allocate_memory_for(b);
+  api::Allocation b_mem = allocate_memory_for(b);
   b.image().bind_allocation(b_mem);
-  api::MemoryAllocation c_mem = allocate_memory_for(c);
+  api::Allocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
   // One allocation for each tensor
@@ -341,15 +534,15 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   // a and d can share the same memory allocation
-  api::MemoryAllocation a_d_mem = allocate_memory_for(a);
+  api::Allocation a_d_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_d_mem);
   d.image().bind_allocation(a_d_mem);
   // b and e can share the same memory allocation
-  api::MemoryAllocation b_e_mem = allocate_memory_for(b);
+  api::Allocation b_e_mem = allocate_memory_for(b);
   b.image().bind_allocation(b_e_mem);
   e.image().bind_allocation(b_e_mem);
   // c must have its own memory allocation
-  api::MemoryAllocation c_mem = allocate_memory_for(c);
+  api::Allocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
   // 3 allocations should be made
@@ -394,7 +587,7 @@ TEST_F(VulkanComputeAPITest, resource_bind_twice_fails) {
   vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
   // Try to double bind a resource, which should fail
-  api::MemoryAllocation a_mem = allocate_memory_for(a);
+  api::Allocation a_mem = allocate_memory_for(a);
   EXPECT_THROW(a.image().bind_allocation(a_mem), api::Error);
 }
 
@@ -402,9 +595,9 @@ TEST_F(VulkanComputeAPITest, resource_destructor_non_owning_memory) {
   // Check that the destructor of a vTensor that does not own its memory
   // does not free the memory
 
-  api::MemoryAllocation memory;
+  api::Allocation memory;
 
-  // Default MemoryAllocation constructor should not allocate memory
+  // Default Allocation constructor should not allocate memory
   EXPECT_TRUE(get_vma_allocation_count() == 0);
 
   std::vector<int64_t> sizes = {4, 4, 1};
@@ -464,11 +657,11 @@ TEST_F(
   vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
   vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
-  api::MemoryAllocation a_mem = allocate_memory_for(a);
+  api::Allocation a_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_mem);
-  api::MemoryAllocation b_mem = allocate_memory_for(b);
+  api::Allocation b_mem = allocate_memory_for(b);
   b.image().bind_allocation(b_mem);
-  api::MemoryAllocation c_mem = allocate_memory_for(c);
+  api::Allocation c_mem = allocate_memory_for(c);
   c.image().bind_allocation(c_mem);
 
   execute_and_check_add(a, b, c, 4.0f, 8.0f);
@@ -595,6 +788,92 @@ TEST(VulkanComputeGraphTest, test_values_string) {
   EXPECT_TRUE(stored == "hello, world");
 }
 
+TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> size_big = {7, 3, 5};
+  std::vector<int64_t> size_small = {};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(size_big, api::kFloat);
+  IOValueRef b = graph.add_input_tensor(size_small, api::kFloat);
+
+  IOValueRef out = {};
+
+  out.value = graph.add_tensor(size_big, api::kFloat);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    float val_a = i + 2.0f;
+    float val_b = i + 1.5f;
+    float val_c = val_a + val_b;
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, val_c);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_simple_graph_with_buffer) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> sizes = {7, 13, 19};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(sizes, api::kFloat, api::kBuffer);
+
+  IOValueRef out = {};
+
+  out.value = graph.add_tensor(sizes, api::kFloat, api::kBuffer);
+
+  auto addFn = VK_GET_OP_FN("aten.abs.default");
+  addFn(graph, {a.value, out.value, kDummyValueRef, kDummyValueRef});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    float val = -i + 2.0f;
+    float expected_val = std::abs(val);
+
+    fill_vtensor(graph, a, val);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, expected_val);
+    }
+  }
+}
+
 TEST(VulkanComputeGraphTest, test_simple_graph) {
   GraphConfig config;
   ComputeGraph graph(config);
@@ -647,6 +926,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
 
 TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   GraphConfig config;
+  config.enable_querypool = true;
   ComputeGraph graph(config);
 
   std::vector<int64_t> size_big = {8, 73, 62};
@@ -694,6 +974,11 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
     // Sanity check that the values are correct
     for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
       CHECK_VALUE(data_out, i, val_out);
+    }
+
+    if (graph.context()->querypool()) {
+      graph.context()->querypool().extract_results();
+      graph.context()->querypool().print_results();
     }
   }
 }
@@ -1188,6 +1473,145 @@ TEST(
   }
 }
 
+TEST(VulkanComputeGraphTest, test_etvk_copy_offset_int_node) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  int64_t n = 6;
+  int64_t c = 12;
+  int64_t h = 4;
+  int64_t w = 8;
+  api::GPUMemoryLayout memory_layout =
+      api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+
+  std::vector<int64_t> size = {n, c, h, w};
+
+  IOValueRef a = graph.add_input_tensor(size, api::kInt, memory_layout);
+
+  IOValueRef out = {};
+  out.value = graph.add_tensor(size, api::kInt, memory_layout);
+
+  // Notice that copy_node operates on in texture's x, y, z dimension. In the
+  // comment, we provide the cooresponding coordinate in nchw.
+
+  // src_offset is (n=0, c=4, h=1, w=1)
+  ValueRef src_offset_ref = graph.add_scalar_list<int64_t>({1, 1, 1});
+
+  // dst_offset is (n=1, c=8, h=2, w=0) in nchw coordinate
+  // Argument is {x, y, z}.
+  // x = 0 since w = 0
+  // y = 2 since h = 2
+  // z = c / 4 + 2 since
+  //   1. there c/4 planes per batch, n=1 means we are on the first batch;
+  //   2. +2 because c = 8, with channel packing it means two texels.
+  ValueRef dst_offset_ref = graph.add_scalar_list<int64_t>({0, 2, c / 4 + 2});
+
+  // range is (n=1, c=8, h=2, w=4)
+  // Argument is {x, y, z}.
+  // x = 4 since w = 4
+  // y = 2 since h = 2
+  // z = 2 since we are only copying 8 channels, hence 2 texel. n = 1 can be a
+  // bit misleading here, since it gives the impression that we are copying the
+  // entire channel. However, remember when we copy, we are trying to
+  // dst[dst_offset:dst_offset + range] = src[src_offset:src_offset + range],
+  // range must be non zero.
+  ValueRef range_ref = graph.add_scalar_list<int64_t>({4, 2, 2});
+
+  auto copyFn = VK_GET_OP_FN("etvk.copy_offset");
+  copyFn(
+      graph, {a.value, range_ref, src_offset_ref, dst_offset_ref, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  fill_vtensor(graph, a, 0, /*iota = */ true);
+
+  graph.execute();
+
+  EXTRACT_TENSOR(out);
+  EXTRACT_TENSOR(a);
+
+  // We will examine the results in the dst_range
+  // The value in the cooresponding coordinate should match between the source
+  // and destination tensor. We loop thru the range, calculate both the src and
+  // dst index using the offsets, and compare the values in the extracted
+  // vector. They should match.
+  int n_idx = 0;
+  // at each nested loop, index range from dst_offset to dst_offset + range
+
+  for (int c_idx = 0; c_idx < 8; c_idx++) {
+    for (int h_idx = 0; h_idx < 2; h_idx++) {
+      for (int w_idx = 0; w_idx < 4; w_idx++) {
+        auto dst_idx =
+            get_buf_idx(graph, out, {n_idx + 1, c_idx + 8, h_idx + 2, w_idx});
+        auto src_idx =
+            get_buf_idx(graph, a, {n_idx, c_idx + 4, h_idx + 1, w_idx + 1});
+
+        EXPECT_TRUE(data_out[dst_idx] == data_a[src_idx]);
+      }
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_etvk_copy_channel_offset_int_node) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  int64_t n = 2;
+  int64_t c = 12;
+  int64_t h = 4;
+  int64_t w = 8;
+  api::GPUMemoryLayout memory_layout =
+      api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+
+  std::vector<int64_t> size = {n, c, h, w};
+
+  IOValueRef a = graph.add_input_tensor(size, api::kFloat, memory_layout);
+
+  IOValueRef out = {};
+  out.value = graph.add_tensor(size, api::kFloat, memory_layout);
+
+  int64_t src_offset = 2;
+  int64_t dst_offset = 3;
+  int64_t range = 7;
+
+  ValueRef src_offset_ref = graph.add_scalar<int64_t>(src_offset);
+  ValueRef dst_offset_ref = graph.add_scalar<int64_t>(dst_offset);
+  ValueRef range_ref = graph.add_scalar<int64_t>(range);
+
+  auto copyFn = VK_GET_OP_FN("etvk.copy_channel_offset");
+  copyFn(
+      graph, {a.value, range_ref, src_offset_ref, dst_offset_ref, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  fill_vtensor(graph, a, 0.0f, true);
+
+  graph.execute();
+
+  EXTRACT_TENSOR(out);
+  EXTRACT_TENSOR(a);
+
+  for (int n_idx = 0; n_idx < n; n_idx++) {
+    for (int c_idx = 0; c_idx < range; c_idx++) {
+      for (int h_idx = 0; h_idx < h; h_idx++) {
+        for (int w_idx = 0; w_idx < w; w_idx++) {
+          auto src_idx =
+              get_buf_idx(graph, a, {n_idx, c_idx + src_offset, h_idx, w_idx});
+          auto dst_idx = get_buf_idx(
+              graph, out, {n_idx, c_idx + dst_offset, h_idx, w_idx});
+          EXPECT_TRUE(data_out[dst_idx] == data_a[src_idx]);
+        }
+      }
+    }
+  }
+}
+
 TEST(VulkanComputeGraphTest, test_view_change_packing) {
   std::vector<std::pair<api::GPUMemoryLayout, api::GPUMemoryLayout>>
       layout_pairs = {
@@ -1266,6 +1690,10 @@ void run_from_gpu_test(
       !api::context()->adapter_ptr()->has_16bit_storage()) {
     return;
   }
+  if ((dtype == api::kChar || dtype == api::kQInt8) &&
+      !api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
+    return;
+  }
   vTensor vten =
       vTensor(api::context(), sizes, dtype, storage_type, memory_layout);
 
@@ -1275,14 +1703,15 @@ void run_from_gpu_test(
 
   {
     api::PipelineBarrier pipeline_barrier{};
-    api::SpecVarList specialization_constants = {vten.gpu_memory_layout_int()};
+    api::SpecVarList specialization_constants = {vten.packed_dim_whcn_idx()};
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
-        vten.extents(),
+        vten.image_extents(),
         {4, 4, 4},
         specialization_constants,
         VK_NULL_HANDLE,
+        0,
         vten.image(
             pipeline_barrier,
             api::PipelineStage::COMPUTE,
@@ -1315,9 +1744,13 @@ void run_to_gpu_test(
       !api::context()->adapter_ptr()->has_16bit_storage()) {
     return;
   }
+  if ((dtype == api::kChar || dtype == api::kQInt8) &&
+      !api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
+    return;
+  }
 
   vTensor vten =
-      vTensor(api::context(), sizes, api::kFloat, storage_type, memory_layout);
+      vTensor(api::context(), sizes, dtype, storage_type, memory_layout);
 
   // Create and fill input staging buffer
   api::StorageBuffer staging_buffer_in(api::context(), dtype, vten.gpu_numel());
@@ -1379,13 +1812,20 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
       {3, 1, 7, 13},
   };
 
+  // These sizes are set such that the total number of elements is less than
+  // 128 which is the maximum representable value for int8.
+  std::vector<std::vector<int64_t>> to_test_int8 = {
+      // 2D sizes
+      {14, 7},
+      // 3D sizes
+      {3, 7, 5},
+      {4, 2, 11},
+      // 4D sizes
+      {3, 3, 3, 3},
+      {7, 1, 6, 3},
+  };
+
 #define RUN_TESTS(ctype, dtype)                                    \
-  run_from_gpu_test<ctype>(                                        \
-      sizes, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, dtype); \
-  run_from_gpu_test<ctype>(                                        \
-      sizes, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, dtype);    \
-  run_from_gpu_test<ctype>(                                        \
-      sizes, api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, dtype);   \
   run_to_gpu_test<ctype>(                                          \
       sizes, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, dtype); \
   run_to_gpu_test<ctype>(                                          \
@@ -1395,8 +1835,13 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
 
   for (auto& sizes : to_test) {
     RUN_TESTS(float, api::kFloat)
-    RUN_TESTS(c10::Half, api::kHalf)
+    RUN_TESTS(torch::executor::Half, api::kHalf)
   }
+
+  for (auto& sizes : to_test_int8) {
+    RUN_TESTS(int8_t, api::kChar);
+  }
+
 #undef RUN_TESTS
 }
 

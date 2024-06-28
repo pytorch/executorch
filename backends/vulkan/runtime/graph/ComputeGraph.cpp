@@ -56,7 +56,7 @@ ComputeGraph::ComputeGraph(GraphConfig config)
       execute_descriptor_counts_{},
       context_{new api::Context(
           api::runtime()->default_adapter_i(),
-          config_.contextConfig)},
+          config_.context_config)},
       shared_objects_{},
       values_{},
       param_ubos_{},
@@ -65,17 +65,17 @@ ComputeGraph::ComputeGraph(GraphConfig config)
       inputs_{},
       outputs_{} {
   // Ensure that descriptor counts are initialized to 0
-  prepack_descriptor_counts_.descriptorPoolMaxSets = 0;
-  prepack_descriptor_counts_.descriptorUniformBufferCount = 0;
-  prepack_descriptor_counts_.descriptorStorageBufferCount = 0;
-  prepack_descriptor_counts_.descriptorCombinedSamplerCount = 0;
-  prepack_descriptor_counts_.descriptorStorageImageCount = 0;
+  prepack_descriptor_counts_.descriptor_pool_max_sets = 0;
+  prepack_descriptor_counts_.descriptor_uniform_buffer_count = 0;
+  prepack_descriptor_counts_.descriptor_storage_buffer_count = 0;
+  prepack_descriptor_counts_.descriptor_combined_sampler_count = 0;
+  prepack_descriptor_counts_.descriptor_storage_image_count = 0;
 
-  execute_descriptor_counts_.descriptorPoolMaxSets = 0;
-  execute_descriptor_counts_.descriptorUniformBufferCount = 0;
-  execute_descriptor_counts_.descriptorStorageBufferCount = 0;
-  execute_descriptor_counts_.descriptorCombinedSamplerCount = 0;
-  execute_descriptor_counts_.descriptorStorageImageCount = 0;
+  execute_descriptor_counts_.descriptor_pool_max_sets = 0;
+  execute_descriptor_counts_.descriptor_uniform_buffer_count = 0;
+  execute_descriptor_counts_.descriptor_storage_buffer_count = 0;
+  execute_descriptor_counts_.descriptor_combined_sampler_count = 0;
+  execute_descriptor_counts_.descriptor_storage_image_count = 0;
 
   context_->set_cmd(/*reusable = */ true);
 }
@@ -89,44 +89,17 @@ ComputeGraph::~ComputeGraph() {
   context_->flush();
 }
 
-void ComputeGraph::update_descriptor_counts(
-    const api::ShaderInfo& shader_info,
-    bool execute) {
-  api::DescriptorPoolConfig* config =
-      execute ? &execute_descriptor_counts_ : &prepack_descriptor_counts_;
-
-  config->descriptorPoolMaxSets += 1;
-  for (const VkDescriptorType arg_type : shader_info.kernel_layout) {
-    switch (arg_type) {
-      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-        config->descriptorUniformBufferCount += 1;
-        break;
-      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-        config->descriptorStorageBufferCount += 1;
-        break;
-      case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-        config->descriptorCombinedSamplerCount += 1;
-        break;
-      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-        config->descriptorStorageImageCount += 1;
-        break;
-      default:
-        VK_THROW("Unsupported descriptor type!");
-    }
-  }
-}
-
 api::StorageType ComputeGraph::suggested_storage_type() {
-  if (config_.enableStorageTypeOverride) {
-    return config_.storageTypeOverride;
+  if (config_.enable_storage_type_override) {
+    return config_.storage_type_override;
   }
   return api::kTexture3D;
 }
 
 api::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
     const std::vector<int64_t>& sizes) {
-  if (config_.enableMemoryLayoutOverride) {
-    return config_.memoryLayoutOverride;
+  if (config_.enable_memory_layout_override) {
+    return config_.memory_layout_override;
   }
   if (sizes.size() < 3) {
     return api::kWidthPacked;
@@ -148,22 +121,22 @@ void ComputeGraph::check_no_active_value_ptrs() {
       "invalidated.");
 }
 
-std::vector<int64_t> ComputeGraph::get_sizes_of(ValueRef idx) {
-  Value& val = values_.at(idx);
+std::vector<int64_t> ComputeGraph::sizes_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
   if (val.isTensor()) {
-    return val.toTensor().sizes();
+    return val.toConstTensor().sizes();
   } else if (val.isTensorRef()) {
-    return val.toTensorRef().sizes;
+    return val.toConstTensorRef().sizes;
   }
   VK_THROW("Could not get sizes of value with type ", val.type());
 }
 
-api::ScalarType ComputeGraph::get_dtype_of(ValueRef idx) {
-  Value& val = values_.at(idx);
+api::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
+  const Value& val = values_.at(idx);
   if (val.isTensor()) {
-    return val.toTensor().dtype();
+    return val.toConstTensor().dtype();
   } else if (val.isTensorRef()) {
-    return val.toTensorRef().dtype;
+    return val.toConstTensorRef().dtype;
   }
   VK_THROW("Could not get dtype of value with type ", val.type());
 }
@@ -190,6 +163,19 @@ ValueRef ComputeGraph::add_tensor(
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const api::ScalarType dtype,
+    const api::StorageType storage_type,
+    const int64_t shared_object_idx) {
+  return add_tensor(
+      sizes,
+      dtype,
+      storage_type,
+      suggested_memory_layout(sizes),
+      shared_object_idx);
+}
+
+ValueRef ComputeGraph::add_tensor(
+    const std::vector<int64_t>& sizes,
+    const api::ScalarType dtype,
     const api::GPUMemoryLayout memory_layout,
     const int64_t shared_object_idx) {
   return add_tensor(
@@ -200,14 +186,13 @@ ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
     const api::StorageType storage_type,
     const api::GPUMemoryLayout memory_layout) {
-  return add_tensor(
-      get_sizes_of(idx), get_dtype_of(idx), storage_type, memory_layout);
+  return add_tensor(sizes_of(idx), dtype_of(idx), storage_type, memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
     const api::GPUMemoryLayout memory_layout) {
-  return add_tensor(get_sizes_of(idx), get_dtype_of(idx), memory_layout);
+  return add_tensor(sizes_of(idx), dtype_of(idx), memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor(
@@ -280,7 +265,12 @@ ValueRef ComputeGraph::set_output_tensor(
     api::ScalarType dtype = get_tensor(idx)->dtype();
     size_t gpu_numel = get_tensor(idx)->gpu_numel();
     ValueRef staging_idx = add_staging(dtype, gpu_numel);
-    add_tensor_to_staging_node(*this, idx, staging_idx);
+    // We only run this when the tensor is non-empty.  When the underlying
+    // tensor is empty (e.g. gpu_numel == 0), we do not allocate a VkImage to
+    // tensor, we will not be able to bind the node for execution.
+    if (gpu_numel > 0) {
+      add_tensor_to_staging_node(*this, idx, staging_idx);
+    }
     outputs_.push_back({idx, staging_idx});
     return staging_idx;
   }
@@ -293,6 +283,70 @@ SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {
     shared_objects_.resize(static_cast<size_t>(idx + 1));
   }
   return shared_objects_.at(idx);
+}
+
+void ComputeGraph::update_descriptor_counts(
+    const api::ShaderInfo& shader_info,
+    bool execute) {
+  api::DescriptorPoolConfig* config =
+      execute ? &execute_descriptor_counts_ : &prepack_descriptor_counts_;
+
+  config->descriptor_pool_max_sets += 1;
+  for (const VkDescriptorType arg_type : shader_info.kernel_layout) {
+    switch (arg_type) {
+      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+        config->descriptor_uniform_buffer_count += 1;
+        break;
+      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        config->descriptor_storage_buffer_count += 1;
+        break;
+      case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+        config->descriptor_combined_sampler_count += 1;
+        break;
+      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+        config->descriptor_storage_image_count += 1;
+        break;
+      default:
+        VK_THROW("Unsupported descriptor type!");
+    }
+  }
+}
+
+api::utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
+  if (is_buffer_storage(idx)) {
+    return {uint32_t(texel_numel_of(idx)), 1u, 1u};
+  }
+  return image_extents_of(idx);
+}
+
+api::utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
+  if (config_.enable_local_wg_size_override) {
+    return config_.local_wg_size_override;
+  }
+
+  if (is_buffer_storage(idx)) {
+    return {64u, 1u, 1u};
+  }
+
+  const api::utils::uvec3 image_extents = image_extents_of(idx);
+  api::utils::uvec3 local_group_size = {4, 4, 4};
+
+  if (image_extents.data[2u] == 1) {
+    if (image_extents.data[1u] == 1) {
+      local_group_size.data[0u] = 64;
+      local_group_size.data[1u] = 1;
+      local_group_size.data[2u] = 1;
+    } else if (image_extents.data[1u] < 8) {
+      local_group_size.data[0u] = 16;
+      local_group_size.data[1u] = 4;
+      local_group_size.data[2u] = 1;
+    } else {
+      local_group_size.data[0u] = 8;
+      local_group_size.data[1u] = 8;
+      local_group_size.data[2u] = 1;
+    }
+  }
+  return local_group_size;
 }
 
 void ComputeGraph::copy_into_staging(
@@ -319,15 +373,15 @@ void ComputeGraph::prepare() {
       std::max(                               \
           execute_descriptor_counts_.field,   \
           prepack_descriptor_counts_.field) * \
-      config_.descriptorPoolSafetyFactor))
+      config_.descriptor_pool_safety_factor))
 
-  uint32_t max_sets = MERGE_FIELD(descriptorPoolMaxSets);
+  uint32_t max_sets = MERGE_FIELD(descriptor_pool_max_sets);
   api::DescriptorPoolConfig config{
       max_sets,
-      std::max(MERGE_FIELD(descriptorUniformBufferCount), max_sets),
-      std::max(MERGE_FIELD(descriptorStorageBufferCount), max_sets),
-      std::max(MERGE_FIELD(descriptorCombinedSamplerCount), max_sets),
-      std::max(MERGE_FIELD(descriptorStorageImageCount), max_sets),
+      std::max(MERGE_FIELD(descriptor_uniform_buffer_count), max_sets),
+      std::max(MERGE_FIELD(descriptor_storage_buffer_count), max_sets),
+      std::max(MERGE_FIELD(descriptor_combined_sampler_count), max_sets),
+      std::max(MERGE_FIELD(descriptor_storage_image_count), max_sets),
       1u,
   };
 
@@ -335,6 +389,10 @@ void ComputeGraph::prepare() {
     context_->descriptor_pool().init(config);
   }
 #undef MERGE_FIELD
+
+  if (config_.enable_querypool) {
+    context_->initialize_querypool();
+  }
 }
 
 void ComputeGraph::encode_prepack() {
@@ -355,6 +413,8 @@ void ComputeGraph::prepack() const {
 void ComputeGraph::encode_execute() {
   context_->flush();
   context_->set_cmd(/*reusable = */ true);
+
+  context_->cmd_reset_querypool();
 
   for (SharedObject& shared_object : shared_objects_) {
     shared_object.allocate(this);

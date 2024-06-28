@@ -57,7 +57,7 @@ class TestResNet18(unittest.TestCase):
         self._test_exported_resnet(Tester(torchvision.models.resnet18(), self.inputs))
 
     @unittest.skip("T187799178: Debugging Numerical Issues with Calibration")
-    def test_qs8_resnet18(self):
+    def _test_qs8_resnet18(self):
         quantized_tester = Tester(torchvision.models.resnet18(), self.inputs).quantize()
         self._test_exported_resnet(quantized_tester)
 
@@ -74,7 +74,7 @@ class TestResNet18(unittest.TestCase):
         )
 
     @unittest.skip("T187799178: Debugging Numerical Issues with Calibration")
-    def test_qs8_resnet18_dynamic(self):
+    def _test_qs8_resnet18_dynamic(self):
         self._test_exported_resnet(
             Tester(self.DynamicResNet(), self.inputs, self.dynamic_shapes).quantize()
         )

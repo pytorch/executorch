@@ -193,6 +193,27 @@ static Kernel prim_ops[] = {
           }
         }),
 
+    // executorch_prim::sym_float.Scalar(Scalar) -> Scalar
+    Kernel(
+        "executorch_prim::sym_float.Scalar",
+        [](RuntimeContext& context, EValue** stack) {
+          // can't use macro because of custom casting behavior
+          // TODO: Now that we are reliably generating conversion operators,
+          // we can remove the mixed type handling for other operators
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isInt()) {
+            out = EValue(static_cast<double>(a.toInt()));
+          } else if (a.isDouble()) {
+            // TODO: This should be impossible
+            out = EValue(a.toDouble());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+          }
+        }),
+
     // executorch_prim::eq.Scalar(Scalar, Scalar) -> bool
     Kernel(
         "executorch_prim::eq.Scalar",
@@ -237,6 +258,17 @@ static Kernel prim_ops[] = {
           EValue& b = *stack[1];
           EValue& out = *stack[2];
           out = EValue(a.toInt() / b.toInt());
+        }),
+
+    // executorch_prim::mod.int(int, int) -> int
+    Kernel(
+        "executorch_prim::mod.int",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          out = EValue(a.toInt() % b.toInt());
         }),
 
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor

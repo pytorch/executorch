@@ -16,6 +16,55 @@
 namespace torch {
 namespace executor {
 namespace native {
+namespace {
+
+template <
+    bool can_cast,
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct AddInner;
+
+template <
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct AddInner<true, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT> {
+  static void
+  run(const Tensor& a, const Tensor& b, CTYPE_IN alpha_val, Tensor& out) {
+    apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+        // NOLINTNEXTLINE(facebook-hte-ConstantArgumentPassByValue)
+        [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {
+          CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+          CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+          CTYPE_IN value = a_casted + alpha_val * b_casted;
+
+          return static_cast<CTYPE_OUT>(value);
+        },
+        a,
+        b,
+        out);
+  }
+};
+
+template <typename CTYPE_IN>
+struct ReportCanCastBug {
+  static void run(const Tensor&, const Tensor&, CTYPE_IN, Tensor&) {
+    ET_DCHECK_MSG(false, "BUG: canCast should have been checked above");
+  }
+};
+
+template <
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_IN,
+    typename CTYPE_OUT>
+struct AddInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
+    : public ReportCanCastBug<CTYPE_IN> {};
+
+} // namespace
 
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
@@ -69,26 +118,20 @@ Tensor& opt_add_out(
 
     ET_SWITCH_REALHB_TYPES(a_type, ctx, "add.out", CTYPE_A, [&]() {
       ET_SWITCH_REALHB_TYPES(b_type, ctx, "add.out", CTYPE_B, [&]() {
-        ET_SWITCH_REALB_TYPES(common_type, ctx, "add.out", CTYPE_IN, [&]() {
-          ET_SWITCH_REALHB_TYPES(out_type, ctx, "add.out", CTYPE_OUT, [&]() {
-            CTYPE_IN alpha_val;
-            ET_KERNEL_CHECK(
-                ctx,
-                utils::extract_scalar(alpha, &alpha_val),
-                InvalidArgument, );
+        using CTYPE_IN = typename torch::executor::
+            promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
+        ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
+        ET_SWITCH_REALHB_TYPES(out_type, ctx, "add.out", CTYPE_OUT, [&]() {
+          CTYPE_IN alpha_val;
+          ET_KERNEL_CHECK(
+              ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
 
-            apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-                [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {
-                  CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                  CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                  CTYPE_IN value = a_casted + alpha_val * b_casted;
-
-                  return static_cast<CTYPE_OUT>(value);
-                },
-                a,
-                b,
-                out);
-          });
+          AddInner<
+              can_cast<CTYPE_IN, CTYPE_OUT>::value,
+              CTYPE_A,
+              CTYPE_B,
+              CTYPE_IN,
+              CTYPE_OUT>::run(a, b, alpha_val, out);
         });
       });
     });

@@ -13,6 +13,7 @@ EXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN:-OFF}"
 cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="${ANDROID_ABI}" \
+  -DANDROID_PLATFORM=android-23 \
   -DEXECUTORCH_BUILD_XNNPACK=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
@@ -32,6 +33,7 @@ cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config Releas
 cmake examples/models/llama2 \
          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
          -DANDROID_ABI="$ANDROID_ABI" \
+         -DANDROID_PLATFORM=android-23 \
          -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
          -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
          -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
@@ -45,6 +47,7 @@ cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}" --config 
 cmake extension/android \
   -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI="${ANDROID_ABI}" \
+  -DANDROID_PLATFORM=android-23 \
   -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
   -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
@@ -53,6 +56,16 @@ cmake extension/android \
 
 cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config Release
 
-JNI_LIBS_PATH="examples/demo-apps/android/LlamaDemo/app/src/main/jniLibs"
-mkdir -p "${JNI_LIBS_PATH}/${ANDROID_ABI}"
-cp "${CMAKE_OUT}"/extension/android/libexecutorch_llama_jni.so "${JNI_LIBS_PATH}/${ANDROID_ABI}/"
+BUILD_AAR_DIR="$(mktemp -d)"
+mkdir -p "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}" "${BUILD_AAR_DIR}/libs"
+cp "${CMAKE_OUT}"/extension/android/libexecutorch_llama_jni.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}"
+cp extension/android/build/libs/executorch.jar "${BUILD_AAR_DIR}/libs"
+echo \<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" \
+  package=\"org.pytorch.executorch\"\> \
+  \<uses-sdk android:minSdkVersion=\"19\" /\> \
+  \</manifest\> > "${BUILD_AAR_DIR}/AndroidManifest.xml"
+pushd "${BUILD_AAR_DIR}"
+zip -r executorch-llama.aar libs jni/${ANDROID_ABI} AndroidManifest.xml
+popd
+mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
+mv "${BUILD_AAR_DIR}/executorch-llama.aar" examples/demo-apps/android/LlamaDemo/app/libs

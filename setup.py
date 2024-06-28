@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -89,6 +90,11 @@ class ShouldBuild:
     @property
     def llama_custom_ops(cls) -> bool:
         return cls._is_env_enabled("EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True)
+
+    @classmethod
+    @property
+    def flatc(cls) -> bool:
+        return cls._is_env_enabled("EXECUTORCH_BUILD_FLATC", default=True)
 
 
 class Version:
@@ -478,6 +484,7 @@ class CustomBuild(build):
             cmake_args += [
                 "-DEXECUTORCH_BUILD_PYBIND=ON",
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
+                "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
@@ -549,9 +556,12 @@ class CustomBuild(build):
 def get_ext_modules() -> list[Extension]:
     """Returns the set of extension modules to build."""
 
-    ext_modules = [
-        BuiltFile("third-party/flatbuffers/flatc", "executorch/data/bin/"),
-    ]
+    ext_modules = []
+    if ShouldBuild.flatc:
+        ext_modules.append(
+            BuiltFile("third-party/flatbuffers/flatc", "executorch/data/bin/")
+        )
+
     if ShouldBuild.pybindings:
         ext_modules.append(
             # Install the prebuilt pybindings extension wrapper for the runtime,

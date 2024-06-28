@@ -18,6 +18,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNMaxPooling2d,
     XNode,
 )
+from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_FLAG_KEEP_DIMS
 
 
 @register_node_visitor
@@ -80,7 +81,7 @@ class MaxPooling2d(NodeVisitor):
             kwargs["dilation_height"] = dilation[0]
             kwargs["dilation_width"] = dilation[1]
 
-        kwargs["flags"] = 0
+        kwargs["flags"] = XNN_FLAG_KEEP_DIMS
 
         ser_node = XNode(
             xnode_union=XNNMaxPooling2d(

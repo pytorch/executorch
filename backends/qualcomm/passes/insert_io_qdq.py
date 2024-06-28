@@ -47,7 +47,9 @@ class InsertIOQDQ(ExportPass):
             if name == "out_dtype":
                 continue
             value = quant_attrs[name]
-            if type(arg_schema.type) == torch.tensor and type(value) in [int, float]:
+            if isinstance(arg_schema.type, torch.tensor) and (
+                isinstance(value, int) or isinstance(value, float)
+            ):
                 value = torch.tensor(value)
             ret.append(value)
         return ret

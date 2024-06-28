@@ -170,57 +170,57 @@ class OpMaxOutTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(max, tf_in.make({2, 3, 1}, {4, 4, 4, 4, 4, 4}));
     EXPECT_TENSOR_EQ(max_indices, tf_long.make({2, 3, 1}, {3, 0, 2, 0, 3, 2}));
   }
-
-  template <>
-  void test_max_out_dtype<ScalarType::Bool>() {
-    TensorFactory<ScalarType::Bool> tf_bool;
-    TensorFactory<ScalarType::Long> tf_long;
-    // clang-format off
-    Tensor self = tf_bool.make(
-      {2, 3, 4},
-      {
-        true,  false, true,  false,
-        false, false, false, false,
-        false, true,  true,  false,
-
-        false, false, true,  false,
-        false, false, false, true,
-        true,  true,  true,  true,
-      });
-    // clang-format on
-
-    Tensor max = tf_bool.zeros({2, 3, 1});
-    Tensor max_indices = tf_long.zeros({2, 3, 1});
-
-    // +/-inf and nan should work
-    op_max_dim_max(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices);
-    // clang-format off
-    EXPECT_TENSOR_CLOSE(
-        max, tf_bool.make(
-          {2, 3, 1},
-          {
-            true,
-            false,
-            true,
-
-            true,
-            true,
-            true
-          }));
-    EXPECT_TENSOR_EQ(max_indices, tf_long.make(
-      {2, 3, 1},
-      {
-        0,
-        0,
-        1,
-
-        2,
-        3,
-        0
-      }));
-    // clang-format on
-  }
 };
+
+template <>
+void OpMaxOutTest::test_max_out_dtype<ScalarType::Bool>() {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  TensorFactory<ScalarType::Long> tf_long;
+  // clang-format off
+  Tensor self = tf_bool.make(
+    {2, 3, 4},
+    {
+      true,  false, true,  false,
+      false, false, false, false,
+      false, true,  true,  false,
+
+      false, false, true,  false,
+      false, false, false, true,
+      true,  true,  true,  true,
+    });
+  // clang-format on
+
+  Tensor max = tf_bool.zeros({2, 3, 1});
+  Tensor max_indices = tf_long.zeros({2, 3, 1});
+
+  // +/-inf and nan should work
+  op_max_dim_max(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices);
+  // clang-format off
+  EXPECT_TENSOR_CLOSE(
+      max, tf_bool.make(
+        {2, 3, 1},
+        {
+          true,
+          false,
+          true,
+
+          true,
+          true,
+          true
+        }));
+  EXPECT_TENSOR_EQ(max_indices, tf_long.make(
+    {2, 3, 1},
+    {
+      0,
+      0,
+      1,
+
+      2,
+      3,
+      0
+    }));
+  // clang-format on
+}
 
 TEST_F(OpMaxOutTest, MismatchedDimensionsDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {

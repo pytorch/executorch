@@ -11,117 +11,89 @@
 
 namespace vkcompute {
 
-namespace {
-
-/*
- * When stored on the GPU, one dimension will be aligned to the next multiple of
- * 4 in order to take advantage of vec4 data types. The dimension that is
- * packed is denoted by the GPUMemoryLayout. This function adjusts one of
- * the dimensions based on the desired memory format and storage type and
- * returns a sizes array describing the dimensions of the memory used to store
- * the tensor data on the GPU.
- */
-std::vector<int64_t> calc_gpu_sizes(
+std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
     const api::GPUMemoryLayout memory_layout,
-    const api::StorageType storage_type) {
-  std::vector<int64_t> gpu_sizes;
-  if (storage_type == api::kBuffer) {
-    gpu_sizes.resize(sizes.size());
-    for (size_t i = 0; i < sizes.size(); i++) {
-      gpu_sizes.at(i) = sizes.at(i);
+    const bool texel_strides) {
+  const int64_t dim_offset =
+      api::to_packed_dim_nchw_offset<int64_t>(memory_layout);
+  const int64_t last_dim = sizes.size() - dim_offset;
+  VK_CHECK_COND(last_dim >= 0);
+
+  size_t ndim = sizes.size();
+  std::vector<int64_t> strides(ndim);
+
+  const int64_t last_dim_size = texel_strides
+      ? api::utils::div_up_4(sizes.at(last_dim))
+      : sizes.at(last_dim);
+
+  for (int stride_d = ndim - 1; stride_d >= 0; stride_d--) {
+    strides.at(stride_d) = 1;
+    if (stride_d == last_dim) {
+      continue;
+    }
+    strides.at(stride_d) = last_dim_size;
+    for (int size_d = ndim - 1; size_d > stride_d; size_d--) {
+      if (size_d != last_dim) {
+        strides.at(stride_d) *= sizes.at(size_d);
+      }
     }
   }
-  // For texture storage, tensors are typically stored using 3D image textures.
-  // Batches are stacked along the depth dimension. To represent the physical
-  // 3 dimensionality of the image texture (with concatenated batches) GPU sizes
-  // will be fixed to 4 dimensions when using texture storage.
-  else {
-    VK_CHECK_COND(
-        sizes.size() >= 0 && sizes.size() <= 4,
-        "Texture storage only valid for 0 <= ndim <= 4, received: ",
-        sizes.size());
+  return strides;
+}
 
-    gpu_sizes.resize(4);
-    gpu_sizes.at(0) = api::utils::val_at(-4, sizes);
-    gpu_sizes.at(1) = api::utils::val_at(-3, sizes);
-    gpu_sizes.at(2) = api::utils::val_at(-2, sizes);
-    gpu_sizes.at(3) = api::utils::val_at(-1, sizes);
+std::vector<int64_t> calculate_padded_sizes(
+    const std::vector<int64_t>& sizes,
+    const api::GPUMemoryLayout memory_layout) {
+  int64_t ndim = sizes.size();
+  if (ndim == 0) {
+    ndim = 1;
   }
 
-  size_t ndim = gpu_sizes.size();
+  // Tensor sizes will be unsqueezed up to the next multiple of 4
+  const int64_t ndim_up4 = api::utils::align_up_4(ndim);
+  std::vector<int64_t> padded_sizes(ndim_up4);
+  for (int64_t i = 0; i < ndim_up4; ++i) {
+    padded_sizes.at(i) = api::utils::val_at(i - ndim_up4, sizes);
+  }
+
+  // Pad the packed dim to the next multiple of 4.
+  const int64_t dim_offset =
+      api::to_packed_dim_nchw_offset<int64_t>(memory_layout);
+  const int64_t padded_dim_size = api::utils::val_at(-dim_offset, sizes);
+  padded_sizes.at(ndim_up4 - dim_offset) =
+      api::utils::align_up_4(padded_dim_size);
+
+  return padded_sizes;
+}
+
+api::utils::uvec3 calculate_image_extents(
+    const std::vector<int64_t>& padded_sizes,
+    const api::GPUMemoryLayout memory_layout) {
+  VK_CHECK_COND(padded_sizes.size() == 4);
+
+  uint32_t N = api::utils::safe_downcast<uint32_t>(padded_sizes.at(0));
+  uint32_t C = api::utils::safe_downcast<uint32_t>(padded_sizes.at(1));
+  uint32_t H = api::utils::safe_downcast<uint32_t>(padded_sizes.at(2));
+  uint32_t W = api::utils::safe_downcast<uint32_t>(padded_sizes.at(3));
+
   switch (memory_layout) {
     case api::kWidthPacked:
-      if (ndim >= 1) {
-        gpu_sizes.at(ndim - 1) =
-            api::utils::align_up(api::utils::val_at(-1, sizes), INT64_C(4));
-      }
+      VK_CHECK_COND(W % 4 == 0);
+      W /= 4;
       break;
-
     case api::kHeightPacked:
-      if (ndim >= 2) {
-        gpu_sizes.at(ndim - 2) =
-            api::utils::align_up(api::utils::val_at(-2, sizes), INT64_C(4));
-      }
+      VK_CHECK_COND(H % 4 == 0);
+      H /= 4;
       break;
-
     case api::kChannelsPacked:
-      if (ndim >= 3) {
-        gpu_sizes.at(ndim - 3) =
-            api::utils::align_up(api::utils::val_at(-3, sizes), INT64_C(4));
-      }
+      VK_CHECK_COND(C % 4 == 0);
+      C /= 4;
       break;
   }
 
-  return gpu_sizes;
+  return {W, H, C * N};
 }
-
-/*
- * Creates a uvec3 denoting the extents of the image texture that will be
- * created to store a tensor of a given size.
- */
-api::utils::uvec3 create_image_extents(
-    const std::vector<int64_t>& gpu_sizes,
-    const api::StorageType storage_type,
-    const api::GPUMemoryLayout memory_layout) {
-  size_t ndim = gpu_sizes.size();
-
-  if (storage_type == api::kBuffer) {
-    // image extents do not apply to buffer storage
-    return {0u, 0u, 0u};
-  } else {
-    VK_CHECK_COND(
-        ndim >= 1 && ndim <= 4,
-        "Texture storage only valid for 1 <= ndim <= 4!");
-
-    using namespace api::utils;
-    uint32_t width = safe_downcast<uint32_t>(val_at(-1, gpu_sizes));
-    uint32_t height = safe_downcast<uint32_t>(val_at(-2, gpu_sizes));
-    uint32_t channels = safe_downcast<uint32_t>(val_at(-3, gpu_sizes));
-    uint32_t batch = safe_downcast<uint32_t>(val_at(-4, gpu_sizes));
-
-    switch (memory_layout) {
-      case api::kWidthPacked:
-        VK_CHECK_COND(width % 4 == 0, "Width must be divisible by 4!");
-        width /= 4;
-        break;
-      case api::kHeightPacked:
-        VK_CHECK_COND(height % 4 == 0, "Height must be divisible by 4!");
-        height /= 4;
-        break;
-      case api::kChannelsPacked:
-        VK_CHECK_COND(channels % 4 == 0, "Channels must be divisible by 4!");
-        channels /= 4;
-        break;
-      default:
-        VK_THROW("Invalid memory format used!");
-    }
-
-    return {width, height, batch * channels};
-  }
-}
-
-} // namespace
 
 //
 // vTensor
@@ -138,24 +110,26 @@ vTensor::vTensor(
       memory_layout_(memory_layout),
       // Calculate sizes and strides
       sizes_(sizes.begin(), sizes.end()),
-      gpu_sizes_{calc_gpu_sizes(sizes, memory_layout_, storage_type)},
+      padded_sizes_{calculate_padded_sizes(sizes, memory_layout_)},
       texture_limits_{{0, 0, 0}},
       // Utility Uniform Buffers that can be passed to shaders as arguments
       sizes_uniform_(),
       texture_limits_uniform_(),
+      texel_strides_uniform_(),
+      ntexels_uniform_(),
       // Construct Tensor storage
       storage_(
           context,
           storage_type,
           memory_layout_,
-          gpu_sizes_,
+          padded_sizes_,
           dtype_,
           allocate_memory) {
   if (storage_type != api::kBuffer) {
     texture_limits_.limits = api::utils::ivec3{
-        api::utils::safe_downcast<int32_t>(storage_.extents_.data[0]),
-        api::utils::safe_downcast<int32_t>(storage_.extents_.data[1]),
-        api::utils::safe_downcast<int32_t>(storage_.extents_.data[2])};
+        api::utils::safe_downcast<int32_t>(storage_.image_extents_.data[0]),
+        api::utils::safe_downcast<int32_t>(storage_.image_extents_.data[1]),
+        api::utils::safe_downcast<int32_t>(storage_.image_extents_.data[2])};
   }
 
   if (dtype == api::kHalf) {
@@ -212,6 +186,24 @@ const api::BufferBindInfo vTensor::texture_limits_ubo() {
   return api::BufferBindInfo(texture_limits_uniform_.buffer());
 }
 
+const api::BufferBindInfo vTensor::texel_strides_ubo() {
+  if (!texel_strides_uniform_.buffer()) {
+    texel_strides_uniform_ = api::UniformParamsBuffer(
+        storage_.context_,
+        api::utils::make_whcn_ivec4(
+            calculate_strides(padded_sizes_, memory_layout_)));
+  }
+  return api::BufferBindInfo(texel_strides_uniform_.buffer());
+}
+
+const api::BufferBindInfo vTensor::ntexels_ubo() {
+  if (!ntexels_uniform_.buffer()) {
+    ntexels_uniform_ =
+        api::UniformParamsBuffer(storage_.context_, texel_numel());
+  }
+  return api::BufferBindInfo(ntexels_uniform_.buffer());
+}
+
 VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
   switch (storage_type()) {
     case api::kBuffer:
@@ -234,7 +226,7 @@ VkMemoryRequirements vTensor::get_memory_requirements() const {
   return {};
 }
 
-void vTensor::bind_allocation(const api::MemoryAllocation& allocation) {
+void vTensor::bind_allocation(const api::Allocation& allocation) {
   switch (storage_type()) {
     case api::kBuffer:
       storage_.buffer_.bind_allocation(allocation);
@@ -248,19 +240,18 @@ void vTensor::bind_allocation(const api::MemoryAllocation& allocation) {
 
 void vTensor::update_size_metadata(const std::vector<int64_t>& new_sizes) {
   sizes_ = new_sizes;
-  gpu_sizes_ = calc_gpu_sizes(sizes_, memory_layout_, storage_type());
+  padded_sizes_ = calculate_padded_sizes(sizes_, memory_layout_);
 
-  if (storage_type() != api::kBuffer) {
-    // Calculate the extents of the image texture that would have been required
-    // for a tensor of the new sizes.
-    api::utils::uvec3 virtual_extents =
-        create_image_extents(gpu_sizes_, storage_type(), memory_layout_);
-    // Update the texture limits to reflect the new virtual extents.
-    texture_limits_.limits = api::utils::ivec3{
-        api::utils::safe_downcast<int32_t>(virtual_extents.data[0]),
-        api::utils::safe_downcast<int32_t>(virtual_extents.data[1]),
-        api::utils::safe_downcast<int32_t>(virtual_extents.data[2])};
-  }
+  // Calculate the extents of the image texture that would have been required
+  // for a tensor of the new sizes.
+  api::utils::uvec3 virtual_extents =
+      calculate_image_extents(padded_sizes_, memory_layout_);
+
+  // Update the texture limits to reflect the new virtual extents.
+  texture_limits_.limits = api::utils::ivec3{
+      api::utils::safe_downcast<int32_t>(virtual_extents.data[0]),
+      api::utils::safe_downcast<int32_t>(virtual_extents.data[1]),
+      api::utils::safe_downcast<int32_t>(virtual_extents.data[2])};
 
   if (sizes_uniform_.buffer()) {
     sizes_uniform_.update(api::utils::make_whcn_ivec4(sizes_));
@@ -268,26 +259,35 @@ void vTensor::update_size_metadata(const std::vector<int64_t>& new_sizes) {
   if (texture_limits_uniform_.buffer()) {
     texture_limits_uniform_.update(texture_limits_);
   }
+  if (texel_strides_uniform_.buffer()) {
+    texel_strides_uniform_.update(api::utils::make_whcn_ivec4(
+        calculate_strides(padded_sizes_, memory_layout_)));
+  }
+  if (ntexels_uniform_.buffer()) {
+    ntexels_uniform_.update(texel_numel());
+  }
 }
 
 void vTensor::reallocate(const std::vector<int64_t>& new_sizes) {
   update_size_metadata(new_sizes);
   storage_.discard_and_reallocate(
-      calc_gpu_sizes(new_sizes, memory_layout_, storage_type()),
+      calculate_padded_sizes(new_sizes, memory_layout_),
       memory_layout_,
       dtype_);
 }
 
 void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
-  // For texture storage check that the current texture is large enough for the
-  // new sizes of the tensor.
   if (storage_type() != api::kBuffer) {
+    // For texture storage check that the current texture is large enough for
+    // the new sizes of the tensor.
     api::utils::uvec3 virtual_extents =
-        create_image_extents(gpu_sizes_, storage_type(), memory_layout_);
+        calculate_image_extents(padded_sizes_, memory_layout_);
 
-    bool valid_resize = virtual_extents.data[0] <= extents().data[0];
-    valid_resize = valid_resize && virtual_extents.data[1] <= extents().data[1];
-    valid_resize = valid_resize && virtual_extents.data[2] <= extents().data[2];
+    bool valid_resize = virtual_extents.data[0] <= image_extents().data[0];
+    valid_resize =
+        valid_resize && virtual_extents.data[1] <= image_extents().data[1];
+    valid_resize =
+        valid_resize && virtual_extents.data[2] <= image_extents().data[2];
 
     VK_CHECK_COND(
         valid_resize,
@@ -303,7 +303,7 @@ void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
 
 api::VulkanImage allocate_image(
     api::Context* const context_ptr,
-    api::utils::uvec3& extents,
+    api::utils::uvec3& image_extents,
     const api::StorageType storage_type,
     const VkFormat image_format,
     const bool allocate_memory) {
@@ -336,7 +336,7 @@ api::VulkanImage allocate_image(
   VkSampler sampler = adapter_ptr->sampler_cache().retrieve(sampler_props);
 
   return adapter_ptr->vma().create_image(
-      api::create_extent3d(extents),
+      api::create_extent3d(image_extents),
       image_format,
       image_type,
       image_view_type,
@@ -370,17 +370,16 @@ vTensorStorage::vTensorStorage(
     api::Context* const context,
     const api::StorageType storage_type,
     const api::GPUMemoryLayout gpu_memory_layout,
-    const std::vector<int64_t>& gpu_sizes,
+    const std::vector<int64_t>& padded_sizes,
     const api::ScalarType dtype,
     const bool allocate_memory)
     : context_(context),
       storage_type_{storage_type},
-      extents_(
-          create_image_extents(gpu_sizes, storage_type, gpu_memory_layout)),
-      buffer_length_{api::utils::multiply_integers(gpu_sizes)},
+      image_extents_(calculate_image_extents(padded_sizes, gpu_memory_layout)),
+      buffer_length_{api::utils::multiply_integers(padded_sizes)},
       image_(allocate_image(
           context_,
-          extents_,
+          image_extents_,
           storage_type_,
           api::to_vkformat(dtype),
           allocate_memory)),
@@ -460,7 +459,7 @@ void vTensorStorage::transition(
 }
 
 void vTensorStorage::discard_and_reallocate(
-    const std::vector<int64_t>& gpu_sizes,
+    const std::vector<int64_t>& padded_sizes,
     const api::GPUMemoryLayout gpu_memory_layout,
     const api::ScalarType dtype) {
   const bool image_owns_memory = image_.owns_memory();
@@ -468,15 +467,15 @@ void vTensorStorage::discard_and_reallocate(
 
   flush();
 
-  extents_ = create_image_extents(gpu_sizes, storage_type_, gpu_memory_layout);
+  image_extents_ = calculate_image_extents(padded_sizes, gpu_memory_layout);
   image_ = allocate_image(
       context_,
-      extents_,
+      image_extents_,
       storage_type_,
       api::to_vkformat(dtype),
       image_owns_memory);
 
-  buffer_length_ = api::utils::multiply_integers(gpu_sizes);
+  buffer_length_ = api::utils::multiply_integers(padded_sizes);
   buffer_ = allocate_buffer(
       context_, buffer_length_, storage_type_, dtype, buffer_owns_memory);
 }

@@ -134,8 +134,8 @@ class TestQNN(unittest.TestCase):
             etdump_path = f"{tmp_dir}/etdump.etdp"
 
             def post_process():
-                for i, f in enumerate(os.listdir(device_output_dir)):
-                    filename = os.path.join(device_output_dir, f)
+                for i, _f in enumerate(os.listdir(device_output_dir)):
+                    filename = os.path.join(device_output_dir, f"output_0_{i}.raw")
                     output = np.fromfile(filename, dtype=ref_outputs[i].numpy().dtype)
                     output = torch.from_numpy(output).reshape(ref_outputs[i].shape)
                     device_outputs.append(output)
@@ -187,6 +187,7 @@ class TestQNN(unittest.TestCase):
         )
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
+                extract_delegate_segments=False,
                 # For shared buffer, user must pass the memory address
                 # which is allocated by RPC memory to executor runner.
                 # Therefore, won't want to pre-allocate
@@ -195,7 +196,7 @@ class TestQNN(unittest.TestCase):
                     memory_planning_algo="greedy",
                     alloc_graph_input=not self.shared_buffer,
                     alloc_graph_output=not self.shared_buffer,
-                )
+                ),
             )
         )
 

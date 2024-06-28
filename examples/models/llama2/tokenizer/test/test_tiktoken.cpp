@@ -21,9 +21,9 @@ class TiktokenExtensionTest : public Test {
  public:
   void SetUp() override {
     torch::executor::runtime_init();
-    tokenizer_ = std::make_unique<Tiktoken>(128256, 128000, 128001);
+    tokenizer_ = std::make_unique<Tiktoken>();
     modelPath_ =
-        std::getenv("RESOURCES_PATH") + std::string("/fb/tokenizer.model");
+        std::getenv("RESOURCES_PATH") + std::string("/tokenizer.model");
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;
@@ -75,6 +75,15 @@ TEST_F(TiktokenExtensionTest, TokenizerDecodeCorrectly) {
     EXPECT_EQ(out.error(), Error::Ok);
     EXPECT_EQ(out.get(), expected[i]);
   }
+}
+
+TEST_F(TiktokenExtensionTest, TokenizerDecodeOutOfRangeFails) {
+  Error res = tokenizer_->load(modelPath_.c_str());
+  EXPECT_EQ(res, Error::Ok);
+  // The vocab size is 128256, addes 256 just so the token is out of vocab
+  // range.
+  Result<std::string> out = tokenizer_->decode(0, 128256 + 256);
+  EXPECT_EQ(out.error(), Error::NotSupported);
 }
 
 } // namespace executor

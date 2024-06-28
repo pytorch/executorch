@@ -15,6 +15,14 @@ from json import JSONDecodeError
 from typing import Any, Callable, List, Optional
 
 import torch
+
+try:
+    from ...portable.utils import export_to_edge, save_pte_program
+except ImportError:
+    # Workaround to bypass the different paths between executorch pip package and directly python call
+    # TODO: remove this try catch workaround and have a standard wa to import portable.utils
+    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `examples.portable.utils`.
+    from examples.portable.utils import export_to_edge, save_pte_program
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
@@ -33,7 +41,6 @@ from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.nn.attention import SDPBackend
 
-from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -69,6 +76,7 @@ def load_llama_model(
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
     weight_type: WeightType = WeightType.LLAMA,
+    enable_dynamic_shape: bool = False,
     verbose: bool = False,
     max_seq_len: int = 128,
 ) -> "LlamaEdgeManager":
@@ -94,6 +102,7 @@ def load_llama_model(
         use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
         fairseq2=weight_type == WeightType.FAIRSEQ2,
         max_seq_len=max_seq_len,
+        enable_dynamic_shape=enable_dynamic_shape,
     )
     state_dict = model.state_dict()
     dtype = state_dict[next(iter(state_dict))].dtype
@@ -121,6 +130,7 @@ def load_llama_model(
         use_kv_cache=use_kv_cache,
         use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
         example_inputs=example_inputs,
+        enable_dynamic_shape=enable_dynamic_shape,
         verbose=verbose,
     )
 
@@ -139,14 +149,18 @@ class LlamaEdgeManager:
         use_kv_cache,
         use_sdpa_with_kv_cache,
         example_inputs,
+        enable_dynamic_shape: bool = False,
         verbose: bool = False,
     ):
         self.model = model
+        # graph module returned from capture_pre_autograd_graph
+        self.pre_autograd_graph_module: Optional[torch.fx.GraphModule] = None
         self.modelname = modelname
         self.weight_type = weight_type
         self.dtype = dtype
         self.example_inputs = example_inputs
         self.use_kv_cache = use_kv_cache
+        self.enable_dynamic_shape = enable_dynamic_shape
         self.use_sdpa_with_kv_cache = use_sdpa_with_kv_cache
         self.metadata = None
         self.verbose = verbose
@@ -154,6 +168,7 @@ class LlamaEdgeManager:
         self.edge_manager: Optional[EdgeProgramManager] = None
         self.export_program = None
         self.output_dir = "."
+        self._saved_pte_filename = None
 
     def set_metadata(self, metadata: Optional[dict]) -> "LlamaEdgeManager":
         """
@@ -210,7 +225,10 @@ class LlamaEdgeManager:
     def _get_dynamic_shape(self) -> Any:
         dim = torch.export.Dim("token_dim", max=self.model.params.max_seq_len - 1)
         if self.use_kv_cache:
-            return None
+            if self.enable_dynamic_shape:
+                return ({1: dim}, {0: dim})
+            else:
+                None
         else:
             return ({1: dim},)
 
@@ -240,6 +258,7 @@ class LlamaEdgeManager:
             "get_vocab_size": params.vocab_size,
             "use_kv_cache": self.use_kv_cache,
             "use_sdpa_with_kv_cache": self.use_sdpa_with_kv_cache,
+            "enable_dynamic_shape": self.enable_dynamic_shape,
         }
         if self.metadata:
             try:
@@ -251,13 +270,53 @@ class LlamaEdgeManager:
         self.metadata = metadata
         return self.metadata
 
-    def export_to_edge(
+    def capture_pre_autograd_graph(self) -> "LlamaEdgeManager":
+        dynamic_shape = self._get_dynamic_shape()
+        # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
+        # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
+        with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+            self.pre_autograd_graph_module = capture_pre_autograd_graph(
+                self.model, self.example_inputs, dynamic_shapes=dynamic_shape
+            )
+        return self
+
+    def pt2e_quantize(
         self, quantizers: Optional[List[Quantizer]]
     ) -> "LlamaEdgeManager":
         """
-        Export the model to Edge dialect and retrieve a EdgeManager.
+        Quantize the model via pt2e flow and retrieve LlamaEdgeManager including the quantized model.
         Args:
             quantizers (Optional[List[Quantizer]]): A list of quantizers.
+        """
+        assert (
+            self.edge_manager is None
+        ), "export_to_edge is already called, please call pt2e_quantize before export_to_edge"
+        logging.info(f"Using pt2e {quantizers} to quantizing the model...")
+
+        # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
+        # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
+        if quantizers:
+            with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+                if self.verbose:
+                    logging.info(f"Applied quantizers: {quantizers}")
+                composed_quantizer = ComposableQuantizer(quantizers)
+                assert (
+                    self.pre_autograd_graph_module is not None
+                ), "Please run capture_pre_autograd_graph first"
+                m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
+                # Calibrate
+                m(*self.example_inputs)
+                m = convert_pt2e(m)
+                DuplicateDynamicQuantChainPass()(m)
+                self.pre_autograd_graph_module = m
+            return self
+        else:
+            logging.info("No quantizer provided, passing...")
+            return self
+
+    def export_to_edge(self) -> "LlamaEdgeManager":
+        """
+        Export the model to Edge dialect and retrieve a LlamaEdgeManager.
         """
         dynamic_shape = self._get_dynamic_shape()
         edge_config = self._get_edge_config()
@@ -266,20 +325,12 @@ class LlamaEdgeManager:
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-            m = capture_pre_autograd_graph(
-                self.model, self.example_inputs, dynamic_shapes=dynamic_shape
-            )
-            if quantizers:
-                if self.verbose:
-                    logging.info(f"Applied quantizers: {quantizers}")
-                composed_quantizer = ComposableQuantizer(quantizers)
-                m = prepare_pt2e(m, composed_quantizer)
-                # Calibrate
-                m(*self.example_inputs)
-                m = convert_pt2e(m)
-                DuplicateDynamicQuantChainPass()(m)
+            if self.pre_autograd_graph_module is None:
+                self.pre_autograd_graph_module = capture_pre_autograd_graph(
+                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape
+                )
             self.edge_manager = export_to_edge(
-                m,
+                self.pre_autograd_graph_module,
                 self.example_inputs,
                 dynamic_shapes=dynamic_shape,
                 edge_constant_methods=metadata,
@@ -354,4 +405,11 @@ class LlamaEdgeManager:
             output_name (Optional[str]): The name of the .pte file.
         """
         assert output_name, "Need a valid output name"
-        save_pte_program(self.export_program, output_name, self.output_dir)
+        filename = save_pte_program(self.export_program, output_name, self.output_dir)
+        self._saved_pte_filename = filename
+
+    def get_saved_pte_filename(self) -> Optional[str]:
+        """
+        Return the filename of the most recenet saved .pte file. Return None if the model is not saved.
+        """
+        return self._saved_pte_filename

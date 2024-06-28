@@ -6,13 +6,29 @@
 
 import logging
 import operator
-from typing import Dict
+from typing import Dict, List, Tuple
 
 import torch
 from executorch.exir import memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from tabulate import tabulate
+
+from torch.ao.quantization.quantize_pt2e import _QUANT_OPS as quant_ops
+
+
+# Check if the model is quantized, by looking at the graph and finding quant/dequant ops
+def model_is_quantized(model: torch.nn.Module) -> bool:
+    # Quantized models have to be GraphModules already, from prepare/convert calls.
+    # Return false if the model is not a GraphModule.
+    if not isinstance(model, torch.fx.GraphModule):
+        return False
+
+    # Walk through the graph and look for quant/dequant ops
+    for op in quant_ops:
+        if model.graph.find_nodes(op="call_function", target=op):
+            return True
+    return False
 
 
 # Get the output size of a 1D convolution given the input size and parameters
@@ -31,6 +47,33 @@ def get_conv1d_output_size(
     lout = (L + 2 * padding - dilation * (kernel_size - 1) - 1) // stride + 1
 
     return torch.Size((in_size[0], out_channels, lout))
+
+
+# Get the output size of a 2D convolution given the input size and parameters
+def get_conv2d_output_size(
+    in_size: torch.Size,
+    out_channels: int,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    kernel_size: List[int],
+    channel_last: bool,
+) -> torch.Size:
+    assert len(in_size) == 4
+    if channel_last:
+        N, H, W, C = in_size
+    else:
+        N, C, H, W = in_size
+
+    # Reference: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    hout = (H + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) // stride[
+        0
+    ] + 1
+    wout = (W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[
+        1
+    ] + 1
+
+    return torch.Size((in_size[0], out_channels, hout, wout))
 
 
 # Return the overload packet for the edge op
@@ -71,29 +114,15 @@ def get_ops_count(graph_module: torch.fx.GraphModule) -> Dict[str, int]:
 # from export, from to_edge, and from Jarvis. Print the available
 # implementations for each op, and error out if the op is not supported.
 def print_ops_info(
-    export_gm: torch.fx.GraphModule,
     to_edge_gm: torch.fx.GraphModule,
     jarvis_gm: torch.fx.GraphModule,
 ):
-    export_ops_count = get_ops_count(export_gm)
     to_edge_ops_count = get_ops_count(to_edge_gm)
     jarvis_ops_count = get_ops_count(jarvis_gm)
 
-    # De-duplicate the "<op>" and "<op>_copy" ops
-    keys_to_delete_and_add = []
-    for k1 in export_ops_count:
-        for k2 in {**to_edge_ops_count, **jarvis_ops_count}:
-            if k2.startswith(k1):
-                keys_to_delete_and_add.append((k1, k2))
-                break
-
-    for k in keys_to_delete_and_add:
-        export_ops_count[k[1]] = export_ops_count[k[0]]
-        del export_ops_count[k[0]]
-
     removed_ops = []
     # Get the counts of the ops that are removed from the final graph
-    for k in {**export_ops_count, **to_edge_ops_count}:
+    for k in to_edge_ops_count:
         if k not in jarvis_ops_count:
             removed_ops.append(k)
 
@@ -103,7 +132,6 @@ def print_ops_info(
             op,
             jarvis_ops_count[op],
             to_edge_ops_count[op] if op in to_edge_ops_count else 0,
-            export_ops_count[op] if op in export_ops_count else 0,
         ]
         for op in jarvis_ops_count
     ]
@@ -115,7 +143,6 @@ def print_ops_info(
             op,
             0,
             to_edge_ops_count[op] if op in to_edge_ops_count else 0,
-            export_ops_count[op] if op in export_ops_count else 0,
         ]
         for op in removed_ops
     ]

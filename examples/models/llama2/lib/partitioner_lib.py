@@ -24,12 +24,11 @@ def get_vulkan_partitioner(args):
     assert (
         args.quantization_mode is None
     ), "Vulkan backend does not support quantization at the moment"
-    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.vulkan.partition.vulkan_partitioner`
-    from executorch.backends.vulkan.partition.vulkan_partitioner import (
+    from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
         VulkanPartitioner,
     )
 
-    return VulkanPartitioner()
+    return VulkanPartitioner({"require_dynamic_shapes": True})
 
 
 def get_mps_partitioner(args):
@@ -57,14 +56,11 @@ def get_coreml_partitioner(args):
         args.use_kv_cache is True
     ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
     try:
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`.
         import coremltools as ct
-
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.compiler`
-        from executorch.backends.apple.coreml.compiler import CoreMLBackend
-
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`
-        from executorch.backends.apple.coreml.partition.coreml_partitioner import (
+        from executorch.backends.apple.coreml.compiler import (  # pyre-ignore
+            CoreMLBackend,
+        )
+        from executorch.backends.apple.coreml.partition import (  # pyre-ignore
             CoreMLPartitioner,
         )
     except ImportError:

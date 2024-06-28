@@ -1,0 +1,37 @@
+From aa65a514e5860267a6d9d52e80b1f8e03c720c6c Mon Sep 17 00:00:00 2001
+From: Zingo Andersen <zingo.andersen@arm.com>
+Date: Tue, 4 Jun 2024 06:20:14 +0200
+Subject: [PATCH 3/3] Make ITCM 1MB
+
+Signed-off-by: Zingo Andersen <zingo.andersen@arm.com>
+---
+ targets/corstone-300/platform.ld | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/targets/corstone-300/platform.ld b/targets/corstone-300/platform.ld
+index 476a2f8..080cc5e 100644
+--- a/targets/corstone-300/platform.ld
++++ b/targets/corstone-300/platform.ld
+@@ -46,8 +46,8 @@
+  * +-----------------------+-------------+-------------+----+--------------------------------------+
+  * |  Memory region name   | Base addr   |    Size     |IDAU|  MCC load address + remarks          |
+  * +-----------------------+-------------+-------------+----+--------------------------------------+
+- * | ITCM                  | 0x0000_0000 | 0x0008_0000 | NS | 0x0000_0000; 512 kiB                 |
+- * | ITCM                  | 0x1000_0000 | 0x0008_0000 | S  | Secure alias for NS ITCM             |
++ * | ITCM                  | 0x0000_0000 | 0x0010_0000 | NS | 0x0000_0000; 1 MiB                   |
++ * | ITCM                  | 0x1000_0000 | 0x0010_0000 | S  | Secure alias for NS ITCM             |
+  * | FPGA Data SRAM; BRAM  | 0x0100_0000 | 0x0010_0000 | NS | 0x0100_0000; 1 MiB                   |
+  * | FPGA data SRAM; BRAM  | 0x1100_0000 | 0x0010_0000 | S  | Secure alias for NS BRAM             |
+  * | DTCM                  | 0x2000_0000 | 0x0008_0000 | NS | 512 kiB; 4 banks of 128k each        |
+@@ -82,7 +82,7 @@ __HEAP_SIZE  = 0x00008000;
+ 
+ MEMORY
+ {
+-  ITCM  (rx)  : ORIGIN = 0x10000000, LENGTH = 0x00080000
++  ITCM  (rx)  : ORIGIN = 0x10000000, LENGTH = 0x00100000
+   BRAM  (rw)  : ORIGIN = 0x11000000, LENGTH = 0x00100000
+   DTCM  (rw)  : ORIGIN = 0x30000000, LENGTH = 0x00080000
+   SRAM  (rw)  : ORIGIN = 0x31000000, LENGTH = 0x00200000
+-- 
+2.25.1
+

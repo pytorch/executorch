@@ -9,6 +9,7 @@ python_unittest(
         "test_emit.py",
     ],
     deps = [
+        "fbsource//third-party/pypi/pytest:pytest",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
         "//executorch/exir:error",
@@ -21,6 +22,6 @@ python_unittest(
         "//executorch/exir/passes:constant_prop_pass",
         "//executorch/exir/tests:lib",
         "//executorch/exir/tests:models",
-        "//executorch/extension/pybindings:aten_lib",
+        "//executorch/extension/pybindings:portable_lib",
     ],
 )

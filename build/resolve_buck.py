@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -67,18 +68,22 @@ BUCK_PLATFORM_MAP = {
         archive_name="buck2-x86_64-unknown-linux-musl.zst",
         target_versions=[
             # MUSL
-            "071372cfde6e9936c62eb92823742392af4a945570df5c5b34d3eed1b03813c3",
+            "3bbde7daa94987db468d021ad625bc93dc62ba7fcb16945cb09b64aab077f284",
             # GNU
-            "38f7c508bf1b87bcdc816bf56d1b9f2d2411c6be",
+            "029b0bcc6f8e399185c1d0f574eba204934722b5",
         ],
+    ),
+    ("linux", "aarch64"): BuckInfo(
+        archive_name="buck2-aarch64-unknown-linux-gnu.zst",
+        target_versions=["49670bee56a7d8a7696409ca6fbf7551d2469787"],
     ),
     ("darwin", "aarch64"): BuckInfo(
         archive_name="buck2-aarch64-apple-darwin.zst",
-        target_versions=["99e407b49dc432eda0cbddd67ea78346"],
+        target_versions=["99773fe6f7963a72ae5f7b737c02836e"],
     ),
     ("darwin", "x86_64"): BuckInfo(
         archive_name="buck2-x86_64-apple-darwin.zst",
-        target_versions=["9150d78e7a7531799a1b06ce58623bbc"],
+        target_versions=["3eb1ae97ea963086866b4d2d9ffa966d"],
     ),
 }
 
@@ -122,7 +127,7 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
     arch = "unknown"
     if machine == "x86" or machine == "x86_64" or machine == "amd64":
         arch = "x86_64"
-    elif machine == "arm64":
+    elif machine == "arm64" or machine == "aarch64":
         arch = "aarch64"
 
     os_family = "unknown"

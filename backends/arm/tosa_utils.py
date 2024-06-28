@@ -6,11 +6,12 @@
 import logging
 import os
 
-import executorch.backends.arm.tosa_quant_utils as tosa_quant_utils
-
 import numpy as np
 import serializer.tosa_serializer as ts
+import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
+
+from executorch.backends.arm.tosa_quant_utils import get_quant_node_args, q_op
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
 
@@ -33,7 +34,7 @@ def dbg_node(node):
     logger.info("  node.meta = ")
     for k, v in node.meta.items():
         logger.info(f"    '{k}' = {v}")
-        if type([]) == type(v):
+        if isinstance(v, list):
             for i in v:
                 logger.info(f"      {i} ")
 
@@ -158,7 +159,7 @@ def is_bias_node_for_addmm(node):
     # consumer node is addmm
     is_rank2_linear_bias = (
         consumer_node.target == exir_ops.edge.aten.addmm.default
-        and list(consumer_node.users)[0].target == tosa_quant_utils.q_op
+        and list(consumer_node.users)[0].target == q_op
     )
 
     # rank>2 linear layers
@@ -170,7 +171,7 @@ def is_bias_node_for_addmm(node):
     ):
         consumer_consumer_node = list(consumer_node.users)[0]
         is_rank_greater_than_2_linear_bias = (
-            list(consumer_consumer_node.users)[0].target == tosa_quant_utils.q_op
+            list(consumer_consumer_node.users)[0].target == q_op
         )
 
     return is_rank2_linear_bias or is_rank_greater_than_2_linear_bias
@@ -183,7 +184,51 @@ def is_consumer_node_depthwise_conv2d(node):
         for arg in consumer_node.args:
             inputs.append(TosaArg(arg))
         group = inputs[-1]
-        if group.number > 1:
+        in_channels = inputs[0].shape[1]
+        out_channels = inputs[1].shape[0]
+        if (in_channels == group.number) and (out_channels % in_channels) == 0:
             return True
 
     return False
+
+
+def build_avg_pool_2d_common(
+    node: torch.fx.Node,
+    tosa_graph: ts.TosaSerializer,
+    input_tensor: TosaArg,
+    kernel_size: list,
+    stride: list,
+    padding: list,
+    is_quant_node: bool,
+    output: TosaArg,
+):
+    accumulator_type = input_tensor.dtype
+
+    if is_quant_node:
+        # Accumulator type always is int32 when input tensor is an integer type.
+        accumulator_type = ts.DType.INT32
+
+    # Initilize zero point to zero.
+    input_zp = 0
+    output_zp = 0
+
+    if is_quant_node:
+        input_zp = get_quant_node_args(node.args[0]).zp
+        output_zp = get_quant_node_args(list(node.users)[0]).zp
+
+    attr = ts.TosaSerializerAttribute()
+    attr.PoolAttribute(
+        kernel=kernel_size,
+        stride=stride,
+        pad=padding,
+        input_zp=input_zp,
+        output_zp=output_zp,
+        accum_dtype=accumulator_type,
+    )
+
+    tosa_graph.addOperator(
+        TosaOp.Op().AVG_POOL2D,
+        [input_tensor.name],
+        [output.name],
+        attr,
+    )

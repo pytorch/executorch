@@ -28,6 +28,9 @@ class QuantizationParams:
         self.zp = zp
         self.scale = scale
 
+    def __repr__(self):
+        return f"QuantizationParams(node_name={self.node_name}, zp={self.zp}, scale={self.scale})"
+
 
 """
 This class is used to work with TOSA artifacts.
@@ -212,6 +215,9 @@ class TosaTestUtils:
         tosa_ref_output = torch.from_numpy(tosa_ref_output.astype("float32"))
 
         return tosa_ref_output
+
+    def get_tosa_artifact_path(self):
+        return self.intermediate_path
 
     @staticmethod
     def _run_cmd(cmd: List[str]) -> None:

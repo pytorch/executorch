@@ -172,18 +172,19 @@ static constexpr StorageType kBuffer = StorageType::BUFFER;
 static constexpr StorageType kTexture3D = StorageType::TEXTURE_3D;
 static constexpr StorageType kTexture2D = StorageType::TEXTURE_2D;
 
-/**
+/*
  * The enum below is used to describe how tensor data is laid out when stored in
- * GPU memory. The name of the enum describes which dimension is tightly packed;
- * so for tensors that are stored as image textures, loading a texel will
- * retrieve 4 consecutive elements of the named dimension, and for tensors
- * stored as buffers, the named dimension will have a stride of 1.
+ * GPU memory; specifically, it indicates how tensor data is packed along a
+ * texel (i.e. a vector of 4 scalar values).
  *
- * The GPU memory layout qualifier will be used by compute shaders to determine
- * how to convert between logical tensor coordinates and physical texel
- * coordinates. For tensors that are stored as buffers, it is expected that the
- * strides of the tensor will be used instead to convert between logical tensor
- * coordinates and linear access indices.
+ * Each enum entry indicates which tensor dimension is packed along a texel, and
+ * it's value is set to the index of that dimension in WHCN dimension order. For
+ * instance, the width dimension corresponds to index 0, so the
+ * TENSOR_WIDTH_PACKED enum entry is set to 0.
+ *
+ * When interpreted as an integer, the enum value can be used as a dim index
+ * representing the packed dimension. This is used in shaders to resolve tensor
+ * indexing calculations.
  */
 enum class GPUMemoryLayout : uint8_t {
   TENSOR_WIDTH_PACKED = 0u,
@@ -199,6 +200,25 @@ static constexpr GPUMemoryLayout kHeightPacked =
 
 static constexpr GPUMemoryLayout kChannelsPacked =
     GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+
+/*
+ * Given a GPUMemoryLayout, return the index of the dimension that is packed
+ * along texels, assuming WHCN dimension order.
+ */
+template <typename T>
+T to_packed_dim_whcn_idx(const GPUMemoryLayout layout) {
+  return static_cast<T>(layout);
+}
+
+/*
+ * Given a GPUMemoryLayout, return an offset that can be used to determine the
+ * index of the dimension that is packed along texels, assuming NCHW dimension
+ * order. The index of the packed dimension will be ndim - offset.
+ */
+template <typename T>
+T to_packed_dim_nchw_offset(const GPUMemoryLayout layout) {
+  return static_cast<T>(layout) + 1;
+}
 
 } // namespace api
 } // namespace vkcompute
