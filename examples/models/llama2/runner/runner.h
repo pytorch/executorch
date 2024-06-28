@@ -92,6 +92,7 @@ class Runner {
   bool use_sdpa_with_kv_cache_;
   bool append_eos_;
   std::unordered_set<std::string> model_methods_;
+  std::string model_path_;
   std::unique_ptr<Module> module_;
   std::string tokenizer_path_;
   float temperature_;
