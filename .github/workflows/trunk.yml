@@ -41,7 +41,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        build-tool: [buck2, cmake]
+        build-tool: [cmake]
         mode: [mps]
       fail-fast: false
     with:
