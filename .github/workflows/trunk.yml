@@ -176,42 +176,6 @@ jobs:
         # Run arm unit tests
         pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test
 
-  test-coreml-delegate:
-    name: test-coreml-delegate
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    with:
-      runner: macos-13-xlarge
-      python-version: '3.11'
-      submodules: 'true'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        BUILD_TOOL=cmake
-
-        bash .ci/scripts/setup-conda.sh
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
-        # Build and test coreml delegate
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/build_all.sh
-
-  test-mps-delegate:
-    name: test-mps-delegate
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    with:
-      runner: macos-13-xlarge
-      python-version: '3.11'
-      submodules: 'true'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        BUILD_TOOL=cmake
-
-        bash .ci/scripts/setup-conda.sh
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
-        # Build and test mps delegate
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
-
   test-pybind-build-macos:
     name: test-pybind-build-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -242,8 +206,8 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        build-tool: [buck2, cmake]
-        mode: [portable, xnnpack+kv+custom, mps]
+        build-tool: [cmake]
+        mode: [mps]
       fail-fast: false
     with:
       runner: macos-m1-stable

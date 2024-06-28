@@ -61,6 +61,8 @@ else
   MPS=OFF
 fi
 
+echo "MPS option ${MPS}"
+
 if [[ -z "${BUCK:-}" ]]; then
   BUCK=buck2
 fi
