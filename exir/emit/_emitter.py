@@ -870,7 +870,13 @@ class _Emitter(torch.fx.Interpreter):
         self.chain.instructions.append(kernel)
         return out_arg
 
-    def _add_debug_handle(self, emitter_id: int, target: _Target) -> None:
+    def _add_debug_handle(
+        self,
+        emitter_id: int,
+        target: _Target,
+        # pyre-ignore[11]: Annotation `LoweredBackendModule` is not defined as a type.
+        lowered_module: "Optional[LoweredBackendModule]" = None,  # noqa: F821
+    ) -> None:
         """Updates the debug handle information for the current node.
 
         If the current node is a delegate we agregate the debug handles of the subgraph and store
@@ -882,12 +888,14 @@ class _Emitter(torch.fx.Interpreter):
         # delegate call and store it in the debug handle map.
         if target == executorch_call_delegate:
             debug_handle_list = []
-            for node in self.node.graph.nodes:
+            # Use the lowered_module to fetch the original graph and its debug
+            # handles.
+            for node in lowered_module.original_module.graph.nodes:
                 if (
                     node.op == "call_function"
                     and node.meta.get("debug_handle") is not None
                 ):
-                    debug_handle_list += [node.meta.get("debug_handle")]
+                    debug_handle_list.append(node.meta.get("debug_handle"))
             self.debug_handle_map[emitter_id] = debug_handle_list
             # Debug handle for this node is the emitter_id which is essentially the index of the
             # instruction in the chain.
@@ -906,7 +914,6 @@ class _Emitter(torch.fx.Interpreter):
 
     def _add_delegate_map(
         self,
-        # pyre-ignore: Undefined or invalid type [11]: Annotation `LoweredBackendModule` is not defined as a type.
         lowered_module: "LoweredBackendModule",  # noqa
         delegate_instruction_id: int,
     ) -> None:
@@ -1371,7 +1378,7 @@ class _Emitter(torch.fx.Interpreter):
             assert is_lowered_module(lowered_module)
             v = self._emit_delegate(lowered_module, args[1:], kwargs)
             delegate_instruction_id = len(self.chain.instructions) - 1
-            self._add_debug_handle(delegate_instruction_id, target)
+            self._add_debug_handle(delegate_instruction_id, target, lowered_module)
             self._add_delegate_map(lowered_module, delegate_instruction_id)
             return v
 
