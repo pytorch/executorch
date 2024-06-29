@@ -152,7 +152,7 @@ if [[ "${QE}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} --embedding-quantize 8,1024"
 fi
 if [[ "${MPS}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} -kv -v --mps"
+  EXPORT_ARGS="${EXPORT_ARGS} -kv -v --mps --disable_dynamic_shape"
 fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
