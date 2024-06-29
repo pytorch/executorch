@@ -28,8 +28,10 @@ BPETokenizer::BPETokenizer() : Tokenizer() {
   vocab_ = std::make_unique<char*[]>(kVocabSize);
   vocab_scores_ = std::make_unique<float[]>(kVocabSize);
   sorted_vocab_ = std::make_unique<TokenIndex[]>(kVocabSize);
-  bos_tok_ = 1;
-  eos_tok_ = 2;
+  // TODO: A bug in the c++ bpe tokenizer. bos/eos token id should be set correctly per the model config.
+  // For HF models, it's in the tokenizer_config.json
+  bos_tok_ = 2;
+  eos_tok_ = 1;
   for (int i = 0; i < 256; i++) {
     byte_pieces_[i * 2] = (unsigned char)i;
     byte_pieces_[i * 2 + 1] = '\0';

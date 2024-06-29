@@ -52,8 +52,8 @@ TEST_F(TokenizerExtensionTest, TokenizerVocabSizeIsExpected) {
   EXPECT_EQ(res, Error::Ok);
   // test.bin has vocab size 0.
   EXPECT_EQ(tokenizer_->vocab_size(), 0);
-  EXPECT_EQ(tokenizer_->bos_tok(), 1);
-  EXPECT_EQ(tokenizer_->eos_tok(), 2);
+  EXPECT_EQ(tokenizer_->bos_tok(), 2);
+  EXPECT_EQ(tokenizer_->eos_tok(), 1);
 }
 
 } // namespace executor
