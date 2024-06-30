@@ -362,7 +362,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
     if args.use_sdpa_with_kv_cache:
-        transforms.append(replace_kv_cache_with_dynamic_kv_cache)
+        # transforms.append(replace_kv_cache_with_dynamic_kv_cache)
         transforms.append(replace_sdpa_with_custom_op)
 
     if args.use_kv_cache:
