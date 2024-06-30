@@ -191,7 +191,6 @@ class KVCache(nn.Module):
         dtype=torch.float32,
     ):
         super().__init__()
-        self.max_seq_length = max_seq_length
         if transpose_cache:
             cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
         else:
@@ -204,28 +203,23 @@ class KVCache(nn.Module):
         self.register_buffer(
             "v_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
         )
+        self.max_batch_size = max_batch_size
+        self.max_seq_length = max_seq_length
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.transpose_cache = transpose_cache
+        self.dtype = dtype
 
     def update(
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # input_pos: [S], k_val: [B, H, S, D] or [B, S, H, D] depending on transpose_cache
-        start_pos = input_pos[-1].item()
-        torch._check_is_size(start_pos)
-        torch._check(start_pos < self.max_seq_length)
-        seq_length = k_val.size(2)
-        # Replace the entry in the cache for this token
-        # The following lines are equivalent to:
-        # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
-        # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
-        # We use .narrow() here to make the compiler happy
-        # pyre-ignore: Incompatible parameter type [6]
-        narrowed_k = self.k_cache.narrow(2, start_pos, seq_length)
-        # pyre-ignore: Incompatible parameter type [6]
-        narrowed_v = self.v_cache.narrow(2, start_pos, seq_length)
+        k_out = self.k_cache
+        v_out = self.v_cache
+        k_out[:, :, input_pos] = k_val
+        v_out[:, :, input_pos] = v_val
 
-        narrowed_k.copy_(k_val)
-        narrowed_v.copy_(v_val)
-        return self.k_cache, self.v_cache
+        return k_out, v_out
 
 
 class SDPA(nn.Module):
@@ -235,14 +229,12 @@ class SDPA(nn.Module):
         dim: int,
         head_dim: int,
         n_rep: int,
-        max_seq_len: int,
     ):
         super().__init__()
         self.kv_cache = kv_cache
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
-        self.max_seq_len = max_seq_len
 
     def forward(
         self,
@@ -259,12 +251,7 @@ class SDPA(nn.Module):
         v = v.transpose(1, 2)
 
         k, v = self.kv_cache.update(input_pos, k, v)
-        start_pos = input_pos[-1].item()
-        torch._check_is_size(start_pos)
-        torch._check(start_pos < self.max_seq_len)
-        seq_length = q.size(2)
-        # pyre-ignore: Incompatible parameter type [6]
-        attn_mask = mask.narrow(0, start_pos, seq_length)
+        attn_mask = mask[None, None, input_pos]
 
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
@@ -318,7 +305,6 @@ class Attention(nn.Module):
                 dim=self.dim,
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
-                max_seq_len=self.max_seq_len,
             )
 
     def forward(
@@ -467,7 +453,6 @@ class Transformer(nn.Module):
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
-        self.max_seq_len = params.max_seq_len
 
         freqs_cos, freqs_sin = precompute_freqs_cis(
             params.dim // params.n_heads,
@@ -497,17 +482,8 @@ class Transformer(nn.Module):
             ), "input_pos must be provided when use_kv_cache is True"
 
             # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
-            input_pos_item = input_pos[-1].item()
-            torch._check_is_size(input_pos_item)
-            # Setting this value to 32 for no particular reason.
-            # It is mainly to make export happy as the resulting
-            # asserts are ignored anyway.
-            # We really need unbounded start_pos
-            torch._check(input_pos_item < self.params.max_seq_len)
-            # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
-            freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
-            # pyre-ignore: Incompatible parameter type [6]
-            freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seqlen)
+            freqs_cos = self.freqs_cos[input_pos]
+            freqs_sin = self.freqs_sin[input_pos]
         else:
             assert input_pos is None, "input_pos is unused when use_kv_cache is False"
             freqs_cos = self.freqs_cos[:seqlen]

@@ -90,7 +90,7 @@ def load_llama_model(
         checkpoint or checkpoint_dir
     ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
     logging.info(
-        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
+        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}, enable_dynamic_shape={enable_dynamic_shape}"
     )
     model, example_inputs, _ = EagerModelFactory.create_model(
         "llama2",
@@ -223,12 +223,12 @@ class LlamaEdgeManager:
         return self
 
     def _get_dynamic_shape(self) -> Any:
-        dim = torch.export.Dim("token_dim", max=self.model.params.max_seq_len - 1)
+        # dim = torch.export.Dim("token_dim", max=self.model.params.max_seq_len - 1)
         if self.use_kv_cache:
-            if self.enable_dynamic_shape:
-                return ({1: dim}, {0: dim})
-            else:
-                None
+            # if self.enable_dynamic_shape:
+            #     return ({1: dim}, {0: dim})
+            # else:
+            return None
         else:
             return ({1: dim},)
 

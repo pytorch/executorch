@@ -46,8 +46,7 @@ class SDPACustom(torch.nn.Module):
             True,  # is_causal
         )
         return output.view(bsz, seqlen, self.dim)
-
-
+        
 def _replace_sdpa_with_custom_op(module: torch.nn.Module):
     for name, child in module.named_children():
         if isinstance(child, SDPA):
