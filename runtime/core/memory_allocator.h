@@ -217,7 +217,7 @@ class MemoryAllocator {
 #define ET_TRY_ALLOCATE_OR(memory_allocator__, nbytes__, ...)              \
   ({                                                                       \
     void* et_try_allocate_result = memory_allocator__->allocate(nbytes__); \
-    if (et_try_allocate_result == nullptr) {                               \
+    if (et_try_allocate_result == nullptr && nbytes__ > 0) {               \
       __VA_ARGS__                                                          \
       /* The args must return. */                                          \
       __ET_UNREACHABLE();                                                  \
@@ -272,7 +272,7 @@ class MemoryAllocator {
   ({                                                                      \
     type__* et_try_allocate_result =                                      \
         memory_allocator__->allocateList<type__>(nelem__);                \
-    if (et_try_allocate_result == nullptr) {                              \
+    if (et_try_allocate_result == nullptr && nelem__ > 0) {               \
       __VA_ARGS__                                                         \
       /* The args must return. */                                         \
       __ET_UNREACHABLE();                                                 \
