@@ -1,23 +1,22 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+# READ:
+# ~/src/llava_diff to run in CPU
+# pip install -I torch for newer torch version for fp16
 
 import torch
 
-from examples.models.model_base import EagerModelBase
-from llava.eval.run_llava import load_images, process_images
-from llava.mm_utils import get_model_name_from_path, tokenizer_image_token
+import os
 
-from llava.model.builder import load_pretrained_model
 from torch import nn
 
-import torchvision
-from torchvision.transforms import v2
+from llava.model.builder import load_pretrained_model
+from llava.mm_utils import get_model_name_from_path, tokenizer_image_token
+from llava.eval.run_llava import eval_model, load_images, process_images
+# from executorch.exir import EdgeProgramManager, ExecutorchProgramManager, to_edge
 
-from dataclasses import dataclass
-from torch.export import Dim
+from llava.model.multimodal_encoder.builder import build_vision_tower
+from llava.model.multimodal_encoder.clip_encoder import CLIPVisionTower
+
+from llava.conversation import conv_templates, SeparatorStyle
 from llava.constants import (
     IGNORE_INDEX,
     IMAGE_TOKEN_INDEX,
@@ -26,13 +25,28 @@ from llava.constants import (
     DEFAULT_IM_END_TOKEN,
     IMAGE_PLACEHOLDER,
 )
-
 from llava.model.llava_arch import LlavaMetaForCausalLM
+
 from transformers import LlamaForCausalLM
+
 from dataclasses import dataclass
 import math
 from executorch.examples.models.llama2.llama_transformer import TransformerBlock, ModelArgs, RMSNorm, precompute_freqs_cis
 from typing import Optional, Dict, Any
+import re
+import requests
+from PIL import Image
+
+
+import torchvision
+from torchvision.transforms._functional_tensor import resize
+from torchvision.transforms import v2
+
+# model_path = "liuhaotian/llava-v1.6-vicuna-7b"
+# only this one works
+os.environ['HF_TOKEN'] = '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'
+model_path = "liuhaotian/llava-v1.5-7b"
+
 
 @dataclass
 class PreprocessConfig:
@@ -102,13 +116,15 @@ class TextModelTransformer(nn.Module):
             freqs_cos = self.freqs_cos[:seqlen]
             freqs_sin = self.freqs_sin[:seqlen]
 
-        for layer in self.layers:
+        for i, layer in enumerate(self.layers):
             h = layer(
                 h,
                 freqs_cos,
                 freqs_sin,
                 input_pos,
             )
+            if i < 3:
+                torch.save(h, f"/Users/larryliu/Desktop/layer_{i}.pt")
 
         h = self.norm(h)
 
@@ -116,14 +132,15 @@ class TextModelTransformer(nn.Module):
         return logits
     
 class Llava(torch.nn.Module):
-    def __init__(self, llava_model: LlavaMetaForCausalLM, config: PreprocessConfig):
+    def __init__(self, llava_model: LlavaMetaForCausalLM, image_processor: CLIPVisionTower,  config: PreprocessConfig):
         super().__init__()
         self.config = config
         self.model_ = llava_model
         self.text_model_args = ModelArgs(
             use_kv_cache=True, 
             vocab_size=self.model_.config.vocab_size, 
-            hidden_dim=self.model_.config.intermediate_size
+            hidden_dim=self.model_.config.intermediate_size,
+            max_batch_size=1, # doesn't work with default batch size 32
         )
         self.text_model = TextModelTransformer(self.text_model_args)
         # load state dict
@@ -132,6 +149,7 @@ class Llava(torch.nn.Module):
             strict=False,
             assign=True,
         )
+        self.image_processor = image_processor
 
     def _translate_state_dict_for_text_model(self) -> Dict[str, Any]:
         state_dict = self.model_.state_dict()
@@ -173,7 +191,7 @@ class Llava(torch.nn.Module):
         return self.model_.get_model()
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
-        images = images.to(dtype=torch.float16)
+        images = images.to(dtype=self.get_model().dtype)
         image_features = self.get_model().get_vision_tower()(images)
         image_features = self.get_model().mm_projector(image_features)
         return image_features
@@ -187,9 +205,9 @@ class Llava(torch.nn.Module):
         t_pad = int(math.ceil(v_padding))
         r_pad = int(math.floor(h_padding))
         b_pad = int(math.floor(v_padding))
-        padded = torchvision.transforms.v2.functional.pad(img, padding=(l_pad, t_pad, r_pad, b_pad), fill=tuple(int(x*255) for x in image_processor.image_mean))
+        padded = torchvision.transforms.v2.functional.pad(img, padding=(l_pad, t_pad, r_pad, b_pad), fill=tuple(int(x*255) for x in self.image_processor.image_mean))
         # here padded shape should be max(h, w) x max(h, w)
-        resized = resize(padded, size=[image_processor.crop_size['height'], image_processor.crop_size['width']], interpolation="bicubic")
+        resized = resize(padded, size=[self.image_processor.crop_size['height'], self.image_processor.crop_size['width']], interpolation="bicubic")
         torch._check(resized.size(1) == self.config.crop_size['height'])
         torch._check(resized.size(2) == self.config.crop_size['width'])
         # print(resized.shape)
@@ -202,8 +220,8 @@ class Llava(torch.nn.Module):
         return normed.unsqueeze(0)
     
     def prepare_inputs_labels_for_multimodal_one_image(self, prompt_before_image: torch.Tensor, images: torch.Tensor, prompt_after_image: torch.Tensor) -> torch.Tensor:
-        assert isinstance(input_ids, torch.Tensor), f"Expecting input_ids to be a tensor, got {input_ids}"
-        assert input_ids.shape[0] == 1, f"Expecting input_ids to be of shape [1, num_tokens], got {input_ids.shape}"
+        assert isinstance(prompt_before_image, torch.Tensor), f"Expecting prompt_before_image to be a tensor, got {prompt_before_image}"
+        assert prompt_before_image.shape[0] == 1, f"Expecting prompt_before_image to be of shape [1, num_tokens], got {prompt_before_image.shape}"
         prompt_before_image = prompt_before_image.squeeze(0)
         prompt_after_image = prompt_after_image.squeeze(0)
 
@@ -229,44 +247,117 @@ class Llava(torch.nn.Module):
         embeds = self.prepare_inputs_labels_for_multimodal_one_image(prompt_before_image, preprocessed_img, prompt_after_image)
         return self.text_model.forward(embeds, torch.tensor([0]))
 
+    def prefill_ref(self, prompt_before_image: torch.Tensor, images: torch.Tensor, prompt_after_image: torch.Tensor) -> torch.Tensor:
+        """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
+        preprocessed_img = self.image_preprocess(images)
+        embeds = self.prepare_inputs_labels_for_multimodal_one_image(prompt_before_image, preprocessed_img, prompt_after_image)
+        return LlamaForCausalLM.forward(self.model_, inputs_embeds=embeds, return_dict=False, use_cache=False, output_hidden_states=False)
+    
+def download_image() -> str:
+    image = Image.open(requests.get('https://llava-vl.github.io/static/images/view.jpg', stream=True).raw)
+    temp_file = "./view.jpg"
+    image.save(temp_file)
+    return temp_file
 
-class LlavaModel(EagerModelBase):
-    def __init__(self):
-        model_path = "liuhaotian/llava-v1.5-7b"
-        self.tokenizer_, self.model_, self.image_processor_, context_len = (
-            load_pretrained_model(
-                model_path=model_path,
-                model_base=None,
-                model_name=get_model_name_from_path(model_path),
-            )
-        )
-        self.config_ = PreprocessConfig(image_processor.crop_size, image_processor.image_mean, image_processor.image_std,
-                image_processor.rescale_factor)
+def get_prompt(query: str, mm_use_im_start_end: bool, model_name: str) -> str:
+    qs = query
+    image_token_se = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN
+    if IMAGE_PLACEHOLDER in qs:
+        if mm_use_im_start_end:
+            qs = re.sub(IMAGE_PLACEHOLDER, image_token_se, qs)
+        else:
+            qs = re.sub(IMAGE_PLACEHOLDER, DEFAULT_IMAGE_TOKEN, qs)
+    else:
+        if mm_use_im_start_end:
+            qs = image_token_se + "\n" + qs
+        else:
+            qs = DEFAULT_IMAGE_TOKEN + "\n" + qs
 
-    def get_eager_model(self):
-        model = Llava(self.model_, self.config_)
-        return model
+    def get_conv_mode(model_name: str) -> str:
+        if "llama-2" in model_name.lower():
+            conv_mode = "llava_llama_2"
+        elif "mistral" in model_name.lower():
+            conv_mode = "mistral_instruct"
+        elif "v1.6-34b" in model_name.lower():
+            conv_mode = "chatml_direct"
+        elif "v1" in model_name.lower():
+            conv_mode = "llava_v1"
+        elif "mpt" in model_name.lower():
+            conv_mode = "mpt"
+        else:
+            conv_mode = "llava_v0"
+        return conv_mode
+    conv = conv_templates[get_conv_mode(model_name)].copy()
+    conv.append_message(conv.roles[0], qs)
+    conv.append_message(conv.roles[1], None)
+    prompt = conv.get_prompt()
+    return prompt
 
-    def get_example_inputs(self):
-        prompt = ""
-        input_ids = (
-            tokenizer_image_token(prompt, self.tokenizer_, IMAGE_TOKEN_INDEX, return_tensors="pt")
-            .unsqueeze(0)
-            .cpu()
-        )
-        index = torch.where(input_ids == IMAGE_TOKEN_INDEX)[1]
-        prompt_before_image = input_ids[:, :index]
-        # print(prompt_before_image.shape)
-        prompt_after_image = input_ids[:, index+1:]
-        # print(prompt_after_image.shape)
-        inputs = (prompt_before_image, imagr, prompt_after_image)
-        return inputs
+def get_image_tensor(args, image_processor, model) -> torch.Tensor:
+    image_files = args.image_file.split(args.sep)
+    images = load_images(image_files)
+    image_sizes = [x.size for x in images]
+    images_tensor = process_images(
+        images,
+        image_processor,
+        model.config
+    ).to(model.device, dtype=torch.float16)
+    return image_sizes, images_tensor
 
-    def get_dynamic_shapes(self):
-        length = Dim('length', min=8, max=4091)
-        token_dim_1 = Dim('token_dim_1', min=2, max=3518)
-        token_dim_2 = Dim('token_dim_2', min=2, max=3518)
-        width = Dim('width', min=9, max=4092)
-        dynamic_shapes = [{1: token_dim_1}, {1: length, 2: width}, {1: token_dim_2}]
-        return dynamic_shapes
+def main():
+    temp_file = download_image()
+    image_files = [temp_file]  # IMG_3997
 
+    args = type('Args', (), {
+        "model_path": model_path,
+        "model_base": None,
+        "model_name": get_model_name_from_path(model_path),
+        "query": "What are the things I should be cautious about when I visit here?",
+        "conv_mode": None,
+        "image_file": image_files[0],
+        "sep": ",",
+        "temperature": 0,
+        "top_p": None,
+        "num_beams": 1,
+        "max_new_tokens": 512
+    })()
+
+    model_name = get_model_name_from_path(args.model_path)
+    tokenizer, model, image_processor, context_len = load_pretrained_model(
+        args.model_path, args.model_base, model_name, device_map="cpu", device="cpu"
+    )
+
+    prompt = get_prompt(args.query, model.config.mm_use_im_start_end, model_name)
+
+    # # uncomment this line for end to end eager mode run
+    # eval_model(args)
+    imagr = torchvision.io.read_image(image_files[0])
+    input_ids = (
+        tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt")
+        .unsqueeze(0)
+        .cpu()
+    )
+
+    pre_config = PreprocessConfig(image_processor.crop_size, image_processor.image_mean, image_processor.image_std,
+                              image_processor.rescale_factor)
+    llava = Llava(model, image_processor, pre_config)
+    index = torch.where(input_ids==IMAGE_TOKEN_INDEX)[1]
+    prompt_before_image = input_ids[:, :index]
+    prompt_after_image = input_ids[:, index+1:]
+    llava = llava.to(torch.float32) # overflow error with fp16
+
+    prefill_logits_ref = llava.prefill_ref(prompt_before_image, imagr, prompt_after_image)[0]
+    prefill_logits = llava.prefill(prompt_before_image, imagr, prompt_after_image)
+    # context_len = prefill_logits.shape[0]
+    # print(prefill_logits)
+    # # first token
+    # new_tokens = [torch.argmax(prefill_logits[-1, :]).item()]
+
+    # for i in range(args.max_new_tokens):
+    #     print(i, tokenizer.decode(new_tokens[i]))
+    #     logits = llava.forward(new_tokens[i], context_len + i)
+    #     new_tokens.append(torch.argmax(logits[-1, :]))
+
+
+if __name__ == "__main__":
+    main()
