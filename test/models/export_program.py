@@ -53,12 +53,13 @@ class ModuleBasic(nn.Module):
 class ModuleIndex(nn.Module):
     def __init__(self):
         super(ModuleIndex, self).__init__()
+        self.register_buffer("b", torch.tensor([1, 2]))
 
     def forward(self, x):
         # Weird index that happens to generate a None in torch.index.Tensor_out
         # which is desirable for deserialization testing. A modified form of
         # an example index from https://pytorch.org/cppdocs/notes/tensor_indexing.html.
-        return x[1::2, torch.tensor([1, 2])]
+        return x[1::2, self.b]
 
     def get_random_inputs(self):
         return (torch.randn(10, 10, 10),)
@@ -132,8 +133,8 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
 class ModuleLinear(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.a = 3 * torch.ones(2, 2, dtype=torch.float)
-        self.b = 2 * torch.ones(2, 2, dtype=torch.float)
+        self.register_buffer("a", 3 * torch.ones(2, 2, dtype=torch.float))
+        self.register_buffer("b", 2 * torch.ones(2, 2, dtype=torch.float))
 
     def forward(self, x: torch.Tensor):
         out_1 = torch.mul(self.a, x)
@@ -147,8 +148,8 @@ class ModuleLinear(torch.nn.Module):
 class ModuleMultipleEntry(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.a = 3 * torch.ones(2, 2, dtype=torch.float)
-        self.b = 2 * torch.ones(2, 2, dtype=torch.float)
+        self.register_buffer("a", 3 * torch.ones(2, 2, dtype=torch.float))
+        self.register_buffer("b", 2 * torch.ones(2, 2, dtype=torch.float))
 
     def forward(self, x: torch.Tensor):
         return x + self.a

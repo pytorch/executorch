@@ -8,9 +8,10 @@ import logging
 
 import torch
 
-from transformers import AutoTokenizer, MobileBertModel  # @manual
+from transformers import AutoTokenizer  # @manual
 
 from ..model_base import EagerModelBase
+from .modeling_mobilebert import MobileBertModel
 
 
 class MobileBertModelExample(EagerModelBase):
@@ -19,7 +20,6 @@ class MobileBertModelExample(EagerModelBase):
 
     def get_eager_model(self) -> torch.nn.Module:
         logging.info("loading mobilebert model")
-        # pyre-ignore
         model = MobileBertModel.from_pretrained(
             "google/mobilebert-uncased", return_dict=False
         )
