@@ -672,8 +672,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       etdump
       executorch
       extension_data_loader
-      portable_ops_lib
-      quantized_ops_aot_lib
       util
       torch
   )
@@ -695,6 +693,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     target_link_options_shared_lib(quantized_ops_lib)
     list(APPEND _dep_libs quantized_kernels quantized_ops_lib)
+    if(TARGET quantized_ops_aot_lib)
+      list(APPEND _dep_libs quantized_kernels quantized_ops_aot_lib)
+    endif()
   endif()
 
   # compile options for pybind
