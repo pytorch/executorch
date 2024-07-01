@@ -72,7 +72,8 @@ int32_t main(int32_t argc, char** argv) {
   ::torch::executor::Runner runner(model_path, tokenizer_path, temperature);
 
   // generate
-  runner.generate(prompt, seq_len);
+  runner.generate(
+      prompt, seq_len, {}, ::torch::executor::Runner::printPytorchObserverLogs);
 
   return 0;
 }
