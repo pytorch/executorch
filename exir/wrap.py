@@ -11,7 +11,7 @@ Helper functions for constructing a "leaf function" in FX graph. A "leaf
 function" will be preserved as a call node in the the graph instead of
 being traced through.
 """
-
+# Downstream change in ExecuTorch to make it compatible with PyTorch.
 import torch
 from executorch.exir.tracer import PythonTensor, unwrap_functional
 
