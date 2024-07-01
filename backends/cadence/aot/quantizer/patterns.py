@@ -95,6 +95,26 @@ class AddmmPattern(QuantizationPattern):
         return torch.ops.cadence.quantized_linear
 
 
+class BmmPattern(QuantizationPattern):
+    def partition_types(self):
+        return [torch.bmm]
+
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
+        bmm_node = fused_partition[0].nodes[-1]
+
+        return PartitionAnchors(
+            inputs=[(bmm_node, 0), (bmm_node, 1)],
+            weights=[],
+            biases=[],
+            output=[(bmm_node,)],
+        )
+
+    def replacement_op(self):
+        return torch.ops.cadence.quantized_matmul.default
+
+
 class Conv1dPattern(QuantizationPattern):
     def partition_types(self) -> List[Type[torch.nn.Module]]:
         return [torch.nn.Conv1d]

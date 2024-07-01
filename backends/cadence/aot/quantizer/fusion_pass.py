@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Tuple
 import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
+    BmmPattern,
     Conv1dPattern,
     Conv2dPattern,
     LayerNormFunctionalPattern,
@@ -396,7 +397,9 @@ class QuantFusion(ExportPass):
                             other_inputs,
                             quant_node,
                         )
-                    elif isinstance(pattern, MatmulPattern):
+                    elif isinstance(pattern, BmmPattern) or isinstance(
+                        pattern, MatmulPattern
+                    ):
                         args, kwargs = get_args_and_kwargs_matmul(
                             inputs_inputs,
                             dequants_inputs,
