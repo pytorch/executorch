@@ -31,6 +31,18 @@ runtime.python_library(
 )
 
 runtime.python_library(
+    name = "runtime_info_schema",
+    srcs = [
+        "runtime_info_schema.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "//executorch/test/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+)
+
+runtime.python_library(
     name = "compile_spec_schema",
     srcs = [
         "compile_spec_schema.py",
@@ -71,6 +83,7 @@ runtime.python_library(
     deps = [
         ":compile_spec_schema",
         ":partitioner",
+        ":runtime_info_schema",
         "//caffe2:torch",
         "//executorch/exir:delegate",
         "//executorch/exir:graph_module",

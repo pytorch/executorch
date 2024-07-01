@@ -40,6 +40,22 @@ class ExecutorBackend final : public PyTorchBackendInterface {
  public:
   ~ExecutorBackend() = default;
 
+  Error runtime_info(ArrayRef<RuntimeInfo> runtime_info) const override {
+    static const char* const kKey = "version";
+    static const char* const kRuntimeVersion = "ET_12";
+
+    for (auto&& [key, value] : runtime_info) {
+      if (strcmp(key, kKey) == 0) {
+        if (value.nbytes > strlen(kRuntimeVersion) + 1) {
+          return Error::DelegateInvalidCompatibility;
+        }
+        // Update the runtime version from ExecutorBackend
+        memcpy(value.buffer, kRuntimeVersion, strlen(kRuntimeVersion) + 1);
+      }
+    }
+    return Error::Ok; // Key found and value set
+  }
+
   bool is_available() const override {
     return true;
   }
