@@ -42,6 +42,7 @@ def define_common_targets():
         name = "vec_ops",
         srcs = [],
         exported_headers = ["vec_ops.h"],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
     )
 
@@ -53,6 +54,7 @@ def define_common_targets():
         exported_headers = [
             "math_constants.h",
         ],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
         visibility = [
             "//executorch/kernels/portable/cpu/...",
         ],
@@ -73,6 +75,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
         ],
+        compiler_flags = ["-Wno-missing-prototypes", "-fvisibility=hidden"],
     )
 
     # Used for dtype selective build. Collect source and header files.
