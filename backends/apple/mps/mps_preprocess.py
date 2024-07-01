@@ -31,6 +31,7 @@ from executorch.exir.backend.backend_details import (
     CompileSpec,
     PreprocessResult,
 )
+from executorch.exir._serialize._program import Cord, _ExtendedHeader
 from torch._export.exported_program import ExportedProgram
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -66,6 +67,7 @@ class MPSBackend(BackendDetails):
             input_ids=[],
             output_ids=[],
             constant_ids=[],
+            constant_segment=DataSegment(0, 0),
             graph_type=OpType.mps_graph,
         )
 
@@ -103,7 +105,24 @@ class MPSBackend(BackendDetails):
         if logging.DEBUG >= logging.root.level:
             pretty_print(mps_graph)
 
-        return PreprocessResult(processed_bytes=convert_to_flatbuffer(mps_graph))
+        # Handle constant segment
+        segment_data, mps_graph = _extract_constant_segment(mps_graph)
+        # Add to aggregate segments cord with padding.
+        padding_length = _padding_required(len(segment_data), 16)
+        if padding_length > 0:
+            segment_data.append(b"\x00" * padding_length)
+        segment_data.append(data)
+        # Combine mps_graph with segment data
+        combined = Cord()
+        combined.append(convert_to_flatbuffer(mps_graph))
+        # Pad the mps graph to 16 alignment (is this necessary?)
+        graph_padding_length = _padding_required(len(combined), 16)
+        if graph_padding_length > 0:
+            combined.append(b"\x00" * graph_padding_length)
+        # Append the segment data to the end of the mps graph
+        combined.append(segment_data)
+
+        return PreprocessResult(processed_bytes=bytes(combined))
 
     @staticmethod
     def handle_call_function(
@@ -162,6 +181,33 @@ class MPSBackend(BackendDetails):
         mps_graph: MPSGraph,
     ) -> None:
         pass
+
+
+def _padding_required(offset: int, alignment: int) -> int:
+    """Returns the padding required to align `offset` to `alignment`."""
+    remainder: int = offset % alignment
+    if remainder != 0:
+        return alignment - remainder
+    return 0
+
+
+def _extract_constant_segment(mps_graph: MPSGraph) -> Tuple[Cord, MPSGraph]:
+    """Extracts the constant segment from the MPSGraph and returns the updated MPSGraph along with the segment data."""
+    # Note that the beginning of the segment data is not aligned. Need to handle out of this call.
+    segment_data = Cord()
+    offset = 0
+    for i in range(len(mps_graph.mps_values)):
+        tensor = mps_graph.mps_values[i]
+        if tensor.constant_buffer_size > 0:
+            # Notice that buffer is already force aligned so we don't need to pad it
+            segment_data.append(tensor.constant_buffer)
+            # Reset buffer to empty
+            tensor.constant_buffer = []
+            # Update segment offset
+            tensor.segment_offset = offset
+            offset += tensor.constant_buffer_size
+
+    return segment_data, mps_graph
 
 
 def tensor_to_str(mps_tensor: MPSTensor):

@@ -127,6 +127,8 @@ private:
   // Linear algebra ops
   _DEFINE_MPS_OP(MatMul);
   _DEFINE_MPS_OP(Addmm);
+  // Quantized linear algebra ops
+  _DEFINE_MPS_OP(Int8PackedMM);
   // Constant ops
   _DEFINE_MPS_OP(Full);
   _DEFINE_MPS_OP(FullLike);
