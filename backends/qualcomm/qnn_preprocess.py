@@ -84,10 +84,13 @@ class QnnBackend(BackendDetails):
                 continue
             else:
                 raise RuntimeError(f"{node.op} is not supported in Qnn")
+        # assert False
+        # TODO(dixu): repace by the onnx path QNN payload
         qnn_context_binary = qnn_manager.Compile(
             [py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrapper_list]
         )
         assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
+        print(f"Generated qnn binary size: {len(qnn_context_binary)}")
         qnn_manager.Destroy()
         # For now, debug_handle_map is not used by QNN ExecuTorch
         return PreprocessResult(

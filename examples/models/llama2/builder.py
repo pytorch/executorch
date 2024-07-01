@@ -200,6 +200,7 @@ class LlamaEdgeManager:
         if dtype_override is not None and dtype_override != self.dtype:
             torch_dtype = dtype_override.to_torch_dtype()
             logging.info(f"model.to {torch_dtype}")
+            # Override b16 dtype
             self.model = self.model.to(dtype=torch_dtype)
             self.dtype = dtype_override
         return self
@@ -352,6 +353,7 @@ class LlamaEdgeManager:
         if partitioners is None:
             logging.info("No partitioner provided, passing...")
         else:
+            print(f"DX Number of partitioners: {len(partitioners)}")
             for partitioner in partitioners:
                 if partitioner is not None:
                     assert (

@@ -11,7 +11,7 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
 from executorch.backends.qualcomm.builders import node_visitor
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
+from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option, draw_graph
 
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -93,6 +93,9 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
 
         self.nodes_to_wrappers.clear()
+        # Enforce 1 QNN blob
+        if node.target.__name__ in ['aten.add.Tensor', 'aten.permute_copy.default', 'aten.embedding.default']:
+            supported = True
         print(f"[QNN Partitioner Op Support]: {node.target.__name__} | {supported}")
         return supported
 
@@ -122,17 +125,34 @@ class QnnPartitioner(Partitioner):
             self.skip_node_id_set,
             self.skip_node_op_set,
         )
+
+        title = "cria"
+        path = "/tmp"
+        draw_graph(title, path, edge_program.graph_module)
+        print(f"Saved CPU edge program to {path}/{title}.svg")
+
         return generate_partitions_from_list_of_nodes(
             edge_program.graph_module,
             op_support=self.op_support_checker,
         )
 
     def tag_nodes(self, partitions: List[Partition]) -> None:
+        # assert False
+        default_tag = None
         for partition in partitions:
+            print(f"DX tagging nodes for partition {partition.id}")
             for node in partition.nodes:
+                # print(f"DX tagging node {node.name}")
                 delegation_tag = f"qnn_{partition.id}"
-                node.meta["delegation_tag"] = delegation_tag
+                if default_tag is None:
+                    default_tag = delegation_tag
+                # # DX
+                # # Enforce using the same partition tag
+                # delegation_tag = default_tag
+                # node.meta["delegation_tag"] = delegation_tag
                 self.partition_tags[delegation_tag] = self.delegation_spec
+
+        print(f"DX Partition tags: {self.partition_tags}")
 
     # override
     def partition(self, edge_program: torch.export.ExportedProgram) -> PartitionResult:
