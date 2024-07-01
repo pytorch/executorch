@@ -58,6 +58,7 @@ set(lib_list
     quantized_kernels
     quantized_ops_lib
     quantized_ops_aot_lib
+    executor_backend
 )
 foreach(lib ${lib_list})
   # Name of the variable which stores result of the find_library search

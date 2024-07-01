@@ -279,6 +279,22 @@ filters = [
   ".fbs$",
 ]
 # ---------------------------------- Vulkan end -----------------------------------
+# ---------------------------------- Executor Backend start ---------------------------------
+[targets.executor_backend]
+buck_targets = [
+  "//exir/backend/test/demos/rpc:executor_backend_register",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "executorch_no_prim_ops",
+  "portable_kernels",
+  "extension_runner_util",
+]
+
+# ---------------------------------- Executor Backend end -----------------------------------
 # ---------------------------------- LLama start ----------------------------------
 [targets.custom_ops]
 buck_targets = [

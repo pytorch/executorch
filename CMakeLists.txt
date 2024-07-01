@@ -621,6 +621,10 @@ if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
 endif()
 
+if(EXECUTORCH_BUILD_EXECUTOR_BACKEND)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/exir/backend/test/demos/rpc)
+endif()
+
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
 endif()
