@@ -205,6 +205,14 @@ Topics in this section will help you get started with ExecuTorch.
    sdk-delegate-integration
    sdk-tutorial
 
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Contributing
+   :hidden:
+
+   contributing
+
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
 
