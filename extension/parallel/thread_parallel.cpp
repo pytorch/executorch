@@ -8,8 +8,8 @@
 
 #include <tuple>
 
-#include <executorch/backends/xnnpack/threadpool/threadpool.h>
 #include <executorch/extension/parallel/thread_parallel.h>
+#include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/assert.h>
 

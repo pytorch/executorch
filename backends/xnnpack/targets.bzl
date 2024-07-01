@@ -44,7 +44,7 @@ def define_common_targets():
         deps = [
             third_party_dep("XNNPACK"),
             "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",
-            "//executorch/backends/xnnpack/threadpool:threadpool",
+            "//executorch/extension/threadpool:threadpool",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         # XnnpackBackend.cpp needs to compile with executor as whole

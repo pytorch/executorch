@@ -23,7 +23,7 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             deps = [
-                "//executorch/backends/xnnpack/threadpool:threadpool",
+                "//executorch/extension/threadpool:threadpool",
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
