@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Optional
+
 
 def get_xnnpack_partitioner():
     from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
@@ -17,12 +19,14 @@ def get_xnnpack_partitioner():
     return XnnpackDynamicallyQuantizedPartitioner()
 
 
-def get_vulkan_partitioner(args):
+def get_vulkan_partitioner(
+    dtype_override: Optional[str] = None, quantization_mode: Optional[str] = None
+):
     assert (
-        args.dtype_override == "fp32" or args.dtype_override is None
+        dtype_override == "fp32" or dtype_override is None
     ), "Vulkan backend does not support non fp32 dtypes at the moment"
     assert (
-        args.quantization_mode is None
+        quantization_mode is None
     ), "Vulkan backend does not support quantization at the moment"
     from executorch.backends.vulkan.partitioner.vulkan_partitioner import (
         VulkanPartitioner,
@@ -31,11 +35,11 @@ def get_vulkan_partitioner(args):
     return VulkanPartitioner({"require_dynamic_shapes": True})
 
 
-def get_mps_partitioner(args):
+def get_mps_partitioner(use_kv_cache: bool = False):
     from executorch.exir.backend.backend_details import CompileSpec
 
     assert (
-        args.use_kv_cache is True
+        use_kv_cache is True
     ), "MPS backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
     try:
         # pyre-ignore Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.mps.partition.mps_partitioner`.
@@ -51,9 +55,9 @@ def get_mps_partitioner(args):
     return MPSPartitioner(compile_specs)
 
 
-def get_coreml_partitioner(args):
+def get_coreml_partitioner(use_kv_cache: bool = False):
     assert (
-        args.use_kv_cache is True
+        use_kv_cache is True
     ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
     try:
         import coremltools as ct
@@ -79,9 +83,11 @@ def get_coreml_partitioner(args):
     )
 
 
-def get_qnn_partitioner(args, quant_dtype):
+def get_qnn_partitioner(
+    quant_dtype, use_kv_cache: bool = False, pt2e_quantize: Optional[str] = None
+):
     assert (
-        args.use_kv_cache is True
+        use_kv_cache is True
     ), "Qualcomm backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
     try:
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.partition.qnn_partitioner`
@@ -109,7 +115,7 @@ def get_qnn_partitioner(args, quant_dtype):
 
     use_fp16 = True
     skip_node_op_set = {}
-    if args.pt2e_quantize:
+    if pt2e_quantize is not None:
         use_fp16 = False
         # TODO: fix the lowering error without skipping nodes
 
