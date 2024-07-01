@@ -13,7 +13,7 @@
 #include <cmath>
 
 namespace impl {
-namespace HiFi {
+namespace reference {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
@@ -223,5 +223,5 @@ void quantized_conv_out(
 }
 
 }; // namespace native
-}; // namespace HiFi
+}; // namespace reference
 }; // namespace impl
