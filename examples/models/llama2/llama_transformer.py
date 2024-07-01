@@ -88,7 +88,7 @@ class ModelArgs:
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
     )
-    enable_dynamic_shape: bool = (False) # export model with dynamic shape support
+    enable_dynamic_shape: bool = False  # export model with dynamic shape support
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
     )
@@ -336,7 +336,7 @@ class Attention(nn.Module):
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
                 max_seq_len=self.max_seq_len,
-                enable_dynamic_shape=args.enable_dynamic_shape
+                enable_dynamic_shape=args.enable_dynamic_shape,
             )
 
     def forward(
