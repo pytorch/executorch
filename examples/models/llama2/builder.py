@@ -90,7 +90,7 @@ def load_llama_model(
         checkpoint or checkpoint_dir
     ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
     logging.info(
-        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
+        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}, enable_dynamic_shape={enable_dynamic_shape}"
     )
     model, example_inputs, _ = EagerModelFactory.create_model(
         "llama2",
@@ -228,7 +228,7 @@ class LlamaEdgeManager:
             if self.enable_dynamic_shape:
                 return ({1: dim}, {0: dim})
             else:
-                None
+                return None
         else:
             return ({1: dim},)
 
