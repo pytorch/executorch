@@ -20,6 +20,7 @@ namespace delegate {
 
 MPSDataType getMPSScalarType(exec_aten::ScalarType scalar_type);
 exec_aten::ScalarType getScalarType(MPSDataType mpsDataType);
+std::string scalarToMetalTypeString(const exec_aten::ScalarType& scalar_type);
 MPSGraphTensor *castMPSTensor(MPSGraph *mpsGraph, MPSGraphTensor *tensor, exec_aten::ScalarType toType);
 MPSGraphTensor *castMPSTensor(MPSGraph *mpsGraph, MPSGraphTensor *tensor, MPSDataType toType);
 std::vector<int64_t> getMPSShapeVec(const MPSShape *shape);

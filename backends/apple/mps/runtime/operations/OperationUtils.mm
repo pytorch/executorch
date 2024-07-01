@@ -273,6 +273,38 @@ exec_aten::ScalarType getScalarType(MPSDataType mpsDataType) {
   }
 }
 
+static inline void checkSupportsBFloat16() {
+  ET_CHECK_MSG(isMacOS13OrNewer(MacOSVersion::MACOS_VER_14_0_PLUS),
+                   "MPS bfloat16 type is supported on MacOS 14.0 or newer.");
+}
+
+std::string scalarToMetalTypeString(const exec_aten::ScalarType& scalar_type) {
+  switch (scalar_type) {
+    case ScalarType::Float:
+      return "float";
+    case ScalarType::Half:
+      return "half";
+    case ScalarType::BFloat16:
+      checkSupportsBFloat16();
+      return "bfloat";
+    case ScalarType::Int:
+      return "int";
+    case ScalarType::Long:
+      return "long";
+    case ScalarType::Short:
+      return "short";
+    case ScalarType::Char:
+      return "char";
+    case ScalarType::Byte:
+      return "uchar";
+    case ScalarType::Bool:
+      return "bool";
+    default:
+      ET_CHECK_MSG(false, "Undefined type ", scalar_type);
+      return "Undefined";
+  }
+}
+
 MPSGraphTensor* castMPSTensor(MPSGraph* mpsGraph, MPSGraphTensor* tensor, exec_aten::ScalarType toType) {
   return castMPSTensor(mpsGraph, tensor, getMPSScalarType(toType));
 }

@@ -16,6 +16,7 @@
 #include <executorch/runtime/core/error.h>
 
 #include <unordered_map>
+typedef id<MTLDevice> MTLDevice_t;
 
 namespace torch {
 namespace executor {
@@ -58,6 +59,7 @@ class MPSStream {
   dispatch_queue_t queue() const {
     return _serialQueue;
   }
+  MTLDevice_t device() const { return [_commandQueue device];}
 
   bool hasLiveCommandBuffer();
   MPSCommandBuffer* commandBuffer();
