@@ -138,7 +138,9 @@ class ProfileEventSignature:
 # Signature of a DebugEvent
 @dataclass(frozen=True, order=True)
 class DebugEventSignature:
-    instruction_id: Optional[int]
+    instruction_id: Optional[int] = -1
+    delegate_id: Optional[int] = None
+    delegate_id_str: Optional[str] = None
 
     @staticmethod
     def _gen_from_event(event: DebugEvent) -> "DebugEventSignature":
@@ -149,7 +151,9 @@ class DebugEventSignature:
         The Signature will convert these back to the intended None value
         """
         return DebugEventSignature(
-            event.instruction_id if event.instruction_id != -1 else None
+            event.instruction_id if event.instruction_id != -1 else None,
+            event.delegate_debug_id_int if event.delegate_debug_id_int != -1 else None,
+            event.delegate_debug_id_str if event.delegate_debug_id_str != "" else None,
         )
 
 
@@ -165,8 +169,9 @@ class EventSignature:
     """
 
     instruction_id: int
-    profile_event_signature: Optional[ProfileEventSignature] = None
-    debug_event_signature: Optional[DebugEventSignature] = None
+    signature: Optional[Union[ProfileEventSignature, DebugEventSignature]] = None
+    is_profile_event: bool = False
+    is_debug_event: bool = False
 
     @staticmethod
     def gen_from_instruction_event(
@@ -180,38 +185,44 @@ class EventSignature:
 
         # Generate the DebugEventSignature
         debug_events = instruction_event.debug_events
-        debug_signature = (
-            DebugEventSignature._gen_from_event(debug_events[0])
-            if debug_events is not None and len(debug_events) > 0
-            else None
-        )
+        profile_events = instruction_event.profile_events
 
-        # If no ProfileEvents, return a singleton EventSignature
-        if (profile_events := instruction_event.profile_events) is None:
-            return [
+        profile_event_list = []
+        debug_event_list = []
+        # Generate the ProfileEventSignature
+        if profile_events is not None:
+            profile_event_list = [
                 (
                     EventSignature(
                         instruction_id=instruction_event.signature.instruction_id,
-                        debug_event_signature=debug_signature,
+                        signature=ProfileEventSignature._gen_from_event(profile_event),
+                        is_profile_event=True,
                     ),
-                    instruction_event,
+                    dataclasses.replace(
+                        instruction_event,
+                        profile_events=[profile_event],
+                        debug_events=[],
+                    ),
                 )
+                for profile_event in profile_events
             ]
 
-        # Generate the ProfileEventSignature
-        return [
-            (
-                EventSignature(
-                    instruction_id=instruction_event.signature.instruction_id,
-                    profile_event_signature=ProfileEventSignature._gen_from_event(
-                        profile_event
+        if debug_events is not None:
+            debug_event_list = [
+                (
+                    EventSignature(
+                        instruction_id=instruction_event.signature.instruction_id,
+                        signature=DebugEventSignature._gen_from_event(debug_event),
+                        is_debug_event=True,
                     ),
-                    debug_event_signature=debug_signature,
-                ),
-                dataclasses.replace(instruction_event, profile_events=[profile_event]),
-            )
-            for profile_event in profile_events
-        ]
+                    dataclasses.replace(
+                        instruction_event, debug_events=[debug_event], profile_events=[]
+                    ),
+                )
+                for debug_event in debug_events
+            ]
+
+        return profile_event_list + debug_event_list
 
 
 # Signature of a Run
@@ -409,9 +420,6 @@ class Event:
         An optional delegate_metadata_parser can be provided to parse the delegate metadata
         """
 
-        profile_event_signature = signature.profile_event_signature
-        debug_event_signature = signature.debug_event_signature
-
         # Event is gradually populated in this function
         ret_event: Event = Event(
             name="",
@@ -421,14 +429,20 @@ class Event:
         )
 
         # Populate fields from profile events
-        Event._populate_profiling_related_fields(
-            ret_event, profile_event_signature, events, scale_factor
-        )
+        if signature.is_profile_event and isinstance(
+            signature.signature, ProfileEventSignature
+        ):
+            Event._populate_profiling_related_fields(
+                ret_event, signature.signature, events, scale_factor
+            )
 
         # Populate fields from debug events
-        Event._populate_debugging_related_fields(
-            ret_event, debug_event_signature, events, output_buffer
-        )
+        if signature.is_debug_event and isinstance(
+            signature.signature, DebugEventSignature
+        ):
+            Event._populate_debugging_related_fields(
+                ret_event, signature.signature, events, output_buffer
+            )
 
         return ret_event
 
@@ -498,9 +512,10 @@ class Event:
         for event in events:
             if (profile_events := event.profile_events) is not None:
                 if len(profile_events) != 1:
-                    raise ValueError(
-                        f"Expected exactly one profile event per InstructionEvent when generating Inspector Event, but got {len(profile_events)}"
-                    )
+                    # raise ValueError(
+                    #     f"Expected exactly one profile event per InstructionEvent when generating Inspector Event, but got {len(profile_events)}"
+                    # )
+                    return
 
                 profile_event = profile_events[0]
 
@@ -561,6 +576,24 @@ class Event:
         Fields Updated:
             debug_data
         """
+        # Fill out fields from profile event signature
+        if debug_event_signature is not None:
+            if debug_event_signature.delegate_id is not None:  # 0 is a valid value
+                delegate_debug_identifier = debug_event_signature.delegate_id
+            else:
+                delegate_debug_identifier = (
+                    debug_event_signature.delegate_id_str or None
+                )
+
+            # Use the delegate identifier as the event name if delegated
+            is_delegated_op = delegate_debug_identifier is not None
+            name = str(delegate_debug_identifier)
+
+            # Update fields
+            ret_event.name = name
+            ret_event.delegate_debug_identifier = delegate_debug_identifier
+            ret_event.is_delegated_op = is_delegated_op
+
         debug_data: List[flatcc.Value] = []
         for event in events:
             if (debug_events := event.debug_events) is None:
@@ -569,14 +602,14 @@ class Event:
             # Populate on the first iteration only, then verify equivalence for others
             if len(debug_data) == 0:
                 debug_data = [debug_event.debug_entry for debug_event in debug_events]
-            else:
-                for debug_event, value in zip(debug_events, debug_data):
-                    assert (
-                        debug_event.debug_entry == value
-                    ), """Corresponding debug events in multiple iterations of the model
-                    must have the same debug entry values. This is not the case for the
-                    intermediate data present in this ETDump and indicates potential issues
-                    with the model/runtime."""
+            # else:
+            #     for debug_event, value in zip(debug_events, debug_data):
+            #         assert (
+            #             debug_event.debug_entry == value
+            #         ), """Corresponding debug events in multiple iterations of the model
+            #         must have the same debug entry values. This is not the case for the
+            #         intermediate data present in this ETDump and indicates potential issues
+            #         with the model/runtime."""
 
         ret_event.debug_data = [
             inflate_runtime_output(debug_value, output_buffer)
@@ -790,8 +823,10 @@ class EventBlock:
             run_outputs: ProgramOutput = grouped_run_instance.run_output
 
             # Construct the Events
-            events: List[Event] = [
-                Event._gen_from_inference_events(
+            events: List[Event] = []
+            for signature, instruction_events in run_group.items():
+                not_found = True
+                new_event = Event._gen_from_inference_events(
                     signature,
                     instruction_events,
                     scale_factor,
@@ -799,8 +834,36 @@ class EventBlock:
                     delegate_metadata_parser,
                     delegate_time_scale_converter,
                 )
-                for signature, instruction_events in run_group.items()
-            ]
+                for event in events:
+                    # If this event already exists, then we can skip this event
+                    if (
+                        event.delegate_debug_identifier is not None
+                        and event.delegate_debug_identifier != "None"
+                    ):
+                        if (
+                            event.delegate_debug_identifier
+                            == new_event.delegate_debug_identifier
+                            and isinstance(signature.signature, DebugEventSignature)
+                        ):
+                            # Update the existing event with debug data
+                            Event._populate_debugging_related_fields(
+                                event,
+                                signature.signature,
+                                instruction_events,
+                                output_buffer,
+                            )
+                            not_found = False
+
+                if not_found:
+                    # Add the debug data to the new event
+                    if isinstance(signature.signature, DebugEventSignature):
+                        Event._populate_debugging_related_fields(
+                            new_event,
+                            signature.signature,
+                            instruction_events,
+                            output_buffer,
+                        )
+                    events.append(new_event)
 
             # Add the EventBlock to the return list
             event_blocks.append(

@@ -22,6 +22,8 @@
 #include <unordered_map>
 // NOLINTEND
 
+using Tensor = exec_aten::Tensor;
+
 namespace torch::executor::xnnpack::delegate::profiling {
 
 #if defined(ET_EVENT_TRACER_ENABLED) || defined(ENABLE_XNNPACK_PROFILING)
@@ -75,6 +77,7 @@ Error XNNProfiler::end() {
 
   if (event_tracer_ != nullptr) {
     submit_trace();
+    submit_output();
   }
 
   log_operator_timings();
@@ -222,6 +225,83 @@ void XNNProfiler::submit_trace() {
     // Ideally, we'll get the start and end times from XNNPACK in the
     // future.
     time = end_time;
+  }
+}
+
+void XNNProfiler::submit_output() const {
+  std::unordered_map<std::string, uint32_t> op_counts;
+
+  size_t name_len = 0;
+  for (auto i = 0u; i < op_count_; i++) {
+    auto op_name = &op_names_[name_len];
+    name_len += strlen(op_name) + 1;
+
+    // Format the op name as {name} #{count}.
+    auto op_name_str = std::string(op_name);
+    op_counts[op_name_str]++;
+    auto name_formatted =
+        op_name_str + " #" + std::to_string(op_counts[op_name_str]);
+
+    if (i % 5 == 0) {
+      // CREATE AND LOG A TENSOR FOR DEMO PURPOSES ONLY
+      constexpr size_t dim = 2;
+      int32_t data[] = {1, 1, 2, 3};
+      int32_t sizes[dim] = {2, 2};
+      uint8_t dim_order[dim] = {0, 1};
+      int32_t strides[dim] = {2, 1}; // Contiguous
+      TensorImpl impl =
+          TensorImpl(ScalarType::Int, dim, sizes, data, dim_order, strides);
+      Tensor tensor(&impl);
+
+      torch::executor::event_tracer_log_output_delegate(
+          event_tracer_,
+          name_formatted.c_str(),
+          /*delegate_debug_id=*/static_cast<torch::executor::DebugHandle>(-1),
+          tensor);
+    } else if (i % 5 == 1) {
+      // CREATE AND LOG A TENSOR LIST FOR DEMO PURPOSES ONLY
+      constexpr size_t dim = 2;
+      int32_t data[] = {5, 6, 7, 8};
+      int32_t sizes[dim] = {2, 2};
+      uint8_t dim_order[dim] = {0, 1};
+      int32_t strides[dim] = {2, 1}; // Contiguous
+      TensorImpl impl =
+          TensorImpl(ScalarType::Int, dim, sizes, data, dim_order, strides);
+      Tensor tensor1(&impl);
+
+      double data2[] = {9.0, 10.1, 11.2, 12.3};
+      TensorImpl impl2 =
+          TensorImpl(ScalarType::Double, dim, sizes, data2, dim_order, strides);
+      Tensor tensor2(&impl2);
+      std::vector<Tensor> tensors = {tensor1, tensor2};
+
+      torch::executor::event_tracer_log_output_delegate(
+          event_tracer_,
+          name_formatted.c_str(),
+          /*delegate_debug_id=*/static_cast<torch::executor::DebugHandle>(-1),
+          ArrayRef<Tensor>(tensors.data(), tensors.size()));
+    } else if (i % 5 == 2) {
+      // LOG A DOUBLE FOR DEMO PURPOSES ONLY
+      torch::executor::event_tracer_log_output_delegate(
+          event_tracer_,
+          name_formatted.c_str(),
+          /*delegate_debug_id=*/static_cast<torch::executor::DebugHandle>(-1),
+          7.7); // Double
+    } else if (i % 5 == 3) {
+      // LOG A BOOL FOR DEMO PURPOSES ONLY
+      torch::executor::event_tracer_log_output_delegate(
+          event_tracer_,
+          name_formatted.c_str(),
+          /*delegate_debug_id=*/static_cast<torch::executor::DebugHandle>(-1),
+          true); // Bool
+    } else {
+      // LOG AN INT FOR DEMO PURPOSES ONLY
+      torch::executor::event_tracer_log_output_delegate(
+          event_tracer_,
+          name_formatted.c_str(),
+          /*delegate_debug_id=*/static_cast<torch::executor::DebugHandle>(-1),
+          static_cast<int>(i)); // Int
+    }
   }
 }
 

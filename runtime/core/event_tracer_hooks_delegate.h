@@ -145,5 +145,47 @@ inline void event_tracer_log_profiling_delegate(
 #endif
 }
 
+/**
+ * This templated interfaces can be called in a loop etc. to log any number of
+ * debug events that are part of this delegate. Supported values types are int,
+ * bool, double, tensor and array of tensors. Can be left in production code as
+ * these hooks compile conditionally.
+ *
+ * @param[in] event_tracer The event tracer instance that is doing the logging.
+ * @param[in] name Human readable name for the delegate event. This name has
+ * to be the same name that was passed in during the Debug delegate mapping
+ * generation in the export/ahead-of-time process. If indices and not names
+ * are used by this delegate to identify ops executed in the backend then
+ * nullptr can be passed in. Users calling this interface do not need to keep
+ * the memory pointed to by this pointer around. The string must
+ * be copied over into internal memory during this call.
+ * @param[in] delegate_debug_id The id of the delegate event. If string
+ * based names are used by this delegate to identify ops executed in the
+ * backend then -1 should be passed in here.
+ * @param[in] output The output to be logged.
+ */
+template <typename T>
+inline void event_tracer_log_output_delegate(
+    EventTracer* event_tracer,
+    const char* name,
+    DebugHandle delegate_debug_id,
+    const T& output) {
+#ifdef ET_EVENT_TRACER_ENABLED
+  if (event_tracer) {
+    static_assert(
+        std::is_same<T, int>::value || std::is_same<T, bool>::value ||
+            std::is_same<T, double>::value || std::is_same<T, Tensor>::value ||
+            std::is_same<T, ArrayRef<Tensor>>::value,
+        "Unsupported type for intermediate output");
+    event_tracer->log_intermediate_output_delegate(
+        name, delegate_debug_id, output);
+  }
+#else //! ET_EVENT_TRACER_ENABLED
+  (void)name;
+  (void)delegate_debug_id;
+  (void)output;
+#endif
+}
+
 } // namespace executor
 } // namespace torch
