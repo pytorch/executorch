@@ -1127,6 +1127,30 @@ class TestPasses(unittest.TestCase):
             "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"
         ).run(gm.code)
 
+    def test_constant_prop_pass_for_get_attr(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.tensor(1.0)
+                return x + y
+
+        add = Add()
+
+        edge = to_edge(export(add, (torch.ones(1),)))
+        edge = edge.transform([ScalarToTensorPass(), RemoveMixedTypeOperators()])
+        exported_program = lift_constant_tensor_pass(edge.exported_program())
+
+        # Check there is a lifted tensor followed by aten_clone node.
+        FileCheck().check("c_lifted_tensor_0").check(
+            "executorch_exir_dialects_edge__ops_aten_clone_default"
+        ).run(exported_program.graph_module.code)
+
+        new_ep = constant_prop_pass(exported_program)
+
+        # Check (c_lifted_tensor_0 + aten_clone) node is replaced by prop tensor.
+        FileCheck().check_not("c_lifted_tensor_0").check("_prop_tensor_constant1").run(
+            new_ep.graph_module.code
+        )
+
     def test_constant_prop_pass_for_add(self) -> None:
         class Add(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
