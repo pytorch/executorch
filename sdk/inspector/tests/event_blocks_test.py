@@ -187,7 +187,8 @@ class TestEventBlock(unittest.TestCase):
             self.assertEqual(profile_signature, expected_signature)
 
             event_signature = EventSignature(
-                instruction_id=instruction_id, profile_event_signature=profile_signature
+                instruction_id=instruction_id,
+                profile_event_signature=profile_signature,
             )
 
             # Test Event Generation
