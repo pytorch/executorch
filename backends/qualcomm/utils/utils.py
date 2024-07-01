@@ -121,6 +121,8 @@ def _transform(edge_program: ExportedProgram) -> None:
     AnnotateDecomposed(edge_program)(graph_module)
     FoldQDQ()(graph_module)
     LayoutTransform(edge_program)(graph_module)
+    # Ensure the exported_program is still valid, ideally we want to verify for each pass
+    edge_program._validate()
 
 
 def capture_program(
