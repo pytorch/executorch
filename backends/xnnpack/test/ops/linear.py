@@ -832,7 +832,6 @@ class TestLinear(unittest.TestCase):
                 tester.quantize(Quantize(quantization_config=quant_config))
 
             tester.export()
-            tester.check_count({aten_op: 1})
             if quant:
                 tester.check(["torch.ops.quantized_decomposed"])
 
@@ -882,8 +881,6 @@ class TestLinear(unittest.TestCase):
         tester.quantize(Quantize(quantization_config=quant_config))
 
         tester.export()
-        tester.check_count({aten_op: linear_count})
-        tester.check(["torch.ops.quantized_decomposed"])
         tester.to_edge()
         tester.check_count({edge_op: linear_count})
 

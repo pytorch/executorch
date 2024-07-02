@@ -27,7 +27,7 @@ class TestSquare(unittest.TestCase):
         (
             Tester(self.Square(), inputs)
             .export()
-            .check_count({"torch.ops.aten.pow.Tensor_Scalar": 1})
+            .check_count({"torch.ops.aten.square.default": 1})
             .to_edge()
             .check_count(
                 {"executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 1}

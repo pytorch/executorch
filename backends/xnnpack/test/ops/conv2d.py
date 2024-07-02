@@ -163,7 +163,7 @@ class TestConv2d(unittest.TestCase):
 
         (
             tester.export()
-            .check_count({"torch.ops.aten.convolution.default": conv_count})
+            .check_count({"torch.ops.aten.conv2d": conv_count})
             .to_edge()
             .check_count(
                 {
