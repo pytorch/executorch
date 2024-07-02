@@ -386,7 +386,7 @@ class CoreMLBackend(BackendDetails):
             source="pytorch",
             convert_to="mlprogram",
             pass_pipeline=ct.PassPipeline.DEFAULT,
-            skip_model_load=False,
+            skip_model_load=True,
             compute_precision=model_compute_precision,
             minimum_deployment_target=minimum_deployment_target,
             compute_units=compute_units,
