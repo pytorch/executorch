@@ -11,6 +11,7 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/api/ParamsBuffer.h>
 #include <executorch/backends/vulkan/runtime/api/Types.h>
 
 namespace vkcompute {
@@ -180,10 +181,10 @@ class vTensor final {
    * Refer to the comments for the corresponding *_ubo() functions for more
    * context about the data contained in each buffer.
    */
-  api::UniformParamsBuffer sizes_uniform_;
-  api::UniformParamsBuffer texture_limits_uniform_;
-  api::UniformParamsBuffer texel_strides_uniform_;
-  api::UniformParamsBuffer ntexels_uniform_;
+  api::ParamsBuffer sizes_uniform_;
+  api::ParamsBuffer texture_limits_uniform_;
+  api::ParamsBuffer texel_strides_uniform_;
+  api::ParamsBuffer ntexels_uniform_;
 
   vTensorStorage storage_;
 
