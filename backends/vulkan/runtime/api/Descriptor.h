@@ -36,6 +36,14 @@ struct BufferBindInfo final {
   BufferBindInfo(const VulkanBuffer& buffer_p);
 };
 
+struct ParamsBindList final {
+  std::vector<BufferBindInfo> bind_infos;
+
+  ParamsBindList(std::initializer_list<const BufferBindInfo> init_list);
+
+  void append(const ParamsBindList& other);
+};
+
 class DescriptorSet final {
  public:
   explicit DescriptorSet(VkDevice, VkDescriptorSet, ShaderLayout::Signature);

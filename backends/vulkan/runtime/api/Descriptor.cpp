@@ -16,7 +16,7 @@ namespace vkcompute {
 namespace api {
 
 //
-// BufferBinding
+// BufferBindInfo
 //
 
 BufferBindInfo::BufferBindInfo()
@@ -26,6 +26,21 @@ BufferBindInfo::BufferBindInfo(const VulkanBuffer& buffer_p)
     : handle(buffer_p.handle()),
       offset(buffer_p.mem_offset()),
       range(buffer_p.mem_range()) {}
+
+//
+// ParamsBindList
+//
+
+ParamsBindList::ParamsBindList(
+    std::initializer_list<const BufferBindInfo> init_list) {
+  bind_infos.resize(init_list.size());
+  std::copy(init_list.begin(), init_list.end(), bind_infos.begin());
+}
+
+void ParamsBindList::append(const ParamsBindList& other) {
+  bind_infos.insert(
+      bind_infos.end(), other.bind_infos.begin(), other.bind_infos.end());
+}
 
 //
 // DescriptorSet
