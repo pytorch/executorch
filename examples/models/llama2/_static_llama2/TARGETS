@@ -1,0 +1,25 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+python_library(
+    name = "static_llama",
+    srcs = [
+        "static_llama.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/examples/models/llama2:llama2_model",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_unittest(
+    name = "test_static_llama2",
+    srcs = [
+        "test_static_llama2.py",
+    ],
+    deps = [
+        ":static_llama",
+    ],
+)
