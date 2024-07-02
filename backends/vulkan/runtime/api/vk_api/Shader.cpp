@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <utility>
-
 #include <executorch/backends/vulkan/runtime/api/vk_api/Shader.h>
+
+#include <utility>
 
 namespace vkcompute {
 namespace vkapi {

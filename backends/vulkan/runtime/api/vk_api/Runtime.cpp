@@ -6,12 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/api/vk_api/Runtime.h>
+
+#include <executorch/backends/vulkan/runtime/api/vk_api/Adapter.h>
+
 #include <cstring>
 #include <iostream>
 #include <sstream>
-
-#include <executorch/backends/vulkan/runtime/api/vk_api/Adapter.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/Runtime.h>
 
 namespace vkcompute {
 namespace vkapi {
