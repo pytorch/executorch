@@ -290,6 +290,7 @@ class ArmBackend(BackendDetails):
                     if node.target.__name__ in [
                         "aten.add.Tensor",
                         "aten._native_batch_norm_legit_no_training.default",
+                        "aten.slice_copy.Tensor",
                     ]:
                         node_visitors[node.target.__name__].define_node(
                             node,

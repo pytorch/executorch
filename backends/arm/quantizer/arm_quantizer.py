@@ -17,8 +17,11 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 import torch
 import torch.nn.functional as F
+
+from executorch.backends.arm.quantizer import arm_quantizer_utils
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     convert_scalars_to_attrs,
+    mark_nodes_as_annotated,
     propagate_annotation,
 )
 from executorch.backends.arm.quantizer.quantization_annotation import (
@@ -41,7 +44,11 @@ from torch.ao.quantization.observer import (
 )
 from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
 from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
-from torch.fx import Node
+from torch.ao.quantization.quantizer.utils import (
+    _annotate_input_qspec_map,
+    _annotate_output_qspec,
+)
+from torch.fx import GraphModule, Node
 
 __all__ = [
     "ArmQuantizer",
@@ -246,6 +253,7 @@ class ArmQuantizer(Quantizer):
     def __init__(self):
         super().__init__()
         self.global_config: Optional[QuantizationConfig] = None
+        self.io_config: Optional[QuantizationConfig] = None
         self.operator_type_config: Dict[
             torch._ops.OpOverloadPacket, Optional[QuantizationConfig]
         ] = {}
@@ -314,15 +322,18 @@ class ArmQuantizer(Quantizer):
         self.module_name_config[module_name] = quantization_config
         return self
 
-    def transform_for_annotation(
-        self, model: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
+    def set_io(self, quantization_config):
+        """Set quantization_config for input and output nodes."""
+        self.io_config = quantization_config
+        return self
+
+    def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         """An initial pass for transforming the graph to prepare it for annotation.
         Currently transforms scalar values to tensor attributes.
         """
         return convert_scalars_to_attrs(model)
 
-    def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+    def annotate(self, model: GraphModule) -> GraphModule:
         """Performs the quantization annotation on the graph.
             Currently only does static quantization annotation.
         Args:
@@ -336,10 +347,10 @@ class ArmQuantizer(Quantizer):
 
     def _annotate_all_static_patterns(
         self,
-        model: torch.fx.GraphModule,
+        model: GraphModule,
         quantization_config: Optional[QuantizationConfig],
         filter_fn: Optional[Callable[[Node], bool]] = None,
-    ) -> torch.fx.GraphModule:
+    ) -> GraphModule:
         """Loops over all STATIC_OPS and runs the corresponding registred annotator.
         Args:
             model: The model to annotate statically.
@@ -357,9 +368,30 @@ class ArmQuantizer(Quantizer):
             OP_TO_ANNOTATOR[op](model, quantization_config, filter_fn)
         return model
 
+    def _annotate_io(
+        self,
+        model: GraphModule,
+        quantization_config: Optional[QuantizationConfig],
+    ):
+        for node in model.graph.nodes:
+            if arm_quantizer_utils.is_annotated([node]):
+                continue
+            if node.op == "placeholder":
+                _annotate_output_qspec(
+                    node,
+                    quantization_config.get_output_act_qspec(),
+                )
+                mark_nodes_as_annotated([node])
+            if node.op == "output":
+                parent = node.all_input_nodes[0]
+                _annotate_input_qspec_map(
+                    node, parent, self.io_config.get_input_act_qspec()
+                )
+                mark_nodes_as_annotated([node])
+
     def _annotate_for_static_quantization_config(
-        self, model: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
+        self, model: GraphModule
+    ) -> GraphModule:
         """Matches the correct QuantizationConfig with the correct module using a filter
         when running _annotate_all_static_patterns.
         """
@@ -380,9 +412,13 @@ class ArmQuantizer(Quantizer):
             self.global_config,
             _get_not_module_type_or_name_filter(tp_list, module_name_list),
         )
+
+        if self.io_config:
+            self._annotate_io(model, self.io_config)
+
         return model
 
-    def validate(self, model: torch.fx.GraphModule) -> None:
+    def validate(self, model: GraphModule) -> None:
         pass
 
     @classmethod

@@ -8,16 +8,20 @@
 # Tests the view op which changes the size of a Tensor without changing the underlying data.
 #
 
-import logging
 import unittest
 from typing import Tuple
 
 import torch
+
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    ArmQuantizer,
+    get_symmetric_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from parameterized import parameterized
 
-logger = logging.getLogger(__name__)
+from executorch.backends.xnnpack.test.tester.tester import Quantize
+from parameterized import parameterized
 
 
 class TestSimpleView(unittest.TestCase):
@@ -50,13 +54,14 @@ class TestSimpleView(unittest.TestCase):
     def _test_view_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
+        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(),
             )
-            .quantize()
+            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .check_count({"torch.ops.aten.view.default": 1})
             .to_edge()
@@ -69,13 +74,14 @@ class TestSimpleView(unittest.TestCase):
     def _test_view_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
+        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_u55_compile_spec(),
             )
-            .quantize()
+            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .check_count({"torch.ops.aten.view.default": 1})
             .to_edge()
@@ -88,16 +94,10 @@ class TestSimpleView(unittest.TestCase):
     def test_view_tosa_MI(self, test_tensor: torch.Tensor):
         self._test_view_tosa_MI_pipeline(self.View(), (test_tensor,))
 
-    # Expected to fail since ArmQuantizer cannot quantize a View layer.
-    # TODO MLETROCH-125
     @parameterized.expand(View.test_parameters)
-    @unittest.expectedFailure
     def test_view_tosa_BI(self, test_tensor: torch.Tensor):
         self._test_view_tosa_BI_pipeline(self.View(), (test_tensor,))
 
-    # Expected to fail since ArmQuantizer cannot quantize a View layer.
-    # TODO MLETROCH-125
     @parameterized.expand(View.test_parameters)
-    @unittest.expectedFailure
     def test_view_u55_BI(self, test_tensor: torch.Tensor):
         self._test_view_u55_BI_pipeline(self.View(), (test_tensor,))
