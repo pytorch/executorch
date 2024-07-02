@@ -172,7 +172,7 @@ api::VulkanBuffer& vTensor::buffer(
 
 const api::BufferBindInfo vTensor::sizes_ubo() {
   if (!sizes_uniform_.buffer()) {
-    sizes_uniform_ = api::UniformParamsBuffer(
+    sizes_uniform_ = api::ParamsBuffer(
         storage_.context_, api::utils::make_whcn_ivec4(sizes_));
   }
   return api::BufferBindInfo(sizes_uniform_.buffer());
@@ -181,14 +181,14 @@ const api::BufferBindInfo vTensor::sizes_ubo() {
 const api::BufferBindInfo vTensor::texture_limits_ubo() {
   if (!texture_limits_uniform_.buffer()) {
     texture_limits_uniform_ =
-        api::UniformParamsBuffer(storage_.context_, texture_limits_);
+        api::ParamsBuffer(storage_.context_, texture_limits_);
   }
   return api::BufferBindInfo(texture_limits_uniform_.buffer());
 }
 
 const api::BufferBindInfo vTensor::texel_strides_ubo() {
   if (!texel_strides_uniform_.buffer()) {
-    texel_strides_uniform_ = api::UniformParamsBuffer(
+    texel_strides_uniform_ = api::ParamsBuffer(
         storage_.context_,
         api::utils::make_whcn_ivec4(
             calculate_strides(padded_sizes_, memory_layout_)));
@@ -198,8 +198,7 @@ const api::BufferBindInfo vTensor::texel_strides_ubo() {
 
 const api::BufferBindInfo vTensor::ntexels_ubo() {
   if (!ntexels_uniform_.buffer()) {
-    ntexels_uniform_ =
-        api::UniformParamsBuffer(storage_.context_, texel_numel());
+    ntexels_uniform_ = api::ParamsBuffer(storage_.context_, texel_numel());
   }
   return api::BufferBindInfo(ntexels_uniform_.buffer());
 }
