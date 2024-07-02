@@ -8,6 +8,8 @@
 import math
 from typing import NamedTuple
 
+import numpy as np
+
 import serializer.tosa_serializer as ts
 import torch.fx
 from executorch.backends.arm.tosa_mapping import TosaArg
@@ -24,6 +26,18 @@ class QuantArgs(NamedTuple):
     zp: int
     qmin: int
     qmax: int
+
+
+def quantize_value(x, qargs: QuantArgs, dtype=np.int8):
+    return np.clip(
+        np.round(x / qargs.scale) + qargs.zp,
+        qargs.qmin,
+        qargs.qmax,
+    ).astype(dtype)
+
+
+def dequantize_value(qx, qargs: QuantArgs):
+    return (qx - qargs.zp) * qargs.scale
 
 
 def is_quant_node(node: torch.fx.Node):
