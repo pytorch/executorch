@@ -234,21 +234,6 @@ class Adapter final {
   void
   submit_cmd(const Queue&, VkCommandBuffer, VkFence fence = VK_NULL_HANDLE);
 
-  void submit_cmds(
-      const Adapter::Queue&,
-      const std::vector<VkCommandBuffer>&,
-      VkFence fence = VK_NULL_HANDLE);
-
-  // Miscellaneous
-
-  inline utils::uvec3 local_work_group_size() const {
-    return {
-        4u,
-        4u,
-        4u,
-    };
-  }
-
   std::string stringize() const;
   friend std::ostream& operator<<(std::ostream&, const Adapter&);
 };
