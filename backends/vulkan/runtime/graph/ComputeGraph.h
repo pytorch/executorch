@@ -56,7 +56,7 @@ class ComputeGraph;
     ~classname();                                                      \
   };
 
-DECL_VALUE_PTR_CLASS(vTensorPtr, vTensor)
+DECL_VALUE_PTR_CLASS(vTensorPtr, api::vTensor)
 DECL_VALUE_PTR_CLASS(TensorRefPtr, TensorRef)
 DECL_VALUE_PTR_CLASS(StagingPtr, api::StorageBuffer)
 DECL_VALUE_PTR_CLASS(IntListPtr, std::vector<int64_t>)
@@ -262,8 +262,8 @@ class ComputeGraph final {
 
   /*
    * Returns a suggested storage type (i.e. buffer or texture) that can be used
-   * to construct `vTensor`s. The storage type is typically determined by the
-   * GPU reported by the Vulkan context, unless a storage type override is
+   * to construct `api::vTensor`s. The storage type is typically determined by
+   * the GPU reported by the Vulkan context, unless a storage type override is
    * defined in the graph configuration. Some GPU architectures work better with
    * buffer storage, and others with texture storage. Current only texture
    * storage is supported.
@@ -272,10 +272,10 @@ class ComputeGraph final {
 
   /*
    * Returns a suggested memory layout (i.e. channels, width, or height packed)
-   * that can be used to construct `vTensor`s. The memory layout impacts which
-   * dimension will be treated as the vectorized dimension. For texture storage,
-   * elements along the vectorized dimension are packed into texels. The
-   * suggested memory layout is determined based on the sizes of the tensor,
+   * that can be used to construct `api::vTensor`s. The memory layout impacts
+   * which dimension will be treated as the vectorized dimension. For texture
+   * storage, elements along the vectorized dimension are packed into texels.
+   * The suggested memory layout is determined based on the sizes of the tensor,
    * unless a memory layout override is defined in the graph configuration.
    */
   api::GPUMemoryLayout suggested_memory_layout(
@@ -290,8 +290,9 @@ class ComputeGraph final {
 
  public:
   /*
-   * Add a `vTensor` value to the graph with the specified properties. There are
-   * various convenience overloads of this function that may be used instead.
+   * Add a `api::vTensor` value to the graph with the specified properties.
+   * There are various convenience overloads of this function that may be used
+   * instead.
    */
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
@@ -301,8 +302,8 @@ class ComputeGraph final {
       const int64_t shared_object_idx = -1);
 
   /*
-   * Add a `vTensor` value to the graph with the specified properties. The
-   * suggested memory layout will be used to construct the `vTensor`.
+   * Add a `api::vTensor` value to the graph with the specified properties. The
+   * suggested memory layout will be used to construct the `api::vTensor`.
    */
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
@@ -311,8 +312,8 @@ class ComputeGraph final {
       const int64_t shared_object_idx = -1);
 
   /*
-   * Add a `vTensor` value to the graph with the specified properties. The
-   * suggested storage type will be used to construct the `vTensor`.
+   * Add a `api::vTensor` value to the graph with the specified properties. The
+   * suggested storage type will be used to construct the `api::vTensor`.
    */
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
@@ -321,9 +322,9 @@ class ComputeGraph final {
       const int64_t shared_object_idx = -1);
 
   /*
-   * Add a `vTensor` value to the graph with the specified properties. The
+   * Add a `api::vTensor` value to the graph with the specified properties. The
    * suggested storage type and memory layout will be used to construct the
-   * `vTensor`.
+   * `api::vTensor`.
    */
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
@@ -331,7 +332,7 @@ class ComputeGraph final {
       const int64_t shared_object_idx = -1);
 
   /*
-   * Add a `vTensor` value to the graph with the properties of `vref`.
+   * Add a `api::vTensor` value to the graph with the properties of `vref`.
    */
   ValueRef add_tensor_like(
       const ValueRef vref,
@@ -339,8 +340,8 @@ class ComputeGraph final {
       const api::GPUMemoryLayout memory_layout);
 
   /*
-   * Add a `vTensor` value to the graph with the properties of `vref`. The
-   * suggested storage type will be used to construct the `vTensor`.
+   * Add a `api::vTensor` value to the graph with the properties of `vref`. The
+   * suggested storage type will be used to construct the `api::vTensor`.
    */
   ValueRef add_tensor_like(
       const ValueRef vref,
@@ -348,7 +349,7 @@ class ComputeGraph final {
 
   /*
    * Add a `TensorRef` value to the graph with the specific properties. A
-   * `TensorRef` is a reference to a `vTensor` whose data is stored in an
+   * `TensorRef` is a reference to a `api::vTensor` whose data is stored in an
    * external CPU buffer.
    */
   ValueRef add_tensorref(
@@ -443,11 +444,12 @@ class ComputeGraph final {
   //
 
   /*
-   * Create a global workgroup size for a given `vTensor` value assuming that
-   * every shader invocation calculates one texel element of the output tensor.
+   * Create a global workgroup size for a given `api::vTensor` value assuming
+   * that every shader invocation calculates one texel element of the output
+   * tensor.
    *
-   * For tensors that use texture storage, the image extents of the `vTensor`
-   * will be used to set the global workgroup size.
+   * For tensors that use texture storage, the image extents of the
+   * `api::vTensor` will be used to set the global workgroup size.
    *
    * For tensor that use buffer storage, the number of texels in the texel
    * buffer will be used to set the x component of the global workgroup size.
@@ -457,8 +459,9 @@ class ComputeGraph final {
   utils::uvec3 create_global_wg_size(const ValueRef idx);
 
   /*
-   * Suggest a local workgroup size for a given `vTensor` value, assuming that
-   * every shader invocation calculates one texel element of the output tensor.
+   * Suggest a local workgroup size for a given `api::vTensor` value, assuming
+   * that every shader invocation calculates one texel element of the output
+   * tensor.
    *
    * The local workgroup size will be formed to try and minimize the number of
    * inactive invocations.

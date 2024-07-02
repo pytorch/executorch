@@ -49,7 +49,7 @@ api::StorageBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   vTensorPtr packed = graph->get_tensor(packed_);
 
   // If no TensorRef is provided, create a staging buffer of zeros according to
-  // the vTensor metadata.
+  // the api::vTensor metadata.
   if (graph->val_is_none(tref_)) {
     size_t numel = utils::multiply_integers(packed->sizes());
     api::StorageBuffer staging(graph->context(), packed->dtype(), numel);
