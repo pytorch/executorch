@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -96,11 +97,17 @@ Tensor& _to_dim_order_copy_out(
       out);
 
   ET_SWITCH_REALHB_TYPES(
-      self.scalar_type(), ctx, "_to_dim_order_copy_out", CTYPE_IN, [&] {
+      self.scalar_type(),
+      ctx,
+      "dim_order_ops::_to_dim_order_copy.out",
+      CTYPE_IN,
+      [&] {
         ET_SWITCH_REALHB_TYPES(
-            out.scalar_type(), ctx, "_to_dim_order_copy_out", CTYPE_OUT, [&] {
-              _to_dim_order_copy_impl<CTYPE_IN, CTYPE_OUT>(self, out);
-            });
+            out.scalar_type(),
+            ctx,
+            "dim_order_ops::_to_dim_order_copy.out",
+            CTYPE_OUT,
+            [&] { _to_dim_order_copy_impl<CTYPE_IN, CTYPE_OUT>(self, out); });
       });
 
   return out;
