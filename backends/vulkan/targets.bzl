@@ -1,3 +1,8 @@
+load("@fbsource//tools/build_defs:fb_xplat_cxx_binary.bzl", "fb_xplat_cxx_binary")
+load(
+    "@fbsource//tools/build_defs:platform_defs.bzl",
+    "ANDROID",
+)
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def get_vulkan_compiler_flags():
@@ -216,4 +221,24 @@ def define_common_targets(is_fbcode = False):
         # VulkanBackend.cpp needs to compile with executor as whole
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
+    )
+
+    fb_xplat_cxx_binary(
+        name = "vulkan_gpuinfo",
+        srcs = native.glob([
+            "tools/gpuinfo/**/*.cpp",
+        ]),
+        compiler_flags = get_vulkan_compiler_flags(),
+        raw_headers = native.glob([
+            "tools/gpuinfo/**/*.h",
+        ]),
+        headers = native.glob([
+            "tools/gpuinfo/**/*.h",
+        ]),
+        include_directories = ["tools/gpuinfo/include"],
+        header_namespace = "include",
+        platforms = ANDROID,
+        deps = [
+            "//xplat/executorch/backends/vulkan:vulkan_graph_runtime",
+        ],
     )
