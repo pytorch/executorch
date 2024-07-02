@@ -15,7 +15,7 @@
 #include <executorch/backends/vulkan/runtime/api/Descriptor.h>
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
+#include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
 #include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
 #include <executorch/backends/vulkan/runtime/api/memory/Image.h>

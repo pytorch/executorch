@@ -9,7 +9,7 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-BadImplicitCast
 
 #include <executorch/backends/vulkan/runtime/api/QueryPool.h>
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
+#include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
 #include <cmath>
 #include <iomanip>
