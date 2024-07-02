@@ -36,7 +36,7 @@ namespace vkcompute {
     graph_->values_in_use_--;                                             \
   }
 
-VALUE_PTR_CLASS_IMPL(vTensorPtr, vTensor, Tensor)
+VALUE_PTR_CLASS_IMPL(vTensorPtr, api::vTensor, Tensor)
 VALUE_PTR_CLASS_IMPL(TensorRefPtr, TensorRef, TensorRef)
 VALUE_PTR_CLASS_IMPL(StagingPtr, api::StorageBuffer, Staging)
 VALUE_PTR_CLASS_IMPL(IntListPtr, std::vector<int64_t>, IntList)
@@ -151,7 +151,7 @@ ValueRef ComputeGraph::add_tensor(
 
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
-  values_.emplace_back(vTensor(
+  values_.emplace_back(api::vTensor(
       context(), sizes, dtype, storage_type, memory_layout, allocate_memory));
 
   if (!allocate_memory) {

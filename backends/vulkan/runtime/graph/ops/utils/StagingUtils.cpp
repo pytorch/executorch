@@ -95,7 +95,7 @@ void set_staging_zeros(api::StorageBuffer& staging, const size_t nbytes) {
   memset(data_ptr, 0, staging.nbytes());
 }
 
-api::ShaderInfo get_nchw_to_tensor_shader(const vTensor& v_dst) {
+api::ShaderInfo get_nchw_to_tensor_shader(const api::vTensor& v_dst) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
@@ -106,7 +106,7 @@ api::ShaderInfo get_nchw_to_tensor_shader(const vTensor& v_dst) {
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-api::ShaderInfo get_tensor_to_nchw_shader(const vTensor& v_src) {
+api::ShaderInfo get_tensor_to_nchw_shader(const api::vTensor& v_src) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
