@@ -46,9 +46,9 @@ def _save_pte_program(
 
 def export_model(
     model: nn.Module,
-    example_inputs: Tuple[Any, ...],
+    example_inputs: Tuple[Any, ...],  # pyre-ignore
     file_name: str = "CadenceDemoModel",
-):
+) -> None:
     # Quantize the model
     quantized_model = quantize_pt2(model, example_inputs)
 

@@ -444,7 +444,6 @@ class QuantFusion(ExportPass):
 
     @classmethod
     # pyre-ignore[2]: Parameter `nodes` has no type specified
-    def mark_fused(cls, nodes) -> bool:
+    def mark_fused(cls, nodes) -> None:
         for n in nodes:
-            # pyre-fixme[7]: Incompatible return type
             n.meta["QuantFusion"] = True
