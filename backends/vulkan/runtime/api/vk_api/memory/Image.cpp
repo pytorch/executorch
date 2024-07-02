@@ -6,10 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/memory/Image.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Image.h>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 //
 // ImageSampler
@@ -335,5 +335,5 @@ void SamplerCache::purge() {
   cache_.clear();
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

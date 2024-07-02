@@ -15,10 +15,12 @@ namespace api {
 
 namespace {
 
-void memcpy_to_buffer(const VulkanBuffer& src, VulkanBuffer& dst) {
-  MemoryMap dst_mapping(dst, MemoryAccessType::WRITE);
+void memcpy_to_buffer(
+    const vkapi::VulkanBuffer& src,
+    vkapi::VulkanBuffer& dst) {
+  vkapi::MemoryMap dst_mapping(dst, vkapi::MemoryAccessType::WRITE);
 
-  MemoryMap src_mapping(src, MemoryAccessType::READ);
+  vkapi::MemoryMap src_mapping(src, vkapi::MemoryAccessType::READ);
   src_mapping.invalidate();
 
   void* dst_ptr = dst_mapping.template data<void>();
@@ -46,7 +48,7 @@ ParamsBuffer& ParamsBuffer::operator=(const ParamsBuffer& other) {
 
     // Move vulkan_buffer_ to another VulkanBuffer for cleanup
     if (vulkan_buffer_) {
-      VulkanBuffer temp_buffer(std::move(vulkan_buffer_));
+      vkapi::VulkanBuffer temp_buffer(std::move(vulkan_buffer_));
       context_p_->register_buffer_cleanup(temp_buffer);
     }
     // vulkan_buffer_ should now be empty
