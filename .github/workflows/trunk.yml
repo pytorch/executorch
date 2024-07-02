@@ -224,8 +224,8 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        build-tool: [cmake]
-        mode: [mps]
+        build-tool: [buck2, cmake]
+        mode: [portable, xnnpack+kv+custom, mps]
       fail-fast: false
     with:
       runner: macos-m1-stable
