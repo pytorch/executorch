@@ -217,7 +217,7 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
   float offset = 1.5f;
 
   {
-    api::UniformParamsBuffer params(api::context(), int32_t(len));
+    api::ParamsBuffer params(api::context(), int32_t(len));
     uint32_t len_div4 = api::utils::div_up(uint32_t(len), uint32_t(4));
     api::PipelineBarrier pipeline_barrier{};
     api::context()->submit_compute_job(
@@ -262,7 +262,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
       {5.0, 5.0, 5.0, 5.0},
   };
 
-  api::UniformParamsBuffer params(api::context(), block);
+  api::ParamsBuffer params(api::context(), block);
 
   {
     api::PipelineBarrier pipeline_barrier{};
@@ -323,7 +323,7 @@ void test_storage_buffer_type(const size_t len) {
       break;
   }
 
-  api::UniformParamsBuffer params(api::context(), int32_t(len));
+  api::ParamsBuffer params(api::context(), int32_t(len));
 
   {
     uint32_t len_div4 = api::utils::div_up(uint32_t(len), uint32_t(4));

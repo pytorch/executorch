@@ -10,19 +10,12 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
-
 #include <executorch/backends/vulkan/runtime/api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/api/Command.h>
 #include <executorch/backends/vulkan/runtime/api/Descriptor.h>
 #include <executorch/backends/vulkan/runtime/api/Fence.h>
-#include <executorch/backends/vulkan/runtime/api/Pipeline.h>
 #include <executorch/backends/vulkan/runtime/api/QueryPool.h>
 #include <executorch/backends/vulkan/runtime/api/Runtime.h>
-#include <executorch/backends/vulkan/runtime/api/Shader.h>
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
-
-#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
 
 namespace vkcompute {
 namespace api {
@@ -216,103 +209,6 @@ class Context final {
       const bool final_use = false);
 
   void flush();
-};
-
-class UniformParamsBuffer final {
- private:
-  Context* context_p_;
-  size_t nbytes_;
-  VulkanBuffer vulkan_buffer_;
-
- public:
-  UniformParamsBuffer() : context_p_{nullptr}, vulkan_buffer_{} {}
-
-  template <typename Block>
-  UniformParamsBuffer(Context* context_p, const Block& block)
-      : context_p_(context_p),
-        nbytes_(sizeof(block)),
-        vulkan_buffer_(
-            context_p_->adapter_ptr()->vma().create_params_buffer(block)) {}
-
-  UniformParamsBuffer(const UniformParamsBuffer&);
-  UniformParamsBuffer& operator=(const UniformParamsBuffer&);
-
-  UniformParamsBuffer(UniformParamsBuffer&&) = default;
-  UniformParamsBuffer& operator=(UniformParamsBuffer&&) = default;
-
-  ~UniformParamsBuffer() {
-    if (vulkan_buffer_) {
-      context_p_->register_buffer_cleanup(vulkan_buffer_);
-    }
-  }
-
-  const VulkanBuffer& buffer() const {
-    return vulkan_buffer_;
-  }
-
-  template <typename Block>
-  void update(const Block& block) {
-    if (sizeof(block) != nbytes_) {
-      VK_THROW(
-          "Attempted to update UniformParamsBuffer with data of different size");
-    }
-    // Fill the uniform buffer with data in block
-    {
-      MemoryMap mapping(vulkan_buffer_, MemoryAccessType::WRITE);
-      Block* data_ptr = mapping.template data<Block>();
-
-      *data_ptr = block;
-    }
-  }
-};
-
-class StorageBuffer final {
- private:
-  Context* context_p_;
-  ScalarType dtype_;
-  size_t numel_;
-  size_t nbytes_;
-  VulkanBuffer vulkan_buffer_;
-
- public:
-  StorageBuffer(
-      Context* context_p,
-      const ScalarType dtype,
-      const size_t numel,
-      const bool gpuonly = false)
-      : context_p_(context_p),
-        dtype_(dtype),
-        numel_(numel),
-        nbytes_(element_size(dtype_) * numel_),
-        vulkan_buffer_(context_p_->adapter_ptr()->vma().create_storage_buffer(
-            nbytes_,
-            gpuonly)) {}
-
-  StorageBuffer(const StorageBuffer&) = delete;
-  StorageBuffer& operator=(const StorageBuffer&) = delete;
-
-  StorageBuffer(StorageBuffer&&) = default;
-  StorageBuffer& operator=(StorageBuffer&&) = default;
-
-  ~StorageBuffer() {
-    context_p_->register_buffer_cleanup(vulkan_buffer_);
-  }
-
-  inline ScalarType dtype() {
-    return dtype_;
-  }
-
-  inline VulkanBuffer& buffer() {
-    return vulkan_buffer_;
-  }
-
-  inline size_t numel() {
-    return numel_;
-  }
-
-  inline size_t nbytes() {
-    return nbytes_;
-  }
 };
 
 bool available();
