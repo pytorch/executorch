@@ -17,15 +17,6 @@
 
 #include <executorch/backends/vulkan/runtime/api/Exception.h>
 
-// Compiler Macros
-
-// Suppress an unused variable. Copied from C10_UNUSED
-#if defined(_MSC_VER) && !defined(__clang__)
-#define VK_UNUSED __pragma(warning(suppress : 4100 4101))
-#else
-#define VK_UNUSED __attribute__((__unused__))
-#endif //_MSC_VER
-
 namespace vkcompute {
 namespace utils {
 
@@ -459,12 +450,4 @@ inline int64_t multiply_integers(Iter begin, Iter end) {
 }
 
 } // namespace utils
-
-namespace api {
-
-inline VkExtent3D create_extent3d(const utils::uvec3& extents) {
-  return VkExtent3D{extents.data[0u], extents.data[1u], extents.data[2u]};
-}
-
-} // namespace api
 } // namespace vkcompute

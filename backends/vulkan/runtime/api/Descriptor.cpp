@@ -7,7 +7,8 @@
  */
 
 #include <executorch/backends/vulkan/runtime/api/Descriptor.h>
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
+
+#include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
 #include <algorithm>
 #include <utility>

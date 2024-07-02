@@ -13,7 +13,8 @@
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/Types.h>
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
+
+#include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
 #include <mutex>
 #include <unordered_map>

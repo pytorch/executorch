@@ -11,21 +11,21 @@
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/StringUtil.h>
+#include <executorch/backends/vulkan/runtime/api/utils/StringUtils.h>
 
 #include <exception>
 #include <ostream>
 #include <string>
 #include <vector>
 
-#define VK_CHECK(function)                                                \
-  do {                                                                    \
-    const VkResult result = (function);                                   \
-    if (VK_SUCCESS != result) {                                           \
-      throw ::vkcompute::api::Error(                                      \
-          {__func__, __FILE__, static_cast<uint32_t>(__LINE__)},          \
-          ::vkcompute::api::concat_str(#function, " returned ", result)); \
-    }                                                                     \
+#define VK_CHECK(function)                                                  \
+  do {                                                                      \
+    const VkResult result = (function);                                     \
+    if (VK_SUCCESS != result) {                                             \
+      throw ::vkcompute::api::Error(                                        \
+          {__func__, __FILE__, static_cast<uint32_t>(__LINE__)},            \
+          ::vkcompute::utils::concat_str(#function, " returned ", result)); \
+    }                                                                       \
   } while (false)
 
 #define VK_CHECK_COND(cond, ...)                                 \
@@ -34,7 +34,7 @@
       throw ::vkcompute::api::Error(                             \
           {__func__, __FILE__, static_cast<uint32_t>(__LINE__)}, \
           #cond,                                                 \
-          ::vkcompute::api::concat_str(__VA_ARGS__));            \
+          ::vkcompute::utils::concat_str(__VA_ARGS__));          \
     }                                                            \
   } while (false)
 
@@ -42,7 +42,7 @@
   do {                                                         \
     throw ::vkcompute::api::Error(                             \
         {__func__, __FILE__, static_cast<uint32_t>(__LINE__)}, \
-        ::vkcompute::api::concat_str(__VA_ARGS__));            \
+        ::vkcompute::utils::concat_str(__VA_ARGS__));          \
   } while (false)
 
 namespace vkcompute {
