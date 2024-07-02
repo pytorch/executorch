@@ -175,6 +175,9 @@ class Quantize(Stage):
     def graph_module(self) -> str:
         return self.converted_graph
 
+    def run_artifact(self, inputs):
+        return self.converted_graph.forward(*inputs)
+
 
 @register_stage
 class Export(Stage):

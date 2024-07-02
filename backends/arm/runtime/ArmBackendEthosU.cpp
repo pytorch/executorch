@@ -124,8 +124,9 @@ class ArmBackend final : public PyTorchBackendInterface {
       if (!supported) {
         ET_LOG(
             Error,
-            "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs",
-            i);
+            "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs, got ScalarType id %d",
+            i,
+            tensor_in.scalar_type());
         return Error::InvalidProgram;
       }
 
@@ -199,11 +200,16 @@ class ArmBackend final : public PyTorchBackendInterface {
       const char* output_addr =
           handles.scratch_data + handles.outputs->io[i].offset;
       // Process input EValue into scratch
-      int* output_address = (int*)output_addr;
       // Outputs are in the index immediately after inputs
       auto tensor_out = args[handles.inputs->count + i]->toTensor();
       for (int j = 0; j < tensor_out.numel(); j++) {
-        tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
+        if (tensor_out.scalar_type() == ScalarType::Char) {
+          char* output_address = (char*)output_addr;
+          tensor_out.mutable_data_ptr<char>()[j] = output_address[j];
+        } else {
+          int* output_address = (int*)output_addr;
+          tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
+        }
       }
     }
 
