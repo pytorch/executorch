@@ -21,7 +21,7 @@
 void record_nchw_to_buffer_op(
     api::Context* const context,
     api::VulkanBuffer& src_buffer,
-    vTensor& v_dst) {
+    api::vTensor& v_dst) {
   api::PipelineBarrier pipeline_barrier{};
   api::SpecVarList specialization_constants = {SV(v_dst.packed_dim_whcn_idx())};
 
@@ -45,7 +45,7 @@ void record_nchw_to_buffer_op(
 
 void record_buffer_to_nchw_op(
     api::Context* const context,
-    vTensor& v_src,
+    api::vTensor& v_src,
     api::VulkanBuffer& dst_buffer) {
   api::PipelineBarrier pipeline_barrier{};
   api::SpecVarList specialization_constants = {SV(v_src.packed_dim_whcn_idx())};
@@ -68,7 +68,7 @@ void record_buffer_to_nchw_op(
 void record_nchw_to_image_op(
     api::Context* const context,
     api::VulkanBuffer& src_buffer,
-    vTensor& v_dst) {
+    api::vTensor& v_dst) {
   api::PipelineBarrier pipeline_barrier{};
   api::SpecVarList specialization_constants = {SV(v_dst.packed_dim_whcn_idx())};
 
@@ -90,7 +90,7 @@ void record_nchw_to_image_op(
 
 void record_image_to_nchw_op(
     api::Context* const context,
-    vTensor& v_src,
+    api::vTensor& v_src,
     api::VulkanBuffer& dst_buffer) {
   api::PipelineBarrier pipeline_barrier{};
   api::SpecVarList specialization_constants = {SV(v_src.packed_dim_whcn_idx())};
@@ -111,7 +111,7 @@ void record_image_to_nchw_op(
 void record_conv2d_prepack_weights_op(
     api::Context* const context,
     api::VulkanBuffer& src_buffer,
-    vTensor& v_dst,
+    api::vTensor& v_dst,
     const std::vector<int64_t>& original_sizes,
     const bool transposed) {
   api::PipelineBarrier pipeline_barrier{};
@@ -150,9 +150,9 @@ void record_conv2d_prepack_weights_op(
 void record_binary_op(
     api::Context* const context,
     const std::string& op_name,
-    vTensor& v_in1,
-    vTensor& v_in2,
-    vTensor& v_dst) {
+    api::vTensor& v_in1,
+    api::vTensor& v_in2,
+    api::vTensor& v_dst) {
   std::string kernel_name = "binary_" + op_name + "_nobroadcast__test";
   add_dtype_suffix(kernel_name, v_dst);
 
@@ -176,9 +176,9 @@ void record_binary_op(
 }
 
 void execute_and_check_add(
-    vTensor& a,
-    vTensor& b,
-    vTensor& c,
+    api::vTensor& a,
+    api::vTensor& b,
+    api::vTensor& c,
     float a_val,
     float b_val) {
   // Fill input tensors
@@ -197,7 +197,7 @@ void execute_and_check_add(
   }
 }
 
-void record_index_fill_buffer(api::Context* context, vTensor& v_ten) {
+void record_index_fill_buffer(api::Context* context, api::vTensor& v_ten) {
   std::string kernel_name("idx_fill_buffer");
   switch (v_ten.dtype()) {
     case api::kFloat:
@@ -240,7 +240,7 @@ void record_index_fill_buffer(api::Context* context, vTensor& v_ten) {
 
 void record_scalar_add_buffer(
     api::Context* context,
-    vTensor& v_ten,
+    api::vTensor& v_ten,
     float offset) {
   api::PipelineBarrier pipeline_barrier{};
   api::SpecVarList specialization_constants = {SV(offset)};
@@ -273,7 +273,7 @@ void record_scalar_add_buffer(
   _(float, Float)                 \
   _(int8_t, QInt8)
 
-void fill_vtensor(vTensor& vten, std::vector<float>& data) {
+void fill_vtensor(api::vTensor& vten, std::vector<float>& data) {
   api::StorageBuffer staging_buffer(api::context(), vten.dtype(), data.size());
 
 #define CASE(ctype, name)                                          \
@@ -302,7 +302,7 @@ void fill_vtensor(vTensor& vten, std::vector<float>& data) {
   }
 }
 
-void fill_vtensor(vTensor& vten, float val, bool iota) {
+void fill_vtensor(api::vTensor& vten, float val, bool iota) {
   std::vector<float> vten_data(vten.gpu_numel());
   if (iota) {
     std::iota(vten_data.begin(), vten_data.end(), val);
@@ -328,7 +328,7 @@ void fill_vtensor(
   graph.copy_into_staging(idx.staging, data.data(), data.size());
 }
 
-void extract_vtensor(vTensor& vten, std::vector<float>& data) {
+void extract_vtensor(api::vTensor& vten, std::vector<float>& data) {
   api::StorageBuffer staging_buffer(
       api::context(), vten.dtype(), vten.gpu_numel());
 
@@ -371,7 +371,7 @@ void submit_to_gpu() {
   fence.wait();
 }
 
-api::Allocation allocate_memory_for(const vTensor& vten) {
+api::Allocation allocate_memory_for(const api::vTensor& vten) {
   return api::context()->adapter_ptr()->vma().create_allocation(
       vten.get_memory_requirements(), vten.get_allocation_create_info());
 }

@@ -245,7 +245,7 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
 TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   api::context()->set_cmd(/*reusable = */ true);
   std::vector<int64_t> sizes = {4, 4, 2};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
   std::string kernel_name("fill_texture__test");
   add_dtype_suffix(kernel_name, a);
@@ -373,9 +373,9 @@ TEST_F(VulkanComputeAPITest, test_zero_size_tensor) {
   // Simple test that performs a + b -> c
 
   std::vector<int64_t> sizes = {0, 5, 7};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
   // Fill input tensors
   fill_vtensor(a, 2.5f);
@@ -402,7 +402,7 @@ TEST_F(VulkanComputeAPITest, test_zero_size_tensor) {
 }
 
 template <typename T>
-void run_buffer_tensor_sanity_check(vTensor& tensor) {
+void run_buffer_tensor_sanity_check(api::vTensor& tensor) {
   fill_vtensor(tensor, 0.0f, true);
 
   record_scalar_add_buffer(api::context(), tensor, 2.0f);
@@ -433,7 +433,8 @@ TEST_F(VulkanComputeAPITest, buffer_tensor_sanity_check) {
       }
       for (const auto& layout :
            {api::kWidthPacked, api::kHeightPacked, api::kChannelsPacked}) {
-        vTensor a = vTensor(api::context(), sizes, dtype, api::kBuffer, layout);
+        api::vTensor a =
+            api::vTensor(api::context(), sizes, dtype, api::kBuffer, layout);
         switch (dtype) {
           case api::kFloat:
             run_buffer_tensor_sanity_check<float>(a);
@@ -456,9 +457,9 @@ TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
   // Simple test that performs a + b -> c
 
   std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
   // Fill input tensors
   fill_vtensor(a, 2.5f);
@@ -481,9 +482,9 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   // memory is allocated in a deferred fashion
 
   std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
   // No allocations made so far
   EXPECT_TRUE(get_vma_allocation_count() == 0);
@@ -524,11 +525,11 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   // and share memory between tensors whenever possible.
 
   std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor d = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor e = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor d = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor e = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
   // No allocations made so far
   EXPECT_TRUE(get_vma_allocation_count() == 0);
@@ -584,7 +585,7 @@ TEST_F(VulkanComputeAPITest, resource_bind_twice_fails) {
   // fails
 
   std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
   // Try to double bind a resource, which should fail
   api::Allocation a_mem = allocate_memory_for(a);
@@ -592,7 +593,7 @@ TEST_F(VulkanComputeAPITest, resource_bind_twice_fails) {
 }
 
 TEST_F(VulkanComputeAPITest, resource_destructor_non_owning_memory) {
-  // Check that the destructor of a vTensor that does not own its memory
+  // Check that the destructor of a api::vTensor that does not own its memory
   // does not free the memory
 
   api::Allocation memory;
@@ -602,7 +603,7 @@ TEST_F(VulkanComputeAPITest, resource_destructor_non_owning_memory) {
 
   std::vector<int64_t> sizes = {4, 4, 1};
   {
-    vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+    api::vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
     memory = allocate_memory_for(a);
     EXPECT_TRUE(get_vma_allocation_count() == 1);
@@ -614,10 +615,11 @@ TEST_F(VulkanComputeAPITest, resource_destructor_non_owning_memory) {
 }
 
 TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
-  // Try to encode a command buffer with a vTensor that does not have memory
+  // Try to encode a command buffer with a api::vTensor that does not have
+  // memory
 
   std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
   // No allocations yet
   EXPECT_TRUE(get_vma_allocation_count() == 0);
@@ -625,15 +627,15 @@ TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
   std::vector<float> data_a(a.gpu_numel());
   std::fill(data_a.begin(), data_a.end(), 2.5f);
 
-  // Encoding a command buffer with a vTensor without memory should throw
+  // Encoding a command buffer with a api::vTensor without memory should throw
   EXPECT_THROW(fill_vtensor(a, data_a), api::Error);
 }
 
 TEST_F(VulkanComputeAPITest, tensor_reallocation_test) {
   std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
   execute_and_check_add(a, b, c, 3.0f, 5.0f);
 
@@ -653,9 +655,9 @@ TEST_F(
     VulkanComputeAPITest,
     tensor_reallocation_with_deferred_allocation_test) {
   std::vector<int64_t> sizes = {8, 8, 8};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
-  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
 
   api::Allocation a_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_mem);
@@ -690,9 +692,9 @@ TEST_F(
 TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
   api::context()->set_cmd(/*reusable = */ true);
   std::vector<int64_t> sizes = {8, 12, 12};
-  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
-  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  api::vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
   DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(a)
   DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(b)
@@ -1694,8 +1696,8 @@ void run_from_gpu_test(
       !api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
     return;
   }
-  vTensor vten =
-      vTensor(api::context(), sizes, dtype, storage_type, memory_layout);
+  api::vTensor vten =
+      api::vTensor(api::context(), sizes, dtype, storage_type, memory_layout);
 
   std::string kernel_name("idx_fill_texture");
   add_memory_layout_suffix(kernel_name, vten);
@@ -1749,8 +1751,8 @@ void run_to_gpu_test(
     return;
   }
 
-  vTensor vten =
-      vTensor(api::context(), sizes, dtype, storage_type, memory_layout);
+  api::vTensor vten =
+      api::vTensor(api::context(), sizes, dtype, storage_type, memory_layout);
 
   // Create and fill input staging buffer
   api::StorageBuffer staging_buffer_in(api::context(), dtype, vten.gpu_numel());
@@ -2145,7 +2147,7 @@ void test_conv2d(
     const std::vector<int64_t>& gpu_sizes,
     const bool transposed,
     const std::vector<float>& data_out_expected) {
-  vTensor vten = vTensor(
+  api::vTensor vten = api::vTensor(
       api::context(),
       gpu_sizes,
       api::kFloat,

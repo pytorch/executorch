@@ -81,7 +81,7 @@ void ComputeGraph::print_readable() {
     // sizes
     std::cout << std::setw(20);
     if (val.isTensor()) {
-      const vTensor& v_tensor = val.toTensor();
+      const api::vTensor& v_tensor = val.toTensor();
       std::stringstream ss;
       ss << v_tensor.sizes();
       std::cout << ss.str();
