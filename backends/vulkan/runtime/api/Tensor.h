@@ -15,6 +15,7 @@
 #include <executorch/backends/vulkan/runtime/api/Types.h>
 
 namespace vkcompute {
+namespace api {
 
 /*
  * Given the sizes of a tensor and the GPU memory layout, calculate the strides
@@ -29,7 +30,7 @@ namespace vkcompute {
  */
 std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
-    const api::GPUMemoryLayout memory_layout,
+    const GPUMemoryLayout memory_layout,
     const bool texel_strides = true);
 
 /*
@@ -48,7 +49,7 @@ std::vector<int64_t> calculate_strides(
  */
 std::vector<int64_t> calculate_padded_sizes(
     const std::vector<int64_t>& sizes,
-    const api::GPUMemoryLayout memory_layout);
+    const GPUMemoryLayout memory_layout);
 
 /*
  * Given the padded sizes of a tensor and the GPU memory layout, calculate the
@@ -56,19 +57,16 @@ std::vector<int64_t> calculate_padded_sizes(
  */
 utils::uvec3 calculate_image_extents(
     const std::vector<int64_t>& padded_sizes,
-    const api::GPUMemoryLayout memory_layout);
+    const GPUMemoryLayout memory_layout);
 
 struct LastAccess {
-  api::PipelineStageFlags stage;
-  api::MemoryAccessFlags access;
+  PipelineStageFlags stage;
+  MemoryAccessFlags access;
 
   LastAccess()
-      : stage{api::PipelineStage::NO_STAGE},
-        access{api::MemoryAccessType::NONE} {}
+      : stage{PipelineStage::NO_STAGE}, access{MemoryAccessType::NONE} {}
 
-  LastAccess(
-      api::PipelineStageFlags stage_flags,
-      api::MemoryAccessFlags access_flags)
+  LastAccess(PipelineStageFlags stage_flags, MemoryAccessFlags access_flags)
       : stage{stage_flags}, access{access_flags} {}
 };
 
@@ -78,11 +76,11 @@ class vTensorStorage final {
   vTensorStorage() = default;
 
   vTensorStorage(
-      api::Context* context,
-      const api::StorageType storage_type,
-      const api::GPUMemoryLayout gpu_memory_layout,
+      Context* context,
+      const StorageType storage_type,
+      const GPUMemoryLayout gpu_memory_layout,
       const std::vector<int64_t>& sizes,
-      const api::ScalarType dtype,
+      const ScalarType dtype,
       const bool allocate_memory = true);
 
   vTensorStorage(const vTensorStorage& other) = delete;
@@ -97,17 +95,17 @@ class vTensorStorage final {
 
  private:
   // Context
-  api::Context* context_{};
+  Context* context_{};
 
-  api::StorageType storage_type_;
+  StorageType storage_type_;
 
   // Resource sizings
   utils::uvec3 image_extents_{};
   int64_t buffer_length_{};
 
   // GPU Storage
-  mutable api::VulkanImage image_;
-  mutable api::VulkanBuffer buffer_;
+  mutable VulkanImage image_;
+  mutable VulkanBuffer buffer_;
 
   // Last Access - used to insert memory barriers
   LastAccess last_access_;
@@ -118,9 +116,9 @@ class vTensorStorage final {
 
   // Memory barrier insertion
   void transition(
-      api::PipelineBarrier&,
-      const api::PipelineStageFlags,
-      const api::MemoryAccessFlags);
+      PipelineBarrier&,
+      const PipelineStageFlags,
+      const MemoryAccessFlags);
 
   // Validation
   void verify() const;
@@ -132,8 +130,8 @@ class vTensorStorage final {
 
   void discard_and_reallocate(
       const std::vector<int64_t>& padded_sizes,
-      const api::GPUMemoryLayout gpu_memory_layout,
-      const api::ScalarType dtype);
+      const GPUMemoryLayout gpu_memory_layout,
+      const ScalarType dtype);
 };
 
 class vTensor final {
@@ -146,11 +144,11 @@ class vTensor final {
 
  public:
   explicit vTensor(
-      api::Context* context,
+      Context* context,
       const std::vector<int64_t>& sizes,
-      const api::ScalarType dtype,
-      const api::StorageType storage_type = api::kTexture3D,
-      const api::GPUMemoryLayout memory_layout = api::kChannelsPacked,
+      const ScalarType dtype,
+      const StorageType storage_type = kTexture3D,
+      const GPUMemoryLayout memory_layout = kChannelsPacked,
       const bool allocate_memory = true);
 
   vTensor(const vTensor& other) = delete;
@@ -160,8 +158,8 @@ class vTensor final {
   vTensor& operator=(vTensor&& other) = default;
 
  private:
-  api::ScalarType dtype_;
-  api::GPUMemoryLayout memory_layout_;
+  ScalarType dtype_;
+  GPUMemoryLayout memory_layout_;
 
   // sizes of the tensor in NCHW dimension order
   std::vector<int64_t> sizes_;
@@ -181,10 +179,10 @@ class vTensor final {
    * Refer to the comments for the corresponding *_ubo() functions for more
    * context about the data contained in each buffer.
    */
-  api::ParamsBuffer sizes_uniform_;
-  api::ParamsBuffer texture_limits_uniform_;
-  api::ParamsBuffer texel_strides_uniform_;
-  api::ParamsBuffer ntexels_uniform_;
+  ParamsBuffer sizes_uniform_;
+  ParamsBuffer texture_limits_uniform_;
+  ParamsBuffer texel_strides_uniform_;
+  ParamsBuffer ntexels_uniform_;
 
   vTensorStorage storage_;
 
@@ -193,42 +191,34 @@ class vTensor final {
    Texture Access
   */
 
-  inline api::VulkanImage& image() const& {
+  inline VulkanImage& image() const& {
     return storage_.image_;
   }
 
-  api::VulkanImage& image(
-      api::PipelineBarrier&,
-      const api::PipelineStageFlags) &;
+  VulkanImage& image(PipelineBarrier&, const PipelineStageFlags) &;
 
-  api::VulkanImage& image(
-      api::PipelineBarrier&,
-      const api::PipelineStageFlags,
-      const api::MemoryAccessFlags) &;
+  VulkanImage&
+  image(PipelineBarrier&, const PipelineStageFlags, const MemoryAccessFlags) &;
 
-  inline api::VulkanBuffer& buffer() const& {
+  inline VulkanBuffer& buffer() const& {
     return storage_.buffer_;
   }
 
-  api::VulkanBuffer& buffer(
-      api::PipelineBarrier&,
-      const api::PipelineStageFlags) &;
+  VulkanBuffer& buffer(PipelineBarrier&, const PipelineStageFlags) &;
 
-  api::VulkanBuffer& buffer(
-      api::PipelineBarrier&,
-      const api::PipelineStageFlags,
-      const api::MemoryAccessFlags) &;
+  VulkanBuffer&
+  buffer(PipelineBarrier&, const PipelineStageFlags, const MemoryAccessFlags) &;
 
   /*
     Metadata
   */
 
-  inline api::StorageType storage_type() const {
+  inline StorageType storage_type() const {
     return storage_.storage_type_;
   }
 
   inline bool has_buffer_storage() const {
-    return storage_.storage_type_ == api::kBuffer;
+    return storage_.storage_type_ == kBuffer;
   }
 
   inline const utils::uvec3& image_extents() const {
@@ -236,13 +226,13 @@ class vTensor final {
   }
 
   /*
-   * Extract an `api::ScalarType` from the TensorOptions member
+   * Extract an `ScalarType` from the TensorOptions member
    */
-  inline api::ScalarType dtype() const {
+  inline ScalarType dtype() const {
     return dtype_;
   }
 
-  inline api::GPUMemoryLayout gpu_memory_layout() const {
+  inline GPUMemoryLayout gpu_memory_layout() const {
     return memory_layout_;
   }
 
@@ -267,7 +257,7 @@ class vTensor final {
    * Note that dimensions that are not present in the tensor's sizes are set to
    * a size of 1.
    */
-  const api::BufferBindInfo sizes_ubo();
+  const BufferBindInfo sizes_ubo();
 
   /*
    * Returns a GPU buffer containing the virtual image extents of the tensor.
@@ -278,18 +268,18 @@ class vTensor final {
    *
    * This buffer should only be used to
    */
-  const api::BufferBindInfo texture_limits_ubo();
+  const BufferBindInfo texture_limits_ubo();
 
   /*
    * Returns the strides of the texel buffer used to store the tensor, as
    * calculated by calculate_strides().
    */
-  const api::BufferBindInfo texel_strides_ubo();
+  const BufferBindInfo texel_strides_ubo();
 
   /*
    * Returns the number of texels in the texel buffer used to store the tensor.
    */
-  const api::BufferBindInfo ntexels_ubo();
+  const BufferBindInfo ntexels_ubo();
 
   inline const utils::ivec3 texture_limits() const {
     return texture_limits_.limits;
@@ -300,7 +290,7 @@ class vTensor final {
   }
 
   inline size_t nbytes() const {
-    return api::element_size(dtype()) * numel();
+    return element_size(dtype()) * numel();
   }
 
   /*
@@ -322,7 +312,7 @@ class vTensor final {
    * Return nbytes but based on padded_sizes_ instead of sizes_
    */
   inline VkDeviceSize gpu_nbytes() const {
-    return api::element_size(dtype()) * gpu_numel();
+    return element_size(dtype()) * gpu_numel();
   }
 
   /*
@@ -338,7 +328,7 @@ class vTensor final {
   /*
    * Binds the underlying resource to the given memory allocation
    */
-  void bind_allocation(const api::Allocation& allocation);
+  void bind_allocation(const Allocation& allocation);
 
  private:
   /*
@@ -362,4 +352,5 @@ class vTensor final {
   void virtual_resize(const std::vector<int64_t>& new_sizes);
 };
 
+} // namespace api
 } // namespace vkcompute

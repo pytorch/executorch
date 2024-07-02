@@ -18,9 +18,9 @@
 namespace vkcompute {
 
 void check_index_select_args(
-    const vTensor& in,
-    const vTensor& idx,
-    const vTensor& out) {
+    const api::vTensor& in,
+    const api::vTensor& idx,
+    const api::vTensor& out) {
   VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
   VK_CHECK_COND(check_memory_layout_is(idx, api::kChannelsPacked));
   VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
@@ -58,7 +58,7 @@ struct IndexSelectParams final {
 
 IndexSelectParams create_index_select_params(
     const int64_t dim_idx,
-    const vTensor& in) {
+    const api::vTensor& in) {
   if (dim_idx == kWidth4D) {
     return {0, 1};
   } else if (dim_idx == kHeight4D) {
