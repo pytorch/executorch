@@ -122,7 +122,7 @@ enum class Conv2dMethod : uint8_t {
 
 api::ShaderInfo get_conv2d_shader(
     ComputeGraph& graph,
-    const vTensor& t_out,
+    const api::vTensor& t_out,
     const bool prepack_weights,
     const Conv2dMethod method,
     const ValueRef weight,
@@ -218,7 +218,7 @@ ValueRef prepack_weights(
   return v;
 }
 
-void check_conv_args(const vTensor& in, const vTensor& out) {
+void check_conv_args(const api::vTensor& in, const api::vTensor& out) {
   VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
   VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
 }

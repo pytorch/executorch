@@ -18,7 +18,7 @@
 namespace vkcompute {
 
 std::vector<int64_t> calc_out_mean_sizes(
-    vTensor& self,
+    api::vTensor& self,
     int64_t normalized_shape_dim) {
   std::vector<int64_t> output_size = self.sizes();
   int64_t self_dim = self.sizes().size();
@@ -48,7 +48,7 @@ void resize_native_layer_norm_node(
   rstd->virtual_resize(mean_size);
 }
 
-void check_args(const vTensor& in, const vTensor& out) {
+void check_args(const api::vTensor& in, const api::vTensor& out) {
   VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
   VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
 }

@@ -19,7 +19,8 @@
 
 namespace vkcompute {
 
-std::vector<int64_t> calc_out_sizes(vTensor& self, int64_t dim, bool keepdim) {
+std::vector<int64_t>
+calc_out_sizes(api::vTensor& self, int64_t dim, bool keepdim) {
   std::vector<int64_t> output_size = self.sizes();
   if (keepdim) {
     output_size.at(dim) = 1;
@@ -45,7 +46,7 @@ void resize_sum_node(
   out->virtual_resize(output_size);
 }
 
-void check_sum_args(const vTensor& in, const vTensor& out) {
+void check_sum_args(const api::vTensor& in, const api::vTensor& out) {
   VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
   VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
 }

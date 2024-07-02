@@ -17,7 +17,7 @@
 
 namespace vkcompute {
 
-void check_pool2d_args(const vTensor& in, const vTensor& out) {
+void check_pool2d_args(const api::vTensor& in, const api::vTensor& out) {
   VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
   VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
 }

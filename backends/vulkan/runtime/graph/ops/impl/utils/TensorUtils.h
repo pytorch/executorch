@@ -17,37 +17,39 @@ namespace vkcompute {
 //
 
 std::vector<int64_t> calculate_broadcasted_output_size(
-    const vTensor& t1,
-    const vTensor& t2);
+    const api::vTensor& t1,
+    const api::vTensor& t2);
 
 //
 // Tensor property checking functions
 //
 
-bool check_ndim_is(const vTensor& t, size_t ndim);
+bool check_ndim_is(const api::vTensor& t, size_t ndim);
 
-bool check_same_ndim(const vTensor& t1, const vTensor& t2);
+bool check_same_ndim(const api::vTensor& t1, const api::vTensor& t2);
 
 bool check_same_sizes_at(
-    const vTensor& t1,
+    const api::vTensor& t1,
     int64_t d1,
-    const vTensor& t2,
+    const api::vTensor& t2,
     int64_t d2);
 
-bool check_memory_layout_is(const vTensor& t, api::GPUMemoryLayout layout);
+bool check_memory_layout_is(const api::vTensor& t, api::GPUMemoryLayout layout);
 
-bool check_same_memory_layout(const vTensor& t1, const vTensor& t2);
+bool check_same_memory_layout(const api::vTensor& t1, const api::vTensor& t2);
 
 bool check_same_memory_layout(
-    const vTensor& t1,
-    const vTensor& t2,
-    const vTensor& t3);
+    const api::vTensor& t1,
+    const api::vTensor& t2,
+    const api::vTensor& t3);
 
 //
 // Broadcast flag functions
 //
 
-utils::ivec2 create_broadcast_params(const vTensor& t1, const vTensor& t2);
+utils::ivec2 create_broadcast_params(
+    const api::vTensor& t1,
+    const api::vTensor& t2);
 
 //
 // Work group size calculation functions

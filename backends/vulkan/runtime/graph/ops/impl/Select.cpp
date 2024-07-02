@@ -18,10 +18,10 @@
 namespace vkcompute {
 
 void check_args(
-    const vTensor& t_in,
+    const api::vTensor& t_in,
     int64_t dim,
     int64_t index,
-    const vTensor& t_out) {
+    const api::vTensor& t_out) {
   VK_CHECK_COND(check_memory_layout_is(t_in, api::kChannelsPacked));
   VK_CHECK_COND(check_memory_layout_is(t_out, api::kChannelsPacked));
 

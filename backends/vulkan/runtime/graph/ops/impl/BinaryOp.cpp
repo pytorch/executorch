@@ -18,9 +18,9 @@
 namespace vkcompute {
 
 void check_binary_op_args(
-    const vTensor& self,
-    const vTensor& other,
-    const vTensor& out) {
+    const api::vTensor& self,
+    const api::vTensor& other,
+    const api::vTensor& out) {
   VK_CHECK_COND(check_same_memory_layout(self, other, out));
   std::vector<int64_t> broadcasted_sizes =
       calculate_broadcasted_output_size(self, other);

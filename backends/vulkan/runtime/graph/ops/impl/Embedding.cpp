@@ -18,9 +18,9 @@
 namespace vkcompute {
 
 void check_embedding_args(
-    const vTensor& weight,
-    const vTensor& in,
-    const vTensor& out) {
+    const api::vTensor& weight,
+    const api::vTensor& in,
+    const api::vTensor& out) {
   VK_CHECK_COND(check_memory_layout_is(weight, api::kChannelsPacked));
   VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
   VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));

@@ -26,7 +26,9 @@ void add_storage_type_suffix(
   }
 }
 
-void add_storage_type_suffix(std::string& kernel_name, const vTensor& tensor) {
+void add_storage_type_suffix(
+    std::string& kernel_name,
+    const api::vTensor& tensor) {
   return add_storage_type_suffix(kernel_name, tensor.storage_type());
 }
 
@@ -50,11 +52,11 @@ void add_dtype_suffix(std::string& kernel_name, const api::ScalarType dtype) {
   }
 }
 
-void add_dtype_suffix(std::string& kernel_name, const vTensor& tensor) {
+void add_dtype_suffix(std::string& kernel_name, const api::vTensor& tensor) {
   return add_dtype_suffix(kernel_name, tensor.dtype());
 }
 
-void add_ndim_suffix(std::string& kernel_name, const vTensor& tensor) {
+void add_ndim_suffix(std::string& kernel_name, const api::vTensor& tensor) {
   switch (tensor.storage_type()) {
     case api::kTexture3D:
       kernel_name += "_3d";
@@ -85,7 +87,9 @@ void add_memory_layout_suffix(
   }
 }
 
-void add_memory_layout_suffix(std::string& kernel_name, const vTensor& tensor) {
+void add_memory_layout_suffix(
+    std::string& kernel_name,
+    const api::vTensor& tensor) {
   return add_memory_layout_suffix(kernel_name, tensor.gpu_memory_layout());
 }
 
