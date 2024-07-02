@@ -39,6 +39,7 @@ For Llama 3 8B, we have verified so far on iPhone 15 Pro, iPhone 15 Pro Max, Sam
 
 ## Performance
 
+### Llama2 7B
 Llama 2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
 
 |Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
@@ -46,6 +47,17 @@ Llama 2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 |Galaxy S22  | 8.15 tokens/second | 8.3 tokens/second |
 |Galaxy S24 | 10.66 tokens/second | 11.26 tokens/second |
 |OnePlus 12 | 11.55 tokens/second | 11.6 tokens/second |
+
+### Llama3 8B
+Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
+
+Note that since Llama3's vocabulary size is 4x that of Llama2, we had to quantize embedding lookup table as well. For these results embedding lookup table was groupwise quantized with 4-bits and group size of 32.
+
+|Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
+|--------| ---------------------- | ---------------
+|Galaxy S22  | 7.85 tokens/second | 8.4 tokens/second |
+|Galaxy S24 | 10.91 tokens/second | 11.21 tokens/second |
+|OnePlus 12 | 10.85 tokens/second | 11.02 tokens/second |
 
 # Instructions
 
