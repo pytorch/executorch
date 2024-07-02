@@ -107,30 +107,30 @@
   variants: function
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::quantize_per_tensor_out
+      kernel_name: impl::reference::quantize_per_tensor_out
 
 - func: cadence::dequantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::dequantize_per_tensor_out
+      kernel_name: impl::reference::dequantize_per_tensor_out
 
 - func: cadence::quantized_conv.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::quantized_conv_out
+      kernel_name: impl::reference::quantized_conv_out
 
 - func: cadence::quantized_layer_norm.out(Tensor input, Tensor in_scale, Tensor in_zero_point, int[] normalized_shape, Tensor weight, Tensor bias, float eps, float output_scale, int output_zero_point, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::quantized_layer_norm_out
+      kernel_name: impl::reference::quantized_layer_norm_out
 
 - func: cadence::quantized_linear.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::quantized_linear_out
+      kernel_name: impl::reference::quantized_linear_out
 
 - func: cadence::quantized_relu.out(Tensor X, Tensor X_zero_point, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::quantized_relu_out
+      kernel_name: impl::reference::quantized_relu_out
