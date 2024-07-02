@@ -10,12 +10,12 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <functional>
-#include <memory>
-
 #include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/vk_api/Adapter.h>
+
+#include <functional>
+#include <memory>
 
 namespace vkcompute {
 namespace vkapi {
