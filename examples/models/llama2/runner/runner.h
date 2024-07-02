@@ -57,6 +57,8 @@ class Runner {
     int64_t num_generated_tokens;
   };
 
+  static void printPytorchObserverLogs(const Stats& stats);
+
   bool is_loaded() const;
   Error load();
   Error generate(
