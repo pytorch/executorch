@@ -47,14 +47,13 @@ bool check_same_memory_layout(
 // Broadcast flag functions
 //
 
-api::utils::ivec2 create_broadcast_params(const vTensor& t1, const vTensor& t2);
+utils::ivec2 create_broadcast_params(const vTensor& t1, const vTensor& t2);
 
 //
 // Work group size calculation functions
 //
 
-api::utils::uvec3 adaptive_work_group_size(
-    const api::utils::uvec3& global_work_group);
+utils::uvec3 adaptive_work_group_size(const utils::uvec3& global_work_group);
 
 //
 // Tensor dim utilities

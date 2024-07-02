@@ -186,7 +186,7 @@ class ComputeGraph final {
 
   api::ScalarType dtype_of(const ValueRef idx) const;
 
-  inline api::utils::uvec3 image_extents_of(const ValueRef idx) const {
+  inline utils::uvec3 image_extents_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().image_extents();
   }
 
@@ -454,7 +454,7 @@ class ComputeGraph final {
    * All other components will be set to 1 (i.e. {ntexels, 1, 1} will be
    * returned).
    */
-  api::utils::uvec3 create_global_wg_size(const ValueRef idx);
+  utils::uvec3 create_global_wg_size(const ValueRef idx);
 
   /*
    * Suggest a local workgroup size for a given `vTensor` value, assuming that
@@ -466,7 +466,7 @@ class ComputeGraph final {
    * Currently, the local workgroup size is hard-coded to contain a total of 64
    * shader invocations. In the future, this value can be configured.
    */
-  api::utils::uvec3 create_local_wg_size(const ValueRef idx);
+  utils::uvec3 create_local_wg_size(const ValueRef idx);
 
   //
   // Input/Output

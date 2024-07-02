@@ -27,8 +27,6 @@
 #endif //_MSC_VER
 
 namespace vkcompute {
-namespace api {
-
 namespace utils {
 
 //
@@ -299,7 +297,7 @@ inline detail::vec<T, N> divup_vec(
     const detail::vec<T, N>& b) {
   detail::vec<T, N> result;
   for (uint32_t i = 0; i < N; ++i) {
-    result.data[i] = api::utils::div_up(a.data[i], b.data[i]);
+    result.data[i] = utils::div_up(a.data[i], b.data[i]);
   }
   return result;
 }
@@ -461,6 +459,8 @@ inline int64_t multiply_integers(Iter begin, Iter end) {
 }
 
 } // namespace utils
+
+namespace api {
 
 inline VkExtent3D create_extent3d(const utils::uvec3& extents) {
   return VkExtent3D{extents.data[0u], extents.data[1u], extents.data[2u]};
