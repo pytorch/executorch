@@ -65,7 +65,7 @@ IndexSelectParams create_index_select_params(
     return {1, 1};
   } else if (dim_idx == kBatch4D) {
     int64_t n_channels = dim_at(in.sizes(), kChannel4D);
-    int64_t stride = api::utils::div_up_4(n_channels);
+    int64_t stride = utils::div_up_4(n_channels);
     return {2, static_cast<int32_t>(stride)};
   } else {
     VK_THROW("Unexpected dim_idx!");

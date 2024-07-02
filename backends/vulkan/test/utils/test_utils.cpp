@@ -127,7 +127,7 @@ void record_conv2d_prepack_weights_op(
   api::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   api::ParamsBuffer original_sizes_ubo(
-      context, api::utils::make_ivec4(original_sizes, /*reverse = */ true));
+      context, utils::make_ivec4(original_sizes, /*reverse = */ true));
 
   api::SpecVarList specialization_constants = {};
   context->submit_compute_job(

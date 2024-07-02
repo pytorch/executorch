@@ -78,7 +78,7 @@ void add_native_batch_norm_node(
   add_dtype_suffix(kernel_name, *t_out);
 
   int32_t num_texel_per_batch =
-      api::utils::div_up_4((dim_at<kChannel4D>(t_in->sizes())));
+      utils::div_up_4((dim_at<kChannel4D>(t_in->sizes())));
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
