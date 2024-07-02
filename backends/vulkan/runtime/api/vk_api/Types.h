@@ -10,12 +10,12 @@
 
 // @lint-ignore-every CLANGTIDY bugprone-branch-clone
 
-#include <cstddef>
-#include <cstdint>
-
 #include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/vk_api/Exception.h>
+
+#include <cstddef>
+#include <cstdint>
 
 #ifdef USE_VULKAN_FP16_INFERENCE
 #define VK_FORMAT_FLOAT4 VK_FORMAT_R16G16B16A16_SFLOAT
