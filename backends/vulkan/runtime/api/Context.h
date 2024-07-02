@@ -17,6 +17,8 @@
 #include <executorch/backends/vulkan/runtime/api/QueryPool.h>
 #include <executorch/backends/vulkan/runtime/api/Runtime.h>
 
+#include <executorch/backends/vulkan/runtime/api/utils/MacroUtils.h>
+
 namespace vkcompute {
 namespace api {
 
