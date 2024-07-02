@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <optional>
 #include <ostream>

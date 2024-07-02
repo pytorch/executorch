@@ -9,14 +9,12 @@
 #pragma once
 // @lint-ignore-every CLANGTIDY facebook-hte-LocalUncheckedArrayBounds
 
-#include <exception>
 #include <ostream>
 #include <sstream>
 #include <string>
-#include <vector>
 
 namespace vkcompute {
-namespace api {
+namespace utils {
 
 namespace detail {
 
@@ -86,5 +84,5 @@ inline std::string concat_str(const Args&... args) {
       typename detail::CanonicalizeStrTypes<Args>::type...>::call(args...);
 }
 
-} // namespace api
+} // namespace utils
 } // namespace vkcompute
