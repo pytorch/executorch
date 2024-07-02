@@ -27,4 +27,3 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/hifi/operators)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/hifi/kernels)
-
