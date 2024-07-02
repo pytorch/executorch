@@ -80,6 +80,9 @@ class ArmPartitioner(Partitioner):
         # subgraphs containing the nodes with the tags
         logger.info("ArmPartitioner::partition")
         partition_tags = {}
+        logger.warning(
+            "Applying passes on unpartitioned graph. This might interfere with other backends."
+        )
         graph_module = ArmPassManager().transform_partition_pipeline(
             graph_module=exported_program.graph_module,
             compile_spec=self.delegation_spec.compile_specs,

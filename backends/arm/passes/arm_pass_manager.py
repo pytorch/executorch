@@ -6,8 +6,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.arm.passes.remove_clone_pass import RemoveClone
-from executorch.backends.arm.passes.tag_io_quant_pass import TagIOQuant
+from executorch.backends.arm.passes.remove_clone_pass import RemoveClonePass
+from executorch.backends.arm.passes.tag_io_quant_pass import TagIOQuantPass
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
 
@@ -25,7 +25,7 @@ class ArmPassManager(PassManager):
             if spec.key == "quantize_io":
                 output_format = spec.value.decode()
                 if output_format == "True":
-                    self.add_pass(TagIOQuant())
+                    self.add_pass(TagIOQuantPass())
 
         return self._transform(graph_module)
 
@@ -33,12 +33,6 @@ class ArmPassManager(PassManager):
         self, graph_module: torch.fx.Graph, compile_spec: CompileSpec
     ):
         """Apply passes before transforming program to backend"""
-        self.add_pass(RemoveClone())
-        for spec in compile_spec:
-            if spec.key == "permute_memory_format":
-                memory_format = spec.value.decode()
-                if memory_format == "nhwc":
-                    # self.add_pass(PermuteMemoryFormatPass)
-                    pass
+        self.add_pass(RemoveClonePass())
 
         return self._transform(graph_module)

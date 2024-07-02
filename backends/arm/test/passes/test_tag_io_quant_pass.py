@@ -12,26 +12,13 @@ from executorch.backends.arm.arm_backend import generate_ethosu_compile_spec
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 
-class Linear(torch.nn.Module):
-    def __init__(
-        self,
-        in_features: int,
-        out_features: int = 3,
-        bias: bool = True,
-    ):
-        super().__init__()
-        self.inputs = (torch.ones(1, 1, 1, in_features),)
-        self.fc = torch.nn.Linear(
-            in_features=in_features,
-            out_features=out_features,
-            bias=bias,
-        )
+class Add(torch.nn.Module):
 
     def get_inputs(self):
-        return self.inputs
+        return (torch.rand(1, 10, 10, 10),)
 
     def forward(self, x):
-        return self.fc(x)
+        return x + x
 
 
 class TestTagIOQuantPass(unittest.TestCase):
@@ -50,6 +37,16 @@ class TestTagIOQuantPass(unittest.TestCase):
             .quantize()
             .export()
             .to_edge()
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default": 2
+                }
+            )
+            .check_count(
+                {
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default": 2
+                }
+            )
             .partition()
             .check_count(
                 {
@@ -66,5 +63,5 @@ class TestTagIOQuantPass(unittest.TestCase):
         )
 
     def test_BI_u55_artifact(self):
-        model = Linear(20, 30)
+        model = Add()
         self._tosa_BI_u55_pipeline(model)

@@ -9,7 +9,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class TagIOQuant(ExportPass):
+class TagIOQuantPass(ExportPass):
     """
     Pass run before partitioning to tag Q/DQ on any placeholder and output
     to ensure we don't greedily partition them for device. Float conversion

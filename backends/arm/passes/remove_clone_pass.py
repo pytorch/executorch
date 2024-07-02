@@ -9,7 +9,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class RemoveClone(ExportPass):
+class RemoveClonePass(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         for node in graph_module.graph.nodes:
