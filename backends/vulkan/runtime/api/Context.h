@@ -36,8 +36,8 @@ struct ContextConfig final {
 
 //
 // Vulkan Context holds onto all relevant Vulkan state as it pertains to our
-// use of Vulkan in PyTorch.  A Context is associated with one, and only one,
-// Adapter as a precursor to multi-GPU support.  All Vulkan tensors in PyTorch
+// use of Vulkan in PyTorch. A Context is associated with one, and only one,
+// Adapter as a precursor to multi-GPU support. All Vulkan tensors in PyTorch
 // are associated with a Context to make tensor <-> device affinity explicit.
 // The context is currently a global object, but technically it does not need
 // to be if we were to make it explicit to the user.
@@ -199,16 +199,6 @@ class Context final {
       PipelineBarrier&,
       const ShaderInfo&,
       const utils::uvec3&);
-
-  template <class S, class D>
-  bool submit_copy(
-      PipelineBarrier&,
-      const S&,
-      const D&,
-      const utils::uvec3&,
-      const utils::uvec3&,
-      const utils::uvec3&,
-      VkFence fence_handle);
 
   template <typename... Arguments>
   bool submit_compute_job(
@@ -382,119 +372,6 @@ inline void bind(
 }
 
 } // namespace detail
-
-template <class S, class D>
-inline void record_copy(
-    CommandBuffer& cmd,
-    const S& source,
-    const D& destination,
-    const utils::uvec3& copy_range,
-    const utils::uvec3& src_offset,
-    const utils::uvec3& dst_offset) = delete;
-
-template <>
-inline void record_copy<VulkanBuffer, VulkanBuffer>(
-    CommandBuffer& cmd,
-    const VulkanBuffer& source,
-    const VulkanBuffer& destination,
-    const utils::uvec3& copy_range,
-    const utils::uvec3& src_offset,
-    const utils::uvec3& dst_offset) {
-  cmd.copy_buffer_to_buffer(
-      source, destination, copy_range, src_offset, dst_offset);
-}
-
-template <>
-inline void record_copy<VulkanImage, VulkanImage>(
-    CommandBuffer& cmd,
-    const VulkanImage& source,
-    const VulkanImage& destination,
-    const utils::uvec3& copy_range,
-    const utils::uvec3& src_offset,
-    const utils::uvec3& dst_offset) {
-  cmd.copy_texture_to_texture(
-      source, destination, copy_range, src_offset, dst_offset);
-}
-
-template <>
-inline void record_copy<VulkanImage, VulkanBuffer>(
-    CommandBuffer& cmd,
-    const VulkanImage& source,
-    const VulkanBuffer& destination,
-    const utils::uvec3& copy_range,
-    const utils::uvec3& src_offset,
-    const utils::uvec3& dst_offset) {
-  cmd.copy_texture_to_buffer(
-      source, destination, copy_range, src_offset, dst_offset);
-}
-
-template <>
-inline void record_copy<VulkanBuffer, VulkanImage>(
-    CommandBuffer& cmd,
-    const VulkanBuffer& source,
-    const VulkanImage& destination,
-    const utils::uvec3& copy_range,
-    const utils::uvec3& src_offset,
-    const utils::uvec3& dst_offset) {
-  cmd.copy_buffer_to_texture(
-      source, destination, copy_range, src_offset, dst_offset);
-}
-
-/*
-  Records a GPU data copy into the current command buffer. If the number of
-  submit_*_job calls exceeds the configured frequency, or if a fence is
-  provided, then the command buffer is submitted to the GPU for execution.
-  Returns a bool indicating whether or not the function call resulted in a GPU
-  queue submission.
- */
-template <class S, class D>
-inline bool Context::submit_copy(
-    PipelineBarrier& pipeline_barrier,
-    const S& source,
-    const D& destination,
-    const utils::uvec3& copy_range,
-    const utils::uvec3& src_offset,
-    const utils::uvec3& dst_offset,
-    VkFence fence_handle) {
-  // If any of the provided arguments does not have memory associated with it,
-  // then exit early as there is no work to be done. However, if a fence has
-  // been passed the command buffer is not empty, then the current command
-  // buffer must still be submitted so that the fence can be signaled.
-  if (!source || !destination) {
-    if (fence_handle != VK_NULL_HANDLE && submit_count_ > 0) {
-      submit_cmd_to_gpu(fence_handle);
-      return true;
-    }
-    return false;
-  }
-
-  // Serialize recording to the shared command buffer. Do not initialize with a
-  // mutex just yet, since in some cases it will be externally managed.
-  std::unique_lock<std::mutex> cmd_lock;
-  // Refer to comments in submit_compute_job for explanation.
-  if (fence_handle == VK_NULL_HANDLE) {
-    cmd_lock = std::unique_lock<std::mutex>(cmd_mutex_);
-  }
-
-  set_cmd();
-
-  std::string label = "cmd_copy";
-  report_shader_dispatch_start(label, {0, 0, 0}, {0, 0, 0});
-
-  cmd_.insert_barrier(pipeline_barrier);
-
-  record_copy(cmd_, source, destination, copy_range, src_offset, dst_offset);
-
-  report_shader_dispatch_end();
-
-  submit_count_++;
-  if (fence_handle != VK_NULL_HANDLE ||
-      submit_count_ >= config_.cmd_submit_frequency) {
-    submit_cmd_to_gpu(fence_handle);
-    return true;
-  }
-  return false;
-}
 
 /*
   Records a compute shader dispatch into the current command buffer. If the
