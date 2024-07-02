@@ -34,7 +34,7 @@ def _annotate_add(
     for add_partition in add_partitions:
         annotated_partitions.append(add_partition.nodes)
         add_node = add_partition.output_nodes[0]
-        if arm_quantizer_utils.is_annotated([add_node]):
+        if arm_quantizer_utils.is_annotated(add_node):
             continue
 
         input_act0 = add_node.args[0]

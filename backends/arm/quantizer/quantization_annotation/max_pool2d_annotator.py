@@ -41,7 +41,7 @@ def _annotate_max_pool2d(
             maxpool_node is not None
         ), "ArmQuantizer only works with torch.ops.aten.max_pool2d.default, "
         "please make sure you are exporting the model correctly"
-        if arm_quantizer_utils.is_annotated([output_node, maxpool_node]):  # type: ignore[list-item]
+        if arm_quantizer_utils.are_annotated([output_node, maxpool_node]):  # type: ignore[list-item]
             continue
 
         input_act = maxpool_node.args[0]  # type: ignore[union-attr]

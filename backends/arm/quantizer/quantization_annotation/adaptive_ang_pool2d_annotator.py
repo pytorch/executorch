@@ -40,7 +40,7 @@ def _annotate_adaptive_avg_pool2d(
         ):
             raise ValueError(f"{pool_node} is not an aten adaptive_avg_pool2d operator")
 
-        if arm_quantizer_utils.is_annotated([pool_node]):
+        if arm_quantizer_utils.is_annotated(pool_node):
             continue
 
         annotated_partitions.append(partition.nodes)
