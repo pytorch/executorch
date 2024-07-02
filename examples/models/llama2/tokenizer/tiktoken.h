@@ -24,9 +24,17 @@ using Encoder = std::unordered_map<std::string, uint64_t>;
 using Decoder = std::unordered_map<uint64_t, std::string>;
 using Re2UPtr = std::unique_ptr<re2::RE2>;
 
+constexpr int32_t kSpecialTokensSize = 256;
+
+enum Version {
+  DEFAULT,
+  MULTIMODAL,
+};
+
 class Tiktoken : public Tokenizer {
  public:
-  explicit Tiktoken() : Tokenizer() {}
+  explicit Tiktoken(const Version& version = DEFAULT)
+      : Tokenizer(), _version(version) {}
   ~Tiktoken(){};
 
   Error load(const std::string& tokenizer_path) override;
@@ -38,24 +46,101 @@ class Tiktoken : public Tokenizer {
       const override;
 
  private:
-  static inline const Encoder _get_special_tokens(ssize_t num_base_tokens) {
+  static inline const Encoder _get_default_special_tokens(
+      ssize_t num_base_tokens) {
     Encoder special_tokens;
-    special_tokens.emplace("<|begin_of_text|>", num_base_tokens++);
-    special_tokens.emplace("<|end_of_text|>", num_base_tokens++);
-    special_tokens.emplace("<|reserved_special_token_0|>", num_base_tokens++);
-    special_tokens.emplace("<|reserved_special_token_1|>", num_base_tokens++);
-    special_tokens.emplace("<|reserved_special_token_2|>", num_base_tokens++);
-    special_tokens.emplace("<|reserved_special_token_3|>", num_base_tokens++);
-    special_tokens.emplace("<|start_header_id|>", num_base_tokens++);
-    special_tokens.emplace("<|end_header_id|>", num_base_tokens++);
-    special_tokens.emplace("<|reserved_special_token_4|>", num_base_tokens++);
-    special_tokens.emplace("<|eot_id|>", num_base_tokens++);
-    for (auto i = 5; i < 251; ++i) {
+    ssize_t special_token_count = 0;
+    special_tokens.emplace(
+        "<|begin_of_text|>", num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|end_of_text|>", num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|reserved_special_token_0|>",
+        num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|reserved_special_token_1|>",
+        num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|reserved_special_token_2|>",
+        num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|reserved_special_token_3|>",
+        num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|start_header_id|>", num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|end_header_id|>", num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|reserved_special_token_4|>",
+        num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|eot_id|>", num_base_tokens + special_token_count++);
+
+    // pad the rest of the special tokens with reserved tokens
+    ssize_t reserved_special_token_num = 5;
+    while (special_token_count < kSpecialTokensSize) {
       special_tokens.emplace(
-          "<|reserved_special_token_" + std::to_string(i) + "|>",
-          num_base_tokens++);
+          "<|reserved_special_token_" +
+              std::to_string(reserved_special_token_num++) + "|>",
+          num_base_tokens + special_token_count++);
     }
     return special_tokens;
+  }
+
+  static inline const Encoder _get_multimodal_special_tokens(
+      ssize_t num_base_tokens) {
+    ssize_t special_token_count = 0;
+    Encoder special_tokens;
+    special_tokens.emplace(
+        "<|begin_of_text|>", num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|end_of_text|>", num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|reserved_special_token_0|>",
+        num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|reserved_special_token_1|>",
+        num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|reserved_special_token_2|>",
+        num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|reserved_special_token_3|>",
+        num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|start_header_id|>", num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|end_header_id|>", num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|eom_id|>", num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|eot_id|>", num_base_tokens + special_token_count++);
+    special_tokens.emplace(
+        "<|image|>", num_base_tokens + special_token_count++);
+
+    // pad the rest of the special tokens with reserved tokens except the last
+    // one
+    ssize_t reserved_special_token_num = 4;
+    while (special_token_count < kSpecialTokensSize - 1) {
+      special_tokens.emplace(
+          "<|reserved_special_token_" +
+              std::to_string(reserved_special_token_num++) + "|>",
+          num_base_tokens + special_token_count++);
+    }
+
+    special_tokens.emplace(
+        "<|python_tag|>", num_base_tokens + special_token_count++);
+
+    return special_tokens;
+  }
+
+  inline const Encoder _get_special_tokens(ssize_t num_base_tokens) {
+    switch (_version) {
+      case MULTIMODAL:
+        return _get_multimodal_special_tokens(num_base_tokens);
+      default:
+        return _get_default_special_tokens(num_base_tokens);
+    }
   }
 
   template <typename T>
@@ -73,6 +158,8 @@ class Tiktoken : public Tokenizer {
   std::pair<std::vector<uint64_t>, uint64_t> _encode_with_special_token(
       const std::string& text,
       const T& allowed_special) const;
+
+  const Version _version;
 
   // Removed negative lookahead \s+(?!\S) since it's not supported by RE2.
   const std::string _pattern =
