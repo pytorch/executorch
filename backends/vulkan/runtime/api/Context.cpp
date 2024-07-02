@@ -274,16 +274,5 @@ UniformParamsBuffer& UniformParamsBuffer::operator=(
   return *this;
 }
 
-ParamsBindList::ParamsBindList(
-    std::initializer_list<const BufferBindInfo> init_list) {
-  bind_infos.resize(init_list.size());
-  std::copy(init_list.begin(), init_list.end(), bind_infos.begin());
-}
-
-void ParamsBindList::append(const ParamsBindList& other) {
-  bind_infos.insert(
-      bind_infos.end(), other.bind_infos.begin(), other.bind_infos.end());
-}
-
 } // namespace api
 } // namespace vkcompute
