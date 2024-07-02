@@ -70,14 +70,14 @@ std::vector<int64_t> get_reference_strides(
     const std::vector<int64_t>& sizes,
     const api::GPUMemoryLayout layout,
     const bool texel_strides) {
-  int64_t C = api::utils::val_at(-3, sizes);
-  int64_t H = api::utils::val_at(-2, sizes);
-  int64_t W = api::utils::val_at(-1, sizes);
+  int64_t C = utils::val_at(-3, sizes);
+  int64_t H = utils::val_at(-2, sizes);
+  int64_t W = utils::val_at(-1, sizes);
 
   switch (layout) {
     case api::kWidthPacked:
       if (texel_strides) {
-        W = api::utils::div_up(W, INT64_C(4));
+        W = utils::div_up(W, INT64_C(4));
       }
       switch (sizes.size()) {
         case 1:
@@ -94,7 +94,7 @@ std::vector<int64_t> get_reference_strides(
       break;
     case api::kHeightPacked:
       if (texel_strides) {
-        H = api::utils::div_up(H, INT64_C(4));
+        H = utils::div_up(H, INT64_C(4));
       }
       switch (sizes.size()) {
         case 1:
@@ -110,7 +110,7 @@ std::vector<int64_t> get_reference_strides(
       }
     case api::kChannelsPacked:
       if (texel_strides) {
-        C = api::utils::div_up(C, INT64_C(4));
+        C = utils::div_up(C, INT64_C(4));
       }
       switch (sizes.size()) {
         case 1:
@@ -218,7 +218,7 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
 
   {
     api::ParamsBuffer params(api::context(), int32_t(len));
-    uint32_t len_div4 = api::utils::div_up(uint32_t(len), uint32_t(4));
+    uint32_t len_div4 = utils::div_up(uint32_t(len), uint32_t(4));
     api::PipelineBarrier pipeline_barrier{};
     api::context()->submit_compute_job(
         VK_KERNEL(fill_buffer),
@@ -251,9 +251,9 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   add_dtype_suffix(kernel_name, a);
 
   struct Params final {
-    api::utils::ivec3 size;
+    utils::ivec3 size;
     int32_t fill;
-    api::utils::vec4 values;
+    utils::vec4 values;
   };
 
   Params block{
@@ -326,7 +326,7 @@ void test_storage_buffer_type(const size_t len) {
   api::ParamsBuffer params(api::context(), int32_t(len));
 
   {
-    uint32_t len_div4 = api::utils::div_up(uint32_t(len), uint32_t(4));
+    uint32_t len_div4 = utils::div_up(uint32_t(len), uint32_t(4));
     api::PipelineBarrier pipeline_barrier{};
     api::SpecVarList specialization_constants = {};
     api::context()->submit_compute_job(
@@ -421,14 +421,14 @@ TEST_F(VulkanComputeAPITest, buffer_tensor_sanity_check) {
           !api::context()->adapter_ptr()->has_full_float16_buffers_support()) {
         continue;
       }
-      if (dtype == api::kHalf && api::utils::multiply_integers(sizes) >= 2048) {
+      if (dtype == api::kHalf && utils::multiply_integers(sizes) >= 2048) {
         continue;
       }
       if (dtype == api::kChar &&
           !api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
         continue;
       }
-      if (dtype == api::kChar && api::utils::multiply_integers(sizes) >= 128) {
+      if (dtype == api::kChar && utils::multiply_integers(sizes) >= 128) {
         continue;
       }
       for (const auto& layout :
@@ -919,9 +919,9 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
   }
 }
 
-#define CREATE_WEIGHT_TENSOR(name, sizes, dtype, val)                   \
-  std::vector<float> data_##name(api::utils::multiply_integers(sizes)); \
-  std::fill(data_##name.begin(), data_##name.end(), val);               \
+#define CREATE_WEIGHT_TENSOR(name, sizes, dtype, val)              \
+  std::vector<float> data_##name(utils::multiply_integers(sizes)); \
+  std::fill(data_##name.begin(), data_##name.end(), val);          \
   ValueRef name = graph.add_tensorref(sizes, dtype, data_##name.data());
 
 TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
@@ -2118,9 +2118,9 @@ void test_max_pool2d(
 
   int h_offset = kernel_copy[0] - 1;
   int w_offset = kernel_copy[1] - 1;
-  int h_out = api::utils::val_at(-2, t_out->sizes());
-  int w_out = api::utils::val_at(-1, t_out->sizes());
-  int w_in = api::utils::val_at(-1, t_in->sizes());
+  int h_out = utils::val_at(-2, t_out->sizes());
+  int w_out = utils::val_at(-1, t_out->sizes());
+  int w_in = utils::val_at(-1, t_in->sizes());
   for (size_t i = 0; i < h_out; ++i) {
     for (size_t j = 0; j < w_out; ++j) {
       size_t idx_out = i * w_out + j;
@@ -2153,7 +2153,7 @@ void test_conv2d(
       api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
 
   // Create and fill input staging buffer
-  const int64_t in_numel = api::utils::multiply_integers(original_sizes);
+  const int64_t in_numel = utils::multiply_integers(original_sizes);
   api::StorageBuffer staging_buffer_in(api::context(), api::kFloat, in_numel);
 
   std::vector<float> data_in(in_numel);

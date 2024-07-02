@@ -91,8 +91,8 @@ void add_native_layer_norm_node(
 
   std::vector<int64_t> in_sizes = t_input->sizes();
 
-  api::utils::uvec3 global_size = t_mean->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  utils::uvec3 global_size = t_mean->image_extents();
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("native_layer_norm");
   kernel_name.reserve(kShaderNameReserve);

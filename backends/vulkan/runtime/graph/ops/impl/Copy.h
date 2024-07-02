@@ -24,9 +24,9 @@ namespace vkcompute {
 void add_copy_offset_node(
     ComputeGraph& graph,
     const ValueRef in,
-    const api::utils::ivec3& range,
-    const api::utils::ivec3& src_offset,
-    const api::utils::ivec3& dst_offset,
+    const utils::ivec3& range,
+    const utils::ivec3& src_offset,
+    const utils::ivec3& dst_offset,
     const ValueRef out);
 
 // add_copy_channel_offset_node behaves similar to add_copy_node, except that it

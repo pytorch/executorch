@@ -22,8 +22,8 @@ std::vector<int64_t> calculate_broadcasted_output_size(
 
   // Match the sizes in reverse because sizes are in NCHW order
   for (int i = -1; i >= -out_sizes.size(); --i) {
-    out_sizes.at(out_sizes.size() + i) = std::max(
-        api::utils::val_at(i, t1.sizes()), api::utils::val_at(i, t2.sizes()));
+    out_sizes.at(out_sizes.size() + i) =
+        std::max(utils::val_at(i, t1.sizes()), utils::val_at(i, t2.sizes()));
   }
 
   return out_sizes;
@@ -42,8 +42,7 @@ bool check_same_sizes_at(
     const int64_t d1,
     const vTensor& t2,
     const int64_t d2) {
-  return api::utils::val_at(d1, t1.sizes()) ==
-      api::utils::val_at(d2, t2.sizes());
+  return utils::val_at(d1, t1.sizes()) == utils::val_at(d2, t2.sizes());
 }
 
 bool check_memory_layout_is(const vTensor& t, api::GPUMemoryLayout layout) {
@@ -77,21 +76,16 @@ bool is_packed_dim_broadcasted(const vTensor& sndr, const vTensor& rcvr) {
   // some index, then the value of rcvr is 1 and hence should be broadcasted.
   switch (sndr.gpu_memory_layout()) {
     case api::kChannelsPacked:
-      return api::utils::val_at(-3, sndr.sizes()) >
-          api::utils::val_at(-3, rcvr.sizes());
+      return utils::val_at(-3, sndr.sizes()) > utils::val_at(-3, rcvr.sizes());
     case api::kHeightPacked:
-      return api::utils::val_at(-2, sndr.sizes()) >
-          api::utils::val_at(-2, rcvr.sizes());
+      return utils::val_at(-2, sndr.sizes()) > utils::val_at(-2, rcvr.sizes());
     case api::kWidthPacked:
-      return api::utils::val_at(-1, sndr.sizes()) >
-          api::utils::val_at(-1, rcvr.sizes());
+      return utils::val_at(-1, sndr.sizes()) > utils::val_at(-1, rcvr.sizes());
   }
 }
 
-api::utils::ivec2 create_broadcast_params(
-    const vTensor& t1,
-    const vTensor& t2) {
-  return api::utils::make_ivec2(
+utils::ivec2 create_broadcast_params(const vTensor& t1, const vTensor& t2) {
+  return utils::make_ivec2(
       {is_packed_dim_broadcasted(t2, t1), is_packed_dim_broadcasted(t1, t2)});
 }
 
@@ -99,9 +93,8 @@ api::utils::ivec2 create_broadcast_params(
 // Work group size calculation functions
 //
 
-api::utils::uvec3 adaptive_work_group_size(
-    const api::utils::uvec3& global_work_group) {
-  api::utils::uvec3 local_group_size = {4, 4, 4};
+utils::uvec3 adaptive_work_group_size(const utils::uvec3& global_work_group) {
+  utils::uvec3 local_group_size = {4, 4, 4};
   if (global_work_group.data[2u] == 1) {
     if (global_work_group.data[1u] < 8) {
       local_group_size.data[0u] = 16;

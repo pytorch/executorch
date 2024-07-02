@@ -74,7 +74,7 @@ inline int32_t dim_at(const std::vector<int64_t>& sizes, DimIndex dim_index) {
   // Recall that dim_index is a negative index.
   return dims < -dim_index
       ? 1
-      : api::utils::safe_downcast<int32_t>(sizes[dims + dim_index]);
+      : utils::safe_downcast<int32_t>(sizes[dims + dim_index]);
 }
 
 template <DimIndex DI>

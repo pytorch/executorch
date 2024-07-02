@@ -33,7 +33,7 @@ void resize_arange_node(
   }
 
   std::vector<int64_t> out_sizes = {
-      api::utils::div_up(end_val - start_val, step_val)};
+      utils::div_up(end_val - start_val, step_val)};
 
   out->virtual_resize(out_sizes);
 }

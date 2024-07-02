@@ -68,8 +68,7 @@ void add_binary_op_node(
     alpha_val = graph.extract_scalar<float>(alpha);
   }
 
-  const api::utils::ivec2 broadcast_params =
-      create_broadcast_params(*t_in1, *t_in2);
+  const utils::ivec2 broadcast_params = create_broadcast_params(*t_in1, *t_in2);
 
   std::string kernel_name("binary_");
   kernel_name.reserve(kShaderNameReserve);

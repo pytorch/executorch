@@ -54,7 +54,7 @@ std::vector<int64_t> calculate_padded_sizes(
  * Given the padded sizes of a tensor and the GPU memory layout, calculate the
  * 3D image extents required to store the tensor data as an image texture.
  */
-api::utils::uvec3 calculate_image_extents(
+utils::uvec3 calculate_image_extents(
     const std::vector<int64_t>& padded_sizes,
     const api::GPUMemoryLayout memory_layout);
 
@@ -102,7 +102,7 @@ class vTensorStorage final {
   api::StorageType storage_type_;
 
   // Resource sizings
-  api::utils::uvec3 image_extents_{};
+  utils::uvec3 image_extents_{};
   int64_t buffer_length_{};
 
   // GPU Storage
@@ -141,7 +141,7 @@ class vTensor final {
     // Alignment is required to conform with Vulkan specification; a 3 or 4
     // component vector with components of size N must have base alignment of
     // 4N.
-    alignas(16) api::utils::ivec3 limits;
+    alignas(16) utils::ivec3 limits;
   };
 
  public:
@@ -231,7 +231,7 @@ class vTensor final {
     return storage_.storage_type_ == api::kBuffer;
   }
 
-  inline const api::utils::uvec3& image_extents() const {
+  inline const utils::uvec3& image_extents() const {
     return storage_.image_extents_;
   }
 
@@ -291,12 +291,12 @@ class vTensor final {
    */
   const api::BufferBindInfo ntexels_ubo();
 
-  inline const api::utils::ivec3 texture_limits() const {
+  inline const utils::ivec3 texture_limits() const {
     return texture_limits_.limits;
   }
 
   inline size_t numel() const {
-    return api::utils::multiply_integers(sizes());
+    return utils::multiply_integers(sizes());
   }
 
   inline size_t nbytes() const {
@@ -307,7 +307,7 @@ class vTensor final {
    * Returns numel but based on padded_sizes_ instead of sizes_
    */
   inline size_t gpu_numel() const {
-    return api::utils::multiply_integers(padded_sizes_);
+    return utils::multiply_integers(padded_sizes_);
   }
 
   /*
@@ -315,7 +315,7 @@ class vTensor final {
    * store the tensor's data.
    */
   inline int32_t texel_numel() const {
-    return api::utils::safe_downcast<int32_t>(gpu_numel() / 4);
+    return utils::safe_downcast<int32_t>(gpu_numel() / 4);
   }
 
   /*

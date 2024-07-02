@@ -169,12 +169,11 @@ api::ShaderInfo get_conv2d_shader(
 std::vector<int64_t> get_final_sizes(
     const std::vector<int64_t>& original_sizes,
     const Conv2dMethod method) {
-  int64_t batch_padded =
-      api::utils::align_up_4(api::utils::val_at(-4, original_sizes));
+  int64_t batch_padded = utils::align_up_4(utils::val_at(-4, original_sizes));
   int64_t channels_padded =
-      api::utils::align_up_4(api::utils::val_at(-3, original_sizes));
-  int64_t height = api::utils::val_at(-2, original_sizes);
-  int64_t width = api::utils::val_at(-1, original_sizes);
+      utils::align_up_4(utils::val_at(-3, original_sizes));
+  int64_t height = utils::val_at(-2, original_sizes);
+  int64_t width = utils::val_at(-1, original_sizes);
 
   switch (method) {
     case Conv2dMethod::Depthwise:
@@ -212,7 +211,7 @@ ValueRef prepack_weights(
       v,
       {t->sizes_ubo(),
        graph.create_params_buffer(
-           api::utils::make_ivec4(original_sizes, /*reverse = */ true))},
+           utils::make_ivec4(original_sizes, /*reverse = */ true))},
       // Specialization constants
       {SV(t->packed_dim_whcn_idx())}));
 
@@ -225,7 +224,7 @@ void check_conv_args(const vTensor& in, const vTensor& out) {
 }
 
 struct Conv2dParams final {
-  api::utils::ivec2 overlay_region;
+  utils::ivec2 overlay_region;
   int in_group_size;
 };
 
@@ -239,16 +238,15 @@ Conv2dParams create_conv2d_params(
     const ValueRef weight,
     const Kernel2dParams& p,
     const bool transposed) {
-  const auto& overlay_region = api::utils::make_ivec2({
+  const auto& overlay_region = utils::make_ivec2({
       p.kernel_size.data[0] +
           (p.kernel_size.data[0] - 1) * (p.dilation.data[0] - 1),
       p.kernel_size.data[1] +
           (p.kernel_size.data[1] - 1) * (p.dilation.data[1] - 1),
   });
   const auto weight_sizes = graph.sizes_of(weight);
-  const int32_t in_group_size =
-      api::utils::safe_downcast<int32_t>(api::utils::align_up_4(
-          transposed ? weight_sizes.at(0) : weight_sizes.at(1)));
+  const int32_t in_group_size = utils::safe_downcast<int32_t>(
+      utils::align_up_4(transposed ? weight_sizes.at(0) : weight_sizes.at(1)));
   return {overlay_region, in_group_size};
 }
 
@@ -289,15 +287,15 @@ Conv2dMethod get_conv2d_method(
   return Conv2dMethod::SlidingWindow;
 }
 
-api::utils::uvec3 create_conv2d_global_wg_size(
+utils::uvec3 create_conv2d_global_wg_size(
     ComputeGraph& graph,
     const Conv2dMethod method,
     const ValueRef out) {
   if (method == Conv2dMethod::Pointwise) {
-    const api::utils::uvec3 image_extents = graph.image_extents_of(out);
+    const utils::uvec3 image_extents = graph.image_extents_of(out);
     return {
-        api::utils::div_up(image_extents.data[0u], 2u),
-        api::utils::div_up(image_extents.data[1u], 2u),
+        utils::div_up(image_extents.data[0u], 2u),
+        utils::div_up(image_extents.data[1u], 2u),
         image_extents.data[2u]};
   } else {
     return graph.create_global_wg_size(out);
@@ -445,8 +443,8 @@ void add_conv1d_node(
   int32_t in_group_size = static_cast<int64_t>(in_channels / groups_val);
   int32_t out_group_size = static_cast<int64_t>(out_channels / groups_val);
 
-  api::utils::uvec3 global_size = {1, static_cast<uint32_t>(out_channels), 1};
-  api::utils::uvec3 local_size = {1, 1, 1};
+  utils::uvec3 global_size = {1, static_cast<uint32_t>(out_channels), 1};
+  utils::uvec3 local_size = {1, 1, 1};
 
   Kernel1dParams kernel_params = {
       kernel_size,
