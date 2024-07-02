@@ -362,25 +362,6 @@ void Adapter::submit_cmd(
   VK_CHECK(vkQueueSubmit(device_queue.handle, 1u, &submit_info, fence));
 }
 
-void Adapter::submit_cmds(
-    const Adapter::Queue& device_queue,
-    const std::vector<VkCommandBuffer>& cmds,
-    VkFence fence) {
-  const VkSubmitInfo submit_info{
-      VK_STRUCTURE_TYPE_SUBMIT_INFO, // sType
-      nullptr, // pNext
-      0u, // waitSemaphoreCount
-      nullptr, // pWaitSemaphores
-      nullptr, // pWaitDstStageMask
-      utils::safe_downcast<uint32_t>(cmds.size()), // commandBufferCount
-      cmds.data(), // pCommandBuffers
-      0u, // signalSemaphoreCount
-      nullptr, // pSignalSemaphores
-  };
-
-  VK_CHECK(vkQueueSubmit(device_queue.handle, 1u, &submit_info, fence));
-}
-
 std::string Adapter::stringize() const {
   std::stringstream ss;
 
