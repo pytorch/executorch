@@ -13,6 +13,7 @@ from typing import Callable, List
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from torch._subclasses import FakeTensor
 from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
 from torch.ao.quantization.pt2e.export_utils import _WrapperModule
@@ -21,7 +22,7 @@ from torch.ao.quantization.quantizer import (
     QuantizationAnnotation,
     SharedQuantizationSpec,
 )
-from torch.fx import Node
+from torch.fx import GraphModule, Node
 
 
 def is_annotated(nodes: List[Node]):
@@ -66,7 +67,53 @@ def get_pattern(conv_fn: Callable, relu_is_inplace: bool, has_relu: bool):
     return _WrapperModule(_conv_bn)
 
 
-def is_input_large_scalar(node: Node, gm: torch.fx.GraphModule):
+def get_shared_qspec(
+    node: Node, gm: GraphModule, quantization_config: QuantizationConfig
+):
+    """Returns a Quantization constallation with a SharedQuantizationSpec for the inputs
+    and output to the parameter 'node'.
+    Parameters:
+        node: a node with two inputs that should share Quantization parameters.
+        gm: The GraphModule containing the node. Used to inspect global graph features.
+        quantization_config : a QuantizationConfig with the input QuantizationSpec to share
+    Returns:
+        input_qspec_map: a dict[node, QuantizationSpec] that maps the inputs to 'node' to
+            the correct QuantizationSpec.
+        shared_with_input0_spec: The SharedQuantizationSpec to be used as output QuantizationSpec.
+
+        Both outputs are None if one of the inputs is a node that can't be quantized.
+    """
+    input_act0 = node.args[0]
+    input_act1 = node.args[1]
+
+    input_act_qspec = quantization_config.get_input_act_qspec()
+    shared_with_input0_qspec = SharedQuantizationSpec((input_act0, node))
+
+    input_qspec_map = {}
+    if isinstance(input_act0, Node):
+        if not is_input_ok_for_quantization(input_act0, gm):
+            return None, None
+        input_qspec_map[input_act0] = input_act_qspec
+
+    if isinstance(input_act1, Node):
+        if not is_input_ok_for_quantization(input_act1, gm):
+            return None, None
+        if input_act0 is not input_act1:
+            input_qspec_map[input_act1] = shared_with_input0_qspec
+    return input_qspec_map, shared_with_input0_qspec
+
+
+def is_input_ok_for_quantization(input_act: Node, gm: GraphModule):
+    """Check if an input can be quantized. The input can not be quantized if:
+    - The node does not output a float tensor or,
+    - The node outputs a large scalar.
+    """
+    return not (
+        is_input_non_float_tensor(input_act) or is_input_large_scalar(input_act, gm)
+    )
+
+
+def is_input_large_scalar(node: Node, gm: GraphModule):
     """Check if input is a large scalar value. So that we can skip quantization for the node
     since histc op (in HistogramObserver) only works for values up to certain upper bound
     """
@@ -107,7 +154,7 @@ def is_share_obs_or_fq_op(op: Callable) -> bool:
     ]
 
 
-def propagate_annotation(model: torch.fx.GraphModule) -> None:
+def propagate_annotation(model: GraphModule) -> None:
     for n in model.graph.nodes:
         if n.op != "call_function" or not is_share_obs_or_fq_op(n.target):
             continue
@@ -143,10 +190,11 @@ def propagate_annotation(model: torch.fx.GraphModule) -> None:
 
 
 # TODO: make the list of ops customizable
-def convert_scalars_to_attrs(model: torch.fx.GraphModule) -> torch.fx.GraphModule:
+def convert_scalars_to_attrs(model: GraphModule) -> GraphModule:
     for n in model.graph.nodes:
         if n.op != "call_function" or n.target not in [
             torch.ops.aten.add.Tensor,
+            torch.ops.aten.sub.Tensor,
             torch.ops.aten.mul.Tensor,
         ]:
             continue

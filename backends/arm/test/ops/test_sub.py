@@ -13,12 +13,11 @@ import torch
 from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from executorch.exir import EdgeCompileConfig
 from parameterized import parameterized
 
 
-class TestSimpleAdd(unittest.TestCase):
-    class Add(torch.nn.Module):
+class TestSimpleSub(unittest.TestCase):
+    class Sub(torch.nn.Module):
         test_parameters = [
             (torch.ones(5),),
             (3 * torch.ones(8),),
@@ -26,28 +25,17 @@ class TestSimpleAdd(unittest.TestCase):
         ]
 
         def forward(self, x):
-            return x + x
+            return x - x
 
-    class Add2(torch.nn.Module):
+    class Sub2(torch.nn.Module):
         test_parameters = [
-            (torch.ones(1, 1, 4, 4), torch.ones(1, 1, 4, 4)),
-            (torch.randn(1, 1, 4, 4), torch.ones(1, 1, 4, 1)),
             (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
-            (10000 * torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
         ]
 
-        def __init__(self):
-            super().__init__()
-            self.permute_memory_to_nhwc = False
-
         def forward(self, x, y):
-            return x + y
+            return x - y
 
-    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
-        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-    )
-
-    def _test_add_tosa_MI_pipeline(
+    def _test_sub_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
         (
@@ -57,16 +45,17 @@ class TestSimpleAdd(unittest.TestCase):
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
-            .check_count({"torch.ops.aten.add.Tensor": 1})
+            .check_count({"torch.ops.aten.sub.Tensor": 1})
             .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge(config=self._edge_compile_config)
+            .to_edge()
             .partition()
+            .check_not(["torch.ops.aten.sub.Tensor"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_add_tosa_BI_pipeline(
+    def _test_sub_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
         (
@@ -77,16 +66,16 @@ class TestSimpleAdd(unittest.TestCase):
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.add.Tensor": 1})
+            .check_count({"torch.ops.aten.sub.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge(config=self._edge_compile_config)
+            .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_add_u55_BI_pipeline(
+    def _test_sub_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
         (
@@ -97,40 +86,32 @@ class TestSimpleAdd(unittest.TestCase):
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten.add.Tensor": 1})
+            .check_count({"torch.ops.aten.sub.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge(config=self._edge_compile_config)
+            .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )
 
-    @parameterized.expand(Add.test_parameters)
-    def test_add_tosa_MI(self, test_data: torch.Tensor):
+    @parameterized.expand(Sub.test_parameters)
+    def test_sub_tosa_MI(self, test_data: torch.Tensor):
         test_data = (test_data,)
-        self._test_add_tosa_MI_pipeline(self.Add(), test_data)
+        self._test_sub_tosa_MI_pipeline(self.Sub(), test_data)
 
-    @parameterized.expand(Add.test_parameters)
-    def test_add_tosa_BI(self, test_data: torch.Tensor):
+    @parameterized.expand(Sub.test_parameters)
+    def test_sub_tosa_BI(self, test_data: torch.Tensor):
         test_data = (test_data,)
-        self._test_add_tosa_BI_pipeline(self.Add(), test_data)
+        self._test_sub_tosa_BI_pipeline(self.Sub(), test_data)
 
-    @parameterized.expand(Add.test_parameters)
-    def test_add_u55_BI(self, test_data: torch.Tensor):
+    # Expected to fail since RESCALE cannot be fused with SUB in Vela.
+    @parameterized.expand(Sub.test_parameters)
+    @unittest.expectedFailure
+    def test_sub_u55_BI(self, test_data: torch.Tensor):
         test_data = (test_data,)
-        self._test_add_u55_BI_pipeline(self.Add(), test_data)
+        self._test_sub_u55_BI_pipeline(self.Sub(), test_data)
 
-    @parameterized.expand(Add2.test_parameters)
-    def test_add2_tosa_MI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+    @parameterized.expand(Sub2.test_parameters)
+    def test_sub2_tosa_MI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
-        self._test_add_tosa_MI_pipeline(self.Add2(), test_data)
-
-    @parameterized.expand(Add2.test_parameters)
-    def test_add2_tosa_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
-        self._test_add_tosa_BI_pipeline(self.Add2(), test_data)
-
-    @parameterized.expand(Add2.test_parameters)
-    def test_add2_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
-        test_data = (operand1, operand2)
-        self._test_add_u55_BI_pipeline(self.Add2(), test_data)
+        self._test_sub_tosa_MI_pipeline(self.Sub2(), test_data)
