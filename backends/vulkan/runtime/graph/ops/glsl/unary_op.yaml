@@ -36,3 +36,5 @@ unary_op:
       OPERATOR: tanh(clamp(X, -15.0, 15.0))
     - NAME: hardshrink
       OPERATOR: X * (vec4(greaterThan(X, vec4(A))) + vec4(lessThan(X, vec4(B))))
+    - NAME: hardswish
+      OPERATOR: vec4(hardswish(X.x),hardswish(X.y),hardswish(X.z),hardswish(X.w))
