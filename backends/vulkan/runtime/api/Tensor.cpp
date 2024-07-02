@@ -17,7 +17,8 @@ std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
     const vkapi::GPUMemoryLayout memory_layout,
     const bool texel_strides) {
-  const int64_t dim_offset = to_packed_dim_nchw_offset<int64_t>(memory_layout);
+  const int64_t dim_offset =
+      vkapi::to_packed_dim_nchw_offset<int64_t>(memory_layout);
   const int64_t last_dim = sizes.size() - dim_offset;
   VK_CHECK_COND(last_dim >= 0);
 
@@ -58,7 +59,8 @@ std::vector<int64_t> calculate_padded_sizes(
   }
 
   // Pad the packed dim to the next multiple of 4.
-  const int64_t dim_offset = to_packed_dim_nchw_offset<int64_t>(memory_layout);
+  const int64_t dim_offset =
+      vkapi::to_packed_dim_nchw_offset<int64_t>(memory_layout);
   const int64_t padded_dim_size = utils::val_at(-dim_offset, sizes);
   padded_sizes.at(ndim_up4 - dim_offset) = utils::align_up_4(padded_dim_size);
 

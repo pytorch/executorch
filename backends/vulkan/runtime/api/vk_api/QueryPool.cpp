@@ -238,5 +238,15 @@ void QueryPool::print_results() {
   std::cout << generate_string_report() << std::endl;
 }
 
+unsigned long QueryPool::get_total_shader_ns(std::string kernel_name) {
+  for (ShaderDuration& entry : shader_durations_) {
+    if (entry.kernel_name == kernel_name) {
+      std::chrono::duration<size_t, std::nano> exec_duration_ns(
+          entry.execution_duration_ns);
+      return exec_duration_ns.count();
+    }
+  }
+  return 0;
+}
 } // namespace vkapi
 } // namespace vkcompute
