@@ -116,8 +116,8 @@ void add_select_int_node(
        // TODO: num_batches and num_texel_per_batch are provided by
        // t_out->sizes. Can change the following to reduce params
        // created.
-       graph.create_params_buffer(api::utils::make_ivec4(
-           {index, num_batches, num_texel_per_batch, 0}))},
+       graph.create_params_buffer(
+           utils::make_ivec4({index, num_batches, num_texel_per_batch, 0}))},
       // Specialization Constants
       {}));
 }

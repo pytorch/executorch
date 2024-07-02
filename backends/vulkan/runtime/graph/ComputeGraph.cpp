@@ -106,7 +106,7 @@ api::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
   }
   // For 3 dimensional tensors that only have a channels dimension of 1, still
   // prefer width packed.
-  if (api::utils::val_at(-3, sizes) == 1) {
+  if (utils::val_at(-3, sizes) == 1) {
     return api::kWidthPacked;
   }
   return api::kChannelsPacked;
@@ -312,14 +312,14 @@ void ComputeGraph::update_descriptor_counts(
   }
 }
 
-api::utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
+utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
   if (is_buffer_storage(idx)) {
     return {uint32_t(texel_numel_of(idx)), 1u, 1u};
   }
   return image_extents_of(idx);
 }
 
-api::utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
+utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
   if (config_.enable_local_wg_size_override) {
     return config_.local_wg_size_override;
   }
@@ -328,8 +328,8 @@ api::utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
     return {64u, 1u, 1u};
   }
 
-  const api::utils::uvec3 image_extents = image_extents_of(idx);
-  api::utils::uvec3 local_group_size = {4, 4, 4};
+  const utils::uvec3 image_extents = image_extents_of(idx);
+  utils::uvec3 local_group_size = {4, 4, 4};
 
   if (image_extents.data[2u] == 1) {
     if (image_extents.data[1u] == 1) {

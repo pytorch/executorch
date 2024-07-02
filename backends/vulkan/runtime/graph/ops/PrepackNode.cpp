@@ -27,8 +27,8 @@ api::ShaderInfo get_noop_shader(ComputeGraph& graph, const ValueRef packed) {
 PrepackNode::PrepackNode(
     ComputeGraph& graph,
     const api::ShaderInfo& shader,
-    const api::utils::uvec3& global_workgroup_size,
-    const api::utils::uvec3& local_workgroup_size,
+    const utils::uvec3& global_workgroup_size,
+    const utils::uvec3& local_workgroup_size,
     const ValueRef tref,
     const ValueRef packed,
     const api::ParamsBindList& params,
@@ -51,7 +51,7 @@ api::StorageBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   // If no TensorRef is provided, create a staging buffer of zeros according to
   // the vTensor metadata.
   if (graph->val_is_none(tref_)) {
-    size_t numel = api::utils::multiply_integers(packed->sizes());
+    size_t numel = utils::multiply_integers(packed->sizes());
     api::StorageBuffer staging(graph->context(), packed->dtype(), numel);
     size_t nbytes = numel * api::element_size(packed->dtype());
     set_staging_zeros(staging, nbytes);
@@ -59,7 +59,7 @@ api::StorageBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   }
 
   TensorRefPtr tref = graph->get_tref(tref_);
-  size_t numel = api::utils::multiply_integers(tref->sizes);
+  size_t numel = utils::multiply_integers(tref->sizes);
   api::StorageBuffer staging(graph->context(), tref->dtype, numel);
   size_t nbytes = numel * api::element_size(tref->dtype);
   copy_ptr_to_staging(tref->data, staging, nbytes);

@@ -15,7 +15,7 @@
 
 namespace vkcompute {
 
-using namespace api::utils;
+using namespace utils;
 
 void resize_softmax_node(
     ComputeGraph* graph,
@@ -66,8 +66,7 @@ void add_softmax_node(
       // Shader params buffers
       {t_out->texture_limits_ubo(),
        t_in->sizes_ubo(),
-       graph.create_params_buffer(
-           api::utils::make_ivec2({in_dim, softmax_dim}))},
+       graph.create_params_buffer(utils::make_ivec2({in_dim, softmax_dim}))},
       // Specialization Constants
       {},
       // Resizing Logic

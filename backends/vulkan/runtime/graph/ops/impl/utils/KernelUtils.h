@@ -26,10 +26,10 @@ struct Kernel1dParams final {
 };
 
 struct Kernel2dParams final {
-  api::utils::ivec2 kernel_size;
-  api::utils::ivec2 stride;
-  api::utils::ivec2 padding;
-  api::utils::ivec2 dilation;
+  utils::ivec2 kernel_size;
+  utils::ivec2 stride;
+  utils::ivec2 padding;
+  utils::ivec2 dilation;
 };
 
 Kernel2dParams create_kernel2d_params(

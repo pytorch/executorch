@@ -111,7 +111,7 @@ void QueryPool::shader_profile_begin(
   uint32_t query_idx = write_timestamp(cmd);
 
   ShaderDuration log_entry{
-      api::utils::safe_downcast<uint32_t>(shader_durations_.size()),
+      utils::safe_downcast<uint32_t>(shader_durations_.size()),
       // Execution Properties
       dispatch_id,
       kernel_name,

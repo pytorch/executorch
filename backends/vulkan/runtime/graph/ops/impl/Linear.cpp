@@ -38,18 +38,15 @@ void check_addmm_args(
 
   VK_CHECK_COND(graph.memory_layout_of(mat1) == graph.memory_layout_of(out));
 
-  VK_CHECK_COND(
-      api::utils::val_at(-1, mat1_sizes) == api::utils::val_at(-2, mat2_sizes));
+  VK_CHECK_COND(utils::val_at(-1, mat1_sizes) == utils::val_at(-2, mat2_sizes));
 
-  if (api::utils::val_at(-1, self_sizes) != 1) {
+  if (utils::val_at(-1, self_sizes) != 1) {
     VK_CHECK_COND(
-        api::utils::val_at(-1, self_sizes) ==
-        api::utils::val_at(-1, mat2_sizes));
+        utils::val_at(-1, self_sizes) == utils::val_at(-1, mat2_sizes));
   }
-  if (api::utils::val_at(-2, self_sizes) != 1) {
+  if (utils::val_at(-2, self_sizes) != 1) {
     VK_CHECK_COND(
-        api::utils::val_at(-2, self_sizes) ==
-        api::utils::val_at(-2, mat1_sizes));
+        utils::val_at(-2, self_sizes) == utils::val_at(-2, mat1_sizes));
   }
 }
 
@@ -64,10 +61,9 @@ void resize_addmm_node(
 
   bool mat2_is_transposed = graph->get_bool(extra_args[0]);
 
-  const int out_cols = api::utils::val_at(-2, mat1->sizes());
-  const int out_rows = mat2_is_transposed
-      ? api::utils::val_at(-2, mat2->sizes())
-      : api::utils::val_at(-1, mat2->sizes());
+  const int out_cols = utils::val_at(-2, mat1->sizes());
+  const int out_rows = mat2_is_transposed ? utils::val_at(-2, mat2->sizes())
+                                          : utils::val_at(-1, mat2->sizes());
 
   std::vector<int64_t> new_out_sizes(3);
   if (mat1->sizes().size() == 2) {
@@ -176,13 +172,13 @@ void add_addmm_optimized_node(
 
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
 
-  api::utils::uvec3 global_size;
+  utils::uvec3 global_size;
   if (mat1_sizes.at(mat1_dims - 2) < 8) {
-    global_size = api::utils::divup_vec(graph.image_extents_of(out), {4, 2, 1});
+    global_size = utils::divup_vec(graph.image_extents_of(out), {4, 2, 1});
   } else {
-    global_size = api::utils::divup_vec(graph.image_extents_of(out), {4, 4, 1});
+    global_size = utils::divup_vec(graph.image_extents_of(out), {4, 4, 1});
   }
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
