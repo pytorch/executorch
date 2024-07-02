@@ -8,7 +8,6 @@
 
 #include <executorch/backends/vulkan/runtime/api/ParamsBuffer.h>
 
-#include <cstdint>
 #include <cstring>
 
 namespace vkcompute {
