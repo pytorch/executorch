@@ -51,8 +51,8 @@ from torchgen.model import NativeFunction, Variant
 class VkTestSuite(TestSuite):
     def __init__(self, input_cases: List[Any]):
         super().__init__(input_cases)
-        self.storage_types: List[str] = ["api::kTexture3D"]
-        self.layouts: List[str] = ["api::kChannelsPacked"]
+        self.storage_types: List[str] = ["vkapi::kTexture3D"]
+        self.layouts: List[str] = ["vkapi::kChannelsPacked"]
         self.data_gen: str = "make_rand_tensor"
 
 
@@ -618,7 +618,7 @@ for (int i=0; i<out.size(); i++) {{
 ##################################
 
 test_fixture_template = """
-class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple<at::ScalarType, api::StorageType, api::GPUMemoryLayout>> {{
+class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple<at::ScalarType, vkapi::StorageType, vkapi::GPUMemoryLayout>> {{
  protected:
   ComputeGraph* graph;
   at::ScalarType test_dtype = at::kFloat;
@@ -627,8 +627,8 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
 
   void SetUp() override {{
     GraphConfig config;
-    api::StorageType default_storage_type;
-    api::GPUMemoryLayout default_memory_layout;
+    vkapi::StorageType default_storage_type;
+    vkapi::GPUMemoryLayout default_memory_layout;
     std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();
     config.set_storage_type_override(default_storage_type);
     config.set_memory_layout_override(default_memory_layout);
@@ -705,18 +705,18 @@ preamble_str = """
 using namespace vkcompute;
 using TensorOptions = at::TensorOptions;
 
-api::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
+vkapi::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
   switch (at_scalartype) {
     case c10::kFloat:
-      return api::kFloat;
+      return vkapi::kFloat;
     case c10::kHalf:
-      return api::kHalf;
+      return vkapi::kHalf;
     case c10::kInt:
-      return api::kInt;
+      return vkapi::kInt;
     case c10::kLong:
-      return api::kInt;
+      return vkapi::kInt;
     case c10::kChar:
-      return api::kChar;
+      return vkapi::kChar;
     default:
       VK_THROW("Unsupported at::ScalarType!");
   }

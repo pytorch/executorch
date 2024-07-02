@@ -10,14 +10,14 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Exception.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Exception.h>
 
 #include <stack>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 class VulkanFence final {
  public:
@@ -94,5 +94,5 @@ struct FencePool final {
   }
 };
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

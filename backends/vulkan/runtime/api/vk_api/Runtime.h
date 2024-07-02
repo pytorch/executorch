@@ -13,12 +13,12 @@
 #include <functional>
 #include <memory>
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Adapter.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Adapter.h>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 //
 // A Vulkan Runtime initializes a Vulkan instance and decouples the concept of
@@ -104,5 +104,5 @@ class Runtime final {
 // a static local variable.
 Runtime* runtime();
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

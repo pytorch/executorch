@@ -10,20 +10,20 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Shader.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Shader.h>
 
-#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
-#include <executorch/backends/vulkan/runtime/api/memory/Image.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Image.h>
 
 #include <mutex>
 #include <unordered_map>
 
-#define SV(x) ::vkcompute::api::SpecVar(x)
+#define SV(x) ::vkcompute::vkapi::SpecVar(x)
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 struct SpecVar final {
   enum class Type : uint8_t {
@@ -291,5 +291,5 @@ class ComputePipelineCache final {
 // Impl
 //
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

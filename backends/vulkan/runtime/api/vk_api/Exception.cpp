@@ -6,12 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/Exception.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Exception.h>
 
 #include <sstream>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 #define VK_RESULT_CASE(code) \
   case code:                 \
@@ -77,5 +77,5 @@ Error::Error(SourceLocation source_location, const char* cond, std::string msg)
   what_ = oss.str();
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

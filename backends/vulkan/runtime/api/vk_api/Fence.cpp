@@ -6,10 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/Fence.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Fence.h>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 VulkanFence::VulkanFence()
     : device_(VK_NULL_HANDLE), handle_(VK_NULL_HANDLE), waiting_(false) {}
@@ -72,5 +72,5 @@ void VulkanFence::wait() {
   }
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

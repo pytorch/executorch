@@ -47,7 +47,7 @@ bool check_same_sizes_at(
 
 bool check_memory_layout_is(
     const api::vTensor& t,
-    api::GPUMemoryLayout layout) {
+    vkapi::GPUMemoryLayout layout) {
   return t.gpu_memory_layout() == layout;
 }
 
@@ -79,11 +79,11 @@ bool is_packed_dim_broadcasted(
   // We assume that the tensors are broadcastable. If values aren't equal at
   // some index, then the value of rcvr is 1 and hence should be broadcasted.
   switch (sndr.gpu_memory_layout()) {
-    case api::kChannelsPacked:
+    case vkapi::kChannelsPacked:
       return utils::val_at(-3, sndr.sizes()) > utils::val_at(-3, rcvr.sizes());
-    case api::kHeightPacked:
+    case vkapi::kHeightPacked:
       return utils::val_at(-2, sndr.sizes()) > utils::val_at(-2, rcvr.sizes());
-    case api::kWidthPacked:
+    case vkapi::kWidthPacked:
       return utils::val_at(-1, sndr.sizes()) > utils::val_at(-1, rcvr.sizes());
   }
 }

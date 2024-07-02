@@ -28,8 +28,8 @@ void check_args(
     const api::vTensor& in,
     const std::vector<int64_t>& permute_dims,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, vkapi::kChannelsPacked));
 
   // This implementation doesn't not requires the input tensor to have the same
   // dim size as the argument. The code will work as long as the input tensor's
@@ -90,7 +90,8 @@ void add_permute_node(
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
-      {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in, vkapi::MemoryAccessType::READ}},
       {t_out->texture_limits_ubo(),
        t_out->sizes_ubo(),
        graph.create_params_buffer(params)},

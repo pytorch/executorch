@@ -102,8 +102,8 @@ void add_upsample_nearest2d_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {arg_in, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {arg_in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->texture_limits_ubo(),
        graph.create_params_buffer(input_size),

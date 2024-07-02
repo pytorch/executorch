@@ -10,18 +10,18 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
-
-#include <executorch/backends/vulkan/runtime/api/memory/vma_api.h>
-
-#include <executorch/backends/vulkan/runtime/api/memory/Allocation.h>
-#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
-#include <executorch/backends/vulkan/runtime/api/memory/Image.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/vma_api.h>
+
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Allocation.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Image.h>
+
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 constexpr VmaAllocationCreateFlags DEFAULT_ALLOCATION_STRATEGY =
     VMA_ALLOCATION_CREATE_STRATEGY_MIN_MEMORY_BIT;
@@ -106,5 +106,5 @@ inline VulkanBuffer Allocator::create_params_buffer(const Block& block) {
   return uniform_buffer;
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute
