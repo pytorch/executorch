@@ -77,7 +77,7 @@ void GraphConfig::set_memory_layout_override(
 }
 
 void GraphConfig::set_local_wg_size_override(
-    const api::utils::uvec3& local_wg_size) {
+    const utils::uvec3& local_wg_size) {
   enable_local_wg_size_override = true;
   local_wg_size_override = local_wg_size;
 }

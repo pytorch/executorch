@@ -51,8 +51,8 @@ class ExecuteNode final {
   ExecuteNode(
       ComputeGraph& graph,
       const api::ShaderInfo& shader,
-      const api::utils::uvec3& global_workgroup_size,
-      const api::utils::uvec3& local_workgroup_size,
+      const utils::uvec3& global_workgroup_size,
+      const utils::uvec3& local_workgroup_size,
       const std::vector<ArgGroup>& args,
       const api::ParamsBindList& params,
       const api::SpecVarList& spec_vars = {},
@@ -76,8 +76,8 @@ class ExecuteNode final {
  protected:
   uint32_t node_id_;
   const api::ShaderInfo shader_;
-  const api::utils::uvec3 global_workgroup_size_;
-  const api::utils::uvec3 local_workgroup_size_;
+  const utils::uvec3 global_workgroup_size_;
+  const utils::uvec3 local_workgroup_size_;
   const std::vector<ArgGroup> args_;
   const api::ParamsBindList params_;
   const api::SpecVarList spec_vars_;
