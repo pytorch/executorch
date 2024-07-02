@@ -10,14 +10,14 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <cstdint>
-#include <functional>
-
 #include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/vk_api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/api/vk_api/Command.h>
 #include <executorch/backends/vulkan/runtime/api/vk_api/Pipeline.h>
+
+#include <cstdint>
+#include <functional>
 
 #ifndef VULKAN_QUERY_POOL_SIZE
 #define VULKAN_QUERY_POOL_SIZE 4096u
