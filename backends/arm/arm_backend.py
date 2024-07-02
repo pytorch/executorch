@@ -264,7 +264,8 @@ class ArmBackend(BackendDetails):
                     # output shape before the depthwise_conv2d node. The output
                     # shape between TOSA conv2d and depthwise_conv2d are different.
                     if (
-                        node.all_input_nodes[0].op
+                        len(node.all_input_nodes) > 0
+                        and node.all_input_nodes[0].op
                         == "placeholder"  # check its parent is a placeholder
                         and is_quant_node(node)
                         and is_consumer_node_depthwise_conv2d(node)
@@ -290,6 +291,7 @@ class ArmBackend(BackendDetails):
                     if node.target.__name__ in [
                         "aten.add.Tensor",
                         "aten._native_batch_norm_legit_no_training.default",
+                        "aten.full.default",
                     ]:
                         node_visitors[node.target.__name__].define_node(
                             node,

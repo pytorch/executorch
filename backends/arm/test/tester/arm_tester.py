@@ -261,7 +261,10 @@ class ArmTester(Tester):
         # for each loop iteration.
         for run_iteration in range(number_of_runs):
             inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
-            input_shapes = [generated_input.shape for generated_input in inputs_to_run]
+            input_shapes = [
+                generated_input.shape if hasattr(generated_input, "shape") else (1,)
+                for generated_input in inputs_to_run
+            ]
             print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
             # Get Torch reference data...

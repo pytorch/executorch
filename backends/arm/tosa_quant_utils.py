@@ -27,22 +27,26 @@ class QuantArgs(NamedTuple):
 
 
 def is_quant_node(node: torch.fx.Node):
-    consumer_node = list(node.users)[0]
-    input = node.all_input_nodes[0]
 
-    # For Rank > 2 Linear layers, the quant node is after the view_copy
-    if (
-        node.target == exir_ops.edge.aten.addmm.default
-        and consumer_node.target == exir_ops.edge.aten.view_copy.default
-    ):
-        consumer_consumer_node = list(consumer_node.users)[0]
-        return True if consumer_consumer_node.target == q_op else False
+    consumer_node_condition = False
+    if len(list(node.users)) > 0:
+        consumer_node = list(node.users)[0]
 
-    return (
-        consumer_node.target == q_op
-        or node.target in dq_q_ops
-        or input.target in dq_q_ops
-    )
+        # For Rank > 2 Linear layers, the quant node is after the view_copy
+        if (
+            node.target == exir_ops.edge.aten.addmm.default
+            and consumer_node.target == exir_ops.edge.aten.view_copy.default
+        ):
+            consumer_consumer_node = list(consumer_node.users)[0]
+            return True if consumer_consumer_node.target == q_op else False
+        consumer_node_condition = consumer_node.target == q_op
+
+    input_node_condition = False
+    if len(node.all_input_nodes) > 0:
+        input = node.all_input_nodes[0]
+        input_node_condition = input.target in dq_q_ops
+
+    return node.target in dq_q_ops or consumer_node_condition or input_node_condition
 
 
 def is_quant_arg(arg):
