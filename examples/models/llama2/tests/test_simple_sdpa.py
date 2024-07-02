@@ -30,6 +30,7 @@ class SDPATest(unittest.TestCase):
             n_heads=n_heads,
             head_dim=head_dim,
             transpose_cache=True,
+            enable_dynamic_shape=False,
         )
         sdpa = SDPA(
             kv_cache=copy.deepcopy(kv_cache),
@@ -37,6 +38,7 @@ class SDPATest(unittest.TestCase):
             head_dim=head_dim,
             n_rep=n_rep,
             max_seq_len=max_seq_length,
+            enable_dynamic_shape=False,
         )
         input_pos = torch.tensor([0])
         query = torch.randn(1, 1, n_local_heads, head_dim)

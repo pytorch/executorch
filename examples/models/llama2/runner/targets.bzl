@@ -31,6 +31,9 @@ def define_common_targets():
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
+            deps = [
+                "//executorch/extension/data_loader:file_data_loader",
+            ],
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
                 "//executorch/examples/models/llama2/sampler:sampler" + aten_suffix,
