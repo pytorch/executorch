@@ -219,6 +219,9 @@ class Verifier:
                 if _is_mutable_buffer(nd, self.graph_signature):
                     continue
                 assert len(specs) > 0, "Expect tensor specs"
+                specs = list(filter(lambda spec: not spec.const, specs))
+                if len(specs) == 0:
+                    continue
                 allocated = any(
                     spec is None or spec.mem_offset is not None for spec in specs
                 )
