@@ -17,10 +17,10 @@
 
 namespace vkcompute {
 
-using api::utils::ivec2;
-using api::utils::ivec3;
-using api::utils::ivec4;
-using api::utils::uvec4;
+using utils::ivec2;
+using utils::ivec3;
+using utils::ivec4;
+using utils::uvec4;
 
 namespace {
 
@@ -74,8 +74,8 @@ void add_permute_node(
   int32_t out_channels = dim_at<kChannel4D>(t_out->sizes());
   int32_t in_channels = dim_at<kChannel4D>(t_in->sizes());
 
-  int32_t out_c_aligned = api::utils::align_up_4(out_channels);
-  int32_t in_c_aligned = api::utils::align_up_4(in_channels);
+  int32_t out_c_aligned = utils::align_up_4(out_channels);
+  int32_t in_c_aligned = utils::align_up_4(in_channels);
 
   const struct Block final {
     ivec4 out_ndims;

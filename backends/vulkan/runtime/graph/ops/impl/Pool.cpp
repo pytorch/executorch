@@ -79,8 +79,8 @@ void add_max_pool2d_node(
 
   check_pool2d_args(*t_in, *t_out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  utils::uvec3 global_size = t_out->image_extents();
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("max_pool2d");
   add_dtype_suffix(kernel_name, *t_out);
@@ -155,8 +155,8 @@ void add_avg_pool2d_node(
 
   check_pool2d_args(*t_in, *t_out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  utils::uvec3 global_size = t_out->image_extents();
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("avg_pool2d");
   add_dtype_suffix(kernel_name, *t_out);

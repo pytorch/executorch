@@ -31,14 +31,14 @@ struct GraphConfig final {
   bool enable_querypool;
 
   bool enable_local_wg_size_override;
-  api::utils::uvec3 local_wg_size_override;
+  utils::uvec3 local_wg_size_override;
 
   // Generate a default graph config with pre-configured settings
   explicit GraphConfig();
 
   void set_storage_type_override(api::StorageType storage_type);
   void set_memory_layout_override(api::GPUMemoryLayout memory_layout);
-  void set_local_wg_size_override(const api::utils::uvec3& local_wg_size);
+  void set_local_wg_size_override(const utils::uvec3& local_wg_size);
 };
 
 } // namespace vkcompute

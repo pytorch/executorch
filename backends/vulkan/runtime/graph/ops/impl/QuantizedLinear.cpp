@@ -33,11 +33,9 @@ void check_qlinear_args(
   VK_CHECK_COND(graph.memory_layout_of(mat1) == graph.memory_layout_of(out));
 
   VK_CHECK_COND(
-      api::utils::val_at(-1, mat1_sizes) ==
-      api::utils::val_at(-1, qmat2_sizes));
+      utils::val_at(-1, mat1_sizes) == utils::val_at(-1, qmat2_sizes));
   VK_CHECK_COND(
-      api::utils::val_at(-1, scales_sizes) ==
-      api::utils::val_at(-2, qmat2_sizes));
+      utils::val_at(-1, scales_sizes) == utils::val_at(-2, qmat2_sizes));
 }
 
 void resize_qlinear_node(
@@ -50,8 +48,8 @@ void resize_qlinear_node(
   vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
   vTensorPtr qmat2 = graph->get_tensor(args[1].refs[1]);
 
-  const int out_cols = api::utils::val_at(-2, mat1->sizes());
-  const int out_rows = api::utils::val_at(-2, qmat2->sizes());
+  const int out_cols = utils::val_at(-2, mat1->sizes());
+  const int out_rows = utils::val_at(-2, qmat2->sizes());
 
   std::vector<int64_t> new_out_sizes(3);
   if (mat1->sizes().size() == 2) {

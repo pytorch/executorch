@@ -17,8 +17,8 @@ namespace vkcompute {
 ExecuteNode::ExecuteNode(
     ComputeGraph& graph,
     const api::ShaderInfo& shader,
-    const api::utils::uvec3& global_workgroup_size,
-    const api::utils::uvec3& local_workgroup_size,
+    const utils::uvec3& global_workgroup_size,
+    const utils::uvec3& local_workgroup_size,
     const std::vector<ArgGroup>& args,
     const api::ParamsBindList& params,
     const api::SpecVarList& spec_vars,
