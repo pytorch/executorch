@@ -7,14 +7,15 @@
  */
 
 #include <executorch/backends/vulkan/runtime/api/Tensor.h>
-#include <executorch/backends/vulkan/runtime/api/VkUtils.h>
+
+#include <executorch/backends/vulkan/runtime/api/vk_api/VkUtils.h>
 
 namespace vkcompute {
 namespace api {
 
 std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
-    const GPUMemoryLayout memory_layout,
+    const vkapi::GPUMemoryLayout memory_layout,
     const bool texel_strides) {
   const int64_t dim_offset = to_packed_dim_nchw_offset<int64_t>(memory_layout);
   const int64_t last_dim = sizes.size() - dim_offset;
@@ -43,7 +44,7 @@ std::vector<int64_t> calculate_strides(
 
 std::vector<int64_t> calculate_padded_sizes(
     const std::vector<int64_t>& sizes,
-    const GPUMemoryLayout memory_layout) {
+    const vkapi::GPUMemoryLayout memory_layout) {
   int64_t ndim = sizes.size();
   if (ndim == 0) {
     ndim = 1;
@@ -66,7 +67,7 @@ std::vector<int64_t> calculate_padded_sizes(
 
 utils::uvec3 calculate_image_extents(
     const std::vector<int64_t>& padded_sizes,
-    const GPUMemoryLayout memory_layout) {
+    const vkapi::GPUMemoryLayout memory_layout) {
   VK_CHECK_COND(padded_sizes.size() == 4);
 
   uint32_t N = utils::safe_downcast<uint32_t>(padded_sizes.at(0));
@@ -75,15 +76,15 @@ utils::uvec3 calculate_image_extents(
   uint32_t W = utils::safe_downcast<uint32_t>(padded_sizes.at(3));
 
   switch (memory_layout) {
-    case kWidthPacked:
+    case vkapi::kWidthPacked:
       VK_CHECK_COND(W % 4 == 0);
       W /= 4;
       break;
-    case kHeightPacked:
+    case vkapi::kHeightPacked:
       VK_CHECK_COND(H % 4 == 0);
       H /= 4;
       break;
-    case kChannelsPacked:
+    case vkapi::kChannelsPacked:
       VK_CHECK_COND(C % 4 == 0);
       C /= 4;
       break;
@@ -99,9 +100,9 @@ utils::uvec3 calculate_image_extents(
 vTensor::vTensor(
     Context* const context,
     const std::vector<int64_t>& sizes,
-    const ScalarType dtype,
-    const StorageType storage_type,
-    const GPUMemoryLayout memory_layout,
+    const vkapi::ScalarType dtype,
+    const vkapi::StorageType storage_type,
+    const vkapi::GPUMemoryLayout memory_layout,
     const bool allocate_memory)
     : dtype_(dtype),
       memory_layout_(memory_layout),
@@ -122,14 +123,14 @@ vTensor::vTensor(
           padded_sizes_,
           dtype_,
           allocate_memory) {
-  if (storage_type != kBuffer) {
+  if (storage_type != vkapi::kBuffer) {
     texture_limits_.limits = utils::ivec3{
         utils::safe_downcast<int32_t>(storage_.image_extents_.data[0]),
         utils::safe_downcast<int32_t>(storage_.image_extents_.data[1]),
         utils::safe_downcast<int32_t>(storage_.image_extents_.data[2])};
   }
 
-  if (dtype == kHalf) {
+  if (dtype == vkapi::kHalf) {
     VK_CHECK_COND(
         api::context()->adapter_ptr()->has_16bit_storage(),
         "Half dtype is only available if the physical device supports float16 "
@@ -137,74 +138,74 @@ vTensor::vTensor(
   }
 }
 
-VulkanImage& vTensor::image(
-    PipelineBarrier& pipeline_barrier,
-    const PipelineStageFlags stage) & {
-  storage_.transition(pipeline_barrier, stage, MemoryAccessType::READ);
+vkapi::VulkanImage& vTensor::image(
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::PipelineStageFlags stage) & {
+  storage_.transition(pipeline_barrier, stage, vkapi::MemoryAccessType::READ);
   return storage_.image_;
 }
 
-VulkanImage& vTensor::image(
-    PipelineBarrier& pipeline_barrier,
-    const PipelineStageFlags stage,
-    const MemoryAccessFlags access) & {
+vkapi::VulkanImage& vTensor::image(
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::PipelineStageFlags stage,
+    const vkapi::MemoryAccessFlags access) & {
   storage_.transition(pipeline_barrier, stage, access);
   return storage_.image_;
 }
 
-VulkanBuffer& vTensor::buffer(
-    PipelineBarrier& pipeline_barrier,
-    const PipelineStageFlags stage) & {
-  storage_.transition(pipeline_barrier, stage, MemoryAccessType::READ);
+vkapi::VulkanBuffer& vTensor::buffer(
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::PipelineStageFlags stage) & {
+  storage_.transition(pipeline_barrier, stage, vkapi::MemoryAccessType::READ);
   return storage_.buffer_;
 }
 
-VulkanBuffer& vTensor::buffer(
-    PipelineBarrier& pipeline_barrier,
-    const PipelineStageFlags stage,
-    const MemoryAccessFlags access) & {
+vkapi::VulkanBuffer& vTensor::buffer(
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::PipelineStageFlags stage,
+    const vkapi::MemoryAccessFlags access) & {
   storage_.transition(pipeline_barrier, stage, access);
   return storage_.buffer_;
 }
 
-const BufferBindInfo vTensor::sizes_ubo() {
+const vkapi::BufferBindInfo vTensor::sizes_ubo() {
   if (!sizes_uniform_.buffer()) {
     sizes_uniform_ =
         ParamsBuffer(storage_.context_, utils::make_whcn_ivec4(sizes_));
   }
-  return BufferBindInfo(sizes_uniform_.buffer());
+  return vkapi::BufferBindInfo(sizes_uniform_.buffer());
 }
 
-const BufferBindInfo vTensor::texture_limits_ubo() {
+const vkapi::BufferBindInfo vTensor::texture_limits_ubo() {
   if (!texture_limits_uniform_.buffer()) {
     texture_limits_uniform_ = ParamsBuffer(storage_.context_, texture_limits_);
   }
-  return BufferBindInfo(texture_limits_uniform_.buffer());
+  return vkapi::BufferBindInfo(texture_limits_uniform_.buffer());
 }
 
-const BufferBindInfo vTensor::texel_strides_ubo() {
+const vkapi::BufferBindInfo vTensor::texel_strides_ubo() {
   if (!texel_strides_uniform_.buffer()) {
     texel_strides_uniform_ = ParamsBuffer(
         storage_.context_,
         utils::make_whcn_ivec4(
             calculate_strides(padded_sizes_, memory_layout_)));
   }
-  return BufferBindInfo(texel_strides_uniform_.buffer());
+  return vkapi::BufferBindInfo(texel_strides_uniform_.buffer());
 }
 
-const BufferBindInfo vTensor::ntexels_ubo() {
+const vkapi::BufferBindInfo vTensor::ntexels_ubo() {
   if (!ntexels_uniform_.buffer()) {
     ntexels_uniform_ = ParamsBuffer(storage_.context_, texel_numel());
   }
-  return BufferBindInfo(ntexels_uniform_.buffer());
+  return vkapi::BufferBindInfo(ntexels_uniform_.buffer());
 }
 
 VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
   switch (storage_type()) {
-    case kBuffer:
+    case vkapi::kBuffer:
       return storage_.buffer_.allocation_create_info();
-    case kTexture2D:
-    case kTexture3D:
+    case vkapi::kTexture2D:
+    case vkapi::kTexture3D:
       return storage_.image_.allocation_create_info();
   }
   return {};
@@ -212,22 +213,22 @@ VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
 
 VkMemoryRequirements vTensor::get_memory_requirements() const {
   switch (storage_type()) {
-    case kBuffer:
+    case vkapi::kBuffer:
       return storage_.buffer_.get_memory_requirements();
-    case kTexture2D:
-    case kTexture3D:
+    case vkapi::kTexture2D:
+    case vkapi::kTexture3D:
       return storage_.image_.get_memory_requirements();
   }
   return {};
 }
 
-void vTensor::bind_allocation(const Allocation& allocation) {
+void vTensor::bind_allocation(const vkapi::Allocation& allocation) {
   switch (storage_type()) {
-    case kBuffer:
+    case vkapi::kBuffer:
       storage_.buffer_.bind_allocation(allocation);
       break;
-    case kTexture2D:
-    case kTexture3D:
+    case vkapi::kTexture2D:
+    case vkapi::kTexture3D:
       storage_.image_.bind_allocation(allocation);
       break;
   }
@@ -272,7 +273,7 @@ void vTensor::reallocate(const std::vector<int64_t>& new_sizes) {
 }
 
 void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
-  if (storage_type() != kBuffer) {
+  if (storage_type() != vkapi::kBuffer) {
     // For texture storage check that the current texture is large enough for
     // the new sizes of the tensor.
     utils::uvec3 virtual_extents =
@@ -296,15 +297,15 @@ void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
 // vTensorStorage
 //
 
-VulkanImage allocate_image(
+vkapi::VulkanImage allocate_image(
     Context* const context_ptr,
     utils::uvec3& image_extents,
-    const StorageType storage_type,
+    const vkapi::StorageType storage_type,
     const VkFormat image_format,
     const bool allocate_memory) {
-  Adapter* adapter_ptr = context_ptr->adapter_ptr();
+  vkapi::Adapter* adapter_ptr = context_ptr->adapter_ptr();
 
-  ImageSampler::Properties sampler_props{
+  vkapi::ImageSampler::Properties sampler_props{
       VK_FILTER_NEAREST,
       VK_SAMPLER_MIPMAP_MODE_NEAREST,
       VK_SAMPLER_ADDRESS_MODE_REPEAT,
@@ -315,23 +316,23 @@ VulkanImage allocate_image(
   VkImageViewType image_view_type;
 
   switch (storage_type) {
-    case kTexture3D:
+    case vkapi::kTexture3D:
       image_type = VK_IMAGE_TYPE_3D;
       image_view_type = VK_IMAGE_VIEW_TYPE_3D;
       break;
-    case kTexture2D:
+    case vkapi::kTexture2D:
       image_type = VK_IMAGE_TYPE_2D;
       image_view_type = VK_IMAGE_VIEW_TYPE_2D;
       break;
     default:
       // Return an empty VulkanImage by default
-      return VulkanImage();
+      return vkapi::VulkanImage();
   }
 
   VkSampler sampler = adapter_ptr->sampler_cache().retrieve(sampler_props);
 
   return adapter_ptr->vma().create_image(
-      create_extent3d(image_extents),
+      vkapi::create_extent3d(image_extents),
       image_format,
       image_type,
       image_view_type,
@@ -341,20 +342,20 @@ VulkanImage allocate_image(
       /*allocate_memory = */ allocate_memory);
 }
 
-VulkanBuffer allocate_buffer(
+vkapi::VulkanBuffer allocate_buffer(
     Context* const context_ptr,
     const int64_t numel,
-    const StorageType storage_type,
-    const ScalarType dtype,
+    const vkapi::StorageType storage_type,
+    const vkapi::ScalarType dtype,
     const bool allocate_memory) {
-  Adapter* adapter_ptr = context_ptr->adapter_ptr();
+  vkapi::Adapter* adapter_ptr = context_ptr->adapter_ptr();
 
   switch (storage_type) {
-    case kBuffer:
+    case vkapi::kBuffer:
       break;
     default:
       // Return an empty VulkanBuffer if Buffer storage is not used
-      return VulkanBuffer();
+      return vkapi::VulkanBuffer();
   }
 
   return adapter_ptr->vma().create_storage_buffer(
@@ -363,10 +364,10 @@ VulkanBuffer allocate_buffer(
 
 vTensorStorage::vTensorStorage(
     Context* const context,
-    const StorageType storage_type,
-    const GPUMemoryLayout gpu_memory_layout,
+    const vkapi::StorageType storage_type,
+    const vkapi::GPUMemoryLayout gpu_memory_layout,
     const std::vector<int64_t>& padded_sizes,
-    const ScalarType dtype,
+    const vkapi::ScalarType dtype,
     const bool allocate_memory)
     : context_(context),
       storage_type_{storage_type},
@@ -400,31 +401,31 @@ void vTensorStorage::flush() {
 }
 
 void vTensorStorage::transition(
-    PipelineBarrier& pipeline_barrier,
-    const PipelineStageFlags cur_stage,
-    const MemoryAccessFlags cur_access) {
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::PipelineStageFlags cur_stage,
+    const vkapi::MemoryAccessFlags cur_access) {
   // Get last stage access
-  PipelineStageFlags prev_stage = last_access_.stage;
-  MemoryAccessFlags prev_access = last_access_.access;
+  vkapi::PipelineStageFlags prev_stage = last_access_.stage;
+  vkapi::MemoryAccessFlags prev_access = last_access_.access;
 
-  const bool prev_written = (prev_access & MemoryAccessType::WRITE) != 0;
+  const bool prev_written = (prev_access & vkapi::MemoryAccessType::WRITE) != 0;
 
   VkImageLayout cur_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   VkImageLayout new_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   bool layout_changed = false;
   if (image_) {
     cur_layout = image_.layout();
-    new_layout = vk_layout(cur_stage, cur_access);
+    new_layout = vkapi::vk_layout(cur_stage, cur_access);
 
     layout_changed = cur_layout != new_layout;
   }
 
   if (prev_written || layout_changed) {
-    VkPipelineStageFlags src_stage = vk_stage(prev_stage);
+    VkPipelineStageFlags src_stage = vkapi::vk_stage(prev_stage);
     if (0u == src_stage) {
       src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     }
-    VkPipelineStageFlags dst_stage = vk_stage(cur_stage);
+    VkPipelineStageFlags dst_stage = vkapi::vk_stage(cur_stage);
     if (0u == dst_stage) {
       dst_stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
     }
@@ -434,8 +435,8 @@ void vTensorStorage::transition(
 
     if (image_) {
       pipeline_barrier.images.emplace_back(
-          vk_access(prev_stage, prev_access),
-          vk_access(cur_stage, cur_access),
+          vkapi::vk_access(prev_stage, prev_access),
+          vkapi::vk_access(cur_stage, cur_access),
           cur_layout,
           new_layout,
           image_);
@@ -443,8 +444,8 @@ void vTensorStorage::transition(
       image_.set_layout(new_layout);
     } else if (buffer_) {
       pipeline_barrier.buffers.emplace_back(
-          vk_access(prev_stage, prev_access),
-          vk_access(cur_stage, cur_access),
+          vkapi::vk_access(prev_stage, prev_access),
+          vkapi::vk_access(cur_stage, cur_access),
           buffer_);
     }
   }
@@ -455,8 +456,8 @@ void vTensorStorage::transition(
 
 void vTensorStorage::discard_and_reallocate(
     const std::vector<int64_t>& padded_sizes,
-    const GPUMemoryLayout gpu_memory_layout,
-    const ScalarType dtype) {
+    const vkapi::GPUMemoryLayout gpu_memory_layout,
+    const vkapi::ScalarType dtype) {
   const bool image_owns_memory = image_.owns_memory();
   const bool buffer_owns_memory = buffer_.owns_memory();
 

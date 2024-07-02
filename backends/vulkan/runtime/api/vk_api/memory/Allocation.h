@@ -10,18 +10,18 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Exception.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Exception.h>
 
-#include <executorch/backends/vulkan/runtime/api/memory/vma_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/vma_api.h>
 
 #include <ostream>
 
 std::ostream& operator<<(std::ostream& out, VmaTotalStatistics stats);
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 struct Allocation final {
   explicit Allocation();
@@ -52,5 +52,5 @@ struct Allocation final {
   }
 };
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

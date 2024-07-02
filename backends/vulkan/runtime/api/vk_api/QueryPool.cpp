@@ -8,8 +8,9 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadImplicitCast
 
-#include <executorch/backends/vulkan/runtime/api/QueryPool.h>
 #include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
+
+#include <executorch/backends/vulkan/runtime/api/vk_api/QueryPool.h>
 
 #include <cmath>
 #include <iomanip>
@@ -17,7 +18,7 @@
 #include <utility>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 namespace {
 
@@ -237,5 +238,5 @@ void QueryPool::print_results() {
   std::cout << generate_string_report() << std::endl;
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

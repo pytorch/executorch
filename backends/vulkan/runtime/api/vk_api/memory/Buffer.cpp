@@ -6,10 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Buffer.h>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 //
 // VulkanBuffer
@@ -192,5 +192,5 @@ BufferMemoryBarrier::BufferMemoryBarrier(
           buffer.buffer_properties_.mem_range, // size
       } {}
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

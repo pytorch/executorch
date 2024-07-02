@@ -7,4 +7,4 @@
  */
 
 #define VMA_IMPLEMENTATION
-#include <executorch/backends/vulkan/runtime/api/memory/vma_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/vma_api.h>
