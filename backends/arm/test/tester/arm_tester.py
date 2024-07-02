@@ -74,7 +74,12 @@ def _get_input_params(
                 and node.args[0].name in input_names
             ):
                 qp = QuantizationParams(
-                    node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
+                    node_name=node.args[0].name,
+                    scale=node.args[1],
+                    zp=node.args[2],
+                    qmin=node.args[3],
+                    qmax=node.args[4],
+                    dtype=node.args[5],
                 )
                 quant_params.append(qp)
                 if len(quant_params) == len(
@@ -115,7 +120,12 @@ def _get_output_param(
                 and node == output_node.args[0][0]
             ):
                 quant_params = QuantizationParams(
-                    node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
+                    node_name=node.args[0].name,
+                    scale=node.args[1],
+                    zp=node.args[2],
+                    qmin=node.args[3],
+                    qmax=node.args[4],
+                    dtype=node.args[5],
                 )
                 break  # break early, there's only one output node
         assert quant_params is not None, "Quantization paramerters not found"

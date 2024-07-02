@@ -20,16 +20,27 @@ logger.setLevel(logging.WARNING)
 
 
 class QuantizationParams:
-    __slots__ = ["node_name", "zp", "scale"]
+    __slots__ = ["node_name", "zp", "scale", "qmin", "qmax", "dtype"]
 
     # todo: zps and scales can be per tensors or per channel => a list??
-    def __init__(self, node_name: str, zp: int, scale: float):
+    def __init__(
+        self,
+        node_name: str,
+        zp: int,
+        scale: float,
+        qmin: int,
+        qmax: int,
+        dtype: torch.dtype,
+    ):
         self.node_name = node_name  # not need I think, but good for error check
         self.zp = zp
         self.scale = scale
+        self.qmin = qmin
+        self.qmax = qmax
+        self.dtype = dtype
 
     def __repr__(self):
-        return f"QuantizationParams(node_name={self.node_name}, zp={self.zp}, scale={self.scale})"
+        return f"QuantizationParams(node_name={self.node_name}, zp={self.zp}, scale={self.scale}, [{self.qmin},{self.qmax}], dtype={self.dtype})"
 
 
 """
@@ -160,13 +171,13 @@ class TosaTestUtils:
                 assert (
                     quant_param.node_name == input_name
                 ), "These quantization params do not match the input tensor name"
-                int8_max = np.iinfo(np.int8).max
-                int8_min = np.iinfo(np.int8).min
                 data_np = (
                     ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
                     .round()
-                    .clip(int8_min, int8_max)
-                    .astype(np.int8)
+                    .clip(quant_param.qmin, quant_param.qmax)
+                    .astype(
+                        f"{quant_param.dtype}".replace("torch.", "")
+                    )  # Use string format of dtype to convert to numpy dtype
                 )
             file_path = os.path.join(self.intermediate_path, input_name + ".npy")
             np.save(file_path, data_np, allow_pickle=False)

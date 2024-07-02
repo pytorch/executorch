@@ -17,8 +17,8 @@ import serializer.tosa_serializer as ts
 from executorch.backends.arm.arm_vela import vela_compile
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm.operators.op_placeholder import process_placeholder
-from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import is_quant_node
+from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
+from executorch.backends.arm.tosa_quant_utils import get_quant_node_dtype, is_quant_node
 from executorch.backends.arm.tosa_utils import (
     dbg_fail,
     dbg_tosa_dump,
@@ -282,7 +282,11 @@ class ArmBackend(BackendDetails):
                         if is_permute_node_before_addmm(node)
                         else output.shape
                     ),
-                    ts.DType.INT8 if is_quant_node(node) else output.dtype,
+                    (
+                        map_dtype(get_quant_node_dtype(node))
+                        if is_quant_node(node)
+                        else output.dtype
+                    ),
                 )
 
                 # Visiting each Node

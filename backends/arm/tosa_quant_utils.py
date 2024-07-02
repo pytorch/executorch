@@ -10,7 +10,7 @@ from typing import NamedTuple
 
 import serializer.tosa_serializer as ts
 import torch.fx
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp, TosaSerializerTensor
 
@@ -45,9 +45,39 @@ def is_quant_node(node: torch.fx.Node):
     )
 
 
+def get_quant_node_dtype(node: torch.fx.Node):
+    if "tosa" in node.target.__name__:
+        return node.meta["val"].dtype
+
+    if node.target in dq_q_ops:
+        return node.args[5]
+
+    # if not a tosa node, nor a q/dq op, walk the graph until we find a q op
+    consumer_node = list(node.users)[0]
+    while True:
+        if consumer_node.target in dq_q_ops:
+            return consumer_node.args[5]
+
+        # Try to move on to the next node
+        if len(consumer_node.users) == 0:
+            raise RuntimeError("No quantized node found in graph")
+        consumer_node = list(consumer_node.users)[0]
+
+
 def is_quant_arg(arg):
     consumer_node = list(arg.users)[0]
     return consumer_node.target == q_op
+
+
+def get_quant_arg_dtype(node: torch.fx.Node):
+    consumer_node = list(node.users)[0]
+
+    # Get type of quant node, args differ from per_tensor and per_channel.
+    if consumer_node.target == q_op:
+        if is_quant_arg(node):
+            return map_dtype(consumer_node.args[5])
+        else:
+            raise RuntimeError("Quantization argument not found")
 
 
 def get_quant_node_args(node: torch.fx.Node):

@@ -8,6 +8,7 @@ import serializer.tosa_serializer as ts
 import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
+    get_quant_arg_dtype,
     get_quant_node_args,
     is_quant_arg,
     q_op,
@@ -166,7 +167,7 @@ def process_placeholder(
         tensor = ts.TosaSerializerTensor(
             inputs[0].name,
             input_shape,
-            ts.DType.INT8 if is_quant_arg(node) else inputs[0].dtype,
+            get_quant_arg_dtype(node) if is_quant_arg(node) else inputs[0].dtype,
             data=None,
             placeholderFilename=inputs[0].name + ".npy",
         )
