@@ -8,11 +8,6 @@
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <sstream>
-
 #ifndef VULKAN_DESCRIPTOR_POOL_SIZE
 #define VULKAN_DESCRIPTOR_POOL_SIZE 1024u
 #endif
@@ -218,60 +213,6 @@ Context* context() {
   }());
 
   return context.get();
-}
-
-//
-// UniformParamsBuffer
-//
-
-namespace {
-
-void memcpy_to_buffer(const VulkanBuffer& src, VulkanBuffer& dst) {
-  MemoryMap dst_mapping(dst, MemoryAccessType::WRITE);
-
-  MemoryMap src_mapping(src, MemoryAccessType::READ);
-  src_mapping.invalidate();
-
-  void* dst_ptr = dst_mapping.template data<void>();
-  void* src_ptr = src_mapping.template data<void>();
-
-  // @lint-ignore CLANGTIDY facebook-security-vulnerable-memcpy
-  memcpy(dst_ptr, src_ptr, src.mem_size());
-}
-
-} // namespace
-
-UniformParamsBuffer::UniformParamsBuffer(const UniformParamsBuffer& other)
-    : context_p_(other.context_p_), vulkan_buffer_{} {
-  if (other.vulkan_buffer_) {
-    vulkan_buffer_ = context_p_->adapter_ptr()->vma().create_uniform_buffer(
-        other.vulkan_buffer_.mem_size());
-
-    memcpy_to_buffer(other.vulkan_buffer_, vulkan_buffer_);
-  }
-}
-
-UniformParamsBuffer& UniformParamsBuffer::operator=(
-    const UniformParamsBuffer& other) {
-  if (&other != this) {
-    context_p_ = other.context_p_;
-
-    // Move vulkan_buffer_ to another VulkanBuffer for cleanup
-    if (vulkan_buffer_) {
-      VulkanBuffer temp_buffer(std::move(vulkan_buffer_));
-      context_p_->register_buffer_cleanup(temp_buffer);
-    }
-    // vulkan_buffer_ should now be empty
-
-    if (other.vulkan_buffer_) {
-      vulkan_buffer_ = context_p_->adapter_ptr()->vma().create_uniform_buffer(
-          other.vulkan_buffer_.mem_size());
-
-      memcpy_to_buffer(other.vulkan_buffer_, vulkan_buffer_);
-    }
-  }
-
-  return *this;
 }
 
 } // namespace api

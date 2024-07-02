@@ -126,7 +126,7 @@ void record_conv2d_prepack_weights_op(
   add_dtype_suffix(kernel_name, v_dst);
   api::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
-  api::UniformParamsBuffer original_sizes_ubo(
+  api::ParamsBuffer original_sizes_ubo(
       context, api::utils::make_ivec4(original_sizes, /*reverse = */ true));
 
   api::SpecVarList specialization_constants = {};
@@ -217,7 +217,7 @@ void record_index_fill_buffer(api::Context* context, vTensor& v_ten) {
       break;
   }
 
-  api::UniformParamsBuffer params(api::context(), int32_t(v_ten.numel()));
+  api::ParamsBuffer params(api::context(), int32_t(v_ten.numel()));
 
   {
     api::PipelineBarrier pipeline_barrier{};
