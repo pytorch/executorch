@@ -39,8 +39,7 @@ class CommandBuffer final {
   enum State {
     INVALID, // Used to indicate the command buffer is moved from
     NEW, // Set during constructor
-    RECORDING, // Set during call to begin(), dispatch(), and
-               // copy_*_to_*()
+    RECORDING, // Set during call to begin() and dispatch()
     PIPELINE_BOUND, // Set during call to  bind_pipeline()
     DESCRIPTORS_BOUND, // Set during call to bind_descriptors()
     BARRIERS_INSERTED, // Set during call to insert_barrier()
@@ -92,34 +91,6 @@ class CommandBuffer final {
 
   void insert_barrier(PipelineBarrier& pipeline_barrier);
   void dispatch(const utils::uvec3&);
-
-  void copy_buffer_to_buffer(
-      const VulkanBuffer&,
-      const VulkanBuffer&,
-      const utils::uvec3&,
-      const utils::uvec3&,
-      const utils::uvec3&);
-
-  void copy_texture_to_texture(
-      const VulkanImage&,
-      const VulkanImage&,
-      const utils::uvec3&,
-      const utils::uvec3&,
-      const utils::uvec3&);
-
-  void copy_texture_to_buffer(
-      const VulkanImage&,
-      const VulkanBuffer&,
-      const utils::uvec3&,
-      const utils::uvec3&,
-      const utils::uvec3&);
-
-  void copy_buffer_to_texture(
-      const VulkanBuffer&,
-      const VulkanImage&,
-      const utils::uvec3&,
-      const utils::uvec3&,
-      const utils::uvec3&);
 
   void write_timestamp(VkQueryPool, const uint32_t) const;
   void reset_querypool(VkQueryPool, const uint32_t, const uint32_t) const;
