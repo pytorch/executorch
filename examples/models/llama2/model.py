@@ -162,6 +162,7 @@ the checkpoint format to avoid generating faulty models.
             max_batch_size=max_batch_size,
             use_kv_cache=self.use_kv_cache,
             use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
+            enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )
         if kwargs.get("fairseq2", False):
