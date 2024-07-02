@@ -202,15 +202,6 @@ static constexpr GPUMemoryLayout kChannelsPacked =
     GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
 
 /*
- * Given a GPUMemoryLayout, return the index of the dimension that is packed
- * along texels, assuming WHCN dimension order.
- */
-template <typename T>
-T to_packed_dim_whcn_idx(const GPUMemoryLayout layout) {
-  return static_cast<T>(layout);
-}
-
-/*
  * Given a GPUMemoryLayout, return an offset that can be used to determine the
  * index of the dimension that is packed along texels, assuming NCHW dimension
  * order. The index of the packed dimension will be ndim - offset.
