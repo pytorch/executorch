@@ -6,12 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Pipeline.h>
 
 #include <fstream>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 //
 // Utility Functions
@@ -464,5 +464,5 @@ void ComputePipelineCache::save_cache() {
   file.write(buffer.data(), buffer.size());
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

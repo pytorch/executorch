@@ -35,7 +35,8 @@ void SharedObject::add_user(ComputeGraph* const graph, const ValueRef idx) {
   VmaAllocationCreateFlags clear_mask = ~VMA_ALLOCATION_CREATE_STRATEGY_MASK;
   VmaAllocationCreateFlags create_flags = create_info.flags & clear_mask;
   // Use the default allocation strategy
-  aggregate_create_info.flags = create_flags | api::DEFAULT_ALLOCATION_STRATEGY;
+  aggregate_create_info.flags =
+      create_flags | vkapi::DEFAULT_ALLOCATION_STRATEGY;
 
   // Set the usage flag if it is currently not set
   if (aggregate_create_info.usage == VMA_MEMORY_USAGE_UNKNOWN) {

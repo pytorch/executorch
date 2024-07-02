@@ -13,9 +13,9 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Exception.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Exception.h>
 
 #ifdef USE_VULKAN_FP16_INFERENCE
 #define VK_FORMAT_FLOAT4 VK_FORMAT_R16G16B16A16_SFLOAT
@@ -35,7 +35,7 @@
   _(int32_t, VK_FORMAT_R32G32B32A32_SINT, QInt32)
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 //
 // Scalar Types
@@ -138,10 +138,10 @@ inline std::ostream& operator<<(std::ostream& os, const ScalarType dtype) {
 template <ScalarType N>
 struct ScalarTypeToCType;
 
-#define SPECIALIZE_ScalarTypeToCType(ctype, vkformat, scalar_type)      \
-  template <>                                                           \
-  struct ScalarTypeToCType<::vkcompute::api::ScalarType::scalar_type> { \
-    using type = ctype;                                                 \
+#define SPECIALIZE_ScalarTypeToCType(ctype, vkformat, scalar_type)        \
+  template <>                                                             \
+  struct ScalarTypeToCType<::vkcompute::vkapi::ScalarType::scalar_type> { \
+    using type = ctype;                                                   \
   };
 
 VK_FORALL_SCALAR_TYPES(SPECIALIZE_ScalarTypeToCType)
@@ -211,5 +211,5 @@ T to_packed_dim_nchw_offset(const GPUMemoryLayout layout) {
   return static_cast<T>(layout) + 1;
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

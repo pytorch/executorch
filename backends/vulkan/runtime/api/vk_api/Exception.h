@@ -9,7 +9,7 @@
 #pragma once
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/utils/StringUtils.h>
 
@@ -22,7 +22,7 @@
   do {                                                                      \
     const VkResult result = (function);                                     \
     if (VK_SUCCESS != result) {                                             \
-      throw ::vkcompute::api::Error(                                        \
+      throw ::vkcompute::vkapi::Error(                                      \
           {__func__, __FILE__, static_cast<uint32_t>(__LINE__)},            \
           ::vkcompute::utils::concat_str(#function, " returned ", result)); \
     }                                                                       \
@@ -31,7 +31,7 @@
 #define VK_CHECK_COND(cond, ...)                                 \
   do {                                                           \
     if (!(cond)) {                                               \
-      throw ::vkcompute::api::Error(                             \
+      throw ::vkcompute::vkapi::Error(                           \
           {__func__, __FILE__, static_cast<uint32_t>(__LINE__)}, \
           #cond,                                                 \
           ::vkcompute::utils::concat_str(__VA_ARGS__));          \
@@ -40,13 +40,13 @@
 
 #define VK_THROW(...)                                          \
   do {                                                         \
-    throw ::vkcompute::api::Error(                             \
+    throw ::vkcompute::vkapi::Error(                           \
         {__func__, __FILE__, static_cast<uint32_t>(__LINE__)}, \
         ::vkcompute::utils::concat_str(__VA_ARGS__));          \
   } while (false)
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 std::ostream& operator<<(std::ostream& out, const VkResult loc);
 
@@ -78,5 +78,5 @@ class Error : public std::exception {
   }
 };
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

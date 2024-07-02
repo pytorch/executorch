@@ -842,7 +842,7 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
     ]
 
     shader_info_str = textwrap.indent(
-        "api::shader_registry().register_shader(\n  api::ShaderInfo(\n{args}));\n".format(
+        "api::shader_registry().register_shader(\n  vkapi::ShaderInfo(\n{args}));\n".format(
             args=textwrap.indent(",\n".join(shader_info_args), "     "),
         ),
         "    ",

@@ -10,17 +10,17 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Shader.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Shader.h>
 
-#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
-#include <executorch/backends/vulkan/runtime/api/memory/Image.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Image.h>
 
 #include <unordered_map>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 /*
  * Stores the binding information of a Vulkan Buffer so that the buffer can be
@@ -161,5 +161,5 @@ class DescriptorPool final {
   void flush();
 };
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

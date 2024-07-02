@@ -71,7 +71,8 @@ void add_view_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in, vkapi::MemoryAccessType::READ}},
       // Parameter Buffers
       {t_out->sizes_ubo(), t_in->sizes_ubo()},
       // Specialization Constants

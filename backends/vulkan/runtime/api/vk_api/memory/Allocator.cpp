@@ -6,10 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/memory/Allocator.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Allocator.h>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 Allocator::Allocator(
     VkInstance instance,
@@ -186,5 +186,5 @@ VulkanBuffer Allocator::create_uniform_buffer(const VkDeviceSize size) {
   return uniform_buffer;
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

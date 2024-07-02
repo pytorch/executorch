@@ -8,7 +8,7 @@
 
 // @lint-ignore-every CLANGTIDY clang-diagnostic-missing-field-initializers
 
-#include <executorch/backends/vulkan/runtime/api/Adapter.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Adapter.h>
 
 #include <bitset>
 #include <cstring>
@@ -17,7 +17,7 @@
 #include <utility>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
     : handle(physical_device_handle),
@@ -470,5 +470,5 @@ std::ostream& operator<<(std::ostream& os, const Adapter& adapter) {
   return os;
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

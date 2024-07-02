@@ -10,18 +10,19 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Descriptor.h>
-#include <executorch/backends/vulkan/runtime/api/Pipeline.h>
-#include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
-#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
-#include <executorch/backends/vulkan/runtime/api/memory/Image.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Shader.h>
+
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Image.h>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 class CommandBuffer final {
  public:
@@ -138,5 +139,5 @@ class CommandPool final {
   void allocate_new_batch(const uint32_t);
 };
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

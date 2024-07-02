@@ -10,11 +10,11 @@
 #include <iostream>
 #include <sstream>
 
-#include <executorch/backends/vulkan/runtime/api/Adapter.h>
-#include <executorch/backends/vulkan/runtime/api/Runtime.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Adapter.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Runtime.h>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 #define PRINT_CASE(name)       \
   case MemoryAccessType::name: \
@@ -378,5 +378,5 @@ Runtime* runtime() {
   return p_runtime.get();
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute
