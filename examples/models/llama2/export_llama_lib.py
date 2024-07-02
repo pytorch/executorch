@@ -14,12 +14,7 @@ from pathlib import Path
 from typing import Union
 
 import pkg_resources
-
-from executorch.sdk.etrecord import generate_etrecord
-from executorch.util.activation_memory_profiler import generate_memory_trace
-
-from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
-from .lib.partitioner_lib import (
+from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_mps_partitioner,
     get_qnn_partitioner,
@@ -27,11 +22,16 @@ from .lib.partitioner_lib import (
     get_xnnpack_partitioner,
 )
 
-from .lib.quant_lib import (
-    _get_pt2e_quantization_params,
+from executorch.extension.llm.export.quantizer_lib import (
+    get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
 )
+
+from executorch.sdk.etrecord import generate_etrecord
+from executorch.util.activation_memory_profiler import generate_memory_trace
+
+from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
@@ -173,6 +173,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="Whether to use sdpa_with_kv_cache update op when using kv cache",
+    )
+    parser.add_argument(
+        "--disable_dynamic_shape",
+        dest="enable_dynamic_shape",
+        default=True,  # Enable this by default
+        action="store_false",
+        help="Enable dynamic shape along seq dim. Used for faster prefill",
     )
     parser.add_argument(
         "-p",
@@ -369,6 +376,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             use_kv_cache=args.use_kv_cache,
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             weight_type=weight_type,
+            enable_dynamic_shape=args.enable_dynamic_shape,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
         )
@@ -380,18 +388,34 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
 
 
 def get_quantizer_and_quant_params(args):
-    pt2e_quant_params = _get_pt2e_quantization_params(args)
-    quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
+    pt2e_quant_params = get_pt2e_quantization_params(
+        args.pt2e_quantize, args.quantization_mode
+    )
+    quantizers = get_pt2e_quantizers(pt2e_quant_params, args.so_library)
     quant_dtype = None
     if args.qnn and args.pt2e_quantize:
         assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
-        qnn_quantizer, quant_dtype = get_qnn_quantizer(args)
+        qnn_quantizer, quant_dtype = get_qnn_quantizer(
+            args.pt2e_quantize, args.quantization_mode
+        )
         quantizers.append(qnn_quantizer)
     logging.info(f"Applying quantizers: {quantizers}")
     return pt2e_quant_params, quantizers, quant_dtype
 
 
+def _validate_args(args):
+    """
+    TODO: Combine all the backends under --backend args
+    """
+    if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
+        raise ValueError(
+            "Dynamic shape is not supported with coreml, MPS or qnn backends."
+            " Please us --disble_dynamic_shape."
+        )
+
+
 def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
+    _validate_args(args)
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
     # export_to_edge
@@ -415,19 +439,30 @@ def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
         modelname = f"xnnpack_{modelname}"
 
     if args.vulkan:
-        partitioners.append(get_vulkan_partitioner(args))
+        partitioners.append(
+            get_vulkan_partitioner(
+                args.dtype_override,
+                args.quantization_mode,
+            )
+        )
         modelname = f"vulkan_{modelname}"
 
     if args.mps:
-        partitioners.append(get_mps_partitioner(args))
+        partitioners.append(get_mps_partitioner(args.use_kv_cache))
         modelname = f"mps_{modelname}"
 
     if args.coreml:
-        partitioners.append(get_coreml_partitioner(args))
+        partitioners.append(get_coreml_partitioner(args.use_kv_cache))
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
-        partitioners.append(get_qnn_partitioner(args, quant_dtype))
+        partitioners.append(
+            get_qnn_partitioner(
+                quant_dtype,
+                args.use_kv_cache,
+                args.pt2e_quantize,
+            )
+        )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
         from executorch.backends.qualcomm.utils.utils import _transform
 

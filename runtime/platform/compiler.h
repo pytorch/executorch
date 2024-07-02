@@ -47,6 +47,10 @@
 
 #define __ET_UNREACHABLE() __builtin_unreachable()
 
+#elif defined(_MSC_VER)
+
+#define __ET_UNREACHABLE() __assume(0)
+
 #else // defined(__GNUC__)
 
 #define __ET_UNREACHABLE() \
@@ -118,3 +122,13 @@
 #else
 #define __ET_FUNCTION __FUNCTION__
 #endif // __has_builtin(__builtin_FUNCTION)
+
+// Whether the compiler supports GNU statement expressions.
+// https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html
+#ifndef __ET_HAVE_GNU_STATEMENT_EXPRESSIONS
+#if (defined(__GNUC__) && __GNUC__ >= 3) || defined(__clang__)
+#define __ET_HAVE_GNU_STATEMENT_EXPRESSIONS 1
+#else
+#define __ET_HAVE_GNU_STATEMENT_EXPRESSIONS 0
+#endif
+#endif // ifndef
