@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# This is for PT2E quantization. For source-transformation quantize, please modify source_transformation/quantize.py
+# This is for PT2E quantization.
 
 import logging
 from dataclasses import dataclass
@@ -47,13 +47,16 @@ class PT2EQuantOptions:
     quantize_linear: Optional[DynamicQuantLinearOptions] = None
 
 
-def _get_pt2e_quantization_params(args) -> Optional[PT2EQuantOptions]:
-    if args.pt2e_quantize is None:
+def get_pt2e_quantization_params(
+    pt2e_quantize: Optional[str] = None,
+    quantization_mode: Optional[str] = None,
+) -> Optional[PT2EQuantOptions]:
+    if pt2e_quantize is None:
         return None
-    if args.quantization_mode:
-        raise ValueError("Cannot specify both --quantization_mode and --pt2e_quantize")
+    if quantization_mode:
+        raise ValueError("Cannot specify both quantization_mode and pt2e_quantize")
 
-    quantization_options = args.pt2e_quantize.split(",")
+    quantization_options = pt2e_quantize.split(",")
     quantization_options = [option.strip() for option in quantization_options]
     # This can really be improved significantly.
     # Hopefully we dont release this in its current form.
@@ -81,14 +84,14 @@ def _get_pt2e_quantization_params(args) -> Optional[PT2EQuantOptions]:
     return quant_options
 
 
-# TODO: move args is used only get so_file. Refactor this
 def get_pt2e_quantizers(
-    quant_params: Optional[PT2EQuantOptions], args
+    quant_params: Optional[PT2EQuantOptions],
+    so_library: Optional[str] = None,
 ) -> List[Quantizer]:
     """
     Get a list of quantizers from quantization params
     Args:
-        args: quant params
+        quant_params: PT2E quantization options.
     Returns:
         A list of quantizers to pass into LlamaBuilder.
     """
@@ -97,9 +100,9 @@ def get_pt2e_quantizers(
         try:
             _ = torch.ops.quantized_decomposed.embedding_byte.out
         except AttributeError:
-            if args.so_library:
-                print(f"Loading library {args.so_library}")
-                torch.ops.load_library(args.so_library)
+            if so_library:
+                print(f"Loading library {so_library}")
+                torch.ops.load_library(so_library)
             else:
                 raise RuntimeError(
                     "Need to specify shared library path to register quantized ops (and their out variants) into EXIR.\n"
@@ -138,7 +141,10 @@ def get_pt2e_quantizers(
     return quantizers
 
 
-def get_qnn_quantizer(args):
+def get_qnn_quantizer(
+    pt2e_quantize: str,
+    quantization_mode: Optional[str] = None,
+):
     try:
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.quantizer.quantizer`
         from executorch.backends.qualcomm.quantizer.quantizer import (
@@ -153,7 +159,7 @@ def get_qnn_quantizer(args):
             "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
         )
 
-    backend, quant_config = args.pt2e_quantize.split("_")
+    backend, quant_config = pt2e_quantize.split("_")
     assert (
         backend == "qnn"
     ), f"The quantization config is for backend {backend} instead of qnn."
@@ -183,7 +189,7 @@ def get_qnn_quantizer(args):
         )
 
     assert (
-        args.quantization_mode is None
+        quantization_mode is None
     ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
     qnn_quantizer.add_custom_quant_annotations(custom_annotations)
     return qnn_quantizer, quant_dtype
