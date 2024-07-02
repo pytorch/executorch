@@ -20,7 +20,8 @@
 #include <executorch/backends/vulkan/runtime/api/ShaderRegistry.h>
 #include <executorch/backends/vulkan/runtime/api/StorageBuffer.h>
 #include <executorch/backends/vulkan/runtime/api/Tensor.h>
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
+
+#include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
 #include <executorch/backends/vulkan/runtime/api/memory/Allocation.h>
 #include <executorch/backends/vulkan/runtime/api/memory/Allocator.h>

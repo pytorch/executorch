@@ -12,13 +12,13 @@
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
-
 #include <executorch/backends/vulkan/runtime/api/memory/vma_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/memory/Allocation.h>
 #include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
 #include <executorch/backends/vulkan/runtime/api/memory/Image.h>
+
+#include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
 namespace vkcompute {
 namespace api {
