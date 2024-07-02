@@ -53,7 +53,7 @@ struct Value final {
       bool as_bool;
     } u;
 
-    vTensor as_tensor;
+    api::vTensor as_tensor;
     api::StorageBuffer as_staging;
     TensorRef as_tensorref;
 
@@ -106,7 +106,8 @@ struct Value final {
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::DOUBLE, as_double);
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::BOOL, as_bool);
       // Tensor and tensor adjacent types
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::TENSOR, vTensor, as_tensor, vTensor);
+      CASE_MOVE_MOVEABLE_TYPE(
+          TypeTag::TENSOR, api::vTensor, as_tensor, vTensor);
       CASE_MOVE_MOVEABLE_TYPE(
           TypeTag::STAGING, api::StorageBuffer, as_staging, StorageBuffer);
       CASE_MOVE_MOVEABLE_TYPE(
@@ -240,7 +241,11 @@ struct Value final {
     return payload.member_name;                             \
   }
 
-  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(vTensor, Tensor, TypeTag::TENSOR, as_tensor);
+  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
+      api::vTensor,
+      Tensor,
+      TypeTag::TENSOR,
+      as_tensor);
 
   SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
       api::StorageBuffer,

@@ -17,7 +17,7 @@ namespace vkcompute {
 //
 
 void bind_tensor_to_descriptor_set(
-    vTensor& tensor,
+    api::vTensor& tensor,
     api::PipelineBarrier& pipeline_barrier,
     const api::MemoryAccessType accessType,
     api::DescriptorSet& descriptor_set,
