@@ -272,9 +272,15 @@ class ArmTester(Tester):
             # ...now get TOSA ref model data
             # Transpose input data which is on NCHW format to NHWC format,
             is_nhwc = is_permute_memory(self.compile_spec)
-            if is_nhwc and len(inputs_to_run[0].shape) == 4:
-                NHWC_Order = (0, 2, 3, 1)
-                inputs_to_run = (np.transpose(inputs_to_run[0], NHWC_Order),)
+            if is_nhwc:
+                inputs_transposed = list(inputs_to_run)
+                for i in range(len(inputs_to_run)):
+                    if len(inputs_to_run[i].shape) == 4:
+                        NHWC_Order = (0, 2, 3, 1)
+                        inputs_transposed[i] = np.transpose(
+                            inputs_to_run[i], NHWC_Order
+                        )
+                inputs_to_run = tuple(inputs_transposed)
 
             # Run the TOSA ref model to get the output tensor, which will be
             # compared to the torch output in compare_outputs()

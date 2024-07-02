@@ -10,7 +10,7 @@ import tempfile
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 
 
-def get_tosa_compile_spec(permute_memory_to_nhwc=False, custom_path=None):
+def get_tosa_compile_spec(permute_memory_to_nhwc=True, custom_path=None):
     """
     Default compile spec for TOSA tests.
     """
@@ -27,7 +27,7 @@ def get_tosa_compile_spec(permute_memory_to_nhwc=False, custom_path=None):
     return compile_spec
 
 
-def get_u55_compile_spec(permute_memory_to_nhwc=False):
+def get_u55_compile_spec(permute_memory_to_nhwc=True):
     """
     Default compile spec for Ethos-U55 tests.
     """
