@@ -17,6 +17,7 @@ restrictions:
 * Only the [XNNPACK backend
   delegate](https://pytorch.org/executorch/main/native-delegates-executorch-xnnpack-delegate.html)
   is linked into the prebuilt module
+* [macOS only] [Core ML](https://pytorch.org/executorch/main/build-run-coreml.html) and [MPS](https://pytorch.org/executorch/main/build-run-mps.html) backend delegates are linked into the prebuilt module.
 
 Please visit the [ExecuTorch website](https://pytorch.org/executorch/) for
 tutorials and documentation. Here are some starting points:
