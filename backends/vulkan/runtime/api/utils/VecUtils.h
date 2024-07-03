@@ -8,14 +8,14 @@
 
 #pragma once
 
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
+
+#include <executorch/backends/vulkan/runtime/api/vk_api/Exception.h>
+
 #include <cmath>
 #include <limits>
 #include <numeric>
 #include <type_traits>
-
-#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
-
-#include <executorch/backends/vulkan/runtime/api/vk_api/Exception.h>
 
 namespace vkcompute {
 namespace utils {
