@@ -10,16 +10,16 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
-#include <executorch/backends/vulkan/runtime/api/memory/vma_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/vma_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/memory/Allocation.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Allocation.h>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 using MemoryAccessFlags = uint8_t;
 
@@ -170,5 +170,5 @@ struct BufferMemoryBarrier final {
       const VulkanBuffer& buffer);
 };
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

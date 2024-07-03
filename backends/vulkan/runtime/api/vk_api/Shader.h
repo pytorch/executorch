@@ -10,17 +10,17 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
-
-#include <executorch/backends/vulkan/runtime/api/Types.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
+
+#include <executorch/backends/vulkan/runtime/api/vk_api/Types.h>
 
 #include <mutex>
 #include <unordered_map>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 class ShaderLayout final {
  public:
@@ -183,7 +183,7 @@ class ShaderCache final {
   void purge();
 };
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute
 
 inline bool operator==(

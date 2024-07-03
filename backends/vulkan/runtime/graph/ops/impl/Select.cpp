@@ -22,8 +22,8 @@ void check_args(
     int64_t dim,
     int64_t index,
     const api::vTensor& t_out) {
-  VK_CHECK_COND(check_memory_layout_is(t_in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(t_out, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(t_in, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(t_out, vkapi::kChannelsPacked));
 
   const int64_t in_dim = t_in.dim();
   VK_CHECK_COND(
@@ -109,7 +109,8 @@ void add_select_int_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in, vkapi::MemoryAccessType::READ}},
       // Parameter buffers
       {t_out->texture_limits_ubo(),
        t_out->sizes_ubo(),

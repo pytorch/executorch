@@ -89,8 +89,8 @@ class ComputeGraph final {
 
  private:
   GraphConfig config_;
-  api::DescriptorPoolConfig prepack_descriptor_counts_;
-  api::DescriptorPoolConfig execute_descriptor_counts_;
+  vkapi::DescriptorPoolConfig prepack_descriptor_counts_;
+  vkapi::DescriptorPoolConfig execute_descriptor_counts_;
 
   std::unique_ptr<api::Context> context_;
   std::vector<SharedObject> shared_objects_;
@@ -184,7 +184,7 @@ class ComputeGraph final {
 
   std::vector<int64_t> sizes_of(const ValueRef idx) const;
 
-  api::ScalarType dtype_of(const ValueRef idx) const;
+  vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
   inline utils::uvec3 image_extents_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().image_extents();
@@ -194,7 +194,7 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().texel_numel();
   }
 
-  inline api::StorageType storage_type_of(const ValueRef idx) const {
+  inline vkapi::StorageType storage_type_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().storage_type();
   }
 
@@ -202,7 +202,7 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().has_buffer_storage();
   }
 
-  inline api::GPUMemoryLayout memory_layout_of(const ValueRef idx) const {
+  inline vkapi::GPUMemoryLayout memory_layout_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().gpu_memory_layout();
   }
 
@@ -210,19 +210,19 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().packed_dim_whcn_idx();
   }
 
-  inline api::BufferBindInfo sizes_ubo(const ValueRef idx) {
+  inline vkapi::BufferBindInfo sizes_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().sizes_ubo();
   }
 
-  inline api::BufferBindInfo texture_limits_ubo(const ValueRef idx) {
+  inline vkapi::BufferBindInfo texture_limits_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().texture_limits_ubo();
   }
 
-  inline api::BufferBindInfo texel_strides_ubo(const ValueRef idx) {
+  inline vkapi::BufferBindInfo texel_strides_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().texel_strides_ubo();
   }
 
-  inline api::BufferBindInfo ntexels_ubo(const ValueRef idx) {
+  inline vkapi::BufferBindInfo ntexels_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().ntexels_ubo();
   }
 
@@ -268,7 +268,7 @@ class ComputeGraph final {
    * buffer storage, and others with texture storage. Current only texture
    * storage is supported.
    */
-  api::StorageType suggested_storage_type();
+  vkapi::StorageType suggested_storage_type();
 
   /*
    * Returns a suggested memory layout (i.e. channels, width, or height packed)
@@ -278,7 +278,7 @@ class ComputeGraph final {
    * The suggested memory layout is determined based on the sizes of the tensor,
    * unless a memory layout override is defined in the graph configuration.
    */
-  api::GPUMemoryLayout suggested_memory_layout(
+  vkapi::GPUMemoryLayout suggested_memory_layout(
       const std::vector<int64_t>& sizes);
 
   //
@@ -296,9 +296,9 @@ class ComputeGraph final {
    */
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
-      const api::ScalarType dtype,
-      const api::StorageType storage_type,
-      const api::GPUMemoryLayout memory_layout,
+      const vkapi::ScalarType dtype,
+      const vkapi::StorageType storage_type,
+      const vkapi::GPUMemoryLayout memory_layout,
       const int64_t shared_object_idx = -1);
 
   /*
@@ -307,8 +307,8 @@ class ComputeGraph final {
    */
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
-      const api::ScalarType dtype,
-      const api::StorageType storage_type,
+      const vkapi::ScalarType dtype,
+      const vkapi::StorageType storage_type,
       const int64_t shared_object_idx = -1);
 
   /*
@@ -317,8 +317,8 @@ class ComputeGraph final {
    */
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
-      const api::ScalarType dtype,
-      const api::GPUMemoryLayout memory_layout,
+      const vkapi::ScalarType dtype,
+      const vkapi::GPUMemoryLayout memory_layout,
       const int64_t shared_object_idx = -1);
 
   /*
@@ -328,7 +328,7 @@ class ComputeGraph final {
    */
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
-      const api::ScalarType dtype,
+      const vkapi::ScalarType dtype,
       const int64_t shared_object_idx = -1);
 
   /*
@@ -336,8 +336,8 @@ class ComputeGraph final {
    */
   ValueRef add_tensor_like(
       const ValueRef vref,
-      const api::StorageType storage_type,
-      const api::GPUMemoryLayout memory_layout);
+      const vkapi::StorageType storage_type,
+      const vkapi::GPUMemoryLayout memory_layout);
 
   /*
    * Add a `api::vTensor` value to the graph with the properties of `vref`. The
@@ -345,7 +345,7 @@ class ComputeGraph final {
    */
   ValueRef add_tensor_like(
       const ValueRef vref,
-      const api::GPUMemoryLayout memory_layout);
+      const vkapi::GPUMemoryLayout memory_layout);
 
   /*
    * Add a `TensorRef` value to the graph with the specific properties. A
@@ -354,7 +354,7 @@ class ComputeGraph final {
    */
   ValueRef add_tensorref(
       const std::vector<int64_t>& sizes,
-      const api::ScalarType dtype,
+      const vkapi::ScalarType dtype,
       const void* const data);
 
   /*
@@ -362,7 +362,7 @@ class ComputeGraph final {
    * use memory that is visible to both the CPU and GPU, and therefore is used
    * as a intermediary when transferring data between the CPU and GPU.
    */
-  ValueRef add_staging(const api::ScalarType dtype, const size_t numel);
+  ValueRef add_staging(const vkapi::ScalarType dtype, const size_t numel);
 
   ValueRef add_none();
 
@@ -382,9 +382,9 @@ class ComputeGraph final {
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
   template <typename Block>
-  const api::BufferBindInfo create_params_buffer(const Block& data) {
+  const vkapi::BufferBindInfo create_params_buffer(const Block& data) {
     param_ubos_.emplace_back(api::ParamsBuffer(context_.get(), data));
-    return api::BufferBindInfo(param_ubos_.back().buffer());
+    return vkapi::BufferBindInfo(param_ubos_.back().buffer());
   }
 
   /*
@@ -392,7 +392,7 @@ class ComputeGraph final {
    */
   inline IOValueRef add_input_tensor(
       const std::vector<int64_t>& sizes,
-      const api::ScalarType dtype,
+      const vkapi::ScalarType dtype,
       const int64_t shared_object_idx = -1) {
     ValueRef t = add_tensor(sizes, dtype, shared_object_idx);
     ValueRef staging = set_input_tensor(t);
@@ -405,8 +405,8 @@ class ComputeGraph final {
    */
   inline IOValueRef add_input_tensor(
       const std::vector<int64_t>& sizes,
-      const api::ScalarType dtype,
-      const api::GPUMemoryLayout memory_layout,
+      const vkapi::ScalarType dtype,
+      const vkapi::GPUMemoryLayout memory_layout,
       const int64_t shared_object_idx = -1) {
     ValueRef t = add_tensor(sizes, dtype, memory_layout, shared_object_idx);
     ValueRef staging = set_input_tensor(t);
@@ -419,8 +419,8 @@ class ComputeGraph final {
    */
   inline IOValueRef add_input_tensor(
       const std::vector<int64_t>& sizes,
-      const api::ScalarType dtype,
-      const api::StorageType storage_type,
+      const vkapi::ScalarType dtype,
+      const vkapi::StorageType storage_type,
       const int64_t shared_object_idx = -1) {
     ValueRef t = add_tensor(sizes, dtype, storage_type, shared_object_idx);
     ValueRef staging = set_input_tensor(t);
@@ -434,7 +434,7 @@ class ComputeGraph final {
   //
 
   void update_descriptor_counts(
-      const api::ShaderInfo& shader_info,
+      const vkapi::ShaderInfo& shader_info,
       bool execute);
 
   void prepare();

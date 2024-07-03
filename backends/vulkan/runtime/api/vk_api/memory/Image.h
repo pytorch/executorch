@@ -10,19 +10,19 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
-#include <executorch/backends/vulkan/runtime/api/memory/vma_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/vma_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/memory/Allocation.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Allocation.h>
 
 #include <mutex>
 #include <unordered_map>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 class ImageSampler final {
  public:
@@ -249,5 +249,5 @@ class SamplerCache final {
   void purge();
 };
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

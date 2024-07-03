@@ -8,8 +8,9 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadImplicitCast
 
-#include <executorch/backends/vulkan/runtime/api/QueryPool.h>
 #include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
+
+#include <executorch/backends/vulkan/runtime/api/vk_api/QueryPool.h>
 
 #include <cmath>
 #include <iomanip>
@@ -17,7 +18,7 @@
 #include <utility>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 namespace {
 
@@ -247,5 +248,5 @@ unsigned long QueryPool::get_total_shader_ns(std::string kernel_name) {
   }
   return 0;
 }
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute
