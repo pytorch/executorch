@@ -20,6 +20,8 @@ Key value propositions of ExecuTorch are:
 For a comprehensive technical overview of ExecuTorch and step-by-step tutorials,
 please visit our documentation website [for the latest release](https://pytorch.org/executorch/stable/index.html) (or the [main branch](https://pytorch.org/executorch/main/index.html)).
 
+Check out the [Getting Started](https://pytorch.org/executorch/stable/getting-started-setup.htmll#quick-setup-colab-jupyter-notebook-prototype) page for a quick spin.
+
 ## Feedback
 
 We welcome any feedback, suggestions, and bug reports from the community to help
