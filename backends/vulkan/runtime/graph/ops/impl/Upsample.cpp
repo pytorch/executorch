@@ -66,29 +66,28 @@ void add_upsample_nearest2d_node(
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
 
   vTensorPtr t_in = graph.get_tensor(in);
-  api::utils::uvec3 input_sizes = t_in->image_extents();
+  utils::uvec3 input_sizes = t_in->image_extents();
 
-  api::utils::ivec2 input_size = {
-      api::utils::safe_downcast<int32_t>(input_sizes.data[0]),
-      api::utils::safe_downcast<int32_t>(input_sizes.data[1])};
-  api::utils::vec2 rev_scales = {
-      api::utils::safe_downcast<float>(1.0),
-      api::utils::safe_downcast<float>(1.0)};
+  utils::ivec2 input_size = {
+      utils::safe_downcast<int32_t>(input_sizes.data[0]),
+      utils::safe_downcast<int32_t>(input_sizes.data[1])};
+  utils::vec2 rev_scales = {
+      utils::safe_downcast<float>(1.0), utils::safe_downcast<float>(1.0)};
 
   // Reverse scale factors that pre-computed before GLSL.
   if (!graph.val_is_none(output_sizes)) {
     auto output_size_ref = graph.get_int_list(output_sizes);
     rev_scales = {
-        api::utils::safe_downcast<float>(
+        utils::safe_downcast<float>(
             (float)input_size.data[0] / output_size_ref->at(1)),
-        api::utils::safe_downcast<float>(
+        utils::safe_downcast<float>(
             (float)input_size.data[1] / output_size_ref->at(0))};
 
   } else {
     auto scales = graph.get_double_list(scale_factors);
     rev_scales = {
-        api::utils::safe_downcast<float>(1.0 / scales->at(1)),
-        api::utils::safe_downcast<float>(1.0 / scales->at(0))};
+        utils::safe_downcast<float>(1.0 / scales->at(1)),
+        utils::safe_downcast<float>(1.0 / scales->at(0))};
   }
 
   vTensorPtr t_out = graph.get_tensor(out);
@@ -103,8 +102,8 @@ void add_upsample_nearest2d_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {arg_in, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {arg_in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->texture_limits_ubo(),
        graph.create_params_buffer(input_size),

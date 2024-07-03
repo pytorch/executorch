@@ -36,6 +36,18 @@ ${layout_declare_ubo(4, "float", "maximum")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+float hardswish(float x){
+    if(x <= -3) {
+      return 0;
+    }
+    else if(x >= 3) {
+      return x;
+    }
+    else {
+      return x * (x + 3)/6;
+    }
+}
+
 #ifdef USING_BUFFER
 
 void main() {
