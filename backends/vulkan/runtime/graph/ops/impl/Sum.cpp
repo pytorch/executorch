@@ -19,7 +19,8 @@
 
 namespace vkcompute {
 
-std::vector<int64_t> calc_out_sizes(vTensor& self, int64_t dim, bool keepdim) {
+std::vector<int64_t>
+calc_out_sizes(api::vTensor& self, int64_t dim, bool keepdim) {
   std::vector<int64_t> output_size = self.sizes();
   if (keepdim) {
     output_size.at(dim) = 1;
@@ -45,9 +46,9 @@ void resize_sum_node(
   out->virtual_resize(output_size);
 }
 
-void check_sum_args(const vTensor& in, const vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+void check_sum_args(const api::vTensor& in, const api::vTensor& out) {
+  VK_CHECK_COND(check_memory_layout_is(in, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, vkapi::kChannelsPacked));
 }
 
 void add_sum_dim_node(
@@ -81,7 +82,8 @@ void add_sum_dim_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}, {arg, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {arg, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->texture_limits_ubo(),
        graph.create_params_buffer(dim + 4 - in_dim),
@@ -99,10 +101,10 @@ ValueRef add_node(
     const ValueRef input,
     const int dim,
     const bool keepdim,
-    const api::ScalarType dtype = api::kFloat) {
+    const vkapi::ScalarType dtype = vkapi::kFloat) {
   std::vector<int64_t> output_size =
       calc_out_sizes(*(graph.get_tensor(input)), dim, keepdim);
-  return graph.add_tensor(output_size, dtype, api::kChannelsPacked);
+  return graph.add_tensor(output_size, dtype, vkapi::kChannelsPacked);
 }
 
 void add_sum_dim_IntList(

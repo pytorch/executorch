@@ -104,7 +104,7 @@ class TestConv1d(unittest.TestCase):
                 else Tester(module, inputs)
             )
             .export()
-            .check_count({"torch.ops.aten.convolution.default": conv_count})
+            .check_count({"torch.ops.aten.conv1d.default": conv_count})
             .to_edge()
             .check_count(
                 {
