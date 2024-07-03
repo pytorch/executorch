@@ -70,8 +70,12 @@ portability details.
 
 ## Quick Setup: Colab/Jupyter Notebook Prototype
 
-To utilize ExecuTorch to its fullest extent, please follow the setup instructions provided below. Alternatively, if you would like to experiment with ExecuTorch quickly and easily, we recommend using the following [colab notebook](https://colab.research.google.com/drive/1qpxrXC3YdJQzly3mRg-4ayYiOjC6rue3?usp=sharing) for prototyping purposes.
+To utilize ExecuTorch to its fullest extent, please follow the setup instructions provided below to install from source.
 
+Alternatively, if you would like to experiment with ExecuTorch quickly and easily, we recommend using the following [colab notebook](https://colab.research.google.com/drive/1qpxrXC3YdJQzly3mRg-4ayYiOjC6rue3?usp=sharing) for prototyping purposes. You can install directly via `pip` for basic functionality.
+  ```bash
+  pip install executorch
+  ```
 
 
 ## Environment Setup
