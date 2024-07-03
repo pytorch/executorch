@@ -20,6 +20,8 @@ class TestTokenizer(unittest.TestCase):
     def test_export(self, mock_sp):
         # Set up the mock SentencePieceProcessor
         mock_sp.return_value.vocab_size.return_value = 0
+        mock_sp.return_value.bos_id.return_value = 0
+        mock_sp.return_value.eos_id.return_value = 0
         mock_sp.return_value.get_piece_size.return_value = 0
         # Create a temporary file
         with tempfile.NamedTemporaryFile(delete=True) as temp:
@@ -32,8 +34,12 @@ class TestTokenizer(unittest.TestCase):
                 with open(output.name, "rb") as f:
                     data = f.read(16)
                 # Unpack the data as 4 integers
-                vocab_size, max_token_length = struct.unpack("II", data)
+                vocab_size, bos_id, eos_id, max_token_length = struct.unpack(
+                    "IIII", data
+                )
                 # Check that the integers match the properties of the tokenizer
                 self.assertEqual(vocab_size, 0)
+                self.assertEqual(bos_id, 0)
+                self.assertEqual(eos_id, 0)
                 # Check that the max token length is correct
                 self.assertEqual(max_token_length, 0)
