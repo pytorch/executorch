@@ -1358,7 +1358,7 @@
 
             <span class="c1"># For delegated events, handles are found via delegateMetadata</span>
             <span class="n">event</span><span class="o">.</span><span class="n">delegate_backend_name</span> <span class="o">=</span> <span class="n">delegate_metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
-            <span class="n">delegate_metadata_delegate_map</span> <span class="o">=</span> <span class="n">delegate_metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegate_map&quot;</span><span class="p">,</span> <span class="p">{})</span>
+            <span class="n">delegate_metadata_delegate_map</span> <span class="o">=</span> <span class="n">delegate_metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegate_map&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
 
             <span class="c1"># delegate_debug_id can be either int based or string based, therefore we need to check both</span>
             <span class="n">debug_handles</span> <span class="o">=</span> <span class="n">delegate_metadata_delegate_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
