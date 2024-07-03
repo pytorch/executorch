@@ -39,6 +39,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.addmm.default,
             exir_ops.edge.aten.expand_copy.default,
+            exir_ops.edge.aten.cat.default,
             exir_ops.edge.aten.permute_copy.default,
             exir_ops.edge.aten.hardtanh.default,
             exir_ops.edge.aten.convolution.default,
