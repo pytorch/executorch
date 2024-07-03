@@ -13,14 +13,6 @@ from enum import Enum
 from typing import Any, Callable, List, Optional
 
 import torch
-
-try:
-    from ...portable.utils import export_to_edge, save_pte_program
-except ImportError:
-    # Workaround to bypass the different paths between executorch pip package and directly python call
-    # TODO: remove this try catch workaround and have a standard wa to import portable.utils
-    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `examples.portable.utils`.
-    from examples.portable.utils import export_to_edge, save_pte_program
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
@@ -33,6 +25,8 @@ from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackend
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+
+from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer

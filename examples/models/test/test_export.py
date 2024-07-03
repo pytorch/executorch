@@ -10,11 +10,11 @@ import torch
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 
+from executorch.extension.export_util.utils import export_to_edge
+
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
-
-from ..utils import export_to_edge
 
 
 class ExportTest(unittest.TestCase):
