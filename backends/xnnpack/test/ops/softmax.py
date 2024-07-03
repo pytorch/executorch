@@ -28,7 +28,7 @@ class TestSoftmax(unittest.TestCase):
             (
                 Tester(self.Softmax(dim), inputs)
                 .export()
-                .check_count({"torch.ops.aten._softmax.default": 1})
+                .check_count({"torch.ops.aten.softmax": 1})
                 .to_edge()
                 .check_count(
                     {"executorch_exir_dialects_edge__ops_aten__softmax_default": 1}
@@ -62,7 +62,7 @@ class TestSoftmax(unittest.TestCase):
             (
                 Tester(self.Softmax(dim), inputs)
                 .export()
-                .check_count({"torch.ops.aten._softmax.default": 1})
+                .check_count({"torch.ops.aten.softmax": 1})
                 .to_edge()
                 .check_count(
                     {"executorch_exir_dialects_edge__ops_aten__softmax_default": 1}

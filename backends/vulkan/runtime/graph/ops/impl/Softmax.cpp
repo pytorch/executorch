@@ -15,7 +15,7 @@
 
 namespace vkcompute {
 
-using namespace api::utils;
+using namespace utils;
 
 void resize_softmax_node(
     ComputeGraph* graph,
@@ -44,7 +44,7 @@ void add_softmax_node(
 
   vTensorPtr t_out = graph.get_tensor(out);
 
-  api::ShaderInfo shader_descriptor;
+  vkapi::ShaderInfo shader_descriptor;
   std::string kernel_name = in_dim - softmax_dim == 3
       ? "softmax_channel"
       : "softmax_batch_height_width";
@@ -61,13 +61,12 @@ void add_softmax_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {in_arg, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in_arg, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->texture_limits_ubo(),
        t_in->sizes_ubo(),
-       graph.create_params_buffer(
-           api::utils::make_ivec2({in_dim, softmax_dim}))},
+       graph.create_params_buffer(utils::make_ivec2({in_dim, softmax_dim}))},
       // Specialization Constants
       {},
       // Resizing Logic

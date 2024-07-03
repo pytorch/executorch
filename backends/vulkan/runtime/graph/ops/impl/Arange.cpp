@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
@@ -33,7 +33,7 @@ void resize_arange_node(
   }
 
   std::vector<int64_t> out_sizes = {
-      api::utils::div_up(end_val - start_val, step_val)};
+      utils::div_up(end_val - start_val, step_val)};
 
   out->virtual_resize(out_sizes);
 }
@@ -94,7 +94,7 @@ void add_arange_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}},
+      {{out, vkapi::MemoryAccessType::WRITE}},
       // Shader params buffers
       {t_out->sizes_ubo(),
        graph.create_params_buffer(start_val),
