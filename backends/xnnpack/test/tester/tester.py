@@ -175,6 +175,9 @@ class Quantize(Stage):
     def graph_module(self) -> str:
         return self.converted_graph
 
+    def run_artifact(self, inputs):
+        return self.converted_graph.forward(*inputs)
+
 
 @register_stage
 class Export(Stage):
@@ -189,7 +192,7 @@ class Export(Stage):
     ) -> None:
         self.exported_program = export(
             artifact, inputs, dynamic_shapes=self.dynamic_shapes
-        ).run_decompositions()
+        )
 
     @property
     def artifact(self) -> ExportedProgram:

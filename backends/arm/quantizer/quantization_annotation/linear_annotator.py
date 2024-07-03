@@ -40,7 +40,7 @@ def _annotate_linear(
         if len(node.args) > 2:
             bias_node = node.args[2]
 
-        if arm_quantizer_utils.is_annotated([node]) is False:  # type: ignore[list-item]
+        if arm_quantizer_utils.is_annotated(node) is False:  # type: ignore[list-item]
             _annotate_input_qspec_map(
                 node,
                 act_node,

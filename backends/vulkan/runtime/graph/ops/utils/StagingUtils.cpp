@@ -20,7 +20,7 @@ namespace vkcompute {
 template <typename T>
 void memcpy_to_mapping_impl(
     const void* src,
-    api::MemoryMap& dst_mapping,
+    vkapi::MemoryMap& dst_mapping,
     const size_t nbytes) {
   T* data_ptr = dst_mapping.template data<T>();
   memcpy(data_ptr, reinterpret_cast<const T*>(src), nbytes);
@@ -28,7 +28,7 @@ void memcpy_to_mapping_impl(
 
 template <typename T>
 void memcpy_from_mapping_impl(
-    api::MemoryMap& src_mapping,
+    vkapi::MemoryMap& src_mapping,
     void* dst,
     const size_t nbytes) {
   T* data_ptr = src_mapping.template data<T>();
@@ -37,11 +37,11 @@ void memcpy_from_mapping_impl(
 
 void memcpy_to_mapping(
     const void* src,
-    api::MemoryMap& dst_mapping,
+    vkapi::MemoryMap& dst_mapping,
     const size_t nbytes,
-    const api::ScalarType dtype) {
+    const vkapi::ScalarType dtype) {
 #define DTYPE_CASE(ctype, vkformat, name)                    \
-  case api::ScalarType::name:                                \
+  case vkapi::ScalarType::name:                              \
     memcpy_to_mapping_impl<ctype>(src, dst_mapping, nbytes); \
     break;
 
@@ -54,12 +54,12 @@ void memcpy_to_mapping(
 }
 
 void memcpy_from_mapping(
-    api::MemoryMap& src_mapping,
+    vkapi::MemoryMap& src_mapping,
     void* dst,
     const size_t nbytes,
-    const api::ScalarType dtype) {
+    const vkapi::ScalarType dtype) {
 #define DTYPE_CASE(ctype, vkformat, name)                      \
-  case api::ScalarType::name:                                  \
+  case vkapi::ScalarType::name:                                \
     memcpy_from_mapping_impl<ctype>(src_mapping, dst, nbytes); \
     break;
 
@@ -75,7 +75,7 @@ void copy_ptr_to_staging(
     const void* src,
     api::StorageBuffer& staging,
     const size_t nbytes) {
-  api::MemoryMap mapping(staging.buffer(), api::MemoryAccessType::WRITE);
+  vkapi::MemoryMap mapping(staging.buffer(), vkapi::MemoryAccessType::WRITE);
   mapping.invalidate();
   memcpy_to_mapping(src, mapping, nbytes, staging.dtype());
 }
@@ -84,18 +84,18 @@ void copy_staging_to_ptr(
     api::StorageBuffer& staging,
     void* dst,
     const size_t nbytes) {
-  api::MemoryMap mapping(staging.buffer(), api::MemoryAccessType::READ);
+  vkapi::MemoryMap mapping(staging.buffer(), vkapi::MemoryAccessType::READ);
   mapping.invalidate();
   memcpy_from_mapping(mapping, dst, nbytes, staging.dtype());
 }
 
 void set_staging_zeros(api::StorageBuffer& staging, const size_t nbytes) {
-  api::MemoryMap mapping(staging.buffer(), api::MemoryAccessType::WRITE);
+  vkapi::MemoryMap mapping(staging.buffer(), vkapi::MemoryAccessType::WRITE);
   uint8_t* data_ptr = mapping.template data<uint8_t>();
   memset(data_ptr, 0, staging.nbytes());
 }
 
-api::ShaderInfo get_nchw_to_tensor_shader(const vTensor& v_dst) {
+vkapi::ShaderInfo get_nchw_to_tensor_shader(const api::vTensor& v_dst) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
@@ -106,7 +106,7 @@ api::ShaderInfo get_nchw_to_tensor_shader(const vTensor& v_dst) {
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-api::ShaderInfo get_tensor_to_nchw_shader(const vTensor& v_src) {
+vkapi::ShaderInfo get_tensor_to_nchw_shader(const api::vTensor& v_src) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
 
