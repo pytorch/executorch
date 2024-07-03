@@ -15,7 +15,7 @@ The LoRA model used is recent and is not yet officially released on `TorchTune`.
 python export_model.py
 ```
 
-2. Run the model using an example runtime. For more more detailed steps on this, check out [Build & Run](https://pytorch.org/executorch/stable/getting-started-setup.html#build-run).
+2. Run the model using an example runtime. For more detailed steps on this, check out [Build & Run](https://pytorch.org/executorch/stable/getting-started-setup.html#build-run).
 ```
 # Clean and configure the CMake build system. Compiled programs will appear in the executorch/cmake-out directory we create here.
 (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)

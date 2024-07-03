@@ -33,11 +33,9 @@ void check_qlinear_args(
   VK_CHECK_COND(graph.memory_layout_of(mat1) == graph.memory_layout_of(out));
 
   VK_CHECK_COND(
-      api::utils::val_at(-1, mat1_sizes) ==
-      api::utils::val_at(-1, qmat2_sizes));
+      utils::val_at(-1, mat1_sizes) == utils::val_at(-1, qmat2_sizes));
   VK_CHECK_COND(
-      api::utils::val_at(-1, scales_sizes) ==
-      api::utils::val_at(-2, qmat2_sizes));
+      utils::val_at(-1, scales_sizes) == utils::val_at(-2, qmat2_sizes));
 }
 
 void resize_qlinear_node(
@@ -50,8 +48,8 @@ void resize_qlinear_node(
   vTensorPtr mat1 = graph->get_tensor(args[1].refs[0]);
   vTensorPtr qmat2 = graph->get_tensor(args[1].refs[1]);
 
-  const int out_cols = api::utils::val_at(-2, mat1->sizes());
-  const int out_rows = api::utils::val_at(-2, qmat2->sizes());
+  const int out_cols = utils::val_at(-2, mat1->sizes());
+  const int out_rows = utils::val_at(-2, qmat2->sizes());
 
   std::vector<int64_t> new_out_sizes(3);
   if (mat1->sizes().size() == 2) {
@@ -74,9 +72,9 @@ void add_q_8w_linear_node(
     const ValueRef scales_data,
     const ValueRef out) {
   ValueRef q_mat2 =
-      prepack_if_tensor_ref(graph, q_mat2_data, api::kWidthPacked);
+      prepack_if_tensor_ref(graph, q_mat2_data, vkapi::kWidthPacked);
   ValueRef scales =
-      prepack_if_tensor_ref(graph, scales_data, api::kWidthPacked);
+      prepack_if_tensor_ref(graph, scales_data, vkapi::kWidthPacked);
 
   std::string kernel_name = "q_8w_linear";
   kernel_name.reserve(kShaderNameReserve);
@@ -85,7 +83,7 @@ void add_q_8w_linear_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
-  api::ParamsBindList ubos({});
+  vkapi::ParamsBindList ubos({});
   if (graph.is_buffer_storage(out)) {
     ubos.append(
         {graph.sizes_ubo(out),
@@ -105,8 +103,8 @@ void add_q_8w_linear_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {{mat1, q_mat2, scales}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{mat1, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       ubos,
       // Specialization Constants
