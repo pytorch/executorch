@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Definition of the Core ATen Operator Set &mdash; ExecuTorch main documentation</title>
+  <title>Contributing to ExecuTorch &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,7 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Backend and Delegate" href="compiler-delegate-and-partitioner.html" />
-    <link rel="prev" title="Export IR Specification" href="ir-exir.html" />
+    <link rel="prev" title="SDK usage tutorial" href="sdk-tutorial.html" />
 
 
   <!-- Google Tag Manager -->
@@ -341,9 +340,9 @@
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Definition of the Core ATen Operator Set</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
 <ul>
@@ -391,8 +390,8 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Contributing to ExecuTorch</a></li>
 </ul>
 
          
@@ -433,13 +432,13 @@
       </li>
 
         
-      <li>Definition of the Core ATen Operator Set</li>
+      <li>Contributing to ExecuTorch</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/ir-ops-set-definition.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/contributing.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -471,51 +470,15 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="definition-of-the-core-aten-operator-set">
-<h1>Definition of the Core ATen Operator Set<a class="headerlink" href="#definition-of-the-core-aten-operator-set" title="Permalink to this heading">¶</a></h1>
-<p>This page provides the description and background of the Core ATen Operator Set (opset). This page is recommended reading for those developing a new kernel library or delegate for ExecuTorch. It is also recommended that one is familiar with <a class="reference external" href="https://pytorch.org/docs/main/export.html"><code class="docutils literal notranslate"><span class="pre">torch.export</span></code></a> as a prerequisite; in particular, the concepts of torch FX graphs, operator decomposition, and functionalization.</p>
-<p>The list of operators that have been identified as a Core ATen operator can be found on the <a class="reference external" href="https://pytorch.org/docs/main/torch.compiler_ir.html">IRs page of the PyTorch documentation website</a>.</p>
-<div class="section" id="what-is-an-operator-set">
-<h2>What is an Operator Set?<a class="headerlink" href="#what-is-an-operator-set" title="Permalink to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">torch.export</span></code> performs a full graph capture on a given PyTorch program, producing a graph IR that describes the computation performed by the program. An operator (i.e. an operation performed on a Tensor) is the basic unit of computation in the graph, often corresponding to a unique node in the graph IR. The primary source of operators is the <a class="reference external" href="https://pytorch.org/cppdocs/#aten">ATen library</a>; outside of ATen operators, developers can also define their own operators (i.e. custom operators).</p>
-<p>An “ATen operator set” or “ATen opset” is the set of ATen operators that can be used to represent a PyTorch program once it has been captured into a graph IR.</p>
-</div>
-<div class="section" id="the-functional-aten-operator-set">
-<h2>The Functional ATen Operator Set<a class="headerlink" href="#the-functional-aten-operator-set" title="Permalink to this heading">¶</a></h2>
-<p>The program capture mechanism of <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> produces a functionalized graph, which only allows functional operators (i.e. operators that do not mutate or alias inputs). Therefore, <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> produces a graph that will contain the functional ATen opset, which contains only functional ATen operators.</p>
-</div>
-<div class="section" id="the-core-aten-operator-set">
-<h2>The Core ATen Operator Set<a class="headerlink" href="#the-core-aten-operator-set" title="Permalink to this heading">¶</a></h2>
-<p>An exported graph can be further transformed by applying operator decompositions. This process will replace specified ATen operators with equivalent sequences of other ATen operators. For instance, <code class="docutils literal notranslate"><span class="pre">aten.hardsigmoid</span></code> can be replaced with <code class="docutils literal notranslate"><span class="pre">aten.clamp(aten.clamp(self</span> <span class="pre">+</span> <span class="pre">3,</span> <span class="pre">min=0),</span> <span class="pre">max=6)</span> <span class="pre">/</span> <span class="pre">6</span></code>.</p>
-<p>If a PyTorch program is decomposed with the default decomposition settings, then the resulting graph IR will contain the “core ATen” opset. This opset will be a subset of the functional ATen opset, as some operators will be decomposed. ATen operators that are a part of the core ATen opset (i.e. core ATen operators) will not be decomposed under the default decomposition setting. Generally, core ATen operators cannot be easily re-expressed by other ATen operators through decomposition.</p>
-<p>The key motivation behind the core ATen opset is to reduce the number of operators that need to be handled by PyTorch backends and compilers once a model is exported. Not only are there a great number of operators defined in the ATen library, but new operators may be added, or the schema of existing operators may change. Without operator decomposition, backends built on top of the IR produced by <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> would have to deal with both a large operator surface, as well as an opset that is constantly in flux. The core ATen opset addresses this by defining a much smaller, more manageable set of operators that was developed with stability in mind.</p>
-</div>
-<div class="section" id="development-of-the-core-aten-operator-set">
-<h2>Development of the Core ATen Operator Set<a class="headerlink" href="#development-of-the-core-aten-operator-set" title="Permalink to this heading">¶</a></h2>
-<p>Although ExecuTorch uses the core ATen opset, it is not specific to ExecuTorch. One of the primary design goals of the core ATen opset is that it should be as generic as possible; the vast majority of use-cases will not want to decompose the operators contained within it. By extension, the decompositions implied by the core ATen opset should be useful to the vast majority of use-cases.</p>
-<p>Another key consideration was to keep the opset as minimal as possible, but not at the expense of imposing decompositions that would have a profound negative impact on performance or developer experience.</p>
-<p>The core ATen opset was developed by reviewing a list of ATen operators created by surveying models in public GitHub repositories in addition to well-known open source models. The purpose of the surveying process was to obtain a reduced list of ATen operators that is a proxy of which ATen operators are used the most. This way the most commonly used operators may be reviewed first.</p>
-<p>The decision of whether each operator should be a core operator or be decomposed by the Core ATen Decomposition Table was determined by:</p>
-<ol class="arabic simple">
-<li><p>Examining potential decompositions of the operators; the decomposition should be a relatively straightforward re-expression of the operator using other ATen operators.</p>
-<ul class="simple">
-<li><p>The decomposition shouldn’t look like an outright implementation of the operator.</p></li>
-<li><p>The decomposition shouldn’t vary based on run-time characteristics of the input.</p></li>
-<li><p>We also consider if decomposing the operator will impact the precision, numerical validity or memory layout of the output.</p></li>
-</ul>
-</li>
-<li><p>Thinking about whether developers would want to preserve the operator in the graph for performance or other reasons.</p>
-<ul class="simple">
-<li><p>For instance, perhaps an operator can be decomposed but it can map to a single hardware instruction on most platforms, in which case it would be preferable to promote it to a core operator.</p></li>
-</ul>
-</li>
-</ol>
-</div>
-<div class="section" id="future-work">
-<h2>Future Work<a class="headerlink" href="#future-work" title="Permalink to this heading">¶</a></h2>
-<p>Until every ATen operator has been reviewed and given a designation of “core” or “decomposed by default”, the core ATen opset cannot be considered fully complete. However, this is a monumental task, and there is a long tail of operators that are not often used. This is why an approach was taken where models were surveyed to determine which ops were the most commonly used which allowed “higher impact” operators to be prioritized.</p>
-<p>Nonetheless, there are still many operators which have not been evaluated. The plan is to continue evaluating additional operators as the need arises; the PyTorch community may propose additional core operators or additional core decompositions through opening a GitHub issue or by <a class="reference external" href="https://dev-discuss.pytorch.org/t/defining-the-core-aten-opset/1464">commenting on this post on the PyTorch Forums</a>.</p>
-</div>
+  <div class="section" id="contributing-to-executorch">
+<h1>Contributing to ExecuTorch<a class="headerlink" href="#contributing-to-executorch" title="Permalink to this heading">¶</a></h1>
+<p>Thank you for your interest in contributing to ExecuTorch! We want to make
+it easy to contribute to this project.</p>
+<p>The source is hosted on GitHub at
+<a class="reference external" href="https://github.com/pytorch/executorch">pytorch/executorch</a>.</p>
+<p>See
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>
+for detailed information about contributing to ExecuTorch.</p>
 </div>
 
 
@@ -526,10 +489,8 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="compiler-delegate-and-partitioner.html" class="btn btn-neutral float-right" title="Backend and Delegate" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
-      
-        <a href="ir-exir.html" class="btn btn-neutral" title="Export IR Specification" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="sdk-tutorial.html" class="btn btn-neutral" title="SDK usage tutorial" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -563,14 +524,7 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Definition of the Core ATen Operator Set</a><ul>
-<li><a class="reference internal" href="#what-is-an-operator-set">What is an Operator Set?</a></li>
-<li><a class="reference internal" href="#the-functional-aten-operator-set">The Functional ATen Operator Set</a></li>
-<li><a class="reference internal" href="#the-core-aten-operator-set">The Core ATen Operator Set</a></li>
-<li><a class="reference internal" href="#development-of-the-core-aten-operator-set">Development of the Core ATen Operator Set</a></li>
-<li><a class="reference internal" href="#future-work">Future Work</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#">Contributing to ExecuTorch</a></li>
 </ul>
 
             </div>
