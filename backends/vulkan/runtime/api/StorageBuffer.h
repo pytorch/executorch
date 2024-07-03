@@ -12,7 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 
-#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Buffer.h>
 
 namespace vkcompute {
 namespace api {
@@ -20,15 +20,15 @@ namespace api {
 class StorageBuffer final {
  private:
   Context* context_p_;
-  ScalarType dtype_;
+  vkapi::ScalarType dtype_;
   size_t numel_;
   size_t nbytes_;
-  VulkanBuffer vulkan_buffer_;
+  vkapi::VulkanBuffer vulkan_buffer_;
 
  public:
   StorageBuffer(
       Context* context_p,
-      const ScalarType dtype,
+      const vkapi::ScalarType dtype,
       const size_t numel,
       const bool gpuonly = false)
       : context_p_(context_p),
@@ -49,11 +49,11 @@ class StorageBuffer final {
     context_p_->register_buffer_cleanup(vulkan_buffer_);
   }
 
-  inline ScalarType dtype() {
+  inline vkapi::ScalarType dtype() {
     return dtype_;
   }
 
-  inline VulkanBuffer& buffer() {
+  inline vkapi::VulkanBuffer& buffer() {
     return vulkan_buffer_;
   }
 

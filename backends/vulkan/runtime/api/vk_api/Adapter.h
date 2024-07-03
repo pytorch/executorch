@@ -10,20 +10,21 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Pipeline.h>
-#include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
-#include <executorch/backends/vulkan/runtime/api/memory/Allocator.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Shader.h>
+
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Allocator.h>
 
 #include <array>
 #include <mutex>
 #include <ostream>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 struct PhysicalDevice final {
   // Handle
@@ -238,5 +239,5 @@ class Adapter final {
   friend std::ostream& operator<<(std::ostream&, const Adapter&);
 };
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

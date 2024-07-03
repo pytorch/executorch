@@ -44,7 +44,7 @@ void add_softmax_node(
 
   vTensorPtr t_out = graph.get_tensor(out);
 
-  api::ShaderInfo shader_descriptor;
+  vkapi::ShaderInfo shader_descriptor;
   std::string kernel_name = in_dim - softmax_dim == 3
       ? "softmax_channel"
       : "softmax_batch_height_width";
@@ -61,8 +61,8 @@ void add_softmax_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {in_arg, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in_arg, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->texture_limits_ubo(),
        t_in->sizes_ubo(),

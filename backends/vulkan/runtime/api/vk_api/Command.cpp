@@ -6,13 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/Adapter.h>
-#include <executorch/backends/vulkan/runtime/api/Command.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Adapter.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Command.h>
 
 #include <mutex>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 //
 // CommandBuffer
@@ -299,5 +299,5 @@ void CommandPool::allocate_new_batch(const uint32_t count) {
       device_, &allocate_info, buffers_.data() + in_use_));
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

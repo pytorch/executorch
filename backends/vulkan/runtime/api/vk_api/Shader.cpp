@@ -8,10 +8,10 @@
 
 #include <utility>
 
-#include <executorch/backends/vulkan/runtime/api/Shader.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Shader.h>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 //
 // ShaderInfo
@@ -210,5 +210,5 @@ void ShaderCache::purge() {
   cache_.clear();
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

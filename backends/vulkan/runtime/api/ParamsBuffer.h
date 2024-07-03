@@ -12,7 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 
-#include <executorch/backends/vulkan/runtime/api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Buffer.h>
 
 namespace vkcompute {
 namespace api {
@@ -21,7 +21,7 @@ class ParamsBuffer final {
  private:
   Context* context_p_;
   size_t nbytes_;
-  VulkanBuffer vulkan_buffer_;
+  vkapi::VulkanBuffer vulkan_buffer_;
 
  public:
   ParamsBuffer() : context_p_{nullptr}, vulkan_buffer_{} {}
@@ -45,7 +45,7 @@ class ParamsBuffer final {
     }
   }
 
-  const VulkanBuffer& buffer() const {
+  const vkapi::VulkanBuffer& buffer() const {
     return vulkan_buffer_;
   }
 
@@ -56,7 +56,7 @@ class ParamsBuffer final {
     }
     // Fill the uniform buffer with data in block
     {
-      MemoryMap mapping(vulkan_buffer_, MemoryAccessType::WRITE);
+      vkapi::MemoryMap mapping(vulkan_buffer_, vkapi::MemoryAccessType::WRITE);
       Block* data_ptr = mapping.template data<Block>();
 
       *data_ptr = block;

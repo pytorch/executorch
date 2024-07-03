@@ -13,18 +13,18 @@
 #include <cstdint>
 #include <functional>
 
-#include <executorch/backends/vulkan/runtime/api/vk_api.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/api/Adapter.h>
-#include <executorch/backends/vulkan/runtime/api/Command.h>
-#include <executorch/backends/vulkan/runtime/api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Adapter.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Command.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Pipeline.h>
 
 #ifndef VULKAN_QUERY_POOL_SIZE
 #define VULKAN_QUERY_POOL_SIZE 4096u
 #endif
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 struct QueryPoolConfig final {
   uint32_t max_query_count = VULKAN_QUERY_POOL_SIZE;
@@ -108,5 +108,5 @@ class QueryPool final {
   }
 };
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute

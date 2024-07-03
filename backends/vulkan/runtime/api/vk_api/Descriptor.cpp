@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/api/vk_api/Descriptor.h>
 
 #include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
 
@@ -14,7 +14,7 @@
 #include <utility>
 
 namespace vkcompute {
-namespace api {
+namespace vkapi {
 
 //
 // BufferBindInfo
@@ -330,5 +330,5 @@ void DescriptorPool::flush() {
   }
 }
 
-} // namespace api
+} // namespace vkapi
 } // namespace vkcompute
