@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 from collections import OrderedDict
 from typing import cast, Mapping, Optional
 
@@ -19,14 +21,16 @@ from torch._export.utils import (
     is_param,
 )
 from torch._guards import detect_fake_mode
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.export import ExportedProgram
 from torch.export.exported_program import InputKind, InputSpec, TensorArgument
+from torch.fx.node import Argument
 from torch.utils import _pytree as pytree
 
 
 # Avoid propagating constants for `exir.ops.edge.aten.full.default`.
 # Propagating aten.full can significantly increase compiled model size.
-_DEFAULT_SKIP_TARGETS = {exir_ops.edge.aten.full.default}
+_DEFAULT_SKIP_TARGETS: set[EdgeOpOverload] = {exir_ops.edge.aten.full.default}
 
 _PRIMITIVE_TYPES = (
     float,
@@ -41,7 +45,7 @@ _PRIMITIVE_TYPES = (
 
 
 def is_const(
-    arg,
+    arg: Argument,
     exported_program: ExportedProgram,
     const_node_to_tensor: Mapping[torch.fx.Node, torch.Tensor],
 ) -> bool:
@@ -57,14 +61,16 @@ def is_const(
         return False
     elif arg in const_node_to_tensor:
         return True
+    elif arg.op == "get_attr":
+        return True
     return False
 
 
 def get_data(
-    arg,
+    arg: Argument,
     exported_program: ExportedProgram,
     const_node_to_tensor: Mapping[torch.fx.Node, torch.Tensor],
-):
+) -> object:
     if isinstance(arg, (tuple, list)):
         return type(arg)(
             get_data(x, exported_program, const_node_to_tensor) for x in arg
@@ -73,6 +79,8 @@ def get_data(
         return arg
     elif arg in const_node_to_tensor:
         return const_node_to_tensor[arg]
+    elif isinstance(arg, torch.fx.Node) and arg.op == "get_attr":
+        return getattr(exported_program.graph_module, arg.target)
     return None
 
 
@@ -160,7 +168,7 @@ def replace_with_constant_node(
     node: torch.fx.Node,
     prop_constant_tensor: torch.Tensor,
     first_user_input: torch.fx.Node,
-    fake_mode,
+    fake_mode: FakeTensorMode,
     exported_program: ExportedProgram,
 ) -> tuple[torch.fx.Node, str]:
     # Add `prop_constant_tensor` to program.state_dict.
@@ -188,7 +196,7 @@ def replace_with_constant_node(
     return const_placeholder_node, prop_constant_tensor_fqn
 
 
-def get_fake_mode(exported_program: ExportedProgram):
+def get_fake_mode(exported_program: ExportedProgram) -> FakeTensorMode:
     fake_mode = detect_fake_mode(
         tuple(
             node.meta["val"]

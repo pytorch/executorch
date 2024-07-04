@@ -9,7 +9,7 @@ import copy
 import os
 import tempfile
 import unittest
-from typing import List, Optional, Tuple
+from typing import cast, List, Optional, Tuple
 
 import executorch.exir as exir
 
@@ -21,7 +21,7 @@ from executorch.exir.dialects._ops import bind_pattern_to_op, ops, ops as exir_o
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.emit import emit_program
 from executorch.exir.graph_module import get_control_flow_submodules
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import ExportPass, PassResult, ProxyValue
 from executorch.exir.passes import (
     dead_code_elimination_pass,
     DebugPass,
@@ -1126,6 +1126,110 @@ class TestPasses(unittest.TestCase):
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"
         ).run(gm.code)
+
+    def test_constant_prop_pass_for_lifted_tensor(self) -> None:
+        class Add(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.y = torch.nn.Parameter(torch.ones(2, 3))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                # This will be a _lifted_tensor.
+                z = torch.tensor(1.0)
+                y_plus_z = self.y + z
+                return x + y_plus_z
+
+        add = Add()
+
+        edge = to_edge(export(add, (torch.ones(1),))).transform([ScalarToTensorPass()])
+        exported_program = lift_constant_tensor_pass(edge.exported_program())
+        exported_program.graph_module.print_readable()
+
+        def count_add_nodes(gm: torch.fx.GraphModule) -> int:
+            return sum(
+                node.target == exir_ops.edge.aten.add.Tensor for node in gm.graph.nodes
+            )
+
+        # Check there are two add nodes - one for c_lifted_tensor_0 + parameter, and another for x.
+        self.assertEqual(count_add_nodes(exported_program.graph_module), 2)
+
+        # Check (c_lifted_tensor_0 + parameter) node is replaced by prop tensor.
+        new_ep = constant_prop_pass(exported_program)
+        new_ep.graph_module.print_readable()
+        self.assertEqual(count_add_nodes(new_ep.graph_module), 1)
+
+    def test_constant_prop_pass_for_constant_attr(self) -> None:
+        class Add(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.p = torch.nn.Parameter(torch.ones(2, 3))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                p_plus_one = self.p + 1
+                return x * p_plus_one
+
+        add = Add()
+
+        # Replaces add(x, y) with add(x, y.item()).
+        class ReplaceScalarWithAttrPass(ExportPass):
+            def call_operator(self, op, args, kwargs, meta):
+                if op != exir_ops.edge.aten.add.Tensor:
+                    return super().call_operator(op, args, kwargs, meta)
+                arg1_tensor = cast(ProxyValue, args[1]).to_tensor()
+                if arg1_tensor.numel() != 1:
+                    return super().call_operator(op, args, kwargs, meta)
+                return super().call_operator(
+                    exir_ops.edge.aten.add.Tensor,
+                    (args[0], arg1_tensor.item()),
+                    kwargs,
+                    meta,
+                )
+
+        edge = to_edge(export(add, (torch.ones(1),)))
+        edge = edge.transform(
+            [
+                # Replace add(x, y) with add(x, 1).
+                ReplaceScalarWithAttrPass(),
+                # This will introduce a self._tensor_constant0 (with value 1).
+                ScalarToTensorPass(),
+            ]
+        )
+        exported_program = edge.exported_program()
+        dead_code_elimination_pass(exported_program.graph_module)
+
+        def count_add_nodes(gm: torch.fx.GraphModule, target: EdgeOpOverload) -> int:
+            return sum(node.target == target for node in gm.graph.nodes)
+
+        def count_get_attr_nodes(gm: torch.fx.GraphModule) -> int:
+            return sum(node.op == "get_attr" for node in gm.graph.nodes)
+
+        # Check that there is exactly one get_attr node after ReplaceScalarWithAttrPass.
+        self.assertEqual(count_get_attr_nodes(exported_program.graph_module), 1)
+
+        # Check there are two nodes - one for p_plus_one=self.p + 1, and another for p_plus_one + x.
+        self.assertEqual(
+            count_add_nodes(
+                exported_program.graph_module, exir_ops.edge.aten.add.Tensor
+            ),
+            1,
+        )
+        self.assertEqual(
+            count_add_nodes(
+                exported_program.graph_module, exir_ops.edge.aten.mul.Tensor
+            ),
+            1,
+        )
+
+        # Check (self.p + 1) node is replaced by prop tensor.
+        new_ep = constant_prop_pass(exported_program)
+        self.assertEqual(
+            count_add_nodes(new_ep.graph_module, exir_ops.edge.aten.add.Tensor),
+            0,
+        )
+        self.assertEqual(
+            count_add_nodes(new_ep.graph_module, exir_ops.edge.aten.mul.Tensor),
+            1,
+        )
 
     def test_constant_prop_pass_for_add(self) -> None:
         class Add(torch.nn.Module):
