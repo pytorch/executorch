@@ -15,7 +15,7 @@ from executorch.exir.passes.replace_aten_with_edge_pass import (
 )
 from torch import fx
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib
-from torch.library import impl, impl_abstract
+from torch.library import impl, register_fake
 
 
 __all__ = [
@@ -103,7 +103,7 @@ def embedding_byte(
     return torch.ops.aten.embedding.default(weight, indices)
 
 
-@impl_abstract("quantized_decomposed::embedding_byte.out")
+@register_fake("quantized_decomposed::embedding_byte.out")
 def embedding_byte_out_meta(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
@@ -150,7 +150,7 @@ def embedding_byte_dtype(
     return torch.ops.aten.embedding.default(weight, indices)
 
 
-@impl_abstract("quantized_decomposed::embedding_byte.dtype_out")
+@register_fake("quantized_decomposed::embedding_byte.dtype_out")
 def embedding_byte_dtype_out_meta(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
@@ -225,7 +225,7 @@ def embedding_4bit(
     return torch.ops.aten.embedding.default(weight, indices)
 
 
-@impl_abstract("quantized_decomposed::embedding_4bit.out")
+@register_fake("quantized_decomposed::embedding_4bit.out")
 def embedding_4bit_out_meta(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
@@ -278,7 +278,7 @@ def embedding_4bit_dtype(
     return torch.ops.aten.embedding.default(weight, indices)
 
 
-@impl_abstract("quantized_decomposed::embedding_4bit.dtype_out")
+@register_fake("quantized_decomposed::embedding_4bit.dtype_out")
 def embedding_4bit_dtype_out_meta(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
