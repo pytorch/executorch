@@ -137,7 +137,7 @@ class Buffer:
 
 @dataclass
 class BackendDelegateInlineData:
-    data: bytes
+    data: str
 
 
 @dataclass

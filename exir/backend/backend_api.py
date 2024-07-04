@@ -115,10 +115,13 @@ def _(
                 copied_edge_program,
                 compile_specs,
             )
+            processed = preprocess_result.processed_bytes + bytes(
+                "delegate_program", "ascii"
+            )
             lowered_module = LoweredBackendModule(
                 edge_program=edge_program,
                 backend_id=backend_id,
-                processed_bytes=preprocess_result.processed_bytes,
+                processed_bytes=processed,
                 compile_specs=compile_specs,
             )
             lowered_module.meta = {

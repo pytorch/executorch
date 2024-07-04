@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import base64 as b64
 import enum
 import json
 from dataclasses import fields, is_dataclass
@@ -25,6 +26,9 @@ class _DataclassEncoder(json.JSONEncoder):
             return props
 
         if isinstance(o, bytes):
+            magic = bytes("delegate_program", "ascii")
+            if o[-len(magic) :] == magic:
+                return b64.b64encode(o[: -len(magic)]).decode("ascii")
             return list(o)
 
         return super().default(o)

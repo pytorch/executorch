@@ -1533,6 +1533,22 @@ class TestQNNQuantizedUtils(TestQNN):
                 lowered_module,
             )
 
+    def test_export_large_pte(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            is_from_context_binary=True,
+        )
+        from executorch.backends.qualcomm.utils.utils import from_context_binary
+
+        fname = "PATH_TO_MY_LARGE_PTE"
+        prog = from_context_binary(fname, "ctx_loader")
+        lm = to_backend("QnnBackend", prog["edge_program"], compiler_specs)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with open(f"{tmp_dir}/large_ctx_bin.pte", "wb") as file:
+                file.write(lm.buffer())
+
 
 class TestExampleOssScript(TestQNN):
     def required_envs(self, conditions=None) -> bool:

@@ -26,6 +26,8 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
 
+#include "base64.hpp"
+
 namespace torch {
 namespace executor {
 
@@ -165,6 +167,7 @@ class BackendDelegate final {
   static Result<FreeableBuffer> GetProcessedData(
       const executorch_flatbuffer::BackendDelegate& delegate,
       const Program* program) {
+    static std::vector<std::string> delegate_data_holder;
     const executorch_flatbuffer::BackendDelegateDataReference* processed =
         delegate.processed();
     switch (processed->location()) {
@@ -176,9 +179,11 @@ class BackendDelegate final {
         if (err != Error::Ok) {
           return err;
         }
+        delegate_data_holder.emplace_back(
+            base64::from_base64(static_cast<const char*>(data)));
         return FreeableBuffer(
-            data,
-            size,
+            delegate_data_holder.back().c_str(),
+            delegate_data_holder.back().size(),
             /*free_fn=*/nullptr);
       }
       case executorch_flatbuffer::DataLocation::SEGMENT: {
@@ -196,7 +201,6 @@ class BackendDelegate final {
         return Error::Internal;
     }
   }
-
   FreeableBuffer segment_;
   const PyTorchBackendInterface* backend_;
   DelegateHandle* handle_;

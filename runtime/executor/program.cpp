@@ -363,7 +363,7 @@ Error Program::get_backend_delegate_data(
       index,
       data_list->size());
   auto data = data_list->Get(index)->data();
-  *out_data = data->data();
+  *out_data = data->c_str();
   *out_size = data->size();
   return Error::Ok;
 }

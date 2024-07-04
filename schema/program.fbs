@@ -348,7 +348,7 @@ table BackendDelegateInlineData {
   // During serialization, this alignment may be rewritten to a larger value.
   // The magic "@executorch-delegate-alignment" comment tells EXIR which lines
   // to patch.
-  data: [ubyte] (force_align: 16);  // @executorch-delegate-alignment
+  data: string;
 }
 
 // Describes a contiguous piece of data that lives outside of the flatbuffer data,
