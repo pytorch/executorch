@@ -86,8 +86,11 @@ class MmapDataLoader : public DataLoader {
 
   ~MmapDataLoader() override;
 
-  __ET_NODISCARD Result<FreeableBuffer> Load(size_t offset, size_t size)
-      override;
+  __ET_NODISCARD Result<FreeableBuffer> Load(
+      size_t offset,
+      size_t size,
+      const torch::executor::SegmentInfo& segment_info =
+          torch::executor::SegmentInfo{}) override;
 
   __ET_NODISCARD Result<size_t> size() const override;
 

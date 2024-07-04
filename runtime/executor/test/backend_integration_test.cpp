@@ -176,7 +176,10 @@ class DataLoaderSpy : public DataLoader {
 
   explicit DataLoaderSpy(DataLoader* delegate) : delegate_(delegate) {}
 
-  Result<FreeableBuffer> Load(size_t offset, size_t size) override {
+  Result<FreeableBuffer> Load(
+      size_t offset,
+      size_t size,
+      const torch::executor::SegmentInfo& segment_info) override {
     Result<FreeableBuffer> buf = delegate_->Load(offset, size);
     if (!buf.ok()) {
       return buf.error();

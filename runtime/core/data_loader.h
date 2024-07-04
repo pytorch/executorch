@@ -17,6 +17,21 @@
 namespace torch {
 namespace executor {
 
+enum class SegmentType { Program, Constant, Backend };
+
+struct SegmentInfo {
+  int segment_index = 0;
+  SegmentType segment_type = SegmentType::Program;
+  char* descriptor = nullptr;
+
+  SegmentInfo() = default;
+
+  SegmentInfo(int segment_index, SegmentType segment_type, char* descriptor)
+      : segment_index(segment_index),
+        segment_type(segment_type),
+        descriptor(descriptor) {}
+};
+
 /**
  * Loads from a data source.
  *
@@ -35,7 +50,8 @@ class DataLoader {
    */
   __ET_NODISCARD virtual Result<FreeableBuffer> Load(
       size_t offset,
-      size_t size) = 0;
+      size_t size,
+      const SegmentInfo& segment_info = SegmentInfo{}) = 0;
 
   /**
    * Returns the length of the underlying data source, typically the file size.

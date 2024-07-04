@@ -29,8 +29,11 @@ class BufferDataLoader : public DataLoader {
   BufferDataLoader(const void* data, size_t size)
       : data_(reinterpret_cast<const uint8_t*>(data)), size_(size) {}
 
-  __ET_NODISCARD Result<FreeableBuffer> Load(size_t offset, size_t size)
-      override {
+  __ET_NODISCARD Result<FreeableBuffer> Load(
+      size_t offset,
+      size_t size,
+      const torch::executor::SegmentInfo& segment_info =
+          torch::executor::SegmentInfo{}) override {
     ET_CHECK_OR_RETURN_ERROR(
         offset + size <= size_,
         InvalidArgument,

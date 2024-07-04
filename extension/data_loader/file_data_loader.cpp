@@ -118,7 +118,10 @@ void FreeSegment(void* context, void* data, __ET_UNUSED size_t size) {
 }
 } // namespace
 
-Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
+Result<FreeableBuffer> FileDataLoader::Load(
+    size_t offset,
+    size_t size,
+    const SegmentInfo& segment_info) {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,

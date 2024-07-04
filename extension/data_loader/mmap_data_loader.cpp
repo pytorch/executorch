@@ -146,7 +146,10 @@ void MunmapSegment(void* context, void* data, size_t size) {
 }
 } // namespace
 
-Result<FreeableBuffer> MmapDataLoader::Load(size_t offset, size_t size) {
+Result<FreeableBuffer> MmapDataLoader::Load(
+    size_t offset,
+    size_t size,
+    const SegmentInfo& segment_info) {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
