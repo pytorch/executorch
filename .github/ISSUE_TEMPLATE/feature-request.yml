@@ -6,14 +6,14 @@ body:
   attributes:
     label: 🚀 The feature, motivation and pitch
     description: >
-      A clear and concise description of the feature proposal. Please outline the motivation for the proposal. Is your feature request related to a specific problem? e.g., *"I'm working on X and would like Y to be possible"*. If this is related to another GitHub issue, please link here too.
+      A clear and concise description of the feature proposal. Please outline the motivation for the proposal. Is your feature request related to a specific problem? e.g., *"I'm working on X and would like Y to be possible"*. If this is related to another GitHub issue, please link to it here too.
   validations:
     required: true
 - type: textarea
   attributes:
     label: Alternatives
     description: >
-      A description of any alternative solutions or features you've considered, if any.
+      A description of alternative solutions or features you've considered, if any.
 - type: textarea
   attributes:
     label: Additional context
@@ -23,7 +23,7 @@ body:
   attributes:
     label: RFC (Optional)
     description: >
-      Explain the design in enough detail.
+      Explain the design in enough detail for others to understand the problem, scope, and proposed solution.
 - type: markdown
   attributes:
     value: >

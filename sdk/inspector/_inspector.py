@@ -892,7 +892,7 @@ class EventBlock:
 
             # For delegated events, handles are found via delegateMetadata
             event.delegate_backend_name = delegate_metadata.get("name", "")
-            delegate_metadata_delegate_map = delegate_metadata.get("delegate_map", {})
+            delegate_metadata_delegate_map = delegate_metadata.get("delegate_map") or {}
 
             # delegate_debug_id can be either int based or string based, therefore we need to check both
             debug_handles = delegate_metadata_delegate_map.get(
