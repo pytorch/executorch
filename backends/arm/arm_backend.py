@@ -95,9 +95,9 @@ class ArmCompileSpecBuilder:
         self.output_format = "tosa"
         return self
 
-    def dump_intermediate_tosa(self, output_path: str):
+    def dump_intermediate_artifacts_to(self, output_path: str):
         """
-        Output intermediate .tosa file
+        Sets a path for dumping intermediate results during such as tosa and pte.
         """
         self.path_for_intermediates = output_path
         return self
@@ -132,7 +132,7 @@ class ArmCompileSpecBuilder:
 
         if self.path_for_intermediates is not None:
             self.compile_spec.append(
-                CompileSpec("debug_tosa_path", self.path_for_intermediates.encode())
+                CompileSpec("debug_artifact_path", self.path_for_intermediates.encode())
             )
 
         if self.permute_nhwc:
@@ -162,7 +162,7 @@ def is_tosa(compile_spec: List[CompileSpec]) -> bool:
 
 def get_intermediate_path(compile_spec: List[CompileSpec]) -> str:
     for spec in compile_spec:
-        if spec.key == "debug_tosa_path":
+        if spec.key == "debug_artifact_path":
             return spec.value.decode()
     return None
 
@@ -199,7 +199,7 @@ def generate_tosa_compile_spec(
         ArmCompileSpecBuilder()
         .tosa_compile_spec()
         .set_permute_memory_format(permute_memory_to_nhwc)
-        .dump_intermediate_tosa(output_path)
+        .dump_intermediate_artifacts_to(output_path)
         .build()
     )
 
@@ -214,15 +214,13 @@ class ArmBackend(BackendDetails):
         logger.info("ArmBackend::preprocess")
 
         # if a debug/test build capture output files from TOSA stage
-        path = None
-        debug_output = False
+        artifact_path = None
         output_format = ""
         compile_flags = []
         permute_memory_to_nhwc = False
         for spec in compile_spec:
-            if spec.key == "debug_tosa_path":
-                path = spec.value.decode()
-                debug_output = True
+            if spec.key == "debug_artifact_path":
+                artifact_path = spec.value.decode()
             if spec.key == "output_format":
                 output_format = spec.value.decode()
             if spec.key == "compile_flags":
@@ -243,7 +241,7 @@ class ArmBackend(BackendDetails):
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
-        tosa_graph = ts.TosaSerializer(path)
+        tosa_graph = ts.TosaSerializer(artifact_path)
         graph_module = ArmPassManager().transform_to_backend_pipeline(
             graph_module=edge_program.graph_module, compile_spec=compile_spec
         )
@@ -321,13 +319,13 @@ class ArmBackend(BackendDetails):
             else:
                 # This will only happen if an unpartitioned graph is passed without
                 # any checking of compatibility.
-                dbg_fail(node, tosa_graph, path)
+                dbg_fail(node, tosa_graph, artifact_path)
 
         # TODO: It would be awesome if this dump could somehow be done on top level and not here.
         # Problem is that the desc.json has to be created on the tosa_graph object, which we can't
         # access from top level.
-        if debug_output is True:
-            dbg_tosa_dump(tosa_graph, path)
+        if artifact_path is not None:
+            dbg_tosa_dump(tosa_graph, artifact_path)
 
         # Serialize and return the program. While we have always produced TOSA
         # output as an intermediate, some flows compile to device binaries in

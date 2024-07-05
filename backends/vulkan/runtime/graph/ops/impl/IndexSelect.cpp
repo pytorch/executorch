@@ -18,12 +18,12 @@
 namespace vkcompute {
 
 void check_index_select_args(
-    const vTensor& in,
-    const vTensor& idx,
-    const vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(idx, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+    const api::vTensor& in,
+    const api::vTensor& idx,
+    const api::vTensor& out) {
+  VK_CHECK_COND(check_memory_layout_is(in, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(idx, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, vkapi::kChannelsPacked));
 }
 
 void add_index_select_channel_node(
@@ -46,8 +46,8 @@ void add_index_select_channel_node(
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
-      {{out, api::MemoryAccessType::WRITE},
-       {{in, idx}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{in, idx}, vkapi::MemoryAccessType::READ}},
       {t_out->sizes_ubo(), t_in->sizes_ubo()}));
 }
 
@@ -58,14 +58,14 @@ struct IndexSelectParams final {
 
 IndexSelectParams create_index_select_params(
     const int64_t dim_idx,
-    const vTensor& in) {
+    const api::vTensor& in) {
   if (dim_idx == kWidth4D) {
     return {0, 1};
   } else if (dim_idx == kHeight4D) {
     return {1, 1};
   } else if (dim_idx == kBatch4D) {
     int64_t n_channels = dim_at(in.sizes(), kChannel4D);
-    int64_t stride = api::utils::div_up_4(n_channels);
+    int64_t stride = utils::div_up_4(n_channels);
     return {2, static_cast<int32_t>(stride)};
   } else {
     VK_THROW("Unexpected dim_idx!");
@@ -95,8 +95,8 @@ void add_index_select_node(
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
-      {{out, api::MemoryAccessType::WRITE},
-       {{in, idx}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{in, idx}, vkapi::MemoryAccessType::READ}},
       {t_out->sizes_ubo(), graph.create_params_buffer(params)}));
 }
 
