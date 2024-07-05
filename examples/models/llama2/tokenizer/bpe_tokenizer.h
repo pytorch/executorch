@@ -14,6 +14,8 @@
 namespace torch {
 namespace executor {
 
+constexpr int32_t kVocabSize = 32000;
+
 struct TokenIndex {
   const char* str;
   int32_t id;
@@ -21,15 +23,16 @@ struct TokenIndex {
 
 class BPETokenizer : public Tokenizer {
  public:
-  explicit BPETokenizer(int32_t vocab_size, uint64_t bos_tok, uint64_t eos_tok);
+  explicit BPETokenizer();
   ~BPETokenizer() override;
 
   Error load(const std::string& tokenizer_path) override;
 
   Result<std::vector<uint64_t>>
-  encode(const std::string& input, int8_t bos, int8_t eos) override;
+  encode(const std::string& input, int8_t bos, int8_t eos) const override;
 
-  Result<std::string> decode(uint64_t prev_token, uint64_t token) override;
+  Result<std::string> decode(uint64_t prev_token, uint64_t token)
+      const override;
 
  private:
   std::unique_ptr<char*[]> vocab_;

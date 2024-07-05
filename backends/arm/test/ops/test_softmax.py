@@ -46,14 +46,14 @@ class TestSoftmax(unittest.TestCase):
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
-            .check(["torch.ops.aten._softmax.default"])
+            .check(["torch.ops.aten.softmax.int"])
             .check_not(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
             .check_not(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_softmax_tosa_BI_pipeline(
@@ -67,14 +67,14 @@ class TestSoftmax(unittest.TestCase):
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten._softmax.default": 1})
+            .check_count({"torch.ops.aten.softmax.int": 1})
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
             .check_not(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
     def _test_softmax_tosa_u55_BI_pipeline(
@@ -88,7 +88,7 @@ class TestSoftmax(unittest.TestCase):
             )
             .quantize()
             .export()
-            .check_count({"torch.ops.aten._softmax.default": 1})
+            .check_count({"torch.ops.aten.softmax.int": 1})
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()

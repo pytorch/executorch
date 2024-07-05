@@ -42,7 +42,7 @@ void add_unary_op_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
-  api::ParamsBindList ubos({});
+  vkapi::ParamsBindList ubos({});
   if (graph.is_buffer_storage(out)) {
     ubos.append({graph.ntexels_ubo(out)});
   } else {
@@ -57,7 +57,8 @@ void add_unary_op_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       ubos,
       // Specialization Constants
@@ -113,6 +114,12 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         "hardshrink");                                                   \
   }
 
+#define DEFINE_HARDSWISH_FN(op_name)                                     \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_unary_op_node(                                            \
+        graph, args[0], kDummyFloat, kDummyFloat, args[1], #op_name);    \
+  }
+
 void gelu(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   // args[1] is the `approximate` string
   // https://fburl.com/code/9omngmyo
@@ -133,6 +140,7 @@ DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
 DEFINE_RELU_FN(relu);
 DEFINE_HARDSHRINK_FN(hardshrink);
+DEFINE_HARDSWISH_FN(hardswish);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.abs.default, abs);
@@ -148,6 +156,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sqrt.default, sqrt);
   VK_REGISTER_OP(aten.tanh.default, tanh);
   VK_REGISTER_OP(aten.hardshrink.default, hardshrink);
+  VK_REGISTER_OP(aten.hardswish.default, hardswish);
 }
 
 } // namespace vkcompute

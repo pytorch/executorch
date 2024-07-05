@@ -14,6 +14,7 @@
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 
@@ -197,6 +198,7 @@ class MemoryAllocator {
   int32_t prof_id_ = -1;
 };
 
+#if __ET_HAVE_GNU_STATEMENT_EXPRESSIONS
 /**
  * Tries allocating from the specified MemoryAllocator*.
  *
@@ -215,29 +217,12 @@ class MemoryAllocator {
 #define ET_TRY_ALLOCATE_OR(memory_allocator__, nbytes__, ...)              \
   ({                                                                       \
     void* et_try_allocate_result = memory_allocator__->allocate(nbytes__); \
-    if (et_try_allocate_result == nullptr) {                               \
+    if (et_try_allocate_result == nullptr && nbytes__ > 0) {               \
       __VA_ARGS__                                                          \
       /* The args must return. */                                          \
-      __builtin_unreachable();                                             \
+      __ET_UNREACHABLE();                                                  \
     }                                                                      \
     et_try_allocate_result;                                                \
-  })
-
-/**
- * Tries allocating from the specified MemoryAllocator*.
- *
- * - On success, returns a pointer to the allocated buffer.
- * - On failure, returns `Error::MemoryAllocationFailed` from the calling
- *   function, which must be declared to return `torch::executor::Error`.
- *
- * Example:
- * @code
- *   char* buf = ET_ALLOCATE_OR_RETURN_ERROR(memory_allocator, bufsize);
- * @endcode
- */
-#define ET_ALLOCATE_OR_RETURN_ERROR(memory_allocator__, nbytes__) \
-  ET_TRY_ALLOCATE_OR(memory_allocator__, nbytes__, {              \
-    return torch::executor::Error::MemoryAllocationFailed;        \
   })
 
 /**
@@ -262,27 +247,9 @@ class MemoryAllocator {
     if (et_try_allocate_result == nullptr) {                         \
       __VA_ARGS__                                                    \
       /* The args must return. */                                    \
-      __builtin_unreachable();                                       \
+      __ET_UNREACHABLE();                                            \
     }                                                                \
     et_try_allocate_result;                                          \
-  })
-
-/**
- * Tries allocating an instance of type__ from the specified MemoryAllocator*.
- *
- * - On success, returns a pointer to the allocated buffer. Note that the memory
- *   will not be initialized.
- * - On failure, returns `Error::MemoryAllocationFailed` from the calling
- *   function, which must be declared to return `torch::executor::Error`.
- *
- * Example:
- * @code
- *   char* buf = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(memory_allocator, MyType);
- * @endcode
- */
-#define ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(memory_allocator__, type__) \
-  ET_TRY_ALLOCATE_INSTANCE_OR(memory_allocator__, type__, {              \
-    return torch::executor::Error::MemoryAllocationFailed;               \
   })
 
 /**
@@ -305,12 +272,81 @@ class MemoryAllocator {
   ({                                                                      \
     type__* et_try_allocate_result =                                      \
         memory_allocator__->allocateList<type__>(nelem__);                \
-    if (et_try_allocate_result == nullptr) {                              \
+    if (et_try_allocate_result == nullptr && nelem__ > 0) {               \
       __VA_ARGS__                                                         \
       /* The args must return. */                                         \
-      __builtin_unreachable();                                            \
+      __ET_UNREACHABLE();                                                 \
     }                                                                     \
     et_try_allocate_result;                                               \
+  })
+#else // !__ET_HAVE_GNU_STATEMENT_EXPRESSIONS
+/**
+ * The recommended alternative for statement expression-incompatible compilers
+ * is to directly allocate the memory.
+ * e.g. memory_allocator__->allocate(nbytes__);
+ */
+#define ET_TRY_ALLOCATE_OR(memory_allocator__, nbytes__, ...) \
+  static_assert(                                              \
+      false,                                                  \
+      "ET_TRY_ALLOCATE_OR uses statement expressions and \
+      thus is not available for use with this compiler.");
+
+/**
+ * The recommended alternative for statement expression-incompatible compilers
+ * is to directly allocate the memory.
+ * e.g. memory_allocator__->allocateInstance<type__>();
+ */
+#define ET_TRY_ALLOCATE_INSTANCE_OR(memory_allocator__, type__, ...) \
+  static_assert(                                                     \
+      false,                                                         \
+      "ET_TRY_ALLOCATE_INSTANCE_OR uses statement \
+    expressions and thus is not available for use with this compiler.");
+
+/**
+ * The recommended alternative for statement expression-incompatible compilers
+ * is to directly use allocate the memory.
+ * e.g. memory_allocator__->allocateList<type__>(nelem__);
+ */
+#define ET_TRY_ALLOCATE_LIST_OR(memory_allocator__, type__, nelem__, ...) \
+  static_assert(                                                          \
+      false,                                                              \
+      "ET_TRY_ALLOCATE_LIST_OR uses statement \
+    expressions and thus is not available for use with this compiler.");
+#endif // !__ET_HAVE_GNU_STATEMENT_EXPRESSIONS
+
+/**
+ * Tries allocating from the specified MemoryAllocator*.
+ *
+ * - On success, returns a pointer to the allocated buffer.
+ * - On failure, returns `Error::MemoryAllocationFailed` from the calling
+ *   function, which must be declared to return `torch::executor::Error`.
+ *
+ * Example:
+ * @code
+ *   char* buf = ET_ALLOCATE_OR_RETURN_ERROR(memory_allocator, bufsize);
+ * @endcode
+ */
+#define ET_ALLOCATE_OR_RETURN_ERROR(memory_allocator__, nbytes__) \
+  ET_TRY_ALLOCATE_OR(memory_allocator__, nbytes__, {              \
+    return torch::executor::Error::MemoryAllocationFailed;        \
+  })
+
+/**
+ * Tries allocating an instance of type__ from the specified MemoryAllocator*.
+ *
+ * - On success, returns a pointer to the allocated buffer. Note that the memory
+ *   will not be initialized.
+ * - On failure, returns `Error::MemoryAllocationFailed` from the calling
+ *   function, which must be declared to return `torch::executor::Error`.
+ *
+ * Example:
+ * @code
+ *   char* buf = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(memory_allocator, MyType);
+ * @endcode
+ */
+#define ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(memory_allocator__, type__) \
+  ET_TRY_ALLOCATE_INSTANCE_OR(memory_allocator__, type__, {              \
+    return torch::executor::Error::MemoryAllocationFailed;               \
   })
 
 /**

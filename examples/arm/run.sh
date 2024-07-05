@@ -10,7 +10,7 @@
 set -eu
 
 if [[ "${1:-'.'}" == "-h" || "${#}" -gt 2 ]]; then
-    echo "Usage: $(basename $0) [path-to-a-scratch-dir] [buck2 binary]"
+    echo "Usage: $(basename $0) [path-to-a-scratch-dir]"
     echo "Supplied args: $*"
     exit 1
 fi
@@ -23,8 +23,6 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 # Ethos-u
 root_dir=${1:-"${script_dir}/ethos-u-scratch"}
 root_dir=$(realpath ${root_dir})
-buck2=${2:-"/tmp/buck2"}
-[[ -x ${buck2} ]] || buck2=`which buck2`
 
 ethos_u_root_dir="$(cd ${root_dir}/ethos-u && pwd)"
 ethos_u_build_dir=${ethos_u_root_dir}/core_platform/build
@@ -70,14 +68,14 @@ function build_quantization_aot_lib()
 
     cd $et_root_dir
     mkdir -p cmake-out-aot-lib
-    cmake -DBUCK2=${buck2} \
+    cmake \
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_XNNPACK=OFF \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
         -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
         -DPYTHON_EXECUTABLE=python3 \
-	-Bcmake-out-aot-lib \
+        -Bcmake-out-aot-lib \
         "${et_root_dir}"
 
     n=$(nproc)
@@ -95,7 +93,6 @@ function build_executorch() {
 
     cd "${et_root_dir}"
     cmake                                                 \
-        -DBUCK2=${buck2}                                  \
         -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
         -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
         -DCMAKE_BUILD_TYPE=Release                        \
@@ -159,7 +156,7 @@ function run_fvp() {
     elf=$(find ${script_dir}/executor_runner -name "${elf_name}")
     [[ ! -f $elf ]] && { echo "[${FUNCNAME[0]}]: Unable to find executor_runner elf: ${elf}"; exit 1; }
     FVP_Corstone_SSE-300_Ethos-U55                          \
-        -C cpu0.CFGITCMSZ=11 \
+        -C cpu0.CFGITCMSZ=11                                \
         -C ethosu.num_macs=128                              \
         -C mps3_board.visualisation.disable-visualisation=1 \
         -C mps3_board.telnetterminal0.start_telnet=0        \
@@ -191,9 +188,6 @@ hash arm-none-eabi-gcc \
 
 [[ -f ${et_root_dir}/CMakeLists.txt ]] \
     || { echo "Executorch repo doesn't contain CMakeLists.txt file at root level"; exit 1; }
-
-type ${buck2} 2>&1 > /dev/null \
-    || { echo "Need a functioning buck2. Got ${buck2}."; exit 1; }
 
 # build executorch libraries
 build_executorch

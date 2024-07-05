@@ -8,7 +8,6 @@ import logging
 
 import torch
 
-# pyre-ignore
 from torchvision.models import (  # @manual
     resnet18,
     ResNet18_Weights,
@@ -25,7 +24,6 @@ class ResNet18Model(EagerModelBase):
 
     def get_eager_model(self) -> torch.nn.Module:
         logging.info("Loading torchvision resnet18 model")
-        # pyre-ignore
         resnet18_model = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
         logging.info("Loaded torchvision resnet18 model")
         return resnet18_model
@@ -41,7 +39,6 @@ class ResNet50Model(EagerModelBase):
 
     def get_eager_model(self) -> torch.nn.Module:
         logging.info("Loading torchvision resnet50 model")
-        # pyre-ignore
         resnet50_model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
         logging.info("Loaded torchvision resnet50 model")
         return resnet50_model

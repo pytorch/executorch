@@ -72,7 +72,11 @@ class PyTorchBackendInterface {
    *     implemented by the delegate. This handle is passed to `execute()` and
    *     `destroy()`, and the memory it points to is owned by the backend.
    *     Typically points to a backend-private class/struct.
-   * @returns On error, a value other than Error:Ok.
+   * @returns On error, returns an error code other than Error::Ok. If the
+   *     compiled unit (the preprocessed result from ahead of time) is not
+   *     compatible with the current backend runtime, return the error code
+   *     Error::DelegateInvalidCompatibility. Other backend delegate
+   *     specific error codes can be found in error.h.
    */
   __ET_NODISCARD virtual Result<DelegateHandle*> init(
       BackendInitContext& context,

@@ -4,14 +4,19 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 import logging
-from typing import Any, Dict, final, List, Optional
+from typing import Any, Callable, Dict, final, List, Mapping, Optional, Tuple
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
 import torch
 
-from executorch.backends.vulkan.partitioner.supported_ops import enumerate_supported_ops
+from executorch.backends.vulkan.partitioner.supported_ops import (
+    enumerate_supported_ops,
+    OpList,
+)
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -28,14 +33,20 @@ from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
 from torch.fx.passes.operator_support import OperatorSupportBase
 
+# pyre-ignore
+ops_not_to_decompose = [
+    torch.ops.aten.upsample_nearest2d.vec,
+]
+
 
 class VulkanSupportedOperators(OperatorSupportBase):
-    _ops = enumerate_supported_ops()
+    _ops: OpList = enumerate_supported_ops()
 
-    def __init__(self, require_dynamic_shape: bool = False):
+    def __init__(self, require_dynamic_shape: bool = False) -> None:
         super().__init__()
         self.require_dynamic_shapes = require_dynamic_shape
 
+    # pyre-ignore
     def node_val_is_compatible(self, node_val: Any) -> bool:
         # Skip nodes that don't have a value
         if node_val is None:
@@ -94,7 +105,17 @@ class VulkanSupportedOperators(OperatorSupportBase):
 
         return False
 
-    def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+    def is_node_supported(
+        self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
+    ) -> bool:
+        r = self._is_node_supported(submodules, node)
+        if not r and node.op == "call_function":
+            logging.info(f"Skipping node in Vulkan partitioning: {node.format_node()}")
+        return r
+
+    def _is_node_supported(
+        self, submodules: Mapping[str, torch.nn.Module], node: torch.fx.Node
+    ) -> bool:
         if self.is_linear_permute(node):
             return True
 
@@ -133,6 +154,11 @@ class VulkanPartitioner(Partitioner):
 
         compile_spec = parse_compile_options(self.options)
         self.delegation_spec = DelegationSpec(VulkanBackend.__name__, compile_spec)
+
+    def ops_to_not_decompose(
+        self, ep: ExportedProgram
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        return (ops_not_to_decompose, None)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible

@@ -133,9 +133,11 @@ def get_propagated_const_tensor_dict(
             lambda x: get_data(x, exported_program, const_node_to_tensor),
             (node.args, node.kwargs),
         )
-
-        # Execute the `node.target` and create a new propagated constant tensor.
-        prop_constant_tensor = node.target(*args_data, **kwargs_data)
+        # Disable grad for constant propagation, otherwise the generated tensor can't be copied
+        # because of the grad_fn.
+        with torch.no_grad():
+            # Execute the `node.target` and create a new propagated constant tensor.
+            prop_constant_tensor = node.target(*args_data, **kwargs_data)
         const_node_to_tensor[node] = prop_constant_tensor
 
     return const_node_to_tensor

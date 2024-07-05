@@ -47,7 +47,7 @@ class TestSimpleClone(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_clone_tosa_BI_pipeline(
@@ -66,7 +66,7 @@ class TestSimpleClone(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
     def _test_clone_tosa_u55_pipeline(

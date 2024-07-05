@@ -29,7 +29,7 @@ def define_common_targets():
             "//executorch/examples/models/llama2/tokenizer:tiktoken",
         ],
         env = {
-            "RESOURCES_PATH": "$(location :resources_fb_only)/resources",
+            "RESOURCES_PATH": "$(location :resources)/resources",
         },
         external_deps = [
             "re2",
@@ -40,13 +40,6 @@ def define_common_targets():
         name = "resources",
         srcs = native.glob([
             "resources/**",
-        ]),
-    )
-
-    runtime.filegroup(
-        name = "resources_fb_only",
-        srcs = native.glob([
-            "resources/fb/**",
         ]),
     )
 

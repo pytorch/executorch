@@ -40,8 +40,7 @@ include(${EXECUTORCH_SRCS_FILE})
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 # Custom op libraries
-set(custom_ops_libs executorch_no_prim_ops)
-list(APPEND custom_ops_libs pthreadpool)
+set(custom_ops_libs pthreadpool)
 list(APPEND custom_ops_libs cpuinfo)
 list(APPEND custom_ops_libs cpublas)
 list(APPEND custom_ops_libs eigen_blas)
@@ -67,7 +66,9 @@ target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(
   custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include"
 )
-target_link_libraries(custom_ops PUBLIC ${custom_ops_libs})
+target_link_libraries(
+  custom_ops PUBLIC ${custom_ops_libs} executorch_no_prim_ops
+)
 
 target_compile_options(
   custom_ops PUBLIC ${_common_compile_options} -DET_USE_THREADPOOL
@@ -79,7 +80,8 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   # Add a AOT library
   find_package(Torch CONFIG REQUIRED)
   add_library(
-    custom_ops_aot_lib SHARED ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
+    custom_ops_aot_lib SHARED ${_custom_ops__srcs}
+                              ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
   )
   target_include_directories(
     custom_ops_aot_lib PUBLIC "${_common_include_directories}"
@@ -88,10 +90,21 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
     custom_ops_aot_lib
     PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include"
   )
-  target_link_libraries(custom_ops_aot_lib PUBLIC custom_ops torch)
+  if(TARGET portable_lib)
+    # If we have portable_lib built, custom_ops_aot_lib gives the ability to use
+    # the ops in PyTorch and ExecuTorch through pybind
+    target_link_libraries(custom_ops_aot_lib PUBLIC portable_lib)
+  else()
+    # If no portable_lib, custom_ops_aot_lib still gives the ability to use the
+    # ops in PyTorch
+    target_link_libraries(custom_ops_aot_lib PUBLIC executorch_no_prim_ops)
+  endif()
+
+  target_link_libraries(custom_ops_aot_lib PUBLIC cpublas torch)
   target_compile_options(
-    custom_ops_aot_lib PUBLIC -Wno-deprecated-declarations -fPIC -frtti
-                              -fexceptions
+    custom_ops_aot_lib
+    PUBLIC -Wno-deprecated-declarations -fPIC -frtti -fexceptions
+           ${_common_compile_options} -DET_USE_THREADPOOL
   )
 
   install(TARGETS custom_ops_aot_lib DESTINATION lib)

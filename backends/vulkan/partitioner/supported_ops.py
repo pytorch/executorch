@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import operator
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -116,10 +118,12 @@ ORCHESTRATION_OPS = [
 CREATION_OPS = [
     exir_ops.edge.aten.arange.start_step,
     exir_ops.edge.aten.clone.default,
+    exir_ops.edge.aten.constant_pad_nd.default,
     exir_ops.edge.aten.full.default,
     exir_ops.edge.aten.full_like.default,
     exir_ops.edge.aten.ones.default,
     exir_ops.edge.aten.ones_like.default,
+    exir_ops.edge.aten.upsample_nearest2d.vec,
     exir_ops.edge.aten.zeros.default,
     exir_ops.edge.aten.zeros_like.default,
 ]

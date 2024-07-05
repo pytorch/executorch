@@ -28,7 +28,7 @@ def make_example_generated_op_test_target():
             "//executorch/kernels/test:function_header_wrapper_portable",
         )
 
-def define_common_targets(is_fbcode = False):
+def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
 
     The directory containing this targets.bzl file should also contain both
@@ -303,15 +303,3 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_zeros_test", ["aten", "portable"])
 
     make_example_generated_op_test_target()
-
-    # dtype selective build test
-    if is_fbcode:
-        runtime.cxx_test(
-            name = "dtype_selective_build_test",
-            srcs = ["dtype_selective_build_test.cpp"],
-            deps = [
-                "//executorch/kernels/portable/cpu:scalar_utils_TEST_ONLY",
-                "//executorch/runtime/core/exec_aten:lib",
-            ],
-            preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
-        )

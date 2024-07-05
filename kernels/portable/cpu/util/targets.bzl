@@ -7,6 +7,32 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    # Note: add all portable_op dependencies to all_deps. This is used for dtype selective
+    # build, where the portable ops are built from source and linked with :all_deps
+    runtime.cxx_library(
+        name = "all_deps",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/kernels/portable/cpu:vec_ops",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+            "//executorch/kernels/portable/cpu/util:transpose_util",
+            "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
+            "//executorch/kernels/portable/cpu/util:padding_util",
+            "//executorch/kernels/portable/cpu/util:repeat_util",
+            "//executorch/kernels/portable/cpu/util:activation_ops_util",
+            "//executorch/kernels/portable/cpu/util:reduce_util",
+            "//executorch/kernels/portable/cpu/util:normalization_ops_util",
+            "//executorch/kernels/portable/cpu/util:distance_util",
+            "//executorch/kernels/portable/cpu/util:select_copy_util",
+            "//executorch/kernels/portable/cpu/util:advanced_index_util",
+        ],
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+    )
+
     runtime.cxx_library(
         name = "activation_ops_util",
         srcs = ["activation_ops_util.cpp"],
@@ -47,7 +73,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "@EXECUTORCH_CLIENTS"],
     )
 
     runtime.cxx_library(

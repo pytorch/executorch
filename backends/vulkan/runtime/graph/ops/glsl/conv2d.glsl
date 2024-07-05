@@ -18,36 +18,15 @@
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
-layout(set = 0, binding = 2) uniform PRECISION sampler2D kernel_in;
-layout(set = 0, binding = 3) uniform PRECISION sampler2D bias_in;
-
-layout(set = 0, binding = 4) uniform PRECISION restrict OutLimits {
-  ivec3 out_limits;
-};
-
-layout(set = 0, binding = 5) uniform PRECISION restrict InSizes {
-  ivec4 in_sizes;
-};
-
-layout(set = 0, binding = 6) uniform PRECISION restrict Params {
-  ivec2 kernel_size;
-  ivec2 stride;
-  ivec2 padding;
-  ivec2 dilation;
-};
-
-// If fields are separated, SwiftShader cannot identify in_group_size.
-layout(set = 0, binding = 7) uniform PRECISION restrict ExtraParams {
-  ivec2 overlay_region;
-  int in_group_size;
-};
-
-layout(set = 0, binding = 8) uniform PRECISION restrict OutputParams {
-  float out_min;
-  float out_max;
-};
+${layout_declare_tensor(0, "w", "t_out", DTYPE, "texture3d")}
+${layout_declare_tensor(1, "r", "t_in", DTYPE, "texture3d")}
+${layout_declare_tensor(2, "r", "t_kernel", DTYPE, "texture2d")}
+${layout_declare_tensor(3, "r", "t_bias", DTYPE, "texture2d")}
+${layout_declare_ubo(4, "ivec3", "out_limits")}
+${layout_declare_ubo(5, "ivec4", "in_sizes")}
+${layout_declare_ubo(6, "ivec2", "kernel_size", "ivec2", "stride", "ivec2", "padding", "ivec2", "dilation")}
+${layout_declare_ubo(7, "ivec2", "overlay_region", "int", "in_group_size")}
+${layout_declare_ubo(8, "float", "out_min", "float", "out_max")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -83,18 +62,18 @@ void main() {
   kstart.y += pos.z * kernel_size.y;
 
   // Perform the convolution by iterating over the overlay region.
-  VEC4_T sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
+  VEC4_T sum = texelFetch(t_bias, ivec2(pos.z, 0), 0);
   const int ic4 = in_group_size / 4;
   for (int z4 = 0; z4 < ic4; ++z4, kstart.x += kernel_size.x * 4) {
     for (int y = start.y, ky = kstart.y; y < end.y; y += dilation.y, ++ky) {
       for (int x = start.x, kx = kstart.x; x < end.x; x += dilation.x, kx += 4) {
-        const VEC4_T in_texel = texelFetch(image_in, ivec3(x, y, z4), 0);
+        const VEC4_T in_texel = texelFetch(t_in, ivec3(x, y, z4), 0);
         const ivec4 kxs = kx + ivec4(0, 1, 2, 3);
 
         // To explain the calculation below, the contents of in_texel and the
-        // group of 4 texels loaded from kernel_in are shown:
+        // group of 4 texels loaded from t_kernel are shown:
         //
-        //   in_texel               kernel_in
+        //   in_texel               t_kernel
         //    -x->                   ---x--->
         //   +---+              +----+----+----+----+
         // ^ | w |           ^  | D0 | D1 | D2 | D3 |
@@ -106,7 +85,7 @@ void main() {
         //   | x |              | A0 | A1 | A2 | A3 |
         //   +---+              +----+----+----+----+
         //
-        // In the kernel_in graphic, cells sharing the same letter are from
+        // In the t_kernel graphic, cells sharing the same letter are from
         // the same batch/output channel index, and the number denotes a unique
         // channel index. To calculate the output texel, the following
         // calculation is performed:
@@ -123,13 +102,13 @@ void main() {
         //
         // which is expressed in the following statements.
 
-        sum = fma(in_texel.xxxx, texelFetch(kernel_in, ivec2(kxs.x, ky), 0), sum);
-        sum = fma(in_texel.yyyy, texelFetch(kernel_in, ivec2(kxs.y, ky), 0), sum);
-        sum = fma(in_texel.zzzz, texelFetch(kernel_in, ivec2(kxs.z, ky), 0), sum);
-        sum = fma(in_texel.wwww, texelFetch(kernel_in, ivec2(kxs.w, ky), 0), sum);
+        sum = fma(in_texel.xxxx, texelFetch(t_kernel, ivec2(kxs.x, ky), 0), sum);
+        sum = fma(in_texel.yyyy, texelFetch(t_kernel, ivec2(kxs.y, ky), 0), sum);
+        sum = fma(in_texel.zzzz, texelFetch(t_kernel, ivec2(kxs.z, ky), 0), sum);
+        sum = fma(in_texel.wwww, texelFetch(t_kernel, ivec2(kxs.w, ky), 0), sum);
       }
     }
   }
 
-  imageStore(image_out, pos, op(sum, out_min, out_max));
+  imageStore(t_out, pos, op(sum, out_min, out_max));
 }
