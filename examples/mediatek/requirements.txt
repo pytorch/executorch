@@ -1,0 +1,8 @@
+datasets
+huggingface-hub
+mtk_converter>=8.x.x
+mtk-neuron==8.2.0
+safetensors
+sentencepiece
+tokenizers
+transformers
