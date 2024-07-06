@@ -148,7 +148,7 @@ class TestQNN(unittest.TestCase):
 
             adb = SimpleADB(
                 qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-                artifact_path=self.build_folder,
+                build_path=self.build_folder,
                 pte_path=pte_fname,
                 workspace="/data/local/tmp/qnn_executorch_test",
                 device_id=self.device,

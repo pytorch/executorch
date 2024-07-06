@@ -9,23 +9,25 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 
 
-class RemoveClone(ExportPass):
+class RemoveRedundancy(ExportPass):
     """
     Trim the 'identity' operators to reduce the unnecessary copy overhead.
     """
 
-    clone_ops = {
+    redundant_ops = {
         torch.clone,
         torch.ops.aten.clone.default,
         exir_ops.edge.aten.clone.default,
+        torch.ops.aten.alias.default,
+        exir_ops.edge.aten.alias.default,
     }
 
     def __init__(self):
-        super(RemoveClone, self).__init__()
+        super(RemoveRedundancy, self).__init__()
 
     def _remove(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
-            if n.target not in self.clone_ops:
+            if n.target not in self.redundant_ops:
                 continue
 
             to_be_remove = n
