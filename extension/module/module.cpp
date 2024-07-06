@@ -165,4 +165,11 @@ Result<std::vector<EValue>> Module::execute(
   return outputs;
 }
 
+Error Module::set_output_data_ptr(Tensor& output_tensor, size_t output_index) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method("forward"));
+  auto& method = methods_.at("forward").method;
+  return method->set_output_data_ptr(
+      output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
+}
+
 } // namespace torch::executor

@@ -4,7 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+set(CMAKE_CXX_STANDARD 17)
 # qnn_executor_runner: Like executor_runner but with QNN
+
 if(NOT ${ANDROID})
   message(FATAL_ERROR "Not building Android, quitting...")
 endif()
@@ -51,6 +53,7 @@ get_filename_component(
   EXECUTORCH_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
 )
 set(_qnn_executor_runner__srcs ${_executor_runner__srcs})
+set(_qnn_llama_runner__srcs ${_llama_runner__srcs})
 
 # portable_ops_lib
 gen_selected_ops(LIB_NAME "full_portable_ops_lib" INCLUDE_ALL_OPS "ON")
@@ -68,19 +71,73 @@ target_include_directories(
   full_portable_ops_lib PUBLIC ${_common_include_directories}
 )
 
-list(TRANSFORM _qnn_executor_runner__srcs PREPEND "${EXECUTORCH_SOURCE_DIR}/")
-list(FILTER _qnn_executor_runner__srcs EXCLUDE REGEX ".*executor_runner.cpp$")
-list(PREPEND _qnn_executor_runner__srcs
-     ${CMAKE_CURRENT_LIST_DIR}/executor_runner/qnn_executor_runner.cpp
+# prerpocess executor runner src files
+list(
+    TRANSFORM
+    _qnn_executor_runner__srcs
+    PREPEND
+    "${EXECUTORCH_SOURCE_DIR}/"
+)
+list(
+    FILTER
+    _qnn_executor_runner__srcs
+    EXCLUDE REGEX
+    ".*executor_runner.cpp$"
+)
+list(
+    PREPEND
+    _qnn_executor_runner__srcs
+    ${CMAKE_CURRENT_LIST_DIR}/executor_runner/qnn_executor_runner.cpp
 )
 
-add_executable(qnn_executor_runner ${_qnn_executor_runner__srcs})
+# preprocess llama runner src files
+list(
+    TRANSFORM
+    _qnn_llama_runner__srcs
+    PREPEND
+    "${EXECUTORCH_SOURCE_DIR}/"
+)
+list(
+    FILTER
+    _qnn_llama_runner__srcs
+    EXCLUDE REGEX
+    ".*runner.cpp$"
+)
+list(
+    PREPEND
+    _qnn_llama_runner__srcs
+    ${CMAKE_CURRENT_LIST_DIR}/executor_runner/qnn_llama_runner.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/llama2/runner/runner.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/llama2/runner/runner.h
+)
 
-target_include_directories(
-  qnn_executor_runner PUBLIC ${_common_include_directories}
+# build executor runner
+add_executable(qnn_executor_runner ${_qnn_executor_runner__srcs})
+target_include_directories(qnn_executor_runner
+    PUBLIC
+    ${_common_include_directories}
 )
 target_link_libraries(
   qnn_executor_runner qnn_executorch_backend full_portable_ops_lib etdump
   ${FLATCCRT_LIB} gflags
 )
-target_compile_options(qnn_executor_runner PUBLIC ${_common_compile_options})
+target_link_options(
+  qnn_executor_runner PUBLIC -fsanitize=undefined)
+
+# build llama runner
+add_executable(qnn_llama_runner ${_qnn_llama_runner__srcs})
+target_include_directories(qnn_llama_runner
+    PUBLIC
+    ${_common_include_directories}
+)
+target_link_libraries(qnn_llama_runner
+    qnn_executorch_backend
+    full_portable_ops_lib
+    extension_data_loader
+    extension_module
+    gflags
+)
+target_compile_options(qnn_llama_runner
+    PUBLIC
+    ${_common_compile_options}
+)

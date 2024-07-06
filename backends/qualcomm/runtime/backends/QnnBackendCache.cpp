@@ -96,6 +96,7 @@ QnnBackendCache::QnnBackendCache(
 
     if (qcir::VerifyGraphBuffer(verifier)) {
       state_ = ONLINE_PREPARE;
+      QNN_EXECUTORCH_LOG_INFO("Verify context blob came from flatbuffer.");
       return;
     }
   }

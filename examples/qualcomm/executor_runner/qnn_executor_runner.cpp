@@ -13,7 +13,7 @@
  * This tool can run ExecuTorch model files with Qualcomm AI Engine Direct
  * and the portable kernels.
  *
- * User could specify arguments like desired input data, iterfations, etc.
+ * User could specify arguments like desired input data, iterations, etc.
  * Currently we assume that the outputs are all fp32 tensors.
  */
 
