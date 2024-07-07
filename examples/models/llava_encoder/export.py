@@ -43,16 +43,6 @@ def main():
         def forward(self, token):
             return llava.token_embedding(token)
         
-            
-    class LlavaTextModel(torch.nn.Module):
-        """ Takes a token embedding and returns the logits for the next token."""
-        def __init__(self):
-            super().__init__()
-            self.param = llava.text_model_args
-
-        def forward(self, embeds, input_pos):
-            return llava.text_model.forward(embeds, input_pos)
-        
     # export LlavaPrefillEmbedding
     llava_prefill = LlavaPrefillEmbedding()
     inputs = llava_model.get_example_inputs()
@@ -66,11 +56,14 @@ def main():
     llava_token_embedding = LlavaTokenEmbedding()
     token = torch.tensor([0])
     token_embedding_ep = torch.export.export(llava_token_embedding, (token,), strict=False)
+    embedding_program = to_edge(token_embedding_ep, compile_config=EdgeCompileConfig(_check_ir_validity=False)).to_executorch()
+    with open("llava_embedding.pte", "wb") as f:
+        embedding_program.write_to_file(f)
 
     # export LlavaTextModel
     embeddings = llava_prefill(*inputs)
     print(embeddings.shape)
-    llava_text_model = LlavaTextModel()
+    llava_text_model = llava.text_model
 
     dim = torch.export.Dim("token_dim", min=1, max=llava.text_model_args.max_seq_len - 1)
     text_model_dynamic_shapes = ({1: dim}, None)
@@ -92,7 +85,7 @@ def main():
         example_inputs=(embeddings, torch.tensor([0], dtype=torch.int64))
     )
 
-    dtype_override = DType.fp16
+    dtype_override = DType.fp32
     parser = build_args_parser()
     args = parser.parse_args(['-X', '-qmode', '8da4w', '--group_size', '128', '--embedding-quantize', '4,32'])
     quant_transform = get_quant_weight_transform(args, dtype_override, False)
