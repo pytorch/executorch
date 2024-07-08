@@ -22,8 +22,8 @@ class TiktokenExtensionTest : public Test {
   void SetUp() override {
     torch::executor::runtime_init();
     tokenizer_ = std::make_unique<Tiktoken>();
-    modelPath_ =
-        std::getenv("RESOURCES_PATH") + std::string("/tokenizer.model");
+    modelPath_ = std::getenv("RESOURCES_PATH") +
+        std::string("/test_tiktoken_tokenizer.model");
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;
@@ -35,8 +35,8 @@ class MultimodalTiktokenV5ExtensionTest : public Test {
   void SetUp() override {
     torch::executor::runtime_init();
     tokenizer_ = std::make_unique<Tiktoken>(MULTIMODAL);
-    modelPath_ =
-        std::getenv("RESOURCES_PATH") + std::string("/tokenizer.model");
+    modelPath_ = std::getenv("RESOURCES_PATH") +
+        std::string("/test_tiktoken_tokenizer.model");
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;
@@ -56,8 +56,6 @@ TEST_F(TiktokenExtensionTest, DecodeWithoutLoadFails) {
 TEST_F(TiktokenExtensionTest, TokenizerVocabSizeIsExpected) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
-  // test.bin has vocab size 0 but the tokenizer respects the vocab size being
-  // passed in and add placeholder tokens.
   EXPECT_EQ(tokenizer_->vocab_size(), 128256);
   EXPECT_EQ(tokenizer_->bos_tok(), 128000);
   EXPECT_EQ(tokenizer_->eos_tok(), 128001);
@@ -66,8 +64,6 @@ TEST_F(TiktokenExtensionTest, TokenizerVocabSizeIsExpected) {
 TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerVocabSizeIsExpected) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
-  // test.bin has vocab size 0 but the tokenizer respects the vocab size being
-  // passed in and add placeholder tokens.
   EXPECT_EQ(tokenizer_->vocab_size(), 128256);
   EXPECT_EQ(tokenizer_->bos_tok(), 128000);
   EXPECT_EQ(tokenizer_->eos_tok(), 128001);
@@ -76,8 +72,6 @@ TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerVocabSizeIsExpected) {
 TEST_F(TiktokenExtensionTest, TokenizerEncodeCorrectly) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
-  // test.bin has vocab size 0 but the tokenizer respects the vocab size being
-  // passed in and add placeholder tokens.
   Result<std::vector<uint64_t>> out = tokenizer_->encode("hello world", 1, 0);
   EXPECT_EQ(out.error(), Error::Ok);
   EXPECT_EQ(out.get().size(), 3);
@@ -89,8 +83,6 @@ TEST_F(TiktokenExtensionTest, TokenizerEncodeCorrectly) {
 TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerEncodeCorrectly) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
-  // test.bin has vocab size 0 but the tokenizer respects the vocab size being
-  // passed in and add placeholder tokens.
   Result<std::vector<uint64_t>> out = tokenizer_->encode(
       "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n<|image|>What do you think is going on in this snapshot?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\nAmidst a scenic garden backdrop, a man dressed in a suit with a distinct button on its lower portion stands prominently.<|eom_id|>",
       0,
@@ -112,8 +104,6 @@ TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerEncodeCorrectly) {
 TEST_F(TiktokenExtensionTest, TokenizerDecodeCorrectly) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
-  // test.bin has vocab size 0 but the tokenizer respects the vocab size being
-  // passed in and add placeholder tokens.
   std::vector<std::string> expected = {"<|begin_of_text|>", "hello", " world"};
   std::vector<uint64_t> tokens = {128000, 15339, 1917};
   for (size_t i = 0; i < tokens.size(); i++) {
@@ -126,8 +116,6 @@ TEST_F(TiktokenExtensionTest, TokenizerDecodeCorrectly) {
 TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerDecodeCorrectly) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
-  // test.bin has vocab size 0 but the tokenizer respects the vocab size being
-  // passed in and add placeholder tokens.
   std::vector<std::string> expected = {
       "<|begin_of_text|>",
       "<|start_header_id|>",

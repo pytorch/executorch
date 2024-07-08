@@ -44,9 +44,9 @@ def define_common_targets():
     )
 
     runtime.python_test(
-        name = "test_tokenizer_py",
+        name = "test_bpe_tokenizer_py",
         srcs = [
-            "test_tokenizer.py",
+            "test_bpe_tokenizer.py",
         ],
         visibility = [
             "//executorch/examples/...",
