@@ -34,6 +34,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
+    get_coreml_quantizer,
 )
 
 from executorch.sdk.etrecord import generate_etrecord
@@ -126,6 +127,7 @@ def build_args_parser() -> argparse.ArgumentParser:
             "qnn_8a8w",
             "qnn_16a16w",
             "qnn_16a4w",
+            "coreml_8a8w",
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
@@ -414,6 +416,10 @@ def get_quantizer_and_quant_params(args):
             args.pt2e_quantize, args.quantization_mode
         )
         quantizers.append(qnn_quantizer)
+    if args.coreml and args.pt2e_quantize:
+        assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
+        coreml_quantizer, quant_dtype = get_coreml_quantizer(args)
+        quantizers.append(coreml_quantizer)
     logging.info(f"Applying quantizers: {quantizers}")
     return pt2e_quant_params, quantizers, quant_dtype
 
