@@ -39,6 +39,7 @@ set(lib_list
     bundled_program
     extension_data_loader
     ${FLATCCRT_LIB}
+    coremldelegate
     mpsdelegate
     qnn_executorch_backend
     portable_ops_lib
