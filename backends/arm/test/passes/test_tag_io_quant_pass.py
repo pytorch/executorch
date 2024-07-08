@@ -7,8 +7,8 @@
 import unittest
 
 import torch
-from executorch.backends.arm.arm_backend import generate_ethosu_compile_spec
 
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 
@@ -28,11 +28,7 @@ class TestTagIOQuantPass(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=module.get_inputs(),
-                compile_spec=generate_ethosu_compile_spec(
-                    "ethos-u55-128",
-                    permute_memory_to_nhwc=True,
-                    quantize_io=True,
-                ),
+                compile_spec=common.get_u55_compile_spec(quantize_io=True),
             )
             .quantize()
             .export()
