@@ -141,6 +141,40 @@ def get_pt2e_quantizers(
     return quantizers
 
 
+def get_coreml_quantizer(args):
+    try:
+        from coremltools.optimize.torch.quantization.quantization_config import (
+            LinearQuantizerConfig,
+            QuantizationScheme,
+        )
+        from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
+    except ImportError:
+        raise ImportError(
+            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+        )
+
+    quantization_config = LinearQuantizerConfig.from_dict(
+        {
+            "global_config": {
+                "activation_dtype": "float32",
+            }
+        }
+    )
+    quantization_config = LinearQuantizerConfig.from_dict(
+        {
+            "global_config": {
+                "quantization_scheme": QuantizationScheme.symmetric,
+                "milestones": [0, 0, 10, 10],
+                "activation_dtype": torch.float32,
+                "weight_dtype": torch.qint8,
+                "weight_per_channel": True,
+            }
+        }
+    )
+    coreml_quantizer = CoreMLQuantizer(quantization_config)
+    return coreml_quantizer, None
+
+
 def get_qnn_quantizer(
     pt2e_quantize: str,
     quantization_mode: Optional[str] = None,
