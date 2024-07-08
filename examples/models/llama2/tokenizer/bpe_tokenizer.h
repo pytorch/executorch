@@ -14,7 +14,10 @@
 namespace torch {
 namespace executor {
 
-constexpr int32_t kVocabSize = 32000;
+// Default values for llama2
+constexpr int32_t kDefaultVocabSize = 32000;
+constexpr uint64_t kDefaultBosTokenId = 1;
+constexpr uint64_t kDefaultEosTokenId = 2;
 
 struct TokenIndex {
   const char* str;
