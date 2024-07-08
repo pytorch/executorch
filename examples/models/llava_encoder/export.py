@@ -100,7 +100,13 @@ def main():
         .pt2e_quantize(quantizers)
         .export_to_edge()
     )
-    partitioners = [get_xnnpack_partitioner()]
+    partitioners = []
+    if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
+        partitioners.append(get_xnnpack_partitioner())
+
+    if args.xnnpack:
+        partitioners.append(get_xnnpack_partitioner())
+    print(f"Using partitioners: {partitioners}")
     executorch_program = edge_program.to_backend(partitioners).to_executorch()
     executorch_program.save_to_pte("llava_text_model.pte")
 
