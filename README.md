@@ -33,6 +33,11 @@ repository](https://github.com/pytorch/executorch/issues) for bug reporting.
 We recommend using the latest release tag from the
 [Releases](https://github.com/pytorch/executorch/releases) page when developing.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details about issues, PRs, code
+style, CI jobs, and other development topics.
+
 ## Directory Structure
 
 ```

@@ -44,9 +44,12 @@ classifiers = [
     "Programming Language :: Python :: 3",
     # Update this as we support more versions of python.
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 
 # Python dependencies required for use.
+requires-python = ">=3.10"
 dependencies=[
   "expecttest",
   "flatbuffers",
@@ -93,3 +96,9 @@ flatc = "executorch.data.bin:flatc"
 [tool.usort]
 # Do not try to put "first-party" imports in their own section.
 first_party_detection = false
+
+[tool.black]
+# Emit syntax compatible with older versions of python instead of only the range
+# specified by `requires-python`. TODO: Remove this once we support these older
+# versions of python and can expand the `requires-python` range.
+target-version = ["py38", "py39", "py310", "py311", "py312"]

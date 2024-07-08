@@ -5,8 +5,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Install required python dependencies for developing
-# Dependencies are defined in .pyproject.toml
+# Before doing anything, cd to the directory containing this script.
+cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null || /bin/true
+
+# Find the names of the python tools to use.
 if [[ -z $PYTHON_EXECUTABLE ]];
 then
   if [[ -z $CONDA_DEFAULT_ENV ]] || [[ $CONDA_DEFAULT_ENV == "base" ]] || [[ ! -x "$(command -v python)" ]];
@@ -24,6 +26,61 @@ else
   PIP_EXECUTABLE=pip3
 fi
 
+# Returns 0 if the current python version is compatible with the version range
+# in pyprojects.toml, or returns 1 if it is not compatible. If the check logic
+# itself fails, prints a warning and returns 0.
+python_is_compatible() {
+  # Scrape the version range from pyproject.toml, which should be
+  # in the current directory.
+  local version_specifier
+  version_specifier="$(
+    grep "^requires-python" pyproject.toml \
+      | head -1 \
+      | sed -e 's/[^"]*"//;s/".*//'
+  )"
+  if [[ -z ${version_specifier} ]]; then
+    echo "WARNING: Skipping python version check: version range not found" >& 2
+    return 0
+  fi
+
+  # Install the packaging module if necessary.
+  if ! python -c 'import packaging' 2> /dev/null ; then
+    ${PIP_EXECUTABLE} install packaging
+  fi
+
+  # Compare the current python version to the range in version_specifier. Exits
+  # with status 1 if the version is not compatible, or with status 0 if the
+  # version is compatible or the logic itself fails.
+${PYTHON_EXECUTABLE} <<EOF
+import sys
+try:
+  import packaging.version
+  import packaging.specifiers
+  import platform
+
+  python_version = packaging.version.parse(platform.python_version())
+  version_range = packaging.specifiers.SpecifierSet("${version_specifier}")
+  if python_version not in version_range:
+    print(
+        "ERROR: ExecuTorch does not support python version "
+        + f"{python_version}: must satisfy \"${version_specifier}\"",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+except Exception as e:
+  print(f"WARNING: Skipping python version check: {e}", file=sys.stderr)
+  sys.exit(0)
+EOF
+
+  return $?
+}
+
+# Fail fast if the wheel build will fail because the current python version
+# isn't supported. But don't fail if the check logic itself has problems: the
+# wheel build will do a final check before proceeding.
+if ! python_is_compatible; then
+  exit 1
+fi
 
 # Parse options.
 EXECUTORCH_BUILD_PYBIND=OFF
