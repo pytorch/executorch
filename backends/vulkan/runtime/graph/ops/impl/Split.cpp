@@ -25,7 +25,7 @@ void add_split_with_sizes_default_node(
     ValueRef out_list_ref) {
   vTensorPtr t_in = graph.get_tensor(in);
 
-  VK_CHECK_COND(check_memory_layout_is(*t_in, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(*t_in, utils::kChannelsPacked));
 
   ValueListPtr out_list = graph.get_value_list(out_list_ref);
 
@@ -38,7 +38,7 @@ void add_split_with_sizes_default_node(
     ValueRef out_ref = (*out_list)[split_idx];
 
     vTensorPtr t_out = graph.get_tensor(out_ref);
-    VK_CHECK_COND(check_memory_layout_is(*t_out, vkapi::kChannelsPacked));
+    VK_CHECK_COND(check_memory_layout_is(*t_out, utils::kChannelsPacked));
     VK_CHECK_COND(dim_at(*t_out, dim_index) == split_size);
   }
 

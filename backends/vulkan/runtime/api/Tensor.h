@@ -13,7 +13,7 @@
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 #include <executorch/backends/vulkan/runtime/api/ParamsBuffer.h>
 
-#include <executorch/backends/vulkan/runtime/vk_api/Types.h>
+#include <executorch/backends/vulkan/runtime/utils/StorageUtils.h>
 
 namespace vkcompute {
 namespace api {
@@ -31,7 +31,7 @@ namespace api {
  */
 std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
-    const vkapi::GPUMemoryLayout memory_layout,
+    const utils::GPUMemoryLayout memory_layout,
     const bool texel_strides = true);
 
 /*
@@ -46,12 +46,12 @@ std::vector<int64_t> calculate_strides(
  *   1. The dimensionality of the tensor will be padded to a multiple of 4.
  *   2. The size of the packed dimension will be padded to a multiple of 4.
  *
- * The "packed dimension" is determined based on the vkapi::GPUMemoryLayout
+ * The "packed dimension" is determined based on the utils::GPUMemoryLayout
  * argument.
  */
 std::vector<int64_t> calculate_padded_sizes(
     const std::vector<int64_t>& sizes,
-    const vkapi::GPUMemoryLayout memory_layout);
+    const utils::GPUMemoryLayout memory_layout);
 
 /*
  * Given the padded sizes of a tensor and the GPU memory layout, calculate the
@@ -59,7 +59,7 @@ std::vector<int64_t> calculate_padded_sizes(
  */
 utils::uvec3 calculate_image_extents(
     const std::vector<int64_t>& padded_sizes,
-    const vkapi::GPUMemoryLayout memory_layout);
+    const utils::GPUMemoryLayout memory_layout);
 
 struct LastAccess {
   vkapi::PipelineStageFlags stage;
@@ -82,8 +82,8 @@ class vTensorStorage final {
 
   vTensorStorage(
       Context* context,
-      const vkapi::StorageType storage_type,
-      const vkapi::GPUMemoryLayout gpu_memory_layout,
+      const utils::StorageType storage_type,
+      const utils::GPUMemoryLayout gpu_memory_layout,
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const bool allocate_memory = true);
@@ -102,7 +102,7 @@ class vTensorStorage final {
   // Context
   Context* context_{};
 
-  vkapi::StorageType storage_type_;
+  utils::StorageType storage_type_;
 
   // Resource sizings
   utils::uvec3 image_extents_{};
@@ -135,7 +135,7 @@ class vTensorStorage final {
 
   void discard_and_reallocate(
       const std::vector<int64_t>& padded_sizes,
-      const vkapi::GPUMemoryLayout gpu_memory_layout,
+      const utils::GPUMemoryLayout gpu_memory_layout,
       const vkapi::ScalarType dtype);
 };
 
@@ -152,8 +152,8 @@ class vTensor final {
       Context* context,
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
-      const vkapi::StorageType storage_type = vkapi::kTexture3D,
-      const vkapi::GPUMemoryLayout memory_layout = vkapi::kChannelsPacked,
+      const utils::StorageType storage_type = utils::kTexture3D,
+      const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked,
       const bool allocate_memory = true);
 
   vTensor(const vTensor& other) = delete;
@@ -164,7 +164,7 @@ class vTensor final {
 
  private:
   vkapi::ScalarType dtype_;
-  vkapi::GPUMemoryLayout memory_layout_;
+  utils::GPUMemoryLayout memory_layout_;
 
   // sizes of the tensor in NCHW dimension order
   std::vector<int64_t> sizes_;
@@ -226,12 +226,12 @@ class vTensor final {
     Metadata
   */
 
-  inline vkapi::StorageType storage_type() const {
+  inline utils::StorageType storage_type() const {
     return storage_.storage_type_;
   }
 
   inline bool has_buffer_storage() const {
-    return storage_.storage_type_ == vkapi::kBuffer;
+    return storage_.storage_type_ == utils::kBuffer;
   }
 
   inline const utils::uvec3& image_extents() const {
@@ -245,7 +245,7 @@ class vTensor final {
     return dtype_;
   }
 
-  inline vkapi::GPUMemoryLayout gpu_memory_layout() const {
+  inline utils::GPUMemoryLayout gpu_memory_layout() const {
     return memory_layout_;
   }
 

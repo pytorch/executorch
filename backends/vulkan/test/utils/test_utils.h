@@ -23,8 +23,8 @@ using namespace vkcompute;
       api::context(),                                 \
       sizes,                                          \
       vkapi::kFloat,                                  \
-      vkapi::StorageType::TEXTURE_3D,                 \
-      vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, \
+      utils::StorageType::TEXTURE_3D,                 \
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, \
       allocate_memory);
 
 #define CREATE_FLOAT_BUFFER(sizes, allocate_memory) \
@@ -32,8 +32,8 @@ using namespace vkcompute;
       api::context(),                               \
       sizes,                                        \
       vkapi::kFloat,                                \
-      vkapi::StorageType::BUFFER,                   \
-      vkapi::GPUMemoryLayout::TENSOR_WIDTH_PACKED,  \
+      utils::StorageType::BUFFER,                   \
+      utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED,  \
       allocate_memory);
 
 #define DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(tensor) \

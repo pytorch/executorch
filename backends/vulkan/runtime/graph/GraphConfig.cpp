@@ -49,13 +49,13 @@ GraphConfig::GraphConfig() {
   // For now, force kTexture3D storage as we are still developing shader support
   // for buffer storage type.
   enable_storage_type_override = true;
-  storage_type_override = vkapi::kTexture3D;
+  storage_type_override = utils::kTexture3D;
 
   // For now, force kWidthPacked memory layout by default as we are still
   // developing support for other memory layouts. In the future memory layout
   // settings will be serialized as part of the graph.
   enable_memory_layout_override = true;
-  memory_layout_override = vkapi::kWidthPacked;
+  memory_layout_override = utils::kWidthPacked;
 
   // QueryPool objects are used to measure execution times of individual shader
   // dispatches. By default, this functionality is disabled.
@@ -65,13 +65,13 @@ GraphConfig::GraphConfig() {
   local_wg_size_override = {};
 }
 
-void GraphConfig::set_storage_type_override(vkapi::StorageType storage_type) {
+void GraphConfig::set_storage_type_override(utils::StorageType storage_type) {
   enable_storage_type_override = true;
   storage_type_override = storage_type;
 }
 
 void GraphConfig::set_memory_layout_override(
-    vkapi::GPUMemoryLayout memory_layout) {
+    utils::GPUMemoryLayout memory_layout) {
   enable_memory_layout_override = true;
   memory_layout_override = memory_layout;
 }
