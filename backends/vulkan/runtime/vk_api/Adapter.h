@@ -53,22 +53,11 @@ struct PhysicalDevice final {
   explicit PhysicalDevice(VkPhysicalDevice);
 };
 
-class DeviceHandle final {
- public:
-  explicit DeviceHandle(VkDevice device);
+struct DeviceHandle final {
+  VkDevice handle;
 
-  DeviceHandle(const DeviceHandle&) = delete;
-  DeviceHandle& operator=(const DeviceHandle&) = delete;
-
-  DeviceHandle(DeviceHandle&&) noexcept;
-  DeviceHandle& operator=(DeviceHandle&&) = delete;
-
+  explicit DeviceHandle(VkDevice);
   ~DeviceHandle();
-
- private:
-  VkDevice handle_;
-
-  friend class Adapter;
 };
 
 //
@@ -150,7 +139,7 @@ class Adapter final {
   }
 
   inline VkDevice device_handle() const {
-    return device_.handle_;
+    return device_.handle;
   }
 
   inline bool has_unified_memory() const {
