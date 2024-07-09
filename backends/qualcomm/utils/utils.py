@@ -22,11 +22,15 @@ from executorch.backends.qualcomm.passes.convert_bmm_to_matmul import ConvertBmm
 from executorch.backends.qualcomm.passes.convert_interpolate_with_upsample2d import (
     ConvertInterpolateWithUpsample2D,
 )
+from executorch.backends.qualcomm.passes.convert_prelu import ConvertPReLU
 from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.qualcomm.passes.fold_qdq import FoldQDQ
 from executorch.backends.qualcomm.passes.i64_to_i32 import I64toI32
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
-from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
+from executorch.backends.qualcomm.passes.recompose_pixel_unshuffle import (
+    RecomposePixelUnshuffle,
+)
+from executorch.backends.qualcomm.passes.remove_redundancy import RemoveRedundancy
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     _soc_info_table,
     QcomChipset,
@@ -61,6 +65,48 @@ def qnn_edge_config() -> exir.EdgeCompileConfig:
         _check_ir_validity=False,
         _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
     )
+
+
+def convert_linear_to_conv2d(module: torch.nn.Module):
+    class Conv2D(torch.nn.Module):
+        def __init__(self, weight, bias=None):
+            super().__init__()
+            use_bias = bias is not None
+            self.conv = torch.nn.Conv2d(
+                in_channels=weight.shape[0],
+                out_channels=weight.shape[1],
+                kernel_size=1,
+                padding=0,
+                bias=use_bias,
+            )
+            self.conv.weight = torch.nn.Parameter(weight.reshape(*weight.shape, 1, 1))
+            if use_bias:
+                self.conv.bias = torch.nn.Parameter(bias)
+
+        def forward(self, x):
+            rank = x.dim()
+            x = x.unsqueeze(-1) if rank == 3 else x.reshape(1, *x.shape, 1)
+            x = torch.transpose(x, 1, 2)
+            res = self.conv(x)
+            res = torch.transpose(res, 1, 2)
+            res = res.squeeze(-1) if rank == 3 else res.reshape(*res.shape[1:3])
+            return res
+
+    def replace_linear(module: torch.nn.Module):
+        attr_strs = dir(module)
+        if isinstance(module, torch.nn.ModuleList):
+            attr_strs += [str(i) for i in range(len(module))]
+
+        for attr_str in attr_strs:
+            target_attr = getattr(module, attr_str)
+            if isinstance(target_attr, torch.nn.Linear):
+                setattr(module, attr_str, Conv2D(target_attr.weight, target_attr.bias))
+
+        for _, sub_module in module.named_children():
+            sub_module = replace_linear(sub_module)
+        return module
+
+    return replace_linear(module)
 
 
 def canonicalize_program(prog: ExportedProgram):
@@ -105,8 +151,10 @@ def _transform(edge_program: ExportedProgram) -> None:
     # changes of input number which was caused by FoldQDQ
     # apply passes one by one here to avoid IR capture failure
     graph_module = edge_program.graph_module
-    RemoveClone()(graph_module)
+    RemoveRedundancy()(graph_module)
+    RecomposePixelUnshuffle()(graph_module)
     ConvertToLinear()(graph_module)
+    ConvertPReLU(edge_program)(graph_module)
     ConvertBmmToMatmul()(graph_module)
     ConvertInterpolateWithUpsample2D()(graph_module)
     I64toI32(edge_program)(graph_module)
@@ -132,6 +180,7 @@ def capture_program(
     core_ep.transform(ConvertBinaryOpsWithScalar())
     edge_ep = core_ep.to_edge(qnn_edge_config())
     _transform(edge_ep.exported_program)
+
     return edge_ep
 
 

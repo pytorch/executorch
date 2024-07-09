@@ -8,18 +8,21 @@
 
 import argparse
 import copy
+import json
 import logging
 import shlex
+from enum import Enum
+from json import JSONDecodeError
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import pkg_resources
 
-from executorch.sdk.etrecord import generate_etrecord
-from executorch.util.activation_memory_profiler import generate_memory_trace
+import torch
 
-from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
-from .lib.partitioner_lib import (
+from executorch.examples.models.llama2.llama_transformer import ModelArgs
+
+from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_mps_partitioner,
     get_qnn_partitioner,
@@ -27,11 +30,18 @@ from .lib.partitioner_lib import (
     get_xnnpack_partitioner,
 )
 
-from .lib.quant_lib import (
-    _get_pt2e_quantization_params,
+from executorch.extension.llm.export.quantizer_lib import (
+    get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
 )
+
+from executorch.sdk.etrecord import generate_etrecord
+from executorch.util.activation_memory_profiler import generate_memory_trace
+
+from ..model_factory import EagerModelFactory
+
+from .builder import DType, LlamaEdgeManager
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
@@ -49,6 +59,11 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 pkg_name = __name__
 verbosity_setting = None
+
+
+class WeightType(Enum):
+    LLAMA = "LLAMA"
+    FAIRSEQ2 = "FAIRSEQ2"
 
 
 def set_pkg_name(name: str) -> None:
@@ -173,6 +188,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="Whether to use sdpa_with_kv_cache update op when using kv cache",
+    )
+    parser.add_argument(
+        "--disable_dynamic_shape",
+        dest="enable_dynamic_shape",
+        default=True,  # Enable this by default
+        action="store_false",
+        help="Enable dynamic shape along seq dim. Used for faster prefill",
     )
     parser.add_argument(
         "-p",
@@ -361,7 +383,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_causal_mask)
     return (
-        load_llama_model(
+        _load_llama_model(
             modelname=modelname,
             checkpoint=checkpoint_path,
             checkpoint_dir=checkpoint_dir,
@@ -369,29 +391,46 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             use_kv_cache=args.use_kv_cache,
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             weight_type=weight_type,
+            enable_dynamic_shape=args.enable_dynamic_shape,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
+            metadata_str=args.metadata,
         )
         .set_output_dir(output_dir_path)
-        .set_metadata(args.metadata)
-        .source_transform(transforms)
         .to_dtype(dtype_override)
+        .source_transform(transforms)
     )
 
 
 def get_quantizer_and_quant_params(args):
-    pt2e_quant_params = _get_pt2e_quantization_params(args)
-    quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
+    pt2e_quant_params = get_pt2e_quantization_params(
+        args.pt2e_quantize, args.quantization_mode
+    )
+    quantizers = get_pt2e_quantizers(pt2e_quant_params, args.so_library)
     quant_dtype = None
     if args.qnn and args.pt2e_quantize:
         assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
-        qnn_quantizer, quant_dtype = get_qnn_quantizer(args)
+        qnn_quantizer, quant_dtype = get_qnn_quantizer(
+            args.pt2e_quantize, args.quantization_mode
+        )
         quantizers.append(qnn_quantizer)
     logging.info(f"Applying quantizers: {quantizers}")
     return pt2e_quant_params, quantizers, quant_dtype
 
 
+def _validate_args(args):
+    """
+    TODO: Combine all the backends under --backend args
+    """
+    if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
+        raise ValueError(
+            "Dynamic shape is not supported with coreml, MPS or qnn backends."
+            " Please us --disble_dynamic_shape."
+        )
+
+
 def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
+    _validate_args(args)
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
     # export_to_edge
@@ -415,19 +454,30 @@ def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
         modelname = f"xnnpack_{modelname}"
 
     if args.vulkan:
-        partitioners.append(get_vulkan_partitioner(args))
+        partitioners.append(
+            get_vulkan_partitioner(
+                args.dtype_override,
+                args.quantization_mode,
+            )
+        )
         modelname = f"vulkan_{modelname}"
 
     if args.mps:
-        partitioners.append(get_mps_partitioner(args))
+        partitioners.append(get_mps_partitioner(args.use_kv_cache))
         modelname = f"mps_{modelname}"
 
     if args.coreml:
-        partitioners.append(get_coreml_partitioner(args))
+        partitioners.append(get_coreml_partitioner(args.use_kv_cache))
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
-        partitioners.append(get_qnn_partitioner(args, quant_dtype))
+        partitioners.append(
+            get_qnn_partitioner(
+                quant_dtype,
+                args.use_kv_cache,
+                args.pt2e_quantize,
+            )
+        )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
         from executorch.backends.qualcomm.utils.utils import _transform
 
@@ -446,7 +496,7 @@ def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
         # Generate ETRecord
         if edge_manager_copy:
             generate_etrecord(
-                etrecord_path="etrecord.bin",
+                et_record="etrecord.bin",
                 edge_dialect_program=edge_manager_copy,
                 executorch_program=builder.export_program,
             )
@@ -477,3 +527,118 @@ def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
     builder.save_to_pte(output_file)
 
     return builder
+
+
+def _load_llama_model_metadata(
+    weight_type: WeightType,
+    dtype: DType,
+    use_kv_cache: bool,
+    use_sdpa_with_kv_cache: bool,
+    enable_dynamic_shape: bool,
+    modelArgs: ModelArgs,
+    metadata_str: Optional[str] = None,
+):
+    is_fairseq2 = weight_type == WeightType.FAIRSEQ2
+    metadata = {
+        "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
+        "get_bos_id": 3 if is_fairseq2 else 1,
+        "get_dtype": 5 if dtype == DType.fp16 else 6,
+        "get_eos_id": 3 if is_fairseq2 else 2,
+        "get_head_dim": modelArgs.dim // modelArgs.n_heads,
+        "get_max_batch_size": modelArgs.max_batch_size,
+        "get_max_seq_len": modelArgs.max_seq_len,
+        "get_n_bos": 1,
+        "get_n_eos": 2 if is_fairseq2 else 1,
+        "get_n_kv_heads": modelArgs.n_kv_heads,
+        "get_n_layers": modelArgs.n_layers,
+        "get_vocab_size": modelArgs.vocab_size,
+        "use_kv_cache": use_kv_cache,
+        "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
+        "enable_dynamic_shape": enable_dynamic_shape,
+    }
+    if metadata_str:
+        try:
+            extra = json.loads(metadata_str)
+            for k, v in extra.items():
+                metadata[k] = v
+        except JSONDecodeError:
+            logging.error("Invalid metadata, should be a valid JSON string")
+    return metadata
+
+
+def _load_llama_model(
+    *,
+    modelname: str = "llama2",
+    checkpoint: Optional[str] = None,
+    checkpoint_dir: Optional[str] = None,
+    params_path: str,
+    use_kv_cache: bool = False,
+    use_sdpa_with_kv_cache: bool = False,
+    weight_type: WeightType = WeightType.LLAMA,
+    enable_dynamic_shape: bool = False,
+    verbose: bool = False,
+    max_seq_len: int = 128,
+    metadata_str: Optional[str] = None,
+) -> "LlamaEdgeManager":
+    """
+    A helper util that builds a Llama2 model. It returns a LlamaEdgeManager that
+    can help further lower the model to ExecuTorch.
+    Returns:
+        An instance of LlamaEdgeManager which contains the eager mode model.
+    """
+    assert (
+        checkpoint or checkpoint_dir
+    ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
+    logging.info(
+        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
+    )
+    model, example_inputs, _ = EagerModelFactory.create_model(
+        "llama2",
+        "Llama2Model",
+        checkpoint=checkpoint,
+        checkpoint_dir=checkpoint_dir,
+        params=params_path,
+        use_kv_cache=use_kv_cache,
+        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
+        fairseq2=weight_type == WeightType.FAIRSEQ2,
+        max_seq_len=max_seq_len,
+        enable_dynamic_shape=enable_dynamic_shape,
+    )
+    state_dict = model.state_dict()
+    dtype = state_dict[next(iter(state_dict))].dtype
+    assert dtype in [
+        torch.bfloat16,
+        torch.float16,
+        torch.float32,
+    ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
+    logging.info(f"Loaded model with dtype={dtype}")
+
+    if dtype == torch.bfloat16:
+        dtype = DType.bf16
+    elif dtype == torch.float16:
+        dtype = DType.fp16
+    elif dtype == torch.float32:
+        dtype = DType.fp32
+    else:
+        raise ValueError(f"Unsupported dtype {dtype}")
+
+    return LlamaEdgeManager(
+        model=model,
+        modelname=modelname,
+        weight_type=weight_type,
+        dtype=dtype,
+        use_kv_cache=use_kv_cache,
+        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
+        example_inputs=example_inputs,
+        enable_dynamic_shape=enable_dynamic_shape,
+        verbose=verbose,
+        metadata=_load_llama_model_metadata(
+            weight_type,
+            dtype,
+            use_kv_cache,
+            use_sdpa_with_kv_cache,
+            enable_dynamic_shape,
+            model.params,
+            metadata_str,
+        ),
+    )

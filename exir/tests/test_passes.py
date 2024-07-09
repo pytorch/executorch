@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
+import copy
 import os
 import tempfile
 import unittest
@@ -1133,7 +1134,10 @@ class TestPasses(unittest.TestCase):
 
         add = Add()
 
-        edge = to_edge(export(add, (torch.ones(1),)))
+        edge = to_edge(
+            export(add, (torch.ones(1),)),
+            compile_config=EdgeCompileConfig(_skip_dim_order=False),
+        )
         edge = edge.transform([ScalarToTensorPass(), RemoveMixedTypeOperators()])
         exported_program = lift_constant_tensor_pass(edge.exported_program())
 
@@ -1639,3 +1643,36 @@ class TestPasses(unittest.TestCase):
         FileCheck().check_count("executorch_exir_memory_view", 2, exactly=True).run(
             gm.code
         )
+
+    def test_constant_prop_pass_for_no_grad(self) -> None:
+        class LSTM(torch.nn.Module):
+            def __init__(self, input_size, hidden_size, num_layers):
+                super(LSTM, self).__init__()
+                self.hidden_size = hidden_size
+                self.num_layers = num_layers
+                self.lstm = torch.nn.LSTM(
+                    input_size, hidden_size, num_layers, batch_first=True
+                )
+
+            def forward(self, text_tokens):
+                # input: (seq_len, batch, input_size)
+                lstm_out, (new_hidden_state, new_cell_state) = self.lstm(
+                    input=text_tokens, hx=None
+                )
+                return lstm_out
+
+        lstm = LSTM(input_size=200, hidden_size=203, num_layers=2)
+        example_input = (torch.rand(2, 10, 200),)
+
+        aten = torch.export.export(lstm, example_input, strict=False)
+        _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
+            _check_ir_validity=True,
+            _skip_dim_order=True,  # TODO(T189114319): Reuse dim order op after solving the ios oss issue
+        )
+
+        edge_manager: EdgeProgramManager = to_edge(
+            aten,
+            compile_config=_EDGE_COMPILE_CONFIG,
+        )
+        new_ep = constant_prop_pass(edge_manager._edge_programs["forward"])
+        _ = copy.deepcopy(new_ep.module_call_graph)

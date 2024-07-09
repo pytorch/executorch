@@ -4,17 +4,23 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Providing builders for Llama2 models. These builders help user to build Llama2
+# Providing builders for LLM models. These builders help user to build LLM
 # eager models, apply source transformations and quantization and export them to
 # ExecuTorch.
 
-import json
 import logging
 from enum import Enum
-from json import JSONDecodeError
 from typing import Any, Callable, List, Optional
 
 import torch
+
+try:
+    from ...portable.utils import export_to_edge, save_pte_program
+except ImportError:
+    # Workaround to bypass the different paths between executorch pip package and directly python call
+    # TODO: remove this try catch workaround and have a standard wa to import portable.utils
+    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `examples.portable.utils`.
+    from examples.portable.utils import export_to_edge, save_pte_program
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
@@ -33,16 +39,8 @@ from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.nn.attention import SDPBackend
 
-from ...portable.utils import export_to_edge, save_pte_program
-from ..model_factory import EagerModelFactory
-
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
-
-
-class WeightType(Enum):
-    LLAMA = "LLAMA"
-    FAIRSEQ2 = "FAIRSEQ2"
 
 
 class DType(Enum):
@@ -60,71 +58,6 @@ class DType(Enum):
         return mapping[self]
 
 
-def load_llama_model(
-    *,
-    modelname: str = "llama2",
-    checkpoint: Optional[str] = None,
-    checkpoint_dir: Optional[str] = None,
-    params_path: str,
-    use_kv_cache: bool = False,
-    use_sdpa_with_kv_cache: bool = False,
-    weight_type: WeightType = WeightType.LLAMA,
-    verbose: bool = False,
-    max_seq_len: int = 128,
-) -> "LlamaEdgeManager":
-    """
-    A helper util that builds a Llama2 model. It returns a LlamaEdgeManager that
-    can help further lower the model to ExecuTorch.
-    Returns:
-        An instance of LlamaEdgeManager which contains the eager mode model.
-    """
-    assert (
-        checkpoint or checkpoint_dir
-    ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
-    logging.info(
-        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
-    )
-    model, example_inputs, _ = EagerModelFactory.create_model(
-        "llama2",
-        "Llama2Model",
-        checkpoint=checkpoint,
-        checkpoint_dir=checkpoint_dir,
-        params=params_path,
-        use_kv_cache=use_kv_cache,
-        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
-        fairseq2=weight_type == WeightType.FAIRSEQ2,
-        max_seq_len=max_seq_len,
-    )
-    state_dict = model.state_dict()
-    dtype = state_dict[next(iter(state_dict))].dtype
-    assert dtype in [
-        torch.bfloat16,
-        torch.float16,
-        torch.float32,
-    ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
-    logging.info(f"Loaded model with dtype={dtype}")
-
-    if dtype == torch.bfloat16:
-        dtype = DType.bf16
-    elif dtype == torch.float16:
-        dtype = DType.fp16
-    elif dtype == torch.float32:
-        dtype = DType.fp32
-    else:
-        raise ValueError(f"Unsupported dtype {dtype}")
-
-    return LlamaEdgeManager(
-        model=model,
-        modelname=modelname,
-        weight_type=weight_type,
-        dtype=dtype,
-        use_kv_cache=use_kv_cache,
-        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
-        example_inputs=example_inputs,
-        verbose=verbose,
-    )
-
-
 class LlamaEdgeManager:
     """
     Host a torch.nn.Module for Llama model and facilitates exporting to ExecuTorch.
@@ -139,7 +72,9 @@ class LlamaEdgeManager:
         use_kv_cache,
         use_sdpa_with_kv_cache,
         example_inputs,
+        enable_dynamic_shape: bool = False,
         verbose: bool = False,
+        metadata: Optional[dict] = None,
     ):
         self.model = model
         # graph module returned from capture_pre_autograd_graph
@@ -149,23 +84,15 @@ class LlamaEdgeManager:
         self.dtype = dtype
         self.example_inputs = example_inputs
         self.use_kv_cache = use_kv_cache
+        self.enable_dynamic_shape = enable_dynamic_shape
         self.use_sdpa_with_kv_cache = use_sdpa_with_kv_cache
-        self.metadata = None
         self.verbose = verbose
+        self.metadata = metadata
         self.applied_source_transforms = []
         self.edge_manager: Optional[EdgeProgramManager] = None
         self.export_program = None
         self.output_dir = "."
         self._saved_pte_filename = None
-
-    def set_metadata(self, metadata: Optional[dict]) -> "LlamaEdgeManager":
-        """
-        Set the metadata that will be serialized into .pte file.
-        Args:
-            metadata (Optional[dict]): Metadata for the model.
-        """
-        self.metadata = metadata
-        return self
 
     def set_output_dir(self, output_dir: str) -> "LlamaEdgeManager":
         """
@@ -213,7 +140,10 @@ class LlamaEdgeManager:
     def _get_dynamic_shape(self) -> Any:
         dim = torch.export.Dim("token_dim", max=self.model.params.max_seq_len - 1)
         if self.use_kv_cache:
-            return None
+            if self.enable_dynamic_shape:
+                return ({1: dim}, {0: dim})
+            else:
+                None
         else:
             return ({1: dim},)
 
@@ -224,35 +154,6 @@ class LlamaEdgeManager:
             _skip_dim_order=True,
         )
         return edge_config
-
-    def _get_metadata(self):
-        params = self.model.params
-        is_fairseq2 = self.weight_type == WeightType.FAIRSEQ2
-        metadata = {
-            "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
-            "get_bos_id": 3 if is_fairseq2 else 1,
-            "get_dtype": 5 if self.dtype == DType.fp16 else 6,
-            "get_eos_id": 3 if is_fairseq2 else 2,
-            "get_head_dim": params.dim // params.n_heads,
-            "get_max_batch_size": params.max_batch_size,
-            "get_max_seq_len": params.max_seq_len,
-            "get_n_bos": 1,
-            "get_n_eos": 2 if is_fairseq2 else 1,
-            "get_n_kv_heads": params.n_kv_heads,
-            "get_n_layers": params.n_layers,
-            "get_vocab_size": params.vocab_size,
-            "use_kv_cache": self.use_kv_cache,
-            "use_sdpa_with_kv_cache": self.use_sdpa_with_kv_cache,
-        }
-        if self.metadata:
-            try:
-                extra = json.loads(self.metadata)
-                for k, v in extra.items():
-                    metadata[k] = v
-            except JSONDecodeError:
-                logging.error("Invalid metadata, should be a valid JSON string")
-        self.metadata = metadata
-        return self.metadata
 
     def capture_pre_autograd_graph(self) -> "LlamaEdgeManager":
         dynamic_shape = self._get_dynamic_shape()
@@ -304,7 +205,6 @@ class LlamaEdgeManager:
         """
         dynamic_shape = self._get_dynamic_shape()
         edge_config = self._get_edge_config()
-        metadata = self._get_metadata()
 
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
@@ -317,7 +217,7 @@ class LlamaEdgeManager:
                 self.pre_autograd_graph_module,
                 self.example_inputs,
                 dynamic_shapes=dynamic_shape,
-                edge_constant_methods=metadata,
+                edge_constant_methods=self.metadata,
                 edge_compile_config=edge_config,
                 verbose=self.verbose,
             )

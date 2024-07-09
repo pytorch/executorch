@@ -6,13 +6,29 @@
 
 import logging
 import operator
-from typing import Dict
+from typing import Dict, List, Tuple
 
 import torch
 from executorch.exir import memory
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload, EdgeOpOverloadPacket
 from tabulate import tabulate
+
+from torch.ao.quantization.quantize_pt2e import _QUANT_OPS as quant_ops
+
+
+# Check if the model is quantized, by looking at the graph and finding quant/dequant ops
+def model_is_quantized(model: torch.nn.Module) -> bool:
+    # Quantized models have to be GraphModules already, from prepare/convert calls.
+    # Return false if the model is not a GraphModule.
+    if not isinstance(model, torch.fx.GraphModule):
+        return False
+
+    # Walk through the graph and look for quant/dequant ops
+    for op in quant_ops:
+        if model.graph.find_nodes(op="call_function", target=op):
+            return True
+    return False
 
 
 # Get the output size of a 1D convolution given the input size and parameters
@@ -31,6 +47,33 @@ def get_conv1d_output_size(
     lout = (L + 2 * padding - dilation * (kernel_size - 1) - 1) // stride + 1
 
     return torch.Size((in_size[0], out_channels, lout))
+
+
+# Get the output size of a 2D convolution given the input size and parameters
+def get_conv2d_output_size(
+    in_size: torch.Size,
+    out_channels: int,
+    stride: Tuple[int],
+    padding: Tuple[int],
+    dilation: Tuple[int],
+    kernel_size: List[int],
+    channel_last: bool,
+) -> torch.Size:
+    assert len(in_size) == 4
+    if channel_last:
+        N, H, W, C = in_size
+    else:
+        N, C, H, W = in_size
+
+    # Reference: https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html
+    hout = (H + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1) // stride[
+        0
+    ] + 1
+    wout = (W + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1) // stride[
+        1
+    ] + 1
+
+    return torch.Size((in_size[0], out_channels, hout, wout))
 
 
 # Return the overload packet for the edge op

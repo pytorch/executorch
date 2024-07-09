@@ -16,16 +16,10 @@ layout(std430) buffer;
 
 #include "indexing_utils.h"
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
-
-layout(set = 0, binding = 2) uniform PRECISION restrict OutSizes {
-  ivec4 out_sizes;
-};
-
-layout(set = 0, binding = 3) uniform PRECISION restrict InSizes {
-  ivec4 in_sizes;
-};
+${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
+${layout_declare_ubo(2, "ivec4", "out_sizes")}
+${layout_declare_ubo(3, "ivec4", "in_sizes")}
 
 layout(set = 0, binding = 4) uniform PRECISION restrict SliceArg {
   int offset;
@@ -65,9 +59,9 @@ void main() {
         in_sizes,
         packed_dim);
 
-      vec4 v = texelFetch(image_in, in_pow_elem.xyz, 0);
+      vec4 v = texelFetch(t_in, in_pow_elem.xyz, 0);
 
       outex[i] = v[in_pow_elem.w];
   }
-  imageStore(image_out, out_pos, outex);
+  imageStore(t_out, out_pos, outex);
 }

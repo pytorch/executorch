@@ -189,6 +189,20 @@ if(TARGET mpsdelegate)
   target_link_options_shared_lib(mpsdelegate)
 endif()
 
+if(TARGET coremldelegate)
+  find_library(SQLITE_LIBRARY sqlite3)
+  list(
+    APPEND
+    link_libraries
+    coremldelegate
+    sqlite3
+    "-framework Foundation"
+    "-framework CoreML"
+    "-framework Accelerate"
+  )
+  target_link_options_shared_lib(coremldelegate)
+endif()
+
 # This one is needed for cpuinfo where it uses android specific log lib
 if(ANDROID)
   list(APPEND link_libraries log)

@@ -5,12 +5,16 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+from collections import defaultdict
 from typing import final, List
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 
 from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
+from executorch.backends.qualcomm.passes.fuse_consecutive_transpose import (
+    FuseConsecutiveTranspose,
+)
 from executorch.backends.qualcomm.passes.insert_io_qdq import InsertIOQDQ
 from executorch.backends.qualcomm.passes.insert_requantize import InsertRequantize
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
@@ -47,6 +51,7 @@ class QnnBackend(BackendDetails):
                 InsertRequantize(edge_program),
                 InsertIOQDQ(edge_program),
                 LayoutTransform(edge_program, insert_permute=True),
+                FuseConsecutiveTranspose(),
             ]
         )
 
@@ -54,7 +59,7 @@ class QnnBackend(BackendDetails):
         assert pass_result is not None
 
         enable_tensor_dump = qnn_manager.IsTensorDump()
-        nodes_to_wrappers = {}
+        nodes_to_wrappers = defaultdict(dict)
         node_visitors = get_node_visitors(
             edge_program, enable_tensor_dump=enable_tensor_dump
         )

@@ -41,6 +41,7 @@ Module::Module(
     : file_path_(file_path),
       mlock_config_(mlock_config),
       memory_allocator_(std::make_unique<util::MallocMemoryAllocator>()),
+      temp_allocator_(std::make_unique<util::MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
   runtime_init();
 }
@@ -48,11 +49,17 @@ Module::Module(
 Module::Module(
     std::unique_ptr<DataLoader> data_loader,
     std::unique_ptr<MemoryAllocator> memory_allocator,
+    std::unique_ptr<MemoryAllocator> tmp_memory_allocator,
     std::unique_ptr<EventTracer> event_tracer)
     : data_loader_(std::move(data_loader)),
       memory_allocator_(
           memory_allocator ? std::move(memory_allocator)
                            : std::make_unique<util::MallocMemoryAllocator>()),
+      temp_allocator_(
+
+          tmp_memory_allocator
+              ? std::move(tmp_memory_allocator)
+              : std::make_unique<util::MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
   runtime_init();
 }
@@ -118,7 +125,9 @@ Error Module::load_method(const std::string& method_name) {
         method_holder.planned_spans.data(),
         method_holder.planned_spans.size()));
     method_holder.memory_manager = std::make_unique<MemoryManager>(
-        memory_allocator_.get(), method_holder.planned_memory.get());
+        memory_allocator_.get(),
+        method_holder.planned_memory.get(),
+        temp_allocator_.get());
     method_holder.method = ET_UNWRAP_UNIQUE(program_->load_method(
         method_name.c_str(),
         method_holder.memory_manager.get(),
@@ -154,6 +163,13 @@ Result<std::vector<EValue>> Module::execute(
       method->get_outputs(outputs.data(), outputs_size));
 
   return outputs;
+}
+
+Error Module::set_output_data_ptr(Tensor& output_tensor, size_t output_index) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method("forward"));
+  auto& method = methods_.at("forward").method;
+  return method->set_output_data_ptr(
+      output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
 } // namespace torch::executor

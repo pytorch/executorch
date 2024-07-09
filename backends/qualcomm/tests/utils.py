@@ -134,8 +134,8 @@ class TestQNN(unittest.TestCase):
             etdump_path = f"{tmp_dir}/etdump.etdp"
 
             def post_process():
-                for i, f in enumerate(os.listdir(device_output_dir)):
-                    filename = os.path.join(device_output_dir, f)
+                for i, _f in enumerate(os.listdir(device_output_dir)):
+                    filename = os.path.join(device_output_dir, f"output_0_{i}.raw")
                     output = np.fromfile(filename, dtype=ref_outputs[i].numpy().dtype)
                     output = torch.from_numpy(output).reshape(ref_outputs[i].shape)
                     device_outputs.append(output)
@@ -148,7 +148,7 @@ class TestQNN(unittest.TestCase):
 
             adb = SimpleADB(
                 qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-                artifact_path=self.build_folder,
+                build_path=self.build_folder,
                 pte_path=pte_fname,
                 workspace="/data/local/tmp/qnn_executorch_test",
                 device_id=self.device,

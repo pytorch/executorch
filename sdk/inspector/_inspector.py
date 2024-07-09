@@ -433,6 +433,25 @@ class Event:
         return ret_event
 
     @staticmethod
+    def _calculate_elapsed_time(start_time, end_time):
+        # We're assuming if there's a wraparound in the time values, then
+        # the time representation of that platform only contains 32 bits.
+        # This should be fine for now, but ideally we should source the max
+        # time value from the platform using etdump.
+        max_uint32 = 2**32 - 1
+        if start_time > end_time:
+            if (start_time > max_uint32) or (end_time > max_uint32):
+                raise ValueError(
+                    f"Expected start_time ({start_time}) and end_time ({end_time}) to be less than {max_uint32} for cases where there is wrap-around of time values."
+                )
+            # Handle wraparound
+            elapsed_time = (max_uint32 - start_time) + end_time
+        else:
+            # Normal case
+            elapsed_time = end_time - start_time
+        return elapsed_time
+
+    @staticmethod
     def _populate_profiling_related_fields(
         ret_event: "Event",
         profile_event_signature: Optional[ProfileEventSignature],
@@ -488,27 +507,31 @@ class Event:
                 # Scale factor should only be applied to non-delegated ops
                 if (
                     ret_event.is_delegated_op
-                    and ret_event._delegate_time_scale_converter is not None
+                    and (convert_time_scale := ret_event._delegate_time_scale_converter)
+                    is not None
                 ):
-                    scaled_time = ret_event._delegate_time_scale_converter(
-                        ret_event.name,
-                        profile_event.end_time,
-                        # pyre-ignore
-                    ) - ret_event._delegate_time_scale_converter(
-                        ret_event.name, profile_event.start_time
+                    scaled_time = Event._calculate_elapsed_time(
+                        convert_time_scale(ret_event.name, profile_event.start_time),
+                        convert_time_scale(ret_event.name, profile_event.end_time),
                     )
                 # If it's not a delegated op then we can just use the raw time values
                 # and then scale them according to the scale factor that was passed in.
                 elif not ret_event.is_delegated_op:
                     scaled_time = (
-                        float(profile_event.end_time - profile_event.start_time)
+                        float(
+                            Event._calculate_elapsed_time(
+                                profile_event.start_time, profile_event.end_time
+                            )
+                        )
                         / scale_factor
                     )
                 # If there was no scale factor passed in just take a difference of the
                 # end and start times.
                 else:
                     scaled_time = float(
-                        profile_event.end_time - profile_event.start_time
+                        Event._calculate_elapsed_time(
+                            profile_event.start_time, profile_event.end_time
+                        )
                     )
 
                 data.append(scaled_time)
@@ -869,7 +892,7 @@ class EventBlock:
 
             # For delegated events, handles are found via delegateMetadata
             event.delegate_backend_name = delegate_metadata.get("name", "")
-            delegate_metadata_delegate_map = delegate_metadata.get("delegate_map", {})
+            delegate_metadata_delegate_map = delegate_metadata.get("delegate_map") or {}
 
             # delegate_debug_id can be either int based or string based, therefore we need to check both
             debug_handles = delegate_metadata_delegate_map.get(

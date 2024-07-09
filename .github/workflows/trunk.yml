@@ -7,6 +7,9 @@ on:
       - release/*
     tags:
       - ciflow/trunk/*
+  pull_request:
+    paths:
+      - .ci/scripts/**
   workflow_dispatch:
 
 concurrency:
@@ -149,7 +152,7 @@ jobs:
         sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
 
         # Test ethos-u delegate examples with run.sh
-        PYTHON_EXECUTABLE=python bash examples/arm/run.sh examples/arm/ethos-u-scratch/ buck2
+        PYTHON_EXECUTABLE=python bash examples/arm/run.sh examples/arm/ethos-u-scratch/
 
   test-arm-reference-delegation:
     name: test-arm-reference-delegation
@@ -170,8 +173,8 @@ jobs:
 
         install_arm
 
-        # Test tosa_reference flow
-        PYTHON_EXECUTABLE=python bash backends/arm/test/run_tosa_reference.sh
+        # Run arm unit tests
+        pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test
 
   test-coreml-delegate:
     name: test-coreml-delegate
@@ -222,7 +225,7 @@ jobs:
       matrix:
         dtype: [fp32]
         build-tool: [buck2, cmake]
-        mode: [portable, xnnpack+kv+custom]
+        mode: [portable, xnnpack+kv+custom, mps, coreml]
       fail-fast: false
     with:
       runner: macos-m1-stable
@@ -231,14 +234,37 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
-        bash .ci/scripts/setup-conda.sh
 
         DTYPE=${{ matrix.dtype }}
         BUILD_TOOL=${{ matrix.build-tool }}
         MODE=${{ matrix.mode }}
 
+        if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+          # TODO: Will add more modes that don't support buck2
+          if [[ "${MODE}" == "mps" ]]; then
+            echo "mps doesn't support buck2."
+            exit 0
+          fi
+          if [[ "${MODE}" == "coreml" ]]; then
+            echo "coreml doesn't support buck2."
+            exit 0
+          fi
+        fi
+
+        bash .ci/scripts/setup-conda.sh
+
         # Setup executorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+
+        if [[ "${MODE}" == "mps" ]]; then
+          # Install mps delegate
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/mps/install_requirements.sh
+          echo "Finishing installing mps."
+        elif [[ "${MODE}" == "coreml" ]]; then
+          # Install coreml delegate
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/install_requirements.sh
+          echo "Finishing installing coreml."
+        fi
 
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/models/llama2/install_requirements.sh

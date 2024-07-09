@@ -52,11 +52,14 @@ class Module final {
    *
    * @param[in] data_loader A DataLoader used for loading program data.
    * @param[in] memory_allocator A MemoryAllocator used for memory management.
+   * @param[in] tmp_memory_allocator A MemoryAllocator used for allocating
+   * memory during execution time.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    */
   explicit Module(
       std::unique_ptr<DataLoader> data_loader,
       std::unique_ptr<MemoryAllocator> memory_allocator = nullptr,
+      std::unique_ptr<MemoryAllocator> tmp_memory_allocator = nullptr,
       std::unique_ptr<EventTracer> event_tracer = nullptr);
   Module(const Module&) = delete;
   Module& operator=(const Module&) = delete;
@@ -191,6 +194,16 @@ class Module final {
     return event_tracer_.get();
   }
 
+  /**
+   * Set output data pointer for forward method.
+   *
+   * @param[in] output_tensor A Tensor for the output of 'forward' method.
+   * @param[in] output_index Index of the output in 'forward' method.
+   *
+   * @returns An Error to indicate success or failure of the loading process.
+   */
+  Error set_output_data_ptr(Tensor& output_tensor, size_t output_index);
+
  private:
   struct MethodHolder {
     std::vector<std::vector<uint8_t>> planned_buffers;
@@ -205,6 +218,7 @@ class Module final {
   MlockConfig mlock_config_{MlockConfig::NoMlock};
   std::unique_ptr<DataLoader> data_loader_;
   std::unique_ptr<MemoryAllocator> memory_allocator_;
+  std::unique_ptr<MemoryAllocator> temp_allocator_;
   std::unique_ptr<EventTracer> event_tracer_;
   std::unique_ptr<Program> program_;
   std::unordered_map<std::string, MethodHolder> methods_;

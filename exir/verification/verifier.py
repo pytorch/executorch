@@ -18,6 +18,7 @@ from executorch.exir.verification.arg_validator import (
     EdgeOpArgValidator,
     RunHigherOrderOperatorError,
 )
+from torch._dispatch.python import enable_python_dispatcher
 
 from torch._export.verifier import SpecViolationError, Verifier
 from torch._ops import OpOverload
@@ -147,7 +148,8 @@ def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
     validator = EdgeOpArgValidator(gm)
     inputs = _get_inputs(gm)
     try:
-        validator.run(*inputs)
+        with enable_python_dispatcher():
+            validator.run(*inputs)
     except RunHigherOrderOperatorError:
         # NB: ignore higher order operator in the graph.
         # If we lower a graph module to delegate and then compose it with some other graph module, retrace it,

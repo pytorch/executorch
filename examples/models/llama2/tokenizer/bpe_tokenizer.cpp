@@ -23,14 +23,13 @@ static int compare_tokens(const void* a, const void* b) {
   return strcmp(((TokenIndex*)a)->str, ((TokenIndex*)b)->str);
 }
 
-BPETokenizer::BPETokenizer(
-    int32_t vocab_size,
-    uint64_t bos_tok,
-    uint64_t eos_tok)
-    : Tokenizer(vocab_size, bos_tok, eos_tok),
-      vocab_(std::make_unique<char*[]>(vocab_size)),
-      vocab_scores_(std::make_unique<float[]>(vocab_size)),
-      sorted_vocab_(std::make_unique<TokenIndex[]>(vocab_size)) {
+BPETokenizer::BPETokenizer() : Tokenizer() {
+  vocab_size_ = kDefaultVocabSize;
+  vocab_ = std::make_unique<char*[]>(kDefaultVocabSize);
+  vocab_scores_ = std::make_unique<float[]>(kDefaultVocabSize);
+  sorted_vocab_ = std::make_unique<TokenIndex[]>(kDefaultVocabSize);
+  bos_tok_ = kDefaultBosTokenId;
+  eos_tok_ = kDefaultEosTokenId;
   for (int i = 0; i < 256; i++) {
     byte_pieces_[i * 2] = (unsigned char)i;
     byte_pieces_[i * 2 + 1] = '\0';
@@ -58,8 +57,8 @@ Error BPETokenizer::load(const std::string& tokenizer_path) {
     ET_LOG(Error, "couldn't load %s", tokenizer_path.c_str());
     return Error::InvalidArgument;
   }
-  int32_t metadata[2];
-  for (int i = 0; i < 2; i++) {
+  int32_t metadata[4];
+  for (int i = 0; i < 4; i++) {
     if (fread(metadata + i, sizeof(int32_t), 1, file) != 1) {
       ET_LOG(
           Error,
@@ -72,21 +71,10 @@ Error BPETokenizer::load(const std::string& tokenizer_path) {
   // now we have two vocab_sizes one from the model and another from the
   // tokenizer file.
   int32_t tokenizer_vocab_size = metadata[0];
-  if (tokenizer_vocab_size < vocab_size_) {
-    ET_LOG(
-        Info,
-        "The tokenizer vocab size %d is smaller than the model vocab size %d, will add padding tokens.",
-        tokenizer_vocab_size,
-        vocab_size_);
-  } else if (tokenizer_vocab_size > vocab_size_) {
-    ET_LOG(
-        Info,
-        "The tokenizer vocab size %d is larger than the model vocab size %d.",
-        tokenizer_vocab_size,
-        vocab_size_);
-  }
-
-  max_token_length_ = metadata[1];
+  vocab_size_ = tokenizer_vocab_size;
+  bos_tok_ = metadata[1];
+  eos_tok_ = metadata[2];
+  max_token_length_ = metadata[3];
 
   // allocate space for the vocabulary
   vocab_ = std::make_unique<char*[]>(vocab_size_);
@@ -145,7 +133,8 @@ BPETokenizer::~BPETokenizer() {
  * @return Result<std::string> A pointer to the string representation of the
  * token.
  */
-Result<std::string> BPETokenizer::decode(uint64_t prev_token, uint64_t token) {
+Result<std::string> BPETokenizer::decode(uint64_t prev_token, uint64_t token)
+    const {
   ET_CHECK_OK_OR_RETURN_ERROR(Tokenizer::decode_verify(token));
   const char* piece = vocab_[token];
   // following BOS token, sentencepiece decoder strips any leading
@@ -184,7 +173,7 @@ str_lookup(const char* str, TokenIndex* sorted_vocab, int32_t vocab_size) {
  * @return Result<std::vector<uint64_t>>
  */
 Result<std::vector<uint64_t>>
-BPETokenizer::encode(const std::string& text, int8_t bos, int8_t eos) {
+BPETokenizer::encode(const std::string& text, int8_t bos, int8_t eos) const {
   if (!initialized_) {
     ET_LOG(Error, "Tokenizer not initialized");
     return Error::NotSupported;

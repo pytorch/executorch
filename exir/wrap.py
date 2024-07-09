@@ -20,7 +20,7 @@ from torch._C._functorch import (  # @manual=//caffe2/functorch:functorch"
     is_functionaltensor,
 )
 
-from torch._functorch.eager_transforms import _assert_wrapped_functional
+from torch._functorch.eager_transforms import _assert_wrapped_functional  # pyre-ignore
 
 
 def update_with_proxy(t: torch.Tensor, proxy: torch.fx.Proxy) -> torch.Tensor:

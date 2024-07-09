@@ -145,11 +145,17 @@ function(gen_custom_ops_aot_lib)
   target_compile_options(${GEN_LIB_NAME} PRIVATE -frtti -fexceptions)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
-  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch executorch)
+  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch)
 
   include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
+  if(APPLE)
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_no_prim_ops_shared)
+    target_link_options(${GEN_LIB_NAME} PRIVATE -undefined dynamic_lookup)
+  else()
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_no_prim_ops)
+  endif()
 endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
@@ -176,6 +182,10 @@ function(gen_operators_lib)
   endif()
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
+  set(_generated_headers ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h)
+  set_target_properties(
+    ${GEN_LIB_NAME} PROPERTIES PUBLIC_HEADER "${_generated_headers}"
+  )
 endfunction()
 
 # Merge two kernel yaml files, prioritizing functions from FUNCTIONS_YAML and

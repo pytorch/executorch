@@ -63,6 +63,9 @@ executorch_pybindings(
 runtime.python_library(
     name = "portable_lib",
     srcs = ["portable_lib.py"],
-    visibility = ["@EXECUTORCH_CLIENTS"],
+    visibility = [
+        "//executorch/exir/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
     deps = [":_portable_lib"],
 )

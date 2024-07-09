@@ -29,7 +29,7 @@ def define_common_targets():
             "//executorch/examples/models/llama2/tokenizer:tiktoken",
         ],
         env = {
-            "RESOURCES_PATH": "$(location :resources_fb_only)/resources",
+            "RESOURCES_PATH": "$(location :resources)/resources",
         },
         external_deps = [
             "re2",
@@ -43,17 +43,10 @@ def define_common_targets():
         ]),
     )
 
-    runtime.filegroup(
-        name = "resources_fb_only",
-        srcs = native.glob([
-            "resources/fb/**",
-        ]),
-    )
-
     runtime.python_test(
-        name = "test_tokenizer_py",
+        name = "test_bpe_tokenizer_py",
         srcs = [
-            "test_tokenizer.py",
+            "test_bpe_tokenizer.py",
         ],
         visibility = [
             "//executorch/examples/...",

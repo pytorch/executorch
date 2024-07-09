@@ -73,14 +73,11 @@ attn_mask=attn_mask)
 
 /*
 Missing tests:
-1. Add back tests with attention masks
-2. Add different seq lengths on Q
-3. Test for different batch sizes
-4. Apply causal attention
-5. Mix 2 with attention_mask
-6. No bool attention_mask
-7. apply scaling
-8. Different dtypes, fp16, bf16, double (or expect throw)
+1. Test for different batch sizes
+2. Mix 2 with attention_mask
+3. No bool attention_mask
+4. apply scaling
+5. Different dtypes, fp16, bf16, double (or expect throw)
 */
 TEST(OpScaledDotProductAttentionTest, BasicTest) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;

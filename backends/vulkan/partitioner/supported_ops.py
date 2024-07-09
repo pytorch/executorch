@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import operator
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -73,6 +75,7 @@ MATMUL_OPS = [
 ]
 
 POOLING_OPS = [
+    exir_ops.edge.aten.avg_pool2d.default,
     exir_ops.edge.aten.max_pool2d_with_indices.default,
 ]
 
@@ -99,6 +102,7 @@ SHAPE_MANIPULATION_OPS = [
 ]
 
 INDEXING_OPS = [
+    exir_ops.edge.aten.embedding.default,
     exir_ops.edge.aten.index_select.default,
     exir_ops.edge.aten.select_copy.int,
     exir_ops.edge.aten.slice_copy.Tensor,
@@ -114,7 +118,14 @@ ORCHESTRATION_OPS = [
 CREATION_OPS = [
     exir_ops.edge.aten.arange.start_step,
     exir_ops.edge.aten.clone.default,
+    exir_ops.edge.aten.constant_pad_nd.default,
     exir_ops.edge.aten.full.default,
+    exir_ops.edge.aten.full_like.default,
+    exir_ops.edge.aten.ones.default,
+    exir_ops.edge.aten.ones_like.default,
+    exir_ops.edge.aten.upsample_nearest2d.vec,
+    exir_ops.edge.aten.zeros.default,
+    exir_ops.edge.aten.zeros_like.default,
 ]
 
 

@@ -33,11 +33,7 @@ if(ANDROID)
       "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}/glslc"
   )
 else()
-  find_program(
-    GLSLC_PATH glslc
-    PATHS ENV VULKAN_SDK "$ENV{VULKAN_SDK}/${CMAKE_HOST_SYSTEM_PROCESSOR}/bin"
-          "$ENV{VULKAN_SDK}/bin"
-  )
+  find_program(GLSLC_PATH glslc PATHS $ENV{PATH})
 
   if(NOT GLSLC_PATH)
     message(FATAL_ERROR "USE_VULKAN glslc not found")
@@ -54,7 +50,7 @@ function(gen_vulkan_shader_lib_cpp shaders_path)
   execute_process(
     COMMAND
       "${PYTHON_EXECUTABLE}"
-      ${EXECUTORCH_ROOT}/backends/vulkan/runtime/api/gen_vulkan_spv.py
+      ${EXECUTORCH_ROOT}/backends/vulkan/runtime/gen_vulkan_spv.py
       --glsl-path ${shaders_path} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
       --glslc-path=${GLSLC_PATH} --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH}
       --env ${VULKAN_GEN_ARG_ENV}
@@ -91,7 +87,7 @@ macro(vulkan_shader_library shaders_path library_name)
   set(VULKAN_SHADERGEN_OUT_PATH ${CMAKE_BINARY_DIR}/${library_name})
 
   # execute_process( COMMAND "${PYTHON_EXECUTABLE}"
-  # ${EXECUTORCH_ROOT}/backends/vulkan/runtime/api/gen_vulkan_spv.py --glsl-path
+  # ${EXECUTORCH_ROOT}/backends/vulkan/runtime/gen_vulkan_spv.py --glsl-path
   # ${shaders_path} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
   # --glslc-path=${GLSLC_PATH} --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH} --env
   # ${VULKAN_GEN_ARG_ENV} RESULT_VARIABLE error_code ) set(ENV{PYTHONPATH}

@@ -1,4 +1,5 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "runtime", "struct_to_json")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "is_xplat", "runtime", "struct_to_json")
+load("@fbsource//xplat/executorch/kernels/portable:op_registration_util.bzl", "portable_header_list", "portable_source_list")
 
 # Headers that declare the function signatures of the C++ functions that
 # map to entries in functions.yaml and custom_ops.yaml.
@@ -324,6 +325,84 @@ def exir_custom_ops_aot_lib(
             force_static = False,
         )
 
+# Used for dtype selective build. Genrules to copy source and header files.
+def portable_outs(target_name, file_list):
+    outs = {}
+    for file in file_list:
+        outs[file] = ["{}/{}".format(target_name, file)]
+    return outs
+
+def copy_portable_source_files(name):
+    target_name = "portable_source_files"
+    runtime.genrule(
+        name = name,
+        cmd = "cp -f -r $(location //executorch/kernels/portable/cpu:{}) $OUT/".format(target_name),
+        outs = portable_outs(target_name, portable_source_list()),
+        default_outs = ["."],
+    )
+
+def copy_portable_header_files(name):
+    target_name = "portable_header_files"
+    runtime.genrule(
+        name = name,
+        cmd = "cp -f -r $(location //executorch/kernels/portable/cpu:{}) $OUT/".format(target_name),
+        outs = portable_outs(target_name, portable_header_list()),
+        default_outs = ["."],
+    )
+
+def build_portable_lib(name, oplist_header_name, feature = None):
+    """Build portable lib from source. We build from source so that the generated header file, 
+    selected_op_variants.h, can be used to selectively build the lib for different dtypes.
+    """
+
+    # Copy portable cpp files.
+    portable_source_files = []
+    copy_portable_source_files_genrule = name + "_copy_portable_source"
+    copy_portable_source_files(copy_portable_source_files_genrule)
+    for op in portable_source_list():
+        portable_source_files.append(":{}[{}]".format(copy_portable_source_files_genrule, op))
+
+    # Copy portable header files.
+    portable_header_files = {}
+    copy_portable_header_files_genrule = name + "_copy_portable_header"
+    copy_portable_header_files(copy_portable_header_files_genrule)
+    for header in portable_header_list():
+        portable_header_files[header] = ":{}[{}]".format(copy_portable_header_files_genrule, header)
+
+    # Include dtype header.
+    portable_header_files["selected_op_variants.h"] = ":{}[selected_op_variants]".format(oplist_header_name)
+
+    # Build portable lib.
+    runtime.cxx_library(
+        name = name,
+        srcs = portable_source_files,
+        exported_headers = portable_header_files,
+        exported_preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
+        deps = ["//executorch/kernels/portable/cpu/pattern:all_deps", "//executorch/kernels/portable/cpu/util:all_deps"],
+        # header_namespace is only available in xplat. See https://fburl.com/code/we2gvopk
+        header_namespace = "executorch/kernels/portable/cpu",
+        compiler_flags = ["-Wno-missing-prototypes"] +
+                         # For shared library build, we don't want to expose symbols of
+                         # kernel implementation (ex torch::executor::native::tanh_out)
+                         # to library users. They should use kernels through registry only.
+                         # With visibility=hidden, linker won't expose kernel impl symbols
+                         # so it can prune unregistered kernels.
+                         # Currently fbcode links all dependent libraries through shared
+                         # library, and it blocks users like unit tests to use kernel
+                         # implementation directly. So we enable this for xplat only.
+                         ["-fvisibility=hidden"],
+        # WARNING: using a deprecated API to avoid being built into a shared
+        # library. In the case of dynamically loading so library we don't want
+        # it to depend on other so libraries because that way we have to
+        # specify library directory path.
+        force_static = True,
+        # link_whole is necessary because the operators register themselves
+        # via static initializers that run at program startup.
+        # @lint-ignore BUCKLINT link_whole
+        link_whole = True,
+        feature = feature,
+    )
+
 def executorch_generated_lib(
         name,
         functions_yaml_target = None,
@@ -342,7 +421,9 @@ def executorch_generated_lib(
         fbcode_deps = [],
         platforms = get_default_executorch_platforms(),
         compiler_flags = [],
-        kernel_deps = []):
+        kernel_deps = [],
+        dtype_selective_build = False,
+        feature = None):
     """Emits 0-3 C++ library targets (in fbcode or xplat) containing code to
     dispatch the operators specified in the provided yaml files.
 
@@ -389,6 +470,8 @@ def executorch_generated_lib(
         xplat_deps: Additional xplat deps, can be used to provide custom operator library.
         fbcode_deps: Additional fbcode deps, can be used to provide custom operator library.
         compiler_flags: compiler_flags args to runtime.cxx_library
+        dtype_selective_build: In additional to operator selection, dtype selective build further selects the dtypes for each operator. Can be used with model or dict selective build APIs, where dtypes can be specified. Note: this is only available in xplat.
+        feature: Product-Feature Hierarchy (PFH). For internal use only, required for FoA in production. See: https://fburl.com/wiki/2wzjpyqy
     """
     if functions_yaml_target and aten_mode:
         fail("{} is providing functions_yaml_target in ATen mode, it will be ignored. `native_functions.yaml` will be the source of truth.".format(name))
@@ -473,13 +556,22 @@ def executorch_generated_lib(
             platforms = platforms,
         )
 
+    portable_lib = []
+    if dtype_selective_build and is_xplat() and "//executorch/kernels/portable:operators" in kernel_deps:
+        # Remove portable from kernel_deps as we're building it from source.
+        kernel_deps.remove("//executorch/kernels/portable:operators")
+
+        # Build portable lib.
+        portable_lib_name = name + "_portable_lib"
+        build_portable_lib(portable_lib_name, oplist_header_name, feature)
+        portable_lib = [":{}".format(portable_lib_name)]
+
     # Exports headers that declare the function signatures of the C++ functions
     # that map to entries in `functions.yaml` and `custom_ops.yaml`.
     # For ATen mode, the headers will be `aten_Functions.h`, `aten_NativeFunctions.h` and `aten_UnboxingFunctions.h`
     # along with headers declaring custom ops `Functions.h`, `NativeFunctions.h` and `UnboxingFunctions.h`.
     header_lib = name + "_headers"
     if header_lib in libs:
-        libs[header_lib]["headers"]["selected_op_variants.h"] = ":{}[selected_op_variants]".format(oplist_header_name)
         runtime.cxx_library(
             name = header_lib,
             srcs = [],
@@ -494,6 +586,7 @@ def executorch_generated_lib(
                 "//executorch/codegen:macros",
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
             ],
+            feature = feature,
         )
 
     if name in libs:
@@ -522,7 +615,7 @@ def executorch_generated_lib(
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/codegen:macros",
-            ] + deps + kernel_deps,
+            ] + deps + kernel_deps + portable_lib,
             exported_deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
@@ -535,6 +628,7 @@ def executorch_generated_lib(
             # of //executorch.
             _is_external_target = True,
             platforms = platforms,
+            feature = feature,
         )
 
     if custom_ops_yaml_target and custom_ops_requires_aot_registration:

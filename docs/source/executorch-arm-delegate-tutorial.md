@@ -278,6 +278,17 @@ Keep the inputs and outputs to these modules in mind. When we will lower and run
 We need to be aware of data types for running networks on the Ethos-U55 as it is an integer only processor. For this example we use integer types explicitly, for typical use of such a flow networks are built and trained in floating point, and then are quantized from floating point to integer for efficient inference.
 ```
 
+#### MobileNetV2 Module
+[MobileNetV2](https://arxiv.org/abs/1801.04381) is a commonly in-production used network for edge and mobile devices.
+It's also available as a default model in [torchvision](https://github.com/pytorch/vision), so we can load it with the sample code below.
+```
+from torchvision.models import mobilenet_v2  # @manual
+from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
+
+mv2 = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
+```
+For more details, you can refer to the code snippet [here](https://github.com/pytorch/executorch/blob/2354945d47f67f60d9a118ea1a08eef8ba2364b5/examples/models/mobilenet_v2/model.py#L18).
+
 ### Non-delegated Workflow
 
 In the ExecuTorch AoT pipeline, one of the options is to select a backend. ExecuTorch offers a variety of different backends. Selecting backend is optional, it is typically done to target a particular mode of acceleration or hardware for a given model compute requirements. Without any backends, ExecuTorch runtime will fallback to using, available by default, a highly portable set of operators.
@@ -316,7 +327,43 @@ python3 -m examples.arm.aot_arm_compiler --model_name="add" --delegate
 # should produce ./add_arm_delegate.pte
 ```
 
-At the end of this, we should have two different `.pte` files. First one with the [SoftmaxModule](#softmaxmodule), without any backend delegates. And the second one with the [AddModule](#addmodule), and with Arm Ethos-U backend delegate enabled. Now let's try to run these `.pte` files on a Corstone-300 platform in a bare-metal environment.
+### Delegated Quantized Workflow
+Before generating the `.pte` file for delegated quantized networks like MobileNetV2, we need to build the `quantized_ops_aot_lib`
+
+```bash
+SITE_PACKAGES="$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
+
+cd $et_root_dir
+mkdir -p cmake-out-aot-lib
+cmake -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_XNNPACK=OFF \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
+    -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+    -DPYTHON_EXECUTABLE=python3 \
+-Bcmake-out-aot-lib \
+    "${et_root_dir}"
+
+n=$(nproc)
+cmake --build cmake-out-aot-lib -j"$((n - 5))" -- quantized_ops_aot_lib
+```
+
+After the `quantized_ops_aot_lib` build, we can run the following script to generate the `.pte` file
+```bash
+python3 -m examples.arm.aot_arm_compiler --model_name="mv2" --delegate --quantize --so_library="$(find cmake-out-aot-lib -name libquantized_ops_aot_lib.so)"
+# should produce ./mv2_arm_delegate.pte.pte
+```
+
+<br />
+
+At the end of this, we should have three different `.pte` files.
+
+- The first one contains the [SoftmaxModule](#softmaxmodule), without any backend delegates.
+- The second one contains the [AddModule](#addmodule), with Arm Ethos-U backend delegate enabled.
+- The third one contains the [quantized MV2Model](#mv2module), with the Arm Ethos-U backend delegate enabled as well.
+
+Now let's try to run these `.pte` files on a Corstone-300 platform in a bare-metal environment.
 
 ## Getting a Bare-Metal Executable
 
@@ -357,7 +404,6 @@ cd <executorch_source_root_dir>
 toolchain_cmake=<executorch_source_root_dir>/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
 
 cmake                                                 \
-    -DBUCK2=${buck2}                                  \
     -DCMAKE_INSTALL_PREFIX=<executorch_build_dir>     \
     -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
     -DCMAKE_BUILD_TYPE=Release                        \
@@ -488,6 +534,39 @@ Application exit code: 0.
 EXITTHESIM
 
 Info: Simulation is stopping. Reason: CPU time has been exceeded.
+```
+
+Similarily we can get the following output for running the [MV2Model](#mv2module)
+
+```
+    Ethos-U rev 136b7d75 --- Apr 12 2023 13:44:01
+    (C) COPYRIGHT 2019-2023 Arm Limited
+    ALL RIGHTS RESERVED
+
+I executorch:arm_executor_runner.cpp:60] Model in 0x70000000 $
+I executorch:arm_executor_runner.cpp:66] Model PTE file loaded. Size: 4556832 bytes.
+I executorch:arm_executor_runner.cpp:77] Model buffer loaded, has 1 methods
+I executorch:arm_executor_runner.cpp:85] Running method forward
+I executorch:arm_executor_runner.cpp:109] Setting up planned buffer 0, size 752640.
+I executorch:ArmBackendEthosU.cpp:49] ArmBackend::init 0x70000060
+I executorch:arm_executor_runner.cpp:130] Method loaded.
+I executorch:arm_executor_runner.cpp:132] Preparing inputs...
+I executorch:arm_executor_runner.cpp:141] Input prepared.
+I executorch:arm_executor_runner.cpp:143] Starting the model execution...
+I executorch:ArmBackendEthosU.cpp:87] ArmBackend::execute 0x70000060
+I executorch:ArmBackendEthosU.cpp:234] Tensor input 0 will be permuted
+I executorch:arm_executor_runner.cpp:152] Model executed successfully.
+I executorch:arm_executor_runner.cpp:156] 1 outputs:
+Output[0][0]: -0.639322
+Output[0][1]: 0.169232
+Output[0][2]: -0.451286
+...(Skipped)
+Output[0][996]: 0.150429
+Output[0][997]: -0.488894
+Output[0][998]: 0.037607
+Output[0][999]: 1.203430
+I executorch:arm_executor_runner.cpp:177] Program complete, exiting.
+I executorch:arm_executor_runner.cpp:179]
 ```
 
 ## Takeaways

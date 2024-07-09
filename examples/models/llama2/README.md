@@ -1,5 +1,5 @@
 # Summary
-This example demonstrates how to run a [Llama 2] (https://llama.meta.com/llama2/) 7B or [Llama 3](https://ai.meta.com/llama/) 8B model on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on a phone.
+This example demonstrates how to run a [Llama 2](https://llama.meta.com/llama2/) 7B or [Llama 3](https://ai.meta.com/llama/) 8B model on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on a phone.
 
 For more details, see [Llama 2 repo](https://github.com/facebookresearch/llama) or [Llama 3 repo](https://github.com/facebookresearch/llama3).
 
@@ -39,6 +39,7 @@ For Llama 3 8B, we have verified so far on iPhone 15 Pro, iPhone 15 Pro Max, Sam
 
 ## Performance
 
+### Llama2 7B
 Llama 2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
 
 |Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
@@ -46,6 +47,17 @@ Llama 2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 |Galaxy S22  | 8.15 tokens/second | 8.3 tokens/second |
 |Galaxy S24 | 10.66 tokens/second | 11.26 tokens/second |
 |OnePlus 12 | 11.55 tokens/second | 11.6 tokens/second |
+
+### Llama3 8B
+Llama 3 8B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 12 devices. The performance measurement is expressed in terms of tokens per second using an [adb binary-based approach](#step-5-run-benchmark-on).
+
+Note that since Llama3's vocabulary size is 4x that of Llama2, we had to quantize embedding lookup table as well. For these results embedding lookup table was groupwise quantized with 4-bits and group size of 32.
+
+|Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
+|--------| ---------------------- | ---------------
+|Galaxy S22  | 7.85 tokens/second | 8.4 tokens/second |
+|Galaxy S24 | 10.91 tokens/second | 11.21 tokens/second |
+|OnePlus 12 | 10.85 tokens/second | 11.02 tokens/second |
 
 # Instructions
 
@@ -55,8 +67,11 @@ Llama 2 7B performance was measured on the Samsung Galaxy S22, S24, and OnePlus 
 - For Llama 2 7B, your device may require at least 32GB RAM. If this is a constraint for you, please try the smaller stories model.
 
 ## Step 1: Setup
+> :warning: **double check your python environment**: make sure `conda activate <VENV>` is run before all the bash and python scripts.
+
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_requirements.sh --pybind xnnpack`
 2. Run `examples/models/llama2/install_requirements.sh` to install a few dependencies.
+
 
 ## Step 2: Prepare model
 
@@ -75,7 +90,7 @@ You can export and run the original Llama 2 7B model.
 4. Create tokenizer.bin.
 
     ```
-    python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+    python -m examples.models.llama2.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
 
 ### Option B: Download and export stories110M model
@@ -98,12 +113,13 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
 4. Create tokenizer.bin.
 
     ```
-    python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+    python -m examples.models.llama2.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
 
 ### Option C: Download and export Llama 3 8B instruct model
 
 You can export and run the original Llama 3 8B instruct model.
+> :warning: **use the main branch**: Llama 3 is only supported on the ExecuTorch main branch (not release 2.0)
 
 1. Llama 3 pretrained parameters can be downloaded from [Meta's official Llama 3 repository](https://github.com/meta-llama/llama3/).
 

@@ -11,7 +11,7 @@ import random
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import torch
 import torch.export._trace as export_trace
@@ -175,6 +175,9 @@ class Quantize(Stage):
     def graph_module(self) -> str:
         return self.converted_graph
 
+    def run_artifact(self, inputs):
+        return self.converted_graph.forward(*inputs)
+
 
 @register_stage
 class Export(Stage):
@@ -189,7 +192,7 @@ class Export(Stage):
     ) -> None:
         self.exported_program = export(
             artifact, inputs, dynamic_shapes=self.dynamic_shapes
-        ).run_decompositions()
+        )
 
     @property
     def artifact(self) -> ExportedProgram:
@@ -224,14 +227,30 @@ class ToEdge(Stage):
 
 @register_stage
 class RunPasses(Stage):
-    def __init__(self, pass_list: Optional[List[Type[PassType]]] = None):
+    def __init__(
+        self,
+        pass_list: Optional[List[Type[PassType]]] = None,
+        pass_functions: Optional[List[Callable]] = None,
+    ):
         self.pass_list = pass_list
+        self.pass_functions = pass_functions
         self.edge_dialect_program = None
 
     def run(self, artifact: EdgeProgramManager, inputs=None) -> None:
-        pass_manager = XNNPACKPassManager(artifact.exported_program(), self.pass_list)
         self.edge_dialect_program = artifact
-        self.edge_dialect_program._edge_programs["forward"] = pass_manager.transform()
+        if self.pass_list:
+            pass_manager = XNNPACKPassManager(
+                artifact.exported_program(), self.pass_list
+            )
+            self.edge_dialect_program._edge_programs["forward"] = (
+                pass_manager.transform()
+            )
+        if self.pass_functions:
+            assert isinstance(self.pass_functions, list)
+            for pass_function in self.pass_functions:
+                self.edge_dialect_program._edge_programs["forward"] = pass_function(
+                    self.edge_dialect_program.exported_program()
+                )
 
     @property
     def artifact(self) -> EdgeProgramManager:
@@ -341,13 +360,13 @@ class Tester:
     def __init__(
         self,
         module: torch.nn.Module,
-        inputs: Tuple[torch.Tensor],
+        example_inputs: Tuple[torch.Tensor],
         dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         module.eval()
 
         self.original_module = module
-        self.inputs = inputs
+        self.example_inputs = example_inputs
         self.dynamic_shapes = dynamic_shapes
         self.stages: Dict[str, Stage] = OrderedDict.fromkeys(list(_stages_.keys()))
         self.pipeline = {
@@ -385,15 +404,15 @@ class Tester:
         # Get shapes of inputs
         input_shapes = []
         if self.dynamic_shapes is None:
-            for tensor_arg in self.inputs:
+            for tensor_arg in self.example_inputs:
                 assert isinstance(tensor_arg, torch.Tensor)
                 input_shapes.append(tensor_arg.shape)
         else:
             # Random shapes depending on dynamic shape constraint
             dim_name_to_size = {}
-            for arg_idx in range(len(self.inputs)):
-                assert isinstance(self.inputs[arg_idx], torch.Tensor)
-                ex_shape = list(self.inputs[arg_idx].shape)
+            for arg_idx in range(len(self.example_inputs)):
+                assert isinstance(self.example_inputs[arg_idx], torch.Tensor)
+                ex_shape = list(self.example_inputs[arg_idx].shape)
                 dynamic_dim_spec = self.dynamic_shapes[arg_idx]
                 for dim_idx, dim_spec in dynamic_dim_spec.items():
                     assert dim_idx < len(ex_shape)
@@ -427,9 +446,11 @@ class Tester:
                 input_shapes.append(torch.Size(ex_shape))
         # create random tensor inputs with the shapes given above:
         random_inputs = []
-        for arg_idx in range(len(self.inputs)):
+        for arg_idx in range(len(self.example_inputs)):
             random_inputs.append(
-                torch.randn(input_shapes[arg_idx]).to(dtype=self.inputs[arg_idx].dtype)
+                torch.randn(input_shapes[arg_idx]).to(
+                    dtype=self.example_inputs[arg_idx].dtype
+                )
             )
 
         yield tuple(random_inputs)
@@ -466,11 +487,12 @@ class Tester:
 
     # Stages
     def quantize(self, quantize_stage: Optional[Quantize] = None):
-        return self._run_stage(quantize_stage or Quantize(), self.inputs)
+        return self._run_stage(quantize_stage or Quantize(), self.example_inputs)
 
     def export(self, export_stage: Optional[Export] = None):
         return self._run_stage(
-            export_stage or Export(dynamic_shapes=self.dynamic_shapes), self.inputs
+            export_stage or Export(dynamic_shapes=self.dynamic_shapes),
+            self.example_inputs,
         )
 
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):

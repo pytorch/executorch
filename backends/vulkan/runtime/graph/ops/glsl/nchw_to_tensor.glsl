@@ -17,9 +17,7 @@ ${define_active_storage_type(STORAGE)}
 
 #include "indexing_utils.h"
 
-$if DTYPE == "half":
-  #extension GL_EXT_shader_16bit_storage : require
-  #extension GL_EXT_shader_explicit_arithmetic_types_float16: require
+${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
@@ -64,11 +62,12 @@ void main() {
     return;
   }
 
-  const ivec4 tensor_idx = from_texel_buf_i(t_id, gpu_strides, packed_dim);
+  ivec4 tensor_idx = to_texel_pos(t_id, gpu_strides, packed_dim);
+  tensor_idx[packed_dim] *= 4;
   t_out[t_id] = read_texel(tensor_idx);
 }
 
-#else
+#else // USING_TEXTURE
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);

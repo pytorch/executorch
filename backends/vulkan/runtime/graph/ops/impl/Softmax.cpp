@@ -15,7 +15,7 @@
 
 namespace vkcompute {
 
-using namespace api::utils;
+using namespace utils;
 
 void resize_softmax_node(
     ComputeGraph* graph,
@@ -43,9 +43,8 @@ void add_softmax_node(
   softmax_dim = normalize(softmax_dim, in_dim);
 
   vTensorPtr t_out = graph.get_tensor(out);
-  uvec3 global_size = t_out->image_extents();
 
-  api::ShaderInfo shader_descriptor;
+  vkapi::ShaderInfo shader_descriptor;
   std::string kernel_name = in_dim - softmax_dim == 3
       ? "softmax_channel"
       : "softmax_batch_height_width";
@@ -55,22 +54,19 @@ void add_softmax_node(
     kernel_name = "log_" + kernel_name;
   }
 
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       // shader_descriptor,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {in_arg, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in_arg, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->texture_limits_ubo(),
        t_in->sizes_ubo(),
-       graph.create_params_buffer(
-           api::utils::make_ivec2({in_dim, softmax_dim}))},
+       graph.create_params_buffer(utils::make_ivec2({in_dim, softmax_dim}))},
       // Specialization Constants
       {},
       // Resizing Logic

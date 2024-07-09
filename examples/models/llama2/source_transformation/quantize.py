@@ -17,13 +17,11 @@ from sentencepiece import SentencePieceProcessor
 from ..builder import DType
 
 try:
-    # pyre-ignore[21]: Undefined import.
     from fairseq2.nn.embedding import (
         Embedding as fsEmbedding,
         StandardEmbedding as fsStandardEmbedding,
     )
 
-    # pyre-ignore[21]: Undefined import.
     from fairseq2.nn.projection import Linear as fsLinear
 
     print("Using fairseq2 modules.")
@@ -96,7 +94,12 @@ def quantize(
         if calibration_tasks is None:
             calibration_tasks = ["wikitext"]
 
-        from torchao.quantization.GPTQ import InputRecorder
+        try:
+            # torchao 0.3+
+            from torchao._eval import InputRecorder
+        except ImportError:
+            from torchao.quantization.GPTQ import InputRecorder  # pyre-ignore
+
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
 
         if tokenizer_path is None:

@@ -27,7 +27,33 @@ adb push tokenizer.bin /data/local/tmp/llama
 
 Note: The demo app searches in `/data/local/tmp/llama` for .pte and .bin files as LLAMA model and tokenizer.
 
-## Build JNI library
+## Build library
+For the demo app to build, we need to build the ExecuTorch AAR library first.
+
+The AAR library contains the required Java package and the corresponding JNI
+library for using ExecuTorch in your Android app.
+
+### Alternative 1: Use prebuilt AAR library (recommended)
+
+1. Open a terminal window and navigate to the root directory of the `executorch`.
+2. Run the following command to download the prebuilt library:
+```bash
+bash examples/demo-apps/android/LlamaDemo/download_prebuilt_lib.sh
+```
+
+The prebuilt AAR library contains the Java library and the JNI binding for
+NativePeer.java and ExecuTorch native library, including core ExecuTorch
+runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels,
+and Quantized kernels. It comes with two ABI variants, arm64-v8a and x86_64.
+
+If you want to use the prebuilt library for your own app, please refer to
+[Using Android prebuilt libraries (AAR)](./android-prebuilt-library.md) for
+tutorial.
+
+If you need to use other dependencies (like tokenizer), please refer to
+Alternative 2: Build from local machine option.
+
+### Alternative 2: Build from local machine
 1. Open a terminal window and navigate to the root directory of the `executorch`.
 2. Set the following environment variables:
 ```bash

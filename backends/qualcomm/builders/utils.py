@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Dict, Optional
+
 import torch
 from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 
@@ -75,7 +77,10 @@ def is_graph_output(tensor: torch.fx.Node) -> bool:
         tensor: EdgeIR Tensor that is being checked for graph input
     """
     for user in tensor.users.keys():
-        if user.op == "output":
+        # getitem node is skiped, check the op_skip_ops.py
+        if user.op == "output" or (
+            user.target.__name__ == "getitem" and is_graph_output(user)
+        ):
             return True
     return False
 
@@ -97,3 +102,20 @@ def is_constant(
         return tensor.meta["val"].constant is not None
 
     return False
+
+
+def deduce_dtype(
+    tensor: torch.Tensor, quant_infos: Optional[Dict] = None
+) -> torch.dtype:
+    if quant_infos:
+        quant_range = quant_infos["quant_max"] - quant_infos["quant_min"]
+        unsigned = quant_infos["quant_min"] >= 0
+        if quant_range <= torch.iinfo(torch.int8).max - torch.iinfo(torch.int8).min:
+            return torch.uint8 if unsigned else torch.int8
+
+        elif quant_range <= torch.iinfo(torch.int16).max - torch.iinfo(torch.int16).min:
+            return torch.uint16 if unsigned else torch.int16
+
+        return quant_infos["dtype"]
+
+    return tensor.dtype

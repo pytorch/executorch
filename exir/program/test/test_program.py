@@ -32,10 +32,74 @@ from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
-from torch.export import export, ExportedProgram
+from torch.export import Dim, export, ExportedProgram
 from torch.export._trace import _export
 
 from torch.library import impl, Library
+from torch.nn import functional as F
+
+
+class TestLinear(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(32, 16, bias=True)
+
+    def forward(self, x):
+        return self.linear(x)
+
+    @classmethod
+    def _get_random_inputs(cls):
+        x = torch.rand(8, 32)
+        return (x,)
+
+
+class TestSDPA(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, query, key, value):
+        return torch.ops.aten.scaled_dot_product_attention.default(query, key, value)
+
+    @classmethod
+    def _get_random_inputs(cls):
+        d_k = 64
+        batch = 16
+        seq_len = 10
+        query = torch.rand(batch, seq_len, d_k)
+        key = torch.rand(batch, seq_len, d_k)
+        value = torch.rand(batch, seq_len, d_k)
+        return (query, key, value)
+
+
+class TestLinearSDPACombined(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(32, 16, bias=True)
+
+    def forward(self, x, query, key, value):
+        x = self.linear(x)
+        return (
+            x,
+            torch.ops.aten.scaled_dot_product_attention.default(query, key, value),
+        )
+
+    @classmethod
+    def _get_random_inputs(cls):
+        return TestLinear._get_random_inputs() + TestSDPA._get_random_inputs()
+
+
+class TestUpsample(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = F.interpolate(x, scale_factor=2, mode="nearest")
+        return x
+
+    @classmethod
+    def _get_random_inputs(cls):
+        x = torch.randn(1, 1, 8, 8)
+        return (x,)
 
 
 class WrapperModule(torch.nn.Module):
@@ -47,7 +111,7 @@ class WrapperModule(torch.nn.Module):
         return self.fn(*args, **kwargs)
 
 
-lib = Library("test_op", "DEF")
+lib = Library("exir_program_test_op", "DEF")
 
 # Fake a operator for testing.
 # This operator takes two tensors as input and returns the first one.
@@ -272,6 +336,38 @@ class TestProgramManagers(unittest.TestCase):
             original_res,  # x * y + x
         )
 
+    def test_issue_3659(self):
+
+        class Mul(torch.nn.Module):
+            def __init__(self):
+                super(Mul, self).__init__()
+
+            def forward(self, x: torch.Tensor, y: torch.Tensor):
+                return torch.matmul(x, y)
+
+            def get_eager_model(self) -> torch.nn.Module:
+                return self
+
+            def get_example_inputs(self):
+                return (torch.randn(1, 3, 10), torch.randn(1, 10, 3))
+
+            def get_dynamic_shapes(self):
+                dim1_x = Dim("Dot_dim1_x", min=2, max=100)
+                dim2_x = Dim("Dot_dim2_x", min=2, max=100)
+                return {"x": {1: dim1_x, 2: dim2_x}, "y": {1: dim2_x, 2: dim1_x}}
+
+        model = Mul()
+        ep = torch.export.export(
+            model, model.get_example_inputs(), dynamic_shapes=model.get_dynamic_shapes()
+        )
+
+        to_edge(
+            ep,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=True,
+            ),
+        )
+
     def test_transform_dict_api(self):
         edge_manager = to_edge(get_exported_programs(), get_config_methods())
 
@@ -442,7 +538,7 @@ class TestProgramManagers(unittest.TestCase):
 
     def test_edge_dialect_custom_op(self):
         def _use_foo_add(a: torch.Tensor, b: torch.Tensor):
-            return torch.ops.test_op.foo(a, b)
+            return torch.ops.exir_program_test_op.foo(a, b)
 
         from torch._export.verifier import SpecViolationError
 
@@ -471,61 +567,13 @@ class TestProgramManagers(unittest.TestCase):
                 )
 
     def test_to_edge_transform_and_lower(self):
-        class TestLinear(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = torch.nn.Linear(32, 16, bias=True)
-
-            def forward(self, x):
-                return self.linear(x)
-
-            @classmethod
-            def _get_random_inputs(cls):
-                x = torch.rand(8, 32)
-                return (x,)
-
-        class TestSDPA(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, query, key, value):
-                return torch.ops.aten.scaled_dot_product_attention.default(
-                    query, key, value
-                )
-
-            @classmethod
-            def _get_random_inputs(cls):
-                d_k = 64
-                batch = 16
-                seq_len = 10
-                query = torch.rand(batch, seq_len, d_k)
-                key = torch.rand(batch, seq_len, d_k)
-                value = torch.rand(batch, seq_len, d_k)
-                return (query, key, value)
-
-        class TestLinearSDPACombined(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = torch.nn.Linear(32, 16, bias=True)
-
-            def forward(self, x, query, key, value):
-                x = self.linear(x)
-                return (
-                    x,
-                    torch.ops.aten.scaled_dot_product_attention.default(
-                        query, key, value
-                    ),
-                )
-
-            @classmethod
-            def _get_random_inputs(cls):
-                return TestLinear._get_random_inputs() + TestSDPA._get_random_inputs()
-
         self._test_model_with_non_decomp_partitioner(TestLinear())
 
         self._test_model_with_non_decomp_partitioner(TestSDPA())
 
         self._test_model_with_non_decomp_partitioner(TestLinearSDPACombined())
+
+        self._test_model_with_non_decomp_partitioner(TestUpsample())
 
     def test_to_edge_transform_and_lower_with_exception(self):
         class TestLinear(torch.nn.Module):

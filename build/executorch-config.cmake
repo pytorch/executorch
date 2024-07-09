@@ -13,7 +13,9 @@
 cmake_minimum_required(VERSION 3.19)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../..")
-set(required_lib_list executorch executorch_no_prim_ops portable_kernels)
+set(required_lib_list executorch executorch_no_prim_ops
+                      executorch_no_prim_ops_shared portable_kernels
+)
 foreach(lib ${required_lib_list})
   set(lib_var "LIB_${lib}")
   add_library(${lib} STATIC IMPORTED)
@@ -39,10 +41,13 @@ set(lib_list
     bundled_program
     extension_data_loader
     ${FLATCCRT_LIB}
+    coremldelegate
     mpsdelegate
     qnn_executorch_backend
     portable_ops_lib
     extension_module
+    extension_module_static
+    extension_runner_util
     xnnpack_backend
     XNNPACK
     cpuinfo
@@ -55,6 +60,7 @@ set(lib_list
     optimized_native_cpu_ops_lib
     quantized_kernels
     quantized_ops_lib
+    quantized_ops_aot_lib
 )
 foreach(lib ${lib_list})
   # Name of the variable which stores result of the find_library search

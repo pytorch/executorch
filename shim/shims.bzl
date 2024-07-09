@@ -135,15 +135,24 @@ def cpp_library(
         exported_linker_flags = None,
         headers = None,
         private_headers = None,
+        propagated_pp_flags = (),
         **kwargs):
-    _unused = (undefined_symbols, arch_preprocessor_flags, modular_headers, arch_compiler_flags, tags)  # @unused
+    base_path = native.package_name()
+    oss_depends_on_folly = read_config("oss_depends_on", "folly", False)
+    header_base_path = base_path
+    if oss_depends_on_folly and header_base_path.startswith("folly"):
+        header_base_path = header_base_path.replace("folly/", "", 1)
+
+    _unused = (undefined_symbols, arch_preprocessor_flags, modular_headers, arch_compiler_flags, tags, propagated_pp_flags)  # @unused
     if os_deps:
         deps += _select_os_deps(_fix_dict_deps(os_deps))
     if headers == None:
         headers = []
+    if tags != None and "oss_dependency" in tags:
+        if oss_depends_on_folly:
+            headers = [item.replace("//:", "//folly:") if item == "//:folly-config.h" else item for item in headers]
     if is_select(srcs) and auto_headers == AutoHeaders.SOURCES:
         # Validate `srcs` and `auto_headers` before the config check
-        base_path = native.package_name()
         fail(
             "//{}:{}: `select` srcs cannot support AutoHeaders.SOURCES".format(base_path, name),
         )
@@ -173,6 +182,7 @@ def cpp_library(
         headers = private_headers,
         exported_linker_flags = linker_flags,
         linker_flags = private_linker_flags,
+        header_namespace = header_base_path,
         **kwargs
     )
 
@@ -188,11 +198,14 @@ def cpp_unittest(
         extract_helper_lib = None,
         compiler_specific_flags = None,
         default_strip_mode = None,
+        srcs = [],
         **kwargs):
     _unused = (supports_static_listing, allocator, owner, tags, emails, extract_helper_lib, compiler_specific_flags, default_strip_mode)  # @unused
+    srcs = srcs + ["shim//third-party/googletest:gtest_main.cpp"]
     prelude.cxx_test(
         deps = _maybe_select_map(deps + external_deps_to_targets(external_deps), _fix_deps),
         visibility = visibility,
+        srcs = srcs,
         **kwargs
     )
 
@@ -415,9 +428,14 @@ def _fix_dep(x: str) -> [
     elif x.startswith("third-party//"):
         return "shim//third-party/" + x.removeprefix("third-party//")
     elif x.startswith("//folly"):
+        oss_depends_on_folly = read_config("oss_depends_on", "folly", False)
+        if oss_depends_on_folly:
+            return "root//folly/" + x.removeprefix("//")
         return "root//" + x.removeprefix("//")
     elif x.startswith("root//folly"):
         return x
+    elif x.startswith("//fizz"):
+        return "root//" + x.removeprefix("//")
     elif x.startswith("shim//"):
         return x
     else:

@@ -120,7 +120,7 @@ struct type_convert<
     torch::executor::ScalarType scalar_type =
         static_cast<torch::executor::ScalarType>(val.scalar_type());
     managed_tensor = std::make_unique<ManagedTensor>(
-        val.mutable_data_ptr(), val.numel(), sizes, scalar_type);
+        val.mutable_data_ptr(), sizes, scalar_type);
     converted = managed_tensor->get_aliasing_tensor();
   }
   ETensor call() {

@@ -21,10 +21,10 @@ void add_staging_to_tensor_node(
     const ValueRef out_tensor) {
   VK_CHECK_COND(graph.val_is_staging(in_staging));
 
-  api::ShaderInfo shader =
+  vkapi::ShaderInfo shader =
       get_nchw_to_tensor_shader(*graph.get_tensor(out_tensor));
 
-  api::ParamsBindList ubos({graph.sizes_ubo(out_tensor)});
+  vkapi::ParamsBindList ubos({graph.sizes_ubo(out_tensor)});
   if (graph.is_buffer_storage(out_tensor)) {
     ubos.append({
         graph.texel_strides_ubo(out_tensor),
@@ -38,8 +38,8 @@ void add_staging_to_tensor_node(
       graph.create_global_wg_size(out_tensor),
       graph.create_local_wg_size(out_tensor),
       // Input and Outputs
-      {{out_tensor, api::MemoryAccessType::WRITE},
-       {in_staging, api::MemoryAccessType::READ}},
+      {{out_tensor, vkapi::MemoryAccessType::WRITE},
+       {in_staging, vkapi::MemoryAccessType::READ}},
       // Parameter Buffers
       ubos,
       // Specialization Constants
@@ -55,10 +55,10 @@ void add_tensor_to_staging_node(
     const ValueRef out_staging) {
   VK_CHECK_COND(graph.val_is_staging(out_staging));
 
-  api::ShaderInfo shader =
+  vkapi::ShaderInfo shader =
       get_tensor_to_nchw_shader(*graph.get_tensor(in_tensor));
 
-  api::ParamsBindList ubos({graph.sizes_ubo(in_tensor)});
+  vkapi::ParamsBindList ubos({graph.sizes_ubo(in_tensor)});
   if (graph.is_buffer_storage(in_tensor)) {
     ubos.append({
         graph.texel_strides_ubo(in_tensor),
@@ -72,8 +72,8 @@ void add_tensor_to_staging_node(
       graph.create_global_wg_size(in_tensor),
       graph.create_local_wg_size(in_tensor),
       // Input and Outputs
-      {{in_tensor, api::MemoryAccessType::READ},
-       {out_staging, api::MemoryAccessType::WRITE}},
+      {{in_tensor, vkapi::MemoryAccessType::READ},
+       {out_staging, vkapi::MemoryAccessType::WRITE}},
       // Parameter Buffers
       ubos,
       // Specialization Constants
@@ -83,25 +83,31 @@ void add_tensor_to_staging_node(
 ValueRef prepack(
     ComputeGraph& graph,
     const ValueRef vref,
-    const api::GPUMemoryLayout layout) {
+    const vkapi::GPUMemoryLayout layout) {
   ValueRef v = graph.add_tensor_like(vref, layout);
-  vTensorPtr t = graph.get_tensor(v);
 
-  api::ShaderInfo shader = get_nchw_to_tensor_shader(*t);
+  vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(*graph.get_tensor(v));
 
-  api::utils::uvec3 global_size = t->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  vkapi::ParamsBindList ubos({graph.sizes_ubo(v)});
+  if (graph.is_buffer_storage(v)) {
+    ubos.append({
+        graph.texel_strides_ubo(v),
+        graph.ntexels_ubo(v),
+    });
+  }
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
       shader,
-      global_size,
-      local_size,
+      graph.create_global_wg_size(v),
+      graph.create_local_wg_size(v),
+      // Input and Outputs
       vref,
       v,
-      {t->sizes_ubo()},
+      // Parameter Buffers
+      ubos,
       // Specialization Constants
-      {SV(t->packed_dim_whcn_idx())}));
+      {SV(graph.packed_dim_whcn_idx_of(v))}));
 
   return v;
 }
@@ -109,7 +115,7 @@ ValueRef prepack(
 ValueRef prepack_if_tensor_ref(
     ComputeGraph& graph,
     const ValueRef v,
-    const api::GPUMemoryLayout layout) {
+    const vkapi::GPUMemoryLayout layout) {
   if (graph.val_is_tref(v)) {
     return prepack(graph, v, layout);
   } else {
@@ -119,7 +125,7 @@ ValueRef prepack_if_tensor_ref(
 
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
   if (graph.val_is_tref(v)) {
-    api::GPUMemoryLayout layout =
+    vkapi::GPUMemoryLayout layout =
         graph.suggested_memory_layout(graph.get_tref(v)->sizes);
     return prepack(graph, v, layout);
   } else {

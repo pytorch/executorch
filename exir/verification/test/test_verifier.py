@@ -4,8 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import unittest
 from contextlib import contextmanager
+from typing import Any
 
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge
@@ -20,7 +23,7 @@ from ..verifier import EXIREdgeDialectVerifier
 
 class TestEdgeDialectVerifier(unittest.TestCase):
     @contextmanager
-    def assertNotRaises(self, exc_type):
+    def assertNotRaises(self, exc_type: Any) -> Any:
         try:
             yield None
         except exc_type:
@@ -81,8 +84,9 @@ class TestEdgeDialectVerifier(unittest.TestCase):
 
         export_model = export(m, example_input)
 
-        # In default we use dim order.
-        compile_config_without_edge_op = EdgeCompileConfig(_use_edge_ops=False)
+        compile_config_without_edge_op = EdgeCompileConfig(
+            _use_edge_ops=False, _skip_dim_order=False
+        )
 
         edge_manager = to_edge(
             export_model, compile_config=compile_config_without_edge_op
@@ -128,8 +132,7 @@ class TestEdgeDialectVerifier(unittest.TestCase):
 
         export_model = export(m, example_input)
 
-        # In default we use dim order.
-        compile_config_with_dim_order = EdgeCompileConfig()
+        compile_config_with_dim_order = EdgeCompileConfig(_skip_dim_order=False)
         compile_config_with_stride = EdgeCompileConfig(_skip_dim_order=True)
 
         dim_order_edge_model = to_edge(
