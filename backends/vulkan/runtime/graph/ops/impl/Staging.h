@@ -27,7 +27,7 @@ void add_tensor_to_staging_node(
 ValueRef prepack_if_tensor_ref(
     ComputeGraph& graph,
     const ValueRef v,
-    const vkapi::GPUMemoryLayout layout);
+    const utils::GPUMemoryLayout layout);
 
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v);
 

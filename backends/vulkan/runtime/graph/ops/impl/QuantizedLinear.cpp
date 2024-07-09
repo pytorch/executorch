@@ -72,9 +72,9 @@ void add_q_8w_linear_node(
     const ValueRef scales_data,
     const ValueRef out) {
   ValueRef q_mat2 =
-      prepack_if_tensor_ref(graph, q_mat2_data, vkapi::kWidthPacked);
+      prepack_if_tensor_ref(graph, q_mat2_data, utils::kWidthPacked);
   ValueRef scales =
-      prepack_if_tensor_ref(graph, scales_data, vkapi::kWidthPacked);
+      prepack_if_tensor_ref(graph, scales_data, utils::kWidthPacked);
 
   std::string kernel_name = "q_8w_linear";
   kernel_name.reserve(kShaderNameReserve);

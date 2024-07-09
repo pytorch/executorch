@@ -94,8 +94,8 @@ void add_addmm_naive_node(
     const ValueRef out,
     const Params& params,
     const ValueRef mat2_is_transposed) {
-  ValueRef self = prepack_if_tensor_ref(graph, self_data, vkapi::kWidthPacked);
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, vkapi::kHeightPacked);
+  ValueRef self = prepack_if_tensor_ref(graph, self_data, utils::kWidthPacked);
+  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
 
   std::string kernel_name =
       graph.get_bool(mat2_is_transposed) ? "linear_naive" : "addmm_naive";
@@ -137,11 +137,11 @@ void add_addmm_optimized_node(
     const Params& params,
     const ValueRef mat2_is_transposed) {
   ValueRef self =
-      prepack_if_tensor_ref(graph, self_data, vkapi::kChannelsPacked);
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, vkapi::kHeightPacked);
+      prepack_if_tensor_ref(graph, self_data, utils::kChannelsPacked);
+  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
 
   // Ensure mat1 is width packed
-  ValueRef mat1_W_packed = graph.add_tensor_like(mat1, vkapi::kWidthPacked);
+  ValueRef mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
   auto viewFn = VK_GET_OP_FN("aten.view_copy.default");
   viewFn(graph, {mat1, graph.add_none(), mat1_W_packed});
 
@@ -149,8 +149,8 @@ void add_addmm_optimized_node(
 
   // Ensure mat2 is height packed
   ValueRef mat2_packed = mat2;
-  const vkapi::GPUMemoryLayout mat2_layout =
-      mat2_is_transposed_val ? vkapi::kWidthPacked : vkapi::kHeightPacked;
+  const utils::GPUMemoryLayout mat2_layout =
+      mat2_is_transposed_val ? utils::kWidthPacked : utils::kHeightPacked;
   if (graph.memory_layout_of(mat2) != mat2_layout) {
     mat2_packed = graph.add_tensor_like(mat2, mat2_layout);
     viewFn(graph, {mat2, graph.add_none(), mat2_packed});
@@ -224,10 +224,10 @@ void add_addmm_node(
   }
 
   Params params = {alpha_val, beta_val};
-  if (graph.memory_layout_of(mat1) == vkapi::kChannelsPacked) {
+  if (graph.memory_layout_of(mat1) == utils::kChannelsPacked) {
     add_addmm_optimized_node(
         graph, self, mat1, mat2, beta, alpha, out, params, mat2_is_transposed);
-  } else if (graph.memory_layout_of(mat1) == vkapi::kWidthPacked) {
+  } else if (graph.memory_layout_of(mat1) == utils::kWidthPacked) {
     add_addmm_naive_node(
         graph, self, mat1, mat2, beta, alpha, out, params, mat2_is_transposed);
   } else {
@@ -255,7 +255,7 @@ void linear(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   ValueRef bias = args.at(2);
   ValueRef out = args.at(3);
   ValueRef weight =
-      prepack_if_tensor_ref(graph, weight_data, vkapi::kWidthPacked);
+      prepack_if_tensor_ref(graph, weight_data, utils::kWidthPacked);
   ValueRef mat2_is_transposed = graph.add_scalar(true);
   if (graph.val_is_none(bias)) {
     return add_matmul_node(graph, input, weight, out, mat2_is_transposed);
