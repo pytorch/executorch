@@ -34,7 +34,7 @@ enum AdapterSelector {
   First,
 };
 
-struct RuntimeConfiguration final {
+struct RuntimeConfig final {
   bool enable_validation_messages;
   bool init_default_device;
   AdapterSelector default_selector;
@@ -44,7 +44,7 @@ struct RuntimeConfiguration final {
 
 class Runtime final {
  public:
-  explicit Runtime(const RuntimeConfiguration);
+  explicit Runtime(const RuntimeConfig);
 
   // Do not allow copying. There should be only one global instance of this
   // class.
@@ -60,7 +60,7 @@ class Runtime final {
   using AdapterPtr = std::unique_ptr<Adapter>;
 
  private:
-  RuntimeConfiguration config_;
+  RuntimeConfig config_;
 
   VkInstance instance_;
 

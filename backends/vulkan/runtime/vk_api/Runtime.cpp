@@ -78,7 +78,7 @@ void find_requested_layers_and_extensions(
   }
 }
 
-VkInstance create_instance(const RuntimeConfiguration& config) {
+VkInstance create_instance(const RuntimeConfig& config) {
   const VkApplicationInfo application_info{
       VK_STRUCTURE_TYPE_APPLICATION_INFO, // sType
       nullptr, // pNext
@@ -175,7 +175,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_report_callback_fn(
 
 VkDebugReportCallbackEXT create_debug_report_callback(
     VkInstance instance,
-    const RuntimeConfiguration config) {
+    const RuntimeConfig config) {
   if (VK_NULL_HANDLE == instance || !config.enable_validation_messages) {
     return VkDebugReportCallbackEXT{};
   }
@@ -256,7 +256,7 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime() {
   const uint32_t num_requested_queues = 1; // TODO: raise this value
   const std::string cache_data_path = ""; // TODO: expose to client
 
-  const RuntimeConfiguration default_config{
+  const RuntimeConfig default_config{
       enable_validation_messages,
       init_default_device,
       AdapterSelector::First,
@@ -274,7 +274,7 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime() {
 
 } // namespace
 
-Runtime::Runtime(const RuntimeConfiguration config)
+Runtime::Runtime(const RuntimeConfig config)
     : config_(config),
       instance_(create_instance(config_)),
       device_mappings_(create_physical_devices(instance_)),
