@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/Tensor.h>
+#include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
 

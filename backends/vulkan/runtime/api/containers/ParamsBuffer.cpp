@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/api/ParamsBuffer.h>
+#include <executorch/backends/vulkan/runtime/api/containers/ParamsBuffer.h>
 
 #include <cstring>
 
