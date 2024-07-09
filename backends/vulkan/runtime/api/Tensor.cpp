@@ -15,10 +15,10 @@ namespace api {
 
 std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
-    const vkapi::GPUMemoryLayout memory_layout,
+    const utils::GPUMemoryLayout memory_layout,
     const bool texel_strides) {
   const int64_t dim_offset =
-      vkapi::to_packed_dim_nchw_offset<int64_t>(memory_layout);
+      utils::to_packed_dim_nchw_offset<int64_t>(memory_layout);
   const int64_t last_dim = sizes.size() - dim_offset;
   VK_CHECK_COND(last_dim >= 0);
 
@@ -45,7 +45,7 @@ std::vector<int64_t> calculate_strides(
 
 std::vector<int64_t> calculate_padded_sizes(
     const std::vector<int64_t>& sizes,
-    const vkapi::GPUMemoryLayout memory_layout) {
+    const utils::GPUMemoryLayout memory_layout) {
   int64_t ndim = sizes.size();
   if (ndim == 0) {
     ndim = 1;
@@ -60,7 +60,7 @@ std::vector<int64_t> calculate_padded_sizes(
 
   // Pad the packed dim to the next multiple of 4.
   const int64_t dim_offset =
-      vkapi::to_packed_dim_nchw_offset<int64_t>(memory_layout);
+      utils::to_packed_dim_nchw_offset<int64_t>(memory_layout);
   const int64_t padded_dim_size = utils::val_at(-dim_offset, sizes);
   padded_sizes.at(ndim_up4 - dim_offset) = utils::align_up_4(padded_dim_size);
 
@@ -69,7 +69,7 @@ std::vector<int64_t> calculate_padded_sizes(
 
 utils::uvec3 calculate_image_extents(
     const std::vector<int64_t>& padded_sizes,
-    const vkapi::GPUMemoryLayout memory_layout) {
+    const utils::GPUMemoryLayout memory_layout) {
   VK_CHECK_COND(padded_sizes.size() == 4);
 
   uint32_t N = utils::safe_downcast<uint32_t>(padded_sizes.at(0));
@@ -78,15 +78,15 @@ utils::uvec3 calculate_image_extents(
   uint32_t W = utils::safe_downcast<uint32_t>(padded_sizes.at(3));
 
   switch (memory_layout) {
-    case vkapi::kWidthPacked:
+    case utils::kWidthPacked:
       VK_CHECK_COND(W % 4 == 0);
       W /= 4;
       break;
-    case vkapi::kHeightPacked:
+    case utils::kHeightPacked:
       VK_CHECK_COND(H % 4 == 0);
       H /= 4;
       break;
-    case vkapi::kChannelsPacked:
+    case utils::kChannelsPacked:
       VK_CHECK_COND(C % 4 == 0);
       C /= 4;
       break;
@@ -103,8 +103,8 @@ vTensor::vTensor(
     Context* const context,
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
-    const vkapi::StorageType storage_type,
-    const vkapi::GPUMemoryLayout memory_layout,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout,
     const bool allocate_memory)
     : dtype_(dtype),
       memory_layout_(memory_layout),
@@ -125,7 +125,7 @@ vTensor::vTensor(
           padded_sizes_,
           dtype_,
           allocate_memory) {
-  if (storage_type != vkapi::kBuffer) {
+  if (storage_type != utils::kBuffer) {
     texture_limits_.limits = utils::ivec3{
         utils::safe_downcast<int32_t>(storage_.image_extents_.data[0]),
         utils::safe_downcast<int32_t>(storage_.image_extents_.data[1]),
@@ -204,10 +204,10 @@ const vkapi::BufferBindInfo vTensor::ntexels_ubo() {
 
 VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
   switch (storage_type()) {
-    case vkapi::kBuffer:
+    case utils::kBuffer:
       return storage_.buffer_.allocation_create_info();
-    case vkapi::kTexture2D:
-    case vkapi::kTexture3D:
+    case utils::kTexture2D:
+    case utils::kTexture3D:
       return storage_.image_.allocation_create_info();
   }
   return {};
@@ -215,10 +215,10 @@ VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
 
 VkMemoryRequirements vTensor::get_memory_requirements() const {
   switch (storage_type()) {
-    case vkapi::kBuffer:
+    case utils::kBuffer:
       return storage_.buffer_.get_memory_requirements();
-    case vkapi::kTexture2D:
-    case vkapi::kTexture3D:
+    case utils::kTexture2D:
+    case utils::kTexture3D:
       return storage_.image_.get_memory_requirements();
   }
   return {};
@@ -226,11 +226,11 @@ VkMemoryRequirements vTensor::get_memory_requirements() const {
 
 void vTensor::bind_allocation(const vkapi::Allocation& allocation) {
   switch (storage_type()) {
-    case vkapi::kBuffer:
+    case utils::kBuffer:
       storage_.buffer_.bind_allocation(allocation);
       break;
-    case vkapi::kTexture2D:
-    case vkapi::kTexture3D:
+    case utils::kTexture2D:
+    case utils::kTexture3D:
       storage_.image_.bind_allocation(allocation);
       break;
   }
@@ -275,7 +275,7 @@ void vTensor::reallocate(const std::vector<int64_t>& new_sizes) {
 }
 
 void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
-  if (storage_type() != vkapi::kBuffer) {
+  if (storage_type() != utils::kBuffer) {
     // For texture storage check that the current texture is large enough for
     // the new sizes of the tensor.
     utils::uvec3 virtual_extents =
@@ -302,7 +302,7 @@ void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
 vkapi::VulkanImage allocate_image(
     Context* const context_ptr,
     utils::uvec3& image_extents,
-    const vkapi::StorageType storage_type,
+    const utils::StorageType storage_type,
     const VkFormat image_format,
     const bool allocate_memory) {
   vkapi::Adapter* adapter_ptr = context_ptr->adapter_ptr();
@@ -318,11 +318,11 @@ vkapi::VulkanImage allocate_image(
   VkImageViewType image_view_type;
 
   switch (storage_type) {
-    case vkapi::kTexture3D:
+    case utils::kTexture3D:
       image_type = VK_IMAGE_TYPE_3D;
       image_view_type = VK_IMAGE_VIEW_TYPE_3D;
       break;
-    case vkapi::kTexture2D:
+    case utils::kTexture2D:
       image_type = VK_IMAGE_TYPE_2D;
       image_view_type = VK_IMAGE_VIEW_TYPE_2D;
       break;
@@ -347,13 +347,13 @@ vkapi::VulkanImage allocate_image(
 vkapi::VulkanBuffer allocate_buffer(
     Context* const context_ptr,
     const int64_t numel,
-    const vkapi::StorageType storage_type,
+    const utils::StorageType storage_type,
     const vkapi::ScalarType dtype,
     const bool allocate_memory) {
   vkapi::Adapter* adapter_ptr = context_ptr->adapter_ptr();
 
   switch (storage_type) {
-    case vkapi::kBuffer:
+    case utils::kBuffer:
       break;
     default:
       // Return an empty VulkanBuffer if Buffer storage is not used
@@ -366,8 +366,8 @@ vkapi::VulkanBuffer allocate_buffer(
 
 vTensorStorage::vTensorStorage(
     Context* const context,
-    const vkapi::StorageType storage_type,
-    const vkapi::GPUMemoryLayout gpu_memory_layout,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout gpu_memory_layout,
     const std::vector<int64_t>& padded_sizes,
     const vkapi::ScalarType dtype,
     const bool allocate_memory)
@@ -458,7 +458,7 @@ void vTensorStorage::transition(
 
 void vTensorStorage::discard_and_reallocate(
     const std::vector<int64_t>& padded_sizes,
-    const vkapi::GPUMemoryLayout gpu_memory_layout,
+    const utils::GPUMemoryLayout gpu_memory_layout,
     const vkapi::ScalarType dtype) {
   const bool image_owns_memory = image_.owns_memory();
   const bool buffer_owns_memory = buffer_.owns_memory();

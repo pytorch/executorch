@@ -49,8 +49,8 @@ void resize_native_layer_norm_node(
 }
 
 void check_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, vkapi::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 }
 
 void add_native_layer_norm_node(

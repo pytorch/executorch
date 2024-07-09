@@ -68,7 +68,7 @@ void add_matmul_naive_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, vkapi::kHeightPacked);
+  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
 
   std::string kernel_name = graph.get_bool(mat2_is_transposed)
       ? "matmul_transposed_naive"
@@ -104,10 +104,10 @@ void add_matmul_optimized_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, vkapi::kHeightPacked);
+  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
 
   // Ensure mat1 is width packed
-  ValueRef mat1_W_packed = graph.add_tensor_like(mat1, vkapi::kWidthPacked);
+  ValueRef mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
   auto viewFn = VK_GET_OP_FN("aten.view_copy.default");
   viewFn(graph, {mat1, graph.add_none(), mat1_W_packed});
 
@@ -115,8 +115,8 @@ void add_matmul_optimized_node(
 
   // Ensure mat2 to height packed
   ValueRef mat2_packed = mat2;
-  const vkapi::GPUMemoryLayout mat2_layout =
-      mat2_is_transposed_val ? vkapi::kWidthPacked : vkapi::kHeightPacked;
+  const utils::GPUMemoryLayout mat2_layout =
+      mat2_is_transposed_val ? utils::kWidthPacked : utils::kHeightPacked;
   if (graph.memory_layout_of(mat2) != mat2_layout) {
     mat2_packed = graph.add_tensor_like(mat2, mat2_layout);
     viewFn(graph, {mat2, graph.add_none(), mat2_packed});
@@ -174,9 +174,9 @@ void add_matmul_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  if (graph.memory_layout_of(mat1) == vkapi::kChannelsPacked) {
+  if (graph.memory_layout_of(mat1) == utils::kChannelsPacked) {
     add_matmul_optimized_node(graph, mat1, mat2_data, out, mat2_is_transposed);
-  } else if (graph.memory_layout_of(mat1) == vkapi::kWidthPacked) {
+  } else if (graph.memory_layout_of(mat1) == utils::kWidthPacked) {
     add_matmul_naive_node(graph, mat1, mat2_data, out, mat2_is_transposed);
   } else {
     VK_THROW("Input should be channel packed or width packed.");
