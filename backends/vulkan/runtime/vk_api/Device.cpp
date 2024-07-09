@@ -10,11 +10,10 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Device.h>
 
+#include <executorch/backends/vulkan/runtime/vk_api/Exception.h>
+
 #include <bitset>
 #include <cstring>
-#include <iomanip>
-#include <sstream>
-#include <utility>
 
 namespace vkcompute {
 namespace vkapi {

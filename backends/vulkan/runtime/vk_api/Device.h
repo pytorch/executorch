@@ -12,18 +12,8 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
-
-#include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
-#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
-
-#include <executorch/backends/vulkan/runtime/vk_api/memory/Allocator.h>
-
-#include <array>
-#include <bitset>
-#include <cstring>
-#include <mutex>
-#include <ostream>
+#include <sstream>
+#include <vector>
 
 namespace vkcompute {
 namespace vkapi {
