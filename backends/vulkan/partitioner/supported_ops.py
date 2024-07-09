@@ -45,6 +45,7 @@ PRIM_OPS = [
 BINARY_OPS = [
     exir_ops.edge.aten.add.Tensor,
     exir_ops.edge.aten.sub.Tensor,
+    exir_ops.edge.aten.minimum.default,
     exir_ops.edge.aten.mul.Tensor,
     exir_ops.edge.aten.div.Tensor,
     exir_ops.edge.aten.div.Tensor_mode,
