@@ -553,7 +553,7 @@ endif()
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
 install(
-  TARGETS executorch executorch_no_prim_ops
+  TARGETS executorch executorch_no_prim_ops executorch_no_prim_ops_shared
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}

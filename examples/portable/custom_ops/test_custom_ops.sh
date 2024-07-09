@@ -103,7 +103,7 @@ test_cmake_custom_op_2() {
 
   EXT=$(get_shared_lib_ext)
   echo "Exporting ${model_name}.pte"
-  ${PYTHON_EXECUTABLE} -m "examples.portable.custom_ops.${model_name}" --so_library="cmake-out/examples/portable/custom_ops/libcustom_ops_aot_lib$EXT"
+  DYLD_LIBRARY_PATH="cmake-out/lib" ${PYTHON_EXECUTABLE} -m "examples.portable.custom_ops.${model_name}" --so_library="cmake-out/examples/portable/custom_ops/libcustom_ops_aot_lib$EXT"
   # should save file custom_ops_2.pte
 
   echo 'Running custom_ops_executor_runner'
