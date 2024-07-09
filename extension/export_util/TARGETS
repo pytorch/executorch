@@ -1,0 +1,22 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "export_util",
+    srcs = [
+        "utils.py",
+    ],
+    _is_external_target = True,
+    visibility = [
+        "//bento/...",
+        "//bento_kernels/...",
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:tracer",
+        "//executorch/exir/program:lib",
+    ],
+)
