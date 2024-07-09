@@ -24,6 +24,7 @@ from executorch.backends.cadence.aot.quantizer.quantizer import (
 )
 from executorch.backends.cadence.aot.utils import model_is_quantized
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
+from on_device_ai.helios.quantization.transforms import decompose_SDPA_turing
 from pyre_extensions import assert_is_instance
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.pt2e.export_utils import model_is_exported
@@ -46,6 +47,9 @@ def quantize_pt2(
 
     # Export with dynamo
     model_exp = capture_pre_autograd_graph(model, inputs)
+
+    # Decompose SDPA (grab the pass from Turing)
+    decompose_SDPA_turing(model_exp)
 
     # Prepare
     prepared_model = prepare_pt2e(model_exp, quantizer)

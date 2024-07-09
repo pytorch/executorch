@@ -35,6 +35,7 @@ python_library(
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
         "//executorch/exir:lib",
+        "//on_device_ai/helios/quantization:quantization",
     ],
 )
 
