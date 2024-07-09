@@ -28,8 +28,8 @@ void check_args(
     const api::vTensor& in,
     const std::vector<int64_t>& permute_dims,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, vkapi::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 
   // This implementation doesn't not requires the input tensor to have the same
   // dim size as the argument. The code will work as long as the input tensor's

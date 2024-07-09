@@ -76,30 +76,30 @@ vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
   }
 }
 
-vkapi::StorageType get_storage_type(
+utils::StorageType get_storage_type(
     const vkgraph::VkStorageType& vk_storage_type) {
   switch (vk_storage_type) {
     case vkgraph::VkStorageType::BUFFER:
-      return vkapi::kBuffer;
+      return utils::kBuffer;
     case vkgraph::VkStorageType::TEXTURE_3D:
-      return vkapi::kTexture3D;
+      return utils::kTexture3D;
     case vkgraph::VkStorageType::TEXTURE_2D:
-      return vkapi::kTexture2D;
+      return utils::kTexture2D;
     default:
       break;
   }
   VK_THROW("Invalid storage type encountered!");
 }
 
-vkapi::GPUMemoryLayout get_memory_layout(
+utils::GPUMemoryLayout get_memory_layout(
     const vkgraph::VkMemoryLayout& vk_memory_layout) {
   switch (vk_memory_layout) {
     case vkgraph::VkMemoryLayout::TENSOR_WIDTH_PACKED:
-      return vkapi::kWidthPacked;
+      return utils::kWidthPacked;
     case vkgraph::VkMemoryLayout::TENSOR_HEIGHT_PACKED:
-      return vkapi::kHeightPacked;
+      return utils::kHeightPacked;
     case vkgraph::VkMemoryLayout::TENSOR_CHANNELS_PACKED:
-      return vkapi::kChannelsPacked;
+      return utils::kChannelsPacked;
     default:
       break;
   }
@@ -115,16 +115,16 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
     if (strcmp(spec.key, "storage_type_override") == 0) {
       ET_CHECK_MSG(value_size == sizeof(int32_t), "Unexpected value size!");
       int value_as_int = static_cast<int>(getUInt32LE(value_data));
-      vkapi::StorageType storage_type =
-          static_cast<vkapi::StorageType>(value_as_int);
+      utils::StorageType storage_type =
+          static_cast<utils::StorageType>(value_as_int);
 
       config.set_storage_type_override(storage_type);
     }
     if (strcmp(spec.key, "memory_layout_override") == 0) {
       ET_CHECK_MSG(value_size == sizeof(uint32_t), "Unexpected value size!");
       uint32_t value_as_int = getUInt32LE(value_data);
-      vkapi::GPUMemoryLayout memory_layout =
-          static_cast<vkapi::GPUMemoryLayout>(value_as_int);
+      utils::GPUMemoryLayout memory_layout =
+          static_cast<utils::GPUMemoryLayout>(value_as_int);
 
       config.set_memory_layout_override(memory_layout);
     }
@@ -172,7 +172,7 @@ class GraphBuilder {
 
   void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
     const vkapi::ScalarType& dtype = get_scalar_type(tensor_fb->datatype());
-    vkapi::StorageType storage_type =
+    utils::StorageType storage_type =
         tensor_fb->storage_type() == vkgraph::VkStorageType::DEFAULT_STORAGE
         ? compute_graph_->suggested_storage_type()
         : get_storage_type(tensor_fb->storage_type());
@@ -180,7 +180,7 @@ class GraphBuilder {
     UIntVector dims_fb = tensor_fb->dims();
     const std::vector<int64_t> dims_vector(dims_fb->cbegin(), dims_fb->cend());
 
-    vkapi::GPUMemoryLayout memory_layout =
+    utils::GPUMemoryLayout memory_layout =
         tensor_fb->memory_layout() == vkgraph::VkMemoryLayout::DEFAULT_LAYOUT
         ? compute_graph_->suggested_memory_layout(dims_vector)
         : get_memory_layout(tensor_fb->memory_layout());

@@ -83,7 +83,7 @@ void add_tensor_to_staging_node(
 ValueRef prepack(
     ComputeGraph& graph,
     const ValueRef vref,
-    const vkapi::GPUMemoryLayout layout) {
+    const utils::GPUMemoryLayout layout) {
   ValueRef v = graph.add_tensor_like(vref, layout);
 
   vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(*graph.get_tensor(v));
@@ -115,7 +115,7 @@ ValueRef prepack(
 ValueRef prepack_if_tensor_ref(
     ComputeGraph& graph,
     const ValueRef v,
-    const vkapi::GPUMemoryLayout layout) {
+    const utils::GPUMemoryLayout layout) {
   if (graph.val_is_tref(v)) {
     return prepack(graph, v, layout);
   } else {
@@ -125,7 +125,7 @@ ValueRef prepack_if_tensor_ref(
 
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
   if (graph.val_is_tref(v)) {
-    vkapi::GPUMemoryLayout layout =
+    utils::GPUMemoryLayout layout =
         graph.suggested_memory_layout(graph.get_tref(v)->sizes);
     return prepack(graph, v, layout);
   } else {

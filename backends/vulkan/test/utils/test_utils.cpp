@@ -299,7 +299,7 @@ void fill_vtensor(api::vTensor& vten, std::vector<float>& data) {
 
 #undef CASE
 
-  if (vten.storage_type() == vkapi::StorageType::BUFFER) {
+  if (vten.storage_type() == utils::StorageType::BUFFER) {
     record_nchw_to_buffer_op(api::context(), staging_buffer.buffer(), vten);
   } else {
     record_nchw_to_image_op(api::context(), staging_buffer.buffer(), vten);
@@ -336,7 +336,7 @@ void extract_vtensor(api::vTensor& vten, std::vector<float>& data) {
   api::StorageBuffer staging_buffer(
       api::context(), vten.dtype(), vten.gpu_numel());
 
-  if (vten.storage_type() == vkapi::StorageType::BUFFER) {
+  if (vten.storage_type() == utils::StorageType::BUFFER) {
     record_buffer_to_nchw_op(api::context(), vten, staging_buffer.buffer());
   } else {
     record_image_to_nchw_op(api::context(), vten, staging_buffer.buffer());
