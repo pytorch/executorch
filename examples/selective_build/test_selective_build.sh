@@ -15,6 +15,22 @@ set -e
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
 
+
+# BUCK2 examples; test internally in fbcode/xplat
+# 1. `--config executorch.select_ops=all`: select all ops from the dependency
+#       kernel libraries, register all of them into ExecuTorch runtime.
+# 2. `--config executorch.select_ops=list`: Only select ops from `ops` kwarg
+#       in `et_operator_library` macro.
+# 3. `--config executorch.select_ops=yaml`: Only select from a yaml file from
+#       `ops_schema_yaml_target` kwarg in `et_operator_library` macro
+# 4. `--config executorch.select_ops=dict`: Only select ops from `ops_dict`
+#       kwarg in `et_operator_library` macro. Add `dtype_selective_build = True`
+#       to executorch_generated_lib to select dtypes specified in the dictionary.
+
+# Other configs:
+# - `--config executorch.max_kernel_num=N`: Only allocate memory for the
+#       required number of operators. Users can retrieve N from `selected_operators.yaml`.
+
 test_buck2_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv3"
@@ -69,6 +85,7 @@ test_buck2_select_ops_from_yaml() {
     rm "./custom_ops_1.pte"
 }
 
+# CMake examples; test in OSS. Check the README for more information.
 test_cmake_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv3"
