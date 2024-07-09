@@ -271,18 +271,13 @@ std::string get_queue_family_properties_str(const VkQueueFlags flags) {
 // DeviceHandle
 //
 
-DeviceHandle::DeviceHandle(VkDevice device) : handle_(device) {}
-
-DeviceHandle::DeviceHandle(DeviceHandle&& other) noexcept
-    : handle_(other.handle_) {
-  other.handle_ = VK_NULL_HANDLE;
-}
+DeviceHandle::DeviceHandle(VkDevice device) : handle(device) {}
 
 DeviceHandle::~DeviceHandle() {
-  if (VK_NULL_HANDLE == handle_) {
+  if (VK_NULL_HANDLE == handle) {
     return;
   }
-  vkDestroyDevice(handle_, nullptr);
+  vkDestroyDevice(handle, nullptr);
 }
 
 //
@@ -305,12 +300,12 @@ Adapter::Adapter(
           num_queues,
           queues_,
           queue_usage_)),
-      shader_layout_cache_(device_.handle_),
-      shader_cache_(device_.handle_),
-      pipeline_layout_cache_(device_.handle_),
-      compute_pipeline_cache_(device_.handle_, cache_data_path),
-      sampler_cache_(device_.handle_),
-      vma_(instance_, physical_device_.handle, device_.handle_) {}
+      shader_layout_cache_(device_.handle),
+      shader_cache_(device_.handle),
+      pipeline_layout_cache_(device_.handle),
+      compute_pipeline_cache_(device_.handle, cache_data_path),
+      sampler_cache_(device_.handle),
+      vma_(instance_, physical_device_.handle, device_.handle) {}
 
 Adapter::Queue Adapter::request_queue() {
   // Lock the mutex as multiple threads can request a queue at the same time
@@ -448,7 +443,7 @@ std::string Adapter::stringize() const {
        << std::endl;
   }
   ss << "  }" << std::endl;
-  ss << "  VkDevice: " << device_.handle_ << std::endl;
+  ss << "  VkDevice: " << device_.handle << std::endl;
   ss << "  Compute Queues [" << std::endl;
   for (const Adapter::Queue& compute_queue : queues_) {
     ss << "    Family " << compute_queue.family_index << ", Queue "
