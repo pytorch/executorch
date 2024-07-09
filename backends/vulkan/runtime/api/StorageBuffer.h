@@ -12,7 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 
-#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
 
 namespace vkcompute {
 namespace api {
