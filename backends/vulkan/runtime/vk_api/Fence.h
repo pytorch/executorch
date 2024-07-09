@@ -21,7 +21,7 @@ namespace vkapi {
 
 class VulkanFence final {
  public:
-  // TODO: This is required for the lazy allocation pattern in api/Tensor.
+  // TODO: This is required for the lazy allocation pattern in api::vTensor.
   //       It will be disabled pending future refactors.
   explicit VulkanFence();
 
