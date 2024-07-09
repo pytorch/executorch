@@ -12,53 +12,13 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
 
-#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
-
+#include <executorch/backends/vulkan/runtime/vk_api/Device.h>
 #include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
-#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
 
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Allocator.h>
 
-#include <array>
-#include <mutex>
-#include <ostream>
-
 namespace vkcompute {
 namespace vkapi {
-
-struct PhysicalDevice final {
-  // Handle
-  VkPhysicalDevice handle;
-
-  // Properties obtained from Vulkan
-  VkPhysicalDeviceProperties properties;
-  VkPhysicalDeviceMemoryProperties memory_properties;
-  // Additional features available from extensions
-  VkPhysicalDevice16BitStorageFeatures shader_16bit_storage;
-  VkPhysicalDevice8BitStorageFeatures shader_8bit_storage;
-  VkPhysicalDeviceShaderFloat16Int8Features shader_float16_int8_types;
-
-  // Available GPU queues
-  std::vector<VkQueueFamilyProperties> queue_families;
-
-  // Metadata
-  uint32_t num_compute_queues;
-  bool has_unified_memory;
-  bool has_timestamps;
-  float timestamp_period;
-
-  // Head of the linked list of extensions to be requested
-  void* extension_features{nullptr};
-
-  explicit PhysicalDevice(VkPhysicalDevice);
-};
-
-struct DeviceHandle final {
-  VkDevice handle;
-
-  explicit DeviceHandle(VkDevice);
-  ~DeviceHandle();
-};
 
 //
 // A Vulkan Adapter represents a logical device and all its properties. It
