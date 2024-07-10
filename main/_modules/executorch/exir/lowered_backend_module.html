@@ -609,6 +609,7 @@
         <span class="n">segment_alignment</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4096</span><span class="p">,</span>
         <span class="n">constant_tensor_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">delegate_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">memory_planning</span><span class="p">:</span> <span class="n">MemoryPlanningPass</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns a buffer containing the serialized ExecuTorch binary.</span>
@@ -616,7 +617,7 @@
         <span class="c1"># TODO(T181463742): avoid calling bytes(..) which incurs large copies.</span>
         <span class="n">out</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span>
             <span class="n">_serialize_pte_binary</span><span class="p">(</span>
-                <span class="n">program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">program</span><span class="p">(),</span>
+                <span class="n">program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">program</span><span class="p">(</span><span class="n">memory_planning</span><span class="o">=</span><span class="n">memory_planning</span><span class="p">),</span>
                 <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="n">extract_delegate_segments</span><span class="p">,</span>
                 <span class="n">segment_alignment</span><span class="o">=</span><span class="n">segment_alignment</span><span class="p">,</span>
                 <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="n">constant_tensor_alignment</span><span class="p">,</span>
@@ -627,7 +628,11 @@
 
     <span class="c1"># TODO(chenlai): re-consider recapture instead of manually constructing the program because</span>
     <span class="c1"># the meta data construction is done manually.</span>
-    <span class="k">def</span> <span class="nf">program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">emit_stacktrace</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">program</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">emit_stacktrace</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">memory_planning</span><span class="p">:</span> <span class="n">MemoryPlanningPass</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
         <span class="c1"># Fix autodpes introuces cyclic dependencies:</span>
         <span class="c1"># program -&gt; verifier -&gt; lowered_backend_module -&gt; program</span>
         <span class="c1"># @manual</span>
@@ -789,9 +794,9 @@
             <span class="n">example_inputs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
             <span class="n">verifier</span><span class="o">=</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">exported_program</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span>
-            <span class="n">exported_program</span><span class="p">,</span> <span class="n">SpecPropPass</span><span class="p">(),</span> <span class="n">MemoryPlanningPass</span><span class="p">(</span><span class="s2">&quot;greedy&quot;</span><span class="p">)</span>
-        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">memory_planning</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">memory_planning</span> <span class="o">=</span> <span class="n">MemoryPlanningPass</span><span class="p">(</span><span class="s2">&quot;greedy&quot;</span><span class="p">)</span>
+        <span class="n">exported_program</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span><span class="n">exported_program</span><span class="p">,</span> <span class="n">SpecPropPass</span><span class="p">(),</span> <span class="n">memory_planning</span><span class="p">)</span>
         <span class="n">emitted_program</span> <span class="o">=</span> <span class="n">emit_program</span><span class="p">(</span>
             <span class="n">exported_program</span><span class="p">,</span> <span class="n">emit_stacktrace</span><span class="o">=</span><span class="n">emit_stacktrace</span>
         <span class="p">)</span><span class="o">.</span><span class="n">program</span>
