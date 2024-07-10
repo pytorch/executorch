@@ -33,7 +33,7 @@ ValueRef prepack_arg(
   // batch_norm's param are broadcasted on the channel dimension.
   // In this implementation, we pack the weights along the x dimension, and
   // in the shader, we lookup using the along the x.
-  return prepack_if_tensor_ref(graph, arg_ref, vkapi::kWidthPacked);
+  return prepack_if_tensor_ref(graph, arg_ref, utils::kWidthPacked);
 }
 
 void add_native_batch_norm_node(
