@@ -8,9 +8,6 @@ from typing import List, Optional
 
 import executorch.exir as exir
 from executorch.exir import CaptureConfig
-from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
-    DuplicateDequantNodePass,
-)
 from executorch.exir.pass_manager import PassType
 
 
@@ -20,8 +17,7 @@ def get_xnnpack_edge_compile_config() -> exir.EdgeCompileConfig:
 
 
 def get_transform_passes(additional_passes=None) -> List[PassType]:
-    additional_passes = additional_passes if additional_passes else []
-    passes = additional_passes + [DuplicateDequantNodePass()]
+    passes = additional_passes if additional_passes else []
     return passes
 
 

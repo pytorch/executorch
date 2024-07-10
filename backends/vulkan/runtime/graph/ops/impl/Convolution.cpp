@@ -88,8 +88,8 @@ ValueRef prepack_biases(
     const ValueRef vref,
     const ValueRef weight,
     const bool transposed,
-    const vkapi::StorageType storage_type,
-    const vkapi::GPUMemoryLayout memory_layout) {
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout) {
   auto sizes = graph.sizes_of(weight);
   const int64_t out_channels = transposed ? sizes.at(1) : sizes.at(0);
 
@@ -198,8 +198,8 @@ ValueRef prepack_weights(
   ValueRef v = graph.add_tensor(
       final_sizes,
       graph.dtype_of(vref),
-      vkapi::kTexture2D,
-      vkapi::kChannelsPacked);
+      utils::kTexture2D,
+      utils::kChannelsPacked);
   vTensorPtr t = graph.get_tensor(v);
 
   vkapi::ShaderInfo shader =
@@ -222,8 +222,8 @@ ValueRef prepack_weights(
 }
 
 void check_conv_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, vkapi::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 }
 
 struct Conv2dParams final {
@@ -343,8 +343,8 @@ void add_conv2d_node(
       bias,
       weight,
       transposed_val,
-      /* storage_type = */ vkapi::kTexture2D,
-      /* memory_layout = */ vkapi::kWidthPacked);
+      /* storage_type = */ utils::kTexture2D,
+      /* memory_layout = */ utils::kWidthPacked);
 
   vTensorPtr t_in = graph.get_tensor(arg_in);
   vTensorPtr t_out = graph.get_tensor(out);
@@ -408,14 +408,14 @@ void add_conv1d_node(
     const bool clamp_out) {
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
   ValueRef arg_weight =
-      prepack_if_tensor_ref(graph, weight, vkapi::kWidthPacked);
+      prepack_if_tensor_ref(graph, weight, utils::kWidthPacked);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,
       weight,
       /*transposed = */ false,
-      /*storage_type = */ vkapi::kTexture3D,
-      /*memory_layout = */ vkapi::kChannelsPacked);
+      /*storage_type = */ utils::kTexture3D,
+      /*memory_layout = */ utils::kChannelsPacked);
 
   float out_min_val = 0.0f;
   float out_max_val = 0.0f;
