@@ -14,7 +14,9 @@ from executorch.extension.llm.export.quantizer_lib import (
     PT2EQuantOptions,
 )
 
-from transformers import Phi3ForCausalLM
+from transformers import (  # @manual=fbsource//third-party/pypi/transformers:transformers
+    Phi3ForCausalLM,
+)
 
 
 def main() -> None:
