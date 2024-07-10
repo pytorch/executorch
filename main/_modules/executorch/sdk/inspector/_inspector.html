@@ -516,6 +516,7 @@
     <span class="n">gen_graphs_from_etrecord</span><span class="p">,</span>
     <span class="n">inflate_runtime_output</span><span class="p">,</span>
     <span class="n">is_debug_output</span><span class="p">,</span>
+    <span class="n">is_inference_output_equal</span><span class="p">,</span>
     <span class="n">ProgramOutput</span><span class="p">,</span>
     <span class="n">RESERVED_FRAMEWORK_EVENT_NAMES</span><span class="p">,</span>
     <span class="n">TIME_SCALE_DICT</span><span class="p">,</span>
@@ -1041,8 +1042,10 @@
                 <span class="n">debug_data</span> <span class="o">=</span> <span class="p">[</span><span class="n">debug_event</span><span class="o">.</span><span class="n">debug_entry</span> <span class="k">for</span> <span class="n">debug_event</span> <span class="ow">in</span> <span class="n">debug_events</span><span class="p">]</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="k">for</span> <span class="n">debug_event</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">debug_events</span><span class="p">,</span> <span class="n">debug_data</span><span class="p">):</span>
-                    <span class="k">assert</span> <span class="p">(</span>
-                        <span class="n">debug_event</span><span class="o">.</span><span class="n">debug_entry</span> <span class="o">==</span> <span class="n">value</span>
+                    <span class="n">v1</span> <span class="o">=</span> <span class="n">inflate_runtime_output</span><span class="p">(</span><span class="n">debug_event</span><span class="o">.</span><span class="n">debug_entry</span><span class="p">,</span> <span class="n">output_buffer</span><span class="p">)</span>
+                    <span class="n">v2</span> <span class="o">=</span> <span class="n">inflate_runtime_output</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">output_buffer</span><span class="p">)</span>
+                    <span class="k">assert</span> <span class="n">is_inference_output_equal</span><span class="p">(</span>
+                        <span class="n">v1</span><span class="p">,</span> <span class="n">v2</span>
                     <span class="p">),</span> <span class="s2">&quot;&quot;&quot;Corresponding debug events in multiple iterations of the model</span>
 <span class="s2">                    must have the same debug entry values. This is not the case for the</span>
 <span class="s2">                    intermediate data present in this ETDump and indicates potential issues</span>
