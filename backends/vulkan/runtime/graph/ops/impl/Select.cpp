@@ -22,8 +22,8 @@ void check_args(
     int64_t dim,
     int64_t index,
     const api::vTensor& t_out) {
-  VK_CHECK_COND(check_memory_layout_is(t_in, vkapi::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(t_out, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(t_in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(t_out, utils::kChannelsPacked));
 
   const int64_t in_dim = t_in.dim();
   VK_CHECK_COND(

@@ -47,8 +47,8 @@ void resize_sum_node(
 }
 
 void check_sum_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, vkapi::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 }
 
 void add_sum_dim_node(
@@ -104,7 +104,7 @@ ValueRef add_node(
     const vkapi::ScalarType dtype = vkapi::kFloat) {
   std::vector<int64_t> output_size =
       calc_out_sizes(*(graph.get_tensor(input)), dim, keepdim);
-  return graph.add_tensor(output_size, dtype, vkapi::kChannelsPacked);
+  return graph.add_tensor(output_size, dtype, utils::kChannelsPacked);
 }
 
 void add_sum_dim_IntList(

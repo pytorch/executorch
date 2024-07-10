@@ -42,8 +42,8 @@ void add_slice_tensor_out_node(
   vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
 
-  VK_CHECK_COND(check_memory_layout_is(*t_in, vkapi::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(*t_out, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(*t_in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(*t_out, utils::kChannelsPacked));
 
   // Need normalize the dim
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);

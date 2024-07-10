@@ -12,15 +12,15 @@ namespace vkcompute {
 
 void add_storage_type_suffix(
     std::string& kernel_name,
-    const vkapi::StorageType storage_type) {
+    const utils::StorageType storage_type) {
   switch (storage_type) {
-    case vkapi::kBuffer:
+    case utils::kBuffer:
       kernel_name += "_buffer";
       break;
-    case vkapi::kTexture3D:
+    case utils::kTexture3D:
       kernel_name += "_texture3d";
       break;
-    case vkapi::kTexture2D:
+    case utils::kTexture2D:
       kernel_name += "_texture2d";
       break;
   }
@@ -58,10 +58,10 @@ void add_dtype_suffix(std::string& kernel_name, const api::vTensor& tensor) {
 
 void add_ndim_suffix(std::string& kernel_name, const api::vTensor& tensor) {
   switch (tensor.storage_type()) {
-    case vkapi::kTexture3D:
+    case utils::kTexture3D:
       kernel_name += "_3d";
       break;
-    case vkapi::kTexture2D:
+    case utils::kTexture2D:
       kernel_name += "_2d";
       break;
     default:
@@ -71,15 +71,15 @@ void add_ndim_suffix(std::string& kernel_name, const api::vTensor& tensor) {
 
 void add_memory_layout_suffix(
     std::string& kernel_name,
-    vkapi::GPUMemoryLayout layout) {
+    utils::GPUMemoryLayout layout) {
   switch (layout) {
-    case vkapi::kChannelsPacked:
+    case utils::kChannelsPacked:
       kernel_name += "_C_packed";
       break;
-    case vkapi::kHeightPacked:
+    case utils::kHeightPacked:
       kernel_name += "_H_packed";
       break;
-    case vkapi::kWidthPacked:
+    case utils::kWidthPacked:
       kernel_name += "_W_packed";
       break;
     default:
