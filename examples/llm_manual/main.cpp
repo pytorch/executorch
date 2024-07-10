@@ -110,9 +110,7 @@ int main() {
 
   // Load the exported nanoGPT program, which was generated via the previous
   // steps.
-  Module model(
-      "nanogpt.pte",
-      torch::executor::Module::MlockConfig::UseMlockIgnoreErrors);
+  Module model("nanogpt.pte", Module::LoadMode::MmapUseMlockIgnoreErrors);
 
   const auto max_input_tokens = 1024;
   const auto max_output_tokens = 30;
