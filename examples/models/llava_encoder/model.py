@@ -256,28 +256,24 @@ class TextModelTransformer(nn.Module):
         seqlen = h.shape[1]
         # h = self.tok_embeddings(tokens)
 
-        if self.use_kv_cache:
-            assert (
-                input_pos is not None
-            ), "input_pos must be provided when use_kv_cache is True"
+        assert (
+            input_pos is not None
+        ), "input_pos must be provided when use_kv_cache is True"
 
-            # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
-            input_pos_item = input_pos[-1].item()
-            torch._check_is_size(input_pos_item)
-            # Setting this to max_seq_len but the resulting
-            # asserts from export are ignore anyway, so the particular
-            # value doesn't matter.
-            # Also in future when we want to support infinite generation
-            # input_pos can take any value until eos is encountered.
-            torch._check(input_pos_item < self.max_seq_len)
-            freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
-            freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seqlen)
-        else:
-            assert input_pos is None, "input_pos is unused when use_kv_cache is False"
-            freqs_cos = self.freqs_cos[:seqlen]
-            freqs_sin = self.freqs_sin[:seqlen]
+        # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
+        input_pos_item = input_pos[-1].item()
+        torch._check_is_size(input_pos_item)
+        # Setting this to max_seq_len but the resulting
+        # asserts from export are ignore anyway, so the particular
+        # value doesn't matter.
+        # Also in future when we want to support infinite generation
+        # input_pos can take any value until eos is encountered.
+        torch._check(input_pos_item < self.max_seq_len)
+        freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
+        freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seqlen)
+    
 
-        for _, layer in enumerate(self.layers):
+        for layer in self.layers:
             h = layer(
                 h,
                 freqs_cos,
@@ -373,22 +369,23 @@ class Llava(torch.nn.Module):
         t_pad = int(math.ceil(v_padding))
         r_pad = int(math.floor(h_padding))
         b_pad = int(math.floor(v_padding))
-        padded = torchvision.transforms.v2.functional.pad(
+        resized = torchvision.transforms.v2.functional.pad(
             img,
             padding=(l_pad, t_pad, r_pad, b_pad),
             fill=tuple(int(x * 255) for x in self.image_processor.image_mean),
         )
         # here padded shape should be max(h, w) x max(h, w)
-        resized = resize(
-            padded,
-            size=[
-                self.image_processor.crop_size["height"],
-                self.image_processor.crop_size["width"],
-            ],
-            interpolation="bicubic",
-        )
-        torch._check(resized.size(1) == self.config.crop_size["height"])
-        torch._check(resized.size(2) == self.config.crop_size["width"])
+        # skipping resize for now due to missing _upsample_bicubic_aa kernel in portable
+        # resized = resize(
+        #     padded,
+        #     size=[
+        #         self.image_processor.crop_size["height"],
+        #         self.image_processor.crop_size["width"],
+        #     ],
+        #     interpolation="bicubic",
+        # )
+        # torch._check(resized.size(1) == self.config.crop_size["height"])
+        # torch._check(resized.size(2) == self.config.crop_size["width"])
         # print(resized.shape)
         # cropped = torchvision.transforms.v2.functional.center_crop(img, output_size=[w, w])
         # print(cropped.shape)
@@ -399,58 +396,36 @@ class Llava(torch.nn.Module):
         )
         # print(normed)
         return normed.unsqueeze(0)
-
-    def prepare_inputs_labels_for_multimodal_one_image(
-        self,
-        prompt_before_image: torch.Tensor,
-        images: torch.Tensor,
-        prompt_after_image: torch.Tensor,
-    ) -> torch.Tensor:
-        assert isinstance(
-            prompt_before_image, torch.Tensor
-        ), f"Expecting prompt_before_image to be a tensor, got {prompt_before_image}"
-        assert (
-            prompt_before_image.shape[0] == 1
-        ), f"Expecting prompt_before_image to be of shape [1, num_tokens], got {prompt_before_image.shape}"
-        prompt_before_image = prompt_before_image.squeeze(0)
-        prompt_after_image = prompt_after_image.squeeze(0)
-
-        # preprocessed_img = self.image_preprocess(imagt)
-        # preprocessed_img = torch.unsqueeze(preprocessed_img, dim=0)
-
-        embeds_before_img = (
-            self.get_model().embed_tokens(prompt_before_image).unsqueeze(0)
-        )
-        embeds_after_img = (
-            self.get_model().embed_tokens(prompt_after_image).unsqueeze(0)
-        )
-
-        image_embeds = self.encode_images(images)
-        # new_input_embeds = torch.cat(input_embeds, image_embeds)
-        result = torch.cat((embeds_before_img, image_embeds, embeds_after_img), dim=1)
-        return result
-    
-    def token_embedding(self, token: torch.Tensor) -> torch.Tensor:
-        return self.get_model().embed_tokens(token).unsqueeze(0)
     
     def forward(
         self, token: torch.Tensor, input_pos: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """Input is embeddings from prompt and image (after image encoder). Return logits."""
-        token_embeds = self.token_embedding(token)
+        token_embeds = self.get_model().embed_tokens(token).unsqueeze(0)
         return self.text_model.forward(token_embeds, input_pos)
 
+    def image_embedding(self, images: torch.Tensor) -> torch.Tensor:
+        preprocessed_img = self.image_preprocess(images)
+        return self.encode_images(preprocessed_img)
+    
+    def token_embedding(self, tokens: torch.Tensor) -> torch.Tensor:
+        return self.get_model().embed_tokens(tokens)
+    
     def prefill_embedding(
         self,
         prompt_before_image: torch.Tensor,
         images: torch.Tensor,
         prompt_after_image: torch.Tensor,
     ) -> torch.Tensor:
-        preprocessed_img = self.image_preprocess(images)
-        embeds = self.prepare_inputs_labels_for_multimodal_one_image(
-            prompt_before_image, preprocessed_img, prompt_after_image
+        image_embeds = self.image_embedding(images)
+        embeds_before_img = (
+            self.token_embedding(prompt_before_image)
         )
-        return embeds
+        embeds_after_img = (
+            self.token_embedding(prompt_after_image)
+        )
+        result = torch.cat((embeds_before_img, image_embeds, embeds_after_img), dim=1)
+        return result
     
     def prefill(
         self,
@@ -571,13 +546,18 @@ class LlavaModel(EagerModelBase):
         prompt_after_image = input_ids[:, index + 1 :]
         # print(prompt_after_image.shape)
         imagr = torchvision.io.read_image(self.image_path)
+        ratio = max(imagr.shape[1], imagr.shape[2]) / self.image_processor.crop_size["height"]
+        output_size = (int(imagr.shape[1] / ratio), int(imagr.shape[2] / ratio))
+        resized = torchvision.transforms.Resize(size=output_size)(imagr)
         self.inputs = (prompt_before_image, imagr, prompt_after_image)
         return self.inputs
 
     def get_dynamic_shapes(self):
-        length = Dim("length", min=8, max=4091)
+        height = Dim("height", min=8, max=336)
+        # height = Dim("height", min=8, max=4091)
         token_dim_1 = Dim("token_dim_1", min=2, max=3518)
         token_dim_2 = Dim("token_dim_2", min=2, max=3518)
-        width = Dim("width", min=9, max=4092)
-        dynamic_shapes = [{1: token_dim_1}, {1: length, 2: width}, {1: token_dim_2}]
+        width = Dim("width", min=28, max=336)
+        # width = Dim("width", min=9, max=4092)
+        dynamic_shapes = [{1: token_dim_1}, {1: height, 2: width}, {1: token_dim_2}]
         return dynamic_shapes

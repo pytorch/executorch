@@ -24,4 +24,4 @@ pip install numpy==1.24
 # For example, torch version required from llava is older than ExecuTorch.
 # To make both work, recover ExecuTorch's original dependencies by rerunning
 # the install_requirements.sh.
-bash -x ./install_requirements.sh
+bash -x ./install_requirements.sh --pybind xnnpack
