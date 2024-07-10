@@ -84,9 +84,10 @@ CONVOLUTION_OPS = [
 ]
 
 REDUCTION_OPS = [
+    exir_ops.edge.aten.mean.dim,
     exir_ops.edge.aten.sum.dim_IntList,
-    exir_ops.edge.aten._softmax.default,
     exir_ops.edge.aten._log_softmax.default,
+    exir_ops.edge.aten._softmax.default,
 ]
 
 NORMALIZATION_OPS = [

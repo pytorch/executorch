@@ -80,8 +80,8 @@ void add_copy_channel_offset_node(
   std::vector<int64_t> in_sizes = t_in->sizes();
   std::vector<int64_t> out_sizes = t_out->sizes();
 
-  VK_CHECK_COND(check_memory_layout_is(*t_in, vkapi::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(*t_out, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(*t_in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(*t_out, utils::kChannelsPacked));
 
   // NOTE: This function should be able to support 1d and 2d tensors when
   // range=1, src_offset=dst_offset=1.
