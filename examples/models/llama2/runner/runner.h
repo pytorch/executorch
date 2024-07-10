@@ -54,7 +54,7 @@ class Runner {
       ManagedTensor& managed_start_pos,
       std::function<void(const std::string&)> token_callback);
   Result<torch::executor::Tensor> run_model_step(
-      int32_t input_token,
+      int64_t input_token,
       ManagedTensor& tokens,
       ManagedTensor& start_pos,
       size_t max_seq_len);
