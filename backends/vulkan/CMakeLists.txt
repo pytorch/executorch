@@ -61,6 +61,10 @@ list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_VOLK")
 # vulkan API files
 
 file(GLOB_RECURSE vulkan_api_cpp ${RUNTIME_PATH}/api/*)
+file(GLOB_RECURSE vulkan_utils_cpp ${RUNTIME_PATH}/utils/*)
+file(GLOB_RECURSE vulkan_vkapi_cpp ${RUNTIME_PATH}/vk_api/*)
+list(APPEND vulkan_api_cpp vulkan_utils_cpp)
+list(APPEND vulkan_api_cpp vulkan_vkapi_cpp)
 list(APPEND vulkan_api_cpp ${VOLK_PATH}/volk.c)
 
 # vulkan ComputeGraph files
