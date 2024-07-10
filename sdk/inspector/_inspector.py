@@ -46,6 +46,7 @@ from executorch.sdk.inspector._inspector_utils import (
     gen_graphs_from_etrecord,
     inflate_runtime_output,
     is_debug_output,
+    is_inference_output_equal,
     ProgramOutput,
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TIME_SCALE_DICT,
@@ -571,8 +572,10 @@ class Event:
                 debug_data = [debug_event.debug_entry for debug_event in debug_events]
             else:
                 for debug_event, value in zip(debug_events, debug_data):
-                    assert (
-                        debug_event.debug_entry == value
+                    v1 = inflate_runtime_output(debug_event.debug_entry, output_buffer)
+                    v2 = inflate_runtime_output(value, output_buffer)
+                    assert is_inference_output_equal(
+                        v1, v2
                     ), """Corresponding debug events in multiple iterations of the model
                     must have the same debug entry values. This is not the case for the
                     intermediate data present in this ETDump and indicates potential issues
