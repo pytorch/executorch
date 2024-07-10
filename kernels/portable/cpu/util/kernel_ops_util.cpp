@@ -110,6 +110,29 @@ bool dilation_is_valid(IntArrayRef dilation, size_t kernel_ndim) {
       "dilation", dilation, /*min_val=*/1, kernel_ndim, /*allow_empty=*/false);
 }
 
+bool output_padding_is_valid(
+    IntArrayRef output_padding,
+    IntArrayRef stride,
+    IntArrayRef dilation,
+    size_t kernel_ndim) {
+  ET_LOG_AND_RETURN_IF_FALSE(param_array_is_valid(
+      "output_padding",
+      output_padding,
+      /*min_val=*/0,
+      kernel_ndim,
+      /*allow_empty=*/false));
+
+  for (size_t i = 0; i < kernel_ndim; i++) {
+    const int64_t op_i = val_at(output_padding, i);
+    const int64_t s_i = val_at(stride, i);
+    const int64_t d_i = val_at(dilation, i);
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        op_i < s_i || op_i < d_i,
+        "output padding must be smaller than either stride or dilation");
+  }
+  return true;
+}
+
 bool output_size_is_valid(
     exec_aten::ArrayRef<exec_aten::SizesType> output_size,
     size_t kernel_ndim) {
@@ -177,7 +200,13 @@ int64_t _kernel_output_size_helper(
     int64_t pad,
     int64_t stride,
     int64_t dilation,
-    bool ceil_mode) {
+    bool ceil_mode,
+    bool transposed,
+    int64_t output_padding) {
+  if (transposed) {
+    return (inputSize - 1) * stride - 2 * pad + dilation * (kernelSize - 1) +
+        output_padding + 1;
+  }
   int64_t numerator = inputSize + 2 * pad - dilation * (kernelSize - 1) - 1 +
       (ceil_mode ? stride - 1 : 0);
   int64_t outputSize = numerator / stride + 1;
@@ -199,16 +228,20 @@ void calculate_kernel_output_sizes(
     IntArrayRef padding,
     IntArrayRef dilation,
     exec_aten::SizesType* out_sizes,
-    bool ceil_mode) {
+    bool ceil_mode,
+    bool transposed,
+    IntArrayRef output_padding) {
   for (size_t i = 0; i < kernel_ndim; ++i) {
     auto dim = in.dim() - (kernel_ndim - i);
     int64_t k = val_at(kernel_size, i);
     int64_t s = val_at(stride, i, /*default_value=*/k);
     int64_t d = val_at(dilation, i, /*default_value=*/1);
     int64_t p = val_at(padding, i, /*default_value=*/0);
+    int64_t op =
+        transposed ? val_at(output_padding, i, /*default_value=*/0) : 0;
 
-    out_sizes[dim] =
-        _kernel_output_size_helper(in.size(dim), k, p, s, d, ceil_mode);
+    out_sizes[dim] = _kernel_output_size_helper(
+        in.size(dim), k, p, s, d, ceil_mode, transposed, op);
   }
 }
 
@@ -294,8 +327,6 @@ bool check_convolution_args(
     IntArrayRef output_padding,
     int64_t groups,
     Tensor& out) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      !transposed, "transposed convolution not supported yet.");
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight, out));
 
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
@@ -312,8 +343,11 @@ bool check_convolution_args(
 
   if (bias.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
-    ET_LOG_AND_RETURN_IF_FALSE(
-        tensors_have_same_size_at_dims(bias.value(), 0, weight, 0));
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        bias.value().size(0) == transposed ? groups * weight.size(1)
+                                           : weight.size(0),
+        "bias length must equal number of output channels, but got %zd",
+        bias.value().size(0));
   }
 
   int64_t kernel_size[2];
@@ -330,12 +364,41 @@ bool check_convolution_args(
   ET_LOG_AND_RETURN_IF_FALSE(
       padding_is_valid(padding, {kernel_size, kernel_ndim}, kernel_ndim));
   ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(dilation, kernel_ndim));
+  if (transposed) {
+    ET_LOG_AND_RETURN_IF_FALSE(
+        output_padding_is_valid(output_padding, stride, dilation, kernel_ndim));
+  }
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      in.size(1) % groups == 0,
-      "groups %" PRId64 " is not divisible by in.size(1) = %zd",
+      weight.size(0) >= groups,
+      "Given groups=%" PRId64 ", expected weight to be at least %" PRId64
+      " at dimension 0, but got weight.size(0) = %zd instead",
       groups,
-      in.size(1));
+      groups,
+      weight.size(0));
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      weight.size(0) % groups == 0,
+      "Given groups=%" PRId64 ", expected weight to be divisible by %" PRId64
+      " at dimension 0, but got weight.size(0) = %zd instead",
+      groups,
+      groups,
+      weight.size(0));
+
+  if (!transposed) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        in.size(1) == groups * weight.size(1),
+        "Given groups=%" PRId64
+        " and weight.size(1) = %zd, expected input to have %" PRId64
+        " channels, but got %zd",
+        groups,
+        weight.size(1),
+        groups * weight.size(1),
+        in.size(1));
+  } else {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        in.size(1) == weight.size(0),
+        "input channels must match weight.size(0) in transposed convolution");
+  }
 
   return true;
 }
@@ -346,12 +409,22 @@ void get_convolution_out_target_size(
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
+    bool transposed,
+    IntArrayRef output_padding,
+    int64_t groups,
     exec_aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
 
+  // batch dim
   out_sizes[0] = in.size(0);
-  out_sizes[1] = in.size(1) == 0 ? 0 : weight.size(0);
+
+  // channel dim
+  if (!transposed) {
+    out_sizes[1] = in.size(1) == 0 ? 0 : weight.size(0);
+  } else {
+    out_sizes[1] = in.size(1) == 0 ? 0 : groups * weight.size(1);
+  }
 
   int64_t kernel_size[2];
   size_t kernel_ndim = 2;
@@ -370,7 +443,9 @@ void get_convolution_out_target_size(
       padding,
       dilation,
       out_sizes,
-      false);
+      false,
+      transposed,
+      output_padding);
 }
 
 bool check_cumsum_args(
