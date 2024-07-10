@@ -32,7 +32,7 @@ enum VkStorageType : ubyte {
 
 // Describes how memory should be laid out in GPU memory. See the GPUMemoryLayout
 // enum class in PyTorch Vulkan for more details. The int values assigned to each
-// entry must match the corresponding entry in vkapi::GPUMemoryLayout.
+// entry must match the corresponding entry in utils::GPUMemoryLayout.
 enum VkMemoryLayout : ubyte {
   TENSOR_WIDTH_PACKED = 0,
   TENSOR_HEIGHT_PACKED = 1,

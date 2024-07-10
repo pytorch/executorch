@@ -15,7 +15,6 @@ import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_
 import torch
 
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
-from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
@@ -125,7 +124,6 @@ class TestBackends(unittest.TestCase):
                 program,
                 transform_passes=[
                     I64toI32(self._edge_compile_config._skip_dim_order),
-                    MeanToSumDiv(),
                 ],
                 partitioner=[VulkanPartitioner(compile_options)],
             )

@@ -20,7 +20,9 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from transformers import Phi3ForCausalLM
+from transformers import (  # @manual=fbsource//third-party/pypi/transformers:transformers
+    Phi3ForCausalLM,
+)
 
 
 def main() -> None:

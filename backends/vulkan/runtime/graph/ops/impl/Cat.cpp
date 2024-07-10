@@ -25,7 +25,7 @@ void add_cat_default_node(
 
   for (ValueRef input_ref : *input_list) {
     vTensorPtr t_in = graph.get_tensor(input_ref);
-    VK_CHECK_COND(check_memory_layout_is(*t_in, vkapi::kChannelsPacked));
+    VK_CHECK_COND(check_memory_layout_is(*t_in, utils::kChannelsPacked));
   }
 
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);

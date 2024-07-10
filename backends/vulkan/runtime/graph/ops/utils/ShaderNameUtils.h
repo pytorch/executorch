@@ -18,7 +18,7 @@ constexpr size_t kShaderNameReserve = 64u;
 
 void add_storage_type_suffix(
     std::string& kernel_name,
-    const vkapi::StorageType storage_type);
+    const utils::StorageType storage_type);
 void add_storage_type_suffix(
     std::string& kernel_name,
     const api::vTensor& tensor);
@@ -31,7 +31,7 @@ void add_ndim_suffix(std::string& kernel_name, const api::vTensor& tensor);
 
 void add_memory_layout_suffix(
     std::string& kernel_name,
-    const vkapi::GPUMemoryLayout layout);
+    const utils::GPUMemoryLayout layout);
 void add_memory_layout_suffix(
     std::string& kernel_name,
     const api::vTensor& tensor);
