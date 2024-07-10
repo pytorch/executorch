@@ -27,8 +27,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
-        include:
-          - tiktoken: [OFF, ON]
+        tiktoken: [OFF, ON]
     with:
       # NB: The example model dl3 requires lots of memory (T161064121)
       runner: linux.12xlarge
