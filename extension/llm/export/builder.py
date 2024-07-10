@@ -52,19 +52,18 @@ class DType(Enum):
         return mapping[self]
 
 
-class LlamaEdgeManager:
+class LLMEdgeManager:
     """
-    Host a torch.nn.Module for Llama model and facilitates exporting to ExecuTorch.
+    Host a torch.nn.Module for LLM model and facilitates exporting to ExecuTorch.
     """
 
     def __init__(
         self,
         model,
         modelname,
-        weight_type,
+        max_seq_len,
         dtype,
         use_kv_cache,
-        use_sdpa_with_kv_cache,
         example_inputs,
         enable_dynamic_shape: bool = False,
         verbose: bool = False,
@@ -74,12 +73,11 @@ class LlamaEdgeManager:
         # graph module returned from capture_pre_autograd_graph
         self.pre_autograd_graph_module: Optional[torch.fx.GraphModule] = None
         self.modelname = modelname
-        self.weight_type = weight_type
+        self.max_seq_len = max_seq_len
         self.dtype = dtype
         self.example_inputs = example_inputs
         self.use_kv_cache = use_kv_cache
         self.enable_dynamic_shape = enable_dynamic_shape
-        self.use_sdpa_with_kv_cache = use_sdpa_with_kv_cache
         self.verbose = verbose
         self.metadata = metadata
         self.applied_source_transforms = []
@@ -88,7 +86,7 @@ class LlamaEdgeManager:
         self.output_dir = "."
         self._saved_pte_filename = None
 
-    def set_output_dir(self, output_dir: str) -> "LlamaEdgeManager":
+    def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
         Set the directory where the .pte file will be saved.
         Args:
@@ -97,7 +95,7 @@ class LlamaEdgeManager:
         self.output_dir = output_dir
         return self
 
-    def to_dtype(self, dtype_override: Optional[DType]) -> "LlamaEdgeManager":
+    def to_dtype(self, dtype_override: Optional[DType]) -> "LLMEdgeManager":
         """
         Convert the model to the specified dtype.
         Args:
@@ -115,7 +113,7 @@ class LlamaEdgeManager:
 
     def source_transform(
         self, transforms: List[Callable[[torch.nn.Module], torch.nn.Module]]
-    ) -> "LlamaEdgeManager":
+    ) -> "LLMEdgeManager":
         """
         Apply source transforms to the model. The transforms are callables that
         takes nn.Module as input and returns nn.Module.
@@ -132,7 +130,7 @@ class LlamaEdgeManager:
         return self
 
     def _get_dynamic_shape(self) -> Any:
-        dim = torch.export.Dim("token_dim", max=self.model.params.max_seq_len - 1)
+        dim = torch.export.Dim("token_dim", max=self.max_seq_len - 1)
         if self.use_kv_cache:
             if self.enable_dynamic_shape:
                 return ({1: dim}, {0: dim})
@@ -149,7 +147,7 @@ class LlamaEdgeManager:
         )
         return edge_config
 
-    def capture_pre_autograd_graph(self) -> "LlamaEdgeManager":
+    def capture_pre_autograd_graph(self) -> "LLMEdgeManager":
         dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
@@ -159,11 +157,9 @@ class LlamaEdgeManager:
             )
         return self
 
-    def pt2e_quantize(
-        self, quantizers: Optional[List[Quantizer]]
-    ) -> "LlamaEdgeManager":
+    def pt2e_quantize(self, quantizers: Optional[List[Quantizer]]) -> "LLMEdgeManager":
         """
-        Quantize the model via pt2e flow and retrieve LlamaEdgeManager including the quantized model.
+        Quantize the model via pt2e flow and retrieve LLMEdgeManager including the quantized model.
         Args:
             quantizers (Optional[List[Quantizer]]): A list of quantizers.
         """
@@ -193,9 +189,9 @@ class LlamaEdgeManager:
             logging.info("No quantizer provided, passing...")
             return self
 
-    def export_to_edge(self) -> "LlamaEdgeManager":
+    def export_to_edge(self) -> "LLMEdgeManager":
         """
-        Export the model to Edge dialect and retrieve a LlamaEdgeManager.
+        Export the model to Edge dialect and retrieve a LLMEdgeManager.
         """
         dynamic_shape = self._get_dynamic_shape()
         edge_config = self._get_edge_config()
@@ -217,9 +213,7 @@ class LlamaEdgeManager:
             )
         return self
 
-    def to_backend(
-        self, partitioners: Optional[List[Partitioner]]
-    ) -> "LlamaEdgeManager":
+    def to_backend(self, partitioners: Optional[List[Partitioner]]) -> "LLMEdgeManager":
         """
         Partition the model and lower to different backends. The signature is
         aligned with the signature of `to_backend` method of EdgeManager.
@@ -249,7 +243,7 @@ class LlamaEdgeManager:
 
         return self
 
-    def to_executorch(self) -> "LlamaEdgeManager":
+    def to_executorch(self) -> "LLMEdgeManager":
         """
         Lower the model to executorch and get an ExecutorchProgram.
         """
