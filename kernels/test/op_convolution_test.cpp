@@ -472,3 +472,147 @@ TEST_F(OpConvOutTest, DynamicShapeUnbound) {
   test_dynamic_shape(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }
+
+TEST_F(OpConvCorrectnessTest, InvalidInputShape) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.ones({2, 4, 4, 5});
+  Tensor weight = tf.ones({8, 3, 2, 2});
+  optional<Tensor> bias;
+  Tensor out = tf.zeros({2, 8, 3, 4});
+
+  int64_t stride[1] = {1};
+  int64_t padding[1] = {0};
+  int64_t dilation[1] = {1};
+  int64_t output_padding[1] = {0};
+  int64_t groups = 2;
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          weight,
+          exec_aten::optional<Tensor>(bias),
+          exec_aten::ArrayRef<int64_t>{stride, 1},
+          exec_aten::ArrayRef<int64_t>{padding, 1},
+          exec_aten::ArrayRef<int64_t>{dilation, 1},
+          false,
+          exec_aten::ArrayRef<int64_t>{output_padding, 1},
+          groups,
+          out));
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          weight,
+          exec_aten::optional<Tensor>(bias),
+          exec_aten::ArrayRef<int64_t>{stride, 1},
+          exec_aten::ArrayRef<int64_t>{padding, 1},
+          exec_aten::ArrayRef<int64_t>{dilation, 1},
+          true,
+          exec_aten::ArrayRef<int64_t>{output_padding, 1},
+          groups,
+          out));
+}
+
+TEST_F(OpConvCorrectnessTest, TransposedDefaultParams) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.full({2, 4, 3, 2}, 2.0);
+  Tensor weight = tf.full({4, 1, 2, 2}, 0.5);
+  optional<Tensor> bias;
+  Tensor out = tf.full({2, 2, 4, 3}, 0.7);
+  Tensor expected =
+      tf.make({2, 2, 4, 3}, {2, 4, 2, 4, 8, 4, 4, 8, 4, 2, 4, 2, 2, 4, 2, 4,
+                             8, 4, 4, 8, 4, 2, 4, 2, 2, 4, 2, 4, 8, 4, 4, 8,
+                             4, 2, 4, 2, 2, 4, 2, 4, 8, 4, 4, 8, 4, 2, 4, 2});
+
+  int64_t stride[1] = {1};
+  int64_t padding[1] = {0};
+  int64_t dilation[1] = {1};
+  bool transposed = true;
+  int64_t output_padding[1] = {0};
+  int64_t groups = 2;
+
+  op_convolution_out(
+      input,
+      weight,
+      exec_aten::optional<Tensor>(bias),
+      exec_aten::ArrayRef<int64_t>{stride, 1},
+      exec_aten::ArrayRef<int64_t>{padding, 1},
+      exec_aten::ArrayRef<int64_t>{dilation, 1},
+      transposed,
+      exec_aten::ArrayRef<int64_t>{output_padding, 1},
+      groups,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, TransposedNonDefaultParams) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.full({2, 6, 4, 5}, 2.0);
+  Tensor weight = tf.full({6, 1, 2, 2}, 0.5);
+  Tensor bias = tf.make({3}, {1, 2, 3});
+  Tensor out = tf.zeros({2, 3, 3, 6});
+  Tensor expected = tf.make(
+      {2, 3, 3, 6},
+      {1, 1, 1, 1, 1, 1, 1, 3, 3, 1, 3, 3, 1, 3, 3, 1, 3, 3, 2, 2, 2, 2,
+       2, 2, 2, 4, 4, 2, 4, 4, 2, 4, 4, 2, 4, 4, 3, 3, 3, 3, 3, 3, 3, 5,
+       5, 3, 5, 5, 3, 5, 5, 3, 5, 5, 1, 1, 1, 1, 1, 1, 1, 3, 3, 1, 3, 3,
+       1, 3, 3, 1, 3, 3, 2, 2, 2, 2, 2, 2, 2, 4, 4, 2, 4, 4, 2, 4, 4, 2,
+       4, 4, 3, 3, 3, 3, 3, 3, 3, 5, 5, 3, 5, 5, 3, 5, 5, 3, 5, 5});
+
+  int64_t stride[1] = {3};
+  int64_t padding[1] = {7};
+  int64_t dilation[1] = {5};
+  bool transposed = true;
+  int64_t output_padding[1] = {2};
+  int64_t groups = 3;
+
+  op_convolution_out(
+      input,
+      weight,
+      exec_aten::optional<Tensor>(bias),
+      exec_aten::ArrayRef<int64_t>{stride, 1},
+      exec_aten::ArrayRef<int64_t>{padding, 1},
+      exec_aten::ArrayRef<int64_t>{dilation, 1},
+      transposed,
+      exec_aten::ArrayRef<int64_t>{output_padding, 1},
+      groups,
+      out);
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST_F(OpConvCorrectnessTest, InvalidOutputPadding) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input = tf.full({2, 6, 4, 5}, 2.0);
+  Tensor weight = tf.full({6, 1, 2, 2}, 0.5);
+  Tensor bias = tf.make({3}, {1, 2, 3});
+  Tensor out = tf.zeros({2, 3, 6, 9});
+
+  int64_t stride[1] = {3};
+  int64_t padding[1] = {7};
+  int64_t dilation[1] = {5};
+  bool transposed = true;
+  int64_t output_padding[1] = {5};
+  int64_t groups = 3;
+
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_convolution_out(
+          input,
+          weight,
+          exec_aten::optional<Tensor>(bias),
+          exec_aten::ArrayRef<int64_t>{stride, 1},
+          exec_aten::ArrayRef<int64_t>{padding, 1},
+          exec_aten::ArrayRef<int64_t>{dilation, 1},
+          transposed,
+          exec_aten::ArrayRef<int64_t>{output_padding, 1},
+          groups,
+          out));
+}
