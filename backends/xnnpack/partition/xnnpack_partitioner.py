@@ -869,7 +869,7 @@ class XnnpackPartitioner(Partitioner):
         self.quant = quant
 
         # TODO(T174256335) - remove this once we have a better way to handle >2d Mask
-        self._lower_recomposed_sdpa: bool = _lower_recomposed_sdpa or True
+        self._lower_recomposed_sdpa: bool = _lower_recomposed_sdpa
 
         self.delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
         self.partition_tags: Dict[str, DelegationSpec] = {}
