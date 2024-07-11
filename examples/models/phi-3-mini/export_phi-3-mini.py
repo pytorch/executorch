@@ -20,9 +20,8 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from transformers import (  # @manual=fbsource//third-party/pypi/transformers:transformers
-    Phi3ForCausalLM,
-)
+# pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
+from transformers import Phi3ForCausalLM
 
 
 def main() -> None:
