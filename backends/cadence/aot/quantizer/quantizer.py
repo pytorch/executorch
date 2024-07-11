@@ -9,6 +9,7 @@ from typing import List
 import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
+    BmmPattern,
     Conv1dPattern,
     Conv2dPattern,
     LayerNormFunctionalPattern,
@@ -133,6 +134,7 @@ class CadenceQuantizer(ComposableQuantizer):
         super().__init__(
             [
                 CadenceGenericQuantizer(AddmmPattern(), static_qconfig),
+                CadenceGenericQuantizer(BmmPattern(), static_qconfig),
                 CadenceGenericQuantizer(Conv1dPattern(), static_qconfig),
                 CadenceGenericQuantizer(Conv2dPattern(), static_qconfig),
                 CadenceGenericQuantizer(LayerNormPattern(), static_qconfig),

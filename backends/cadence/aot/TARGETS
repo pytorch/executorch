@@ -28,6 +28,7 @@ python_library(
         "compiler.py",
     ],
     deps = [
+        "fbsource//third-party/pypi/pyre-extensions:pyre-extensions",
         ":passes",
         ":utils",
         "//caffe2:torch",
