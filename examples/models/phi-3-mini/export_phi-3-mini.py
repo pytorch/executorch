@@ -19,7 +19,6 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from torch.export import export
 
 from transformers import Phi3ForCausalLM
 
@@ -27,6 +26,7 @@ from transformers import Phi3ForCausalLM
 def main() -> None:
     torch.random.manual_seed(0)
 
+    # pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
     model = Phi3ForCausalLM.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
 
     example_inputs = (torch.randint(0, 100, (1, 100), dtype=torch.long),)
@@ -48,8 +48,14 @@ def main() -> None:
         model(*example_inputs)
         model = convert_pt2e(model, fold_quantize=False)
         DuplicateDynamicQuantChainPass()(model)
-        model = export(
-            model, example_inputs, dynamic_shapes=dynamic_shape, strict=False
+        # TODO(lunwenh): update it to use export once
+        # https://github.com/pytorch/pytorch/issues/128394 is resolved.
+        model = torch.export._trace._export(
+            model,
+            example_inputs,
+            dynamic_shapes=dynamic_shape,
+            strict=False,
+            pre_dispatch=False,
         )
 
     edge_config = get_xnnpack_edge_compile_config()
