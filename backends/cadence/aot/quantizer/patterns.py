@@ -4,14 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Optional, Tuple, Type, Union
+from typing import Callable, List, Optional, Tuple, Type, Union
 
 import torch
 from executorch.backends.cadence.aot.quantizer.utils import get_bias_qparams
+from pyre_extensions import assert_is_instance
 
 from torch import fx
+from torch._ops import OpOverload
 from torch.ao.quantization.quantizer import (
     DerivedQuantizationSpec,
     SharedQuantizationSpec,
@@ -44,18 +48,25 @@ class PartitionAnchors:
 
 class QuantizationPattern(ABC):
     @abstractmethod
-    def partition_types(self):
+    def partition_types(
+        self,
+    ) -> Union[
+        list[Type[torch.nn.Module]],
+        list[Callable[..., torch.Tensor]],
+    ]:
         """
         List of types to be passed to find_sequential_partitions.
         """
         pass
 
     @abstractmethod
-    def get_anchors(self, gm, fused_partition) -> Optional[PartitionAnchors]:
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> Optional[PartitionAnchors]:
         pass
 
     @abstractmethod
-    def replacement_op(self) -> Callable[..., Any]:
+    def replacement_op(self) -> OpOverload:
         """
         Operator (most likely a custom one) that this partition should be fused into in
         the backend. Refer to the QuantFusion pass for examples.
@@ -91,7 +102,7 @@ class AddmmPattern(QuantizationPattern):
             output=[(addmm_node,)],
         )
 
-    def replacement_op(self):
+    def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_linear
 
 
@@ -102,12 +113,15 @@ class Conv1dPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
-        conv1d_node = fused_partition[0].nodes[-1]
+        conv1d_node = assert_is_instance(fused_partition[0].nodes[-1], fx.Node)
+
+        args0 = assert_is_instance(conv1d_node.args[0], fx.Node)
+        args1 = assert_is_instance(conv1d_node.args[1], fx.Node)
 
         bias_qspec = DerivedQuantizationSpec(
             derived_from=[
-                (conv1d_node.args[0], conv1d_node),
-                (conv1d_node.args[1], conv1d_node),
+                (args0, conv1d_node),
+                (args1, conv1d_node),
             ],
             derive_qparams_fn=get_bias_qparams,
             dtype=torch.int32,
@@ -124,12 +138,11 @@ class Conv1dPattern(QuantizationPattern):
         return PartitionAnchors(
             inputs=[(conv1d_node, 0)],
             weights=[(conv1d_node, 1)],
-            # pyre-fixme[6]: Incompatible parameter type
             biases=bias,
             output=[(conv1d_node,)],
         )
 
-    def replacement_op(self):
+    def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_conv.default
 
 
@@ -140,12 +153,15 @@ class Conv2dPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
-        conv2d_node = fused_partition[0].nodes[-1]
+        conv2d_node = assert_is_instance(fused_partition[0].nodes[-1], fx.Node)
+
+        args0 = assert_is_instance(conv2d_node.args[0], fx.Node)
+        args1 = assert_is_instance(conv2d_node.args[1], fx.Node)
 
         bias_qspec = DerivedQuantizationSpec(
             derived_from=[
-                (conv2d_node.args[0], conv2d_node),
-                (conv2d_node.args[1], conv2d_node),
+                (args0, conv2d_node),
+                (args1, conv2d_node),
             ],
             derive_qparams_fn=get_bias_qparams,
             dtype=torch.int32,
@@ -162,20 +178,21 @@ class Conv2dPattern(QuantizationPattern):
         return PartitionAnchors(
             inputs=[(conv2d_node, 0)],
             weights=[(conv2d_node, 1)],
-            # pyre-fixme[6]: Incompatible parameter type
             biases=bias,
             output=[(conv2d_node,)],
         )
 
-    def replacement_op(self):
+    def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_conv.default
 
 
 class LayerNormPattern(QuantizationPattern):
-    def partition_types(self):
+    def partition_types(self) -> List[Type[torch.nn.Module]]:
         return [torch.nn.LayerNorm]
 
-    def get_anchors(self, gm, fused_partition) -> PartitionAnchors:
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
         layer_norm_node = fused_partition[0].nodes[-1]
 
         # Weights and biases are used as fp32 by our kernel, so they are
@@ -189,15 +206,17 @@ class LayerNormPattern(QuantizationPattern):
             output=[(layer_norm_node,)],
         )
 
-    def replacement_op(self):
+    def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_layer_norm.default
 
 
 class LayerNormFunctionalPattern(QuantizationPattern):
-    def partition_types(self):
+    def partition_types(self) -> List[Callable[..., torch.Tensor]]:
         return [torch.nn.functional.layer_norm]
 
-    def get_anchors(self, gm, fused_partition) -> PartitionAnchors:
+    def get_anchors(
+        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+    ) -> PartitionAnchors:
         layer_norm_node = fused_partition[0].nodes[-1]
 
         others = [(layer_norm_node, 1)]
@@ -221,7 +240,7 @@ class LayerNormFunctionalPattern(QuantizationPattern):
             output=[(layer_norm_node,)],
         )
 
-    def replacement_op(self):
+    def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_layer_norm.default
 
 
@@ -232,12 +251,15 @@ class LinearPattern(QuantizationPattern):
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
-        linear_node = fused_partition[0].nodes[-1]
+        linear_node = assert_is_instance(fused_partition[0].nodes[-1], fx.Node)
+
+        args0 = assert_is_instance(linear_node.args[0], fx.Node)
+        args1 = assert_is_instance(linear_node.args[1], fx.Node)
 
         bias_qspec = DerivedQuantizationSpec(
             derived_from=[
-                (linear_node.args[0], linear_node),
-                (linear_node.args[1], linear_node),
+                (args0, linear_node),
+                (args1, linear_node),
             ],
             derive_qparams_fn=get_bias_qparams,
             dtype=torch.int32,
@@ -254,28 +276,30 @@ class LinearPattern(QuantizationPattern):
         return PartitionAnchors(
             inputs=[(linear_node, 0)],
             weights=[(linear_node, 1)],
-            # pyre-fixme[6]: Incompatible parameter type
             biases=bias,
             output=[(linear_node,)],
         )
 
-    def replacement_op(self):
+    def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_linear.default
 
 
 class LinearFunctionalPattern(QuantizationPattern):
-    def partition_types(self):
+    def partition_types(self) -> List[Callable[..., torch.Tensor]]:
         return [torch.nn.functional.linear]
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> PartitionAnchors:
-        linear_node = fused_partition[0].nodes[-1]
+        linear_node = assert_is_instance(fused_partition[0].nodes[-1], fx.Node)
+
+        args0 = assert_is_instance(linear_node.args[0], fx.Node)
+        args1 = assert_is_instance(linear_node.args[1], fx.Node)
 
         bias_qspec = DerivedQuantizationSpec(
             derived_from=[
-                (linear_node.args[0], linear_node),
-                (linear_node.args[1], linear_node),
+                (args0, linear_node),
+                (args1, linear_node),
             ],
             derive_qparams_fn=get_bias_qparams,
             dtype=torch.int32,
@@ -292,17 +316,16 @@ class LinearFunctionalPattern(QuantizationPattern):
         return PartitionAnchors(
             inputs=[(linear_node, 0)],
             weights=[(linear_node, 1)],
-            # pyre-fixme[6]: Incompatible parameter type
             biases=bias,
             output=[(linear_node,)],
         )
 
-    def replacement_op(self):
+    def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_linear.default
 
 
 class MatmulPattern(QuantizationPattern):
-    def partition_types(self):
+    def partition_types(self) -> List[Callable[..., torch.Tensor]]:
         return [torch.matmul]
 
     def get_anchors(
@@ -317,7 +340,7 @@ class MatmulPattern(QuantizationPattern):
             output=[(matmul_node,)],
         )
 
-    def replacement_op(self):
+    def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_matmul.default
 
 
@@ -339,5 +362,5 @@ class ReluPattern(QuantizationPattern):
             ],
         )
 
-    def replacement_op(self):
+    def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_relu.default

@@ -67,8 +67,14 @@ def quantize_per_tensor_meta(
     quant_min: int,
     quant_max: int,
     dtype: ScalarType,
-):
-    return input.new_empty(input.size(), dtype=dtype)
+) -> torch.Tensor:
+    _out_type = torch.uint8
+    if dtype == 1:
+        _out_type = torch.int8
+    elif dtype == 3:
+        _out_type = torch.int32
+
+    return input.new_empty(input.size(), dtype=_out_type)
 
 
 @impl(m, "dequantize_per_tensor")
@@ -79,7 +85,7 @@ def dequantize_per_tensor_meta(
     quant_min: int,
     quant_max: int,
     dtype: ScalarType,
-):
+) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=torch.float)
 
 
@@ -94,7 +100,7 @@ def quantized_linear_meta(
     out_shift: torch.Tensor,
     out_zero_point: int,
     offset: Optional[torch.Tensor],
-):
+) -> torch.Tensor:
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -154,7 +160,7 @@ def quantized_layer_norm_meta(
     eps: float,
     output_scale: float,
     output_zero_point: int,
-):
+) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=torch.uint8)
 
 
@@ -162,5 +168,5 @@ def quantized_layer_norm_meta(
 def quantized_relu_meta(
     X: torch.Tensor,
     X_zero_point: torch.Tensor,
-):
+) -> torch.Tensor:
     return X.new_empty(X.size(), dtype=torch.uint8)

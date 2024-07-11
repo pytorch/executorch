@@ -18,6 +18,7 @@ python_library(
         "patterns.py",
     ],
     deps = [
+        "fbsource//third-party/pypi/pyre-extensions:pyre-extensions",
         ":utils",
         "//caffe2:torch",
     ],
