@@ -38,7 +38,7 @@ Runner::Runner(
     const float temperature)
     : module_(std::make_unique<Module>(
           model_path,
-          Module::MlockConfig::UseMlockIgnoreErrors)),
+          Module::LoadMode::MmapUseMlockIgnoreErrors)),
       tokenizer_path_(tokenizer_path),
       model_path_(model_path),
       temperature_(temperature) {
@@ -649,7 +649,7 @@ Error Runner::mem_alloc(size_t alignment, size_t seq_len) {
   // Reset and re-init again to trigger registered function
   module_.reset();
   module_ = std::make_unique<Module>(
-      model_path_, Module::MlockConfig::UseMlockIgnoreErrors),
+      model_path_, Module::LoadMode::MmapUseMlockIgnoreErrors),
   ET_CHECK_MSG(load() == Error::Ok, "Runner failed to load method");
 
   return Error::Ok;
