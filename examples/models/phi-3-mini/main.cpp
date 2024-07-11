@@ -83,7 +83,7 @@ int main() {
 
   SentencePieceTokenizer tokenizer("tokenizer.model");
 
-  Module model("phi-3-mini.pte", Module::MlockConfig::UseMlockIgnoreErrors);
+  Module model("phi-3-mini.pte", Module::LoadMode::MmapUseMlockIgnoreErrors);
 
   const auto max_output_tokens = 128;
   generate(model, prompt, tokenizer, max_output_tokens);
