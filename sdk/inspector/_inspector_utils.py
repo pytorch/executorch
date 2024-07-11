@@ -70,6 +70,20 @@ InferenceOutput: TypeAlias = Union[
 ProgramOutput: TypeAlias = List[InferenceOutput]
 
 
+# Compare whether two InferenceOutputs are equal
+def is_inference_output_equal(
+    output1: InferenceOutput, output2: InferenceOutput
+) -> bool:
+    if isinstance(output1, torch.Tensor) and isinstance(output2, torch.Tensor):
+        return torch.equal(output1, output2)
+    elif isinstance(output1, List) and isinstance(output2, List):
+        return all(torch.equal(t1, t2) for t1, t2 in zip(output1, output2))
+    elif output1 == output2:
+        return True
+    else:
+        return False
+
+
 # Given a ETDump Tensor object and offset, extract into a torch.Tensor
 def _parse_tensor_value(
     tensor: Optional[Tensor], output_buffer: Optional[bytes]

@@ -40,6 +40,11 @@ class OpConv2d:
 
 
 @dataclass(init=False, frozen=True)
+class OpConvert:
+    op_name: str = "Convert"
+
+
+@dataclass(init=False, frozen=True)
 class OpDepthToSpace:
     op_name: str = "DepthToSpace"
     param_block_size: str = "block_size"

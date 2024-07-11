@@ -11,15 +11,12 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/schema_generated.h>
-
-#include <string>
 namespace torch {
 namespace executor {
 // ========== Public method implementations =========================
 using namespace qnn;
 using namespace qnn_delegate;
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
-
 Result<DelegateHandle*> QnnExecuTorchBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
