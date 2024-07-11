@@ -99,14 +99,7 @@ class EXIRATenDialectVerifier(EXIRATenDialectVerifierBase):
         if isinstance(op, OpOverload):
             # TODO These special ops should be removable easily.
             if (
-                op.namespace
-                in [
-                    "quantized_decomposed",
-                    "boltnn_nimble",
-                    "nimble",
-                    "quantized",
-                    "dim_order_ops",
-                ]
+                op.namespace != "aten"
                 or op in self._get_exception_list()
             ):
                 return
