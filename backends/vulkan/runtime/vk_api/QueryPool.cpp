@@ -248,5 +248,22 @@ unsigned long QueryPool::get_total_shader_ns(std::string kernel_name) {
   }
   return 0;
 }
+
+unsigned long QueryPool::get_mean_shader_ns(std::string kernel_name) {
+  uint64_t total_ns = 0;
+  uint32_t count = 0;
+  for (ShaderDuration& entry : shader_durations_) {
+    if (entry.kernel_name == kernel_name) {
+      std::chrono::duration<size_t, std::nano> exec_duration_ns(
+          entry.execution_duration_ns);
+      total_ns += exec_duration_ns.count();
+      count++;
+    }
+  }
+  if (count == 0) {
+    return 0;
+  }
+  return total_ns / count;
+}
 } // namespace vkapi
 } // namespace vkcompute
