@@ -15,7 +15,6 @@
 #else /* BPE */
 #include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
 #endif /* ET_USE_TIKTOKEN*/
-#include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
@@ -43,7 +42,10 @@ Runner::Runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
     const float temperature)
-    : model_path_(model_path),
+    // NOTE: we observed ~2x loading performance increase on iPhone 15
+    // and a ~5% improvement on Galaxy S22 by switching to
+    // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
+    : module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
       tokenizer_path_(tokenizer_path),
       temperature_(temperature) {
   ET_LOG(
@@ -54,22 +56,13 @@ Runner::Runner(
 }
 
 bool Runner::is_loaded() const {
-  return module_ && module_->is_loaded() && tokenizer_ && sampler_;
+  return module_->is_loaded() && tokenizer_ && sampler_;
 }
 
 Error Runner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
-  // NOTE: we observed ~2x loading performance increase on iPhone 15
-  // and a ~5% improvement on Galaxy S22 by switching to
-  // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
-  auto data_loader_result = util::FileDataLoader::from(model_path_.c_str());
-  if (!data_loader_result.ok()) {
-    return data_loader_result.error();
-  }
-  module_ = std::make_unique<Module>(
-      std::make_unique<util::FileDataLoader>(std::move(*data_loader_result)));
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
 
   // Read out metadata: vocab_size (expected by the model), BOS, EOS, n_BOS,
