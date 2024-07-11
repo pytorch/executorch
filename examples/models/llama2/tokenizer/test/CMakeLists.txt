@@ -25,7 +25,7 @@ set(
   _tokenizer_test_srcs
   test_tiktoken.cpp
   test_bpe_tokenizer.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../tiktoken.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../llama_tiktoken.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../bpe_tokenizer.cpp
 )
 

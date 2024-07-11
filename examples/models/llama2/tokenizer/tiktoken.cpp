@@ -334,7 +334,7 @@ std::pair<std::vector<uint64_t>, uint64_t> Tiktoken::_encode_with_special_token(
 
 Error Tiktoken::load(const std::string& path) {
   _encoder = _load_encoder(path);
-  _special_token_encoder = _get_special_tokens(_encoder.size());
+  _special_token_encoder = get_special_tokens(_encoder.size());
 
   _decoder = _build_decoder(_encoder);
   _special_token_decoder = _build_decoder(_special_token_encoder);

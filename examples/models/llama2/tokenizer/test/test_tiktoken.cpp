@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
+#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
@@ -17,11 +17,11 @@ using namespace ::testing;
 namespace torch {
 namespace executor {
 
-class TiktokenExtensionTest : public Test {
+class LlamaTiktokenExtensionTest : public Test {
  public:
   void SetUp() override {
     torch::executor::runtime_init();
-    tokenizer_ = std::make_unique<Tiktoken>();
+    tokenizer_ = std::make_unique<LlamaTiktoken>();
     modelPath_ = std::getenv("RESOURCES_PATH") +
         std::string("/test_tiktoken_tokenizer.model");
   }
@@ -30,11 +30,11 @@ class TiktokenExtensionTest : public Test {
   std::string modelPath_;
 };
 
-class MultimodalTiktokenV5ExtensionTest : public Test {
+class MultimodalLlamaTiktokenV5ExtensionTest : public Test {
  public:
   void SetUp() override {
     torch::executor::runtime_init();
-    tokenizer_ = std::make_unique<Tiktoken>(MULTIMODAL);
+    tokenizer_ = std::make_unique<LlamaTiktoken>(MULTIMODAL);
     modelPath_ = std::getenv("RESOURCES_PATH") +
         std::string("/test_tiktoken_tokenizer.model");
   }
@@ -43,17 +43,17 @@ class MultimodalTiktokenV5ExtensionTest : public Test {
   std::string modelPath_;
 };
 
-TEST_F(TiktokenExtensionTest, EncodeWithoutLoadFails) {
+TEST_F(LlamaTiktokenExtensionTest, EncodeWithoutLoadFails) {
   Result<std::vector<uint64_t>> res = tokenizer_->encode("hello world", 0, 0);
   EXPECT_EQ(res.error(), Error::NotSupported);
 }
 
-TEST_F(TiktokenExtensionTest, DecodeWithoutLoadFails) {
+TEST_F(LlamaTiktokenExtensionTest, DecodeWithoutLoadFails) {
   auto result = tokenizer_->decode(0, 0);
   EXPECT_EQ(result.error(), Error::NotSupported);
 }
 
-TEST_F(TiktokenExtensionTest, TokenizerVocabSizeIsExpected) {
+TEST_F(LlamaTiktokenExtensionTest, TokenizerVocabSizeIsExpected) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
   EXPECT_EQ(tokenizer_->vocab_size(), 128256);
@@ -61,7 +61,7 @@ TEST_F(TiktokenExtensionTest, TokenizerVocabSizeIsExpected) {
   EXPECT_EQ(tokenizer_->eos_tok(), 128001);
 }
 
-TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerVocabSizeIsExpected) {
+TEST_F(MultimodalLlamaTiktokenV5ExtensionTest, TokenizerVocabSizeIsExpected) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
   EXPECT_EQ(tokenizer_->vocab_size(), 128256);
@@ -69,7 +69,7 @@ TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerVocabSizeIsExpected) {
   EXPECT_EQ(tokenizer_->eos_tok(), 128001);
 }
 
-TEST_F(TiktokenExtensionTest, TokenizerEncodeCorrectly) {
+TEST_F(LlamaTiktokenExtensionTest, TokenizerEncodeCorrectly) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
   Result<std::vector<uint64_t>> out = tokenizer_->encode("hello world", 1, 0);
@@ -80,7 +80,7 @@ TEST_F(TiktokenExtensionTest, TokenizerEncodeCorrectly) {
   EXPECT_EQ(out.get()[2], 1917);
 }
 
-TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerEncodeCorrectly) {
+TEST_F(MultimodalLlamaTiktokenV5ExtensionTest, TokenizerEncodeCorrectly) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
   Result<std::vector<uint64_t>> out = tokenizer_->encode(
@@ -101,7 +101,7 @@ TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerEncodeCorrectly) {
   }
 }
 
-TEST_F(TiktokenExtensionTest, TokenizerDecodeCorrectly) {
+TEST_F(LlamaTiktokenExtensionTest, TokenizerDecodeCorrectly) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
   std::vector<std::string> expected = {"<|begin_of_text|>", "hello", " world"};
@@ -113,7 +113,7 @@ TEST_F(TiktokenExtensionTest, TokenizerDecodeCorrectly) {
   }
 }
 
-TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerDecodeCorrectly) {
+TEST_F(MultimodalLlamaTiktokenV5ExtensionTest, TokenizerDecodeCorrectly) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
   std::vector<std::string> expected = {
@@ -135,7 +135,7 @@ TEST_F(MultimodalTiktokenV5ExtensionTest, TokenizerDecodeCorrectly) {
   }
 }
 
-TEST_F(TiktokenExtensionTest, TokenizerDecodeOutOfRangeFails) {
+TEST_F(LlamaTiktokenExtensionTest, TokenizerDecodeOutOfRangeFails) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
   // The vocab size is 128256, addes 256 just so the token is out of vocab
