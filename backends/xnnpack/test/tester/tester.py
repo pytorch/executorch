@@ -437,7 +437,7 @@ class Tester:
                             dim_spec.max, 1000
                         )  # unbounded int max is too large
                         lower_bound = (
-                            dim_spec.min if dim_spec.min != 2 else 1
+                            dim_spec.min if dim_spec.min >= 2 else 1
                         )  # 0/1 specialization means dim_spec.min can never be 1
                         dim_name_to_size[dim_name] = fn(
                             random.randint(lower_bound, upper_bound)
