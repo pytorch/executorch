@@ -85,6 +85,8 @@ def get_sample_etdump_flatcc() -> flatcc.ETDumpFlatCC:
                         debug_event=flatcc.DebugEvent(
                             chain_index=1,
                             instruction_id=0,
+                            delegate_debug_id_str="56",
+                            delegate_debug_id_int=-1,
                             debug_entry=flatcc.Value(
                                 val=flatcc.ValueType.TENSOR.value,
                                 tensor=flatcc.Tensor(
