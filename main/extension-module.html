@@ -590,7 +590,7 @@
 
 <span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="o">::</span><span class="nn">torch</span><span class="o">::</span><span class="nn">executor</span><span class="p">;</span>
 
-<span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Module</span><span class="o">::</span><span class="n">MlockConfig</span><span class="o">::</span><span class="n">UseMlock</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="p">());</span>
+<span class="n">Module</span><span class="w"> </span><span class="k">module</span><span class="p">(</span><span class="s">&quot;/path/to/model.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Module</span><span class="o">::</span><span class="n">LoadMode</span><span class="o">::</span><span class="n">MmapUseMlock</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="p">());</span>
 
 <span class="c1">// Execute a method, e.g. module.forward(...); or module.execute(&quot;my_method&quot;, ...);</span>
 
