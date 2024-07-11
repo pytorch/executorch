@@ -20,13 +20,13 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-# pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
 from transformers import Phi3ForCausalLM
 
 
 def main() -> None:
     torch.random.manual_seed(0)
 
+    # pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
     model = Phi3ForCausalLM.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
 
     example_inputs = (torch.randint(0, 100, (1, 100), dtype=torch.long),)
