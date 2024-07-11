@@ -10,10 +10,16 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 #include <iostream>
 
+#include "stats.h"
 #include "utils.h"
 
 void reg_count() {
   const uint32_t NREG_MIN = 1;
+  const uint32_t NREG_MAX = 512;
+  const uint32_t NREG_STEP = 1;
+
+  const double COMPENSATE = 0.01;
+  const double THRESHOLD = 3;
 
   uint32_t NITER;
 
@@ -43,6 +49,26 @@ void reg_count() {
   std::cout << "Calculating NITER..." << std::endl;
   ensure_min_niter(1000, NITER, [&]() { return bench(1, 1, NREG_MIN); });
   std::cout << "NITER," << NITER << std::endl;
+
+  uint32_t nreg_max;
+
+  DtJumpFinder<5> dj(COMPENSATE, THRESHOLD);
+  uint32_t nreg = NREG_MIN;
+  for (; nreg <= NREG_MAX; nreg += NREG_STEP) {
+    double time = bench(1, 1, nreg);
+    std::cout << "Testing nreg=\t" << nreg << "\tTime=\t" << time << std::endl;
+    if (dj.push(time)) {
+      nreg -= NREG_STEP;
+      nreg_max = nreg;
+      break;
+    }
+  }
+  if (nreg >= NREG_MAX) {
+    std::cout << "Unable to conclude a maximal register count" << std::endl;
+    nreg_max = NREG_STEP;
+  } else {
+    std::cout << nreg_max << " registers are available at most" << std::endl;
+  }
 }
 
 int main(int argc, const char** argv) {
