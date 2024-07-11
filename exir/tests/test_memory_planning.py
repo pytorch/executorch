@@ -50,7 +50,7 @@ from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Graph, GraphModule, Node
 from torch.nn import functional as F
 
-torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
+torch.ops.load_library("//executorch/kernels/portable:python_preload_generated_lib")
 
 
 def swap_modules(

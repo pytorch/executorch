@@ -988,7 +988,7 @@ class TestBackends(unittest.TestCase):
 
     def test_quantized_with_delegate(self) -> None:
         torch.ops.load_library(
-            "//executorch/kernels/quantized:custom_ops_generated_lib"
+            "//executorch/kernels/quantized:python_preload_generated_lib"
         )
         qconfig_mapping = get_default_qconfig_mapping("qnnpack")
         in_size = 2
