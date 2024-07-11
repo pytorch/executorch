@@ -14,13 +14,13 @@ from executorch.extension.llm.export.quantizer_lib import (
     PT2EQuantOptions,
 )
 
-# pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
 from transformers import Phi3ForCausalLM
 
 
 def main() -> None:
     torch.manual_seed(42)
 
+    # pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
     model = Phi3ForCausalLM.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
 
     modelname = "phi-3-mini"
