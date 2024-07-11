@@ -30,7 +30,6 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
 )
-from executorch.examples.models.llama2.builder import DType
 from executorch.examples.qualcomm.llama2.model.static_llama import LlamaModel, ModelArgs
 from executorch.examples.qualcomm.scripts.utils import (
     make_output_dir,
@@ -41,6 +40,7 @@ from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program._program import _get_updated_graph_signature
+from executorch.extension.llm.export.builder import DType
 
 from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.observer import MinMaxObserver

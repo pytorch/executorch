@@ -119,6 +119,7 @@ runtime.python_library(
     visibility = [
         "//executorch/backends/...",
         "//executorch/examples/...",
+        "//executorch/extension/llm/...",
     ],
     deps = [
         "//caffe2:torch",
