@@ -25,5 +25,5 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/hifi/operators)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/hifi/kernels)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/reference/operators)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/reference/kernels)
