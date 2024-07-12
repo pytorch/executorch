@@ -12,23 +12,23 @@ namespace torch {
 namespace executor {
 namespace {
 static constexpr int32_t kSpecialTokensSize = 256;
-static std::string kBOSToken = "<|begin_of_text|>";
 static constexpr size_t kBOSTokenIndex = 0;
-static std::string kEOSToken = "<|end_of_text|>";
 static constexpr size_t kEOSTokenIndex = 1;
 
 static inline std::unique_ptr<std::vector<std::string>>
 _get_default_special_tokens() {
-  auto special_tokens = std::make_unique<std::vector<std::string>>(
-      std::vector<std::string>{kBOSToken, kEOSToken});
-  special_tokens->emplace_back("<|reserved_special_token_0|>");
-  special_tokens->emplace_back("<|reserved_special_token_1|>");
-  special_tokens->emplace_back("<|reserved_special_token_2|>");
-  special_tokens->emplace_back("<|reserved_special_token_3|>");
-  special_tokens->emplace_back("<|start_header_id|>");
-  special_tokens->emplace_back("<|end_header_id|>");
-  special_tokens->emplace_back("<|reserved_special_token_4|>");
-  special_tokens->emplace_back("<|eot_id|>");
+  auto special_tokens =
+      std::make_unique<std::vector<std::string>>(std::vector<std::string>{
+          "<|begin_of_text|>",
+          "<|end_of_text|>",
+          "<|reserved_special_token_0|>",
+          "<|reserved_special_token_1|>",
+          "<|reserved_special_token_2|>",
+          "<|reserved_special_token_3|>",
+          "<|start_header_id|>",
+          "<|end_header_id|>",
+          "<|reserved_special_token_4|>",
+          "<|eot_id|>"});
 
   // pad the rest of the special tokens with reserved tokens
   ssize_t reserved_special_token_num = 5;
@@ -42,17 +42,19 @@ _get_default_special_tokens() {
 
 static inline std::unique_ptr<std::vector<std::string>>
 _get_multimodal_special_tokens() {
-  auto special_tokens = std::make_unique<std::vector<std::string>>(
-      std::vector<std::string>{kBOSToken, kEOSToken});
-  special_tokens->emplace_back("<|reserved_special_token_0|>");
-  special_tokens->emplace_back("<|reserved_special_token_1|>");
-  special_tokens->emplace_back("<|reserved_special_token_2|>");
-  special_tokens->emplace_back("<|reserved_special_token_3|>");
-  special_tokens->emplace_back("<|start_header_id|>");
-  special_tokens->emplace_back("<|end_header_id|>");
-  special_tokens->emplace_back("<|eom_id|>");
-  special_tokens->emplace_back("<|eot_id|>");
-  special_tokens->emplace_back("<|image|>");
+  auto special_tokens =
+      std::make_unique<std::vector<std::string>>(std::vector<std::string>{
+          "<|begin_of_text|>",
+          "<|end_of_text|>",
+          "<|reserved_special_token_0|>",
+          "<|reserved_special_token_1|>",
+          "<|reserved_special_token_2|>",
+          "<|reserved_special_token_3|>",
+          "<|start_header_id|>",
+          "<|end_header_id|>",
+          "<|eom_id|>",
+          "<|eot_id|>",
+          "<|image|>"});
 
   // pad the rest of the special tokens with reserved tokens except the last
   // one
