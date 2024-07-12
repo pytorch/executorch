@@ -86,8 +86,6 @@ def _validate_params(
     #     1
     # ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {key_cache.size(2)}"
 
-    assert seq_len == 1, "Only support seq_len = 1 for now."
-
     if attn_mask is not None:
         assert (
             attn_mask.dim() == 2

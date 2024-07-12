@@ -59,7 +59,6 @@ class SplitWithSizes(NodeVisitor):
         # Edge represents chunks by specifying the size of each chunk
         # QNN represents chunks by specifying the index to split chunks
         for index, _value in enumerate(chunks[:-1]):
-
             sum = sum + chunks[index]
             split_indices.append(sum)
 

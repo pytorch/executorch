@@ -169,7 +169,7 @@ class TestConvCombos(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(list(module.edge_op_list))
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_conv_combo_tosa_BI_pipeline(
@@ -192,7 +192,9 @@ class TestConvCombos(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(list(module.edge_op_list))
             .to_executorch()
-            .run_method_and_compare_outputs(atol=atol, rtol=rtol, qtol=1)
+            .run_method_and_compare_outputs(
+                inputs=test_data, atol=atol, rtol=rtol, qtol=1
+            )
         )
 
     def _test_conv_combo_u55_BI_pipeline(

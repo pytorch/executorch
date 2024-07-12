@@ -131,13 +131,13 @@ if __name__ == "__main__":
 
     # setup required paths accordingly
     # qnn_sdk       : QNN SDK path setup in environment variable
-    # artifact_path : path where artifacts were built
+    # build_path : path where QNN delegate artifacts were built
     # pte_path      : path where executorch binary was stored
     # device_id     : serial number of android device
     # workspace     : folder for storing artifacts on android device
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        artifact_path=f"{args.build_folder}",
+        build_path=f"{args.build_folder}",
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
         device_id=args.device,

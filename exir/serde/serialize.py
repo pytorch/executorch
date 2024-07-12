@@ -344,6 +344,11 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
             assert n not in constants
             constants[n] = t
 
+        additional_kwargs = {}
+        if hasattr(exported_program, "verifiers"):
+            additional_kwargs["verifiers"] = [
+                v.dialect for v in exported_program.verifiers
+            ]
         return export_serialize.SerializedArtifact(
             schema.ExportedProgram(
                 graph_module=serialized_graph_module,
@@ -351,6 +356,7 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
                 range_constraints=serialized_range_constraints,
                 schema_version=SchemaVersion(-1, -1),
                 dialect=exported_program.dialect,
+                **additional_kwargs,
             ),
             export_serialize.serialize_torch_artifact(exported_program.state_dict),
             export_serialize.serialize_torch_artifact(constants),
@@ -756,7 +762,7 @@ def deserialize(
 
 def save(
     ep_save: ep.ExportedProgram,
-    f: Union[str, os.PathLike, io.BytesIO],
+    f: Union[str, os.PathLike[str], io.BytesIO],
     *,
     extra_files: Optional[Dict[str, Any]] = None,
     opset_version: Optional[Dict[str, int]] = None,
@@ -767,7 +773,7 @@ def save(
     artifact: export_serialize.SerializedArtifact = serialize(ep_save, opset_version)
 
     if isinstance(f, (str, os.PathLike)):
-        f = os.fspath(f)
+        f = os.fspath(str(f))
 
     with zipfile.ZipFile(f, "w") as zipf:
         # Save every field in the SerializedArtifact to a file.
@@ -786,13 +792,13 @@ def save(
 
 
 def load(
-    f: Union[str, os.PathLike, io.BytesIO],
+    f: Union[str, os.PathLike[str], io.BytesIO],
     *,
     extra_files: Optional[Dict[str, Any]] = None,
     expected_opset_version: Optional[Dict[str, int]] = None,
 ) -> ep.ExportedProgram:
     if isinstance(f, (str, os.PathLike)):
-        f = os.fspath(f)
+        f = os.fspath(str(f))
 
     extra_files = extra_files or {}
 

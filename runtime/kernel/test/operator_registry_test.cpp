@@ -112,12 +112,12 @@ TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
   make_kernel_key({{ScalarType::Float, {0, 1, 2, 3}}}, buf_float_contiguous);
   KernelKey key_2 = KernelKey(buf_float_contiguous);
   Kernel kernel_1 =
-      Kernel("test::boo", key_1, [](RuntimeContext& context, EValue** stack) {
+      Kernel("test::bar", key_1, [](RuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
   Kernel kernel_2 =
-      Kernel("test::boo", key_2, [](RuntimeContext& context, EValue** stack) {
+      Kernel("test::bar", key_2, [](RuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(50);
       });
@@ -132,11 +132,11 @@ TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
   TensorMeta meta_2[] = {TensorMeta(ScalarType::Float, dim_order_type)};
   ArrayRef<TensorMeta> user_kernel_key_2 = ArrayRef<TensorMeta>(meta_2, 1);
 
-  EXPECT_TRUE(hasOpsFn("test::boo", user_kernel_key_1));
-  EXPECT_TRUE(hasOpsFn("test::boo", user_kernel_key_2));
+  EXPECT_TRUE(hasOpsFn("test::bar", user_kernel_key_1));
+  EXPECT_TRUE(hasOpsFn("test::bar", user_kernel_key_2));
 
   // no fallback kernel is registered
-  EXPECT_FALSE(hasOpsFn("test::boo", {}));
+  EXPECT_FALSE(hasOpsFn("test::bar", {}));
 
   EValue values[1];
   values[0] = Scalar(0);
@@ -145,7 +145,7 @@ TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
   RuntimeContext context{};
 
   // test kernel_1
-  OpFunction func_1 = getOpsFn("test::boo", user_kernel_key_1);
+  OpFunction func_1 = getOpsFn("test::bar", user_kernel_key_1);
   func_1(context, evalues);
 
   auto val_1 = values[0].toScalar().to<int64_t>();
@@ -153,7 +153,7 @@ TEST_F(OperatorRegistryTest, RegisterTwoKernels) {
 
   // test kernel_2
   values[0] = Scalar(0);
-  OpFunction func_2 = getOpsFn("test::boo", user_kernel_key_2);
+  OpFunction func_2 = getOpsFn("test::bar", user_kernel_key_2);
   func_2(context, evalues);
 
   auto val_2 = values[0].toScalar().to<int64_t>();
@@ -166,12 +166,12 @@ TEST_F(OperatorRegistryTest, DoubleRegisterKernelsDies) {
   KernelKey key = KernelKey(buf_long_contiguous);
 
   Kernel kernel_1 =
-      Kernel("test::boo", key, [](RuntimeContext& context, EValue** stack) {
+      Kernel("test::baz", key, [](RuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
   Kernel kernel_2 =
-      Kernel("test::boo", key, [](RuntimeContext& context, EValue** stack) {
+      Kernel("test::baz", key, [](RuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(50);
       });
@@ -187,7 +187,7 @@ TEST_F(OperatorRegistryTest, ExecutorChecksKernel) {
   KernelKey key = KernelKey(buf_long_contiguous);
 
   Kernel kernel_1 =
-      Kernel("test::boo", key, [](RuntimeContext& context, EValue** stack) {
+      Kernel("test::qux", key, [](RuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
@@ -198,7 +198,7 @@ TEST_F(OperatorRegistryTest, ExecutorChecksKernel) {
   auto dim_order_type = ArrayRef<Tensor::DimOrderType>(dims, 4);
   TensorMeta meta[] = {TensorMeta(ScalarType::Long, dim_order_type)};
   ArrayRef<TensorMeta> user_kernel_key_1 = ArrayRef<TensorMeta>(meta, 1);
-  EXPECT_TRUE(hasOpsFn("test::boo", user_kernel_key_1));
+  EXPECT_TRUE(hasOpsFn("test::qux", user_kernel_key_1));
 
   Tensor::DimOrderType dims_channel_first[] = {0, 3, 1, 2};
   auto dim_order_type_channel_first =
@@ -207,11 +207,11 @@ TEST_F(OperatorRegistryTest, ExecutorChecksKernel) {
       TensorMeta(ScalarType::Long, dim_order_type_channel_first)};
   ArrayRef<TensorMeta> user_kernel_key_2 =
       ArrayRef<TensorMeta>(meta_channel_first, 1);
-  EXPECT_FALSE(hasOpsFn("test::boo", user_kernel_key_2));
+  EXPECT_FALSE(hasOpsFn("test::qux", user_kernel_key_2));
 
   TensorMeta meta_float[] = {TensorMeta(ScalarType::Float, dim_order_type)};
   ArrayRef<TensorMeta> user_kernel_key_3 = ArrayRef<TensorMeta>(meta_float, 1);
-  EXPECT_FALSE(hasOpsFn("test::boo", ArrayRef<TensorMeta>(user_kernel_key_3)));
+  EXPECT_FALSE(hasOpsFn("test::qux", ArrayRef<TensorMeta>(user_kernel_key_3)));
 }
 
 TEST_F(OperatorRegistryTest, ExecutorUsesKernel) {
@@ -220,7 +220,7 @@ TEST_F(OperatorRegistryTest, ExecutorUsesKernel) {
   KernelKey key = KernelKey(buf_long_contiguous);
 
   Kernel kernel_1 =
-      Kernel("test::boo", key, [](RuntimeContext& context, EValue** stack) {
+      Kernel("test::quux", key, [](RuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
@@ -231,9 +231,9 @@ TEST_F(OperatorRegistryTest, ExecutorUsesKernel) {
   auto dim_order_type = ArrayRef<Tensor::DimOrderType>(dims, 4);
   TensorMeta meta[] = {TensorMeta(ScalarType::Long, dim_order_type)};
   ArrayRef<TensorMeta> user_kernel_key_1 = ArrayRef<TensorMeta>(meta, 1);
-  EXPECT_TRUE(hasOpsFn("test::boo", ArrayRef<TensorMeta>(meta)));
+  EXPECT_TRUE(hasOpsFn("test::quux", ArrayRef<TensorMeta>(meta)));
 
-  OpFunction func = getOpsFn("test::boo", ArrayRef<TensorMeta>(meta));
+  OpFunction func = getOpsFn("test::quux", ArrayRef<TensorMeta>(meta));
 
   EValue values[1];
   values[0] = Scalar(0);
@@ -248,17 +248,17 @@ TEST_F(OperatorRegistryTest, ExecutorUsesKernel) {
 
 TEST_F(OperatorRegistryTest, ExecutorUsesFallbackKernel) {
   Kernel kernel_1 = Kernel(
-      "test::boo", KernelKey{}, [](RuntimeContext& context, EValue** stack) {
+      "test::corge", KernelKey{}, [](RuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
   auto s1 = register_kernels({kernel_1});
   EXPECT_EQ(s1, torch::executor::Error::Ok);
 
-  EXPECT_TRUE(hasOpsFn("test::boo"));
-  EXPECT_TRUE(hasOpsFn("test::boo", ArrayRef<TensorMeta>()));
+  EXPECT_TRUE(hasOpsFn("test::corge"));
+  EXPECT_TRUE(hasOpsFn("test::corge", ArrayRef<TensorMeta>()));
 
-  OpFunction func = getOpsFn("test::boo", ArrayRef<TensorMeta>());
+  OpFunction func = getOpsFn("test::corge", ArrayRef<TensorMeta>());
 
   EValue values[1];
   values[0] = Scalar(0);

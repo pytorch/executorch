@@ -81,7 +81,7 @@ void ComputeGraph::print_readable() {
     // sizes
     std::cout << std::setw(20);
     if (val.isTensor()) {
-      const vTensor& v_tensor = val.toTensor();
+      const api::vTensor& v_tensor = val.toTensor();
       std::stringstream ss;
       ss << v_tensor.sizes();
       std::cout << ss.str();
@@ -150,7 +150,7 @@ void ComputeGraph::print_readable() {
 
     std::stringstream read_s;
     for (const ArgGroup& arg_group : node->args_) {
-      if (arg_group.access != api::MemoryAccessType::READ) {
+      if (arg_group.access != vkapi::MemoryAccessType::READ) {
         continue;
       }
       read_s << arg_group.refs;
@@ -159,7 +159,7 @@ void ComputeGraph::print_readable() {
 
     std::stringstream write_s;
     for (const ArgGroup& arg_group : node->args_) {
-      if (arg_group.access != api::MemoryAccessType::WRITE) {
+      if (arg_group.access != vkapi::MemoryAccessType::WRITE) {
         continue;
       }
       write_s << arg_group.refs;

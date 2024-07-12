@@ -21,16 +21,16 @@ class ComputeGraph;
  * access permission.
  */
 struct ArgGroup {
-  ArgGroup(const ValueRef ref, const api::MemoryAccessType access)
+  ArgGroup(const ValueRef ref, const vkapi::MemoryAccessType access)
       : refs{ref}, access(access) {}
 
   ArgGroup(
       const std::vector<ValueRef>& refs,
-      const api::MemoryAccessType access)
+      const vkapi::MemoryAccessType access)
       : refs(refs), access(access) {}
 
   const std::vector<ValueRef> refs;
-  const api::MemoryAccessType access;
+  const vkapi::MemoryAccessType access;
 };
 
 /*
@@ -50,12 +50,12 @@ class ExecuteNode final {
 
   ExecuteNode(
       ComputeGraph& graph,
-      const api::ShaderInfo& shader,
-      const api::utils::uvec3& global_workgroup_size,
-      const api::utils::uvec3& local_workgroup_size,
+      const vkapi::ShaderInfo& shader,
+      const utils::uvec3& global_workgroup_size,
+      const utils::uvec3& local_workgroup_size,
       const std::vector<ArgGroup>& args,
-      const api::ParamsBindList& params,
-      const api::SpecVarList& spec_vars = {},
+      const vkapi::ParamsBindList& params,
+      const vkapi::SpecVarList& spec_vars = {},
       const ResizeFunction& resize_fn = nullptr,
       const std::vector<ValueRef>& resize_args = {});
 
@@ -69,13 +69,18 @@ class ExecuteNode final {
     }
   }
 
+  inline void set_node_id(uint32_t node_id) {
+    node_id_ = node_id;
+  }
+
  protected:
-  const api::ShaderInfo shader_;
-  const api::utils::uvec3 global_workgroup_size_;
-  const api::utils::uvec3 local_workgroup_size_;
+  uint32_t node_id_;
+  const vkapi::ShaderInfo shader_;
+  const utils::uvec3 global_workgroup_size_;
+  const utils::uvec3 local_workgroup_size_;
   const std::vector<ArgGroup> args_;
-  const api::ParamsBindList params_;
-  const api::SpecVarList spec_vars_;
+  const vkapi::ParamsBindList params_;
+  const vkapi::SpecVarList spec_vars_;
   const ResizeFunction resize_fn_;
   const std::vector<ValueRef> resize_args_;
 };

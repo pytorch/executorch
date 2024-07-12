@@ -18,33 +18,33 @@
 
 using namespace vkcompute;
 
-#define CREATE_FLOAT_TEXTURE(sizes, allocate_memory) \
-  vTensor(                                           \
-      api::context(),                                \
-      sizes,                                         \
-      api::kFloat,                                   \
-      api::StorageType::TEXTURE_3D,                  \
-      api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,  \
+#define CREATE_FLOAT_TEXTURE(sizes, allocate_memory)  \
+  api::vTensor(                                       \
+      api::context(),                                 \
+      sizes,                                          \
+      vkapi::kFloat,                                  \
+      utils::StorageType::TEXTURE_3D,                 \
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, \
       allocate_memory);
 
 #define CREATE_FLOAT_BUFFER(sizes, allocate_memory) \
-  vTensor(                                          \
+  api::vTensor(                                     \
       api::context(),                               \
       sizes,                                        \
-      api::kFloat,                                  \
-      api::StorageType::BUFFER,                     \
-      api::GPUMemoryLayout::TENSOR_WIDTH_PACKED,    \
+      vkapi::kFloat,                                \
+      utils::StorageType::BUFFER,                   \
+      utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED,  \
       allocate_memory);
 
 #define DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(tensor) \
   api::StorageBuffer staging_buffer_##tensor(               \
-      api::context(), api::kFloat, tensor.gpu_numel());     \
+      api::context(), vkapi::kFloat, tensor.gpu_numel());   \
   record_nchw_to_image_op(                                  \
       api::context(), staging_buffer_##tensor.buffer(), tensor);
 
 #define DEFINE_STAGING_BUFFER_AND_RECORD_FROM_GPU_FOR(tensor) \
   api::StorageBuffer staging_buffer_##tensor(                 \
-      api::context(), api::kFloat, tensor.gpu_numel());       \
+      api::context(), vkapi::kFloat, tensor.gpu_numel());     \
   record_image_to_nchw_op(                                    \
       api::context(), tensor, staging_buffer_##tensor.buffer());
 
@@ -64,50 +64,50 @@ using namespace vkcompute;
 
 void record_nchw_to_buffer_op(
     api::Context* const context,
-    api::VulkanBuffer& src_buffer,
-    vTensor& v_dst);
+    vkapi::VulkanBuffer& src_buffer,
+    api::vTensor& v_dst);
 
 void record_buffer_to_nchw_op(
     api::Context* const context,
-    vTensor& v_src,
-    api::VulkanBuffer& dst_buffer);
+    api::vTensor& v_src,
+    vkapi::VulkanBuffer& dst_buffer);
 
 void record_nchw_to_image_op(
     api::Context* const context,
-    api::VulkanBuffer& src_buffer,
-    vTensor& v_dst);
+    vkapi::VulkanBuffer& src_buffer,
+    api::vTensor& v_dst);
 
 void record_image_to_nchw_op(
     api::Context* const context,
-    vTensor& v_src,
-    api::VulkanBuffer& dst_buffer);
+    api::vTensor& v_src,
+    vkapi::VulkanBuffer& dst_buffer);
 
 void record_conv2d_prepack_weights_op(
     api::Context* const context,
-    api::VulkanBuffer& src_buffer,
-    vTensor& v_dst,
+    vkapi::VulkanBuffer& src_buffer,
+    api::vTensor& v_dst,
     const std::vector<int64_t>& original_sizes,
     const bool transposed);
 
 void record_binary_op(
     api::Context* const context,
     const std::string& op_name,
-    vTensor& v_in1,
-    vTensor& v_in2,
-    vTensor& v_dst);
+    api::vTensor& v_in1,
+    api::vTensor& v_in2,
+    api::vTensor& v_dst);
 
 void execute_and_check_add(
-    vTensor& a,
-    vTensor& b,
-    vTensor& c,
+    api::vTensor& a,
+    api::vTensor& b,
+    api::vTensor& c,
     float a_val,
     float b_val);
 
-void record_index_fill_buffer(api::Context* const context, vTensor& v_ten);
+void record_index_fill_buffer(api::Context* const context, api::vTensor& v_ten);
 
 void record_scalar_add_buffer(
     api::Context* context,
-    vTensor& v_ten,
+    api::vTensor& v_ten,
     float offset);
 
 //
@@ -124,9 +124,9 @@ fill_staging(api::StorageBuffer& staging, float val, int numel = -1) {
   copy_ptr_to_staging(data.data(), staging, sizeof(float) * numel);
 }
 
-void fill_vtensor(vTensor& vten, std::vector<float>& data);
+void fill_vtensor(api::vTensor& vten, std::vector<float>& data);
 
-void fill_vtensor(vTensor& vten, float val, bool iota = false);
+void fill_vtensor(api::vTensor& vten, float val, bool iota = false);
 
 void fill_vtensor(
     ComputeGraph& graph,
@@ -134,9 +134,9 @@ void fill_vtensor(
     float val,
     bool iota = false);
 
-void extract_vtensor(vTensor& vten, std::vector<float>& data);
+void extract_vtensor(api::vTensor& vten, std::vector<float>& data);
 
-inline std::vector<float> extract_vtensor(vTensor& vten) {
+inline std::vector<float> extract_vtensor(api::vTensor& vten) {
   std::vector<float> data_out(vten.gpu_numel());
   extract_vtensor(vten, data_out);
   return data_out;
@@ -181,7 +181,7 @@ inline int64_t get_buf_idx(
 
 void submit_to_gpu();
 
-api::Allocation allocate_memory_for(const vTensor& vten);
+vkapi::Allocation allocate_memory_for(const api::vTensor& vten);
 
 VmaTotalStatistics get_vma_stats();
 

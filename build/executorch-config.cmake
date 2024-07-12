@@ -39,6 +39,7 @@ set(lib_list
     bundled_program
     extension_data_loader
     ${FLATCCRT_LIB}
+    coremldelegate
     mpsdelegate
     qnn_executorch_backend
     portable_ops_lib
@@ -57,6 +58,7 @@ set(lib_list
     optimized_native_cpu_ops_lib
     quantized_kernels
     quantized_ops_lib
+    quantized_ops_aot_lib
 )
 foreach(lib ${lib_list})
   # Name of the variable which stores result of the find_library search

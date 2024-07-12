@@ -1,15 +1,12 @@
 import argparse
-import logging
 import os
-import sys
-import traceback
-import copy
-import torch
-from examples.portable.utils import export_to_edge
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
-from torch.nn.attention import SDPBackend
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
+import torch
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.extension.export_util.utils import export_to_edge
+from torch.nn.attention import SDPBackend
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -20,8 +17,18 @@ def main() -> None:
         default=None,
         help="a valid huggingface model repo name",
     )
-    parser.add_argument("--compile", required=False, action="store_true", help="run HF model in eager with torch.compile")
-    parser.add_argument("--export", required=False, action="store_true", help="export HF model to ExecuTorch")
+    parser.add_argument(
+        "--compile",
+        required=False,
+        action="store_true",
+        help="run HF model in eager with torch.compile",
+    )
+    parser.add_argument(
+        "--export",
+        required=False,
+        action="store_true",
+        help="export HF model to ExecuTorch",
+    )
 
     args = parser.parse_args()
 
@@ -32,7 +39,8 @@ def main() -> None:
     max_seq_len = 32
     cache_implementation = "static"
     attn_implementation = "sdpa"
-    prompt = "" # Use empty prompt as a hack to avoid parallel prefill in order to verify the correctness in eager
+    use_sdpa_with_kv_cache = False
+    prompt = ""  # Use empty prompt as a hack to avoid parallel prefill in order to verify the correctness in eager
 
     # Load a HF model in eager
     tokenizer = AutoTokenizer.from_pretrained(args.hf_model_repo)
@@ -53,7 +61,7 @@ def main() -> None:
     # properly with ExecuTorch, this needs to be a config at model construction time
     # and should not change at generation runtime.
     model.generation_config.cache_implementation = cache_implementation
-    model.generation_config.max_length = max_seq_len # HF is setting this independently from config.max_length, and use this one to construct static kv cache
+    model.generation_config.max_length = max_seq_len  # HF is setting this independently from config.max_length, and use this one to construct static kv cache
     print(f"DEBUG model config = {model.config}")
     print(f"DEBUG model generation_config = {model.generation_config}")
 
@@ -69,35 +77,45 @@ def main() -> None:
         # torch.export
         input_tokens = tokenizer(prompt, return_tensors="pt")
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-            prog = export_to_edge(
-                model,
-                (
-                    torch.tensor([[1]], dtype=torch.long), # tokens, with kv cache our input token length is always just 1 token.
-                    torch.tensor([0], dtype=torch.long), # input_pos, what token of output are we on.)
-                ),
-                edge_compile_config=EdgeCompileConfig(
-                    _check_ir_validity=False,
-                    _skip_dim_order=True,
-                ),
-                edge_constant_methods={
-                    "get_bos_id": config.bos_token_id,
-                    "get_dtype": 5 if config.torch_dtype == torch.float16 else 6,
-                    "get_eos_id": config.eos_token_id,
-                    "get_head_dim": config.hidden_size / config.num_attention_heads,
-                    "get_max_batch_size": max_batch_size,
-                    "get_max_seq_len": max_seq_len,
-                    "get_n_bos": 1,
-                    "get_n_eos": 1,
-                    "get_n_kv_heads": config.num_key_value_heads,
-                    "get_n_layers": config.num_hidden_layers,
-                    "use_kv_cache": config.use_cache,
-                    "get_vocab_size": config.vocab_size,
-                },
-                verbose=False,
-            ).to_executorch(
-                ExecutorchBackendConfig(
-                    extract_constant_segment=True,
-                    extract_delegate_segments=True
+            prog = (
+                export_to_edge(
+                    model,
+                    (
+                        torch.tensor(
+                            [[1]], dtype=torch.long
+                        ),  # tokens, with kv cache our input token length is always just 1 token.
+                        torch.tensor(
+                            [0], dtype=torch.long
+                        ),  # input_pos, what token of output are we on.)
+                    ),
+                    edge_compile_config=EdgeCompileConfig(
+                        _check_ir_validity=False,
+                        _skip_dim_order=True,
+                    ),
+                    edge_constant_methods={
+                        "get_dtype": 5 if config.torch_dtype == torch.float16 else 6,
+                        "get_bos_id": config.bos_token_id,
+                        "get_eos_id": config.eos_token_id,
+                        "get_head_dim": config.hidden_size / config.num_attention_heads,
+                        "get_max_batch_size": max_batch_size,
+                        "get_max_seq_len": max_seq_len,
+                        "get_n_bos": 1,
+                        "get_n_eos": 1,
+                        "get_n_kv_heads": config.num_key_value_heads,
+                        "get_n_layers": config.num_hidden_layers,
+                        "get_vocab_size": config.vocab_size,
+                        "use_kv_cache": config.use_cache,
+                        "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
+                    },
+                    verbose=False,
+                )
+                .to_backend(
+                    XnnpackPartitioner(_lower_recomposed_sdpa=use_sdpa_with_kv_cache)
+                )
+                .to_executorch(
+                    ExecutorchBackendConfig(
+                        extract_constant_segment=True, extract_delegate_segments=True
+                    )
                 )
             )
             filename = os.path.join("./", f"{config.model_type}.pte")

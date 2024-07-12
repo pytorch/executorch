@@ -49,7 +49,6 @@ runtime.python_library(
     srcs = ["fuse_conv_with_clamp.py"],
     visibility = [
         "//executorch/backends/...",
-        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         ":utils",
@@ -57,6 +56,32 @@ runtime.python_library(
         "//executorch/backends/vulkan/passes:custom_ops_defs",
         "//executorch/exir:pass_base",
         "//executorch/exir:sym_util",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "fuse_view_copy",
+    srcs = ["fuse_view_copy.py"],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "remove_clone_ops",
+    srcs = ["remove_clone_ops.py"],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
     ],
 )
@@ -94,6 +119,7 @@ runtime.python_library(
     visibility = [
         "//executorch/backends/...",
         "//executorch/examples/...",
+        "//executorch/extension/llm/...",
     ],
     deps = [
         "//caffe2:torch",
@@ -101,9 +127,9 @@ runtime.python_library(
 )
 
 runtime.python_library(
-    name = "i64_to_i32",
+    name = "convert_dtype_pass",
     srcs = [
-        "i64_to_i32.py",
+        "convert_dtype_pass.py",
     ],
     visibility = [
         "//executorch/backends/...",

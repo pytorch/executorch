@@ -81,6 +81,11 @@ def eq(a: _SymScalar, b: _SymScalar) -> bool:
     return a == b
 
 
+@bind_pattern_to_op(executorch_prims_lib, "mod.Scalar(SymInt a, SymInt b) -> SymInt")
+def mod(a: SymInt, b: SymInt) -> SymInt:
+    return SymInt(int(a) % int(b))
+
+
 _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[OpOverload, OpOverload] = {
     operator.sub: ops.backend.executorch_prim.sub.Scalar,
     operator.mul: ops.backend.executorch_prim.mul.Scalar,
@@ -92,6 +97,7 @@ _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[OpOverload, OpOverload] = {
     operator.lt: ops.backend.executorch_prim.lt.Scalar,
     operator.ge: ops.backend.executorch_prim.ge.Scalar,
     operator.le: ops.backend.executorch_prim.le.Scalar,
+    operator.mod: ops.backend.executorch_prim.mod.Scalar,
     torch.sym_float: ops.backend.executorch_prim.sym_float.Scalar,
 }
 

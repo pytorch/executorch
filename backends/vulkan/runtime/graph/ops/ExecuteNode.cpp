@@ -16,12 +16,12 @@ namespace vkcompute {
 
 ExecuteNode::ExecuteNode(
     ComputeGraph& graph,
-    const api::ShaderInfo& shader,
-    const api::utils::uvec3& global_workgroup_size,
-    const api::utils::uvec3& local_workgroup_size,
+    const vkapi::ShaderInfo& shader,
+    const utils::uvec3& global_workgroup_size,
+    const utils::uvec3& local_workgroup_size,
     const std::vector<ArgGroup>& args,
-    const api::ParamsBindList& params,
-    const api::SpecVarList& spec_vars,
+    const vkapi::ParamsBindList& params,
+    const vkapi::SpecVarList& spec_vars,
     const ResizeFunction& resize_fn,
     const std::vector<ValueRef>& resize_args)
     : shader_(shader),
@@ -37,14 +37,17 @@ ExecuteNode::ExecuteNode(
 
 void ExecuteNode::encode(ComputeGraph* graph) {
   api::Context* const context = graph->context();
-  api::PipelineBarrier pipeline_barrier{};
+  vkapi::PipelineBarrier pipeline_barrier{};
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
   context->report_shader_dispatch_start(
-      shader_.kernel_name, global_workgroup_size_, local_workgroup_size_);
+      shader_.kernel_name,
+      global_workgroup_size_,
+      local_workgroup_size_,
+      node_id_);
 
-  api::DescriptorSet descriptor_set =
+  vkapi::DescriptorSet descriptor_set =
       context->get_descriptor_set(shader_, local_workgroup_size_, spec_vars_);
 
   uint32_t idx = 0;

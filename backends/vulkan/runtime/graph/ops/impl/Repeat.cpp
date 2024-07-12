@@ -20,11 +20,11 @@ namespace vkcompute {
 namespace {
 
 void check_args(
-    const vTensor& in,
+    const api::vTensor& in,
     const std::vector<int64_t>& repeats,
-    const vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+    const api::vTensor& out) {
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 
   int64_t in_dim = in.dim();
   VK_CHECK_COND(
@@ -59,7 +59,7 @@ void add_repeat_channel_node(
     ValueRef in,
     int64_t repeat_channel,
     ValueRef out,
-    api::utils::ivec3& running_range) {
+    utils::ivec3& running_range) {
   vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
 
@@ -69,30 +69,28 @@ void add_repeat_channel_node(
 
   const std::vector<int64_t>& in_sizes = t_in->sizes();
 
-  int32_t in_width =
-      api::utils::safe_downcast<int32_t>(dim_at<kWidth4D>(in_sizes));
+  int32_t in_width = utils::safe_downcast<int32_t>(dim_at<kWidth4D>(in_sizes));
   int32_t in_height =
-      api::utils::safe_downcast<int32_t>(dim_at<kHeight4D>(in_sizes));
+      utils::safe_downcast<int32_t>(dim_at<kHeight4D>(in_sizes));
   int32_t in_channel =
-      api::utils::safe_downcast<int32_t>(dim_at<kChannel4D>(in_sizes));
-  int32_t in_batch =
-      api::utils::safe_downcast<int32_t>(dim_at<kBatch4D>(in_sizes));
+      utils::safe_downcast<int32_t>(dim_at<kChannel4D>(in_sizes));
+  int32_t in_batch = utils::safe_downcast<int32_t>(dim_at<kBatch4D>(in_sizes));
 
   int32_t out_channel = repeat_channel * in_channel;
 
-  api::utils::ivec4 out_whcn_sizes{in_width, in_height, out_channel, in_batch};
+  utils::ivec4 out_whcn_sizes{in_width, in_height, out_channel, in_batch};
 
-  api::utils::ivec4 in_whcn_sizes{in_width, in_height, in_channel, in_batch};
+  utils::ivec4 in_whcn_sizes{in_width, in_height, in_channel, in_batch};
 
   // Channel packed global work ids
   running_range.data[2] =
-      out_whcn_sizes.data[3] * api::utils::div_up_4(out_whcn_sizes.data[2]);
-  api::utils::uvec3 global_size = api::utils::make_uvec3(running_range);
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+      out_whcn_sizes.data[3] * utils::div_up_4(out_whcn_sizes.data[2]);
+  utils::uvec3 global_size = utils::make_uvec3(running_range);
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   const struct Block final {
-    api::utils::ivec4 out_sizes;
-    api::utils::ivec4 in_size;
+    utils::ivec4 out_sizes;
+    utils::ivec4 in_size;
   } repeat_channel_args{
       out_whcn_sizes,
       in_whcn_sizes,
@@ -106,7 +104,8 @@ void add_repeat_channel_node(
       global_size,
       local_size,
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in, vkapi::MemoryAccessType::READ}},
       // Parameter buffers
       {graph.create_params_buffer(repeat_channel_args)},
       // Specialization Constants
@@ -132,7 +131,7 @@ void add_repeat_node(
   // After expanding a dimension, we will update the "running_range" since we
   // will need to copy the "expanded" area.
 
-  api::utils::ivec3 running_range = t_in->texture_limits();
+  utils::ivec3 running_range = t_in->texture_limits();
 
   const std::vector<int64_t>& in_sizes = t_in->sizes();
 
@@ -145,8 +144,8 @@ void add_repeat_node(
   if (int64_t channel_repeat = dim_at<kChannel4D>(repeats);
       channel_repeat == 1) {
     // If no repeat, short-cut to a direct copy
-    api::utils::ivec3 src_offset{0, 0, 0};
-    api::utils::ivec3 dst_offset{0, 0, 0};
+    utils::ivec3 src_offset{0, 0, 0};
+    utils::ivec3 dst_offset{0, 0, 0};
 
     add_copy_offset_node(graph, in, running_range, src_offset, dst_offset, out);
 
@@ -157,10 +156,10 @@ void add_repeat_node(
   // TODO: refactor width, height, and batch into a common helper function.
   // Width
   if (int64_t width_repeat = dim_at<kWidth4D>(repeats); width_repeat > 1) {
-    api::utils::ivec3 src_offset{0, 0, 0};
+    utils::ivec3 src_offset{0, 0, 0};
 
     for (int i = 1; i < width_repeat; ++i) {
-      api::utils::ivec3 dst_offset{i * dim_at<kWidth4D>(in_sizes), 0, 0};
+      utils::ivec3 dst_offset{i * dim_at<kWidth4D>(in_sizes), 0, 0};
 
       add_copy_offset_node(
           graph, out, running_range, src_offset, dst_offset, out);
@@ -171,10 +170,10 @@ void add_repeat_node(
 
   // Height
   if (int64_t height_repeat = dim_at<kHeight4D>(repeats); height_repeat > 1) {
-    api::utils::ivec3 src_offset{0, 0, 0};
+    utils::ivec3 src_offset{0, 0, 0};
 
     for (int i = 1; i < height_repeat; ++i) {
-      api::utils::ivec3 dst_offset = {0, i * dim_at<kHeight4D>(in_sizes), 0};
+      utils::ivec3 dst_offset = {0, i * dim_at<kHeight4D>(in_sizes), 0};
 
       add_copy_offset_node(
           graph, out, running_range, src_offset, dst_offset, out);
@@ -185,10 +184,10 @@ void add_repeat_node(
 
   // Batch
   if (int64_t batch_repeat = dim_at<kBatch4D>(repeats); batch_repeat > 1) {
-    api::utils::ivec3 src_offset{0, 0, 0};
+    utils::ivec3 src_offset{0, 0, 0};
 
     for (int i = 1; i < batch_repeat; ++i) {
-      api::utils::ivec3 dst_offset = {0, 0, i * running_range.data[2]};
+      utils::ivec3 dst_offset = {0, 0, i * running_range.data[2]};
 
       add_copy_offset_node(
           graph, out, running_range, src_offset, dst_offset, out);

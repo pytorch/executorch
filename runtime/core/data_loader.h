@@ -20,7 +20,7 @@ namespace executor {
 /**
  * Loads from a data source.
  *
- * See //executorch/util for common implementations.
+ * See //executorch/extension/data_loader for common implementations.
  */
 class DataLoader {
  public:

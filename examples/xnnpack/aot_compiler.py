@@ -13,11 +13,11 @@ import logging
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 from executorch.sdk import generate_etrecord
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
-from ..portable.utils import export_to_edge, save_pte_program
 from . import MODEL_NAME_TO_OPTIONS
 from .quantization.utils import quantize
 

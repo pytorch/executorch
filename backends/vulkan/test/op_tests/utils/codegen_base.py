@@ -243,7 +243,7 @@ class TestSuiteGen:
             arg_data = get_or_return_default(arg, inputs, i)
             ref_code += self.create_input_data(arg, arg_data)
 
-        ref_code = re.sub(r"^", "    ", ref_code, flags=re.M)
+        ref_code = re.sub(r"^", "  ", ref_code, flags=re.M)
         return ref_code
 
     def gen_create_and_check_out(self, prepack=False) -> str:
@@ -254,7 +254,7 @@ class TestSuiteGen:
             arg = binding.argument
             test_str += f"{arg.name}, "
         test_str = test_str[:-2] + ");"
-        test_str = re.sub(r"^", "    ", test_str, flags=re.M)
+        test_str = re.sub(r"^", "  ", test_str, flags=re.M)
         return test_str
 
     def gen_parameterization(self) -> str:
@@ -272,7 +272,7 @@ class TestSuiteGen:
         )
 
     def generate_suite_cpp(self) -> str:
-        suite_cpp = self.generate_fixture_cpp() + "\n"
+        suite_cpp = self.generate_fixture_cpp()
         for inputs in self.suite_def.input_cases:
             if not self.suite_def.requires_prepack:
                 suite_cpp += self.generate_case_cpp(inputs)
@@ -295,19 +295,18 @@ cpp_test_template = """
 {preamble}
 
 at::Tensor make_rand_tensor(
-        std::vector<int64_t> sizes,
-        at::ScalarType dtype = at::kFloat,
-        float low = 0.0,
-        float high = 1.0) {{
-    if (high == 1.0 && low == 0.0)
-        return at::rand(sizes, at::device(at::kCPU).dtype(dtype));
+    std::vector<int64_t> sizes,
+    at::ScalarType dtype = at::kFloat,
+    float low = 0.0,
+    float high = 1.0) {{
+  if (high == 1.0 && low == 0.0)
+    return at::rand(sizes, at::device(at::kCPU).dtype(dtype));
     
-    if (dtype == at::kChar)
-        return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
+  if (dtype == at::kChar)
+    return at::randint(high, sizes, at::device(at::kCPU).dtype(dtype));
 
-    return at::rand(sizes, at::device(at::kCPU).dtype(dtype)) * (high - low) + low;
+  return at::rand(sizes, at::device(at::kCPU).dtype(dtype)) * (high - low) + low;
 }}
-
 
 at::Tensor make_seq_tensor(
     std::vector<int64_t> sizes,
@@ -330,7 +329,6 @@ at::Tensor make_seq_tensor(
   // Clone as original data will be deallocated upon return.
   return at::from_blob(values.data(), sizes, at::kFloat).toType(dtype).detach().clone();
 }}
-
 
 at::Tensor make_index_tensor(std::vector<int64_t> indices) {{
   at::ScalarType dtype = at::kInt;

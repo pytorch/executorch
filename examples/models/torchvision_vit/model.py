@@ -8,7 +8,6 @@ import logging
 
 import torch
 
-# pyre-ignore
 from torchvision.models import vit_b_16  # @manual
 
 from ..model_base import EagerModelBase
@@ -20,7 +19,6 @@ class TorchVisionViTModel(EagerModelBase):
 
     def get_eager_model(self) -> torch.nn.Module:
         logging.info("Loading torchvision vit_b_16 model")
-        # pyre-ignore
         vit_b_16_model = vit_b_16(weights="IMAGENET1K_V1")
         logging.info("Loaded torchvision vit_b_16 model")
         return vit_b_16_model

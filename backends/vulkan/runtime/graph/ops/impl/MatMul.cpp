@@ -31,8 +31,7 @@ void check_matmul_args(
 
   VK_CHECK_COND(graph.memory_layout_of(mat1) == graph.memory_layout_of(out));
 
-  VK_CHECK_COND(
-      api::utils::val_at(-1, mat1_sizes) == api::utils::val_at(-2, mat2_sizes));
+  VK_CHECK_COND(utils::val_at(-1, mat1_sizes) == utils::val_at(-2, mat2_sizes));
 }
 
 void resize_matmul_node(
@@ -45,10 +44,9 @@ void resize_matmul_node(
 
   bool mat2_is_transposed = graph->get_bool(extra_args[0]);
 
-  const int out_cols = api::utils::val_at(-2, mat1->sizes());
-  const int out_rows = mat2_is_transposed
-      ? api::utils::val_at(-2, mat2->sizes())
-      : api::utils::val_at(-1, mat2->sizes());
+  const int out_cols = utils::val_at(-2, mat1->sizes());
+  const int out_rows = mat2_is_transposed ? utils::val_at(-2, mat2->sizes())
+                                          : utils::val_at(-1, mat2->sizes());
 
   std::vector<int64_t> new_out_sizes(3);
   if (mat1->sizes().size() == 2) {
@@ -70,10 +68,7 @@ void add_matmul_naive_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, api::kHeightPacked);
-
-  api::utils::uvec3 global_size = graph.image_extents_of(out);
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
 
   std::string kernel_name = graph.get_bool(mat2_is_transposed)
       ? "matmul_transposed_naive"
@@ -86,11 +81,11 @@ void add_matmul_naive_node(
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {{mat1, mat2}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{mat1, mat2}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
           graph.texture_limits_ubo(out),
@@ -109,10 +104,10 @@ void add_matmul_optimized_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, api::kHeightPacked);
+  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
 
   // Ensure mat1 is width packed
-  ValueRef mat1_W_packed = graph.add_tensor_like(mat1, api::kWidthPacked);
+  ValueRef mat1_W_packed = graph.add_tensor_like(mat1, utils::kWidthPacked);
   auto viewFn = VK_GET_OP_FN("aten.view_copy.default");
   viewFn(graph, {mat1, graph.add_none(), mat1_W_packed});
 
@@ -120,21 +115,37 @@ void add_matmul_optimized_node(
 
   // Ensure mat2 to height packed
   ValueRef mat2_packed = mat2;
-  const api::GPUMemoryLayout mat2_layout =
-      mat2_is_transposed_val ? api::kWidthPacked : api::kHeightPacked;
+  const utils::GPUMemoryLayout mat2_layout =
+      mat2_is_transposed_val ? utils::kWidthPacked : utils::kHeightPacked;
   if (graph.memory_layout_of(mat2) != mat2_layout) {
     mat2_packed = graph.add_tensor_like(mat2, mat2_layout);
     viewFn(graph, {mat2, graph.add_none(), mat2_packed});
   }
 
-  api::utils::uvec3 global_size =
-      api::utils::divup_vec(graph.image_extents_of(out), {4, 4, 1});
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   std::string kernel_name = mat2_is_transposed_val
       ? "matmul_transposed_optimized"
       : "matmul_optimized";
+
+  std::vector<int64_t> mat1_sizes = graph.sizes_of(mat1_W_packed);
+  int mat1_dims = mat1_sizes.size();
+  if (mat1_dims == 3) {
+    kernel_name = "batch_" + kernel_name;
+  }
+  if (mat1_sizes.at(mat1_dims - 2) < 8) {
+    kernel_name += "_tile_row_2";
+  } else {
+    kernel_name += "_tile_row_4";
+  }
+
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  utils::uvec3 global_size;
+  if (mat1_sizes.at(mat1_dims - 2) < 8) {
+    global_size = utils::divup_vec(graph.image_extents_of(out), {4, 2, 1});
+  } else {
+    global_size = utils::divup_vec(graph.image_extents_of(out), {4, 4, 1});
+  }
+  utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
@@ -142,8 +153,8 @@ void add_matmul_optimized_node(
       global_size,
       local_size,
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {{mat1_W_packed, mat2_packed}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{mat1_W_packed, mat2_packed}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
           graph.texture_limits_ubo(out),
@@ -163,9 +174,9 @@ void add_matmul_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  if (graph.memory_layout_of(mat1) == api::kChannelsPacked) {
+  if (graph.memory_layout_of(mat1) == utils::kChannelsPacked) {
     add_matmul_optimized_node(graph, mat1, mat2_data, out, mat2_is_transposed);
-  } else if (graph.memory_layout_of(mat1) == api::kWidthPacked) {
+  } else if (graph.memory_layout_of(mat1) == utils::kWidthPacked) {
     add_matmul_naive_node(graph, mat1, mat2_data, out, mat2_is_transposed);
   } else {
     VK_THROW("Input should be channel packed or width packed.");

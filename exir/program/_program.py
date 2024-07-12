@@ -736,7 +736,9 @@ def _replace_aten_ops_with_transformed_ops(
     # Iterate through the graph and replace the aten ops with the corresponding
     # transformed ops.
     for partitioner in partitioners:
-        ops_set_to_not_decompose, check_op_support = partitioner.ops_to_not_decompose()
+        ops_set_to_not_decompose, check_op_support = partitioner.ops_to_not_decompose(
+            program
+        )
 
         for op_aten in ops_set_to_not_decompose:
             _register_no_decomp_op(op_aten)
@@ -808,7 +810,12 @@ def _register_no_decomp_op(op_aten):
         lib.define(op_schema)
         # Define the implementation of the op in the edge_no_decomp_namespace namespace.
         # Important to note that the implementation of the op is the same as the aten op.
+
+        overload_name = op_aten._schema.overload_name
+        if overload_name != "":
+            op_name += "." + overload_name
         lib.impl(op_name, op_aten, "CompositeExplicitAutograd")
+
         # Cache the aten op and transformed op in their corresponding tables for future use.
         aten_op_to_transform_op[op_aten] = _get_transformed_op(op_aten)
         transform_op_to_aten_op[str(aten_op_to_transform_op[op_aten])] = op_aten
@@ -850,15 +857,6 @@ def _sanity_check_graph_for_non_decomp_ops(
                     raise RuntimeError(warning_str)
                 else:
                     logging.warning(warning_str)
-
-
-def _get_ops_to_not_decompose(partitioners, ops_set_to_not_decompose_by_partitioner):
-    ops_set_to_not_decompose = set()
-    for partitioner in partitioners:
-        ops_set_to_not_decompose = ops_set_to_not_decompose.union(
-            ops_set_to_not_decompose_by_partitioner[partitioner][0]
-        )
-    return ops_set_to_not_decompose
 
 
 def _to_edge_transform_and_lower(
@@ -959,7 +957,6 @@ def _to_edge_transform_and_lower(
         for name, partitioner_list in partitioner.items():
             for curr_partitioner in partitioner_list:
                 edge_manager = edge_manager.to_backend({name: curr_partitioner})
-                curr_op_set, check_op_support = curr_partitioner.ops_to_not_decompose()
 
     for name, program in edge_manager._edge_programs.items():
         if config._check_ir_validity:
@@ -971,7 +968,9 @@ def _to_edge_transform_and_lower(
         ops_set_to_not_decompose = set()
         partitioners = partitioner.get(name, [])
         for curr_partitioner in partitioners:
-            curr_op_set, check_op_support = curr_partitioner.ops_to_not_decompose()
+            curr_op_set, check_op_support = curr_partitioner.ops_to_not_decompose(
+                program
+            )
             ops_set_to_not_decompose = ops_set_to_not_decompose.union(curr_op_set)
             _sanity_check_graph_for_non_decomp_ops(
                 name,

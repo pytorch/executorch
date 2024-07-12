@@ -54,8 +54,7 @@ class TestMaxPool2d(unittest.TestCase):
         (
             Tester(self.MaxPool2d(3, 1, 0, 1), inputs)
             .export()
-            .check_count({"torch.ops.aten.max_pool2d_with_indices.default": 1})
-            .check(["getitem"])
+            .check_count({"torch.ops.aten.max_pool2d.default": 1})
             .to_edge()
             .check_count(
                 {
@@ -115,7 +114,7 @@ class TestMaxPool2d(unittest.TestCase):
         (
             Tester(self.MaxPool2dUnsupportedCeilMode(), inputs)
             .export()
-            .check_count({"torch.ops.aten.max_pool2d_with_indices.default": 1})
+            .check_count({"torch.ops.aten.max_pool2d.default": 1})
             .to_edge()
             .check_count(
                 {
@@ -152,7 +151,7 @@ class TestMaxPool2d(unittest.TestCase):
                 Tester(MaxPool(maxpool_params), inputs)
                 .quantize()
                 .export()
-                .check_count({"torch.ops.aten.max_pool2d_with_indices.default": 1})
+                .check_count({"torch.ops.aten.max_pool2d.default": 1})
                 .check(["torch.ops.quantized_decomposed"])
                 .to_edge()
                 .check_count(

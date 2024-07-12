@@ -22,7 +22,8 @@ class TokenizerExtensionTest : public Test {
   void SetUp() override {
     torch::executor::runtime_init();
     tokenizer_ = std::make_unique<BPETokenizer>();
-    modelPath_ = std::getenv("RESOURCES_PATH") + std::string("/test.bin");
+    modelPath_ =
+        std::getenv("RESOURCES_PATH") + std::string("/test_bpe_tokenizer.bin");
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;
@@ -47,13 +48,13 @@ TEST_F(TokenizerExtensionTest, DecodeOutOfRangeFails) {
   EXPECT_EQ(result.error(), Error::NotSupported);
 }
 
-TEST_F(TokenizerExtensionTest, TokenizerVocabSizeIsExpected) {
+TEST_F(TokenizerExtensionTest, TokenizerMetadataIsExpected) {
   Error res = tokenizer_->load(modelPath_.c_str());
   EXPECT_EQ(res, Error::Ok);
-  // test.bin has vocab size 0.
+  // test_bpe_tokenizer.bin has vocab_size 0, bos_id 0, eos_id 0 recorded.
   EXPECT_EQ(tokenizer_->vocab_size(), 0);
-  EXPECT_EQ(tokenizer_->bos_tok(), 2);
-  EXPECT_EQ(tokenizer_->eos_tok(), 1);
+  EXPECT_EQ(tokenizer_->bos_tok(), 0);
+  EXPECT_EQ(tokenizer_->eos_tok(), 0);
 }
 
 } // namespace executor

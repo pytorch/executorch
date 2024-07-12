@@ -10,8 +10,8 @@ from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
-from executorch.backends.arm.operators.op_common import build_avg_pool_2d_common
 from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa_utils import build_avg_pool_2d_common
 
 
 @register_node_visitor

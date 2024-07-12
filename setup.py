@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -57,7 +58,7 @@ import setuptools  # noqa: F401 # usort: skip
 from distutils import log
 from distutils.sysconfig import get_python_lib
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from setuptools import Extension, setup
 from setuptools.command.build import build
@@ -81,18 +82,20 @@ class ShouldBuild:
         return True
 
     @classmethod
-    @property
     def pybindings(cls) -> bool:
         return cls._is_env_enabled("EXECUTORCH_BUILD_PYBIND", default=False)
 
     @classmethod
-    @property
     def llama_custom_ops(cls) -> bool:
         return cls._is_env_enabled("EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT", default=True)
 
+    @classmethod
+    def flatc(cls) -> bool:
+        return cls._is_env_enabled("EXECUTORCH_BUILD_FLATC", default=True)
+
 
 class Version:
-    """Static properties that describe the version of the pip package."""
+    """Static strings that describe the version of the pip package."""
 
     # Cached values returned by the properties.
     __root_dir_attr: Optional[str] = None
@@ -100,7 +103,6 @@ class Version:
     __git_hash_attr: Optional[str] = None
 
     @classmethod
-    @property
     def _root_dir(cls) -> str:
         """The path to the root of the git repo."""
         if cls.__root_dir_attr is None:
@@ -109,7 +111,6 @@ class Version:
         return str(cls.__root_dir_attr)
 
     @classmethod
-    @property
     def git_hash(cls) -> Optional[str]:
         """The current git hash, if known."""
         if cls.__git_hash_attr is None:
@@ -118,7 +119,7 @@ class Version:
             try:
                 cls.__git_hash_attr = (
                     subprocess.check_output(
-                        ["git", "rev-parse", "HEAD"], cwd=cls._root_dir
+                        ["git", "rev-parse", "HEAD"], cwd=cls._root_dir()
                     )
                     .decode("ascii")
                     .strip()
@@ -129,7 +130,6 @@ class Version:
         return cls.__git_hash_attr if cls.__git_hash_attr else None
 
     @classmethod
-    @property
     def string(cls) -> str:
         """The version string."""
         if cls.__string_attr is None:
@@ -141,10 +141,10 @@ class Version:
                 # Otherwise, read the version from a local file and add the git
                 # commit if available.
                 version = (
-                    open(os.path.join(cls._root_dir, "version.txt")).read().strip()
+                    open(os.path.join(cls._root_dir(), "version.txt")).read().strip()
                 )
-                if cls.git_hash:
-                    version += "+" + cls.git_hash[:7]
+                if cls.git_hash():
+                    version += "+" + cls.git_hash()[:7]
             cls.__string_attr = version
         return cls.__string_attr
 
@@ -154,9 +154,9 @@ class Version:
         lines = [
             "from typing import Optional",
             '__all__ = ["__version__", "git_version"]',
-            f'__version__ = "{cls.string}"',
+            f'__version__ = "{cls.string()}"',
             # A string or None.
-            f"git_version: Optional[str] = {repr(cls.git_hash)}",
+            f"git_version: Optional[str] = {repr(cls.git_hash())}",
         ]
         with open(path, "w") as fp:
             fp.write("\n".join(lines) + "\n")
@@ -474,17 +474,18 @@ class CustomBuild(build):
         # extension entries themselves instead of hard-coding them here.
         build_args += ["--target", "flatc"]
 
-        if ShouldBuild.pybindings:
+        if ShouldBuild.pybindings():
             cmake_args += [
                 "-DEXECUTORCH_BUILD_PYBIND=ON",
                 "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
+                "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
             build_args += ["--target", "portable_lib"]
             # To link backends into the portable_lib target, callers should
             # add entries like `-DEXECUTORCH_BUILD_XNNPACK=ON` to the CMAKE_ARGS
             # environment variable.
 
-        if ShouldBuild.llama_custom_ops:
+        if ShouldBuild.llama_custom_ops():
             cmake_args += [
                 "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON",  # add llama sdpa ops to pybindings.
                 "-DEXECUTORCH_BUILD_KERNELS_CUSTOM_AOT=ON",
@@ -546,13 +547,16 @@ class CustomBuild(build):
         build.run(self)
 
 
-def get_ext_modules() -> list[Extension]:
+def get_ext_modules() -> List[Extension]:
     """Returns the set of extension modules to build."""
 
-    ext_modules = [
-        BuiltFile("third-party/flatbuffers/flatc", "executorch/data/bin/"),
-    ]
-    if ShouldBuild.pybindings:
+    ext_modules = []
+    if ShouldBuild.flatc():
+        ext_modules.append(
+            BuiltFile("third-party/flatbuffers/flatc", "executorch/data/bin/")
+        )
+
+    if ShouldBuild.pybindings():
         ext_modules.append(
             # Install the prebuilt pybindings extension wrapper for the runtime,
             # portable kernels, and a selection of backends. This lets users
@@ -561,7 +565,7 @@ def get_ext_modules() -> list[Extension]:
                 "_portable_lib.*", "executorch.extension.pybindings._portable_lib"
             )
         )
-    if ShouldBuild.llama_custom_ops:
+    if ShouldBuild.llama_custom_ops():
         ext_modules.append(
             # Install the prebuilt library for custom ops used in llama.
             BuiltFile(
@@ -578,7 +582,7 @@ def get_ext_modules() -> list[Extension]:
 
 
 setup(
-    version=Version.string,
+    version=Version.string(),
     # TODO(dbort): Could use py_modules to restrict the set of modules we
     # package, and package_data to restrict the set up non-python files we
     # include. See also setuptools/discovery.py for custom finders.

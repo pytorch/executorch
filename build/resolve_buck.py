@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -72,6 +73,10 @@ BUCK_PLATFORM_MAP = {
             "029b0bcc6f8e399185c1d0f574eba204934722b5",
         ],
     ),
+    ("linux", "aarch64"): BuckInfo(
+        archive_name="buck2-aarch64-unknown-linux-gnu.zst",
+        target_versions=["49670bee56a7d8a7696409ca6fbf7551d2469787"],
+    ),
     ("darwin", "aarch64"): BuckInfo(
         archive_name="buck2-aarch64-apple-darwin.zst",
         target_versions=["99773fe6f7963a72ae5f7b737c02836e"],
@@ -122,7 +127,7 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
     arch = "unknown"
     if machine == "x86" or machine == "x86_64" or machine == "amd64":
         arch = "x86_64"
-    elif machine == "arm64":
+    elif machine == "arm64" or machine == "aarch64":
         arch = "aarch64"
 
     os_family = "unknown"
