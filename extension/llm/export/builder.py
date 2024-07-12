@@ -137,7 +137,7 @@ class LLMEdgeManager:
 
         if not self.use_kv_cache or self.enable_dynamic_shape:
             dim = torch.export.Dim("token_dim", max=self.max_seq_len - 1)
-            self.dynamic_shapes = ({1: dim}, {1: 1})
+            self.dynamic_shapes = ({1: dim}, {0: 1})
             return self.dynamic_shapes
         else:
             return None
