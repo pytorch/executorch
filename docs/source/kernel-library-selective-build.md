@@ -1,6 +1,6 @@
 # Kernel Library Selective Build
 
-_Selective build_ is a build mode on ExecuTorch that uses model metadata to guide ExecuTorch build. This build mode contains build tool APIs available on both CMake and buck2. ExecuTorch users can use selective build APIs to build an ExecuTorch runtime binary with minimal binary size by only including operators required by models.
+_Selective build_ is a build mode on ExecuTorch that uses model metadata to guide ExecuTorch build. This build mode contains build tool APIs available on CMake. ExecuTorch users can use selective build APIs to build an ExecuTorch runtime binary with minimal binary size by only including operators required by models.
 
 This document aims to help ExecuTorch users better use selective build, by listing out available APIs, providing an overview of high level architecture and showcasing examples.
 
@@ -36,17 +36,11 @@ The basic flow looks like this:
 
 ## APIs
 
-We expose build macros for CMake and Buck2, to allow users specifying op info.
-
-On CMake:
+We expose build macros for CMake, to allow users specifying op info:
 
 [gen_selected_ops](https://github.com/pytorch/executorch/blob/main/build/Codegen.cmake#L12)
 
-On Buck2:
-
-[et_operator_library](https://github.com/pytorch/executorch/blob/main/shim/xplat/executorch/codegen/codegen.bzl#L44C21-L44C21)
-
-Both of these build macros take the following inputs:
+Build macros take the following inputs:
 
 
 ### Select all ops
@@ -65,52 +59,6 @@ This API lets users pass in a list of operator names. Note that this API can be 
 
 
 ## Example Walkthrough
-
-
-### Buck2 example
-
-Let’s take a look at the following build:
-
-```
-# Select a list of operators: defined in `ops`
-et_operator_library(
-    name = "select_ops_in_list",
-    ops = [
-        "aten::add.out",
-        "aten::mm.out",
-    ],
-)
-```
-This target generates the yaml file containing op info for these two ops.
-
-In addition to that, if we want to select all ops from a kernel library, we can do:
-
-```
-# Select all ops from a yaml file
-et_operator_library(
-    name = "select_ops_from_yaml",
-    ops_schema_yaml_target = "//executorch/examples/portable/custom_ops:custom_ops.yaml",
-)
-```
-Then in the kernel registration library we can do:
-```
-executorch_generated_lib(
-    name = "select_ops_lib",
-    custom_ops_yaml_target = "//executorch/examples/portable/custom_ops:custom_ops.yaml",
-functions_yaml_target = "//executorch/kernels/portable:functions.yaml",
-    deps = [
-        "//executorch/examples/portable/custom_ops:custom_ops_1", # kernel library
-        "//executorch/examples/portable/custom_ops:custom_ops_2", # kernel library
-        "//executorch/kernels/portable:operators", # kernel library
-        ":select_ops_from_yaml",
-        ":select_ops_in_list",
-    ],
-)
-```
-Notice we are allowlisting both add.out, mm.out from the list, and the ones from the schema yaml (`custom_ops.yaml`).
-
-
-### CMake example
 
 In CMakeLists.txt we have the following logic:
 ```cmake
