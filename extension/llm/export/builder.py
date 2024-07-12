@@ -133,13 +133,14 @@ class LLMEdgeManager:
 
     def _get_dynamic_shape(self) -> Any:
         if self.dynamic_shapes:
-            return dynamic_shapes
+            return self.dynamic_shapes
 
-        dim = torch.export.Dim("token_dim", max=self.max_seq_len - 1)
         if not self.use_kv_cache or self.enable_dynamic_shape:
-            return ({1: dim}, {1: 1})
+            dim = torch.export.Dim("token_dim", max=self.max_seq_len - 1)
+            self.dynamic_shapes = ({1: dim}, {1: 1})
+            return self.dynamic_shapes
         else:
-            None
+            return None
 
     def _get_edge_config(self) -> EdgeCompileConfig:
         edge_config = EdgeCompileConfig(
