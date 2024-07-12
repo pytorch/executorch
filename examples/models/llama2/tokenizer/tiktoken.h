@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <executorch/examples/models/llama2/tokenizer/base64.h>
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <re2/re2.h>
 #include <cstdint>
