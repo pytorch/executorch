@@ -23,10 +23,12 @@ def define_common_targets():
         name = "tiktoken",
         srcs = [
             "tiktoken.cpp",
+            "llama_tiktoken.cpp",
         ],
         exported_headers = [
             "tokenizer.h",
             "tiktoken.h",
+            "llama_tiktoken.h",
             "base64.h",
         ],
         exported_deps = [
