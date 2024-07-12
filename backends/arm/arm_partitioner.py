@@ -10,7 +10,7 @@ from typing import final, List
 
 import torch
 from executorch.backends.arm.arm_backend import ArmBackend
-from executorch.backends.arm.passes.arm_pass_manager import ArmPassManager
+from executorch.backends.arm.passes.tag_io_quant_pass import TagIOQuantPass
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -19,6 +19,7 @@ from executorch.exir.backend.partitioner import (
 )
 from executorch.exir.backend.utils import tag_constant_data
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.passes import PassManager
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
@@ -80,16 +81,19 @@ class ArmPartitioner(Partitioner):
         # subgraphs containing the nodes with the tags
         logger.info("ArmPartitioner::partition")
         partition_tags = {}
-        logger.warning(
-            "Applying passes on unpartitioned graph. This might interfere with other backends."
-        )
-        graph_module = ArmPassManager().transform_partition_pipeline(
-            graph_module=exported_program.graph_module,
-            compile_spec=self.delegation_spec.compile_specs,
-        )
+
+        for spec in self.delegation_spec.compile_specs:
+            if spec.key == "quantize_io" and spec.value.decode() == "True":
+                # Exclude IO quantization from the partition
+                passes = PassManager(
+                    passes=[
+                        TagIOQuantPass(),
+                    ]
+                )
+                passes(exported_program.graph_module)
 
         capability_partitioner = CapabilityBasedPartitioner(
-            graph_module,
+            exported_program.graph_module,
             TOSASupportedOperators(),
             allows_single_node_partition=True,
         )

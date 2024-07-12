@@ -7,7 +7,6 @@
 
 import torch
 from executorch.backends.arm.passes.remove_clone_pass import RemoveClonePass
-from executorch.backends.arm.passes.tag_io_quant_pass import TagIOQuantPass
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
 
@@ -16,18 +15,6 @@ class ArmPassManager(PassManager):
 
     def _transform(self, graph_module: torch.fx.Graph):
         return self(graph_module).graph_module
-
-    def transform_partition_pipeline(
-        self, graph_module: torch.fx.Graph, compile_spec: CompileSpec
-    ):
-        """Apply passes before partitioning"""
-        for spec in compile_spec:
-            if spec.key == "quantize_io":
-                output_format = spec.value.decode()
-                if output_format == "True":
-                    self.add_pass(TagIOQuantPass())
-
-        return self._transform(graph_module)
 
     def transform_to_backend_pipeline(
         self, graph_module: torch.fx.Graph, compile_spec: CompileSpec
