@@ -26,6 +26,8 @@ class LlamaTiktoken : public Tiktoken {
 
  protected:
   const Encoder get_special_tokens(ssize_t num_base_tokens) const override;
+  const std::string get_bos_token() const override;
+  const std::string get_eos_token() const override;
 
  private:
   const Version _version;
