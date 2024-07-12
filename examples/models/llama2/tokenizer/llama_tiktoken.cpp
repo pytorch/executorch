@@ -12,98 +12,77 @@ namespace torch {
 namespace executor {
 namespace {
 static constexpr int32_t kSpecialTokensSize = 256;
+static std::string kBOSToken = "<|begin_of_text|>";
+static constexpr size_t kBOSTokenIndex = 0;
+static std::string kEOSToken = "<|end_of_text|>";
+static constexpr size_t kEOSTokenIndex = 1;
 
-static inline const Encoder _get_default_special_tokens(
-    ssize_t num_base_tokens) {
-  Encoder special_tokens;
-  ssize_t special_token_count = 0;
-  special_tokens.emplace(
-      "<|begin_of_text|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|end_of_text|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|reserved_special_token_0|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|reserved_special_token_1|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|reserved_special_token_2|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|reserved_special_token_3|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|start_header_id|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|end_header_id|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|reserved_special_token_4|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace("<|eot_id|>", num_base_tokens + special_token_count++);
+static inline std::unique_ptr<std::vector<std::string>>
+_get_default_special_tokens() {
+  auto special_tokens = std::make_unique<std::vector<std::string>>(
+      std::vector<std::string>{kBOSToken, kEOSToken});
+  special_tokens->emplace_back("<|reserved_special_token_0|>");
+  special_tokens->emplace_back("<|reserved_special_token_1|>");
+  special_tokens->emplace_back("<|reserved_special_token_2|>");
+  special_tokens->emplace_back("<|reserved_special_token_3|>");
+  special_tokens->emplace_back("<|start_header_id|>");
+  special_tokens->emplace_back("<|end_header_id|>");
+  special_tokens->emplace_back("<|reserved_special_token_4|>");
+  special_tokens->emplace_back("<|eot_id|>");
 
   // pad the rest of the special tokens with reserved tokens
   ssize_t reserved_special_token_num = 5;
-  while (special_token_count < kSpecialTokensSize) {
-    special_tokens.emplace(
+  while (special_tokens->size() < kSpecialTokensSize) {
+    special_tokens->emplace_back(
         "<|reserved_special_token_" +
-            std::to_string(reserved_special_token_num++) + "|>",
-        num_base_tokens + special_token_count++);
+        std::to_string(reserved_special_token_num++) + "|>");
   }
   return special_tokens;
 }
 
-static inline const Encoder _get_multimodal_special_tokens(
-    ssize_t num_base_tokens) {
-  ssize_t special_token_count = 0;
-  Encoder special_tokens;
-  special_tokens.emplace(
-      "<|begin_of_text|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|end_of_text|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|reserved_special_token_0|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|reserved_special_token_1|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|reserved_special_token_2|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|reserved_special_token_3|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|start_header_id|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace(
-      "<|end_header_id|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace("<|eom_id|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace("<|eot_id|>", num_base_tokens + special_token_count++);
-  special_tokens.emplace("<|image|>", num_base_tokens + special_token_count++);
+static inline std::unique_ptr<std::vector<std::string>>
+_get_multimodal_special_tokens() {
+  auto special_tokens = std::make_unique<std::vector<std::string>>(
+      std::vector<std::string>{kBOSToken, kEOSToken});
+  special_tokens->emplace_back("<|reserved_special_token_0|>");
+  special_tokens->emplace_back("<|reserved_special_token_1|>");
+  special_tokens->emplace_back("<|reserved_special_token_2|>");
+  special_tokens->emplace_back("<|reserved_special_token_3|>");
+  special_tokens->emplace_back("<|start_header_id|>");
+  special_tokens->emplace_back("<|end_header_id|>");
+  special_tokens->emplace_back("<|eom_id|>");
+  special_tokens->emplace_back("<|eot_id|>");
+  special_tokens->emplace_back("<|image|>");
 
   // pad the rest of the special tokens with reserved tokens except the last
   // one
   ssize_t reserved_special_token_num = 4;
-  while (special_token_count < kSpecialTokensSize - 1) {
-    special_tokens.emplace(
+  while (special_tokens->size() < kSpecialTokensSize - 1) {
+    special_tokens->emplace_back(
         "<|reserved_special_token_" +
-            std::to_string(reserved_special_token_num++) + "|>",
-        num_base_tokens + special_token_count++);
+        std::to_string(reserved_special_token_num++) + "|>");
   }
 
-  special_tokens.emplace(
-      "<|python_tag|>", num_base_tokens + special_token_count++);
+  special_tokens->emplace_back("<|python_tag|>");
 
   return special_tokens;
 }
-} // namespace
 
-const Encoder LlamaTiktoken::get_special_tokens(ssize_t num_base_tokens) const {
-  switch (_version) {
+std::unique_ptr<std::vector<std::string>> _get_special_tokens(Version version) {
+  switch (version) {
     case MULTIMODAL:
-      return _get_multimodal_special_tokens(num_base_tokens);
+      return _get_multimodal_special_tokens();
     default:
-      return _get_default_special_tokens(num_base_tokens);
+      return _get_default_special_tokens();
   }
 }
 
-const std::string LlamaTiktoken::get_bos_token() const {
-  return "<|begin_of_text|>";
+} // namespace
+
+std::unique_ptr<Tiktoken> get_tiktoken_for_llama(Version version) {
+  return std::make_unique<Tiktoken>(
+      _get_special_tokens(version), kBOSTokenIndex, kEOSTokenIndex);
 }
 
-const std::string LlamaTiktoken::get_eos_token() const {
-  return "<|end_of_text|>";
-}
 } // namespace executor
 } // namespace torch
