@@ -28,6 +28,16 @@ struct ContentView: View {
   @StateObject private var resourceMonitor = ResourceMonitor()
   @StateObject private var logManager = LogManager()
 
+  @State private var isImagePickerPresented = false
+  @State private var selectedImage: UIImage?
+  @State private var imagePickerSourceType: UIImagePickerController.SourceType = .photoLibrary
+    
+  @State private var showingSettings = false
+  @State private var sliderTemperature: Double = 0.7
+  @State private var sliderTopK: Int = 1
+  @State private var sliderTopP: Double = 1.0
+  @State private var sliderMaxOutputToken: Int = 1024
+
   enum PickerType {
     case model
     case tokenizer
@@ -54,6 +64,60 @@ struct ContentView: View {
   var body: some View {
     NavigationView {
       VStack {
+        if showingSettings {
+            VStack(spacing: 20) {
+                Form {
+                    Section(header: Text("Model and Tokenizer")
+                      .font(.headline)
+                      .foregroundColor(.primary)) {
+                        Button(action: { pickerType = .model }) {
+                            Label(resourceManager.modelName == "" ? modelTitle : resourceManager.modelName, systemImage: "doc")
+                        }
+                        Button(action: { pickerType = .tokenizer }) {
+                            Label(resourceManager.tokenizerName == "" ? tokenizerTitle : resourceManager.tokenizerName, systemImage: "doc")
+                        }
+                    }
+                    
+                    Section(header: Text("Parameters")
+                      .font(.headline)
+                      .foregroundColor(.primary)) {
+                        VStack {
+                            HStack {
+                                Text("Temperature")
+                                Slider(value: $sliderTemperature, in: 0...1)
+                                Text(String(format: "%.2f", sliderTemperature))
+                            }
+                            HStack {
+                                Text("Top-K")
+                                
+                                Slider(value: Binding(
+                                  get: { Double(sliderTopK) },
+                                  set: { sliderTopK = Int($0) }
+                                ), in: 1...5, step: 1)
+                                
+                                Text(String(format: "%d", sliderTopK))
+                            }
+                            HStack {
+                                Text("Top-P")
+                                Slider(value: $sliderTopP, in: 0...1)
+                                Text(String(format: "%.2f", sliderTopP))
+                            }
+                            HStack {
+                                Text("Max output token")
+                                
+                                Slider(value: Binding(
+                                  get: { Double(sliderMaxOutputToken) },
+                                  set: { sliderMaxOutputToken = Int($0) }
+                                ), in: 100...8000, step: 1)
+                                
+                                Text(String(format: "%d", sliderMaxOutputToken))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         MessageListView(messages: $messages)
           .gesture(
             DragGesture().onChanged { value in
@@ -63,25 +127,34 @@ struct ContentView: View {
             }
           )
         HStack {
-          Menu {
-            Section(header: Text("Model")) {
-              Button(action: { pickerType = .model }) {
-                Label(modelTitle, systemImage: "doc")
-              }
-            }
-            Section(header: Text("Tokenizer")) {
-              Button(action: { pickerType = .tokenizer }) {
-                Label(tokenizerTitle, systemImage: "doc")
-              }
-            }
-          } label: {
-            Image(systemName: "ellipsis.circle")
+          Button(action: {
+            imagePickerSourceType = .photoLibrary
+            isImagePickerPresented = true
+          }) {
+            Image(systemName: "photo.on.rectangle")
               .resizable()
-              .aspectRatio(contentMode: .fit)
-              .frame(height: 28)
+              .scaledToFit()
+              .frame(width: 24, height: 24)
           }
-          .disabled(isGenerating)
+          .background(Color.clear)
+          .cornerRadius(8)
 
+          Button(action: {
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+              imagePickerSourceType = .camera
+              isImagePickerPresented = true
+            } else {
+                print("Camera not available")
+            }
+          }) {
+            Image(systemName: "camera")
+              .resizable()
+              .scaledToFit()
+              .frame(width: 24, height: 24)
+          }
+          .background(Color.clear)
+          .cornerRadius(8)
+          
           TextField(placeholder, text: $prompt, axis: .vertical)
             .padding(8)
             .background(Color.gray.opacity(0.1))
@@ -102,8 +175,18 @@ struct ContentView: View {
           .disabled(isGenerating ? shouldStopGenerating : (!isInputEnabled || prompt.isEmpty))
         }
         .padding([.leading, .trailing, .bottom], 10)
+        .sheet(isPresented: $isImagePickerPresented, onDismiss: addSelectedImageMessage) {
+          ImagePicker(selectedImage: $selectedImage, sourceType: imagePickerSourceType)
+        }
       }
       .navigationBarTitle(title, displayMode: .inline)
+      .navigationBarItems(leading:
+                            Button(action: {
+                              showingSettings.toggle()
+                            }) {
+                                  Image(systemName: "gearshape")
+                                    .imageScale(.large)
+                                })
       .navigationBarItems(trailing:
                             HStack {
                               Menu {
@@ -151,6 +234,13 @@ struct ContentView: View {
       }
     }
     .navigationViewStyle(StackNavigationViewStyle())
+  }
+
+  private func addSelectedImageMessage() {
+    if let selectedImage = selectedImage {
+      messages.append(Message(image: selectedImage))
+      messages.append(Message(type: .prompted))
+    }
   }
 
   private func generate() {

@@ -110,6 +110,7 @@
 		03EC45952BD61987008D4E28 /* simplify.cc in Sources */ = {isa = PBXBuildFile; fileRef = 03BAEA702BD30C0A00DDFDC2 /* simplify.cc */; };
 		03EC45962BD6199C008D4E28 /* bitmap256.cc in Sources */ = {isa = PBXBuildFile; fileRef = 03BAEA6B2BD30C0A00DDFDC2 /* bitmap256.cc */; };
 		03EC45972BD619B3008D4E28 /* tostring.cc in Sources */ = {isa = PBXBuildFile; fileRef = 03BAEA812BD30C0B00DDFDC2 /* tostring.cc */; };
+		2690E0B62C40BEEA00593B61 /* ImagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2690E0B52C40BEEA00593B61 /* ImagePicker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -233,6 +234,7 @@
 		03DDA0F62BD632D800D234B3 /* charconv_bigint.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = charconv_bigint.cc; path = strings/internal/charconv_bigint.cc; sourceTree = "<group>"; };
 		03DDA0F82BD632F600D234B3 /* int128.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = int128.cc; path = numeric/int128.cc; sourceTree = "<group>"; };
 		03DDA0FA2BD6368100D234B3 /* base64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = base64.h; sourceTree = "<group>"; };
+		2690E0B52C40BEEA00593B61 /* ImagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePicker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -289,6 +291,7 @@
 				0324D6862BAACB6900DEF36F /* MessageView.swift */,
 				0324D6872BAACB6900DEF36F /* ResourceManager.swift */,
 				0324D6882BAACB6900DEF36F /* ResourceMonitor.swift */,
+				2690E0B52C40BEEA00593B61 /* ImagePicker.swift */,
 			);
 			path = Application;
 			sourceTree = "<group>";
@@ -627,6 +630,7 @@
 				0324D6922BAACB6900DEF36F /* ResourceManager.swift in Sources */,
 				0324D68C2BAACB6900DEF36F /* ContentView.swift in Sources */,
 				0324D6902BAACB6900DEF36F /* MessageListView.swift in Sources */,
+				2690E0B62C40BEEA00593B61 /* ImagePicker.swift in Sources */,
 				0324D6912BAACB6900DEF36F /* MessageView.swift in Sources */,
 				0324D68B2BAACB6900DEF36F /* App.swift in Sources */,
 			);
