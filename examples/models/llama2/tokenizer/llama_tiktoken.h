@@ -22,7 +22,7 @@ class LlamaTiktoken : public Tiktoken {
  public:
   explicit LlamaTiktoken(Version version = Version::DEFAULT)
       : Tiktoken(), _version(version) {}
-  ~LlamaTiktoken() {}
+  ~LlamaTiktoken() override {}
 
  protected:
   const Encoder get_special_tokens(ssize_t num_base_tokens) const override;
