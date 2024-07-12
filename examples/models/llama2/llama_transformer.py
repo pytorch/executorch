@@ -12,14 +12,15 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
-from rope import (
+
+from torch import nn
+
+from .rope import (
     apply_rotary_emb,
     hf_apply_rotary_emb,
     hf_precompute_freqs_cis,
     precompute_freqs_cis,
 )
-
-from torch import nn
 
 
 class RMSNorm(torch.nn.Module):
