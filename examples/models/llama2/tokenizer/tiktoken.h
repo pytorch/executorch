@@ -39,6 +39,10 @@ class Tiktoken : public Tokenizer {
  protected:
   // Provide model specific special tokens.
   virtual const Encoder get_special_tokens(ssize_t num_base_tokens) const = 0;
+  // Provide beginning of sentence token.
+  virtual const std::string get_bos_token() const = 0;
+  // Provide end of sentence token.
+  virtual const std::string get_eos_token() const = 0;
 
  private:
   template <typename T>
