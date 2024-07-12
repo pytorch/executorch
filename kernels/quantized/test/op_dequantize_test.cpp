@@ -161,7 +161,6 @@ TEST(OpDequantizeOutTest, DequantizePerChannel) {
       ScalarType::Byte,
       optional<ScalarType>(),
       out);
-
   EXPECT_TENSOR_EQ(out, expected);
 
   // Test with a different axis
