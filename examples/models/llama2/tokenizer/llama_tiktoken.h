@@ -18,19 +18,7 @@ enum Version {
   MULTIMODAL,
 };
 
-class LlamaTiktoken : public Tiktoken {
- public:
-  explicit LlamaTiktoken(Version version = Version::DEFAULT)
-      : Tiktoken(), _version(version) {}
-  ~LlamaTiktoken() override {}
+std::unique_ptr<Tiktoken> get_tiktoken_for_llama(Version version = DEFAULT);
 
- protected:
-  const Encoder get_special_tokens(ssize_t num_base_tokens) const override;
-  const std::string get_bos_token() const override;
-  const std::string get_eos_token() const override;
-
- private:
-  const Version _version;
-};
 } // namespace executor
 } // namespace torch

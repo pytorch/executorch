@@ -81,7 +81,7 @@ Error Runner::load() {
 
   // Load tokenizer
 #if ET_USE_TIKTOKEN
-  tokenizer_ = std::make_unique<LlamaTiktoken>();
+  tokenizer_ = get_tiktoken_for_llama();
 #else
   tokenizer_ = std::make_unique<BPETokenizer>();
 #endif

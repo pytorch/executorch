@@ -26,8 +26,16 @@ using Re2UPtr = std::unique_ptr<re2::RE2>;
 
 class Tiktoken : public Tokenizer {
  public:
-  explicit Tiktoken() : Tokenizer() {}
-  virtual ~Tiktoken() {}
+  /**
+   * @param[in] special_tokens List of special tokens including bos, eos;
+   * @param[in] bos_token_index Index of the bos token in special_tokens;
+   * @param[in] eos_token_index Index of the eos token in special_tokens.
+   */
+  explicit Tiktoken(
+      std::unique_ptr<std::vector<std::string>> special_tokens,
+      size_t bos_token_index,
+      size_t eos_token_index);
+  ~Tiktoken() {}
 
   Error load(const std::string& tokenizer_path) override;
 
@@ -36,14 +44,6 @@ class Tiktoken : public Tokenizer {
 
   Result<std::string> decode(uint64_t prev_token, uint64_t token)
       const override;
-
- protected:
-  // Provide model specific special tokens.
-  virtual const Encoder get_special_tokens(ssize_t num_base_tokens) const = 0;
-  // Provide beginning of sentence token.
-  virtual const std::string get_bos_token() const = 0;
-  // Provide end of sentence token.
-  virtual const std::string get_eos_token() const = 0;
 
  private:
   template <typename T>
@@ -62,6 +62,11 @@ class Tiktoken : public Tokenizer {
       const std::string& text,
       const T& allowed_special) const;
 
+  Encoder _build_special_token_encoder(ssize_t num_base_tokens) const;
+
+  std::unique_ptr<std::vector<std::string>> _special_tokens;
+  size_t _bos_token_index;
+  size_t _eos_token_index;
   // Removed negative lookahead \s+(?!\S) since it's not supported by RE2.
   const std::string _pattern =
       R"((?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+)";
