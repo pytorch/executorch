@@ -450,7 +450,7 @@ class Transformer(nn.Module):
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
         self.max_seq_len = params.max_seq_len
-        if self.use_hf_rope:
+        if params.use_hf_rope:
             self.precompute_freqs_cis = hf_precompute_freqs_cis
         else:
             self.precompute_freqs_cis = precompute_freqs_cis
@@ -468,11 +468,11 @@ class Transformer(nn.Module):
 
     def forward(
         self,
-        tokens: Optional[torch.LongTensor,] = None,  # tokens
+        tokens: Optional[torch.LongTensor] = None,  # tokens
         input_pos: Optional[
             torch.LongTensor
         ] = None,  # Scalar tensor indicating size of window of the caches
-        h: Optional[torch.FloatTensor,] = None,  # embeddings
+        h: Optional[torch.FloatTensor] = None,  # embeddings
     ) -> torch.Tensor:
         if (tokens is None) ^ (h is not None):
             raise ValueError(
