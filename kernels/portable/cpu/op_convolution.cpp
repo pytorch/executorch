@@ -136,17 +136,6 @@ void conv2d_impl(
       }
     }
   } else { // transposed convolution
-    if (bias_ptr != nullptr) {
-      out_coord[2] = 0;
-      out_coord[3] = 0;
-      size_t out_c_start_idx =
-          calculate_linear_index(out_coord, out_strides.data(), 4);
-      size_t out_c_end_idx = out_c_start_idx + out_H * out_W;
-      for (size_t out_ix = out_c_start_idx; out_ix < out_c_end_idx; out_ix++) {
-        out_ptr[out_ix] = convert<CTYPE, CTYPE_BIAS>(bias_ptr[out_c]);
-      }
-    }
-
     w_coord[1] = out_c - out_c_start;
 
     for (size_t in_y = 0; in_y < in_H; ++in_y) {
@@ -295,12 +284,22 @@ void convolution_wrapper(
       bias.has_value() ? bias.value().const_data_ptr<CTYPE_BIAS>() : nullptr;
 
   size_t out_N = out.size(0);
-  size_t out_C_per_group = out.size(1) / groups;
+  size_t out_C = out.size(1);
+  size_t out_C_per_group = out_C / groups;
 
-  if (transposed && bias_ptr == nullptr) {
-    // If bias is not present, we need to initialize the output to 0
-    // before we can accumulate into it.
-    memset(out_ptr, 0, out.nbytes());
+  if (transposed) {
+    // For transposed convolution, we need to initialized the output before we
+    // can accumulate into it.
+    if (bias_ptr == nullptr) {
+      // If bias is not present, we need to initialize the output to 0
+      memset(out_ptr, 0, out.nbytes());
+    } else {
+      // If bias is present, we initialize the output to the bias value
+      for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+        out_ptr[out_ix] = convert<CTYPE, CTYPE_BIAS>(
+            bias_ptr[(out_ix / out_strides[1]) % out_C]);
+      }
+    }
   }
 
   for (size_t batch = 0; batch < out_N; ++batch) {
