@@ -102,6 +102,7 @@ class QueryPool final {
   std::string generate_string_report();
   void print_results();
   unsigned long get_total_shader_ns(std::string kernel_name);
+  unsigned long get_mean_shader_ns(std::string kernel_name);
 
   operator bool() const {
     return querypool_ != VK_NULL_HANDLE;
