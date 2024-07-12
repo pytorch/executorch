@@ -330,12 +330,38 @@ std::pair<std::vector<uint64_t>, uint64_t> Tiktoken::_encode_with_special_token(
   return std::make_pair(tokens, last_piece_token_len);
 }
 
+Encoder Tiktoken::_build_special_token_encoder(ssize_t num_base_tokens) const {
+  Encoder special_token_encoder;
+  for (ssize_t i = 0; i < _special_tokens->size(); ++i) {
+    special_token_encoder.emplace(_special_tokens->at(i), num_base_tokens + i);
+  }
+  return special_token_encoder;
+}
+
 // -------------------------private method end-------------------------------
 // -------------------------public method start-------------------------------
 
+Tiktoken::Tiktoken(
+    std::unique_ptr<std::vector<std::string>> special_tokens,
+    size_t bos_token_index,
+    size_t eos_token_index)
+    : Tokenizer(),
+      _special_tokens(std::move(special_tokens)),
+      _bos_token_index(bos_token_index),
+      _eos_token_index(eos_token_index) {
+  ET_CHECK_MSG(
+      _bos_token_index < _special_tokens->size(),
+      "invalid bos_token_index %zu",
+      _bos_token_index);
+  ET_CHECK_MSG(
+      _eos_token_index < _special_tokens->size(),
+      "invalid eos_token_index %zu",
+      _eos_token_index);
+}
+
 Error Tiktoken::load(const std::string& path) {
   _encoder = _load_encoder(path);
-  _special_token_encoder = get_special_tokens(_encoder.size());
+  _special_token_encoder = _build_special_token_encoder(_encoder.size());
 
   _decoder = _build_decoder(_encoder);
   _special_token_decoder = _build_decoder(_special_token_encoder);
@@ -346,8 +372,8 @@ Error Tiktoken::load(const std::string& path) {
 
   // initialize vocab_size, bos_tok, eos_tok
   vocab_size_ = _encoder.size() + _special_token_encoder.size();
-  bos_tok_ = _special_token_encoder.at(get_bos_token());
-  eos_tok_ = _special_token_encoder.at(get_eos_token());
+  bos_tok_ = _special_token_encoder.at(_special_tokens->at(_bos_token_index));
+  eos_tok_ = _special_token_encoder.at(_special_tokens->at(_eos_token_index));
 
   initialized_ = true;
   return Error::Ok;
