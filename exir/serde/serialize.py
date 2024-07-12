@@ -344,6 +344,11 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
             assert n not in constants
             constants[n] = t
 
+        additional_kwargs = {}
+        if hasattr(exported_program, "verifiers"):
+            additional_kwargs["verifiers"] = [
+                v.dialect for v in exported_program.verifiers
+            ]
         return export_serialize.SerializedArtifact(
             schema.ExportedProgram(
                 graph_module=serialized_graph_module,
@@ -351,6 +356,7 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
                 range_constraints=serialized_range_constraints,
                 schema_version=SchemaVersion(-1, -1),
                 dialect=exported_program.dialect,
+                **additional_kwargs,
             ),
             export_serialize.serialize_torch_artifact(exported_program.state_dict),
             export_serialize.serialize_torch_artifact(constants),

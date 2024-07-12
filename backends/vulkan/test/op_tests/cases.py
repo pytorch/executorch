@@ -1022,3 +1022,19 @@ def get_constant_pad_nd_inputs():
         ]
     )
     return test_suite
+
+
+@register_test_suite("aten.minimum.default")
+def get_minimum_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M1, M2), (M2)),
+            ((M1, M2), (M1, M2)),
+            ((M1, M2, M), (M2, M)),
+            ((M1, M1, S1, S2), (M1, M1, S1, S2)),
+            ((S1, S1, S2, S), (S1, S2, S)),
+            ((M1, S1, S2), (L, M1, S1, S2)),
+            ((S1, S2), (L, M1, S1, S2)),
+        ]
+    )
+    return test_suite

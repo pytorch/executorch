@@ -97,5 +97,13 @@ const Encoder LlamaTiktoken::get_special_tokens(ssize_t num_base_tokens) const {
       return _get_default_special_tokens(num_base_tokens);
   }
 }
+
+const std::string LlamaTiktoken::get_bos_token() const {
+  return "<|begin_of_text|>";
+}
+
+const std::string LlamaTiktoken::get_eos_token() const {
+  return "<|end_of_text|>";
+}
 } // namespace executor
 } // namespace torch

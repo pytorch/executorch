@@ -120,6 +120,7 @@ runtime.python_library(
         "//executorch/backends/...",
         "//executorch/examples/...",
         "//executorch/extension/llm/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         "//caffe2:torch",
