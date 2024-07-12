@@ -1058,12 +1058,18 @@ class ExportedProgramSerializer:
             assert n not in constants
             constants[n] = t
 
+        additional_kwargs = {}
+        if hasattr(exported_program, "verifiers"):
+            additional_kwargs["verifiers"] = [
+                v.dialect for v in exported_program.verifiers
+            ]
         serialized_ep = ExportedProgram(
             graph_module=serialized_graph_module,
             opset_version=self.opset_version,
             range_constraints=serialized_range_constraints,
             schema_version=SchemaVersion(-1, -1),
             dialect=exported_program.dialect,
+            **additional_kwargs,
         )
 
         return SerializedArtifact(
