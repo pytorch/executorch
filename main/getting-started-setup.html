@@ -697,37 +697,6 @@ Sample Output<div class="sd-summary-down docutils">
 </div>
 </details><p>To learn how to build a similar program, visit the <a class="reference internal" href="extension-module.html"><span class="doc std std-doc">Runtime APIs Tutorial</span></a>.</p>
 </div>
-<div class="section" id="optional-setting-up-buck2">
-<h3>[Optional] Setting Up Buck2<a class="headerlink" href="#optional-setting-up-buck2" title="Permalink to this heading">¶</a></h3>
-<p><strong>Buck2</strong> is an open-source build system that some of our examples currently utilize for building and running.</p>
-<p>However, please note that the installation of <code class="docutils literal notranslate"><span class="pre">Buck2</span></code> is optional for using ExecuTorch and we are in the process of transitioning away from <code class="docutils literal notranslate"><span class="pre">Buck2</span></code> and migrating all relevant sections to <code class="docutils literal notranslate"><span class="pre">cmake</span></code>. This section will be removed once we finish the migration.</p>
-<p>To set up <code class="docutils literal notranslate"><span class="pre">Buck2</span></code>, You will need the following prerequisits for this section:</p>
-<ul>
-<li><p>The <code class="docutils literal notranslate"><span class="pre">zstd</span></code> command line tool — install by running</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip3<span class="w"> </span>install<span class="w"> </span>zstd
-</pre></div>
-</div>
-</li>
-<li><p>Version <code class="docutils literal notranslate"><span class="pre">2024-05-15</span></code> of the <code class="docutils literal notranslate"><span class="pre">buck2</span></code> commandline tool — you can download a
-prebuilt archive for your system from <a class="reference external" href="https://github.com/facebook/buck2/releases/tag/2024-05-15">the Buck2
-repo</a>. Note that
-the version is important, and newer or older versions may not work with the
-version of the buck2 prelude used by the ExecuTorch repo.</p></li>
-</ul>
-<p>Configure Buck2 by decompressing with the following command (filename depends
-on your system, and the location of the binary can be different):</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># For example, buck2-x86_64-unknown-linux-musl.zst for Linux, or buck2-aarch64-apple-darwin.zst for Mac with Apple silicon.</span>
-zstd<span class="w"> </span>-cdq<span class="w"> </span>buck2-DOWNLOADED_FILENAME.zst<span class="w"> </span>&gt;<span class="w"> </span>/tmp/buck2<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>/tmp/buck2
-</pre></div>
-</div>
-<p>You may want to copy the <code class="docutils literal notranslate"><span class="pre">buck2</span></code> binary into your <code class="docutils literal notranslate"><span class="pre">$PATH</span></code> so you can run it
-as <code class="docutils literal notranslate"><span class="pre">buck2</span></code>.</p>
-<p>After the installation, you can run the <code class="docutils literal notranslate"><span class="pre">add.pte</span></code> program by following <code class="docutils literal notranslate"><span class="pre">buck2</span></code> command:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>/tmp/buck2<span class="w"> </span>run<span class="w"> </span>//examples/portable/executor_runner:executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>add.pte
-</pre></div>
-</div>
-<p>Note that the first run may take a while as it will have to complie the kernels from sources</p>
-</div>
 </div>
 <div class="section" id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Permalink to this heading">¶</a></h2>
@@ -807,7 +776,6 @@ explore its advanced features and capabilities below.</p>
 <li><a class="reference internal" href="#build-run">Build &amp; Run</a><ul>
 <li><a class="reference internal" href="#build-tooling-setup">Build Tooling Setup</a></li>
 <li><a class="reference internal" href="#run-your-program">Run Your Program</a></li>
-<li><a class="reference internal" href="#optional-setting-up-buck2">[Optional] Setting Up Buck2</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#next-steps">Next Steps</a></li>
