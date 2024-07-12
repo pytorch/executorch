@@ -10,7 +10,7 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/Shader.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
 
 #include <string>
 #include <unordered_map>
@@ -32,7 +32,7 @@ enum class DispatchKey : int8_t {
 };
 
 class ShaderRegistry final {
-  using ShaderListing = std::unordered_map<std::string, ShaderInfo>;
+  using ShaderListing = std::unordered_map<std::string, vkapi::ShaderInfo>;
   using Dispatcher = std::unordered_map<DispatchKey, std::string>;
   using Registry = std::unordered_map<std::string, Dispatcher>;
 
@@ -54,7 +54,7 @@ class ShaderRegistry final {
   /*
    * Register a ShaderInfo to a given shader name
    */
-  void register_shader(ShaderInfo&& shader_info);
+  void register_shader(vkapi::ShaderInfo&& shader_info);
 
   /*
    * Register a dispatch entry to the given op name
@@ -67,7 +67,7 @@ class ShaderRegistry final {
   /*
    * Given a shader name, return the ShaderInfo which contains the SPIRV binary
    */
-  const ShaderInfo& get_shader_info(const std::string& shader_name);
+  const vkapi::ShaderInfo& get_shader_info(const std::string& shader_name);
 };
 
 class ShaderRegisterInit final {

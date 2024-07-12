@@ -20,6 +20,8 @@ Key value propositions of ExecuTorch are:
 For a comprehensive technical overview of ExecuTorch and step-by-step tutorials,
 please visit our documentation website [for the latest release](https://pytorch.org/executorch/stable/index.html) (or the [main branch](https://pytorch.org/executorch/main/index.html)).
 
+Check out the [Getting Started](https://pytorch.org/executorch/stable/getting-started-setup.html#quick-setup-colab-jupyter-notebook-prototype) page for a quick spin.
+
 ## Feedback
 
 We welcome any feedback, suggestions, and bug reports from the community to help
@@ -30,6 +32,11 @@ repository](https://github.com/pytorch/executorch/issues) for bug reporting.
 
 We recommend using the latest release tag from the
 [Releases](https://github.com/pytorch/executorch/releases) page when developing.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details about issues, PRs, code
+style, CI jobs, and other development topics.
 
 ## Directory Structure
 

@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <executorch/backends/vulkan/runtime/api/Utils.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <optional>
 #include <ostream>
@@ -26,20 +26,20 @@ inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec) {
   return os; // Return the ostream to allow chaining
 }
 
-inline std::ostream& operator<<(std::ostream& os, const api::utils::uvec3& v) {
-  return api::utils::operator<<(os, v);
+inline std::ostream& operator<<(std::ostream& os, const utils::uvec3& v) {
+  return utils::operator<<(os, v);
 }
 
-inline std::ostream& operator<<(std::ostream& os, const api::utils::uvec4& v) {
-  return api::utils::operator<<(os, v);
+inline std::ostream& operator<<(std::ostream& os, const utils::uvec4& v) {
+  return utils::operator<<(os, v);
 }
 
-inline std::ostream& operator<<(std::ostream& os, const api::utils::ivec3& v) {
-  return api::utils::operator<<(os, v);
+inline std::ostream& operator<<(std::ostream& os, const utils::ivec3& v) {
+  return utils::operator<<(os, v);
 }
 
-inline std::ostream& operator<<(std::ostream& os, const api::utils::ivec4& v) {
-  return api::utils::operator<<(os, v);
+inline std::ostream& operator<<(std::ostream& os, const utils::ivec4& v) {
+  return utils::operator<<(os, v);
 }
 
 template <typename T>

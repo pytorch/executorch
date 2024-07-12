@@ -12,6 +12,7 @@ from typing import cast, List, Optional, Union
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
 import torch
+from executorch.exir.backend.utils import DelegateMappingBuilder
 
 from executorch.exir.tensor import TensorSpec
 from torch._export.utils import get_buffer, get_param, is_buffer, is_param
@@ -25,9 +26,13 @@ _Argument = Union[
 
 
 class VkGraphBuilder:
-    def __init__(self, program: ExportedProgram) -> None:
+    def __init__(
+        self,
+        program: ExportedProgram,
+        delegate_mapping_builder: DelegateMappingBuilder,
+    ) -> None:
         self.program = program
-
+        self.delegate_mapping_builder = delegate_mapping_builder
         self.chain = []
         self.values = []
         self.input_ids = []
@@ -295,9 +300,14 @@ class VkGraphBuilder:
 
         # Add output node
         operator_call_args.append(self.create_node_value(node))
-
+        operator_node_id = (
+            0
+            if not self.delegate_mapping_builder
+            else self.delegate_mapping_builder.insert_delegate_mapping_entry(node)
+        )
         self.chain.append(
             vk_graph_schema.OperatorCall(
+                node_id=operator_node_id,  # pyre-ignore[6]: this is going to be an int
                 name=node.target.__name__,
                 args=operator_call_args,
             ),
@@ -316,13 +326,14 @@ class VkGraphBuilder:
                 )
             self.output_ids.append(self.node_to_value_ids[out_node])
 
-    def process_node(self, node: Node) -> None:
+    def process_node(self, node: Node, call_node_debug_hdl: int) -> None:
         if node.op == "placeholder":
             self.process_placeholder_node(node)
         elif node.op == "call_function":
             if node.target == operator.getitem:
                 self.process_getitem_node(node)
             else:
+                node.meta["debug_handle"] = call_node_debug_hdl
                 self.process_call_function_node(node)
         elif node.op == "get_attr":
             self.process_getattr_node(node)
@@ -332,8 +343,10 @@ class VkGraphBuilder:
             raise AssertionError(f"Unsupported node op: {node.op}")
 
     def build_graph(self) -> vk_graph_schema.VkGraph:
+        call_node_debug_hdl = 0
         for node in self.program.graph_module.graph.nodes:
-            self.process_node(node)
+            self.process_node(node, call_node_debug_hdl)
+            call_node_debug_hdl += 1
 
         logging.info("Operators included in this Vulkan partition: ")
         for op in self.seen_ops:

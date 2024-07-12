@@ -56,7 +56,7 @@ def define_common_targets(is_fbcode = False):
     runtime.python_library(
         name = "gen_vulkan_spv_lib",
         srcs = [
-            "runtime/api/gen_vulkan_spv.py",
+            "runtime/gen_vulkan_spv.py",
         ],
         base_module = "",
         external_deps = ["torchgen"],
@@ -64,7 +64,7 @@ def define_common_targets(is_fbcode = False):
 
     runtime.python_binary(
         name = "gen_vulkan_spv_bin",
-        main_module = "runtime.api.gen_vulkan_spv",
+        main_module = "runtime.gen_vulkan_spv",
         visibility = [
             "//executorch/backends/vulkan/...",
             "@EXECUTORCH_CLIENTS",
@@ -151,9 +151,13 @@ def define_common_targets(is_fbcode = False):
         compiler_flags = get_vulkan_compiler_flags(),
         srcs = native.glob([
             "runtime/api/**/*.cpp",
+            "runtime/utils/**/*.cpp",
+            "runtime/vk_api/**/*.cpp",
         ]),
         exported_headers = native.glob([
             "runtime/api/**/*.h",
+            "runtime/utils/**/*.h",
+            "runtime/vk_api/**/*.h",
         ]),
         visibility = [
             "//executorch/backends/vulkan/...",
@@ -208,6 +212,7 @@ def define_common_targets(is_fbcode = False):
         deps = [
             ":vk_delegate_schema",
             ":vulkan_graph_runtime",
+            "//executorch/runtime/core:event_tracer",
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],

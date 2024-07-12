@@ -24,12 +24,12 @@ static int compare_tokens(const void* a, const void* b) {
 }
 
 BPETokenizer::BPETokenizer() : Tokenizer() {
-  vocab_size_ = kVocabSize;
-  vocab_ = std::make_unique<char*[]>(kVocabSize);
-  vocab_scores_ = std::make_unique<float[]>(kVocabSize);
-  sorted_vocab_ = std::make_unique<TokenIndex[]>(kVocabSize);
-  bos_tok_ = 1;
-  eos_tok_ = 2;
+  vocab_size_ = kDefaultVocabSize;
+  vocab_ = std::make_unique<char*[]>(kDefaultVocabSize);
+  vocab_scores_ = std::make_unique<float[]>(kDefaultVocabSize);
+  sorted_vocab_ = std::make_unique<TokenIndex[]>(kDefaultVocabSize);
+  bos_tok_ = kDefaultBosTokenId;
+  eos_tok_ = kDefaultEosTokenId;
   for (int i = 0; i < 256; i++) {
     byte_pieces_[i * 2] = (unsigned char)i;
     byte_pieces_[i * 2 + 1] = '\0';
@@ -57,8 +57,8 @@ Error BPETokenizer::load(const std::string& tokenizer_path) {
     ET_LOG(Error, "couldn't load %s", tokenizer_path.c_str());
     return Error::InvalidArgument;
   }
-  int32_t metadata[2];
-  for (int i = 0; i < 2; i++) {
+  int32_t metadata[4];
+  for (int i = 0; i < 4; i++) {
     if (fread(metadata + i, sizeof(int32_t), 1, file) != 1) {
       ET_LOG(
           Error,
@@ -72,8 +72,9 @@ Error BPETokenizer::load(const std::string& tokenizer_path) {
   // tokenizer file.
   int32_t tokenizer_vocab_size = metadata[0];
   vocab_size_ = tokenizer_vocab_size;
-
-  max_token_length_ = metadata[1];
+  bos_tok_ = metadata[1];
+  eos_tok_ = metadata[2];
+  max_token_length_ = metadata[3];
 
   // allocate space for the vocabulary
   vocab_ = std::make_unique<char*[]>(vocab_size_);
@@ -132,7 +133,8 @@ BPETokenizer::~BPETokenizer() {
  * @return Result<std::string> A pointer to the string representation of the
  * token.
  */
-Result<std::string> BPETokenizer::decode(uint64_t prev_token, uint64_t token) {
+Result<std::string> BPETokenizer::decode(uint64_t prev_token, uint64_t token)
+    const {
   ET_CHECK_OK_OR_RETURN_ERROR(Tokenizer::decode_verify(token));
   const char* piece = vocab_[token];
   // following BOS token, sentencepiece decoder strips any leading
@@ -171,7 +173,7 @@ str_lookup(const char* str, TokenIndex* sorted_vocab, int32_t vocab_size) {
  * @return Result<std::vector<uint64_t>>
  */
 Result<std::vector<uint64_t>>
-BPETokenizer::encode(const std::string& text, int8_t bos, int8_t eos) {
+BPETokenizer::encode(const std::string& text, int8_t bos, int8_t eos) const {
   if (!initialized_) {
     ET_LOG(Error, "Tokenizer not initialized");
     return Error::NotSupported;

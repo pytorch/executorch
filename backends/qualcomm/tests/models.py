@@ -29,7 +29,7 @@ class AddConstantLong(torch.nn.Module):
         super().__init__()
 
     def forward(self, x):
-        return 10.0 + x
+        return 10 + x
 
 
 class Arange(torch.nn.Module):
@@ -786,6 +786,20 @@ class SliceCopy(torch.nn.Module):
     def forward(self, x, y):
         seq_length = y.size()[1]
         return x[:, :seq_length] + self.position_ids[:, :seq_length]
+
+
+class SliceCopyWithStep(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.position_ids = torch.randn([1, 512])
+        self.step = 2
+
+    def forward(self, x, y):
+        seq_length = y.size()[1]
+        return (
+            x[:, : seq_length : self.step]
+            + self.position_ids[:, : seq_length : self.step]
+        )
 
 
 class Softmax(torch.nn.Module):

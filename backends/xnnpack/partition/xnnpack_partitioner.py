@@ -560,6 +560,23 @@ class XnnpackFloatingPointPartitioner(Partitioner):
             log.info(f"Found {pl} subgraphs to be partitioned.")
         return pl != 0
 
+    def get_input_deps(  # noqa
+        self, input_nodes: List[torch.fx.Node], ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        """
+        For each input node, walk up and pull necessary param/attr nodes in the partition
+        """
+        nodes = set()
+
+        def is_param(ep: ExportedProgram, node) -> bool:
+            return isinstance(node, torch.fx.Node) and is_param_node(ep, node)
+
+        for inp in input_nodes:
+            if is_param(ep, inp):
+                nodes.add(inp)
+
+        return list(nodes)
+
     def get_nodes(
         self, src_partition: SourcePartition, ep: ExportedProgram
     ) -> List[torch.fx.Node]:
@@ -569,7 +586,7 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         This is a wrapper to allow derived classes to add their own custom
         logic to extend the src_partition nodes list.
         """
-        return src_partition.nodes
+        return src_partition.nodes + self.get_input_deps(src_partition.input_nodes, ep)
 
     def qualify_nodes(
         self, input_nodes: List[torch.fx.Node], ep: ExportedProgram
@@ -852,7 +869,9 @@ class XnnpackPartitioner(Partitioner):
         self.quant = quant
 
         # TODO(T174256335) - remove this once we have a better way to handle >2d Mask
-        self._lower_recomposed_sdpa: bool = _lower_recomposed_sdpa or True
+        self._lower_recomposed_sdpa: bool = (
+            _lower_recomposed_sdpa if _lower_recomposed_sdpa is not None else True
+        )
 
         self.delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
         self.partition_tags: Dict[str, DelegationSpec] = {}
@@ -1168,7 +1187,9 @@ class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
         partitions = [
             Partition(
                 id=next(partition_id),
-                nodes=set(match),
+                nodes=set(
+                    filter(lambda x: x.target != torch.ops.aten.sym_size.int, match)
+                ),
             )
             for match in self.get_module_partitions(exported_program)
         ]

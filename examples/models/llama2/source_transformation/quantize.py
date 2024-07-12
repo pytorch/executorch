@@ -12,18 +12,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from executorch.extension.llm.export.builder import DType
+
 from sentencepiece import SentencePieceProcessor
 
-from ..builder import DType
-
 try:
-    # pyre-ignore[21]: Undefined import.
     from fairseq2.nn.embedding import (
         Embedding as fsEmbedding,
         StandardEmbedding as fsStandardEmbedding,
     )
 
-    # pyre-ignore[21]: Undefined import.
     from fairseq2.nn.projection import Linear as fsLinear
 
     print("Using fairseq2 modules.")
@@ -98,10 +96,9 @@ def quantize(
 
         try:
             # torchao 0.3+
-            # pyre-ignore
             from torchao._eval import InputRecorder
         except ImportError:
-            from torchao.quantization.GPTQ import InputRecorder
+            from torchao.quantization.GPTQ import InputRecorder  # pyre-ignore
 
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
 
@@ -113,7 +110,7 @@ def quantize(
         )
 
         inputs = (
-            InputRecorder(  # pyre-ignore
+            InputRecorder(
                 tokenizer,
                 calibration_seq_length,
                 None,  # input_prep_func

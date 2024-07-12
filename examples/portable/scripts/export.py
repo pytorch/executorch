@@ -12,10 +12,14 @@ import logging
 import torch
 
 from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.extension.export_util.utils import (
+    export_to_edge,
+    export_to_exec_prog,
+    save_pte_program,
+)
 
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
-from ..utils import export_to_edge, export_to_exec_prog, save_pte_program
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"

@@ -4,12 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import unittest
 from dataclasses import dataclass
 from typing import Any, Tuple
 
 import torch
 from executorch.exir import to_edge
+from executorch.exir.capture._config import EdgeCompileConfig
 
 from executorch.exir.dim_order_utils import (
     is_channel_last_dim_order,
@@ -70,7 +73,7 @@ class MemoryFormatOpsPassTestUtils:
             edge_op_str
         ).run(before.graph_module.code)
 
-        epm = to_edge(before)
+        epm = to_edge(before, compile_config=EdgeCompileConfig(_skip_dim_order=False))
 
         # check op strings
         FileCheck().check_not(aten_op_str).check_count(

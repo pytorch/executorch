@@ -31,7 +31,7 @@ def _annotate_mul(
     for mul_partition in mul_partitions:
         annotated_partitions.append(mul_partition.nodes)
         mul_node = mul_partition.output_nodes[0]
-        if arm_quantizer_utils.is_annotated([mul_node]):
+        if arm_quantizer_utils.is_annotated(mul_node):
             continue
 
         input_act_qspec = quantization_config.get_input_act_qspec()

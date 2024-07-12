@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 from typing import final, List
 
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
@@ -11,6 +13,9 @@ from executorch.backends.transforms.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.transforms.fuse_conv_with_clamp import FuseClampPass
+from executorch.backends.transforms.fuse_view_copy import FuseViewCopyTransform
+from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
@@ -23,6 +28,7 @@ from executorch.exir.backend.backend_details import (
     ExportedProgram,
     PreprocessResult,
 )
+from executorch.exir.backend.utils import DelegateMappingBuilder
 
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
 
@@ -43,9 +49,12 @@ class VulkanBackend(BackendDetails):
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
         passes = [
+            RemoveCloneOpsTransform(),
             AddmmToLinearTransform(),
+            FuseViewCopyTransform(),
             FuseBatchNormWithConvPass(program),
             FuseClampPass(),
+            MeanToSumDiv(),
             SpecPropPass(),
             ConstraintBasedSymShapeEvalPass(),
             MemoryPlanningPass("greedy"),
@@ -66,11 +75,14 @@ class VulkanBackend(BackendDetails):
 
         _copy_module(program.graph_module, new_gm)
 
-        graph_builder = VkGraphBuilder(program)
+        graph_builder = VkGraphBuilder(
+            program, DelegateMappingBuilder(generated_identifiers=True)
+        )
         vk_graph = graph_builder.build_graph()
 
         return PreprocessResult(
             processed_bytes=serialize_vulkan_graph(
                 vk_graph, graph_builder.const_tensors, []
             ),
+            debug_handle_map=graph_builder.delegate_mapping_builder.get_delegate_mapping(),
         )

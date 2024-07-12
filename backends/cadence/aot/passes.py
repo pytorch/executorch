@@ -4,12 +4,20 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Any, Dict, Tuple
+
 import torch
 from executorch.backends.cadence.aot.utils import get_edge_overload_packet
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from torch._subclasses import FakeTensor
 from torch.utils._pytree import tree_map_only
+
+
+# pyre-strict
+
+# Similar to what's done in executorch/exir/pass_base.py
+Argument = Any  # pyre-ignore
 
 
 class ReplacePT2QuantWithCadenceQuantPass(ExportPass):
@@ -17,7 +25,13 @@ class ReplacePT2QuantWithCadenceQuantPass(ExportPass):
     Replace the pt2 quantization ops with custom cadence quantization ops.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(
+        self,
+        op,  # pyre-ignore
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
         if op not in {exir_ops.edge.quantized_decomposed.quantize_per_tensor.default}:
             return super().call_operator(op, args, kwargs, meta)
 
@@ -34,7 +48,13 @@ class ReplacePT2DequantWithCadenceDequantPass(ExportPass):
     Replace the pt2 dequantization ops with custom cadence dequantization ops.
     """
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(
+        self,
+        op,  # pyre-ignore
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
         if op not in {exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default}:
             return super().call_operator(op, args, kwargs, meta)
 
@@ -51,7 +71,13 @@ class ReplaceScalarTensorWithFullPass(ExportPass):
     aten.scalar_tensor can be replaced by aten.full with a shape of [1].
     """
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(
+        self,
+        op,  # pyre-ignore
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
         if op not in {
             exir_ops.edge.aten.scalar_tensor.default,
             torch.ops.aten.scalar_tensor.default,
@@ -64,7 +90,7 @@ class ReplaceScalarTensorWithFullPass(ExportPass):
                 [1],
                 args[0],
             ),
-            {},
+            {"dtype": torch.float32},
             meta,
         )
 
@@ -75,7 +101,13 @@ class ReplaceSqueezeAndUnsqueezeWithViewPass(ExportPass):
     view_copy op
     """
 
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(
+        self,
+        op,  # pyre-ignore
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
         # Instead of testing EdgeOpOverload, test EdgeOpOverloadPacket,
         # which allows us to cover all overloads.
         if get_edge_overload_packet(op) not in {
@@ -99,7 +131,13 @@ class ReplaceSqueezeAndUnsqueezeWithViewPass(ExportPass):
 
 
 class RemoveZeroSizedCatArgsPass(ExportPass):
-    def call_operator(self, op, args, kwargs, meta):
+    def call_operator(
+        self,
+        op,  # pyre-ignore
+        args: Tuple[Argument, ...],
+        kwargs: Dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
         if op != exir_ops.edge.aten.cat.default:
             return super().call_operator(op, args, kwargs, meta)
 
@@ -122,6 +160,7 @@ class RemoveZeroSizedCatArgsPass(ExportPass):
             # TODO(matthiascremon): confirm this is the best way to do this.
             if isinstance(result, FakeTensor):
                 result.constant = result
+            # pyre-ignore[7]: Incompatible return type.
             return torch.empty_like(result)
 
         # If there was only one tensor in the new_args list,
@@ -130,7 +169,7 @@ class RemoveZeroSizedCatArgsPass(ExportPass):
             return new_args[0]
 
         # Otherwise, we replace args[0] with new_args.
-        args = list(args)
-        args[0] = new_args
+        init_args = list(args)
+        init_args[0] = new_args
         args = tuple(args)
         return super().call_operator(op, args, kwargs, meta)

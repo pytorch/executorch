@@ -24,6 +24,7 @@ from executorch.exir.passes.spec_prop_pass import make_spec, SpecPropPass
 from executorch.exir.schema import Program
 
 from executorch.exir.tracer import Value
+from torch._library.fake_class_registry import FakeScriptObject
 
 from torch._subclasses import FakeTensor
 from torch.export.exported_program import (
@@ -138,6 +139,7 @@ class LoweredBackendModule(torch.nn.Module):
         segment_alignment: int = 4096,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
+        memory_planning: MemoryPlanningPass = None,
     ) -> bytes:
         """
         Returns a buffer containing the serialized ExecuTorch binary.
@@ -145,7 +147,7 @@ class LoweredBackendModule(torch.nn.Module):
         # TODO(T181463742): avoid calling bytes(..) which incurs large copies.
         out = bytes(
             _serialize_pte_binary(
-                program=self.program(),
+                program=self.program(memory_planning=memory_planning),
                 extract_delegate_segments=extract_delegate_segments,
                 segment_alignment=segment_alignment,
                 constant_tensor_alignment=constant_tensor_alignment,
@@ -156,7 +158,11 @@ class LoweredBackendModule(torch.nn.Module):
 
     # TODO(chenlai): re-consider recapture instead of manually constructing the program because
     # the meta data construction is done manually.
-    def program(self, emit_stacktrace: bool = False) -> Program:
+    def program(
+        self,
+        emit_stacktrace: bool = False,
+        memory_planning: MemoryPlanningPass = None,
+    ) -> Program:
         # Fix autodpes introuces cyclic dependencies:
         # program -> verifier -> lowered_backend_module -> program
         # @manual
@@ -318,9 +324,9 @@ class LoweredBackendModule(torch.nn.Module):
             example_inputs=None,
             verifier=lowered_exported_program.verifier,
         )
-        exported_program = _transform(
-            exported_program, SpecPropPass(), MemoryPlanningPass("greedy")
-        )
+        if memory_planning is None:
+            memory_planning = MemoryPlanningPass("greedy")
+        exported_program = _transform(exported_program, SpecPropPass(), memory_planning)
         emitted_program = emit_program(
             exported_program, emit_stacktrace=emit_stacktrace
         ).program
@@ -430,7 +436,7 @@ def _get_new_signature(  # noqa: C901
 ) -> Tuple[
     ExportGraphSignature,
     Dict[str, Union[torch.Tensor, torch.nn.Parameter]],
-    Dict[str, Union[torch.Tensor, torch.ScriptObject]],
+    Dict[str, Union[torch.Tensor, FakeScriptObject, torch.ScriptObject]],
 ]:
     """
     Args:

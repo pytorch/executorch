@@ -16,6 +16,9 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/runtime/core/event_tracer_hooks_delegate.h>
+#endif // ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -56,47 +59,47 @@ const uint8_t* get_constant_data_ptr(
   return constant_data + constant_bytes->offset();
 }
 
-api::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
+vkapi::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
   switch (vk_datatype) {
     case vkgraph::VkDataType::BOOL:
-      return api::kBool;
+      return vkapi::kBool;
     case vkgraph::VkDataType::UINT8:
-      return api::kByte;
+      return vkapi::kByte;
     case vkgraph::VkDataType::INT8:
-      return api::kChar;
+      return vkapi::kChar;
     case vkgraph::VkDataType::INT32:
-      return api::kInt;
+      return vkapi::kInt;
     case vkgraph::VkDataType::FLOAT16:
-      return api::kHalf;
+      return vkapi::kHalf;
     case vkgraph::VkDataType::FLOAT32:
-      return api::kFloat;
+      return vkapi::kFloat;
   }
 }
 
-api::StorageType get_storage_type(
+utils::StorageType get_storage_type(
     const vkgraph::VkStorageType& vk_storage_type) {
   switch (vk_storage_type) {
     case vkgraph::VkStorageType::BUFFER:
-      return api::kBuffer;
+      return utils::kBuffer;
     case vkgraph::VkStorageType::TEXTURE_3D:
-      return api::kTexture3D;
+      return utils::kTexture3D;
     case vkgraph::VkStorageType::TEXTURE_2D:
-      return api::kTexture2D;
+      return utils::kTexture2D;
     default:
       break;
   }
   VK_THROW("Invalid storage type encountered!");
 }
 
-api::GPUMemoryLayout get_memory_layout(
+utils::GPUMemoryLayout get_memory_layout(
     const vkgraph::VkMemoryLayout& vk_memory_layout) {
   switch (vk_memory_layout) {
     case vkgraph::VkMemoryLayout::TENSOR_WIDTH_PACKED:
-      return api::kWidthPacked;
+      return utils::kWidthPacked;
     case vkgraph::VkMemoryLayout::TENSOR_HEIGHT_PACKED:
-      return api::kHeightPacked;
+      return utils::kHeightPacked;
     case vkgraph::VkMemoryLayout::TENSOR_CHANNELS_PACKED:
-      return api::kChannelsPacked;
+      return utils::kChannelsPacked;
     default:
       break;
   }
@@ -112,20 +115,23 @@ GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
     if (strcmp(spec.key, "storage_type_override") == 0) {
       ET_CHECK_MSG(value_size == sizeof(int32_t), "Unexpected value size!");
       int value_as_int = static_cast<int>(getUInt32LE(value_data));
-      api::StorageType storage_type =
-          static_cast<api::StorageType>(value_as_int);
+      utils::StorageType storage_type =
+          static_cast<utils::StorageType>(value_as_int);
 
       config.set_storage_type_override(storage_type);
     }
     if (strcmp(spec.key, "memory_layout_override") == 0) {
       ET_CHECK_MSG(value_size == sizeof(uint32_t), "Unexpected value size!");
       uint32_t value_as_int = getUInt32LE(value_data);
-      api::GPUMemoryLayout memory_layout =
-          static_cast<api::GPUMemoryLayout>(value_as_int);
+      utils::GPUMemoryLayout memory_layout =
+          static_cast<utils::GPUMemoryLayout>(value_as_int);
 
       config.set_memory_layout_override(memory_layout);
     }
   }
+#ifdef ET_EVENT_TRACER_ENABLED
+  config.enable_querypool = true;
+#endif // ET_EVENT_TRACER_ENABLED
   return config;
 }
 
@@ -165,8 +171,8 @@ class GraphBuilder {
   }
 
   void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
-    const api::ScalarType& dtype = get_scalar_type(tensor_fb->datatype());
-    api::StorageType storage_type =
+    const vkapi::ScalarType& dtype = get_scalar_type(tensor_fb->datatype());
+    utils::StorageType storage_type =
         tensor_fb->storage_type() == vkgraph::VkStorageType::DEFAULT_STORAGE
         ? compute_graph_->suggested_storage_type()
         : get_storage_type(tensor_fb->storage_type());
@@ -174,7 +180,7 @@ class GraphBuilder {
     UIntVector dims_fb = tensor_fb->dims();
     const std::vector<int64_t> dims_vector(dims_fb->cbegin(), dims_fb->cend());
 
-    api::GPUMemoryLayout memory_layout =
+    utils::GPUMemoryLayout memory_layout =
         tensor_fb->memory_layout() == vkgraph::VkMemoryLayout::DEFAULT_LAYOUT
         ? compute_graph_->suggested_memory_layout(dims_vector)
         : get_memory_layout(tensor_fb->memory_layout());
@@ -301,6 +307,9 @@ class GraphBuilder {
     }
 
     // Parse the operators
+    uint32_t last_prepack_node_ct = 0;
+    uint32_t last_execute_node_ct = 0;
+
     for (OpCallPtr op_call : *(flatbuffer_->chain())) {
       std::string op_name = op_call->name()->str();
       ET_CHECK_MSG(VK_HAS_OP(op_name), "Missing operator: %s", op_name.c_str());
@@ -315,6 +324,22 @@ class GraphBuilder {
 
       auto vkFn = VK_GET_OP_FN(op_name);
       vkFn(*compute_graph_, args);
+      if (compute_graph_->graphconfig().enable_querypool) {
+        for (uint32_t idx_prepack = last_prepack_node_ct;
+             idx_prepack < compute_graph_->prepack_nodes().size();
+             idx_prepack++) {
+          compute_graph_->prepack_nodes()[idx_prepack]->set_node_id(
+              op_call->node_id());
+        }
+        for (uint32_t idx_execute = last_execute_node_ct;
+             idx_execute < compute_graph_->execute_nodes().size();
+             idx_execute++) {
+          compute_graph_->execute_nodes()[idx_execute]->set_node_id(
+              op_call->node_id());
+        }
+        last_prepack_node_ct = compute_graph_->prepack_nodes().size();
+        last_execute_node_ct = compute_graph_->execute_nodes().size();
+      }
     }
 
     // Parse the outputs
@@ -493,6 +518,22 @@ class VulkanBackend final : public PyTorchBackendInterface {
           args[num_inputs + i]->toTensor().mutable_data_ptr(),
           args[num_inputs + i]->toTensor().numel());
     }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+    EventTracer* event_tracer = context.event_tracer();
+    compute_graph->context()->querypool().extract_results();
+    for (const auto& tup :
+         compute_graph->context()->querypool().get_shader_timestamp_data()) {
+      std::string event_name =
+          std::get<0>(tup) + "_" + std::to_string(std::get<1>(tup));
+      event_tracer_log_profiling_delegate(
+          event_tracer,
+          event_name.c_str(),
+          -1,
+          std::get<2>(tup),
+          std::get<3>(tup));
+    }
+#endif // ET_EVENT_TRACER_ENABLED
 
     return Error::Ok;
   }

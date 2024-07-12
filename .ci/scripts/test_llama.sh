@@ -55,6 +55,22 @@ else
   QE=OFF
 fi
 
+if [[ "${MODE}" =~ .*mps.* ]]; then
+  MPS=ON
+else
+  MPS=OFF
+fi
+
+echo "MPS option ${MPS}"
+
+if [[ "${MODE}" =~ .*coreml.* ]]; then
+  COREML=ON
+else
+  COREML=OFF
+fi
+
+echo "COREML option ${COREML}"
+
 if [[ -z "${BUCK:-}" ]]; then
   BUCK=buck2
 fi
@@ -77,6 +93,8 @@ cmake_install_executorch_libraries() {
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
+        -DEXECUTORCH_BUILD_MPS="$MPS" \
+        -DEXECUTORCH_BUILD_COREML="$COREML" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Debug
@@ -141,6 +159,12 @@ if [[ "${CUSTOM}" == "ON" ]]; then
 fi
 if [[ "${QE}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} --embedding-quantize 8,1024"
+fi
+if [[ "${MPS}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} -kv -v --mps --disable_dynamic_shape"
+fi
+if [[ "${COREML}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} -kv -v --coreml --disable_dynamic_shape"
 fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}

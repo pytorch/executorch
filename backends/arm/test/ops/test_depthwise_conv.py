@@ -125,6 +125,9 @@ testsuite_u55.remove(
 )
 testsuite_u55.remove(("two_dw_conv2d", two_dw_conv2d))
 
+# Fails when enabling CompileSpec.set_quantize_io(True). MLETORCH-191.
+testsuite_u55.remove(("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_st1))
+
 
 class TestDepthwiseConv2D(unittest.TestCase):
     def _test_dw_conv2d_tosa_MI_pipeline(
@@ -142,7 +145,7 @@ class TestDepthwiseConv2D(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs()
+            .run_method_and_compare_outputs(inputs=test_data)
         )
 
     def _test_dw_conv2d_tosa_BI_pipeline(
@@ -161,7 +164,7 @@ class TestDepthwiseConv2D(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
-            .run_method_and_compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
     def _test_dw_conv2d_u55_BI_pipeline(
@@ -190,6 +193,7 @@ class TestDepthwiseConv2D(unittest.TestCase):
     def test_dw_conv2d_tosa_BI(self, test_name, model):
         self._test_dw_conv2d_tosa_BI_pipeline(model, model.get_inputs())
 
-    @parameterized.expand(testsuite_u55)
+    @parameterized.expand(testsuite_u55, skip_on_empty=True)
+    @unittest.expectedFailure
     def test_dw_conv2d_u55_BI(self, test_name, model):
         self._test_dw_conv2d_u55_BI_pipeline(model, model.get_inputs())

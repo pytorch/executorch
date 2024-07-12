@@ -14,7 +14,10 @@
 namespace torch {
 namespace executor {
 
-constexpr int32_t kVocabSize = 32000;
+// Default values for llama2
+constexpr int32_t kDefaultVocabSize = 32000;
+constexpr uint64_t kDefaultBosTokenId = 1;
+constexpr uint64_t kDefaultEosTokenId = 2;
 
 struct TokenIndex {
   const char* str;
@@ -29,9 +32,10 @@ class BPETokenizer : public Tokenizer {
   Error load(const std::string& tokenizer_path) override;
 
   Result<std::vector<uint64_t>>
-  encode(const std::string& input, int8_t bos, int8_t eos) override;
+  encode(const std::string& input, int8_t bos, int8_t eos) const override;
 
-  Result<std::string> decode(uint64_t prev_token, uint64_t token) override;
+  Result<std::string> decode(uint64_t prev_token, uint64_t token)
+      const override;
 
  private:
   std::unique_ptr<char*[]> vocab_;

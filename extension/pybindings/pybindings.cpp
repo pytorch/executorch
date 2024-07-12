@@ -57,7 +57,7 @@
   })
 
 // Our logs work by writing to stderr. By default this is done through fprintf
-// (as defined in Posix.cpp) which then does not show up in python environments.
+// (as defined in posix.cpp) which then does not show up in python environments.
 // Here we override the pal to use std::cerr which can be properly redirected by
 // scoped_estream_redirect.
 void et_pal_emit_log_message(
@@ -77,6 +77,24 @@ namespace executor {
 
 namespace {
 
+void write_data_to_file(const std::string& path, void* buf, size_t size) {
+  FILE* f = fopen(path.c_str(), "w+");
+  if (!f) {
+    throw std::runtime_error(
+        "Failed to open file " + path + ": " + strerror(errno));
+  }
+  size_t num_written = fwrite(buf, 1, size, f);
+  if (num_written != size) {
+    fclose(f);
+    throw std::runtime_error("Failed to write etdump to file " + path);
+  }
+  int err = fclose(f);
+  if (err) {
+    throw std::runtime_error(
+        "Failed to close etdump file " + path + ": " + strerror(err));
+  }
+}
+
 using util::BufferDataLoader;
 using util::MallocMemoryAllocator;
 using util::MmapDataLoader;
@@ -85,8 +103,11 @@ class Module final {
  public:
   explicit Module(
       std::unique_ptr<DataLoader> loader,
-      std::unique_ptr<ETDumpGen> tracer = nullptr)
-      : loader_(std::move(loader)), event_tracer_(std::move(tracer)) {
+      std::unique_ptr<ETDumpGen> tracer = nullptr,
+      size_t debug_buffer_size = 0)
+      : loader_(std::move(loader)),
+        event_tracer_(std::move(tracer)),
+        debug_buffer_size_(debug_buffer_size) {
     runtime_init();
     Result<Program> program = Program::load(
         loader_.get(), Program::Verification::InternalConsistency);
@@ -124,6 +145,14 @@ class Module final {
     }
 
     memory_ = std::make_unique<Memory>(std::move(non_const_buffers_));
+    if (event_tracer_ && debug_buffer_size > 0) {
+      // If a debug buffer was requested for the ETDump, allocate it and make
+      // sure its lifetime is as long as the event_tracer.
+      debug_buffer_ = std::make_unique<uint8_t[]>(debug_buffer_size);
+      event_tracer_->set_debug_buffer(get_etdump_debug_buffer());
+      event_tracer_->set_event_tracer_debug_level(
+          EventTracerDebugLogLevel::kIntermediateOutputs);
+    }
 
     // Load methods
     for (size_t i = 0; i < program_->num_methods(); ++i) {
@@ -236,6 +265,14 @@ class Module final {
     return *event_tracer_;
   }
 
+  bool has_etdump_debug_buffer() const {
+    return static_cast<bool>(debug_buffer_);
+  }
+
+  Span<uint8_t> get_etdump_debug_buffer() {
+    return Span<uint8_t>(debug_buffer_.get(), debug_buffer_size_);
+  }
+
  private:
   /// A wrapper/util class for executorch memory allocations/manager.
   class Memory {
@@ -291,20 +328,27 @@ class Module final {
   std::unique_ptr<const Program> program_; // methods_ entries points to this.
   std::unordered_map<std::string, std::unique_ptr<Method>> methods_;
   std::unique_ptr<ETDumpGen> event_tracer_;
+  std::unique_ptr<uint8_t[]> debug_buffer_;
+  size_t debug_buffer_size_;
 };
 
-inline std::unique_ptr<Module>
-load_from_buffer(const void* ptr, size_t ptr_len, bool enable_etdump) {
+inline std::unique_ptr<Module> load_from_buffer(
+    const void* ptr,
+    size_t ptr_len,
+    bool enable_etdump,
+    size_t debug_buffer_size) {
   EXECUTORCH_SCOPE_PROF("load_from_buffer");
   auto loader = std::make_unique<BufferDataLoader>(ptr, ptr_len);
   return std::make_unique<Module>(
       std::move(loader),
-      enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr);
+      enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr,
+      debug_buffer_size);
 }
 
 inline std::unique_ptr<Module> load_from_file(
     const std::string& path,
-    bool enable_etdump) {
+    bool enable_etdump,
+    size_t debug_buffer_size) {
   EXECUTORCH_SCOPE_PROF("load_from_file");
 
   Result<MmapDataLoader> res = MmapDataLoader::from(
@@ -318,7 +362,8 @@ inline std::unique_ptr<Module> load_from_file(
   auto loader = std::make_unique<MmapDataLoader>(std::move(res.get()));
   return std::make_unique<Module>(
       std::move(loader),
-      enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr);
+      enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr,
+      debug_buffer_size);
 }
 
 static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * 1024U;
@@ -365,18 +410,35 @@ struct PyBundledModule final {
 };
 
 struct PyModule final {
-  explicit PyModule(const py::bytes& buffer, bool enable_etdump)
+  explicit PyModule(
+      const py::bytes& buffer,
+      bool enable_etdump,
+      size_t debug_buffer_size = 0)
       : module_(torch::executor::load_from_buffer(
             buffer.cast<std::string_view>().data(),
             py::len(buffer),
-            enable_etdump)) {}
+            enable_etdump,
+            debug_buffer_size)) {}
 
-  explicit PyModule(const void* ptr, size_t ptr_len, bool enable_etdump)
-      : module_(
-            torch::executor::load_from_buffer(ptr, ptr_len, enable_etdump)) {}
+  explicit PyModule(
+      const void* ptr,
+      size_t ptr_len,
+      bool enable_etdump,
+      size_t debug_buffer_size = 0)
+      : module_(torch::executor::load_from_buffer(
+            ptr,
+            ptr_len,
+            enable_etdump,
+            debug_buffer_size)) {}
 
-  explicit PyModule(const std::string& path, bool enable_etdump)
-      : module_(torch::executor::load_from_file(path, enable_etdump)) {}
+  explicit PyModule(
+      const std::string& path,
+      bool enable_etdump,
+      size_t debug_buffer_size = 0)
+      : module_(torch::executor::load_from_file(
+            path,
+            enable_etdump,
+            debug_buffer_size)) {}
 
   PyModule(const PyModule&) = delete;
   PyModule& operator=(const PyModule&) = delete;
@@ -386,20 +448,26 @@ struct PyModule final {
   // Module is only valid as long as the python buffer is alive.
   static std::unique_ptr<PyModule> load_from_buffer(
       const py::bytes& buffer,
-      bool enable_etdump) {
-    return std::make_unique<PyModule>(buffer, enable_etdump);
+      bool enable_etdump,
+      size_t debug_buffer_size = 0) {
+    return std::make_unique<PyModule>(buffer, enable_etdump, debug_buffer_size);
   }
   static std::unique_ptr<PyModule> load_from_file(
       const std::string& path,
-      bool enable_etdump) {
-    return std::make_unique<PyModule>(path, enable_etdump);
+      bool enable_etdump,
+      size_t debug_buffer_size = 0) {
+    return std::make_unique<PyModule>(path, enable_etdump, debug_buffer_size);
   }
 
   static std::unique_ptr<PyModule> load_from_bundled_program(
       PyBundledModule& m,
-      bool enable_etdump) {
+      bool enable_etdump,
+      size_t debug_buffer_size = 0) {
     return std::make_unique<PyModule>(
-        m.get_program_ptr(), m.get_program_len(), enable_etdump);
+        m.get_program_ptr(),
+        m.get_program_len(),
+        enable_etdump,
+        debug_buffer_size);
   }
 
   py::list run_method(
@@ -560,16 +628,26 @@ struct PyModule final {
     return module_->has_etdump();
   }
 
-  void write_etdump_result_to_file(const std::string& path) {
+  void write_etdump_result_to_file(
+      const std::string& path,
+      const py::object& debug_buffer_path) {
     if (!has_etdump()) {
       throw std::runtime_error("No etdump found");
     }
-    etdump_result result = module_->etdump().get_etdump_data();
+    auto& etdump = module_->etdump();
+    etdump_result result = etdump.get_etdump_data();
     if (result.buf != nullptr && result.size > 0) {
-      FILE* f = fopen(path.c_str(), "w+");
-      fwrite((uint8_t*)result.buf, 1, result.size, f);
-      fclose(f);
+      write_data_to_file(path, result.buf, result.size);
       free(result.buf);
+      if (module_->has_etdump_debug_buffer() &&
+          py::isinstance<py::str>(debug_buffer_path)) {
+        // Also write out the debug buffer to a separate file if requested.
+        std::string debug_buffer_path_str =
+            py::cast<py::str>(debug_buffer_path);
+        const auto debug_buffer = module_->get_etdump_debug_buffer();
+        write_data_to_file(
+            debug_buffer_path_str, debug_buffer.data(), debug_buffer.size());
+      }
     } else {
       ET_LOG(
           Info,
@@ -649,18 +727,21 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       PyModule::load_from_file,
       py::arg("path"),
       py::arg("enable_etdump") = false,
+      py::arg("debug_buffer_size") = 0,
       call_guard);
   m.def(
       "_load_for_executorch_from_buffer",
       &PyModule::load_from_buffer,
       py::arg("buffer"),
       py::arg("enable_etdump") = false,
+      py::arg("debug_buffer_size") = 0,
       call_guard);
   m.def(
       "_load_for_executorch_from_bundled_program",
       &PyModule::load_from_bundled_program,
       py::arg("ptr"),
       py::arg("enable_etdump") = false,
+      py::arg("debug_buffer_size") = 0,
       call_guard);
   m.def(
       "_load_bundled_program_from_buffer",
@@ -708,6 +789,8 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def(
           "write_etdump_result_to_file",
           &PyModule::write_etdump_result_to_file,
+          py::arg("path"),
+          py::arg("debug_buffer_path") = py::none(),
           call_guard)
       .def("__call__", &PyModule::forward, call_guard)
       .def("__call__", &PyModule::forward_single_input, call_guard);

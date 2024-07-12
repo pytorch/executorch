@@ -305,6 +305,10 @@ quantized_decomposed_lib.define(
 )
 
 quantized_decomposed_lib.define(
+    "mixed_linear(Tensor input, Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, ScalarType? dtype=None) -> Tensor",
+)
+
+quantized_decomposed_lib.define(
     "add(Tensor a, float a_scale, int a_zero_point, int a_quant_min, int a_quant_max, Tensor b, float b_scale, int b_zero_point, int b_quant_min, int b_quant_max, float out_scale, int out_zero_point, int out_quant_min, int out_quant_max) -> Tensor qc"
 )
 

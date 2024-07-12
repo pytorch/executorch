@@ -8,9 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 
-#include <cstring>
-#include <memory>
-#include <sstream>
+#include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
 
 #ifndef VULKAN_DESCRIPTOR_POOL_SIZE
 #define VULKAN_DESCRIPTOR_POOL_SIZE 1024u
@@ -26,7 +24,7 @@ namespace api {
 Context::Context(size_t adapter_i, const ContextConfig& config)
     : config_(config),
       // Important handles
-      adapter_p_(runtime()->get_adapter_p(adapter_i)),
+      adapter_p_(vkapi::runtime()->get_adapter_p(adapter_i)),
       device_(adapter_p_->device_handle()),
       queue_(adapter_p_->request_queue()),
       // Resource pools
@@ -68,13 +66,15 @@ void Context::cmd_reset_querypool() {
 void Context::report_shader_dispatch_start(
     const std::string& shader_name,
     const utils::uvec3& global_wg_size,
-    const utils::uvec3& local_wg_size) {
+    const utils::uvec3& local_wg_size,
+    const uint32_t dispatch_id) {
   if (querypool_) {
     querypool_.shader_profile_begin(
         cmd_,
+        dispatch_id,
         shader_name,
-        create_extent3d(global_wg_size),
-        create_extent3d(local_wg_size));
+        vkapi::create_extent3d(global_wg_size),
+        vkapi::create_extent3d(local_wg_size));
   }
 }
 
@@ -84,17 +84,17 @@ void Context::report_shader_dispatch_end() {
   }
 }
 
-DescriptorSet Context::get_descriptor_set(
-    const ShaderInfo& shader_descriptor,
+vkapi::DescriptorSet Context::get_descriptor_set(
+    const vkapi::ShaderInfo& shader_descriptor,
     const utils::uvec3& local_workgroup_size,
-    const SpecVarList& additional_constants) {
+    const vkapi::SpecVarList& additional_constants) {
   VkDescriptorSetLayout shader_layout =
       shader_layout_cache().retrieve(shader_descriptor.kernel_layout);
 
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout);
 
-  SpecVarList spec_constants = {
+  vkapi::SpecVarList spec_constants = {
       SV(local_workgroup_size.data[0u]),
       SV(local_workgroup_size.data[1u]),
       SV(local_workgroup_size.data[2u])};
@@ -113,9 +113,9 @@ DescriptorSet Context::get_descriptor_set(
 }
 
 void Context::register_shader_dispatch(
-    const DescriptorSet& descriptors,
-    PipelineBarrier& pipeline_barrier,
-    const ShaderInfo& shader_descriptor,
+    const vkapi::DescriptorSet& descriptors,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::ShaderInfo& shader_descriptor,
     const utils::uvec3& global_workgroup_size) {
   // Adjust the global workgroup size based on the output tile size
   uint32_t global_wg_w = utils::div_up(
@@ -181,12 +181,12 @@ Context* context() {
     try {
       const uint32_t cmd_submit_frequency = 16u;
 
-      const CommandPoolConfig cmd_config{
+      const vkapi::CommandPoolConfig cmd_config{
           32u, // cmdPoolInitialSize
           8u, // cmdPoolBatchSize
       };
 
-      const DescriptorPoolConfig descriptor_pool_config{
+      const vkapi::DescriptorPoolConfig descriptor_pool_config{
           VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorPoolMaxSets
           VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorUniformBufferCount
           VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorStorageBufferCount
@@ -195,7 +195,7 @@ Context* context() {
           32u, // descriptorPileSizes
       };
 
-      const QueryPoolConfig query_pool_config{
+      const vkapi::QueryPoolConfig query_pool_config{
           VULKAN_QUERY_POOL_SIZE, // maxQueryCount
           256u, // initialReserveSize
       };
@@ -207,7 +207,7 @@ Context* context() {
           query_pool_config,
       };
 
-      return new Context(runtime()->default_adapter_i(), config);
+      return new Context(vkapi::runtime()->default_adapter_i(), config);
     } catch (...) {
     }
 
@@ -215,71 +215,6 @@ Context* context() {
   }());
 
   return context.get();
-}
-
-//
-// UniformParamsBuffer
-//
-
-namespace {
-
-void memcpy_to_buffer(const VulkanBuffer& src, VulkanBuffer& dst) {
-  MemoryMap dst_mapping(dst, MemoryAccessType::WRITE);
-
-  MemoryMap src_mapping(src, MemoryAccessType::READ);
-  src_mapping.invalidate();
-
-  void* dst_ptr = dst_mapping.template data<void>();
-  void* src_ptr = src_mapping.template data<void>();
-
-  // @lint-ignore CLANGTIDY facebook-security-vulnerable-memcpy
-  memcpy(dst_ptr, src_ptr, src.mem_size());
-}
-
-} // namespace
-
-UniformParamsBuffer::UniformParamsBuffer(const UniformParamsBuffer& other)
-    : context_p_(other.context_p_), vulkan_buffer_{} {
-  if (other.vulkan_buffer_) {
-    vulkan_buffer_ = context_p_->adapter_ptr()->vma().create_uniform_buffer(
-        other.vulkan_buffer_.mem_size());
-
-    memcpy_to_buffer(other.vulkan_buffer_, vulkan_buffer_);
-  }
-}
-
-UniformParamsBuffer& UniformParamsBuffer::operator=(
-    const UniformParamsBuffer& other) {
-  if (&other != this) {
-    context_p_ = other.context_p_;
-
-    // Move vulkan_buffer_ to another VulkanBuffer for cleanup
-    if (vulkan_buffer_) {
-      VulkanBuffer temp_buffer(std::move(vulkan_buffer_));
-      context_p_->register_buffer_cleanup(temp_buffer);
-    }
-    // vulkan_buffer_ should now be empty
-
-    if (other.vulkan_buffer_) {
-      vulkan_buffer_ = context_p_->adapter_ptr()->vma().create_uniform_buffer(
-          other.vulkan_buffer_.mem_size());
-
-      memcpy_to_buffer(other.vulkan_buffer_, vulkan_buffer_);
-    }
-  }
-
-  return *this;
-}
-
-ParamsBindList::ParamsBindList(
-    std::initializer_list<const BufferBindInfo> init_list) {
-  bind_infos.resize(init_list.size());
-  std::copy(init_list.begin(), init_list.end(), bind_infos.begin());
-}
-
-void ParamsBindList::append(const ParamsBindList& other) {
-  bind_infos.insert(
-      bind_infos.end(), other.bind_infos.begin(), other.bind_infos.end());
 }
 
 } // namespace api
