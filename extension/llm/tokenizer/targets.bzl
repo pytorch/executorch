@@ -10,6 +10,7 @@ def define_common_targets():
         base_module = "executorch.extension.llm.tokenizer",
         visibility = [
             "//executorch/examples/...",
+            "//executorch/extension/llm/tokenizer/...",
             "//bento/...",
             "//bento_kernels/...",
         ],
