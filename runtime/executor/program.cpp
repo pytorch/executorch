@@ -414,8 +414,10 @@ Error Program::get_backend_delegate_data(
   return HeaderStatus::NotPresent;
 }
 
-Result<FreeableBuffer> Program::LoadSegment(size_t index) const {
+Result<FreeableBuffer> Program::LoadSegment(
+    const DataLoader::SegmentInfo& segment_info) const {
   EXECUTORCH_SCOPE_PROF("Program::LoadSegment");
+  size_t index = segment_info.segment_index;
   if (loader_ == nullptr || segment_base_offset_ == 0) {
     ET_LOG(Error, "No segments in program: requested index %zu", index);
     return Error::NotFound;
@@ -431,12 +433,8 @@ Result<FreeableBuffer> Program::LoadSegment(size_t index) const {
   // Could fail if offset and size are out of bound for the data, or if this
   // is reading from a file and fails, or for many other reasons depending on
   // the implementation of the loader.
-  // TODO(jackzhxng): "backend_segment" is a hardcode, pass in real backend id.
   return loader_->load(
-      segment_base_offset_ + segment->offset(),
-      segment->size(),
-      DataLoader::SegmentInfo(
-          DataLoader::SegmentInfo::Type::Backend, index, "backend_segment"));
+      segment_base_offset_ + segment->offset(), segment->size(), segment_info);
 }
 
 } // namespace executor
