@@ -488,8 +488,28 @@
 <dl class="cpp function">
 <dt class="sig sig-object cpp">
 <span class="target" id="classtorch_1_1executor_1_1DataLoader_1ae1e2d721134592477404b821478d18fa"></span><span class="sig-name descname"><span class="pre">virtual</span> <span class="pre">__ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">FreeableBuffer</span> <span class="pre">&gt;</span> <span class="pre">Load</span> <span class="pre">(size_t</span> <span class="pre">offset,</span> <span class="pre">size_t</span> <span class="pre">size)=0</span></span></dt>
-<dd><p>Loads <code class="docutils literal notranslate"><span class="pre">size</span></code> bytes at byte offset <code class="docutils literal notranslate"><span class="pre">offset</span></code> from the underlying data source into a <code class="docutils literal notranslate"><span class="pre">FreeableBuffer</span></code>, which owns the memory.</p>
+<dd><p>DEPRECATED: Use <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1DataLoader_1a55ecc35a7a6496ac3e64bf8f6f11c6ea"><span class="std std-ref"><span class="pre">load()</span></span></a></code> going forward for access to segment info during the load.</p>
+<p>Loads <code class="docutils literal notranslate"><span class="pre">size</span></code> bytes at byte offset <code class="docutils literal notranslate"><span class="pre">offset</span></code> from the underlying data source into a <code class="docutils literal notranslate"><span class="pre">FreeableBuffer</span></code>, which owns the memory.</p>
 <p>NOTE: This must be thread-safe. If this call modifies common state, the implementation must do its own locking. </p>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp">
+<span class="target" id="classtorch_1_1executor_1_1DataLoader_1a55ecc35a7a6496ac3e64bf8f6f11c6ea"></span><span class="sig-name descname"><span class="pre">inline</span> <span class="pre">virtual</span> <span class="pre">__ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">FreeableBuffer</span> <span class="pre">&gt;</span> <span class="pre">load</span> <span class="pre">(size_t</span> <span class="pre">offset,</span> <span class="pre">size_t</span> <span class="pre">size,</span> <span class="pre">const</span> <span class="pre">SegmentInfo</span> <span class="pre">&amp;segment_info)</span></span></dt>
+<dd><p>Loads data from the underlying data source.</p>
+<p>NOTE: This must be thread-safe. If this call modifies common state, the implementation must do its own locking.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>offset</strong> – The byte offset in the data source to start loading from. </p></li>
+<li><p><strong>size</strong> – The number of bytes to load. </p></li>
+<li><p><strong>segment_info</strong> – Information about the segment being loaded.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>a <code class="docutils literal notranslate"><span class="pre">FreeableBuffer</span></code> that owns the loaded data. </p>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="cpp function">
@@ -499,6 +519,61 @@
 </dd></dl>
 
 </div>
+<dl class="cpp struct">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor10DataLoader11SegmentInfoE">
+<span id="_CPPv3N5torch8executor10DataLoader11SegmentInfoE"></span><span id="_CPPv2N5torch8executor10DataLoader11SegmentInfoE"></span><span id="torch::executor::DataLoader::SegmentInfo"></span><span class="target" id="structtorch_1_1executor_1_1DataLoader_1_1SegmentInfo"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">SegmentInfo</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor10DataLoader11SegmentInfoE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Describes the content of the segment. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-types">Public Types</p>
+<dl class="cpp enum-class">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor10DataLoader11SegmentInfo4TypeE">
+<span id="_CPPv3N5torch8executor10DataLoader11SegmentInfo4TypeE"></span><span id="_CPPv2N5torch8executor10DataLoader11SegmentInfo4TypeE"></span><span class="target" id="structtorch_1_1executor_1_1DataLoader_1_1SegmentInfo_1a79b5d5b27a2838451c79f20aadafc6fe"></span><span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="k"><span class="pre">class</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Type</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor10DataLoader11SegmentInfo4TypeE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Represents the purpose of the segment. </p>
+<p><em>Values:</em></p>
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor10DataLoader11SegmentInfo4Type7ProgramE">
+<span id="_CPPv3N5torch8executor10DataLoader11SegmentInfo4Type7ProgramE"></span><span id="_CPPv2N5torch8executor10DataLoader11SegmentInfo4Type7ProgramE"></span><span class="target" id="structtorch_1_1executor_1_1DataLoader_1_1SegmentInfo_1a79b5d5b27a2838451c79f20aadafc6fea95c50c7cc68e399ac5540898dfd06820"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Program</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor10DataLoader11SegmentInfo4Type7ProgramE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Data for the actual program. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor10DataLoader11SegmentInfo4Type8ConstantE">
+<span id="_CPPv3N5torch8executor10DataLoader11SegmentInfo4Type8ConstantE"></span><span id="_CPPv2N5torch8executor10DataLoader11SegmentInfo4Type8ConstantE"></span><span class="target" id="structtorch_1_1executor_1_1DataLoader_1_1SegmentInfo_1a79b5d5b27a2838451c79f20aadafc6feacb17869fe51048b5a5c4c6106551a255"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Constant</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor10DataLoader11SegmentInfo4Type8ConstantE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Holds constant tensor data. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor10DataLoader11SegmentInfo4Type7BackendE">
+<span id="_CPPv3N5torch8executor10DataLoader11SegmentInfo4Type7BackendE"></span><span id="_CPPv2N5torch8executor10DataLoader11SegmentInfo4Type7BackendE"></span><span class="target" id="structtorch_1_1executor_1_1DataLoader_1_1SegmentInfo_1a79b5d5b27a2838451c79f20aadafc6fea2e427c268ac1768b9add94b65e2d6c14"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">Backend</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor10DataLoader11SegmentInfo4Type7BackendE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Data used for initializing a backend. </p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor10DataLoader11SegmentInfo12segment_typeE">
+<span id="_CPPv3N5torch8executor10DataLoader11SegmentInfo12segment_typeE"></span><span id="_CPPv2N5torch8executor10DataLoader11SegmentInfo12segment_typeE"></span><span id="torch::executor::DataLoader::SegmentInfo::segment_type__Type"></span><span class="target" id="structtorch_1_1executor_1_1DataLoader_1_1SegmentInfo_1a471d70b9e9e511fd70b6f2ef84ad297e"></span><a class="reference internal" href="#_CPPv4N5torch8executor10DataLoader11SegmentInfo4TypeE" title="torch::executor::DataLoader::SegmentInfo::Type"><span class="n"><span class="pre">Type</span></span></a><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">segment_type</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor10DataLoader11SegmentInfo12segment_typeE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Type of the segment. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor10DataLoader11SegmentInfo13segment_indexE">
+<span id="_CPPv3N5torch8executor10DataLoader11SegmentInfo13segment_indexE"></span><span id="_CPPv2N5torch8executor10DataLoader11SegmentInfo13segment_indexE"></span><span id="torch::executor::DataLoader::SegmentInfo::segment_index__s"></span><span class="target" id="structtorch_1_1executor_1_1DataLoader_1_1SegmentInfo_1a1a041b427245d4e1901b335808e1e2d5"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">segment_index</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor10DataLoader11SegmentInfo13segment_indexE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Index of the segment within the segment list. Undefined for program segments. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N5torch8executor10DataLoader11SegmentInfo10descriptorE">
+<span id="_CPPv3N5torch8executor10DataLoader11SegmentInfo10descriptorE"></span><span id="_CPPv2N5torch8executor10DataLoader11SegmentInfo10descriptorE"></span><span id="torch::executor::DataLoader::SegmentInfo::descriptor__cCP"></span><span class="target" id="structtorch_1_1executor_1_1DataLoader_1_1SegmentInfo_1a400ccc868d6590b2c101d4c0991c25df"></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">descriptor</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor10DataLoader11SegmentInfo10descriptorE" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>An optional, null-terminated string describing the segment. For <code class="docutils literal notranslate"><span class="pre">Backend</span></code> segments, this is the backend ID. Null for other segment types. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
 </dd></dl>
 
 <dl class="cpp class">
