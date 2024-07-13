@@ -72,8 +72,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   size_t segment_base_offset = 0;
   {
     EXECUTORCH_SCOPE_PROF("Program::check_header");
-    Result<FreeableBuffer> header =
-        loader->Load(/*offset=*/0, ExtendedHeader::kNumHeadBytes);
+    Result<FreeableBuffer> header = loader->load(
+        /*offset=*/0,
+        ExtendedHeader::kNumHeadBytes,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     if (!header.ok()) {
       return header.error();
     }
@@ -95,8 +97,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
   // Load the flatbuffer data as a segment.
   uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("Program::load_data");
-  Result<FreeableBuffer> program_data =
-      loader->Load(/*offset=*/0, program_size);
+  Result<FreeableBuffer> program_data = loader->load(
+      /*offset=*/0,
+      program_size,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   if (!program_data.ok()) {
     return program_data.error();
   }
@@ -173,8 +177,12 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
     const executorch_flatbuffer::DataSegment* data_segment =
         segments->Get(constant_segment->segment_index());
-    Result<FreeableBuffer> constant_segment_data = loader->Load(
-        segment_base_offset + data_segment->offset(), data_segment->size());
+    Result<FreeableBuffer> constant_segment_data = loader->load(
+        segment_base_offset + data_segment->offset(),
+        data_segment->size(),
+        DataLoader::SegmentInfo(
+            DataLoader::SegmentInfo::Type::Constant,
+            constant_segment->segment_index()));
     if (!constant_segment_data.ok()) {
       return constant_segment_data.error();
     }
@@ -423,8 +431,12 @@ Result<FreeableBuffer> Program::LoadSegment(size_t index) const {
   // Could fail if offset and size are out of bound for the data, or if this
   // is reading from a file and fails, or for many other reasons depending on
   // the implementation of the loader.
-  return loader_->Load(
-      segment_base_offset_ + segment->offset(), segment->size());
+  // TODO(jackzhxng): "backend_segment" is a hardcode, pass in real backend id.
+  return loader_->load(
+      segment_base_offset_ + segment->offset(),
+      segment->size(),
+      DataLoader::SegmentInfo(
+          DataLoader::SegmentInfo::Type::Backend, index, "backend_segment"));
 }
 
 } // namespace executor
