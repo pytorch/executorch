@@ -545,8 +545,8 @@ TEST_P(BackendIntegrationTest, SegmentInfoIsPassedIntoDataLoader) {
   // Expect that load was called correctly on a backend segment.
   bool backend_load_was_called = spy_loader.UsedLoad(
       DataLoader::SegmentInfo::Type::Backend,
-      "backend_segment"); // TODO(jackzhxng): replace with actual mock PTE
-                          // file's backend_id in next chained PR.
+      "StubBackend"); // This backend id is taken from the StubBackend defined
+                      // in export_delegated_program.py.
 
   EXPECT_TRUE(program_load_was_called);
   EXPECT_EQ(backend_load_was_called, using_segments());
