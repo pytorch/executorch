@@ -84,9 +84,7 @@ def export_to_et_ir(
     for shape, ntok_and_cache in export_shapes.items():
         dest_path = get_dest_path(output_folder, exp_name, shape, chunk_idx)
         print(f"Exporting Shape: {shape} to:\n{dest_path}")
-        num_token, cache_size = ntok_and_cache
-        if num_token != max_num_token and cache_size != max_cache_size:
-            example_inputs = model.get_example_inputs(*ntok_and_cache)
+        example_inputs = model.get_example_inputs(*ntok_and_cache)
         aten_dialect: exir.ExportedProgram = torch.export.export(converted_graph, example_inputs)
 
         print("Lowering to Edge Dialect Graph")
