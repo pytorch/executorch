@@ -65,7 +65,7 @@ echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps":
 Then, create a tokenizer binary file:
 
 ```shell
-python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 ```
 
 Finally, export the `stories110M.pt` file into an ExecuTorch program:

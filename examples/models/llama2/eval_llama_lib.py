@@ -15,11 +15,11 @@ from executorch.examples.models.llama2.export_llama_lib import (
     get_quantizer_and_quant_params,
 )
 from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
-from executorch.examples.models.llama2.tokenizer.tokenizer import (
-    Tokenizer as SentencePieceTokenizer,
-)
 
 from executorch.extension.llm.export import LLMEdgeManager
+from executorch.extension.llm.tokenizer.tokenizer import (
+    Tokenizer as SentencePieceTokenizer,
+)
 
 from lm_eval.api.model import LM
 
