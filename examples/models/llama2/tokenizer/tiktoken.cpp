@@ -25,6 +25,7 @@
    limitations under the License.
  *************************************************************************/
 
+#include <executorch/examples/models/llama2/tokenizer/base64.h>
 #include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
 #include <cctype>
 #include <cstdint>
