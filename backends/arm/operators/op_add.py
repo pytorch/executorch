@@ -16,7 +16,7 @@ from executorch.backends.arm.tosa_quant_utils import (
     build_rescale_from_int32,
     build_rescale_to_int32,
 )
-from executorch.backends.arm.tosa_utils import broadcast_shapes, getNodeArgs
+from executorch.backends.arm.tosa_utils import broadcast_shapes, getNodeArgs, tosa_shape
 from serializer.tosa_serializer import TosaOp
 
 
@@ -34,7 +34,6 @@ class AddVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
         is_quant_node: bool,
-        permute_memory_to_nhwc: bool,
     ) -> None:
         if is_quant_node:
             # Single input or not
@@ -54,12 +53,9 @@ class AddVisitor(NodeVisitor):
             inputA_rescale_scale = input_A_scale.number / min_scale
             inputB_rescale_scale = input_B_scale.number / min_scale
 
+            input_A.shape = tosa_shape(input_A.shape, input_A.dim_order)
+            input_B.shape = tosa_shape(input_B.shape, input_B.dim_order)
             broadcasted_shape = broadcast_shapes(input_A.shape, input_B.shape)
-            if permute_memory_to_nhwc:
-                NHWC_Order = [0, 2, 3, 1]
-                broadcasted_shape = [broadcasted_shape[i] for i in NHWC_Order]
-                input_A.shape = [input_A.shape[i] for i in NHWC_Order]
-                input_B.shape = [input_B.shape[i] for i in NHWC_Order]
 
             input_A_rescaled_to_int32 = build_rescale_to_int32(
                 tosa_graph,
