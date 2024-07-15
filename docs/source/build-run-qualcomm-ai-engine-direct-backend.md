@@ -145,6 +145,7 @@ cmake .. \
     -DCMAKE_INSTALL_PREFIX=$PWD \
     -DEXECUTORCH_BUILD_SDK=ON \
     -DEXECUTORCH_BUILD_QNN=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
@@ -168,6 +169,7 @@ cmake --build examples/qualcomm -j16
 
 You can find `qnn_executor_runner` under `build_android/examples/qualcomm/`.
 
+The build script is also available [here](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh).
 
 ## Deploying and running on device
 

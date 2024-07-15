@@ -1,8 +1,11 @@
-# Copyright (c) Qualcomm Innovation Center, Inc.
-# All rights reserved
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# pyre-strict
+
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._decomp import get_decompositions
@@ -14,7 +17,15 @@ class DecomposeScaledDotProductAttention(ExportPass):
     Decompose from scaled_dot_product_attention to multiple nodes.
     """
 
-    def call(self, graph_module: torch.fx.GraphModule):
+    def __init__(self, allow_non_fake_inputs: bool = True) -> None:
+        super().__init__()
+        # With allow_non_fake_inputs=False, we don't get _unsafe_view ops
+        # in the graph, we allow disabling it here.
+        self._allow_non_fake_inputs = allow_non_fake_inputs
+
+    def call(
+        self, graph_module: torch.fx.GraphModule, allow_non_fake_inputs: bool = True
+    ) -> PassResult:
         graph = graph_module.graph
         for node in graph.nodes:
             if node.target == torch.ops.aten.scaled_dot_product_attention.default:
@@ -29,7 +40,7 @@ class DecomposeScaledDotProductAttention(ExportPass):
                         ]
                     ),
                     tracing_mode="fake",
-                    _allow_non_fake_inputs=True,
+                    _allow_non_fake_inputs=allow_non_fake_inputs,
                 )(*input_tensors)
                 with graph.inserting_before(node):
                     name_to_input_tensor_map = {}

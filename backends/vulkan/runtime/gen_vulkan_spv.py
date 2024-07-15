@@ -676,7 +676,6 @@ class SPVGenerator:
                     for arg in ["-I", src_dir_path]
                 ]
 
-                print("glslc cmd:", cmd)
                 subprocess.check_call(cmd)
 
                 return (spv_out_path, glsl_out_path)
