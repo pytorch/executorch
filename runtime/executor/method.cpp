@@ -182,7 +182,11 @@ class BackendDelegate final {
             /*free_fn=*/nullptr);
       }
       case executorch_flatbuffer::DataLocation::SEGMENT: {
-        return program->LoadSegment(processed->index());
+        const char* backend_id = delegate.id()->c_str();
+        return program->LoadSegment(DataLoader::SegmentInfo(
+            DataLoader::SegmentInfo::Type::Backend,
+            processed->index(),
+            backend_id));
       }
       default:
         ET_LOG(

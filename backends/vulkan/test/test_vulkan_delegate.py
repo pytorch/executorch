@@ -1157,6 +1157,22 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_squeeze(self):
+        class SqueezeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.squeeze(x, 0)
+
+        sample_inputs = (torch.randn(size=(1, 2, 2, 1), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            SqueezeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_select(self):
         class SelectModule(torch.nn.Module):
             def __init__(self):

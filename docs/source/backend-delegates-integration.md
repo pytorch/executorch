@@ -30,10 +30,6 @@ should be built conditionally with an ExecuTorch build flag like
 For third-party dependencies, please refer to
 [this](./backend-delegates-dependencies.md).
 
-
-Adding buck2 support is optional, but will make the delegate available to more
-ExecuTorch users.
-
 <!---
 TODO: Add more details. Need to insert a CMake layer in `executorch/backends` to
 provide some uniform abstraction across delegates.
