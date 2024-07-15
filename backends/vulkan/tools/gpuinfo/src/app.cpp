@@ -18,6 +18,7 @@ using namespace vkapi;
 class App {
  private:
   size_t buf_cache_size_;
+  size_t max_const_mem_size_;
   uint32_t sm_count_;
   uint32_t nthread_logic_;
 
@@ -33,11 +34,14 @@ class App {
     sm_count_ = cl_device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
     nthread_logic_ = cl_device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
     buf_cache_size_ = cl_device.getInfo<CL_DEVICE_GLOBAL_MEM_CACHE_SIZE>();
+    max_const_mem_size_ =
+        cl_device.getInfo<CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE>();
 
     std::cout << std::endl;
     std::cout << "SM count," << sm_count_ << std::endl;
     std::cout << "Logic Thread Count," << nthread_logic_ << std::endl;
     std::cout << "Cache Size," << buf_cache_size_ << std::endl;
+    std::cout << "Constant Memory Size," << max_const_mem_size_ << std::endl;
   }
 
   void reg_count() {
@@ -246,7 +250,7 @@ class App {
           context(), vkapi::kFloat, VEC_SIZE * nthread_logic_);
       vkapi::PipelineBarrier pipeline_barrier{};
 
-      auto shader_name = "buf_bandwidth";
+      auto shader_name = "buf_bandwidth_buffer";
 
       auto time = benchmark_on_gpu(shader_name, 10, [&]() {
         context()->submit_compute_job(
@@ -283,6 +287,74 @@ class App {
     std::cout << "MaxBandwidth," << max_bandwidth << std::endl;
     std::cout << "MinBandwidth," << min_bandwidth << std::endl;
   }
+
+  void const_mem_bandwidth() {
+    const int NTHREAD_WARP = nthread_logic_;
+    const int NSM = sm_count_;
+    const size_t RANGE = max_const_mem_size_;
+
+    // Size configs in bytes. These settings should be adjusted by hand.
+    const uint32_t VEC_WIDTH = 4;
+    const uint32_t NFLUSH = 16;
+    const uint32_t NUNROLL = 16;
+    const uint32_t NITER = 4;
+    const uint32_t NREAD_PER_THREAD = NUNROLL * NITER;
+
+    const size_t VEC_SIZE = VEC_WIDTH * sizeof(float);
+    auto bench = [&](size_t access_size) {
+      const size_t CACHE_SIZE = access_size;
+
+      const size_t NVEC = RANGE / VEC_SIZE;
+      const size_t NVEC_CACHE = CACHE_SIZE / VEC_SIZE;
+
+      // The thread count is doesn't divide by thread workload basically because
+      // of the limited memory size. Constant memory and local memory are
+      // usually sub-MB level but buffer and images can go upto gigs.
+      const int nthread_total = NVEC;
+      const uint local_x = NTHREAD_WARP;
+      const uint global_x = (nthread_total / local_x * local_x) * NSM * NFLUSH;
+
+      StorageBuffer in_buf(context(), vkapi::kFloat, CACHE_SIZE);
+      StorageBuffer out_buf(context(), vkapi::kFloat, VEC_SIZE * NTHREAD_WARP);
+      vkapi::PipelineBarrier pipeline_barrier{};
+
+      auto shader_name = "buf_bandwidth_ubo";
+
+      auto time = benchmark_on_gpu(shader_name, 100, [&]() {
+        context()->submit_compute_job(
+            VK_KERNEL_FROM_STR(shader_name),
+            pipeline_barrier,
+            {global_x, 1, 1},
+            {local_x, 1, 1},
+            {SV(NITER),
+             SV((uint32_t)(NVEC_CACHE - 1)),
+             SV(local_x * NREAD_PER_THREAD),
+             SV(local_x)},
+            VK_NULL_HANDLE,
+            0,
+            in_buf.buffer(),
+            out_buf.buffer());
+      });
+
+      const size_t SIZE_TRANS = global_x * NREAD_PER_THREAD * VEC_SIZE;
+      auto gbps = SIZE_TRANS * 1e-3 / time;
+      std::cout << "Constant memory bandwidth accessing \t" << access_size
+                << "\tB unique data is \t" << gbps << " \tgbps (\t" << time
+                << "\tus)" << std::endl;
+      return gbps;
+    };
+
+    MaxStats<double> max_bandwidth{};
+    MinStats<double> min_bandwidth{};
+    for (size_t access_size = VEC_SIZE; access_size < RANGE; access_size *= 2) {
+      double gbps = bench(access_size);
+      max_bandwidth.push(gbps);
+      min_bandwidth.push(gbps);
+    }
+
+    std::cout << "MaxConstBandwidth," << max_bandwidth << std::endl;
+    std::cout << "MinConstBandwidth," << min_bandwidth << std::endl;
+  }
 };
 
 int main(int argc, const char** argv) {
@@ -292,6 +364,7 @@ int main(int argc, const char** argv) {
   app.reg_count();
   app.buf_cacheline_size();
   app.buf_bandwidth();
+  app.const_mem_bandwidth();
 
   return 0;
 }
