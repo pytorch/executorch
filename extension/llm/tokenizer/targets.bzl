@@ -1,6 +1,11 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
+    """Defines targets that should be shared between fbcode and xplat.
+
+    The directory containing this targets.bzl file should also contain both
+    TARGETS and BUCK files that call this function.
+    """
     runtime.python_library(
         name = "tokenizer_py_lib",
         srcs = [
@@ -15,6 +20,7 @@ def define_common_targets():
             "//bento_kernels/...",
         ],
         _is_external_target = True,
+        # TODO: Define an external_deps entry for sentencepiece instead of pointing to an fbsource path.
         deps = [] if runtime.is_oss else ["fbsource//third-party/pypi/sentencepiece:sentencepiece"],
     )
 
