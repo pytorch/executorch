@@ -537,16 +537,18 @@ class TestProgramManagers(unittest.TestCase):
         _ = to_edge(exported_foo, compile_config=edge_compile_config)
 
     def test_edge_dialect_custom_op(self):
+        # We shouldn't error out if there's a custom op in the graph.
         def _use_foo_add(a: torch.Tensor, b: torch.Tensor):
             return torch.ops.exir_program_test_op.foo(a, b)
 
         from torch._export.verifier import SpecViolationError
 
-        with self.assertRaises(SpecViolationError):
+        try:
+            # This should not raise error
             self._test_edge_dialect_verifier(_use_foo_add)
-
-        # This should not raise error
-        self._test_edge_dialect_verifier(_use_foo_add, False)
+            self._test_edge_dialect_verifier(_use_foo_add, False)
+        except SpecViolationError:
+            self.fail("Should not error out on custom op")
 
     def _test_model_with_non_decomp_partitioner(self, model: torch.nn.Module):
         # This is the pre-dispatch export that we will be switching to primarily
