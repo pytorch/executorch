@@ -43,7 +43,7 @@ target_include_directories(
 
 if(EXECUTORCH_USE_TIKTOKEN)
   list(APPEND _llama_runner__srcs
-        ${CMAKE_CURRENT_SOURCE_DIR}/../tokenizer/tiktoken.cpp
+       ${CMAKE_CURRENT_SOURCE_DIR}/../tokenizer/tiktoken.cpp
   )
   list(APPEND _llama_runner__srcs
        ${CMAKE_CURRENT_SOURCE_DIR}/../tokenizer/llama_tiktoken.cpp
