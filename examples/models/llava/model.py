@@ -19,6 +19,7 @@ import requests
 import torch
 import torchvision
 from executorch.examples.models.llama2.llama_transformer import Transformer, ModelArgs
+from executorch.examples.models.llama2.source_transformation.sdpa import replace_sdpa_with_custom_op
 from executorch.examples.models.model_base import EagerModelBase
 from llava.constants import (
     DEFAULT_IM_END_TOKEN,
@@ -84,6 +85,8 @@ class Llava(torch.nn.Module):
             self.model_.config.pad_token_id,
         )
         self.text_model = Transformer(self.text_model_args)
+        # use custom op for SDPA
+        self.text_model = replace_sdpa_with_custom_op(self.text_model)
         # load state dict
         self.text_model.load_state_dict(
             state_dict=self._translate_state_dict_for_text_model(),
