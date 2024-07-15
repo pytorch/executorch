@@ -47,6 +47,7 @@ class App {
     const uint32_t NREG_MAX = 512;
     const uint32_t NREG_STEP = 1;
 
+    // TODO: Make these values configurable
     const double COMPENSATE = 0.01;
     const double THRESHOLD = 3;
 
@@ -150,11 +151,76 @@ class App {
               << std::endl;
     std::cout << "Register type," << reg_ty << std::endl;
   }
+
+  void buf_cacheline_size() {
+    std::cout << std::endl;
+    std::cout << "------ Buffer Cacheline Size ------" << std::endl;
+
+    // TODO: Make these values configurable
+    const double COMPENSATE = 0.01;
+    const double THRESHOLD = 10;
+
+    const uint32_t PITCH = buf_cache_size_ / nthread_logic_;
+    const uint32_t BUF_SIZE = buf_cache_size_;
+    const uint32_t MAX_STRIDE = PITCH;
+
+    uint32_t NITER;
+
+    auto bench = [&](int stride) {
+      size_t len = sizeof(float);
+      StorageBuffer in_buf(context(), vkapi::kFloat, BUF_SIZE);
+      StorageBuffer out_buf(context(), vkapi::kFloat, len);
+      vkapi::PipelineBarrier pipeline_barrier{};
+
+      auto shader_name = "buf_cacheline_size";
+
+      auto time = benchmark_on_gpu(shader_name, 100, [&]() {
+        context()->submit_compute_job(
+            VK_KERNEL_FROM_STR(shader_name),
+            pipeline_barrier,
+            {nthread_logic_, 1, 1},
+            {nthread_logic_, 1, 1},
+            {SV(NITER), SV(stride), SV(PITCH)},
+            VK_NULL_HANDLE,
+            0,
+            in_buf.buffer(),
+            out_buf.buffer());
+      });
+      return time;
+    };
+
+    ensure_min_niter(1000, NITER, [&]() { return bench(1); });
+
+    uint32_t cacheline_size;
+
+    DtJumpFinder<5> dj(COMPENSATE, THRESHOLD);
+    uint32_t stride = 1;
+    for (; stride <= MAX_STRIDE; ++stride) {
+      double time = bench(stride);
+      std::cout << "Testing stride=\t" << stride << "\t, time=\t" << time
+                << std::endl;
+
+      if (dj.push(time)) {
+        cacheline_size = stride * sizeof(float);
+        break;
+      }
+    }
+    if (stride >= MAX_STRIDE) {
+      std::cout << "Unable to conclude a top level buffer cacheline size."
+                << std::endl;
+      cacheline_size = MAX_STRIDE;
+    }
+
+    std::cout << "BufTopLevelCachelineSize," << cacheline_size << std::endl;
+  }
 };
 
 int main(int argc, const char** argv) {
   App app;
 
+  // TODO: Allow user to skip tests
   app.reg_count();
+  app.buf_cacheline_size();
+
   return 0;
 }
