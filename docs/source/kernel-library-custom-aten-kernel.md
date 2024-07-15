@@ -218,7 +218,7 @@ ExecuTorch does not support all of the argument types that core PyTorch supports
 
 ### Build Tool Macros
 
-We provide build time macros to help users to build their kernel registration library. The macro takes the yaml file describing the kernel library as well as model operator metadata, and packages the generated C++ bindings into a C++ library. The macro is available on both CMake and Buck2.
+We provide build time macros to help users to build their kernel registration library. The macro takes the yaml file describing the kernel library as well as model operator metadata, and packages the generated C++ bindings into a C++ library. The macro is available on CMake.
 
 
 #### CMake
@@ -263,46 +263,6 @@ And out fallback:
 
 The merged yaml will have the entry in functions.yaml.
 
-#### Buck2
-
-`executorch_generated_lib` is the macro that takes the yaml files and depends on the selective build macro `et_operator_library`. For an example:
-```python
-# Yaml file for kernel library
-export_file(
-  name = "functions.yaml"
-)
-
-# Kernel library
-cxx_library(
-  name = "add_kernel",
-  srcs = ["add.cpp"],
-)
-
-# Selective build artifact, it allows all operators to be registered
-et_operator_library(
-  name = "all_ops",
-  include_all_ops = True, # Select all ops in functions.yaml
-)
-
-# Prepare a generated_lib
-executorch_generated_lib(
-  name = "generated_lib",
-  functions_yaml_target = ":functions.yaml",
-  deps = [
-    ":all_ops",
-    ":add_kernel",
-  ],
-)
-
-# Link generated_lib to ExecuTorch binary
-cxx_binary(
- name = "executorch_bin",
- deps = [
-  ":generated_lib",
- ],
-)
-
-```
 
 ### Custom Ops API Best Practices
 
