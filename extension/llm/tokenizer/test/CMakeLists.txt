@@ -24,7 +24,9 @@ include(${EXECUTORCH_ROOT}/build/Test.cmake)
 set(
   _tokenizer_test_srcs
   test_tiktoken.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/../llama_tiktoken.cpp
+  test_bpe_tokenizer.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../tiktoken.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../bpe_tokenizer.cpp
 )
 
 set(ENV{RESOURCES_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/resources)
