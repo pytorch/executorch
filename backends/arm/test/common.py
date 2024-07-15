@@ -102,7 +102,9 @@ def get_tosa_compile_spec(permute_memory_to_nhwc=False, custom_path=None):
     return compile_spec
 
 
-def get_u55_compile_spec(permute_memory_to_nhwc=False, custom_path=None):
+def get_u55_compile_spec(
+    permute_memory_to_nhwc=False, quantize_io=False, custom_path=None
+):
     """
     Default compile spec for Ethos-U55 tests.
     """
@@ -115,7 +117,7 @@ def get_u55_compile_spec(permute_memory_to_nhwc=False, custom_path=None):
             memory_mode="Shared_Sram",
             extra_flags=None,
         )
-        .set_quantize_io(is_option_enabled("quantize_io"))
+        .set_quantize_io(is_option_enabled("quantize_io") or quantize_io)
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(artifact_path)
         .build()
