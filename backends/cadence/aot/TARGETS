@@ -34,6 +34,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/backends/transforms:decompose_sdpa",
         "//executorch/exir:lib",
     ],
 )
