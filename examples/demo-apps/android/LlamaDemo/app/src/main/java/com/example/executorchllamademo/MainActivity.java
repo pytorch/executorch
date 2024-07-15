@@ -235,8 +235,6 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     mMessageAdapter.notifyDataSetChanged();
   }
 
-
-
   @Override
   public void run() {
     runOnUiThread(
