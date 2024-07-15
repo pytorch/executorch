@@ -627,6 +627,7 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span><span class="nv">$PWD</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_SDK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="nv">$QNN_SDK_ROOT</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="s1">&#39;arm64-v8a&#39;</span><span class="w"> </span><span class="se">\</span>
@@ -648,6 +649,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<sp
 </div>
 <p><strong>Note:</strong> If you want to build for release, add <code class="docutils literal notranslate"><span class="pre">-DCMAKE_BUILD_TYPE=Release</span></code> to the <code class="docutils literal notranslate"><span class="pre">cmake</span></code> command options.</p>
 <p>You can find <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> under <code class="docutils literal notranslate"><span class="pre">build_android/examples/qualcomm/</span></code>.</p>
+<p>The build script is also available <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh">here</a>.</p>
 </div>
 </div>
 <div class="section" id="deploying-and-running-on-device">
