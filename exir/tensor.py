@@ -13,10 +13,12 @@ import copy
 
 import math
 import typing
+from functools import cmp_to_key
 from typing import Dict, List, Optional, Tuple, Union
 
 import executorch.exir.schema as schema
 import torch
+from torch.fx.experimental.symbolic_shapes import guard_size_oblivious
 from executorch.exir.error import internal_assert
 from executorch.exir.schema import ScalarType, TensorShapeDynamism
 from executorch.exir.sym_util import eval_shape
@@ -66,8 +68,17 @@ def dim_order_from_stride(stride: Tuple[int]) -> Tuple[bytes]:
     for _, s in enumerate(stride):
         if s == 0:
             raise ValueError("0 in strides is not supported for ExecuTorch.")
+
+    def cmp(a, b):
+        if guard_size_oblivious(a[1] < b[1]):
+            return -1
+        elif guard_size_oblivious(a[1] > b[1]):
+            return 1
+        else:
+            return 0
+
     sorted_dims = [
-        i[0] for i in sorted(enumerate(stride), key=lambda x: x[1], reverse=True)
+        i[0] for i in sorted(enumerate(stride), key=cmp_to_key(cmp), reverse=True)
     ]
     return tuple(typing.cast(Tuple[bytes], sorted_dims))
 
