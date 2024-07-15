@@ -1063,12 +1063,13 @@ class ExportedProgramSerializer:
             additional_kwargs["verifiers"] = [
                 v.dialect for v in exported_program.verifiers
             ]
+        elif hasattr(exported_program, "dialect"):
+            additional_kwargs["dialect"] = exported_program.dialect
         serialized_ep = ExportedProgram(
             graph_module=serialized_graph_module,
             opset_version=self.opset_version,
             range_constraints=serialized_range_constraints,
             schema_version=SchemaVersion(-1, -1),
-            dialect=exported_program.dialect,
             **additional_kwargs,
         )
 
