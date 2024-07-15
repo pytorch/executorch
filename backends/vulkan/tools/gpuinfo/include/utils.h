@@ -10,6 +10,10 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
+#define CL_TARGET_OPENCL_VERSION 200
+#define CL_HPP_TARGET_OPENCL_VERSION CL_TARGET_OPENCL_VERSION
+#include <CL/opencl.hpp>
+
 using namespace vkcompute;
 using namespace api;
 
@@ -48,4 +52,30 @@ void ensure_min_niter(
     }
     niter = uint32_t(niter * min_time_us / t);
   }
+}
+
+cl_platform_id get_cl_platform_id() {
+  cl_uint nplatform_id;
+  clGetPlatformIDs(0, nullptr, &nplatform_id);
+  std::vector<cl_platform_id> platform_ids;
+  platform_ids.resize(nplatform_id);
+  clGetPlatformIDs(nplatform_id, platform_ids.data(), nullptr);
+  return platform_ids[0];
+}
+
+cl_device_id get_cl_dev_id(cl_platform_id platform_id) {
+  cl_uint ndev_id;
+  clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_ALL, 0, nullptr, &ndev_id);
+  std::vector<cl_device_id> dev_ids;
+  dev_ids.resize(ndev_id);
+  clGetDeviceIDs(
+      platform_id, CL_DEVICE_TYPE_ALL, ndev_id, dev_ids.data(), nullptr);
+  return dev_ids[0];
+}
+
+cl::Device get_cl_device() {
+  auto platform_id = get_cl_platform_id();
+  auto dev_id = get_cl_dev_id(platform_id);
+  cl::Device dev(dev_id);
+  return dev;
 }
