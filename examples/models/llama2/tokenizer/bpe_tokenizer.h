@@ -33,10 +33,10 @@ class BPETokenizer : public Tokenizer {
       const override;
 
  private:
-  std::unique_ptr<char*[]> vocab_;
-  std::unique_ptr<float[]> vocab_scores_;
-  std::unique_ptr<TokenIndex[]> sorted_vocab_;
-  unsigned int max_token_length_;
+  std::unique_ptr<char*[]> vocab_ = nullptr;
+  std::unique_ptr<float[]> vocab_scores_ = nullptr;
+  std::unique_ptr<TokenIndex[]> sorted_vocab_ = nullptr;
+  unsigned int max_token_length_ = 0;
   unsigned char byte_pieces_[512]; // stores all single-byte strings
 };
 } // namespace executor

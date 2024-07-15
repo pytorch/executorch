@@ -168,20 +168,52 @@ class DataLoaderSpy : public DataLoader {
  public:
   /// A record of an operation performed on this DataLoader.
   struct Operation {
-    enum { Load, Free } op;
-    size_t offset; // Set for Load; zero for Free.
-    void* data; // Set for Free; nullptr for Load.
-    size_t size; // Set for Load and Free.
+    enum { Load, Free, DeprecatedLoad } op;
+    size_t offset; // Set for Load/DeprecatedLoad; zero for Free.
+    void* data; // Set for Free; nullptr for Load/DeprecatedLoad.
+    size_t size; // Set for Load/DeprecatedLoad and Free.
+    std::unique_ptr<const DataLoader::SegmentInfo>
+        segment_info; // Set for Load; nullptr for Free/DeprecatedLoad.
   };
 
   explicit DataLoaderSpy(DataLoader* delegate) : delegate_(delegate) {}
 
+  /**
+   * Override the deprecated "Load" method. We will be looking to test that
+   * this function is not called if the new "load" method is called.
+   */
   Result<FreeableBuffer> Load(size_t offset, size_t size) override {
     Result<FreeableBuffer> buf = delegate_->Load(offset, size);
     if (!buf.ok()) {
       return buf.error();
     }
-    operations_.push_back({Operation::Load, offset, /*data=*/nullptr, size});
+    operations_.push_back(
+        {Operation::DeprecatedLoad,
+         offset,
+         /*data=*/nullptr,
+         size,
+         /*segment_info=*/nullptr});
+    auto* context = new SpyContext(&operations_, std::move(buf.get()));
+    // Use context->buffer since buf has been moved.
+    return FreeableBuffer(
+        context->buffer.data(), context->buffer.size(), FreeBuffer, context);
+  }
+
+  Result<FreeableBuffer>
+  load(size_t offset, size_t size, const SegmentInfo& segment_info) override {
+    Result<FreeableBuffer> buf = delegate_->load(offset, size, segment_info);
+    if (!buf.ok()) {
+      return buf.error();
+    }
+
+    auto segment_info_cpy =
+        std::make_unique<const DataLoader::SegmentInfo>(segment_info);
+    operations_.push_back(
+        {Operation::Load,
+         offset,
+         /*data=*/nullptr,
+         size,
+         /*segment_info=*/std::move(segment_info_cpy)});
     auto* context = new SpyContext(&operations_, std::move(buf.get()));
     // Use context->buffer since buf has been moved.
     return FreeableBuffer(
@@ -198,6 +230,36 @@ class DataLoaderSpy : public DataLoader {
    */
   const std::vector<Operation>& operations() const {
     return operations_;
+  }
+
+  /**
+   * Returns true if the DataLoader::load() method was called with the correct
+   * segment info.
+   */
+  bool UsedLoad(
+      DataLoader::SegmentInfo::Type segment_type,
+      const char* descriptor = nullptr) const {
+    for (const auto& op : operations_) {
+      // We should not be using the deprecated DataLoader::Load() function.
+      if (op.op == Operation::DeprecatedLoad) {
+        return false;
+      }
+      if (op.op != Operation::Load) {
+        continue;
+      }
+      // We have a load op.
+      if (op.segment_info->segment_type == segment_type) {
+        if (segment_type != DataLoader::SegmentInfo::Type::Backend) {
+          // For non-backend segments, the descriptor is irrelevant / a nullptr.
+          return true;
+        } else {
+          if (strcmp(op.segment_info->descriptor, descriptor) == 0) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   /**
@@ -223,7 +285,8 @@ class DataLoaderSpy : public DataLoader {
 
   static void FreeBuffer(void* context, void* data, size_t size) {
     auto* sc = reinterpret_cast<SpyContext*>(context);
-    sc->operations->push_back({Operation::Free, /*offset=*/0, data, size});
+    sc->operations->push_back(
+        {Operation::Free, /*offset=*/0, data, size, /*segment_info=*/nullptr});
     delete sc;
   }
 
@@ -333,7 +396,7 @@ TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
   EXPECT_EQ(method_res.error(), Error::Ok);
 
   // Demonstrate that our installed init was called.
-  EXPECT_EQ(init_called, true);
+  EXPECT_TRUE(init_called);
 
   // See if the processed data was freed.
   bool processed_was_freed = spy_loader.WasFreed(processed_data);
@@ -442,6 +505,51 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
 
   // And it should have destroyed the backend handle.
   EXPECT_EQ(execute_handle, destroy_handle);
+}
+
+/**
+ * Tests that the DataLoader's load is receiving the correct segment info for
+ * different types of segments.
+ */
+TEST_P(BackendIntegrationTest, SegmentInfoIsPassedIntoDataLoader) {
+  const void* processed_data = nullptr;
+  StubBackend::singleton().install_init(
+      [&](FreeableBuffer* processed,
+          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          -> Result<DelegateHandle*> {
+        processed_data = processed->data();
+        processed->Free();
+        return nullptr;
+      });
+
+  // Wrap the real loader in a spy so we can see which operations were
+  // performed.
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  DataLoaderSpy spy_loader(&loader.get());
+
+  // Load the program.
+  Result<Program> program = Program::load(&spy_loader);
+  ASSERT_EQ(program.error(), Error::Ok);
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+
+  // Expect that load was called correctly on program segments.
+  bool program_load_was_called =
+      spy_loader.UsedLoad(DataLoader::SegmentInfo::Type::Program, nullptr);
+
+  // Load a method.
+  Result<Method> method_res = program->load_method("forward", &mmm.get());
+  EXPECT_EQ(method_res.error(), Error::Ok);
+
+  // Expect that load was called correctly on a backend segment.
+  bool backend_load_was_called = spy_loader.UsedLoad(
+      DataLoader::SegmentInfo::Type::Backend,
+      "StubBackend"); // This backend id is taken from the StubBackend defined
+                      // in export_delegated_program.py.
+
+  EXPECT_TRUE(program_load_was_called);
+  EXPECT_EQ(backend_load_was_called, using_segments());
 }
 
 // TODO: Add more tests for the runtime-to-backend interface. E.g.:

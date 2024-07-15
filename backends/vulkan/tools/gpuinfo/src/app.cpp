@@ -13,117 +13,148 @@
 #include "stats.h"
 #include "utils.h"
 
-void reg_count() {
-  const uint32_t NREG_MIN = 1;
-  const uint32_t NREG_MAX = 512;
-  const uint32_t NREG_STEP = 1;
+using namespace vkapi;
 
-  const double COMPENSATE = 0.01;
-  const double THRESHOLD = 3;
+class App {
+ private:
+  size_t buf_cache_size_;
+  uint32_t sm_count_;
+  uint32_t nthread_logic_;
 
-  const uint32_t NGRP_MIN = 1;
-  const uint32_t NGRP_MAX = 64;
-  const uint32_t NGRP_STEP = 1;
+ public:
+  App() {
+    context()->initialize_querypool();
 
-  uint32_t NITER;
+    std::cout << context()->adapter_ptr()->stringize() << std::endl
+              << std::endl;
 
-  auto bench = [&](uint32_t ngrp, uint32_t nreg) {
-    size_t len = sizeof(float);
-    StorageBuffer buffer(context(), vkapi::kFloat, len);
-    ParamsBuffer params(context(), int32_t(len));
-    vkapi::PipelineBarrier pipeline_barrier{};
+    auto cl_device = get_cl_device();
 
-    auto shader_name = "reg_count_" + std::to_string(nreg);
+    sm_count_ = cl_device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
+    nthread_logic_ = cl_device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
+    buf_cache_size_ = cl_device.getInfo<CL_DEVICE_GLOBAL_MEM_CACHE_SIZE>();
 
-    auto time = benchmark_on_gpu(shader_name, 100, [&]() {
-      context()->submit_compute_job(
-          VK_KERNEL_FROM_STR(shader_name),
-          pipeline_barrier,
-          {1, ngrp, 1},
-          {1, 1, 1},
-          {SV(NITER)},
-          VK_NULL_HANDLE,
-          0,
-          buffer.buffer(),
-          params.buffer());
-    });
-    return time;
-  };
-
-  std::cout << "Calculating NITER..." << std::endl;
-  ensure_min_niter(1000, NITER, [&]() { return bench(1, NREG_MIN); });
-  std::cout << "NITER," << NITER << std::endl;
-
-  uint32_t nreg_max;
-
-  DtJumpFinder<5> dj(COMPENSATE, THRESHOLD);
-  uint32_t nreg = NREG_MIN;
-  for (; nreg <= NREG_MAX; nreg += NREG_STEP) {
-    double time = bench(1, nreg);
-    std::cout << "Testing nreg=\t" << nreg << "\tTime=\t" << time << std::endl;
-    if (dj.push(time)) {
-      nreg -= NREG_STEP;
-      nreg_max = nreg;
-      break;
-    }
-  }
-  if (nreg >= NREG_MAX) {
-    std::cout << "Unable to conclude a maximal register count" << std::endl;
-    nreg_max = NREG_STEP;
-  } else {
-    std::cout << nreg_max << " registers are available at most" << std::endl;
+    std::cout << std::endl;
+    std::cout << "SM count," << sm_count_ << std::endl;
+    std::cout << "Logic Thread Count," << nthread_logic_ << std::endl;
+    std::cout << "Cache Size," << buf_cache_size_ << std::endl;
   }
 
-  auto find_ngrp_by_nreg = [&](const uint32_t nreg) {
+  void reg_count() {
+    std::cout << std::endl;
+    std::cout << "------ Register Count ------" << std::endl;
+    const uint32_t NREG_MIN = 1;
+    const uint32_t NREG_MAX = 512;
+    const uint32_t NREG_STEP = 1;
+
+    const double COMPENSATE = 0.01;
+    const double THRESHOLD = 3;
+
+    const uint32_t NGRP_MIN = 1;
+    const uint32_t NGRP_MAX = 64;
+    const uint32_t NGRP_STEP = 1;
+
+    uint32_t NITER;
+
+    auto bench = [&](uint32_t ngrp, uint32_t nreg) {
+      size_t len = sizeof(float);
+      StorageBuffer buffer(context(), vkapi::kFloat, len);
+      ParamsBuffer params(context(), int32_t(len));
+      vkapi::PipelineBarrier pipeline_barrier{};
+
+      auto shader_name = "reg_count_" + std::to_string(nreg);
+
+      auto time = benchmark_on_gpu(shader_name, 100, [&]() {
+        context()->submit_compute_job(
+            VK_KERNEL_FROM_STR(shader_name),
+            pipeline_barrier,
+            {1, ngrp, 1},
+            {1, 1, 1},
+            {SV(NITER)},
+            VK_NULL_HANDLE,
+            0,
+            buffer.buffer(),
+            params.buffer());
+      });
+      return time;
+    };
+
+    std::cout << "Calculating NITER..." << std::endl;
+    ensure_min_niter(1000, NITER, [&]() { return bench(1, NREG_MIN); });
+    std::cout << "NITER," << NITER << std::endl;
+
+    uint32_t nreg_max;
+
     DtJumpFinder<5> dj(COMPENSATE, THRESHOLD);
-    for (auto ngrp = NGRP_MIN; ngrp <= NGRP_MAX; ngrp += NGRP_STEP) {
-      auto time = bench(ngrp, nreg);
-      std::cout << "Testing occupation (nreg=" << nreg << "); ngrp=" << ngrp
-                << ", time=" << time << " us" << std::endl;
-
+    uint32_t nreg = NREG_MIN;
+    for (; nreg <= NREG_MAX; nreg += NREG_STEP) {
+      double time = bench(1, nreg);
+      std::cout << "Testing nreg=\t" << nreg << "\tTime=\t" << time
+                << std::endl;
       if (dj.push(time)) {
-        ngrp -= NGRP_STEP;
-        std::cout << "Using " << nreg << " registers can have " << ngrp
-                  << " concurrent single-thread workgroups" << std::endl;
-        return ngrp;
+        nreg -= NREG_STEP;
+        nreg_max = nreg;
+        break;
       }
     }
-    std::cout
-        << "Unable to conclude a maximum number of concurrent single-thread workgroups when "
-        << nreg << " registers are occupied" << std::endl;
-    return (uint32_t)1;
-  };
+    if (nreg >= NREG_MAX) {
+      std::cout << "Unable to conclude a maximal register count" << std::endl;
+      nreg_max = NREG_STEP;
+    } else {
+      std::cout << nreg_max << " registers are available at most" << std::endl;
+    }
 
-  uint32_t ngrp_full, ngrp_half;
-  ngrp_full = find_ngrp_by_nreg(nreg_max);
-  ngrp_half = find_ngrp_by_nreg(nreg_max / 2);
+    auto find_ngrp_by_nreg = [&](const uint32_t nreg) {
+      DtJumpFinder<5> dj(COMPENSATE, THRESHOLD);
+      for (auto ngrp = NGRP_MIN; ngrp <= NGRP_MAX; ngrp += NGRP_STEP) {
+        auto time = bench(ngrp, nreg);
+        std::cout << "Testing occupation (nreg=" << nreg << "); ngrp=" << ngrp
+                  << ", time=" << time << " us" << std::endl;
 
-  std::string reg_ty;
+        if (dj.push(time)) {
+          ngrp -= NGRP_STEP;
+          std::cout << "Using " << nreg << " registers can have " << ngrp
+                    << " concurrent single-thread workgroups" << std::endl;
+          return ngrp;
+        }
+      }
+      std::cout
+          << "Unable to conclude a maximum number of concurrent single-thread workgroups when "
+          << nreg << " registers are occupied" << std::endl;
+      return (uint32_t)1;
+    };
 
-  if (ngrp_full * 1.5 < ngrp_half) {
-    std::cout << "All physical threads in an sm share " << nreg_max
-              << " registers" << std::endl;
-    reg_ty = "Pooled";
+    uint32_t ngrp_full, ngrp_half;
+    ngrp_full = find_ngrp_by_nreg(nreg_max);
+    ngrp_half = find_ngrp_by_nreg(nreg_max / 2);
 
-  } else {
-    std::cout << "Each physical thread has " << nreg_max << " registers"
+    std::string reg_ty;
+
+    if (ngrp_full * 1.5 < ngrp_half) {
+      std::cout << "All physical threads in an sm share " << nreg_max
+                << " registers" << std::endl;
+      reg_ty = "Pooled";
+
+    } else {
+      std::cout << "Each physical thread has " << nreg_max << " registers"
+                << std::endl;
+      reg_ty = "Dedicated";
+    }
+
+    std::cout << std::endl << std::endl;
+    std::cout << "NITER," << NITER << std::endl;
+    std::cout << "Max registers," << nreg_max << std::endl;
+    std::cout << "Concurrent full single thread workgroups," << ngrp_full
               << std::endl;
-    reg_ty = "Dedicated";
+    std::cout << "Concurrent half single thread workgroups," << ngrp_half
+              << std::endl;
+    std::cout << "Register type," << reg_ty << std::endl;
   }
-
-  std::cout << "\n\nNITER," << NITER << std::endl;
-  std::cout << "Max registers," << nreg_max << std::endl;
-  std::cout << "Concurrent full single thread workgroups," << ngrp_full
-            << std::endl;
-  std::cout << "Concurrent half single thread workgroups," << ngrp_half
-            << std::endl;
-  std::cout << "Register type," << reg_ty << std::endl;
-}
+};
 
 int main(int argc, const char** argv) {
-  context()->initialize_querypool();
+  App app;
 
-  reg_count();
-
+  app.reg_count();
   return 0;
 }
