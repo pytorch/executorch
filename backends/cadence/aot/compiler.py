@@ -23,6 +23,9 @@ from executorch.backends.cadence.aot.quantizer.quantizer import (
     CadenceQuantizer,
 )
 from executorch.backends.cadence.aot.utils import model_is_quantized
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from pyre_extensions import assert_is_instance
 from torch._export import capture_pre_autograd_graph
@@ -46,6 +49,9 @@ def quantize_pt2(
 
     # Export with dynamo
     model_exp = capture_pre_autograd_graph(model, inputs)
+
+    # Decompose SDPA
+    DecomposeScaledDotProductAttention(False)(model_exp)
 
     # Prepare
     prepared_model = prepare_pt2e(model_exp, quantizer)
