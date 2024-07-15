@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Tuple
 import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
+    BmmPattern,
     Conv1dPattern,
     Conv2dPattern,
     LayerNormFunctionalPattern,
@@ -361,9 +362,7 @@ class QuantFusion(ExportPass):
                         inputs_inputs + weights_inputs + other_inputs + bias_inputs
                     )
                     kwargs = {}
-                    if isinstance(pattern, Conv1dPattern) or isinstance(
-                        pattern, Conv2dPattern
-                    ):
+                    if isinstance(pattern, (Conv1dPattern, Conv2dPattern)):
                         args, kwargs = get_args_and_kwargs_conv(
                             graph_module,
                             inputs_inputs,
@@ -396,7 +395,7 @@ class QuantFusion(ExportPass):
                             other_inputs,
                             quant_node,
                         )
-                    elif isinstance(pattern, MatmulPattern):
+                    elif isinstance(pattern, (BmmPattern, MatmulPattern)):
                         args, kwargs = get_args_and_kwargs_matmul(
                             inputs_inputs,
                             dequants_inputs,

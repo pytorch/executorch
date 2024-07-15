@@ -525,8 +525,29 @@ class SPVGenerator:
             if param_name not in exclude_params:
                 param_values = []
                 for value in value_list:
-                    suffix = value.get("SUFFIX", value["VALUE"])
-                    param_values.append((param_name, suffix, value["VALUE"]))
+                    if "RANGE" in value:
+                        value_range = value["RANGE"]
+                        suffix = value.get("SUFFIX", "")
+                        if isinstance(value_range, list) and len(value_range) == 2:
+                            for i in range(value_range[0], value_range[1] + 1):
+                                curr_suffix = (
+                                    suffix + "_" + str(i) if suffix else str(i)
+                                )
+                                param_values.append((param_name, curr_suffix, str(i)))
+                        else:
+                            raise ValueError(
+                                f"{value['RANGE']} is not a valid range. Must be in format [start, end] (inclusive)."
+                            )
+
+                    elif "VALUE" in value:
+                        suffix = value.get("SUFFIX", value["VALUE"])
+                        param_values.append((param_name, suffix, value["VALUE"]))
+
+                    else:
+                        raise KeyError(
+                            "Parameter must be 'VALUE: string' or 'RANGE: [a, b]'"
+                        )
+
                 all_iterated_params.append(param_values)
 
         return list(product(*all_iterated_params))

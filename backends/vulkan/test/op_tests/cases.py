@@ -1022,3 +1022,38 @@ def get_constant_pad_nd_inputs():
         ]
     )
     return test_suite
+
+
+@register_test_suite("aten.minimum.default")
+def get_minimum_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M1, M2), (M2)),
+            ((M1, M2), (M1, M2)),
+            ((M1, M2, M), (M2, M)),
+            ((M1, M1, S1, S2), (M1, M1, S1, S2)),
+            ((S1, S1, S2, S), (S1, S2, S)),
+            ((M1, S1, S2), (L, M1, S1, S2)),
+            ((S1, S2), (L, M1, S1, S2)),
+        ]
+    )
+    return test_suite
+
+
+@register_test_suite("aten.squeeze_copy.dims")
+def get_squeeze_copy_dim_inputs():
+    test_suite = VkTestSuite(
+        [
+            ([S, S, S, 1], 3),
+            ([S, 1, S, S], 1),
+            ([S, 1, 1, S], [1, 2]),
+            ([1, S, S, S], 0),
+            ([S, S, S, S], 3),
+            ([S, S, S, S], 2),
+            ([S, S, S, S], 1),
+            ([M, M1, 1], 2),
+            ([M, 1, M1], 1),
+            ([1, M1, M1], 0),
+        ]
+    )
+    return test_suite

@@ -18,9 +18,7 @@ from executorch.backends.arm.arm_vela import vela_compile
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm.operators.op_output import process_output
 from executorch.backends.arm.operators.op_placeholder import process_placeholder
-from executorch.backends.arm.passes.annotate_channels_last_dim_order_pass import (
-    AnnotateChannelsLastDimOrder,
-)
+from executorch.backends.arm.passes.arm_pass_manager import ArmPassManager
 from executorch.backends.arm.tosa_utils import (
     dbg_fail,
     dbg_tosa_dump,
@@ -28,7 +26,6 @@ from executorch.backends.arm.tosa_utils import (
 )
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.pass_manager import PassManager
 from torch.export.exported_program import ExportedProgram
 
 # TOSA backend debug functionality
@@ -219,7 +216,6 @@ class ArmBackend(BackendDetails):
         artifact_path = None
         output_format = ""
         compile_flags = []
-        permute_memory_to_nhwc = False
         for spec in compile_spec:
             if spec.key == "debug_artifact_path":
                 artifact_path = spec.value.decode()
@@ -227,10 +223,6 @@ class ArmBackend(BackendDetails):
                 output_format = spec.value.decode()
             if spec.key == "compile_flags":
                 compile_flags.append(spec.value.decode())
-            if spec.key == "permute_memory_format":
-                memory_format = spec.value.decode()
-                if memory_format == "nhwc":
-                    permute_memory_to_nhwc = True
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -244,14 +236,13 @@ class ArmBackend(BackendDetails):
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
         tosa_graph = ts.TosaSerializer(artifact_path)
-        passes = PassManager()
-        if permute_memory_to_nhwc:
-            passes.add_pass(AnnotateChannelsLastDimOrder())
-        passes(edge_program.graph_module)
+        graph_module = ArmPassManager().transform_to_backend_pipeline(
+            graph_module=edge_program.graph_module, compile_spec=compile_spec
+        )
 
         node_visitors = get_node_visitors(edge_program)
 
-        for node in edge_program.graph.nodes:
+        for node in graph_module.graph.nodes:
             if node.op == "call_function":
                 process_call_function(node, tosa_graph, node_visitors)
             elif node.op == "placeholder":

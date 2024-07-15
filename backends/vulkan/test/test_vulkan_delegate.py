@@ -1072,6 +1072,25 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_minimum(self):
+        class MinimumModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                return torch.minimum(x, y)
+
+        sample_inputs = (
+            torch.rand(size=(3, 5, 6, 4), dtype=torch.float32),
+            torch.rand(size=(6, 4), dtype=torch.float32),
+        )
+
+        self.lower_module_and_test_output(
+            MinimumModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_reshape(self):
         class ReshapeModule(torch.nn.Module):
             def __init__(self):
@@ -1134,6 +1153,22 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(
             UnsqueezeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_squeeze(self):
+        class SqueezeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.squeeze(x, 0)
+
+        sample_inputs = (torch.randn(size=(1, 2, 2, 1), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            SqueezeModule(),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
