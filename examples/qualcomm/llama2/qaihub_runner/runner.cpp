@@ -115,10 +115,11 @@ int32_t Runner::logitsToToken(const Tensor& logits_tensor) {
   for (int i = 0; i < vocab_size_; i += 4) {
     const uint16_t* in = logits + i;
     float* out = logits_f.data() + i;
-    int32x4_t q = {in[0], in[1], in[2], in[3]};
-    int32x4_t c = vsubq_s32(q, offset);
-    float32x4_t cf = vcvtq_f32_s32(c);
-    vst1q_f32(out, vmulq_f32(cf, scale));
+    int32_t data[4] = {in[0], in[1], in[2], in[3]};
+    int32x4_t quantized = vld1q_s32(data);
+    int32x4_t shifted = vsubq_s32(quantized, offset);
+    float32x4_t shifted_f = vcvtq_f32_s32(shifted);
+    vst1q_f32(out, vmulq_f32(shifted_f, scale));
   }
   return sampler_->sample(logits_f.data());
 }
@@ -348,6 +349,7 @@ void Runner::stop() {
 
 std::vector<Result<MethodMeta>> Runner::get_methods_meta() {
   std::vector<Result<MethodMeta>> methods_meta;
+  methods_meta.reserve(modules_.size());
   for (std::shared_ptr<Module>& module : modules_) {
     methods_meta.emplace_back(module->method_meta("forward"));
   }

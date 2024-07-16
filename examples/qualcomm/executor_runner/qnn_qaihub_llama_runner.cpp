@@ -43,7 +43,7 @@ DEFINE_double(
 DEFINE_int32(
     eval_mode,
     0,
-    "0: BERT-like evaluation / 1: KV cache based token generation / 2: Mixed mode (TBD)");
+    "0: PromptProcessor / 1: TokenGenerator / 2: MixedMode (TBD)");
 DEFINE_int32(
     seq_len,
     128,
@@ -74,15 +74,11 @@ int main(int argc, char** argv) {
       FLAGS_logits_scale,
       FLAGS_logits_offset);
 
-  // generate tokens
-  std::string inference_output;
-  runner.generate(FLAGS_prompt, FLAGS_seq_len, [&](const std::string& piece) {
-    inference_output += piece;
-  });
-
-  // store inference output
+  // generate tokens & store inference output
   std::ofstream fout(FLAGS_output_path.c_str());
-  fout << inference_output;
+  runner.generate(FLAGS_prompt, FLAGS_seq_len, [&](const std::string& piece) {
+    fout << piece;
+  });
   fout.close();
   return 0;
 }

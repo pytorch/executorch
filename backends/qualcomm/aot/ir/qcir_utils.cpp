@@ -136,6 +136,7 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
     case qcir::QuantizeType::AXIS_SCALE_OFFSET: {
       size_t len = param.axisScaleOffsetEncoding.numScaleOffsets;
       axis = param.axisScaleOffsetEncoding.axis;
+      data.reserve(len);
       for (uint i = 0; i < len; ++i) {
         data.emplace_back(qcir::ScaleOffset(
             param.axisScaleOffsetEncoding.scaleOffset[i].scale,
@@ -151,6 +152,8 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
       bitwidth = param.bwAxisScaleOffsetEncoding.bitwidth;
       axis = param.bwAxisScaleOffsetEncoding.axis;
       size_t len = param.bwAxisScaleOffsetEncoding.numElements;
+      scales.reserve(len);
+      offsets.reserve(len);
       for (size_t i = 0; i < len; ++i) {
         scales.push_back(param.bwAxisScaleOffsetEncoding.scales[i]);
         offsets.push_back(param.bwAxisScaleOffsetEncoding.offsets[i]);
@@ -216,10 +219,10 @@ Qnn_QuantizeParams_t ToQuantizeParam(const qparam_type& param) {
       p.bwAxisScaleOffsetEncoding.bitwidth = param->bitwidth();
       p.bwAxisScaleOffsetEncoding.axis = param->axis();
       p.bwAxisScaleOffsetEncoding.numElements = param->scales()->size();
-      p.bwAxisScaleOffsetEncoding.scales = reinterpret_cast<float*>(
-          const_cast<uint8_t*>(param->scales()->Data()));
-      p.bwAxisScaleOffsetEncoding.offsets = reinterpret_cast<int32_t*>(
-          const_cast<uint8_t*>(param->offsets()->Data()));
+      p.bwAxisScaleOffsetEncoding.scales =
+          const_cast<float*>(param->scales()->data());
+      p.bwAxisScaleOffsetEncoding.offsets =
+          const_cast<int32_t*>(param->offsets()->data());
     } break;
     default:
       QNN_EXECUTORCH_LOG_ERROR("qcir::QuantizeType::UNDEFINED detected");
@@ -260,8 +263,7 @@ Qnn_Tensor_t ToTensor(const tensor_type& tensor) {
   QNN_VER_PTR(t)->dataType = ToDataType(tensor->dtype());
   QNN_VER_PTR(t)->quantizeParams = ToQuantizeParam(tensor->qparam());
   QNN_VER_PTR(t)->rank = tensor->shape()->size();
-  QNN_VER_PTR(t)->dimensions = reinterpret_cast<uint32_t*>(
-      const_cast<uint8_t*>(tensor->shape()->Data()));
+  QNN_VER_PTR(t)->dimensions = const_cast<uint32_t*>(tensor->shape()->data());
   QNN_VER_PTR(t)->clientBuf.dataSize = tensor->data()->size();
   QNN_VER_PTR(t)->clientBuf.data = is_io_tensor(QNN_VER_PTR(t)->type)
       ? nullptr

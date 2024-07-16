@@ -99,7 +99,7 @@ class ThreadPool {
   std::queue<JobInfo> jobs_;
   std::mutex mutex_;
   std::condition_variable cv_;
-  bool quit_;
+  bool stop_;
 };
 
 class KVCachedMemory : public Memory {

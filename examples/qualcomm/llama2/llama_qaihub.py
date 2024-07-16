@@ -28,7 +28,7 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 
 
-if __name__ == "__main__":
+def main():
     parser = setup_common_args_and_variables()
 
     parser.add_argument(
@@ -106,28 +106,27 @@ if __name__ == "__main__":
         use_multi_contexts=True,
     )
     compiler_specs = generate_qnn_executorch_compiler_spec(
-        soc_model=eval(f"QcomChipset.{args.model}"),
+        soc_model=getattr(QcomChipset, args.model),
         backend_options=backend_options,
         is_from_context_binary=True,
     )
 
     if args.pre_gen_pte is None:
         # create custom operators as context loader
-        bundle_programs = []
-        for i, target in enumerate(target_names):
-            file_name = f"{args.context_binaries}/{target}"
-            bundle_programs.append(from_context_binary(file_name, f"ctx_loader_{i}"))
+        bundle_programs = [
+            from_context_binary(f"{args.context_binaries}/{target}", f"ctx_loader_{i}")
+            for i, target in enumerate(target_names)
+        ]
         # lower with QnnBackend
-        lowered_modules = []
-        for prog in bundle_programs:
-            lowered_modules.append(
-                to_backend("QnnBackend", prog["edge_program"], compiler_specs)
-            )
+        lowered_modules = [
+            to_backend("QnnBackend", prog["edge_program"], compiler_specs)
+            for prog in bundle_programs
+        ]
         # setup spill-fill buffer for relieving runtime memory usage
         canonicalize_program(lowered_modules)
         # export pte files
         pte_name, pte_files = "qaihub_llama7b", []
-        for i, _ in enumerate(target_names):
+        for i in range(len(target_names)):
             memory_planning_pass = MemoryPlanningPass(
                 memory_planning_algo="greedy",
                 alloc_graph_input=False,
@@ -147,7 +146,7 @@ if __name__ == "__main__":
         pte_files = [f"{args.pre_gen_pte}/{pte_name}_{i}.pte" for i in range(4)]
 
     if args.compile_only:
-        exit(0)
+        return
 
     def get_logit_encoding(path_to_last_shard: str):
         with open(f"{args.context_binaries}/{path_to_last_shard}", "rb") as f:
@@ -230,3 +229,7 @@ if __name__ == "__main__":
     adb.push(files=custom_files)
     adb.execute(custom_runner_cmd=runner_cmds)
     adb.pull(args.artifact, callback=post_process)
+
+
+if __name__ == "__main__":
+    main()

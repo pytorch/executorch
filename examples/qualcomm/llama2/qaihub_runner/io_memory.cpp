@@ -30,6 +30,7 @@ void* Memory::get_mutable_ptr() {
 
 std::vector<Tensor> Memory::get_input_tensors(int shard_index) {
   std::vector<Tensor> ret;
+  ret.reserve(input_tensors_.size());
   for (TensorImpl* impl : input_tensors_[shard_index]) {
     ret.emplace_back(Tensor(impl));
   }
@@ -38,6 +39,7 @@ std::vector<Tensor> Memory::get_input_tensors(int shard_index) {
 
 std::vector<Tensor> Memory::get_output_tensors(int shard_index) {
   std::vector<Tensor> ret;
+  ret.reserve(output_tensors_.size());
   for (TensorImpl* impl : output_tensors_[shard_index]) {
     ret.emplace_back(Tensor(impl));
   }
@@ -48,8 +50,8 @@ BertMemory::BertMemory(
     const std::vector<std::string>& pos_embs_path,
     std::vector<std::shared_ptr<Module>>& modules)
     : Memory(pos_embs_path, modules) {
-  auto deleter = [](void* ptr) { delete static_cast<IO*>(ptr); };
-  data_ptr_ = std::unique_ptr<void, decltype(deleter)>(new IO, deleter);
+  data_ptr_ = std::unique_ptr<void, std::function<void(void*)>>(
+      new IO, [](void* ptr) { delete static_cast<IO*>(ptr); });
 }
 
 void BertMemory::prepare_io(
@@ -133,20 +135,20 @@ void BertMemory::prepare_io(
   // [O] kv_cache for shard1,2,3,4
   for (int offset = 0, shard_index = 0; shard_index < 4;
        offset += 8, shard_index++) {
-    for (int i = 0; i < 8; ++i) { // layers per shard
-      for (int j = 0; j < 2; ++j) { // k_cache + v_cache
-        for (int k = 0; k < 32; ++k) { // heads
-          int index = 64 * i + j * 32 + k;
+    for (int layer = 0; layer < 8; ++layer) {
+      for (int cache_group = 0; cache_group < 2; ++cache_group) {
+        for (int head = 0; head < 32; ++head) {
+          int index = 64 * layer + cache_group * 32 + head;
           Result<TensorInfo> kv_cache =
               methods_meta[shard_index]->output_tensor_meta(index);
           std::vector<std::unique_ptr<TensorImpl>>& cache =
-              (j == 0 ? v_cache_ : k_cache_);
+              (cache_group == 0 ? v_cache_ : k_cache_);
           cache.emplace_back(std::make_unique<TensorImpl>(
               kv_cache->scalar_type(),
               kv_cache->sizes().size(),
               const_cast<TensorImpl::SizesType*>(kv_cache->sizes().data()),
-              j == 0 ? ptr->v_cache[i + offset][k]
-                     : ptr->k_cache[i + offset][k],
+              cache_group == 0 ? ptr->v_cache[layer + offset][head]
+                               : ptr->k_cache[layer + offset][head],
               const_cast<TensorImpl::DimOrderType*>(
                   kv_cache->dim_order().data())));
           output_tensors_[shard_index].push_back(cache.back().get());
@@ -202,8 +204,8 @@ KVCachedMemory::KVCachedMemory(
     const std::vector<std::string>& pos_embs_path,
     std::vector<std::shared_ptr<Module>>& modules)
     : Memory(pos_embs_path, modules) {
-  auto deleter = [](void* ptr) { delete static_cast<IO*>(ptr); };
-  data_ptr_ = std::unique_ptr<void, decltype(deleter)>(new IO, deleter);
+  data_ptr_ = std::unique_ptr<void, std::function<void(void*)>>(
+      new IO, [](void* ptr) { delete static_cast<IO*>(ptr); });
   futures_ = std::vector<std::future<void>>(thread_pool_.num_workers());
 }
 
@@ -288,19 +290,20 @@ void KVCachedMemory::prepare_io(
   // [I] kv_cache for shard1,2,3,4
   for (int offset = 0, shard_index = 0, v_stride = 1023 * 128; shard_index < 4;
        offset += 8, shard_index++) {
-    for (int i = 0; i < 8; ++i) { // layers per shard
-      for (int j = 0; j < 2; ++j) { // k_cache + v_cache
-        for (int k = 0; k < 32; ++k) { // heads
+    for (int layer = 0; layer < 8; ++layer) {
+      for (int cache_group = 0; cache_group < 2; ++cache_group) {
+        for (int head = 0; head < 32; ++head) {
           // bypass hidden_state(input_ids), atten_mask, pos_cos, pos_sin
-          int index = 64 * i + j * 32 + k + 4;
+          int index = 64 * layer + cache_group * 32 + head + 4;
           Result<TensorInfo> kv_cache =
               methods_meta[shard_index]->input_tensor_meta(index);
           std::vector<std::unique_ptr<TensorImpl>>& cache =
-              (j == 0 ? k_cache_in_ : v_cache_in_);
+              (cache_group == 0 ? k_cache_in_ : v_cache_in_);
 
-          void* cache_ptr = (j == 0)
-              ? static_cast<void*>(ptr->k_cache[i + offset][k])
-              : static_cast<void*>(ptr->v_cache[i + offset] + k * v_stride);
+          void* cache_ptr = (cache_group == 0)
+              ? static_cast<void*>(ptr->k_cache[layer + offset][head])
+              : static_cast<void*>(
+                    ptr->v_cache[layer + offset] + head * v_stride);
 
           cache.emplace_back(std::make_unique<TensorImpl>(
               kv_cache->scalar_type(),
@@ -317,19 +320,19 @@ void KVCachedMemory::prepare_io(
   // [O] kv_cache for shard1,2,3,4
   for (int offset = 0, shard_index = 0, v_stride = 1023 * 128; shard_index < 4;
        offset += 8, shard_index++) {
-    for (int i = 0; i < 8; ++i) { // layers per shard
-      for (int j = 0; j < 2; ++j) { // k_cache + v_cache
-        for (int k = 0; k < 32; ++k) { // heads
-          int index = 64 * i + j * 32 + k;
+    for (int layer = 0; layer < 8; ++layer) {
+      for (int cache_group = 0; cache_group < 2; ++cache_group) {
+        for (int head = 0; head < 32; ++head) {
+          int index = 64 * layer + cache_group * 32 + head;
           Result<TensorInfo> kv_cache =
               methods_meta[shard_index]->output_tensor_meta(index);
           std::vector<std::unique_ptr<TensorImpl>>& cache =
-              (j == 0 ? v_cache_out_ : k_cache_out_);
+              (cache_group == 0 ? v_cache_out_ : k_cache_out_);
 
-          void* cache_ptr = (j == 0)
+          void* cache_ptr = (cache_group == 0)
               ? static_cast<void*>(
-                    ptr->v_cache[i + offset] + (k + 1) * v_stride)
-              : static_cast<void*>(ptr->k_cache_out[i + offset][k]);
+                    ptr->v_cache[layer + offset] + (head + 1) * v_stride)
+              : static_cast<void*>(ptr->k_cache_out[layer + offset][head]);
 
           cache.emplace_back(std::make_unique<TensorImpl>(
               kv_cache->scalar_type(),
@@ -393,11 +396,11 @@ void KVCachedMemory::update_io(
     // update output tensors of v_cache, 256 is the number of kvs per shard
     int shard = lr->start >> 8, offset = shard << 8;
     int start = lr->start - offset, end = lr->end - offset;
-    for (int i = start; i < end; i += 32) {
-      for (int j = 0; j < 2; ++j) {
-        for (int k = 0; k < 32; ++k) {
+    for (int cache_stride = start; cache_stride < end; cache_stride += 32) {
+      for (int cache_group = 0; cache_group < 2; ++cache_group) {
+        for (int head = 0; head < 32; ++head) {
           // k, v are placed interleaved
-          int index = (i << 1) + (j << 5) + k;
+          int index = (cache_stride << 1) + (cache_group << 5) + head;
           ET_CHECK_MSG(
               modules_[shard]->set_output_data_ptr(
                   output_tensors[shard][index], index) == Error::Ok,
@@ -426,7 +429,7 @@ void KVCachedMemory::update_io(
   }
 }
 
-ThreadPool::ThreadPool() : quit_(false) {
+ThreadPool::ThreadPool() : stop_(false) {
   size_t hc = (std::thread::hardware_concurrency() + 3) / 4;
   // maximum number should be divisible by head dimension which equals to 32
   num_workers_ = min(32, hc * 4);
@@ -434,9 +437,9 @@ ThreadPool::ThreadPool() : quit_(false) {
     threads_.emplace_back([this]() {
       while (1) {
         std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return !jobs_.empty() || quit_; });
+        cv_.wait(lock, [this] { return !jobs_.empty() || stop_; });
 
-        if (quit_ && jobs_.empty())
+        if (stop_ && jobs_.empty())
           return;
 
         JobInfo job_info(std::move(jobs_.front()));
@@ -450,7 +453,7 @@ ThreadPool::ThreadPool() : quit_(false) {
 
 ThreadPool::~ThreadPool() {
   std::unique_lock<std::mutex> lock(mutex_);
-  quit_ = true;
+  stop_ = true;
   lock.unlock();
   cv_.notify_all();
   for (auto& thread : threads_) {

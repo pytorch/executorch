@@ -329,7 +329,7 @@ Error QnnManager::AllocateTensor() {
     std::shared_ptr<TensorWrapper> tensor_wrapper =
         CreateTensorWrapper(output_tensors[i]);
     tensor_wrapper->UpdateQnnTensorMeta(output_tensors[i]);
-    std::string tensor_name = tensor_wrapper->GetName();
+    const std::string& tensor_name = tensor_wrapper->GetName();
     // this is required by identifying shared buffer mechanism
     // info might be missed if context binary came from qnn_converter
     if (tensor_name.find("output_") == std::string::npos) {

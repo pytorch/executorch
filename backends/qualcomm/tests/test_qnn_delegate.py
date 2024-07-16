@@ -1360,7 +1360,7 @@ class TestQNNFloatingPointUtils(TestQNN):
                 module,
                 tuple(
                     torch.randn(size=v.shape, dtype=v.dtype)
-                    for _, v in bundle_program["inputs"].items()
+                    for v in bundle_program["inputs"].values()
                 ),
                 lowered_module,
             )
@@ -1528,7 +1528,7 @@ class TestQNNQuantizedUtils(TestQNN):
                 module,
                 tuple(
                     torch.randn(size=v.shape, dtype=v.dtype)
-                    for _, v in bundle_program["inputs"].items()
+                    for v in bundle_program["inputs"].values()
                 ),
                 lowered_module,
             )

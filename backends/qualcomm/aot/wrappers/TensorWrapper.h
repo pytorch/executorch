@@ -79,7 +79,7 @@ class TensorWrapper {
     return QNN_VER_PTR(tensor_)->quantizeParams;
   }
 
-  std::string GetName() const {
+  const std::string& GetName() const {
     return qnn_tensor_name_;
   };
 

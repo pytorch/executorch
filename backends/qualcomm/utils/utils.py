@@ -228,6 +228,16 @@ def capture_program(
 
 
 def from_context_binary(ctx_path: str, op_name: str):
+    def implement_op(custom_op, op_name, outputs):
+        @torch.library.impl(
+            custom_op, str(op_name), dispatch_key="CompositeExplicitAutograd"
+        )
+        def op_impl(inputs: List[torch.Tensor]):
+            return tuple(
+                torch.zeros(tuple(v.shape), device="meta", dtype=v.dtype)
+                for v in outputs.values()
+            )
+
     def build_graph(inputs, outputs):
         # custom op declaration
         inputs_str = "Tensor[] inputs"
@@ -235,30 +245,17 @@ def from_context_binary(ctx_path: str, op_name: str):
         custom_op = Library(OpContextLoader.namespace, "FRAGMENT")
         custom_op.define(func_proto)
         # custom op implementation
-        args_name = "inputs"
-        inputs_str = f"{args_name}: List[torch.Tensor]"
-        outputs_str = "return " + ", ".join(
-            [
-                f"torch.zeros({tuple(v.shape)}, device='meta', dtype={v.dtype})"
-                for _, v in outputs.items()
-            ]
-        )
-        exec(
-            f'@torch.library.impl(custom_op, "{op_name}", '
-            'dispatch_key="CompositeExplicitAutograd")'
-            f"\ndef {op_name}_impl({inputs_str}):"
-            f"\n\t{outputs_str}",
-        )
+        implement_op(custom_op, op_name, outputs)
+
         # model architecture mimicking context binary
-        inputs_str = ", ".join(k for k in inputs.keys())
-        exec(
-            "class Model(torch.nn.Module):"
-            f"\n\tdef forward(self, {inputs_str}):"
-            f"\n\t\t{args_name} = [{inputs_str}]"
-            f"\n\t\treturn torch.ops.{OpContextLoader.namespace}.{op_name}.default({args_name})",
-        )
-        model = eval("Model()")
-        prog = torch.export.export(model, tuple(v for _, v in inputs.items()))
+        class Model(torch.nn.Module):
+            def forward(self, *inputs):
+                return getattr(
+                    getattr(torch.ops, OpContextLoader.namespace), op_name
+                ).default(inputs)
+
+        model = Model()
+        prog = torch.export.export(model, tuple(inputs.values()))
         # bookkeeping for variables' life cycle
         return {
             "custom_op": custom_op,
@@ -292,7 +289,7 @@ def from_context_binary(ctx_path: str, op_name: str):
     assert qnn_mgr.Init().value == 0, "failed to load context binary"
     qnn_mgr.AllocateTensor()
     dtype_map = {}
-    for type_map in [QNN_QUANT_TYPE_MAP, QNN_TENSOR_TYPE_MAP]:
+    for type_map in (QNN_QUANT_TYPE_MAP, QNN_TENSOR_TYPE_MAP):
         for k, v in type_map.items():
             dtype_map.setdefault(v, k)
     inputs = build_tensor(qnn_mgr.GetGraphInputs(), dtype_map)

@@ -53,18 +53,17 @@ def generate_context_binary(
     assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
     assert ndk, "ANDROID_NDK_ROOT was not found in environment variable"
 
-    inputs_tup = tuple(v for _, v in inputs.items())
+    inputs_tup = tuple(inputs.values())
     jit_module = torch.jit.trace(module, inputs_tup)
     torch.jit.save(jit_module, f"{artifact_dir}/jit_module.pt")
 
     # input data
     if quantized:
-        input_list, idx = [], 0
+        input_list = []
         for name, data in inputs.items():
             file_name = f"{artifact_dir}/{name}.raw"
             data.detach().numpy().tofile(file_name)
             input_list.append(file_name)
-            idx += 1
 
         with open(f"{artifact_dir}/input_list.txt", "w") as f:
             f.write(" ".join(input_list))
@@ -72,7 +71,7 @@ def generate_context_binary(
     # flow of qnn tools
     target = "x86_64-linux-clang"
     inputs_str = [
-        f"-d '{k}' " + str(tuple(v.shape)).replace(" ", "")[1:-1]
+        f"-d '{k}' {str(tuple(v.shape)).replace(' ', '')[1:-1]}"
         for k, v in inputs.items()
     ]
     cmds = [
