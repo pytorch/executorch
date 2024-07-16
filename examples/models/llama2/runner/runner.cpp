@@ -277,7 +277,8 @@ Result<torch::executor::Tensor> Runner::run_model_step(
     // latest.
     tokens.mutable_data_ptr<int64_t>()[0] = input_token;
 
-    Result<std::vector<EValue>> outputs_res = module_->forward({tokens, start_pos});
+    Result<std::vector<EValue>> outputs_res =
+        module_->forward({tokens, start_pos});
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_CHECK_MSG(
         outputs_res.get().size() == 1,
