@@ -62,8 +62,8 @@ class TestVerification(unittest.TestCase):
         class Op1(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.a = torch.ones(2, 2)
-                self.b = 2 * torch.ones(2, 2)
+                self.register_buffer("a", torch.ones(2, 2))
+                self.register_buffer("b", 2 * torch.ones(2, 2))
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 for _ in range(10):
@@ -74,8 +74,8 @@ class TestVerification(unittest.TestCase):
         class Op2(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.a = torch.ones(2, 2)
-                self.b = 2 * torch.ones(2, 2)
+                self.register_buffer("a", torch.ones(2, 2))
+                self.register_buffer("b", 2 * torch.ones(2, 2))
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 for _ in range(10):
@@ -120,8 +120,8 @@ class TestVerification(unittest.TestCase):
         class Op2(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.a = torch.ones(2, 2)
-                self.b = 2 * torch.ones(2, 2)
+                self.register_buffer("a", torch.ones(2, 2))
+                self.register_buffer("b", 2 * torch.ones(2, 2))
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 for _ in range(10):

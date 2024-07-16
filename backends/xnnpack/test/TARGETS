@@ -59,6 +59,7 @@ runtime.python_test(
         "fbsource//third-party/pypi/transformers:transformers",  # @manual
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/examples/models/llama2:llama2_model",
+        "//executorch/examples/models/mobilebert:mobilebert_model",
         "//pytorch/audio/src:torchaudio_core",
         "//pytorch/vision:torchvision",  # @manual
     ],
