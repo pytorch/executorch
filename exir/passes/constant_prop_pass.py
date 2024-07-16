@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from collections import OrderedDict
 from typing import cast, Mapping, Optional
 
@@ -124,6 +126,10 @@ def get_propagated_const_tensor_dict(
 
         if not is_const(
             node.args,
+            exported_program,
+            const_node_to_tensor,
+        ) or not is_const(
+            node.kwargs,
             exported_program,
             const_node_to_tensor,
         ):

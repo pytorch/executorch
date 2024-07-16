@@ -485,7 +485,7 @@ if(MAX_KERNEL_NUM)
   )
 endif()
 
-if(EXECUTORCH_BUILD_PYBIND)
+if(EXECUTORCH_BUILD_PYBIND AND APPLE)
   # shared version
   add_library(
     executorch_no_prim_ops_shared SHARED ${_executorch_no_prim_ops__srcs}

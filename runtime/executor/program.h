@@ -239,8 +239,9 @@ class Program final {
   /**
    * Loads a segment by index.
    *
-   * @param[in] index The sement index to load. This should be an index into
-   *     the Program.segments list.
+   * @param[in] SegmentInfo Struct containing an index to load from the
+   * Program.segments list. The other fields of the struct, such as
+   * `segment_type` and `descriptor`, need to also be correct.
    *
    * @returns The data as a FreeableBuffer, if the index is valid.
    * @retval Error::NotFound The program does not contain any segments or the
@@ -249,7 +250,8 @@ class Program final {
    *     DataLoader: The Program.segment table is inconsistent, or the
    *     data cannot be accessed.
    */
-  __ET_NODISCARD Result<FreeableBuffer> LoadSegment(size_t index) const;
+  __ET_NODISCARD Result<FreeableBuffer> LoadSegment(
+      const DataLoader::SegmentInfo& segment_info) const;
 
  private:
   Program(
