@@ -13,7 +13,7 @@
 #if ET_USE_TIKTOKEN
 #include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 #else /* BPE */
-#include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
+#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #endif /* ET_USE_TIKTOKEN*/
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
