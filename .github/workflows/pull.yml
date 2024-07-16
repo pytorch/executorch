@@ -92,9 +92,6 @@ jobs:
           echo "ls -l"
           ls -l
 
-          echo "pwd: "
-          pwd
-
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/qualcomm/scripts/build.sh
           echo "Finishing installing qnn."
         else
