@@ -42,16 +42,3 @@ def define_common_targets():
             "resources/**",
         ]),
     )
-
-    runtime.python_test(
-        name = "test_bpe_tokenizer_py",
-        srcs = [
-            "test_bpe_tokenizer.py",
-        ],
-        visibility = [
-            "//executorch/examples/...",
-        ],
-        deps = [
-            "//executorch/examples/models/llama2/tokenizer:tokenizer_py_lib",
-        ],
-    )

@@ -10,13 +10,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from executorch.examples.models.llama2.tokenizer.tokenizer import Tokenizer
+from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
 
 
 class TestTokenizer(unittest.TestCase):
-    @patch(
-        "executorch.examples.models.llama2.tokenizer.tokenizer.SentencePieceProcessor"
-    )
+    @patch("executorch.extension.llm.tokenizer.tokenizer.SentencePieceProcessor")
     def test_export(self, mock_sp):
         # Set up the mock SentencePieceProcessor
         mock_sp.return_value.vocab_size.return_value = 0

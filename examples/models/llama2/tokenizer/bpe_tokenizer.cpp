@@ -24,12 +24,6 @@ static int compare_tokens(const void* a, const void* b) {
 }
 
 BPETokenizer::BPETokenizer() : Tokenizer() {
-  vocab_size_ = kDefaultVocabSize;
-  vocab_ = std::make_unique<char*[]>(kDefaultVocabSize);
-  vocab_scores_ = std::make_unique<float[]>(kDefaultVocabSize);
-  sorted_vocab_ = std::make_unique<TokenIndex[]>(kDefaultVocabSize);
-  bos_tok_ = kDefaultBosTokenId;
-  eos_tok_ = kDefaultEosTokenId;
   for (int i = 0; i < 256; i++) {
     byte_pieces_[i * 2] = (unsigned char)i;
     byte_pieces_[i * 2 + 1] = '\0';

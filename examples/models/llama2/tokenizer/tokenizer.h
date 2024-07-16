@@ -28,7 +28,7 @@ namespace executor {
 
 class Tokenizer {
  public:
-  explicit Tokenizer() : initialized_(false) {}
+  explicit Tokenizer() {}
   virtual ~Tokenizer() {}
 
   virtual Error load(const std::string& tokenizer_path) = 0;
@@ -69,9 +69,10 @@ class Tokenizer {
   }
 
  protected:
-  bool initialized_;
-  int32_t vocab_size_;
-  uint64_t bos_tok_, eos_tok_;
+  bool initialized_ = false;
+  int32_t vocab_size_ = 0;
+  uint64_t bos_tok_ = 0;
+  uint64_t eos_tok_ = 0;
 };
 
 } // namespace executor
