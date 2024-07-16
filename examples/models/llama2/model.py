@@ -165,6 +165,21 @@ the checkpoint format to avoid generating faulty models.
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )
+        # Estimate the number of parameters based on the model args
+        params_size = (
+            (
+                2 * pow(model_args.dim, 2)
+                + 2
+                * (model_args.n_heads / model_args.n_kv_heads)
+                * pow(model_args.dim, 2)
+                + model_args.dim * model_args.multiple_of * 3
+            )
+            * model_args.n_layers
+            + 2 * model_args.dim * model_args.vocab_size / 1000000
+        )
+        print(
+            f"Estimated model parameters (Not consider MoE: Mixture-of-Expert): {params_size}M params"
+        )
         if kwargs.get("fairseq2", False):
             print("Using fairseq2 checkpoint")
             checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
