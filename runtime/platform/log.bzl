@@ -17,6 +17,6 @@ def et_log_level():
 def get_et_logging_flags():
     if et_logging_enabled():
         # On by default.
-        return ["-DET_MIN_LOG_LEVEL=" + et_log_level()]
+        return ["-DET_LOG_ENABLED=1", "-DET_MIN_LOG_LEVEL=" + et_log_level()]
     else:
         return ["-DET_LOG_ENABLED=0"]
