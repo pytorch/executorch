@@ -97,6 +97,45 @@ class ETDumpGen : public EventTracer {
       const EValue& evalue,
       LoggedEValueType evalue_type =
           LoggedEValueType::kIntermediateOutput) override;
+  /**
+   * Log an intermediate tensor output from a delegate.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const Tensor& output) override;
+
+  /**
+   * Log an intermediate tensor array output from a delegate.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const ArrayRef<Tensor> output) override;
+
+  /**
+   * Log an intermediate int output from a delegate.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const int& output) override;
+
+  /**
+   * Log an intermediate bool output from a delegate.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const bool& output) override;
+
+  /**
+   * Log an intermediate double output from a delegate.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const double& output) override;
   void set_debug_buffer(Span<uint8_t> buffer);
   etdump_result get_etdump_data();
   size_t get_num_blocks();
@@ -115,6 +154,16 @@ class ETDumpGen : public EventTracer {
   void check_ready_to_add_events();
   int64_t create_string_entry(const char* name);
   size_t copy_tensor_to_debug_buffer(exec_aten::Tensor tensor);
+
+  /**
+   * Templated helper function used to log various types of intermediate output.
+   * Supported types include tensor, tensor array, int, bool and double.
+   */
+  template <typename T>
+  void log_intermediate_output_delegate_helper(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const T& output);
 };
 
 } // namespace executor

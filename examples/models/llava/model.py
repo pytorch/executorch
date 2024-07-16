@@ -8,48 +8,43 @@
 
 import math
 
-import os
 import re
 
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import requests
 import torch
 import torchvision
-from executorch.examples.models.llama2.llama_transformer import Transformer, ModelArgs
-from executorch.examples.models.llama2.source_transformation.sdpa import replace_sdpa_with_custom_op
+from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
+from executorch.examples.models.llama2.source_transformation.sdpa import (
+    replace_sdpa_with_custom_op,
+)
 from executorch.examples.models.model_base import EagerModelBase
 from llava.constants import (
     DEFAULT_IM_END_TOKEN,
     DEFAULT_IM_START_TOKEN,
     DEFAULT_IMAGE_TOKEN,
-    IGNORE_INDEX,
     IMAGE_PLACEHOLDER,
     IMAGE_TOKEN_INDEX,
 )
 
-from llava.conversation import conv_templates, SeparatorStyle
+from llava.conversation import conv_templates
 
-from llava.eval.run_llava import eval_model, load_images, process_images
 from llava.mm_utils import get_model_name_from_path, tokenizer_image_token
 
 from llava.model.builder import load_pretrained_model
 
 from llava.model.llava_arch import LlavaMetaForCausalLM
 
-from llava.model.multimodal_encoder.builder import build_vision_tower
 from llava.model.multimodal_encoder.clip_encoder import CLIPVisionTower
 from PIL import Image
 
 from torch import nn
 from torch.export import Dim
-from torch.nn import functional as F
-from torchvision.transforms import v2
-from torchvision.transforms._functional_tensor import resize
 
 from transformers import LlamaForCausalLM
+
 
 @dataclass
 class PreprocessConfig:
@@ -289,7 +284,11 @@ class LlavaModel(EagerModelBase):
             self.image_processor.image_std,
             self.image_processor.rescale_factor,
         )
-        self.image_path = Path(__file__).with_name("view.jpg")
+        self.image = Image.open(
+            requests.get(
+                "https://llava-vl.github.io/static/images/view.jpg", stream=True
+            ).raw
+        )
         self.args = type(
             "Args",
             (),
@@ -299,7 +298,6 @@ class LlavaModel(EagerModelBase):
                 "model_name": get_model_name_from_path(self.model_path),
                 "query": "What are the things I should be cautious about when I visit here?",
                 "conv_mode": None,
-                "image_file": "./view.jpg",
                 "sep": ",",
                 "temperature": 0,
                 "top_p": None,
@@ -316,19 +314,19 @@ class LlavaModel(EagerModelBase):
 
         model_name = get_model_name_from_path(self.model_path)
         prompt = get_prompt(self.args.query, False, model_name)
-        input_ids = (
+        self.input_ids = (
             tokenizer_image_token(
                 prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
             )
             .unsqueeze(0)
             .cpu()
         )
-        index = torch.where(input_ids == IMAGE_TOKEN_INDEX)[1]
-        prompt_before_image = input_ids[:, :index]
+        index = torch.where(self.input_ids == IMAGE_TOKEN_INDEX)[1]
+        prompt_before_image = self.input_ids[:, :index]
         # print(prompt_before_image.shape)
-        prompt_after_image = input_ids[:, index + 1 :]
+        prompt_after_image = self.input_ids[:, index + 1 :]
         # print(prompt_after_image.shape)
-        imagr = torchvision.io.read_image(self.image_path)
+        imagr = torchvision.transforms.functional.pil_to_tensor(self.image)
         ratio = (
             max(imagr.shape[1], imagr.shape[2])
             / self.image_processor.crop_size["height"]

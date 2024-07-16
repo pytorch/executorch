@@ -114,8 +114,8 @@ class Conv2d(torch.nn.Module):
         return x
 
 
-conv2d_2x2_3x1x40x40_nobias = Conv2d(
-    in_channels=1,
+conv2d_2x2_3x2x40x40_nobias = Conv2d(
+    in_channels=2,
     out_channels=3,
     kernel_size=(2, 2),
     stride=1,
@@ -221,7 +221,7 @@ two_conv2d = Conv2d(
 # Shenanigan to get a nicer output when test fails. With unittest it looks like:
 # FAIL: test_conv2d_tosa_BI_2_3x3_1x3x12x12_st2_pd1
 testsuite = [
-    ("2x2_3x1x40x40_nobias", conv2d_2x2_3x1x40x40_nobias),
+    ("2x2_3x2x40x40_nobias", conv2d_2x2_3x2x40x40_nobias),
     ("3x3_1x3x256x256_st1", conv2d_3x3_1x3x256x256_st1),
     ("3x3_1x3x12x12_st2_pd1", conv2d_3x3_1x3x12x12_st2_pd1),
     ("1x1_1x2x128x128_st1", conv2d_1x1_1x2x128x128_st1),
@@ -236,7 +236,7 @@ testsuite = [
 # Check: https://review.mlplatform.org/plugins/gitiles/ml/ethos-u/ethos-u-vela/+/refs/heads/main/SUPPORTED_OPS.md
 #     IFM Tensor batch size must be 1 - [FULLY_CONNECTED, RESHAPE, SHAPE, SLICE, SOFTMAX, SPLIT, SPLIT_V, SQUEEZE, STRIDED_SLICE, UNPACK]
 testsuite_u55 = testsuite.copy()
-testsuite_u55.remove(("2x2_3x1x40x40_nobias", conv2d_2x2_3x1x40x40_nobias))
+testsuite_u55.remove(("2x2_3x2x40x40_nobias", conv2d_2x2_3x2x40x40_nobias))
 testsuite_u55.remove(("5x5_3x2x128x128_st1", conv2d_5x5_3x2x128x128_st1))
 
 # Fails when enabling CompileSpec.set_quantize_io(True). MLETORCH-191.

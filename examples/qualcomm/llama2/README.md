@@ -23,7 +23,7 @@ wget "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt"
 wget "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model"
 
 # tokenizer.bin:
-python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 
 # params.json:
 echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
