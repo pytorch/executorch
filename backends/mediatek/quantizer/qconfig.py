@@ -13,7 +13,6 @@ from typing import Optional
 import torch
 
 from torch.ao.quantization.observer import (
-    HistogramObserver,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
     PerChannelMinMaxObserver,
@@ -22,7 +21,6 @@ from torch.ao.quantization.quantizer import QuantizationSpec
 
 @unique
 class Precision(IntEnum):
-    # TODO: Add sym/asym setting
     A16W16 = 0
     A16W8 = 1
     A16W4 = 2

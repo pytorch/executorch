@@ -7,7 +7,7 @@ import argparse
 import struct
 from tqdm import tqdm
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from executorch.backends.mediatek.neuropilot import NeuropilotPartitioner, NeuropilotQuantizer, Precision
+from executorch.backends.mediatek import NeuropilotPartitioner, NeuropilotQuantizer, Precision
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch import exir
 from datasets import load_dataset

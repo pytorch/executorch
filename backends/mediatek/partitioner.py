@@ -6,8 +6,8 @@
 
 import torch
 
-from typing import final, List
-from executorch.backends.mediatek.neuropilot.preprocess import NeuropilotBackend
+from typing import final, Callable, List, Optional, Tuple
+from executorch.backends.mediatek.preprocess import NeuropilotBackend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -22,7 +22,23 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 from mtk_converter.python.converters.pytorch import importer_v2
 
 
+def _get_node_type(node: torch.fx.Node) -> str:
+    op = node.target
+    try:
+        op_name = op.name()
+    except AttributeError:
+        # built-in function getitem
+        op_name = op.__name__ if callable(op) else str(op)
+    return op_name
+
+
 class NeuropilotOperatorsSupport(OperatorSupportBase):
+
+    def __init__(self, ops_to_skip: Optional[set] = None) -> None:
+        if ops_to_skip is None:
+            ops_to_skip = set()
+
+        self._ops_to_skip = ops_to_skip
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
         # Handle 'call_function' only cause 'placeholder' and 'output' cannot be tagged.
@@ -30,27 +46,42 @@ class NeuropilotOperatorsSupport(OperatorSupportBase):
         if node.op != "call_function":
             return False
 
-        # TODO: Add mechansim to ignore some specific nodes
-        is_supported = importer_v2.is_fx_node_supported(node)
-        return is_supported
+        op_type = _get_node_type(node)
+        if op_type in self._ops_to_skip:
+            print(f'[Neuropilot Backend] The {op_type} operator is skipped.')
+            return False
+
+        return importer_v2.is_fx_node_supported(node)
 
 
 @final
 class NeuropilotPartitioner(Partitioner):
 
-    def __init__(self, compile_spec: List[CompileSpec]) -> None:
+    def __init__(self, compile_spec: List[CompileSpec], ops_to_skip: Optional[set] = None) -> None:
         self.delegation_spec = DelegationSpec(NeuropilotBackend.__name__, compile_spec)
+        self._ops_to_skip = ops_to_skip
+
+    def ops_to_not_decompose(
+        self, ep: ExportedProgram,
+    ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
+        ops_not_decompose = [
+            torch.ops.aten.pixel_shuffle.default,
+            torch.ops.aten.upsample_bilinear2d.default,
+            torch.ops.aten.upsample_bilinear2d.vec,
+            torch.ops.aten.upsample_nearest2d.default,
+            torch.ops.aten.upsample_nearest2d.vec,
+        ]
+        return (ops_not_decompose, None)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
-        # Run the CapabilityBasedPartitioner to return the largest possible
-        partition_tags = {}
-
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            NeuropilotOperatorsSupport(),
+            NeuropilotOperatorsSupport(self._ops_to_skip),
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()
+
+        partition_tags = {}
         for partition in partition_list:
             for node in partition.nodes:
                 tag = f'tag{partition.id}'

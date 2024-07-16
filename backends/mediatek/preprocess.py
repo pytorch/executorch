@@ -25,7 +25,7 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 import mtk_converter
 import mtk_neuron
 
-SKIP_COMPILE_SPEC_KEYS = {'HighAddr', 'ImportForever'}
+SKIP_COMPILE_SPEC_KEYS = {'ImportForever'}
 
 
 @final
@@ -42,12 +42,16 @@ class NeuropilotBackend(BackendDetails):
         num_inputs = len(edge_program.graph_signature.user_inputs)
         num_outputs = len(edge_program.graph_signature.user_outputs)
 
-        compile_options = ['--arch=mdla5.1', '--relax-fp32']
+        # This default compile options are only for mt6989 SOC
+        compile_options = ['--arch=mdla5.1,edpa1.0', '--relax-fp32', '--opt=3']
         for spec in module_compile_spec:
             if spec.key in SKIP_COMPILE_SPEC_KEYS:
                 continue
-            value = spec.value.decode('utf-8')
-            compile_options.append(f'--{spec.key}={value}')
+            if spec.value is None:
+                compile_options.append(f'--{spec.key}')
+            else:
+                value = spec.value.decode('utf-8')
+                compile_options.append(f'--{spec.key}={value}')
 
         converter = mtk_converter.PyTorchV2Converter.from_exported_program(edge_program)
         converter.quantize = True

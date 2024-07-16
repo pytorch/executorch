@@ -12,9 +12,7 @@ from torch._export import capture_pre_autograd_graph
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 
-from torch.ao.quantization.quantizer import (
-    QuantizationAnnotation,
-)
+from torch.ao.quantization.quantizer import QuantizationAnnotation
 from torch.ao.quantization.quantizer.utils import (
     _annotate_input_qspec_map,
     _annotate_output_qspec,
