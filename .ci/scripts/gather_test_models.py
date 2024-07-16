@@ -83,7 +83,7 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     We put higher priority and fast models to pull request and rest to push.
     """
     if event == "pull_request":
-        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit", "llava_encoder"]
+        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit", "llava"]
     return True
 
 
@@ -93,7 +93,7 @@ def model_should_run_on_target_os(model: str, target_os: str) -> bool:
     For example, a big model can be disabled in macos due to the limited macos resources.
     """
     if target_os == "macos":
-        return model not in ["llava_encoder"]
+        return model not in ["llava"]
     return True
 
 
