@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/xnnpack/threadpool/threadpool.h>
-#include <executorch/backends/xnnpack/threadpool/threadpool_guard.h>
+#include <executorch/extension/threadpool/threadpool.h>
+#include <executorch/extension/threadpool/threadpool_guard.h>
 #include <executorch/runtime/platform/assert.h>
 #include <algorithm>
 
