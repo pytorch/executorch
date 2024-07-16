@@ -58,9 +58,7 @@ class App {
     uint32_t NITER;
 
     auto bench = [&](uint32_t ngrp, uint32_t nreg) {
-      size_t len = sizeof(float);
-      StorageBuffer buffer(context(), vkapi::kFloat, len);
-      ParamsBuffer params(context(), int32_t(len));
+      StorageBuffer buffer(context(), vkapi::kFloat, 1);
       vkapi::PipelineBarrier pipeline_barrier{};
 
       auto shader_name = "reg_count_" + std::to_string(nreg);
@@ -74,8 +72,7 @@ class App {
             {SV(NITER)},
             VK_NULL_HANDLE,
             0,
-            buffer.buffer(),
-            params.buffer());
+            buffer.buffer());
       });
       return time;
     };
@@ -167,9 +164,8 @@ class App {
     uint32_t NITER;
 
     auto bench = [&](int stride) {
-      size_t len = sizeof(float);
       StorageBuffer in_buf(context(), vkapi::kFloat, BUF_SIZE);
-      StorageBuffer out_buf(context(), vkapi::kFloat, len);
+      StorageBuffer out_buf(context(), vkapi::kFloat, 1);
       vkapi::PipelineBarrier pipeline_barrier{};
 
       auto shader_name = "buf_cacheline_size";
@@ -213,6 +209,82 @@ class App {
 
     std::cout << "BufTopLevelCachelineSize," << cacheline_size << std::endl;
   }
+
+  void buf_bandwidth() {
+    std::cout << "\n------ Memory Bandwidth ------" << std::endl;
+
+    // TODO: Make these values configurable
+
+    // Maximum memory space read - 128MB
+    // For regular devices, bandwidth plateaus at less memory than this, so more
+    // is not needed.
+    const size_t RANGE = 128 * 1024 * 1024;
+    // Cache lines flushed
+    const uint32_t NFLUSH = 4;
+    // Number of loop unrolls. Changing this value requires an equal change in
+    // buf_bandwidth.yaml
+    const uint32_t NUNROLL = 16;
+    // Number of iterations. Increasing this value reduces noise in exchange for
+    // higher latency.
+    const uint32_t NITER = 10;
+    // Vector dimensions (vec4)
+    const uint32_t VEC_WIDTH = 4;
+    const size_t VEC_SIZE = VEC_WIDTH * sizeof(float);
+    // Number of vectors that fit in the selected memory space
+    const size_t NVEC = RANGE / VEC_SIZE;
+    // Number of memory reads per thread
+    const uint32_t NREAD_PER_THREAD = NUNROLL * NITER;
+    // Number of threads needed to read all vectors
+    const int NTHREAD = NVEC / NREAD_PER_THREAD;
+    // Occupy all threads
+    const uint local_x = nthread_logic_;
+    // Ensure that global is a multiple of local, and distribute across all SMs
+    const uint global_x = (NTHREAD / local_x * local_x) * sm_count_ * NFLUSH;
+
+    auto bench = [&](size_t access_size) {
+      // Number of vectors that fit in this iteration
+      const size_t nvec_access = access_size / VEC_SIZE;
+      const uint32_t addr_mask = nvec_access - 1;
+
+      StorageBuffer in_buf(context(), vkapi::kFloat, RANGE / sizeof(float));
+      StorageBuffer out_buf(
+          context(), vkapi::kFloat, VEC_WIDTH * nthread_logic_);
+      vkapi::PipelineBarrier pipeline_barrier{};
+
+      auto shader_name = "buf_bandwidth";
+
+      auto time = benchmark_on_gpu(shader_name, 10, [&]() {
+        context()->submit_compute_job(
+            VK_KERNEL_FROM_STR(shader_name),
+            pipeline_barrier,
+            {global_x, 1, 1},
+            {local_x, 1, 1},
+            {SV(NITER), SV(addr_mask), SV(local_x)},
+            VK_NULL_HANDLE,
+            0,
+            in_buf.buffer(),
+            out_buf.buffer());
+      });
+
+      const size_t SIZE_TRANS = global_x * NREAD_PER_THREAD * VEC_SIZE;
+      auto gbps = SIZE_TRANS * 1e-3 / time;
+      std::cout << "Memory bandwidth accessing \t" << access_size
+                << "\tB unique data is \t" << gbps << " \tgbps (\t" << time
+                << "\tus)" << std::endl;
+      return gbps;
+    };
+
+    MaxStats<double> max_bandwidth{};
+    MinStats<double> min_bandwidth{};
+    for (size_t access_size = VEC_SIZE; access_size < RANGE; access_size *= 2) {
+      double gbps = bench(access_size);
+      max_bandwidth.push(gbps);
+      min_bandwidth.push(gbps);
+    }
+
+    std::cout << "MaxBandwidth (GB/s)," << max_bandwidth << std::endl;
+    std::cout << "MinBandwidth (GB/s)," << min_bandwidth << std::endl;
+  }
 };
 
 int main(int argc, const char** argv) {
@@ -221,6 +293,7 @@ int main(int argc, const char** argv) {
   // TODO: Allow user to skip tests
   app.reg_count();
   app.buf_cacheline_size();
+  app.buf_bandwidth();
 
   return 0;
 }

@@ -39,6 +39,61 @@
 #include <cstdint>
 
 template <typename T>
+class MinStats {
+  T mn_ = std::numeric_limits<T>::max();
+
+ public:
+  typedef T value_t;
+
+  // Returns true if the value has been updated.
+  bool push(T value) {
+    if (mn_ > value) {
+      mn_ = value;
+      return true;
+    } else {
+      return false;
+    }
+  }
+  inline bool has_value() const {
+    return mn_ != std::numeric_limits<T>::max();
+  }
+  operator T() const {
+    return mn_;
+  }
+  friend std::ostream& operator<<(std::ostream& out, const MinStats<T>& x) {
+    out << (T)(x);
+    return out;
+  }
+};
+template <typename T>
+class MaxStats {
+  T mx_ = -std::numeric_limits<T>::max();
+
+ public:
+  typedef T value_t;
+
+  // Returns true if the value has been updated.
+  bool push(T value) {
+    if (mx_ < value) {
+      mx_ = value;
+      return true;
+    } else {
+      return false;
+    }
+  }
+  inline bool has_value() const {
+    return mx_ != -std::numeric_limits<T>::max();
+  }
+  operator T() const {
+    return mx_;
+  }
+  friend std::ostream& operator<<(std::ostream& out, const MaxStats<T>& x) {
+    out << (T)(x);
+    return out;
+  }
+};
+
+template <typename T>
 class AvgStats {
   T sum_ = 0;
   uint64_t n_ = 0;
