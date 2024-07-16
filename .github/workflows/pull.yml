@@ -85,9 +85,9 @@ jobs:
         if [[ "${MODE}" == "qnn" ]]; then
           curl -Ls "https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.23.0.24.06.24.zip" --output v2.23.0.24.06.24.zip
           unzip v2.23.0.24.06.24.zip
-          local EXECUTORCH_ROOT=$(pwd)
-          local ANDROID_NDK=/opt/ndk
-          local QNN_SDK_ROOT=qairt/2.23.0.240531
+          export EXECUTORCH_ROOT=$(pwd)
+          export ANDROID_NDK=/opt/ndk
+          export QNN_SDK_ROOT=qairt/2.23.0.240531
 
           echo "ls -l"
           ls -l
