@@ -19,7 +19,7 @@ from executorch.backends.cadence.aot.passes import (
 )
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
 from executorch.backends.cadence.aot.quantizer.quantizer import (
-    CadenceGenericQuantizer,
+    CadenceAtenQuantizer,
     CadenceQuantizer,
 )
 from executorch.backends.cadence.aot.utils import model_is_quantized
@@ -64,7 +64,7 @@ def quantize_pt2(
 
     # Get patterns and apply fusion of dq -> op -> q to qop
     patterns = [
-        assert_is_instance(q, CadenceGenericQuantizer).pattern
+        assert_is_instance(q, CadenceAtenQuantizer).pattern
         for q in quantizer.quantizers
     ]
     QuantFusion(patterns)(converted_model)
