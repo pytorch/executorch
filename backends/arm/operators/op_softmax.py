@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,6 +11,7 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa_utils import tosa_shape
 from serializer.tosa_serializer import TosaOp
 
 
@@ -30,8 +31,9 @@ class SoftmaxVisitor(NodeVisitor):
         is_quant_node: bool,
     ) -> None:
         input_name = inputs[0].name
-        input_shape = inputs[0].shape
-        dim_value = inputs[1].number
+        dim_order = inputs[0].dim_order
+        input_shape = tosa_shape(inputs[0].shape, dim_order)
+        dim_value = dim_order.index(inputs[1].number)
 
         ## softmax = exp(logits - max(logits)) / reduce_sum(exp(logits - max(logits)), -1)
         # FP32
