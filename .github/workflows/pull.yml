@@ -95,9 +95,9 @@ jobs:
           echo "pwd: "
           pwd
 
-          echo "EXECUTORCH_ROOT: $EXECUTORCH_ROOT"
-          echo "ANDROID_NDK: $ANDROID_NDK"
-          echo "QNN_SDK_ROOT: $QNN_SDK_ROOT"
+          echo "EXECUTORCH_ROOT: ${EXECUTORCH_ROOT}"
+          echo "ANDROID_NDK: ${ANDROID_NDK}"
+          echo "QNN_SDK_ROOT: ${QNN_SDK_ROOT}"
 
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/qualcomm/scripts/build.sh
           echo "Finishing installing qnn."
