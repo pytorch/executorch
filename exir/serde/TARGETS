@@ -8,11 +8,14 @@ python_library(
     name = "serialize",
     srcs = [
         "export_serialize.py",
+        "schema.py",
+        "schema_check.py",
         "serialize.py",
+        "union.py",
+        "upgrade.py",
     ],
     deps = [
         "fbsource//third-party/pypi/sympy:sympy",
-        ":schema",
         "//caffe2:torch",
         "//executorch/exir:delegate",
         "//executorch/exir:lowered_backend_module",
@@ -21,15 +24,5 @@ python_library(
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/backend:lib",
         "//executorch/exir/dialects/edge:lib",
-    ],
-)
-
-python_library(
-    name = "schema",
-    srcs = [
-        "schema.py",
-    ],
-    deps = [
-        "//caffe2:torch",
     ],
 )
