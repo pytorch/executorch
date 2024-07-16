@@ -160,6 +160,81 @@ def get_qnn_quantizer(
             "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
         )
 
+    def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
+        """
+        This function is specific for matmul op 16a8w.
+        """
+        from executorch.backends.qualcomm.quantizer.quantizer import (
+            get_16a8w_qnn_ptq_config,
+            get_default_8bit_qnn_ptq_config,
+            QuantizationConfig,
+        )
+        from executorch.backends.qualcomm.quantizer.utils import QUANT_ANNOTATION_KEY
+        from torch.ao.quantization.quantizer import (
+            QuantizationAnnotation,
+            SharedQuantizationSpec,
+        )
+        from torch.fx import Node
+
+        def annotate_matmul(node: Node, quantization_config: QuantizationConfig):
+            input_qspec_map = {}
+            input_act = node.args[0]
+            input_spec = quantization_config.input_activation
+            input_qspec_map[input_act] = input_spec
+
+            input_act1 = node.args[1]
+            input_spec1 = quantization_config.weight
+            input_qspec_map[input_act1] = input_spec1
+
+            node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=quantization_config.output_activation,
+                _annotated=True,
+            )
+        def annotate_index_put(node: Node, quantization_config: QuantizationConfig) -> None:
+            input = node.args[0]
+            value = node.args[2]
+
+            input_qspec_map = {}
+            input_qspec_map[input] = quantization_config.input_activation
+            input_qspec_map[value] = SharedQuantizationSpec((input, node))
+
+            node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=SharedQuantizationSpec((input, node)),
+                _annotated=True,
+            )
+
+        def annotate_single_in_single_out(
+            node: Node, quantization_config: QuantizationConfig
+        ) -> None:
+
+            input_qspec_map = {}
+            input_act = node.args[0]
+            input_qspec_map[input_act] = quantization_config.input_activation
+
+            node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=quantization_config.output_activation,
+                _annotated=True,
+            )
+
+        def annotate_matmul_input1(node: Node):
+            quantization_config_8a8w = get_default_8bit_qnn_ptq_config(act_symmetric=True)
+            while isinstance(node, Node) and node.op == "call_function":
+                if node.target == torch.ops.aten.index_put_.default:
+                    annotate_index_put(node, quantization_config_8a8w)
+                    break
+                annotate_single_in_single_out(node, quantization_config_8a8w)
+                node = node.args[0]
+
+        quantization_config_16a8w = get_16a8w_qnn_ptq_config()
+
+        for node in gm.graph.nodes:
+            if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
+                annotate_matmul(node, quantization_config_16a8w)
+                annotate_matmul_input1(node.args[1])
+    
     backend, quant_config = pt2e_quantize.split("_")
     assert (
         backend == "qnn"
@@ -168,16 +243,17 @@ def get_qnn_quantizer(
     qnn_quantizer.set_per_channel_conv_quant(enable=True)
     qnn_quantizer.set_per_channel_linear_quant(enable=True)
     # more custom quantization are supported including 16a4w etc. default to 8bit quantized
-    custom_annotations = ()
+
     if quant_config == "8a8w":
         quant_dtype = QuantDtype.use_8a8w
-        pass
+        custom_annotations = ()
     elif quant_config == "16a16w":
         quant_dtype = QuantDtype.use_16a16w
         qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
         qnn_quantizer.set_bit16_op_quant_config(
             get_default_16bit_qnn_ptq_config(act_observer=MinMaxObserver)
         )
+        custom_annotations = ()
     elif quant_config == "16a4w":
         quant_dtype = QuantDtype.use_16a4w
         qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
@@ -185,6 +261,7 @@ def get_qnn_quantizer(
             get_16a4w_qnn_ptq_config(act_observer=MinMaxObserver)
         )
         qnn_quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
+        custom_annotations = (annotate_matmul_16a8w, )
     else:
         raise AssertionError(
             f"No support for quant type {quant_config}. Support 8a8w, 16a16w and 16a4w."
