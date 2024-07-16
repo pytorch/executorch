@@ -98,17 +98,7 @@ class EXIRATenDialectVerifier(EXIRATenDialectVerifierBase):
     def check_valid_op(self, op):
         if isinstance(op, OpOverload):
             # TODO These special ops should be removable easily.
-            if (
-                op.namespace
-                in [
-                    "quantized_decomposed",
-                    "boltnn_nimble",
-                    "nimble",
-                    "quantized",
-                    "dim_order_ops",
-                ]
-                or op in self._get_exception_list()
-            ):
+            if op.namespace != "aten" or op in self._get_exception_list():
                 return
             if torch.Tag.core not in op.tags and torch.Tag.view_copy not in op.tags:
                 # NOTE(qihan): whether view_copy operators are marked as canonical is still under
