@@ -78,7 +78,7 @@ function(generate_bindings_for_kernels)
   # Executorch runtime.
   execute_process(
     COMMAND
-      "${PYTHON_EXECUTABLE}" -c "from distutils.sysconfig import get_python_lib;print(get_python_lib())"
+      "${PYTHON_EXECUTABLE}" -c "import sysconfig; lib_path = sysconfig.get_paths()['purelib']; print(lib_path)"
     OUTPUT_VARIABLE site-packages-out
     ERROR_VARIABLE site-packages-out-error
     RESULT_VARIABLE site-packages-result
