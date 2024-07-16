@@ -83,14 +83,10 @@ jobs:
         TARGET=${{ matrix.target }}
 
         if [[ "${MODE}" == "qnn" ]]; then
-          curl -Ls "https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.23.0.24.06.24.zip" --output v2.23.0.24.06.24.zip
-          unzip v2.23.0.24.06.24.zip
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
           export EXECUTORCH_ROOT=$(pwd)
           export ANDROID_NDK=/opt/ndk
-          export QNN_SDK_ROOT=qairt/2.23.0.240531
-
-          echo "ls -l"
-          ls -l
+          export QNN_SDK_ROOT=/opt/qnn/qairt/2.23.0.240531
 
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/qualcomm/scripts/build.sh
           echo "Finishing installing qnn."
