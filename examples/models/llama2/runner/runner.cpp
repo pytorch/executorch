@@ -11,7 +11,7 @@
 
 #include <executorch/examples/models/llama2/runner/runner.h>
 #if ET_USE_TIKTOKEN
-#include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
+#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 #else /* BPE */
 #include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
 #endif /* ET_USE_TIKTOKEN*/
@@ -81,7 +81,7 @@ Error Runner::load() {
 
   // Load tokenizer
 #if ET_USE_TIKTOKEN
-  tokenizer_ = std::make_unique<Tiktoken>();
+  tokenizer_ = get_tiktoken_for_llama();
 #else
   tokenizer_ = std::make_unique<BPETokenizer>();
 #endif
