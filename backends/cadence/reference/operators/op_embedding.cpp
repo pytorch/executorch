@@ -7,7 +7,6 @@
  */
 
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include "kernels.h"
 
 namespace torch {
 namespace executor {
@@ -31,7 +30,7 @@ void embedding_out(
 
   for (int i = 0, e = indices.numel(); i < e; i++) {
     // memcpy(dest, src, nbytes);
-    impl::HiFi::kernels::memcpy(
+    memcpy(
         out_data, w_data + nbytes_per_entry * indices_ptr[i], nbytes_per_entry);
     out_data += nbytes_per_entry;
   }
