@@ -1077,6 +1077,15 @@ Error Method::execute_instruction() {
         // debugging. This is a failure path, and it doesn't matter if it's a
         // little slow. Do the same for DelegateCall errors.
       }
+      // Log all the arguments of the kernel call. Ideally we'd only like to
+      // log the outputs of the kernel, but currently we cannot know from the
+      // arguments which are the inputs and which are the outputs, so we just
+      // log everything.
+#ifdef ET_EVENT_TRACER_ENABLED
+      for (size_t i = 0; i < args.size(); i++) {
+        internal::event_tracer_log_evalue(event_tracer_, *args[i]);
+      }
+#endif
     } break;
     case executorch_flatbuffer::InstructionArguments::DelegateCall: {
       EXECUTORCH_SCOPE_PROF("DELEGATE_CALL");
