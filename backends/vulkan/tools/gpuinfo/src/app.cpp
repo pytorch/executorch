@@ -210,9 +210,8 @@ class App {
     std::cout << "BufTopLevelCachelineSize," << cacheline_size << std::endl;
   }
 
-  void buf_bandwidth() {
-    std::cout << "\n------ Memory Bandwidth ------" << std::endl;
-
+ private:
+  void _bandwidth(std::string memtype) {
     // TODO: Make these values configurable
 
     // Maximum memory space read - 128MB
@@ -251,7 +250,13 @@ class App {
           context(), vkapi::kFloat, VEC_WIDTH * nthread_logic_);
       vkapi::PipelineBarrier pipeline_barrier{};
 
-      auto shader_name = "buf_bandwidth";
+      auto memtype_lower = memtype;
+      std::transform(
+          memtype_lower.begin(),
+          memtype_lower.end(),
+          memtype_lower.begin(),
+          [](unsigned char c) { return std::tolower(c); });
+      auto shader_name = "buf_bandwidth_" + memtype_lower;
 
       auto time = benchmark_on_gpu(shader_name, 10, [&]() {
         context()->submit_compute_job(
@@ -268,7 +273,7 @@ class App {
 
       const size_t SIZE_TRANS = global_x * NREAD_PER_THREAD * VEC_SIZE;
       auto gbps = SIZE_TRANS * 1e-3 / time;
-      std::cout << "Memory bandwidth accessing \t" << access_size
+      std::cout << memtype << " bandwidth accessing \t" << access_size
                 << "\tB unique data is \t" << gbps << " \tgbps (\t" << time
                 << "\tus)" << std::endl;
       return gbps;
@@ -282,8 +287,21 @@ class App {
       min_bandwidth.push(gbps);
     }
 
-    std::cout << "MaxBandwidth (GB/s)," << max_bandwidth << std::endl;
-    std::cout << "MinBandwidth (GB/s)," << min_bandwidth << std::endl;
+    std::cout << "Max" << memtype << "Bandwidth (GB/s)," << max_bandwidth
+              << std::endl;
+    std::cout << "Min" << memtype << "Bandwidth (GB/s)," << min_bandwidth
+              << std::endl;
+  }
+
+ public:
+  void buf_bandwidth() {
+    std::cout << "\n------ Memory Bandwidth ------" << std::endl;
+    _bandwidth("Buffer");
+  }
+
+  void ubo_bandwidth() {
+    std::cout << "\n------ UBO Bandwidth ------" << std::endl;
+    _bandwidth("UBO");
   }
 };
 
@@ -294,6 +312,7 @@ int main(int argc, const char** argv) {
   app.reg_count();
   app.buf_cacheline_size();
   app.buf_bandwidth();
+  app.ubo_bandwidth();
 
   return 0;
 }

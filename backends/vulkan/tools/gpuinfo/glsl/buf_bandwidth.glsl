@@ -12,7 +12,11 @@
 
 layout(std430) buffer;
 
-${layout_declare_buffer(0, "r", "A", DTYPE, "PRECISION", False)}
+$if MEMTYPE == "ubo":
+    ${layout_declare_ubo(0, "vec4", "A")}
+$else:
+    ${layout_declare_buffer(0, "r", "A", DTYPE, "PRECISION", False)}
+
 ${layout_declare_buffer(1, "w", "B", DTYPE, "PRECISION", False)}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
