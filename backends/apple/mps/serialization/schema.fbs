@@ -441,6 +441,10 @@ union MPSNodeUnion {
 
     // Range ops
     MPSArange,
+
+    // Quantized linear algebra ops
+    MPSInt8PackedMM: _MPSNode3x1,
+
 }
 
 table MPSNode {
@@ -450,7 +454,8 @@ table MPSNode {
 
 // taken from executorch
 // Data buffer abstraction.
-table Buffer {
+// Deprecated
+table Buffer { 
   storage:[ubyte] (force_align: 16);
 }
 
@@ -459,7 +464,20 @@ table MPSTensor {
   num_dims:int;
   dims:[int];
   constant_buffer_size:int;
-  constant_buffer:Buffer;
+  constant_buffer:Buffer; // deprecated
+  segment_offset:uint64;
+}
+
+table DataSegment {
+  // Segment offsets are relative to the segment base offset provided in
+  // the extended file header. Segments will typically be aligned in a
+  // way to make it possible to use mmap() to load them.
+  offset: uint64;
+
+  // The size in bytes of valid data starting at the offset. The segment
+  // data may be followed by padding before the segment that follows it,
+  // to make it easier to use mmap().
+  size: uint64;
 }
 
 table MPSGraph {
@@ -473,6 +491,8 @@ table MPSGraph {
   constant_ids:[int];
 
   graph_type:OpType;
+
+  constant_segment:DataSegment;
 }
 
 root_type MPSGraph;

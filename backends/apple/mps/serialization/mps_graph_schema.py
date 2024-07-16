@@ -389,6 +389,14 @@ class MPSAddmm(MPSNode3x1):
 
 
 ##
+## Linear algebra ops
+##
+@dataclass
+class MPSInt8PackedMM(MPSNode3x1):
+    pass
+
+
+##
 ## Constant ops
 ##
 @dataclass
@@ -697,6 +705,7 @@ MPSNodeUnion = Union[
     # Linear algebra ops
     MPSMatMul,
     MPSAddmm,
+    MPSInt8PackedMM,
     # Constant ops
     MPSFull,
     MPSFullLike,
@@ -764,6 +773,7 @@ class MPSTensor:
     dims: List[int]
     constant_buffer_size: int
     constant_buffer: Buffer
+    segment_offset: int
 
 
 @dataclass
@@ -775,3 +785,9 @@ class MPSGraph:
     output_ids: List[int]
     constant_ids: List[int]
     graph_type: OpType
+    constant_segment: DataSegment
+
+@dataclass
+class DataSegment:
+    offset: int
+    size: int
