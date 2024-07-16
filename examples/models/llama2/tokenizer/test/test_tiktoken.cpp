@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
+#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
@@ -21,7 +21,7 @@ class TiktokenExtensionTest : public Test {
  public:
   void SetUp() override {
     torch::executor::runtime_init();
-    tokenizer_ = std::make_unique<Tiktoken>();
+    tokenizer_ = get_tiktoken_for_llama();
     modelPath_ = std::getenv("RESOURCES_PATH") +
         std::string("/test_tiktoken_tokenizer.model");
   }
@@ -34,7 +34,7 @@ class MultimodalTiktokenV5ExtensionTest : public Test {
  public:
   void SetUp() override {
     torch::executor::runtime_init();
-    tokenizer_ = std::make_unique<Tiktoken>(MULTIMODAL);
+    tokenizer_ = get_tiktoken_for_llama(MULTIMODAL);
     modelPath_ = std::getenv("RESOURCES_PATH") +
         std::string("/test_tiktoken_tokenizer.model");
   }
@@ -144,5 +144,34 @@ TEST_F(TiktokenExtensionTest, TokenizerDecodeOutOfRangeFails) {
   EXPECT_EQ(out.error(), Error::NotSupported);
 }
 
+TEST_F(TiktokenExtensionTest, ConstructionWithInvalidBOSIndex) {
+  // gtest death test doesn't work on iOS:
+  // https://github.com/google/googletest/issues/2834
+#if !GTEST_OS_IOS
+  EXPECT_EXIT(
+      std::make_unique<Tiktoken>(
+          std::make_unique<std::vector<std::string>>(
+              std::vector<std::string>{"<|end_of_text|>"}),
+          1,
+          0),
+      ::testing::KilledBySignal(SIGABRT),
+      "");
+#endif
+}
+
+TEST_F(TiktokenExtensionTest, ConstructionWithInvalidEOSIndex) {
+  // gtest death test doesn't work on iOS:
+  // https://github.com/google/googletest/issues/2834
+#if !GTEST_OS_IOS
+  EXPECT_EXIT(
+      std::make_unique<Tiktoken>(
+          std::make_unique<std::vector<std::string>>(
+              std::vector<std::string>{"<|begin_of_text|>"}),
+          0,
+          1),
+      ::testing::KilledBySignal(SIGABRT),
+      "");
+#endif
+}
 } // namespace executor
 } // namespace torch

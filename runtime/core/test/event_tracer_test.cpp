@@ -88,6 +88,51 @@ class DummyEventTracer : public EventTracer {
     (void)metadata_len;
   }
 
+  void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const Tensor& output) override {
+    (void)name;
+    (void)delegate_debug_index;
+    (void)output;
+  }
+
+  void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const ArrayRef<Tensor> output) override {
+    (void)name;
+    (void)delegate_debug_index;
+    (void)output;
+  }
+
+  void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const int& output) override {
+    (void)name;
+    (void)delegate_debug_index;
+    (void)output;
+  }
+
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const bool& output) override {
+    (void)name;
+    (void)delegate_debug_index;
+    (void)output;
+  }
+
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const double& output) override {
+    (void)name;
+    (void)delegate_debug_index;
+    (void)output;
+  }
+
   void log_evalue(const EValue& evalue, LoggedEValueType evalue_type) override {
     logged_evalue_ = evalue;
     logged_evalue_type_ = evalue_type;
