@@ -92,6 +92,63 @@ enum class Error : error_code_t {
 
 };
 
+static inline const char* error_message(enum Error err) {
+  switch ((int)err) {
+    case 0x00:
+      return "OK: Successful complextion.";
+
+    case 0x01:
+      return "Internal: An internal error occurred.";
+
+    case 0x02:
+      return "InvalidState: Status indicating the executor is in an invalid state.";
+
+    case 0x03:
+      return "EndOfMethod: Status indicating there are no more steps of execution to run";
+
+    case 0x10:
+      return "NotSupported: Operation is not supported in the current context.";
+
+    case 0x11:
+      return "NotImplemented: Operation is not yet implemented.";
+
+    case 0x12:
+      return "InvalidArgument: User provided an invalid argument.";
+
+    case 0x13:
+      return "InvalidType: Object is an invalid type for the operation.";
+
+    case 0x14:
+      return "OperatorMissing: Operator(s) missing in the operator registry.";
+
+    case 0x20:
+      return "NotFound: Requested resource could not be found.";
+
+    case 0x21:
+      return "MemoryAllocationFailed: ould not allocate the requested memory.";
+
+    case 0x22:
+      return "AccessFailed: Could not access a resource.";
+
+    case 0x23:
+      return "InvalidProgram: Error caused by the contents of a program.";
+
+    case 0x30:
+      return "DelegateInvalidCompatibility: Backend receives an incompatbledelegate version (Init Stage).";
+
+    case 0x31:
+      return "DelegateMemoryAllocationFailed: Backend fails to allocate memory (Init Stage).";
+
+    case 0x32:
+      return "DelegateInvalidHandle: The handle is invalid (Execute stage).";
+
+    default:
+      return "This should not happen";
+  }
+
+  return nullptr;
+};
+
 } // namespace executor
 } // namespace torch
 
