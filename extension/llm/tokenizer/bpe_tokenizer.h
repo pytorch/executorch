@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
+#include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <cstdint>
 
 namespace torch {

@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
+#include <executorch/extension/llm/tokenizer/tiktoken.h>
 
 namespace torch {
 namespace executor {
