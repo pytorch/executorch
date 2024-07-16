@@ -270,7 +270,6 @@ Result<torch::executor::Tensor> Runner::run_model_step(
     size_t max_seq_len) {
   // ET_LOG(Info, "Input token %" PRIu64, input_token);
   if (use_kv_cache_) {
-    std::vector<EValue> inputs;
     auto tokens = managed_tokens.get_aliasing_tensor();
     auto start_pos = managed_start_pos.get_aliasing_tensor();
 
@@ -278,11 +277,7 @@ Result<torch::executor::Tensor> Runner::run_model_step(
     // latest.
     tokens.mutable_data_ptr<int64_t>()[0] = input_token;
 
-    // inputs:[tokens, start_pos]
-    inputs.push_back(tokens);
-    inputs.push_back(start_pos);
-
-    Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
+    Result<std::vector<EValue>> outputs_res = module_->forward({tokens, start_pos});
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_CHECK_MSG(
         outputs_res.get().size() == 1,

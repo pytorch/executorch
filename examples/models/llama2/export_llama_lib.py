@@ -425,7 +425,7 @@ def _validate_args(args):
     if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
         raise ValueError(
             "Dynamic shape is not supported with coreml, MPS or qnn backends."
-            " Please us --disble_dynamic_shape."
+            " Please use --disable_dynamic_shape."
         )
 
 
