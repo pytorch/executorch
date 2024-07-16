@@ -19,6 +19,6 @@ def define_common_targets():
             "//executorch/extension/llm/tokenizer:tiktoken",
         ],
         visibility = [
-            "//executorch/examples/models/llama2/...",
+            "@EXECUTORCH_CLIENTS",
         ],
     )
