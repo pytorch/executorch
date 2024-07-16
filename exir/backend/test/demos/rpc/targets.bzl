@@ -29,6 +29,9 @@ def define_common_targets():
             "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/util:util",
         ] + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB,
+        visibility = [
+            "//executorch/runtime/backend/test/...",
+        ],
         exported_deps = [
             "//executorch/runtime/core:core",
         ],
@@ -40,6 +43,7 @@ def define_common_targets():
             "ExecutorBackendRegister.cpp",
         ],
         visibility = [
+            "//executorch/runtime/backend/test/...",
             "//executorch/exir/backend/test/...",
         ],
         deps = [

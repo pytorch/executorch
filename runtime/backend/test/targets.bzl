@@ -1,7 +1,15 @@
-def define_common_targets():
-    """Defines targets that should be shared between fbcode and xplat.
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-    The directory containing this targets.bzl file should also contain both
-    TARGETS and BUCK files that call this function.
-    """
-    pass
+def define_common_targets():
+    runtime.cxx_test(
+        name = "test_backend_compatibility",
+        srcs = [
+            "test_backend_compatibility.cpp",
+        ],
+        deps = [
+            "fbsource//third-party/googletest:gtest_main",
+            "//executorch/runtime/backend:interface",
+            "//executorch/exir/backend/test/demos/rpc:executor_backend",
+            "//executorch/exir/backend/test/demos/rpc:executor_backend_register",
+        ],
+    )

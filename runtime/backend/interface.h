@@ -28,10 +28,44 @@ struct SizedBuffer {
   size_t nbytes; // number of bytes of buffer
 };
 
+struct RuntimeInfo {
+  const char* key; // runtime info key like "runtime_version",
+  SizedBuffer value; // runtime info value like "v0.4.2",
+};
+
 struct CompileSpec {
   const char* key; // spec key
   SizedBuffer value; // spec value
 };
+
+/*
+
+The following is the interface for backend delegation on runtime side, which is
+responsible for taking the preprocessed delegated payload from AOT
+(ahead-of-time), further compiler and execution.
+
+Compatibility:
+Since each backend will have their own binary (the delegated payload) and
+runtime, and it's possible that the binary is not compatible with the current
+runtime, as known as the BC/FC compatibility. To allow the backend to run
+compatibility check for the binary against the backend runtime, here is the
+interface:
+
+AOT (Ahead-of-time):
+1. Implement the backend_details::is_compatible that takes the preprocessed
+binary, the serialized runtime info (from the runtime api) and the compile spec,
+which will be invoked by the high level is_compatible API from ExecuTorch.
+
+
+Runtime:
+1. There will be no is_compatible API in runtime. The expectation is that during
+init, if the binary is not compatible, return the error code
+Error::DelegateInvalidCompatibility
+
+2. Implement the PyTorchBackendInterface::runtime_info function, the serialized
+runtime info will be used together with backend_details::is_compatible such that
+the backend can compare the binary against the runtime.
+*/
 
 /**
  * An opaque handle managed by a backend. Typically points to a backend-private
@@ -42,6 +76,21 @@ using DelegateHandle = void;
 class PyTorchBackendInterface {
  public:
   virtual ~PyTorchBackendInterface() = 0;
+
+  /**
+   * Returns the runtime info from the backend. The key is the like
+   * runtime_version, supported binary version, available library, etc.
+   * The value is SizedBuffer which can be used to cover more data type,
+   * including int, float, str, etc. The runtime info is a serializable format
+   * and it can be used AOT to figure out whether the preprocessed bytes (the
+   * delegated payload) is compatible with the current backend.
+   */
+  // TODO: change this class to be virtual after we add the implementaion for
+  // each backend.
+  virtual Error runtime_info(
+      __ET_UNUSED ArrayRef<RuntimeInfo> runtime_info) const {
+    return Error::Ok;
+  }
 
   /**
    * Returns true if the backend is available to process delegation calls.
