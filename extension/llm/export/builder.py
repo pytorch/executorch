@@ -68,6 +68,7 @@ class LLMEdgeManager:
         enable_dynamic_shape: bool = False,
         verbose: bool = False,
         metadata: Optional[dict] = None,
+        dynamic_shapes: Optional[Any] = None,
     ):
         self.model = model
         # graph module returned from capture_pre_autograd_graph
@@ -84,6 +85,7 @@ class LLMEdgeManager:
         self.edge_manager: Optional[EdgeProgramManager] = None
         self.export_program = None
         self.output_dir = "."
+        self.dynamic_shapes = dynamic_shapes
         self._saved_pte_filename = None
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
@@ -130,14 +132,21 @@ class LLMEdgeManager:
         return self
 
     def _get_dynamic_shape(self) -> Any:
+        if self.dynamic_shapes:
+            return self.dynamic_shapes
+
         dim = torch.export.Dim("token_dim", max=self.max_seq_len - 1)
-        if self.use_kv_cache:
-            if self.enable_dynamic_shape:
-                return ({1: dim}, {0: dim})
-            else:
-                None
+
+        if not self.use_kv_cache:
+            # Only one input argument: tokens
+            self.dynamic_shapes = ({1: dim},)
+        elif self.enable_dynamic_shape:
+            # Two input arguments: tokens and input_pos but input_pos is static shape
+            self.dynamic_shapes = ({1: dim}, {0: 1})
         else:
-            return ({1: dim},)
+            # Two input arguments: tokens and input_pos but both are of static shape
+            self.dynamic_shapes = None
+        return self.dynamic_shapes
 
     def _get_edge_config(self) -> EdgeCompileConfig:
         edge_config = EdgeCompileConfig(
