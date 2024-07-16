@@ -9,7 +9,7 @@ set -ex
 
 install_qnn() {
   echo "Start installing qnn."
-  QNN_INSTALLATION_DIR=/opt/qnn
+  QNN_INSTALLATION_DIR=/pytorch/qnn
   mkdir -p "${QNN_INSTALLATION_DIR}"
 
   pushd /tmp
