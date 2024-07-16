@@ -169,6 +169,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
         Internal,
         "Fail to allocate tensor");
   }
+  processed->Free();
   return qnn_manager;
 }
 
