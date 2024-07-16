@@ -92,19 +92,6 @@ python_library(
 )
 
 python_library(
-    name = "control_flow",
-    srcs = [
-        "control_flow.py",
-    ],
-    deps = [
-        ":error",
-        ":tracer",
-        ":wrap",
-        "//caffe2:torch",
-    ],
-)
-
-python_library(
     name = "delegate",
     srcs = [
         "delegate.py",
@@ -154,7 +141,6 @@ python_library(
         "memory_planning.py",
     ],
     deps = [
-        ":control_flow",
         ":delegate",
         ":error",
         ":memory",
