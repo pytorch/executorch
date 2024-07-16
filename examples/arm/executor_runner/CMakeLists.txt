@@ -120,7 +120,7 @@ endif()
 # The arm_executor_runner executable
 add_executable(arm_executor_runner)
 
-target_sources(arm_executor_runner PRIVATE arm_executor_runner.cpp)
+target_sources(arm_executor_runner PRIVATE arm_executor_runner.cpp arm_perf_monitor.cpp)
 
 # Include the target's bare-metal linker script
 ethosu_eval_link_options(arm_executor_runner)
