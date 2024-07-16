@@ -480,7 +480,7 @@ class Transformer(nn.Module):
             )
         if tokens is not None and h is None:
             h = self.tok_embeddings(tokens)
-        _bsz, seqlen = h.shape[0], h.shape[1]
+        seqlen = h.shape[1]
 
         if self.use_kv_cache:
             assert (

@@ -101,8 +101,7 @@ can build it for a wide variety of target systems.
   to them.
 * The code is compatible with GCC and Clang, and has also been built with
   several proprietary embedded toolchains.
-* The repo provides both CMake and buck2 build systems to make integration
-  easier.
+* The repo provides CMake build system to make integration easier.
 
 #### Operating System Considerations
 

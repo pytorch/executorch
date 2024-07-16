@@ -24,6 +24,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
+using torch::executor::DataLoader;
 using torch::executor::Error;
 using torch::executor::FreeableBuffer;
 using torch::executor::Program;
@@ -87,8 +88,8 @@ class ProgramTestFriend final {
  public:
   __ET_NODISCARD static Result<FreeableBuffer> LoadSegment(
       const Program* program,
-      size_t index) {
-    return program->LoadSegment(index);
+      const DataLoader::SegmentInfo& segment_info) {
+    return program->LoadSegment(segment_info);
   }
 
   const static executorch_flatbuffer::Program* GetInternalProgram(
@@ -227,14 +228,18 @@ TEST_F(ProgramTest, UnalignedProgramDataFails) {
 }
 
 TEST_F(ProgramTest, LoadSegmentWithNoSegments) {
-  // Load a program with no segments.
+  // Load a program with no appended segments.
   Result<Program> program =
       Program::load(add_loader_.get(), kDefaultVerification);
   EXPECT_EQ(program.error(), Error::Ok);
 
-  // Loading a segment should fail.
+  // Loading a non-program segment should fail.
+  const auto segment_info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Backend,
+      /*segment_index=*/0,
+      "some-backend");
   Result<FreeableBuffer> segment =
-      ProgramTestFriend::LoadSegment(&program.get(), 0);
+      ProgramTestFriend::LoadSegment(&program.get(), segment_info);
   EXPECT_NE(segment.error(), Error::Ok);
 }
 
@@ -350,9 +355,13 @@ TEST_F(ProgramTest, LoadConstantSegment) {
   Result<Program> program = Program::load(&linear_loader.get());
   ASSERT_EQ(program.error(), Error::Ok);
 
-  // Load constant segment data.
+  // Load constant segment data, which is currently always in segment index
+  // zero.
+  const auto segment_info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Constant,
+      /*segment_index=*/0);
   Result<FreeableBuffer> segment =
-      ProgramTestFriend::LoadSegment(&program.get(), 0);
+      ProgramTestFriend::LoadSegment(&program.get(), segment_info);
   EXPECT_EQ(segment.error(), Error::Ok);
 
   const executorch_flatbuffer::Program* flatbuffer_program =
