@@ -349,13 +349,14 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
             additional_kwargs["verifiers"] = [
                 v.dialect for v in exported_program.verifiers
             ]
+        elif hasattr(exported_program, "dialect"):
+            additional_kwargs["dialect"] = exported_program.dialect
         return export_serialize.SerializedArtifact(
             schema.ExportedProgram(
                 graph_module=serialized_graph_module,
                 opset_version=self.opset_version,
                 range_constraints=serialized_range_constraints,
                 schema_version=SchemaVersion(-1, -1),
-                dialect=exported_program.dialect,
                 **additional_kwargs,
             ),
             export_serialize.serialize_torch_artifact(exported_program.state_dict),
@@ -681,6 +682,16 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
 
         dummy_g = torch.fx.Graph()
         dummy_g.output(())
+        serialized_ep = serialized_artifact.exported_program
+        additional_kwargs = {}
+        if hasattr(serialized_ep, "verifiers"):
+            additional_kwargs["verifiers"] = [
+                load_verifier(v) for v in serialized_ep.verifiers  # pyre-ignore
+            ]
+        elif hasattr(serialized_ep, "dialect"):
+            additional_kwargs["verifier"] = load_verifier(
+                serialized_ep.dialect  # pyre-ignore
+            )
         exported_program = exir.ExportedProgram(
             root=state_dict,
             graph=dummy_g,
@@ -688,9 +699,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             state_dict=state_dict,  # TODO(T157676982)
             range_constraints=range_constraints,
             module_call_graph=module_call_graph,
-            verifier=load_verifier(
-                serialized_artifact.exported_program.dialect  # pyre-ignore
-            ),
+            **additional_kwargs,
         )
         exported_program.graph_module.graph = graph_module.graph
         exported_program._graph_signature = res.signature

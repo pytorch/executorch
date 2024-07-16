@@ -57,5 +57,15 @@ TEST_F(TokenizerExtensionTest, TokenizerMetadataIsExpected) {
   EXPECT_EQ(tokenizer_->eos_tok(), 0);
 }
 
+TEST_F(TokenizerExtensionTest, SafeToDestruct) {
+  // Safe to destruct initialized tokenizer.
+  tokenizer_->load(modelPath_);
+  tokenizer_.reset();
+
+  // Safe to destruct uninitialized tokenizer.
+  tokenizer_ = std::make_unique<BPETokenizer>();
+  tokenizer_.reset();
+}
+
 } // namespace executor
 } // namespace torch

@@ -27,8 +27,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
-        include:
-          - build-tool: buck2
+          tiktoken: [OFF, ON]
     with:
       # NB: The example model dl3 requires lots of memory (T161064121)
       runner: linux.12xlarge
@@ -44,30 +43,30 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        BUILD_TOOL=${{ matrix.build-tool }}
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
         # Build Android library
+        export EXECUTORCH_USE_TIKTOKEN=${{ matrix.tiktoken }}
         bash build/build_android_library.sh
         # Build Android demo app
         bash build/test_android_ci.sh
 
-        mkdir -p artifacts-to-be-uploaded
-        mkdir -p artifacts-to-be-uploaded/arm64-v8a/
-        mkdir -p artifacts-to-be-uploaded/x86_64/
+        mkdir -p artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN
+        mkdir -p artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN/arm64-v8a/
+        mkdir -p artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN/x86_64/
         # Copy the jar to S3
-        cp extension/android/build/libs/executorch.jar artifacts-to-be-uploaded/
+        cp extension/android/build/libs/executorch.jar artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN/
         # Copy the app and its test suite to S3
-        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk artifacts-to-be-uploaded/
-        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk artifacts-to-be-uploaded/
+        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN/
+        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN/
         # Also copy the libraries
-        cp cmake-out-android-arm64-v8a/lib/*.a artifacts-to-be-uploaded/arm64-v8a/
-        cp cmake-out-android-arm64-v8a/extension/android/*.so artifacts-to-be-uploaded/arm64-v8a/
-        cp cmake-out-android-x86_64/lib/*.a artifacts-to-be-uploaded/x86_64/
-        cp cmake-out-android-x86_64/extension/android/*.so artifacts-to-be-uploaded/x86_64/
+        cp cmake-out-android-arm64-v8a/lib/*.a artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN/arm64-v8a/
+        cp cmake-out-android-arm64-v8a/extension/android/*.so artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN/arm64-v8a/
+        cp cmake-out-android-x86_64/lib/*.a artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN/x86_64/
+        cp cmake-out-android-x86_64/extension/android/*.so artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN/x86_64/
         # Copyp AAR to S3
-        cp executorch.aar artifacts-to-be-uploaded/
-        cp executorch-llama.aar artifacts-to-be-uploaded/
+        cp executorch.aar artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN/
+        cp executorch-llama.aar artifacts-to-be-uploaded/tiktoken_$EXECUTORCH_USE_TIKTOKEN/
 
   # Upload the app and its test suite to S3 so that they can be downloaded by the test job
   upload-artifacts:

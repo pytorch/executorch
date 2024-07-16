@@ -28,11 +28,13 @@ python_library(
         "compiler.py",
     ],
     deps = [
+        "fbsource//third-party/pypi/pyre-extensions:pyre-extensions",
         ":passes",
         ":utils",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
+        "//executorch/backends/transforms:decompose_sdpa",
         "//executorch/exir:lib",
     ],
 )
