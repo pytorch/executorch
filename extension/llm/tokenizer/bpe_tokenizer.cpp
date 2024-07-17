@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
+#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 
 #include <string>
 
