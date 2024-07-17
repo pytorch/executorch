@@ -1329,6 +1329,66 @@
                     <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">warning_str</span><span class="p">)</span>
 
 
+<span class="k">def</span> <span class="nf">_gen_edge_manager_for_partitioners</span><span class="p">(</span>
+    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">]],</span>
+    <span class="n">aten_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">],</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span>
+    <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generates EdgeProgramManager for subsequent lowering to the</span>
+<span class="sd">    partitioners specified by partitioner. The EdgeProgramManager is generated from</span>
+<span class="sd">    aten_programs.</span>
+
+<span class="sd">    Partitioners specify what nodes should not be decomposed from the original aten programs.</span>
+<span class="sd">    This is done through two passes of run_decompositions.</span>
+<span class="sd">        - First pass preserves all aten_targets specified by partitioners to preserve</span>
+<span class="sd">          them from nested decompositions</span>
+<span class="sd">        - Second pass uses check_op fn provided by partitioners to perform additional checks</span>
+<span class="sd">          on nodes with preserved aten targets. They are then replaces with transformed ops to</span>
+<span class="sd">          keep them through the second pass of decompositions</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ops_set_to_not_decompose_by_program</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># preserve all ops listed by all partitioners first</span>
+            <span class="n">all_ops_no_decomp</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">curr_partitioner</span> <span class="ow">in</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[]):</span>
+                <span class="n">curr_ops_no_decomp</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">curr_partitioner</span><span class="o">.</span><span class="n">ops_to_not_decompose</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
+                <span class="n">all_ops_no_decomp</span> <span class="o">|=</span> <span class="nb">set</span><span class="p">(</span><span class="n">curr_ops_no_decomp</span><span class="p">)</span>
+
+            <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span>
+                <span class="n">_default_decomposition_table</span><span class="p">(),</span> <span class="n">_preserve_ops</span><span class="o">=</span><span class="nb">tuple</span><span class="p">(</span><span class="n">all_ops_no_decomp</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="c1"># Among all the preserved aten ops, use the check_op_fn to do an additional</span>
+            <span class="c1"># check on which ops need to be preserved and which ops need to be decomposed</span>
+            <span class="c1"># Those which are truly preserved will be replaced with transformed ops</span>
+            <span class="n">ops_set_to_not_decompose_by_program</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_replace_aten_ops_with_transformed_ops</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">program</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">_default_decomposition_table</span><span class="p">())</span>
+
+        <span class="n">_restore_transformed_ops_to_aten_ops</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
+
+        <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">program</span>
+
+        <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_generate_edge_program</span><span class="p">(</span>
+            <span class="n">name</span><span class="p">,</span>
+            <span class="n">config</span><span class="p">,</span>
+            <span class="n">program</span><span class="p">,</span>
+            <span class="nb">list</span><span class="p">(</span><span class="n">ops_set_to_not_decompose_by_program</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[])),</span>
+        <span class="p">)</span>
+
+    <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">EdgeProgramManager</span><span class="p">(</span>
+        <span class="n">edge_programs</span><span class="p">,</span>
+        <span class="n">constant_methods</span><span class="p">,</span>
+        <span class="n">config</span><span class="p">,</span>
+        <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">()</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="o">*</span><span class="n">ops_set_to_not_decompose_by_program</span><span class="o">.</span><span class="n">values</span><span class="p">())),</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">edge_manager</span>
+
+
 <span class="k">def</span> <span class="nf">_to_edge_transform_and_lower</span><span class="p">(</span>
     <span class="n">programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
     <span class="n">transform_passes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
@@ -1379,8 +1439,6 @@
 <span class="sd">    Returns:</span>
 <span class="sd">        EdgeProgramManager</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">ops_set_to_not_decompose</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
-
     <span class="k">assert</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constant_methods</span><span class="p">,</span> <span class="n">EdgeCompileConfig</span><span class="p">)</span>
     <span class="n">config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">programs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
@@ -1393,31 +1451,8 @@
     <span class="k">else</span><span class="p">:</span>
         <span class="n">partitioner</span> <span class="o">=</span> <span class="p">{}</span>
 
-    <span class="n">ops_set_to_not_decompose_by_program</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="k">if</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">ops_set_to_not_decompose_by_program</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="n">_replace_aten_ops_with_transformed_ops</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">program</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">)</span>
-            <span class="p">)</span>
-        <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">_default_decomposition_table</span><span class="p">())</span>
-
-        <span class="n">_restore_transformed_ops_to_aten_ops</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
-
-        <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">program</span>
-
-        <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">_generate_edge_program</span><span class="p">(</span>
-            <span class="n">name</span><span class="p">,</span>
-            <span class="n">config</span><span class="p">,</span>
-            <span class="n">program</span><span class="p">,</span>
-            <span class="nb">list</span><span class="p">(</span><span class="n">ops_set_to_not_decompose_by_program</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="p">[])),</span>
-        <span class="p">)</span>
-
-    <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">EdgeProgramManager</span><span class="p">(</span>
-        <span class="n">edge_programs</span><span class="p">,</span>
-        <span class="n">constant_methods</span><span class="p">,</span>
-        <span class="n">config</span><span class="p">,</span>
-        <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">()</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="o">*</span><span class="n">ops_set_to_not_decompose_by_program</span><span class="o">.</span><span class="n">values</span><span class="p">())),</span>
+    <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">_gen_edge_manager_for_partitioners</span><span class="p">(</span>
+        <span class="n">partitioner</span><span class="p">,</span> <span class="n">aten_programs</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">constant_methods</span>
     <span class="p">)</span>
 
     <span class="k">if</span> <span class="n">transform_passes</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
