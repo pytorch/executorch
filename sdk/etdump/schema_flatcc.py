@@ -95,6 +95,8 @@ class Value:
 class DebugEvent:
     chain_index: int
     instruction_id: int
+    delegate_debug_id_int: Optional[int]
+    delegate_debug_id_str: Optional[str]
     debug_entry: Value
 
 
