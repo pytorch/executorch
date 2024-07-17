@@ -74,6 +74,7 @@ class XNNProfiler {
    * Submit the trace to the ET event tracer.
    */
   void submit_trace();
+  void submit_output() const;
 #endif
 };
 

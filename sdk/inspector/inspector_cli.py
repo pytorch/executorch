@@ -53,14 +53,14 @@ def main() -> None:
         target_time_scale=TimeScale(args.target_time_scale),
     )
     inspector.print_data_tabular()
-    if args.compare_results:
-        for event_block in inspector.event_blocks:
-            if event_block.name == "Execute":
-                compare_results(
-                    reference_output=event_block.reference_output,
-                    run_output=event_block.run_output,
-                    plot=True,
-                )
+    for event_block in inspector.event_blocks:
+        if event_block.name == "Execute":
+            print(f"Execute event_block.run_output")
+            print(event_block.run_output)
+            for event in event_block.events:
+                if event.is_delegated_op:
+                    print(f"{event.name} event.debug_data")
+                    print(event.debug_data)
 
 
 if __name__ == "__main__":
