@@ -86,7 +86,7 @@ jobs:
           PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
           export EXECUTORCH_ROOT=$(pwd)
           export ANDROID_NDK=/opt/ndk
-          export QNN_SDK_ROOT=/pytorch/qnn/qairt/2.23.0.240531
+          export QNN_SDK_ROOT=qnn/2.23.0.240531
 
           PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/qualcomm/scripts/build.sh
           echo "Finishing installing qnn."
