@@ -9,9 +9,9 @@
 // A simple llama2 runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
 
-#include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
 #include <executorch/examples/qualcomm/llama2/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
 #include <ctime>
