@@ -99,27 +99,11 @@ if(EXECUTORCH_USE_TIKTOKEN)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/abseil-cpp
-<<<<<<< HEAD
-<<<<<<< HEAD
     ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
   )
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/re2
     ${CMAKE_CURRENT_BINARY_DIR}/re2
-=======
-    ${CMAKE_CURRENT_BINARY_DIR}/third-party/abseil-cpp
-  )
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/re2
-    ${CMAKE_CURRENT_BINARY_DIR}/third-party/re2
->>>>>>> a1d0d14e3 (fix lint)
-=======
-    ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
-  )
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/re2
-    ${CMAKE_CURRENT_BINARY_DIR}/re2
->>>>>>> bc2883139 (fix lint)
   )
   set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
   target_link_libraries(llama_runner PUBLIC re2::re2)
