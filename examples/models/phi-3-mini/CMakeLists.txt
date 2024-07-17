@@ -4,6 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# ### Editing this file ###
+#
+# This file should be formatted with
+# ~~~
+# cmake-format -i CMakeLists.txt
+# ~~~
+# It should also be cmake-lint clean.
+#
+
 cmake_minimum_required(VERSION 3.19)
 project(phi_3_mini_runner)
 
@@ -18,22 +27,15 @@ option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
 option(EXECUTORCH_BUILD_XNNPACK "" ON)
 
 add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../..
-    ${CMAKE_BINARY_DIR}/../../..)
-add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece
-    ${CMAKE_BINARY_DIR}/third-party/sentencepiece)
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../.. ${CMAKE_BINARY_DIR}/../../..
+)
 
-add_executable(phi_3_mini_runner main.cpp)
-target_include_directories(
-    phi_3_mini_runner
-    PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece/src)
+add_executable(
+  phi_3_mini_runner
+  main.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/tokenizer/bpe_tokenizer.cpp
+)
 target_link_libraries(
-    phi_3_mini_runner
-    PRIVATE
-    executorch
-    extension_module_static
-    optimized_native_cpu_ops_lib
-    xnnpack_backend
-    sentencepiece)
+  phi_3_mini_runner PRIVATE executorch extension_module_static
+                            optimized_native_cpu_ops_lib xnnpack_backend
+)

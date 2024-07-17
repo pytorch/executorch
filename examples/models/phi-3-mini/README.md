@@ -11,7 +11,7 @@ This example demonstrates how to run a [Phi-3-mini](https://huggingface.co/micro
 1. Download the `tokenizer.model` from HuggingFace.
 ```
 cd examples/models/phi-3-mini
-wget -O tokenizer.model https://huggingface.co/microsoft/Phi-3-mini-128k-instruct/resolve/main/tokenizer.model?download=true
+wget -O tokenizer.model "https://huggingface.co/microsoft/Phi-3-mini-128k-instruct/resolve/main/tokenizer.model?download=true"
 ```
 2. Export the model. This step will take a few minutes to finish.
 ```
