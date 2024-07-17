@@ -72,8 +72,8 @@ def hf_precompute_freqs_cis(dim: int, end: int, theta: float):
         ** (torch.arange(0, dim, 2, device="cpu", dtype=torch.int64).float() / dim)
     )
     t = torch.arange(end, device=freqs.device, dtype=torch.int64).type_as(
-        freqs
-    )  # pyre-ignore
+        freqs  # pyre-ignore
+    )
     freqs = torch.outer(t, freqs).float()  # pyre-ignore
     emb = torch.cat((freqs, freqs), dim=-1)
     freqs_cos = torch.cos(emb)
