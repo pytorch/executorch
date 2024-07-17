@@ -38,7 +38,7 @@ class Memory {
   std::vector<Tensor> get_output_tensors(int shard_index);
 
  protected:
-  std::unique_ptr<void, std::function<void(void*)>> data_ptr_;
+  std::unique_ptr<void, void (*)(void*)> data_ptr_;
   std::vector<std::vector<TensorImpl*>> input_tensors_;
   std::vector<std::vector<TensorImpl*>> output_tensors_;
   std::vector<std::string> pos_embs_path_;

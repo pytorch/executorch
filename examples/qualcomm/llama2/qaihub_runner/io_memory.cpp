@@ -17,7 +17,8 @@ namespace executor {
 Memory::Memory(
     const std::vector<std::string>& pos_embs_path,
     std::vector<std::shared_ptr<Module>>& modules)
-    : input_tensors_(4),
+    : data_ptr_(nullptr, [](void*) {}),
+      input_tensors_(4),
       output_tensors_(4),
       pos_embs_path_(pos_embs_path),
       modules_(modules) {}
@@ -50,7 +51,7 @@ BertMemory::BertMemory(
     const std::vector<std::string>& pos_embs_path,
     std::vector<std::shared_ptr<Module>>& modules)
     : Memory(pos_embs_path, modules) {
-  data_ptr_ = std::unique_ptr<void, std::function<void(void*)>>(
+  data_ptr_ = std::unique_ptr<void, void (*)(void*)>(
       new IO, [](void* ptr) { delete static_cast<IO*>(ptr); });
 }
 
@@ -204,7 +205,7 @@ KVCachedMemory::KVCachedMemory(
     const std::vector<std::string>& pos_embs_path,
     std::vector<std::shared_ptr<Module>>& modules)
     : Memory(pos_embs_path, modules) {
-  data_ptr_ = std::unique_ptr<void, std::function<void(void*)>>(
+  data_ptr_ = std::unique_ptr<void, void (*)(void*)>(
       new IO, [](void* ptr) { delete static_cast<IO*>(ptr); });
   futures_ = std::vector<std::future<void>>(thread_pool_.num_workers());
 }
