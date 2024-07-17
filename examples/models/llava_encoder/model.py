@@ -18,11 +18,11 @@ from pathlib import Path
 import torchvision
 
 from executorch.examples.models.model_base import EagerModelBase
+from executorch.examples.models.llama2.source_transformation.sdpa import replace_sdpa_with_custom_op
 from executorch.examples.models.llama2.llama_transformer import (
     FeedForward,
     KVCache,
     ModelArgs,
-    precompute_freqs_cis,
     RMSNorm,
     SDPA,
     TransformerBlock,
@@ -305,15 +305,26 @@ class Llava(torch.nn.Module):
             # rope_theta=self.model_.config.rope_theta,
             ffn_dim_multiplier=1,  # a hack to make rotary embedding happy
             enable_dynamic_shape=True,
+            use_sdpa_with_kv_cache_op=True,
         )
+        self.embed_tokens = nn.Embedding(self.model_.config.vocab_size, self.model_.config.hidden_size, self.model_.config.pad_token_id) 
         self.text_model = TextModelTransformer(self.text_model_args)
+        # use custom op for SDPA
+        self.text_model = replace_sdpa_with_custom_op(self.text_model)
         # load state dict
         self.text_model.load_state_dict(
             state_dict=self._translate_state_dict_for_text_model(),
             strict=False,
             assign=True,
         )
+        self.embed_tokens.load_state_dict(
+            state_dict=self.get_model().embed_tokens.state_dict(),
+            strict=True,
+            assign=True,
+        )
         self.image_processor = image_processor
+        self.vision_tower = self.get_model().vision_tower
+        self.mm_projector = self.get_model().mm_projector
 
     def _translate_state_dict_for_text_model(self) -> Dict[str, Any]:
         state_dict = self.model_.state_dict()
@@ -329,7 +340,7 @@ class Llava(torch.nn.Module):
             r"model.layers.([0-9]+).mlp.up_proj.": r"layers.\1.feed_forward.w3.",
             r"model.layers.([0-9]+).post_attention_layernorm.": r"layers.\1.ffn_norm.",
             r"model.norm.": r"norm.",
-            # r"model.embed_tokens.": r"tok_embeddings.", # not needed
+            # r"model.embed_tokens.": r"tok_embeddings.", # load separately
             r"lm_head.": r"output.",
             # fmt: on
         }
@@ -356,8 +367,8 @@ class Llava(torch.nn.Module):
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
         images = images.to(dtype=self.get_model().dtype)
-        image_features = self.get_model().get_vision_tower()(images)
-        image_features = self.get_model().mm_projector(image_features)
+        image_features = self.vision_tower(images)
+        image_features = self.mm_projector(image_features)
         return image_features
 
     def image_preprocess(self, img: torch.Tensor) -> torch.Tensor:
@@ -401,15 +412,12 @@ class Llava(torch.nn.Module):
         self, token: torch.Tensor, input_pos: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """Input is embeddings from prompt and image (after image encoder). Return logits."""
-        token_embeds = self.get_model().embed_tokens(token).unsqueeze(0)
+        token_embeds = self.embed_tokens(token).unsqueeze(0)
         return self.text_model.forward(token_embeds, input_pos)
 
     def image_embedding(self, images: torch.Tensor) -> torch.Tensor:
         preprocessed_img = self.image_preprocess(images)
         return self.encode_images(preprocessed_img)
-    
-    def token_embedding(self, tokens: torch.Tensor) -> torch.Tensor:
-        return self.get_model().embed_tokens(tokens)
     
     def prefill_embedding(
         self,
@@ -419,10 +427,10 @@ class Llava(torch.nn.Module):
     ) -> torch.Tensor:
         image_embeds = self.image_embedding(images)
         embeds_before_img = (
-            self.token_embedding(prompt_before_image)
+            self.embed_tokens(prompt_before_image)
         )
         embeds_after_img = (
-            self.token_embedding(prompt_after_image)
+            self.embed_tokens(prompt_after_image)
         )
         result = torch.cat((embeds_before_img, image_embeds, embeds_after_img), dim=1)
         return result
@@ -549,7 +557,7 @@ class LlavaModel(EagerModelBase):
         ratio = max(imagr.shape[1], imagr.shape[2]) / self.image_processor.crop_size["height"]
         output_size = (int(imagr.shape[1] / ratio), int(imagr.shape[2] / ratio))
         resized = torchvision.transforms.Resize(size=output_size)(imagr)
-        self.inputs = (prompt_before_image, imagr, prompt_after_image)
+        self.inputs = (prompt_before_image, resized, prompt_after_image)
         return self.inputs
 
     def get_dynamic_shapes(self):

@@ -31,11 +31,6 @@ from torchvision.transforms._functional_tensor import resize
 
 from transformers import LlamaForCausalLM
 
-# model_path = "liuhaotian/llava-v1.6-vicuna-7b"
-# only this one works
-os.environ["HF_TOKEN"] = "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"
-
-
 def download_image() -> str:
     image = Image.open(
         requests.get(
