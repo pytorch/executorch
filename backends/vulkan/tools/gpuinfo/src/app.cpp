@@ -7,7 +7,6 @@
  */
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 #include <iostream>
 
 #include "stats.h"
@@ -18,6 +17,7 @@ using namespace vkapi;
 class App {
  private:
   size_t buf_cache_size_;
+  uint32_t max_shared_mem_size_;
   uint32_t sm_count_;
   uint32_t nthread_logic_;
 
@@ -33,11 +33,12 @@ class App {
     sm_count_ = cl_device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
     nthread_logic_ = cl_device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
     buf_cache_size_ = cl_device.getInfo<CL_DEVICE_GLOBAL_MEM_CACHE_SIZE>();
-
+    max_shared_mem_size_ = cl_device.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>();
     std::cout << std::endl;
     std::cout << "SM count," << sm_count_ << std::endl;
     std::cout << "Logic Thread Count," << nthread_logic_ << std::endl;
     std::cout << "Cache Size," << buf_cache_size_ << std::endl;
+    std::cout << "Shared Memory Size," << max_shared_mem_size_ << std::endl;
   }
 
   void reg_count() {
@@ -211,13 +212,8 @@ class App {
   }
 
  private:
-  void _bandwidth(std::string memtype) {
+  void _bandwidth(std::string memtype, size_t range) {
     // TODO: Make these values configurable
-
-    // Maximum memory space read - 128MB
-    // For regular devices, bandwidth plateaus at less memory than this, so more
-    // is not needed.
-    const size_t RANGE = 128 * 1024 * 1024;
     // Cache lines flushed
     const uint32_t NFLUSH = 4;
     // Number of loop unrolls. Changing this value requires an equal change in
@@ -230,11 +226,13 @@ class App {
     const uint32_t VEC_WIDTH = 4;
     const size_t VEC_SIZE = VEC_WIDTH * sizeof(float);
     // Number of vectors that fit in the selected memory space
-    const size_t NVEC = RANGE / VEC_SIZE;
+    const size_t NVEC = range / VEC_SIZE;
     // Number of memory reads per thread
     const uint32_t NREAD_PER_THREAD = NUNROLL * NITER;
-    // Number of threads needed to read all vectors
-    const int NTHREAD = NVEC / NREAD_PER_THREAD;
+    // Number of threads needed to read al l vectors
+    // The thread count doesn't divide by thread workload in shared memory
+    // because of the limited memory size.
+    const int NTHREAD = memtype == "Shared" ? NVEC : NVEC / NREAD_PER_THREAD;
     // Occupy all threads
     const uint local_x = nthread_logic_;
     // Ensure that global is a multiple of local, and distribute across all SMs
@@ -242,10 +240,10 @@ class App {
 
     auto bench = [&](size_t access_size) {
       // Number of vectors that fit in this iteration
-      const size_t nvec_access = access_size / VEC_SIZE;
-      const uint32_t addr_mask = nvec_access - 1;
+      const uint32_t nvec_access = access_size / VEC_SIZE;
 
-      StorageBuffer in_buf(context(), vkapi::kFloat, RANGE / sizeof(float));
+      StorageBuffer in_buf(
+          context(), vkapi::kFloat, range/ sizeof(float));
       StorageBuffer out_buf(
           context(), vkapi::kFloat, VEC_WIDTH * nthread_logic_);
       vkapi::PipelineBarrier pipeline_barrier{};
@@ -264,7 +262,7 @@ class App {
             pipeline_barrier,
             {global_x, 1, 1},
             {local_x, 1, 1},
-            {SV(NITER), SV(addr_mask), SV(local_x)},
+            {SV(NITER), SV(nvec_access), SV(local_x)},
             VK_NULL_HANDLE,
             0,
             in_buf.buffer(),
@@ -281,7 +279,7 @@ class App {
 
     MaxStats<double> max_bandwidth{};
     MinStats<double> min_bandwidth{};
-    for (size_t access_size = VEC_SIZE; access_size < RANGE; access_size *= 2) {
+    for (size_t access_size = VEC_SIZE; access_size < range; access_size *= 2) {
       double gbps = bench(access_size);
       max_bandwidth.push(gbps);
       min_bandwidth.push(gbps);
@@ -296,12 +294,22 @@ class App {
  public:
   void buf_bandwidth() {
     std::cout << "\n------ Memory Bandwidth ------" << std::endl;
-    _bandwidth("Buffer");
+    // Maximum memory space read - 128MB
+    // For regular devices, bandwidth plateaus at less memory than this, so more
+    // is not needed.
+    const size_t RANGE = 128 * 1024 * 1024;
+    _bandwidth("Buffer", RANGE);
   }
 
   void ubo_bandwidth() {
     std::cout << "\n------ UBO Bandwidth ------" << std::endl;
-    _bandwidth("UBO");
+    const size_t RANGE = 128 * 1024 * 1024;
+    _bandwidth("UBO", RANGE);
+  }
+  void shared_mem_bandwidth() {
+    std::cout << "\n------ Shared Bandwidth ------" << std::endl;
+    const size_t RANGE = max_shared_mem_size_;
+    _bandwidth("Shared", RANGE);
   }
 };
 
@@ -313,6 +321,7 @@ int main(int argc, const char** argv) {
   app.buf_cacheline_size();
   app.buf_bandwidth();
   app.ubo_bandwidth();
+  app.shared_mem_bandwidth();
 
   return 0;
 }
