@@ -10,7 +10,7 @@
 #include "kernels.h"
 
 namespace impl {
-namespace HiFi {
+namespace reference {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
@@ -47,5 +47,5 @@ void quantized_relu_out(
 }
 
 }; // namespace native
-}; // namespace HiFi
+}; // namespace reference
 }; // namespace impl
