@@ -42,6 +42,7 @@ from PIL import Image
 
 from torch import nn
 from torch.export import Dim
+from torchvision.transforms.v2 import functional as F
 
 from transformers import LlamaForCausalLM
 
@@ -151,7 +152,7 @@ class Llava(torch.nn.Module):
         t_pad = int(math.ceil(v_padding))
         r_pad = int(math.floor(h_padding))
         b_pad = int(math.floor(v_padding))
-        resized = torchvision.transforms.v2.functional.pad(
+        resized = F.pad(
             img,
             padding=(l_pad, t_pad, r_pad, b_pad),
             fill=tuple(int(x * 255) for x in self.image_processor.image_mean),
@@ -170,20 +171,18 @@ class Llava(torch.nn.Module):
         # torch._check(resized.size(1) == self.config.crop_size["height"])
         # torch._check(resized.size(2) == self.config.crop_size["width"])
         # print(resized.shape)
-        # cropped = torchvision.transforms.v2.functional.center_crop(img, output_size=[w, w])
+        # cropped = F.center_crop(img, output_size=[w, w])
         # print(cropped.shape)
         scaled = resized * self.config.rescale_factor
         # print(scaled)
-        normed = torchvision.transforms.v2.functional.normalize(
-            scaled, self.config.image_mean, self.config.image_std
-        )
+        normed = F.normalize(scaled, self.config.image_mean, self.config.image_std)
         # print(normed)
         return normed.unsqueeze(0)
 
-    def forward(
+    def step(
         self, token: torch.Tensor, input_pos: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        """Input is embeddings from prompt and image (after image encoder). Return logits."""
+        """Input is one token. Return logits for next token."""
         token_embeds = self.embed_tokens(token).unsqueeze(0)
         return self.text_model.forward(None, input_pos, token_embeds)
 
@@ -228,6 +227,15 @@ class Llava(torch.nn.Module):
             use_cache=False,
             output_hidden_states=False,
         )
+
+    def forward(
+        self,
+        prompt_before_image: torch.Tensor,
+        images: torch.Tensor,
+        prompt_after_image: torch.Tensor,
+    ) -> torch.Tensor:
+        """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
+        return self.prefill(prompt_before_image, images, prompt_after_image)
 
 
 def get_prompt(query: str, mm_use_im_start_end: bool, model_name: str) -> str:
@@ -308,6 +316,7 @@ class LlavaModel(EagerModelBase):
 
     def get_eager_model(self):
         model = Llava(self.model, self.image_processor, self.config)
+        model.to(dtype=torch.float32)
         return model
 
     def get_example_inputs(self):
