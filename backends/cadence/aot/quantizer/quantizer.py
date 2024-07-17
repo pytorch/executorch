@@ -14,15 +14,14 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     BmmPattern,
     Conv1dPattern,
     Conv2dPattern,
-    LayerNormFunctionalPattern,
     LayerNormPattern,
-    LinearFunctionalPattern,
     LinearPattern,
     MatmulPattern,
     QuantizationPattern,
     ReluPattern,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
+    find_sequential_partitions_aten,
     is_annotated,
     no_outside_users,
 )
@@ -31,7 +30,6 @@ from pyre_extensions import assert_is_instance
 from torch import fx
 
 from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
-from torch.ao.quantization.pt2e.graph_utils import find_sequential_partitions
 from torch.ao.quantization.quantizer import DerivedQuantizationSpec, Quantizer
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
@@ -63,7 +61,7 @@ wgt_qspec = QuantizationSpec(
 bias_qspec: Optional[QuantizationSpec] = None
 
 
-class CadenceGenericQuantizer(Quantizer):
+class CadenceAtenQuantizer(Quantizer):
     def __init__(
         self, pattern: QuantizationPattern, quantization_config: QuantizationConfig
     ) -> None:
@@ -72,7 +70,7 @@ class CadenceGenericQuantizer(Quantizer):
         self.quantization_config = quantization_config
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        fused_partitions = find_sequential_partitions(
+        fused_partitions = find_sequential_partitions_aten(
             model,
             self.pattern.partition_types(),
         )
@@ -154,15 +152,13 @@ class CadenceQuantizer(ComposableQuantizer):
         )
         super().__init__(
             [
-                CadenceGenericQuantizer(AddmmPattern(), static_qconfig),
-                CadenceGenericQuantizer(BmmPattern(), static_qconfig),
-                CadenceGenericQuantizer(Conv1dPattern(), static_qconfig),
-                CadenceGenericQuantizer(Conv2dPattern(), static_qconfig),
-                CadenceGenericQuantizer(LayerNormPattern(), static_qconfig),
-                CadenceGenericQuantizer(LayerNormFunctionalPattern(), static_qconfig),
-                CadenceGenericQuantizer(LinearPattern(), static_qconfig),
-                CadenceGenericQuantizer(LinearFunctionalPattern(), static_qconfig),
-                CadenceGenericQuantizer(MatmulPattern(), static_qconfig),
-                CadenceGenericQuantizer(ReluPattern(), static_qconfig),
+                CadenceAtenQuantizer(AddmmPattern(), static_qconfig),
+                CadenceAtenQuantizer(BmmPattern(), static_qconfig),
+                CadenceAtenQuantizer(Conv1dPattern(), static_qconfig),
+                CadenceAtenQuantizer(Conv2dPattern(), static_qconfig),
+                CadenceAtenQuantizer(LayerNormPattern(), static_qconfig),
+                CadenceAtenQuantizer(LinearPattern(), static_qconfig),
+                CadenceAtenQuantizer(MatmulPattern(), static_qconfig),
+                CadenceAtenQuantizer(ReluPattern(), static_qconfig),
             ]
         )

@@ -7,7 +7,6 @@
  */
 
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include "kernels.h"
 
 namespace torch {
 namespace executor {
@@ -21,8 +20,7 @@ Tensor& view_copy_out(
     const Tensor& input,
     const IntArrayRef size,
     Tensor& out) {
-  impl::HiFi::kernels::memcpy(
-      out.mutable_data_ptr(), input.const_data_ptr(), input.nbytes());
+  memcpy(out.mutable_data_ptr(), input.const_data_ptr(), input.nbytes());
   return out;
 }
 

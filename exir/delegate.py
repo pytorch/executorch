@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.utils._pytree as pytree
@@ -38,7 +38,9 @@ def trace_call_delegate(proxy_mode, func_overload, lowered_module, *args):
     def _unwrap_proxy(e):
         if not isinstance(e, (torch.Tensor, torch.SymInt, torch.SymFloat)):
             return e
-        return get_proxy_slot(e, proxy_mode.tracer, e, lambda e: e.proxy)
+        return get_proxy_slot(
+            cast(torch.Tensor, e), proxy_mode.tracer, e, lambda e: e.proxy
+        )
 
     if not is_lowered_module(lowered_module):
         raise ValueError(
