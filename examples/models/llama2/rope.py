@@ -71,6 +71,7 @@ def hf_precompute_freqs_cis(dim: int, end: int, theta: float):
         theta
         ** (torch.arange(0, dim, 2, device="cpu", dtype=torch.int64).float() / dim)
     )
+    # pyre-ignore Undefined attribute [16]: `float` has no attribute `device`.
     t = torch.arange(end, device=freqs.device, dtype=torch.int64).type_as(
         freqs  # pyre-ignore
     )

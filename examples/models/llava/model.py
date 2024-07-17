@@ -322,10 +322,10 @@ class LlavaModel(EagerModelBase):
     def get_example_inputs(self):
 
         model_name = get_model_name_from_path(self.model_path)
-        prompt = get_prompt(self.args.query, False, model_name)
+        self.prompt = get_prompt(self.args.query, False, model_name)
         self.input_ids = (
             tokenizer_image_token(
-                prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
+                self.prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
             )
             .unsqueeze(0)
             .cpu()

@@ -14,12 +14,30 @@ def main():
     llava_model = LlavaModel()
     llava = llava_model.get_eager_model()
 
-    llava = llava.to(torch.float32)  # overflow error with fp16
-    _, resized, _ = llava_model.get_example_inputs()
+    prompt_before_image, resized, prompt_after_image = llava_model.get_example_inputs()
+    print(f"Prompt: {llava_model.prompt}")
+    preprocessed = llava.image_preprocess(resized)
+    with torch.inference_mode():
+        output_ids = llava_model.model.generate(
+            llava_model.input_ids,
+            images=preprocessed,
+            image_sizes=[preprocessed.size],
+            do_sample=False,
+            num_beams=1,
+            max_new_tokens=10,
+            use_cache=True,
+        )
 
-    # prefill_logits = llava.prefill(*inputs)
+    outputs = llava_model.tokenizer.batch_decode(output_ids, skip_special_tokens=True)[
+        0
+    ].strip()
+    print(f"Reference output: {outputs}")
+
+    # comparing with llava result
+    # prefill_logits = llava.prefill(prompt_before_image, resized, prompt_after_image)
     # prefill_logits_ref = llava.prefill_ref(*inputs)[0]
-    # print(torch.allclose(prefill_logits, prefill_logits_ref, atol=1e-3))
+    # print(f"Prefill logits all close? {torch.allclose(prefill_logits, prefill_logits_ref, atol=1e-3)}")
+
     # prefill_logits = llava.prefill(*inputs)
     # context_len = prefill_logits.shape[1]
     # print(prefill_logits)
@@ -32,23 +50,6 @@ def main():
     #         torch.tensor([new_tokens[i]]), torch.tensor([context_len + i])
     #     )
     #     new_tokens.append(torch.argmax(logits[-1, :]))
-    preprocessed = llava.image_preprocess(resized)
-    with torch.inference_mode():
-        output_ids = llava_model.model.generate(
-            llava_model.input_ids,
-            images=preprocessed,
-            image_sizes=[preprocessed.size],
-            do_sample=False,
-            num_beams=1,
-            max_new_tokens=50,
-            use_cache=True,
-        )
-
-    outputs = llava_model.tokenizer.batch_decode(output_ids, skip_special_tokens=True)[
-        0
-    ].strip()
-    print(outputs)
-
 
 if __name__ == "__main__":
     main()
