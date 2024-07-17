@@ -898,39 +898,6 @@
 
 <dl class="cpp function">
 <dt class="sig sig-object cpp">
-<span class="target" id="classtorch_1_1executor_1_1Program_1ab7611b834b5909c5280306d0031aaac2"></span><span class="sig-name descname"><span class="pre">__ET_DEPRECATED</span> <span class="pre">Result&lt;</span> <span class="pre">int64_t</span> <span class="pre">&gt;</span> <span class="pre">get_non_const_buffer_size</span> <span class="pre">(size_t</span> <span class="pre">buffer_index,</span> <span class="pre">const</span> <span class="pre">char</span> <span class="pre">*method_name=&quot;forward&quot;)</span> <span class="pre">const</span></span></dt>
-<dd><p>DEPRECATED: Use <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta"><span class="std std-ref">MethodMeta</span></a> instead.</p>
-<p>Get the size of the buffer with index buffer_index. Note that this function does not return the correct value for index 0 which denotes constant memory. Only index &gt;= 1 should be used to retrieve the size of non-constant pools. </p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>buffer_index</strong> – <strong>[in]</strong> the index of the buffer in the non_const_buffer list </p></li>
-<li><p><strong>method_name</strong> – <strong>[in]</strong> The name of the method to retrieve buffer information from. </p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p>The size of the non_constant buffer corresponding to buffer_index, or Error if it cannot be retrieved. </p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="cpp function">
-<dt class="sig sig-object cpp">
-<span class="target" id="classtorch_1_1executor_1_1Program_1a8ad7f7d9dc0b2e7aae838ae7557b16c7"></span><span class="sig-name descname"><span class="pre">__ET_DEPRECATED</span> <span class="pre">Result&lt;</span> <span class="pre">size_t</span> <span class="pre">&gt;</span> <span class="pre">num_non_const_buffers</span> <span class="pre">(const</span> <span class="pre">char</span> <span class="pre">*method_name=&quot;forward&quot;)</span> <span class="pre">const</span></span></dt>
-<dd><p>DEPRECATED: Use <a class="reference internal" href="#classtorch_1_1executor_1_1MethodMeta"><span class="std std-ref">MethodMeta</span></a> instead.</p>
-<p>Get the number of non_constant buffers. </p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>method_name</strong> – <strong>[in]</strong> The name of the method to get the buffer amounts for. </p>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p>The number of non_constant buffers, or Error if it cannot be retrieved. </p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="cpp function">
-<dt class="sig sig-object cpp">
 <span class="target" id="classtorch_1_1executor_1_1Program_1a1f22302b834274e7fd035c7e0e4983b2"></span><span class="sig-name descname"><span class="pre">__ET_DEPRECATED</span> <span class="pre">Result&lt;</span> <span class="pre">const</span> <span class="pre">char</span> <span class="pre">*</span> <span class="pre">&gt;</span> <span class="pre">get_output_flattening_encoding</span> <span class="pre">(const</span> <span class="pre">char</span> <span class="pre">*method_name=&quot;forward&quot;)</span> <span class="pre">const</span></span></dt>
 <dd><p>DEPRECATED: Get the pytree encoding string for the output. Deprecated as this functionality will eventually move out of the core program into a higher level structure, but that does not exist at this time. </p>
 <dl class="field-list simple">
