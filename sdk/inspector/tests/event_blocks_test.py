@@ -59,6 +59,55 @@ class TestEventBlock(unittest.TestCase):
         )
 
     @staticmethod
+    def _gen_sample_debug_event(
+        instruction_id: int,
+        delegate_debug_id: Optional[Union[int, str]] = None,
+    ) -> flatcc.DebugEvent:
+        """
+        Helper for generating test DebugEvents
+
+        Notably:
+        - delegate_debug_id takes either the str or int representation
+        """
+        delegate_debug_id_int = (
+            delegate_debug_id if isinstance(delegate_debug_id, int) else -1
+        )
+        delegate_debug_id_str = (
+            delegate_debug_id if isinstance(delegate_debug_id, str) else ""
+        )
+
+        return flatcc.DebugEvent(
+            chain_index=0,
+            instruction_id=instruction_id,
+            delegate_debug_id_int=delegate_debug_id_int,
+            delegate_debug_id_str=delegate_debug_id_str,
+            debug_entry=flatcc.Value(
+                val=flatcc.ValueType.TENSOR.value,
+                tensor=flatcc.Tensor(
+                    scalar_type=flatcc.ScalarType.INT,
+                    sizes=[1],
+                    strides=[1],
+                    offset=12345,
+                ),
+                tensor_list=flatcc.TensorList(
+                    [
+                        flatcc.Tensor(
+                            scalar_type=flatcc.ScalarType.INT,
+                            sizes=[1],
+                            strides=[1],
+                            offset=12345,
+                        )
+                    ]
+                ),
+                int_value=flatcc.Int(1),
+                float_value=flatcc.Float(1.0),
+                double_value=flatcc.Double(1.0),
+                bool_value=flatcc.Bool(False),
+                output=None,
+            ),
+        )
+
+    @staticmethod
     def _get_sample_etdump_flatcc() -> flatcc.ETDumpFlatCC:
         """
         Helper for getting a sample ETDumpFlatCC object with 3 RunData:
@@ -123,17 +172,145 @@ class TestEventBlock(unittest.TestCase):
 
         return ETDumpFlatCC(version=0, run_data=[run_data_1, run_data_2, run_data_3])
 
+    @staticmethod
+    def _get_sample_etdump_flatcc_inconsistent_debug_data() -> flatcc.ETDumpFlatCC:
+        debug_event_1 = TestEventBlock._gen_sample_debug_event(
+            instruction_id=1, delegate_debug_id=100
+        )
+        run_data_1 = flatcc.RunData(
+            name="signature_a",
+            bundled_input_index=-1,
+            allocators=[],
+            events=[
+                flatcc.Event(
+                    allocation_event=None,
+                    debug_event=debug_event_1,
+                    profile_event=None,
+                ),
+            ],
+        )
+
+        debug_event_2 = TestEventBlock._gen_sample_debug_event(
+            instruction_id=1, delegate_debug_id=100
+        )
+        # Modify this debug event so it's different from debug_event_1
+        debug_event_2.debug_entry.tensor.sizes = [2]  # pyre-ignore
+        run_data_2 = flatcc.RunData(
+            name="signature_a",
+            bundled_input_index=-1,
+            allocators=[],
+            events=[
+                flatcc.Event(
+                    allocation_event=None,
+                    debug_event=debug_event_2,
+                    profile_event=None,
+                ),
+            ],
+        )
+        return ETDumpFlatCC(version=0, run_data=[run_data_1, run_data_2])
+
+    @staticmethod
+    def _get_sample_etdump_flatcc_profiling_and_debugging() -> flatcc.ETDumpFlatCC:
+        """
+        Helper for getting a sample ETDumpFlatCC object with 3 RunData:
+        - run_data_1 has signature_a with (debug_event_1, profile_event_1)
+        - run_data_2 has the same signature with run_data_1 and same debug event, but different profiling times
+        - run_data_3 has signature_b with (debug_event_3, profile_event_3) and (not debug event, profile_event_4)
+        """
+        profile_event_1 = TestEventBlock._gen_sample_profile_event(
+            name="profile_1", instruction_id=1, time=(0, 1), delegate_debug_id=100
+        )
+        debug_event_1 = TestEventBlock._gen_sample_debug_event(
+            instruction_id=1, delegate_debug_id=100
+        )
+        run_data_1 = flatcc.RunData(
+            name="signature_a",
+            bundled_input_index=-1,
+            allocators=[],
+            events=[
+                flatcc.Event(
+                    allocation_event=None,
+                    debug_event=None,
+                    profile_event=profile_event_1,
+                ),
+                flatcc.Event(
+                    allocation_event=None,
+                    debug_event=debug_event_1,
+                    profile_event=None,
+                ),
+            ],
+        )
+
+        profile_event_2 = TestEventBlock._gen_sample_profile_event(
+            name="profile_1", instruction_id=1, time=(2, 4), delegate_debug_id=100
+        )
+        debug_event_2 = TestEventBlock._gen_sample_debug_event(
+            instruction_id=1, delegate_debug_id=100
+        )
+        run_data_2 = flatcc.RunData(
+            name="signature_a",
+            bundled_input_index=-1,
+            allocators=[],
+            events=[
+                flatcc.Event(
+                    allocation_event=None,
+                    debug_event=None,
+                    profile_event=profile_event_2,
+                ),
+                flatcc.Event(
+                    allocation_event=None,
+                    debug_event=debug_event_2,
+                    profile_event=None,
+                ),
+            ],
+        )
+
+        profile_event_3 = TestEventBlock._gen_sample_profile_event(
+            name="profile_3", instruction_id=1, time=(5, 6), delegate_debug_id=100
+        )
+        debug_event_3 = TestEventBlock._gen_sample_debug_event(
+            instruction_id=1, delegate_debug_id=100
+        )
+        profile_event_4 = TestEventBlock._gen_sample_profile_event(
+            name="profile_4", instruction_id=2, time=(7, 8), delegate_debug_id=100
+        )
+        run_data_3 = flatcc.RunData(
+            name="signature_b",
+            bundled_input_index=-1,
+            allocators=[],
+            events=[
+                flatcc.Event(
+                    allocation_event=None,
+                    debug_event=debug_event_3,
+                    profile_event=None,
+                ),
+                flatcc.Event(
+                    allocation_event=None,
+                    debug_event=None,
+                    profile_event=profile_event_3,
+                ),
+                flatcc.Event(
+                    allocation_event=None,
+                    debug_event=None,
+                    profile_event=profile_event_4,
+                ),
+            ],
+        )
+
+        return ETDumpFlatCC(version=0, run_data=[run_data_1, run_data_2, run_data_3])
+
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Tests ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     def test_gen_from_etdump(self) -> None:
         """
         Test "e2e" generation of EventBlocks given an ETDump
-            - Generated via EventBock.gen_from_etdump
+            - Generated via EventBlock.gen_from_etdump
 
         Specifically it tests for external correctness:
         - Correct number of EventBlocks
         - Correct number of Events and Raw Data values (iterations)
         """
+
         etdump: ETDumpFlatCC = TestEventBlock._get_sample_etdump_flatcc()
         blocks: List[EventBlock] = EventBlock._gen_from_etdump(etdump)
 
@@ -146,6 +323,52 @@ class TestEventBlock(unittest.TestCase):
             if (perf_data := block.events[0].perf_data) is not None:
                 run_counts.add((len(block.events), len(perf_data.raw)))
         self.assertSetEqual(run_counts, {(1, 2), (2, 1)})
+
+    def test_gen_from_etdump_profiling_and_debugging(self) -> None:
+        """
+        Test "e2e" generation of EventBlocks given an ETDump with both profiling and debugging events
+            - Generated via EventBlock.gen_from_etdump
+
+        Specifically it tests for external correctness:
+        - Correct number of EventBlocks
+        - Correct number of raw perf_data and debug_data for each Event
+        """
+        etdump: ETDumpFlatCC = (
+            TestEventBlock._get_sample_etdump_flatcc_profiling_and_debugging()
+        )
+        blocks: List[EventBlock] = EventBlock._gen_from_etdump(etdump)
+
+        self.assertEqual(len(blocks), 2, f"Expected 2 runs, got {len(blocks)}")
+
+        # One EventBlock should have 1 event with 2 iterations
+        # and 1 debug data (because we only populate debug data in the first iteration)
+        self.assertEqual(len(blocks[0].events), 1)
+        if (perf_data := blocks[0].events[0].perf_data) is not None:
+            self.assertEqual(len(perf_data.raw), 2)
+        self.assertEqual(len(blocks[0].events[0].debug_data), 1)
+
+        # The other EventBlock should have 2 events with 1 iterations, and only the fist event has debug data
+        self.assertEqual(len(blocks[1].events), 2)
+        perf_data = blocks[1].events[0].perf_data
+        self.assertIsNotNone(perf_data)
+        self.assertEqual(len(perf_data.raw), 1)
+
+        perf_data = blocks[1].events[1].perf_data
+        self.assertIsNotNone(perf_data)
+        self.assertEqual(len(perf_data.raw), 1)
+        self.assertEqual(len(blocks[1].events[0].debug_data), 1)
+        self.assertEqual(len(blocks[1].events[1].debug_data), 0)
+
+    def test_gen_from_etdump_inconsistent_debug_data(self) -> None:
+        """
+        Make sure AssertionError is thrown when intermediate outputs are different across
+        different iterations of a model run
+        """
+        etdump: ETDumpFlatCC = (
+            TestEventBlock._get_sample_etdump_flatcc_inconsistent_debug_data()
+        )
+        with self.assertRaises(AssertionError):
+            EventBlock._gen_from_etdump(etdump)
 
     def test_inspector_event_generation(self) -> None:
         """
@@ -187,7 +410,8 @@ class TestEventBlock(unittest.TestCase):
             self.assertEqual(profile_signature, expected_signature)
 
             event_signature = EventSignature(
-                instruction_id=instruction_id, profile_event_signature=profile_signature
+                instruction_id=instruction_id,
+                profile_event_signature=profile_signature,
             )
 
             # Test Event Generation
