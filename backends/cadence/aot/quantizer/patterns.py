@@ -8,7 +8,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple, Type, Union
+from typing import List, Optional, Tuple, Union
 
 import torch
 from executorch.backends.cadence.aot.quantizer.utils import get_bias_qparams
@@ -47,17 +47,15 @@ class PartitionAnchors:
 
 class QuantizationPattern(ABC):
     @abstractmethod
-    def partition_types(
-        self,
-    ) -> Union[List[Type[torch.nn.Module]], List[Callable[..., torch.Tensor]]]:
+    def partition_types(self) -> list[OpOverload]:
         """
-        List of types to be passed to find_sequential_partitions.
+        List of types to be passed to find_sequential_partitions_aten.
         """
         pass
 
     @abstractmethod
     def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
+        self, gm: torch.fx.GraphModule, fused_partition: List[fx.GraphModule]
     ) -> Optional[PartitionAnchors]:
         pass
 
@@ -71,8 +69,8 @@ class QuantizationPattern(ABC):
 
 
 class AddmmPattern(QuantizationPattern):
-    def partition_types(self) -> List[Type[torch.nn.Module]]:
-        return [torch.addmm]
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.addmm.default]
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
@@ -103,8 +101,8 @@ class AddmmPattern(QuantizationPattern):
 
 
 class BmmPattern(QuantizationPattern):
-    def partition_types(self) -> List[Callable[..., torch.Tensor]]:
-        return [torch.bmm]
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.bmm.default]
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
@@ -123,8 +121,8 @@ class BmmPattern(QuantizationPattern):
 
 
 class Conv1dPattern(QuantizationPattern):
-    def partition_types(self) -> List[Type[torch.nn.Module]]:
-        return [torch.nn.Conv1d]
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.conv1d.default]
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
@@ -161,8 +159,8 @@ class Conv1dPattern(QuantizationPattern):
 
 
 class Conv2dPattern(QuantizationPattern):
-    def partition_types(self) -> List[Type[torch.nn.Module]]:
-        return [torch.nn.Conv2d]
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.conv2d.default]
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
@@ -199,32 +197,8 @@ class Conv2dPattern(QuantizationPattern):
 
 
 class LayerNormPattern(QuantizationPattern):
-    def partition_types(self) -> List[Type[torch.nn.Module]]:
-        return [torch.nn.LayerNorm]
-
-    def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
-    ) -> PartitionAnchors:
-        layer_norm_node = fused_partition[0].nodes[-1]
-
-        # Weights and biases are used as fp32 by our kernel, so they are
-        # passed in as others here along with the normalized shape.
-        return PartitionAnchors(
-            inputs=[(layer_norm_node, 0)],
-            weights=[],
-            biases=[],
-            # Ordering: normalized_shape, weights, bias
-            others=[(layer_norm_node, 1), (layer_norm_node, 2), (layer_norm_node, 3)],
-            output=[(layer_norm_node,)],
-        )
-
-    def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_layer_norm.default
-
-
-class LayerNormFunctionalPattern(QuantizationPattern):
-    def partition_types(self) -> List[Callable[..., torch.Tensor]]:
-        return [torch.nn.functional.layer_norm]
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.layer_norm.default]
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
@@ -257,8 +231,8 @@ class LayerNormFunctionalPattern(QuantizationPattern):
 
 
 class LinearPattern(QuantizationPattern):
-    def partition_types(self) -> List[Type[torch.nn.Module]]:
-        return [torch.nn.Linear]
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.linear.default]
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
@@ -294,47 +268,9 @@ class LinearPattern(QuantizationPattern):
         return torch.ops.cadence.quantized_linear.default
 
 
-class LinearFunctionalPattern(QuantizationPattern):
-    def partition_types(self) -> List[Callable[..., torch.Tensor]]:
-        return [torch.nn.functional.linear]
-
-    def get_anchors(
-        self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
-    ) -> PartitionAnchors:
-        linear_node = fused_partition[0].nodes[-1]
-
-        bias_qspec = DerivedQuantizationSpec(
-            derived_from=[
-                (linear_node.args[0], linear_node),
-                (linear_node.args[1], linear_node),
-            ],
-            derive_qparams_fn=get_bias_qparams,
-            dtype=torch.int32,
-            quant_min=-(2**31),
-            quant_max=2**31 - 1,
-            qscheme=torch.per_tensor_affine,
-        )
-
-        # Keep bias empty if not supplied
-        bias = []
-        if len(linear_node.args) > 2 and linear_node.args[2] is not None:
-            bias = [(linear_node, 2, bias_qspec)]
-
-        return PartitionAnchors(
-            inputs=[(linear_node, 0)],
-            weights=[(linear_node, 1)],
-            # pyre-fixme[6]: Incompatible parameter type
-            biases=bias,
-            output=[(linear_node,)],
-        )
-
-    def replacement_op(self) -> OpOverload:
-        return torch.ops.cadence.quantized_linear.default
-
-
 class MatmulPattern(QuantizationPattern):
-    def partition_types(self) -> List[Callable[..., torch.Tensor]]:
-        return [torch.matmul]
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.matmul.default]
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
@@ -353,8 +289,8 @@ class MatmulPattern(QuantizationPattern):
 
 
 class ReluPattern(QuantizationPattern):
-    def partition_types(self) -> List[Type[torch.nn.Module]]:
-        return [torch.nn.ReLU]
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.relu.default]
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
