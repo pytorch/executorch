@@ -28,6 +28,7 @@ runtime.python_library(
         "__init__.py",
         "fairseq2.py",
         "model.py",
+        "rope.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama2",
