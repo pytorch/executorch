@@ -36,6 +36,13 @@ def main() -> None:
     )
 
     parser.add_argument(
+        "-s",
+        "--strict",
+        action=argparse.BooleanOptionalAction,
+        help="whether to export with strict mode. Default is True",
+    )
+
+    parser.add_argument(
         "-a",
         "--segment_alignment",
         required=False,
@@ -68,6 +75,7 @@ def main() -> None:
             edge_compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
+            strict=args.strict,
         )
         prog = edge_manager.to_executorch(config=backend_config)
     else:
@@ -76,6 +84,7 @@ def main() -> None:
             example_inputs,
             dynamic_shapes=dynamic_shapes,
             backend_config=backend_config,
+            strict=args.strict,
         )
     save_pte_program(prog, args.model_name, args.output_dir)
 
