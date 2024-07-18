@@ -265,6 +265,7 @@ class ArmQuantizer(Quantizer):
         "sub",
         "mul",
         "sigmoid",
+        "mm",
     ]
 
     def __init__(self) -> None:
