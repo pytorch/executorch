@@ -80,8 +80,10 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   # Add a AOT library
   find_package(Torch CONFIG REQUIRED)
   add_library(
-    custom_ops_aot_lib SHARED ${_custom_ops__srcs}
-                              ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
+    custom_ops_aot_lib SHARED
+    ${_custom_ops__srcs}
+    ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/op_randomized_fast_hadamard_transform_aten.cpp
   )
   target_include_directories(
     custom_ops_aot_lib PUBLIC "${_common_include_directories}"
