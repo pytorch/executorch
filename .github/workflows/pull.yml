@@ -206,6 +206,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
         # install Llava requirements
+        bash examples/models/llama2/install_requirements.sh
         bash examples/models/llava/install_requirements.sh
 
         # run export_llava.sh
