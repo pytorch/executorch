@@ -92,6 +92,9 @@ if(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT)
   execute_process(
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}/_host_build
   )
+  set(_etdump_schema_gen_dep)
+else()
+  set(_etdump_schema_gen_dep flatcc_cli)
 endif()
 
 set(_etdump_schema__outputs)
@@ -136,6 +139,7 @@ add_custom_command(
     ${_flatcc_source_dir}/bin/flatcc -cwr -o
     ${_program_schema__include_dir}/executorch/sdk/etdump
     ${_etdump_schema__srcs}
+  DEPENDS ${_etdump_schema_gen_dep}
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/sdk
   COMMENT "Generating etdump headers"
   VERBATIM
