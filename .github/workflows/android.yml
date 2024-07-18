@@ -9,8 +9,7 @@ on:
     paths:
       - .ci/docker/**
       - .github/workflows/android.yml
-      - build/build_android_library.sh
-      - build/test_android_ci.sh
+      - build/*android*.sh
       - install_requirements.sh
       - examples/demo-apps/android/**
       - extension/android/**
@@ -46,3 +45,34 @@ jobs:
 
         # Build LLM Demo for Android
         bash build/build_android_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
+  # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
+  upload-artifacts:
+    needs: build-llm-demo
+    runs-on: linux.2xlarge
+    steps:
+      - name: Download the artifacts from GitHub
+        uses: actions/download-artifact@v3
+        with:
+          # The name here needs to match the name of the upload-artifact parameter
+          name: android-apps
+          path: ${{ runner.temp }}/artifacts/
+
+      - name: Verify the artifacts
+        shell: bash
+        working-directory: ${{ runner.temp }}/artifacts/
+        run: |
+          ls -lah ./
+
+      - name: Upload the artifacts to S3
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifact
+          # NOTE: Consume stale artifacts won't make sense for benchmarking as the goal is always to
+          # benchmark models as fresh as possible. I'm okay to keep the 14 retention-days for now
+          # for TorchChat until we have a periodic job can publish it more often. Ideally I want to
+          # reduce it to <= 2 day, meaning the benchmark job will run daily.
+          retention-days: 14
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/artifacts/
