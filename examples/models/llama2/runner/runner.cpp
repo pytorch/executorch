@@ -492,6 +492,18 @@ Error Runner::generate(
 }
 
 namespace {
+
+void printPyTorchObserverLog(
+    const std::string& unit,
+    const std::string& metric,
+    const std::string& value) noexcept {
+  printf(
+      "PyTorchObserver {\"type\": \"executorch_runner\", \"unit\": \"%s\", \"metric\": \"%s\", \"value\": \"%s\"}\n",
+      unit.c_str(),
+      metric.c_str(),
+      value.c_str());
+}
+
 void printReport(const Runner::Stats& stats) {
   printf("PyTorchObserver %s\n", statsToJsonString(stats).c_str());
 
@@ -571,6 +583,69 @@ std::string statsToJsonString(const Runner::Stats& stats) {
 
 void Runner::stop() {
   shouldStop_ = true;
+}
+
+void Runner::printPytorchObserverLogs(const Stats& stats) {
+  printPyTorchObserverLog(
+      "number", "prompt_tokens", std::to_string(stats.num_prompt_tokens));
+  printPyTorchObserverLog(
+      "number", "generated_tokens", std::to_string(stats.num_generated_tokens));
+  double model_load_time =
+      ((double)(stats.model_load_end_ms - stats.model_load_start_ms) /
+       stats.SCALING_FACTOR_UNITS_PER_SECOND);
+  printPyTorchObserverLog(
+      "seconds", "model_load_time", std::to_string(model_load_time));
+  double inference_time_ms =
+      (double)(stats.inference_end_ms - stats.inference_start_ms);
+  printPyTorchObserverLog(
+      "seconds",
+      "total_inference_time",
+      std::to_string(
+          inference_time_ms / stats.SCALING_FACTOR_UNITS_PER_SECOND));
+  printPyTorchObserverLog(
+      "tokens_per_second",
+      "inference_rate",
+      std::to_string(
+          (stats.num_generated_tokens) / inference_time_ms *
+          stats.SCALING_FACTOR_UNITS_PER_SECOND));
+  double prompt_eval_time =
+      (double)(stats.prompt_eval_end_ms - stats.inference_start_ms);
+  printPyTorchObserverLog(
+      "seconds",
+      "prompt_evaluation_time",
+      std::to_string(prompt_eval_time / stats.SCALING_FACTOR_UNITS_PER_SECOND));
+  printPyTorchObserverLog(
+      "tokens_per_second",
+      "prompt_evaluation_rate",
+      std::to_string(
+          (stats.num_prompt_tokens) / prompt_eval_time *
+          stats.SCALING_FACTOR_UNITS_PER_SECOND));
+  double eval_time =
+      (double)(stats.inference_end_ms - stats.prompt_eval_end_ms);
+  printPyTorchObserverLog(
+      "seconds",
+      "generated_tokens_time",
+      std::to_string(eval_time / stats.SCALING_FACTOR_UNITS_PER_SECOND));
+  printPyTorchObserverLog(
+      "tokens_per_second",
+      "generated_tokens_rate",
+      std::to_string(
+          stats.num_generated_tokens / eval_time *
+          stats.SCALING_FACTOR_UNITS_PER_SECOND));
+  // Time to first token is measured from the start of inference, excluding
+  // model load time.
+  printPyTorchObserverLog(
+      "seconds",
+      "time_to_first_token",
+      std::to_string(
+          ((double)(stats.first_token_ms - stats.inference_start_ms) /
+           stats.SCALING_FACTOR_UNITS_PER_SECOND)));
+  printPyTorchObserverLog(
+      "seconds",
+      "sampling_time",
+      std::to_string(
+          (double)stats.aggregate_sampling_time_ms /
+          stats.SCALING_FACTOR_UNITS_PER_SECOND));
 }
 
 // explicit instantiation of template methods
