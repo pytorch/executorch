@@ -20,8 +20,9 @@ def define_common_targets():
             "//bento_kernels/...",
         ],
         _is_external_target = True,
-        # TODO: Define an external_deps entry for sentencepiece instead of pointing to an fbsource path.
-        deps = [] if runtime.is_oss else ["fbsource//third-party/pypi/sentencepiece:sentencepiece"],
+        external_deps = [
+            "sentencepiece-py",
+        ],
     )
 
     runtime.python_binary(
@@ -34,5 +35,45 @@ def define_common_targets():
         _is_external_target = True,
         deps = [
             ":tokenizer_py_lib",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "bpe_tokenizer",
+        srcs = [
+            "bpe_tokenizer.cpp",
+        ],
+        exported_headers = [
+            "tokenizer.h",
+            "bpe_tokenizer.h",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+        ],
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "tiktoken",
+        srcs = [
+            "tiktoken.cpp",
+        ],
+        exported_headers = [
+            "tokenizer.h",
+            "tiktoken.h",
+            "base64.h",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+        ],
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_external_deps = [
+            "re2",
         ],
     )
