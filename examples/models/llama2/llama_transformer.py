@@ -13,7 +13,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
 
-from rope import (
+from executorch.examples.models.llama2.rope import (
     apply_rotary_emb,
     hf_apply_rotary_emb,
     hf_precompute_freqs_cis,
