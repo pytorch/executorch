@@ -126,4 +126,4 @@ jobs:
       # The exported llama2 model and its tokenizer, can be downloaded from https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b.zip.
       # Among the input, this is the biggest file, so it is cached on AWS to make the test faster. Note that the file is deleted by AWS after 30
       # days and the job will automatically re-upload the file when that happens.
-      extra-data: https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b.zip
+      extra-data: https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b-0717.zip
