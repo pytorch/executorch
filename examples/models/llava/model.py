@@ -372,5 +372,5 @@ class LlavaModel(EagerModelBase):
         dim = torch.export.Dim(
             "token_dim", min=1, max=self.model.config.max_position_embeddings - 1
         )
-        text_model_dynamic_shapes = (None, {0: 1}, {1: dim})
+        text_model_dynamic_shapes = ({0: 1}, {1: dim})
         return text_model_dynamic_shapes
