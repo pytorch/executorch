@@ -1,0 +1,18 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+buf_bandwidth:
+  parameter_names_with_default_values:
+    DTYPE: float
+    STORAGE: buffer
+    NUNROLL: "16"
+  generate_variant_forall:
+    MEMTYPE:
+      - VALUE: ubo
+      - VALUE: buffer
+      - VALUE: shared
+  shader_variants:
+    - NAME: buf_bandwidth

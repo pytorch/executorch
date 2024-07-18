@@ -13,6 +13,7 @@ from pathlib import Path
 
 import torch
 from executorch.backends.qualcomm.tests.utils import (
+    generate_context_binary,
     QnnPartitioner,
     QuantDtype,
     TestQNN,
@@ -22,6 +23,7 @@ from executorch.backends.qualcomm.tests.utils import (
 from executorch.backends.qualcomm.utils.utils import (
     canonicalize_program,
     capture_program,
+    from_context_binary,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
 )
@@ -600,8 +602,6 @@ class TestQNNQuantizedOperator(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
-    # Is not enabled in the current qnn sdk release
-    @unittest.expectedFailure
     def test_qnn_backend_16a4w_per_channel_linear_with_bias(self):
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
@@ -1330,13 +1330,40 @@ class TestQNNFloatingPointUtils(TestQNN):
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.arch_table[TestQNN.model],
             backend_options=backend_options,
-            debug=False,
-            saver=False,
             online_prepare=True,
         )
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_context_direct(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            module = ContextBinaryExample()  # noqa: F405
+            generate_context_binary(
+                module=module,
+                inputs=module.example_inputs(),
+                quantized=False,
+                artifact_dir=tmp_dir,
+            )
+            ctx_path = f"{tmp_dir}/model_ctx.bin"
+            bundle_program = from_context_binary(ctx_path, "ctx_loader")
+            backend_options = generate_htp_compiler_spec(use_fp16=True)
+            compiler_specs = generate_qnn_executorch_compiler_spec(
+                soc_model=self.arch_table[TestQNN.model],
+                backend_options=backend_options,
+                is_from_context_binary=True,
+            )
+            lowered_module = to_backend(
+                "QnnBackend", bundle_program["edge_program"], compiler_specs
+            )
+            self.verify_output(
+                module,
+                tuple(
+                    torch.randn(size=v.shape, dtype=v.dtype)
+                    for v in bundle_program["inputs"].values()
+                ),
+                lowered_module,
+            )
 
 
 class TestQNNQuantizedUtils(TestQNN):
@@ -1470,14 +1497,41 @@ class TestQNNQuantizedUtils(TestQNN):
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
             soc_model=self.arch_table[TestQNN.model],
             backend_options=backend_options,
-            debug=False,
-            saver=False,
             online_prepare=True,
         )
         module = SimpleModel()  # noqa: F405
         sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_context_direct(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            module = ContextBinaryExample()  # noqa: F405
+            generate_context_binary(
+                module=module,
+                inputs=module.example_inputs(),
+                quantized=True,
+                artifact_dir=tmp_dir,
+            )
+            ctx_path = f"{tmp_dir}/model_ctx.bin"
+            bundle_program = from_context_binary(ctx_path, "ctx_loader")
+            backend_options = generate_htp_compiler_spec(use_fp16=False)
+            compiler_specs = generate_qnn_executorch_compiler_spec(
+                soc_model=self.arch_table[TestQNN.model],
+                backend_options=backend_options,
+                is_from_context_binary=True,
+            )
+            lowered_module = to_backend(
+                "QnnBackend", bundle_program["edge_program"], compiler_specs
+            )
+            self.verify_output(
+                module,
+                tuple(
+                    torch.randn(size=v.shape, dtype=v.dtype)
+                    for v in bundle_program["inputs"].values()
+                ),
+                lowered_module,
+            )
 
 
 class TestExampleOssScript(TestQNN):
@@ -2029,7 +2083,7 @@ class TestExampleScript(TestQNN):
             for k, v in cpu.items():
                 self.assertLessEqual(abs(v[0] - htp[k][0]), 2)
 
-    @unittest.expectedFailure
+    @unittest.skip("will be enabled after TODOs got resolved")
     def test_ptq_mobilebert(self):
         # TODO: 2 approaches to resolve accuracy issue
         # 1. fallback embedding layers:
