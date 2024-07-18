@@ -14,22 +14,32 @@ layout(std430) buffer;
 
 $if MEMTYPE == "ubo":
     ${layout_declare_ubo(0, "vec4", "A")}
-$else:
+$elif MEMTYPE == "buffer":
     ${layout_declare_buffer(0, "r", "A", DTYPE, "PRECISION", False)}
+$else:
+    ${layout_declare_buffer(0, "r", "_", DTYPE, "PRECISION", False)}
 
 ${layout_declare_buffer(1, "w", "B", DTYPE, "PRECISION", False)}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 layout(constant_id = 3) const int niter = 1;
-
-// The address mask works as a modulo because x % 2^n == x & (2^n - 1).
-// This will help us limit address accessing to a specific set of unique
-// addresses depending on the access size we want to measure.
-layout(constant_id = 4) const int addr_mask = 1;
+layout(constant_id = 4) const int nvec = 1;
 layout(constant_id = 5) const int local_group_size = 1;
 
+$if MEMTYPE == "shared":
+    shared vec4 A[nvec];
+
 void main() {
+
+    $if MEMTYPE == "shared":
+        A[gl_LocalInvocationID[0]][0] = gl_LocalInvocationID[0];
+        memoryBarrierShared();
+
+    // The address mask works as a modulo because x % 2^n == x & (2^n - 1).
+    // This will help us limit address accessing to a specific set of unique
+    // addresses depending on the access size we want to measure.
+    const int addr_mask = nvec - 1;
     vec4 sum = vec4(0);
 
     // This is to distribute the accesses to unique addresses across the workgroups, once the

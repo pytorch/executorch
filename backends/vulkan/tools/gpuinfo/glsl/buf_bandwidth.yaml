@@ -13,5 +13,6 @@ buf_bandwidth:
     MEMTYPE:
       - VALUE: ubo
       - VALUE: buffer
+      - VALUE: shared
   shader_variants:
     - NAME: buf_bandwidth
