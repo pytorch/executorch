@@ -310,6 +310,9 @@ class LlavaModel(EagerModelBase):
                 "max_new_tokens": 512,
             },
         )()
+        # set input to None and initialize them lazily
+        self.input = None
+        self.resized_image = None
 
     def get_eager_model(self):
         model = Llava(self.model, self.image_processor, self.config)
@@ -326,7 +329,7 @@ class LlavaModel(EagerModelBase):
             / self.image_processor.crop_size["height"]
         )
         output_size = (int(imagr.shape[1] / ratio), int(imagr.shape[2] / ratio))
-        self.resized_image = torchvision.transforms.Resize(size=output_size)(imagr)
+        self.resized_image = (torchvision.transforms.Resize(size=output_size)(imagr), )
         return self.resized_image
 
     def get_inputs_for_prefill(self):
