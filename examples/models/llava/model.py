@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# An ExecuTorch friendly implementation of Llava-1.5.abs
+# An ExecuTorch friendly implementation of Llava-1.5.
 
 import math
 
@@ -362,9 +362,7 @@ class LlavaModel(EagerModelBase):
 
     def _get_image_dynamic_shapes(self):
         height = Dim("height", min=8, max=336)
-        # height = Dim("height", min=8, max=4091)
         width = Dim("width", min=28, max=336)
-        # width = Dim("width", min=9, max=4092)
         dynamic_shapes = [{1: height, 2: width}]
         return dynamic_shapes
 

@@ -7,7 +7,7 @@
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
-    XnnpackFloatingPointPartitioner,
+    # XnnpackFloatingPointPartitioner,
 )
 from executorch.examples.models.llama2.export_llama_lib import (
     build_args_parser,
@@ -22,8 +22,6 @@ from executorch.examples.models.llama2.source_transformation.sdpa import (
 from executorch.exir import EdgeCompileConfig, to_edge
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
-from executorch.extension.llm.export.partitioner_lib import get_xnnpack_partitioner
-from llava.constants import IMAGE_TOKEN_INDEX
 from model import LlavaModel
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -59,7 +57,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
 
         def forward(self, input_pos, embeddings):
             return self.text_model(None, input_pos, embeddings)
-    
+
     llava_text_model = LlavaTextModel(llava)
 
     text_model_em = LLMEdgeManager(
@@ -116,7 +114,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
         is_per_channel=True, is_dynamic=True
     )
     linear_quantizer.set_global(operator_config_dynamic)
-    
+
     manager = LlavaEdgeManager(
         model=llava_image_encode,
         modelname="llava_image_encoder",

@@ -7,7 +7,7 @@
 import torch
 
 from model import LlavaModel
-
+import logging
 
 def main():
 
@@ -15,23 +15,23 @@ def main():
     llava = llava_model.get_eager_model()
 
     prompt_before_image, resized, prompt_after_image = llava_model.get_example_inputs()
-    print(f"Prompt: {llava_model.prompt}")
-    # preprocessed = llava.image_preprocess(resized)
-    # with torch.inference_mode():
-    #     output_ids = llava_model.model.generate(
-    #         llava_model.input_ids,
-    #         images=preprocessed,
-    #         image_sizes=[preprocessed.size],
-    #         do_sample=False,
-    #         num_beams=1,
-    #         max_new_tokens=10,
-    #         use_cache=True,
-    #     )
+    logging.info(f"Prompt: {llava_model.prompt}")
+    preprocessed = llava.image_preprocess(resized)
+    with torch.inference_mode():
+        output_ids = llava_model.model.generate(
+            llava_model.input_ids,
+            images=preprocessed,
+            image_sizes=[preprocessed.size],
+            do_sample=False,
+            num_beams=1,
+            max_new_tokens=10,
+            use_cache=True,
+        )
 
-    # outputs = llava_model.tokenizer.batch_decode(output_ids, skip_special_tokens=True)[
-    #     0
-    # ].strip()
-    # print(f"Reference output: {outputs}")
+    outputs = llava_model.tokenizer.batch_decode(output_ids, skip_special_tokens=True)[
+        0
+    ].strip()
+    logging.info(f"Reference output: {outputs}")
 
     # comparing with llava result
     # prefill_logits = llava.prefill(prompt_before_image, resized, prompt_after_image)
@@ -52,13 +52,13 @@ def main():
     #     new_tokens.append(torch.argmax(logits[-1, :]))
     prefill_logits = llava.prefill(prompt_before_image, resized, prompt_after_image)
     context_len = prefill_logits.shape[1]
-    print(prefill_logits)
+    logging.info(prefill_logits)
     new_tokens = [torch.argmax(prefill_logits[..., -1, :]).item()]
     i = 0
-    print(i, llava_model.tokenizer.decode(new_tokens[i]))
-    logits = llava.step(
-        torch.tensor([new_tokens[i]]), torch.tensor([context_len + i])
-    )
+    logging.info(i, llava_model.tokenizer.decode(new_tokens[i]))
+    logits = llava.step(torch.tensor([new_tokens[i]]), torch.tensor([context_len + i]))
+    logging.info(logits)
+
 
 if __name__ == "__main__":
     main()
