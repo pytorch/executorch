@@ -70,7 +70,7 @@ jobs:
 
   # Upload the app and its test suite to S3 so that they can be downloaded by the test job
   upload-artifacts:
-    needs: test-demo-android
+    needs: build-demo-android
     runs-on: linux.2xlarge
     steps:
       - name: Download the artifacts
