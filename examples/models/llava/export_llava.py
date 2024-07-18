@@ -50,15 +50,25 @@ class LlavaEdgeManager(LLMEdgeManager):
 
 
 def export_text_model(llava, embeddings, dynamic_shapes):
-    llava_text_model = llava.text_model
+    class LlavaTextModel(torch.nn.Module):
+        """Takes images and prompts and encode them into embeddings. Result will be sent to the text model LlavaTextModel."""
 
-    text_model_em = LlavaEdgeManager(
+        def __init__(self, llava):
+            super().__init__()
+            self.text_model = llava.text_model
+
+        def forward(self, input_pos, embeddings):
+            return self.text_model(None, input_pos, embeddings)
+    
+    llava_text_model = LlavaTextModel(llava)
+
+    text_model_em = LLMEdgeManager(
         model=llava_text_model,
         modelname="llava_text_model",
         max_seq_len=llava.text_model_args.max_seq_len,
         dtype=DType.fp32,
         use_kv_cache=True,
-        example_inputs=(None, torch.tensor([0], dtype=torch.int64), embeddings),
+        example_inputs=(torch.tensor([0], dtype=torch.int64), embeddings),
         dynamic_shapes=dynamic_shapes,
     )
 
