@@ -329,7 +329,7 @@ class LlavaModel(EagerModelBase):
             / self.image_processor.crop_size["height"]
         )
         output_size = (int(imagr.shape[1] / ratio), int(imagr.shape[2] / ratio))
-        self.resized_image = (torchvision.transforms.Resize(size=output_size)(imagr), )
+        self.resized_image = (torchvision.transforms.Resize(size=output_size)(imagr),)
         return self.resized_image
 
     def get_inputs_for_prefill(self):
@@ -352,7 +352,7 @@ class LlavaModel(EagerModelBase):
         # print(prompt_after_image.shape)
         self.input = (
             self.prompt_before_image,
-            self.get_example_inputs(),
+            *self.get_example_inputs(),
             self.prompt_after_image,
         )
         return self.input
@@ -369,6 +369,8 @@ class LlavaModel(EagerModelBase):
         return dynamic_shapes
 
     def _get_prompt_dynamic_shapes(self):
-        token_dim = Dim("token_dim", min=2, max=3518)
-        dynamic_shapes = [{1: token_dim}, {1: 1}]
-        return dynamic_shapes
+        dim = torch.export.Dim(
+            "token_dim", min=1, max=self.model.config.max_position_embeddings - 1
+        )
+        text_model_dynamic_shapes = (None, {0: 1}, {1: dim})
+        return text_model_dynamic_shapes
