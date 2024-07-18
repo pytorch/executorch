@@ -8,8 +8,14 @@ def define_common_targets():
     """
     runtime.cxx_library(
         name = "custom_ops",
-        srcs = ["op_sdpa.cpp"],
-        exported_headers = ["op_sdpa.h"],
+        srcs = [
+            "op_randomized_fast_hadamard_transform.cpp",
+            "op_sdpa.cpp",
+        ],
+        exported_headers = [
+            "op_randomized_fast_hadamard_transform.h",
+            "op_sdpa.h",
+        ],
         exported_deps = [
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/kernels/portable/cpu:scalar_utils",
@@ -33,6 +39,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "custom_ops_aot_lib",
         srcs = [
+            "op_randomized_fast_hadamard_transform_aten.cpp",
             "op_sdpa_aot.cpp",
         ],
         visibility = [
@@ -56,6 +63,20 @@ def define_common_targets():
         visibility = ["//executorch/..."],
         deps = [
             "//caffe2:torch",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "op_randomized_fast_hadamard_transform_test",
+        srcs = [
+            "op_randomized_fast_hadamard_transform_test.cpp",
+        ],
+        visibility = ["//executorch/..."],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/kernels/test:test_util",
+            ":custom_ops",
         ],
     )
 
