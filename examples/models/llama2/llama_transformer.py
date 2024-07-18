@@ -15,7 +15,7 @@ import torch.nn.functional as F
 
 from torch import nn
 
-from .rope import (
+from rope import (
     apply_rotary_emb,
     hf_apply_rotary_emb,
     hf_precompute_freqs_cis,
