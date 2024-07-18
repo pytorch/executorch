@@ -6,20 +6,6 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-
-    runtime.cxx_test(
-        name = "test_bpe_tokenizer",
-        srcs = [
-            "test_bpe_tokenizer.cpp",
-        ],
-        deps = [
-            "//executorch/examples/models/llama2/tokenizer:bpe_tokenizer",
-        ],
-        env = {
-            "RESOURCES_PATH": "$(location :resources)/resources",
-        },
-    )
-
     runtime.cxx_test(
         name = "test_tiktoken",
         srcs = [
@@ -31,9 +17,6 @@ def define_common_targets():
         env = {
             "RESOURCES_PATH": "$(location :resources)/resources",
         },
-        external_deps = [
-            "re2",
-        ],
     )
 
     runtime.filegroup(

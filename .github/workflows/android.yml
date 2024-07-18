@@ -22,8 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-demo-android:
-    name: test-demo-android
+  build-demo-android:
+    name: build-demo-android
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:

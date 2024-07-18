@@ -859,6 +859,66 @@ def _sanity_check_graph_for_non_decomp_ops(
                     logging.warning(warning_str)
 
 
+def _gen_edge_manager_for_partitioners(
+    partitioner: Dict[str, List[Partitioner]],
+    aten_programs: Dict[str, ExportedProgram],
+    config: EdgeCompileConfig,
+    constant_methods: Optional[Dict[str, Any]],
+) -> "EdgeProgramManager":
+    """
+    Generates EdgeProgramManager for subsequent lowering to the
+    partitioners specified by partitioner. The EdgeProgramManager is generated from
+    aten_programs.
+
+    Partitioners specify what nodes should not be decomposed from the original aten programs.
+    This is done through two passes of run_decompositions.
+        - First pass preserves all aten_targets specified by partitioners to preserve
+          them from nested decompositions
+        - Second pass uses check_op fn provided by partitioners to perform additional checks
+          on nodes with preserved aten targets. They are then replaces with transformed ops to
+          keep them through the second pass of decompositions
+    """
+    ops_set_to_not_decompose_by_program = {}
+    edge_programs: Dict[str, ExportedProgram] = {}
+    for name, program in aten_programs.items():
+        if partitioner is not None:
+            # preserve all ops listed by all partitioners first
+            all_ops_no_decomp = set()
+            for curr_partitioner in partitioner.get(name, []):
+                curr_ops_no_decomp, _ = curr_partitioner.ops_to_not_decompose(program)
+                all_ops_no_decomp |= set(curr_ops_no_decomp)
+
+            program = program.run_decompositions(
+                _default_decomposition_table(), _preserve_ops=tuple(all_ops_no_decomp)
+            )
+            # Among all the preserved aten ops, use the check_op_fn to do an additional
+            # check on which ops need to be preserved and which ops need to be decomposed
+            # Those which are truly preserved will be replaced with transformed ops
+            ops_set_to_not_decompose_by_program[name] = (
+                _replace_aten_ops_with_transformed_ops(name, program, partitioner)
+            )
+        program = program.run_decompositions(_default_decomposition_table())
+
+        _restore_transformed_ops_to_aten_ops(program)
+
+        edge_programs[name] = program
+
+        edge_programs[name] = _generate_edge_program(
+            name,
+            config,
+            program,
+            list(ops_set_to_not_decompose_by_program.get(name, [])),
+        )
+
+    edge_manager = EdgeProgramManager(
+        edge_programs,
+        constant_methods,
+        config,
+        list(set().union(*ops_set_to_not_decompose_by_program.values())),
+    )
+    return edge_manager
+
+
 def _to_edge_transform_and_lower(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
@@ -909,8 +969,6 @@ def _to_edge_transform_and_lower(
     Returns:
         EdgeProgramManager
     """
-    ops_set_to_not_decompose = set()
-
     assert not isinstance(constant_methods, EdgeCompileConfig)
     config = compile_config or EdgeCompileConfig()
     if not isinstance(programs, dict):
@@ -923,31 +981,8 @@ def _to_edge_transform_and_lower(
     else:
         partitioner = {}
 
-    ops_set_to_not_decompose_by_program = {}
-    edge_programs: Dict[str, ExportedProgram] = {}
-    for name, program in aten_programs.items():
-        if partitioner is not None:
-            ops_set_to_not_decompose_by_program[name] = (
-                _replace_aten_ops_with_transformed_ops(name, program, partitioner)
-            )
-        program = program.run_decompositions(_default_decomposition_table())
-
-        _restore_transformed_ops_to_aten_ops(program)
-
-        edge_programs[name] = program
-
-        edge_programs[name] = _generate_edge_program(
-            name,
-            config,
-            program,
-            list(ops_set_to_not_decompose_by_program.get(name, [])),
-        )
-
-    edge_manager = EdgeProgramManager(
-        edge_programs,
-        constant_methods,
-        config,
-        list(set().union(*ops_set_to_not_decompose_by_program.values())),
+    edge_manager = _gen_edge_manager_for_partitioners(
+        partitioner, aten_programs, config, constant_methods
     )
 
     if transform_passes is not None:

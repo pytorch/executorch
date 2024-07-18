@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * Copyright (c) Qualcomm Innovation Center, Inc.
  * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -18,18 +18,24 @@
 #include <unordered_map>
 
 #include <executorch/examples/models/llama2/sampler/sampler.h>
-#include <executorch/extension/llm/tokenizer/tokenizer.h>
+#include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
+#include <executorch/examples/qualcomm/llama2/qaihub_runner/io_memory.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
-namespace torch::executor {
+namespace torch {
+namespace executor {
 
 class Runner {
  public:
   explicit Runner(
-      const std::string& model_path,
+      const std::vector<std::string>& models_path,
+      const std::vector<std::string>& pos_embs_path,
       const std::string& tokenizer_path,
-      const float temperature = 0.8f);
+      const int eval_mode,
+      const float temperature,
+      const float logits_scale,
+      const int logits_offset);
 
   struct Stats {
     // Scaling factor for timestamps - in this case, we use ms.
@@ -61,46 +67,40 @@ class Runner {
   Error load();
   Error generate(
       const std::string& prompt,
-      int32_t seq_len = 128,
+      int32_t seq_len,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
   void stop();
+  std::vector<Result<MethodMeta>> get_methods_meta();
 
  private:
-  // metadata
-  template <typename T>
-  T getMetadataHelper(const std::string& method_name, T default_val);
+  enum EvalMode {
+    kBert = 0,
+    kKVCached,
+    kUnsupported,
+  };
+
   int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
-  Result<torch::executor::Tensor> prefill(
-      const std::vector<uint64_t>& tokens,
-      ManagedTensor& managed_tokens,
-      ManagedTensor& managed_start_pos,
-      std::function<void(const std::string&)> token_callback);
-  Result<torch::executor::Tensor> run_model_step(
-      int64_t input_token,
-      ManagedTensor& tokens,
-      ManagedTensor& start_pos,
-      size_t max_seq_len);
+  void run_model_step(std::vector<std::vector<EValue>>& inputs);
   // metadata
-  int32_t vocab_size_;
-  int32_t bos_id_;
-  int32_t eos_id_;
-  int32_t n_bos_;
-  int32_t n_eos_;
-  int32_t max_seq_len_;
-  bool use_kv_cache_;
-  bool use_sdpa_with_kv_cache_;
-  bool append_eos_;
-  std::unordered_set<std::string> model_methods_;
-  std::string model_path_;
-  std::unique_ptr<Module> module_;
+  const int32_t bos_id_;
+  const int32_t eos_id_;
+  const int32_t n_bos_;
+  const int32_t n_eos_;
+  const int32_t vocab_size_;
+  const int32_t max_seq_len_;
+  int32_t eval_mode_;
+  std::vector<std::shared_ptr<Module>> modules_;
   std::string tokenizer_path_;
   float temperature_;
   std::unique_ptr<Tokenizer> tokenizer_;
   std::unique_ptr<Sampler> sampler_;
   bool shouldStop_{false};
   Stats stats_;
-  bool enable_parallel_prefill_;
+  std::unique_ptr<Memory> io_mem_;
+  const float logits_scale_;
+  const int32_t logits_offset_;
 };
 
-} // namespace torch::executor
+} // namespace executor
+} // namespace torch

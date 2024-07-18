@@ -31,6 +31,12 @@ class OpConcat:
 
 
 @dataclass(init=False, frozen=True)
+class OpContextLoader:
+    namespace: str = "qaisw"
+    meta_ctx_bin: str = "qnn_context_binary"
+
+
+@dataclass(init=False, frozen=True)
 class OpConv2d:
     op_name: str = "Conv2d"
     param_stride: str = "stride"
