@@ -27,7 +27,7 @@
 	url = https://github.com/Maratyszcza/FXdiv.git
 [submodule "backends/xnnpack/third-party/XNNPACK"]
 	path = backends/xnnpack/third-party/XNNPACK
-	url = https://github.com/digantdesai/XNNPACK.git
+	url = https://github.com/kirklandsign/XNNPACK.git
 [submodule "backends/arm/third-party/serialization_lib"]
 	path = backends/arm/third-party/serialization_lib
 	url = https://review.mlplatform.org/tosa/serialization_lib
