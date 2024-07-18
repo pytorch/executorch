@@ -128,11 +128,11 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     add_subdirectory(
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/models/llama2/third-party/abseil-cpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/abseil-cpp
       ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
     )
     add_subdirectory(
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/models/llama2/third-party/re2
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/re2
       ${CMAKE_CURRENT_BINARY_DIR}/re2
     )
     set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
