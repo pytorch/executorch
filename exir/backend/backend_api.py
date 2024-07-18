@@ -352,14 +352,7 @@ def _(
         ExportedProgram: The input program, with some portions targeted for delegation.
     """
     # Use fake program, with FakeTensors in the state dict, to avoid copying large constant values.
-    # Fall back to deepcopy if no fake mode is found. TODO(T182910699): Remove this fallback.
-    try:
-        fake_edge_program = get_fake_program(edge_program)
-    except Exception as e:
-        logging.warning(
-            f"Error in get_fake_program for graph {edge_program.graph_module}, fallback to deepcopy: {e}"
-        )
-        fake_edge_program = copy.deepcopy(edge_program)
+    fake_edge_program = get_fake_program(edge_program)
     partitioner_result = partitioner_instance(fake_edge_program)
     tagged_exported_program = partitioner_result.tagged_exported_program
 
