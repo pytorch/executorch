@@ -141,10 +141,10 @@ DEVEL_REQUIREMENTS=(
 # pip packages needed to run examples.
 # TODO(dbort): Make each example publish its own requirements.txt
 EXAMPLES_REQUIREMENTS=(
-  timm==0.6.13
+  timm==1.0.7
   torchaudio=="2.4.0.${NIGHTLY_VERSION}"
   torchsr==1.0.4
-  transformers==4.38.2
+  transformers==4.42.4
 )
 
 # Assemble the list of requirements to actually install.
