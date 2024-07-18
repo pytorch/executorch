@@ -10,9 +10,9 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/Context.h>
-#include <executorch/backends/vulkan/runtime/api/Tensor.h>
-#include <executorch/backends/vulkan/runtime/api/Types.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
+
+#include <executorch/backends/vulkan/runtime/vk_api/Types.h>
 
 #include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
 
@@ -30,7 +30,7 @@ struct SharedObject {
   VkMemoryRequirements aggregate_memory_requirements;
   VmaAllocationCreateInfo aggregate_create_info;
   std::vector<ValueRef> users;
-  api::Allocation allocation;
+  vkapi::Allocation allocation;
 
   void add_user(ComputeGraph* const graph, const ValueRef idx);
   void allocate(ComputeGraph* const graph);

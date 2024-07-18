@@ -145,11 +145,17 @@ function(gen_custom_ops_aot_lib)
   target_compile_options(${GEN_LIB_NAME} PRIVATE -frtti -fexceptions)
   target_compile_definitions(${GEN_LIB_NAME} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
-  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch executorch)
+  target_link_libraries(${GEN_LIB_NAME} PRIVATE torch)
 
   include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
+  if(EXECUTORCH_BUILD_PYBIND AND APPLE)
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_no_prim_ops_shared)
+    target_link_options(${GEN_LIB_NAME} PRIVATE -undefined dynamic_lookup)
+  else()
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_no_prim_ops)
+  endif()
 endfunction()
 
 # Generate a runtime lib for registering operators in Executorch

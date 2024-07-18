@@ -1,5 +1,4 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -12,7 +11,7 @@ import random
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import torch
 import torch.export._trace as export_trace
@@ -176,6 +175,9 @@ class Quantize(Stage):
     def graph_module(self) -> str:
         return self.converted_graph
 
+    def run_artifact(self, inputs):
+        return self.converted_graph.forward(*inputs)
+
 
 @register_stage
 class Export(Stage):
@@ -190,7 +192,7 @@ class Export(Stage):
     ) -> None:
         self.exported_program = export(
             artifact, inputs, dynamic_shapes=self.dynamic_shapes
-        ).run_decompositions()
+        )
 
     @property
     def artifact(self) -> ExportedProgram:
@@ -225,14 +227,30 @@ class ToEdge(Stage):
 
 @register_stage
 class RunPasses(Stage):
-    def __init__(self, pass_list: Optional[List[Type[PassType]]] = None):
+    def __init__(
+        self,
+        pass_list: Optional[List[Type[PassType]]] = None,
+        pass_functions: Optional[List[Callable]] = None,
+    ):
         self.pass_list = pass_list
+        self.pass_functions = pass_functions
         self.edge_dialect_program = None
 
     def run(self, artifact: EdgeProgramManager, inputs=None) -> None:
-        pass_manager = XNNPACKPassManager(artifact.exported_program(), self.pass_list)
         self.edge_dialect_program = artifact
-        self.edge_dialect_program._edge_programs["forward"] = pass_manager.transform()
+        if self.pass_list:
+            pass_manager = XNNPACKPassManager(
+                artifact.exported_program(), self.pass_list
+            )
+            self.edge_dialect_program._edge_programs["forward"] = (
+                pass_manager.transform()
+            )
+        if self.pass_functions:
+            assert isinstance(self.pass_functions, list)
+            for pass_function in self.pass_functions:
+                self.edge_dialect_program._edge_programs["forward"] = pass_function(
+                    self.edge_dialect_program.exported_program()
+                )
 
     @property
     def artifact(self) -> EdgeProgramManager:
@@ -419,7 +437,7 @@ class Tester:
                             dim_spec.max, 1000
                         )  # unbounded int max is too large
                         lower_bound = (
-                            dim_spec.min if dim_spec.min != 2 else 1
+                            dim_spec.min if dim_spec.min >= 2 else 1
                         )  # 0/1 specialization means dim_spec.min can never be 1
                         dim_name_to_size[dim_name] = fn(
                             random.randint(lower_bound, upper_bound)

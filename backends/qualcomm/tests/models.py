@@ -29,7 +29,7 @@ class AddConstantLong(torch.nn.Module):
         super().__init__()
 
     def forward(self, x):
-        return 10.0 + x
+        return 10 + x
 
 
 class Arange(torch.nn.Module):
@@ -187,6 +187,19 @@ class CompositeDelegateModule(torch.nn.Module):
                 return x4
 
         return CompositeReferenceModule(self.modules)
+
+
+class ContextBinaryExample(torch.nn.Module):
+    def forward(self, x, y):
+        x = torch.nn.functional.relu(x)
+        y = torch.nn.functional.relu(y)
+        return x, y
+
+    def example_inputs(self):
+        return {
+            "x": torch.randn((1, 3, 3, 3)),
+            "y": torch.randn((2, 1, 5, 5)),
+        }
 
 
 class Conv1dSequential(torch.nn.Module):
@@ -786,6 +799,20 @@ class SliceCopy(torch.nn.Module):
     def forward(self, x, y):
         seq_length = y.size()[1]
         return x[:, :seq_length] + self.position_ids[:, :seq_length]
+
+
+class SliceCopyWithStep(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.position_ids = torch.randn([1, 512])
+        self.step = 2
+
+    def forward(self, x, y):
+        seq_length = y.size()[1]
+        return (
+            x[:, : seq_length : self.step]
+            + self.position_ids[:, : seq_length : self.step]
+        )
 
 
 class Softmax(torch.nn.Module):

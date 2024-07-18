@@ -144,6 +144,19 @@ class CoreMLBackend(BackendDetails):
         return ct.target.iOS15
 
     @staticmethod
+    def compute_unit_from_compile_specs(
+        compile_specs: List[CompileSpec],
+    ) -> ct.ComputeUnit:
+        """
+        Returns the minimum deployment target by parsing the list of compile specs.
+        """
+        for compile_spec in compile_specs:
+            if compile_spec.key == COMPILE_SPEC_KEYS.COMPUTE_UNITS.value:
+                return ct.ComputeUnit[compile_spec.value.decode("utf-8").upper()]
+
+        return ct.ComputeUnit.ALL
+
+    @staticmethod
     def generate_compute_unit_compile_spec(
         compute_unit: ct.ComputeUnit,
     ) -> CompileSpec:
@@ -364,14 +377,19 @@ class CoreMLBackend(BackendDetails):
             CoreMLBackend.min_deployment_target_from_compile_specs(compile_specs)
         )
 
+        compute_units: ct.ComputeUnit = CoreMLBackend.compute_unit_from_compile_specs(
+            compile_specs
+        )
+
         mlmodel = ct.convert(
             model=edge_program,
             source="pytorch",
             convert_to="mlprogram",
             pass_pipeline=ct.PassPipeline.DEFAULT,
-            skip_model_load=False,
+            skip_model_load=True,
             compute_precision=model_compute_precision,
             minimum_deployment_target=minimum_deployment_target,
+            compute_units=compute_units,
         )
 
         return CoreMLBackend.preprocess_model(mlmodel, model_type=model_type)

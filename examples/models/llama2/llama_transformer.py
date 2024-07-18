@@ -13,6 +13,13 @@ from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
 
+from executorch.examples.models.llama2.rope import (
+    apply_rotary_emb,
+    hf_apply_rotary_emb,
+    hf_precompute_freqs_cis,
+    precompute_freqs_cis,
+)
+
 from torch import nn
 
 
@@ -88,6 +95,8 @@ class ModelArgs:
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
     )
+    enable_dynamic_shape: bool = False  # export model with dynamic shape support
+    use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
     )
@@ -132,54 +141,6 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
     )
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float):
-    freqs = 1.0 / (
-        theta ** (torch.arange(0, dim, 2, device="cpu")[: (dim // 2)].float() / dim)
-    )
-    t = torch.arange(end, device=freqs.device)  # pyre-ignore
-    freqs = torch.outer(t, freqs).float()  # pyre-ignore
-    freqs_cos = torch.cos(freqs)
-    freqs_sin = torch.sin(freqs)
-    return freqs_cos, freqs_sin
-
-
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
-    ndim = x.ndim
-    freqs_cis_ndim = freqs_cis.ndim
-    if freqs_cis_ndim == 3:
-        # freqs_cis: (seq_len, n_heads, head_dim // 2)
-        assert freqs_cis.shape == (x.shape[-3], x.shape[-2], x.shape[-1])
-        shape = [
-            d if (i == ndim - 3 or i == ndim - 2 or i == ndim - 1) else 1
-            for i, d in enumerate(x.shape)
-        ]
-    else:
-        # freqs_cis: (seq_len, head_dim // 2)
-        assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-        shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-    return freqs_cis.view(shape)
-
-
-def apply_rotary_emb(
-    xq: torch.Tensor, xk: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    xq_r, xq_i = xq.float().reshape(xq.shape[:-1] + (-1, 2)).unbind(-1)
-    xk_r, xk_i = xk.float().reshape(xk.shape[:-1] + (-1, 2)).unbind(-1)
-
-    freqs_cos = reshape_for_broadcast(freqs_cos, xq_r)
-    freqs_sin = reshape_for_broadcast(freqs_sin, xq_r)
-
-    xq_out_r = xq_r * freqs_cos - xq_i * freqs_sin
-    xq_out_i = xq_r * freqs_sin + xq_i * freqs_cos
-    xk_out_r = xk_r * freqs_cos - xk_i * freqs_sin
-    xk_out_i = xk_r * freqs_sin + xk_i * freqs_cos
-
-    xq_out = torch.stack([xq_out_r, xq_out_i], dim=-1).flatten(3)
-    xk_out = torch.stack([xk_out_r, xk_out_i], dim=-1).flatten(3)
-
-    return xq_out.type_as(xq), xk_out.type_as(xk)
-
-
 class KVCache(nn.Module):
     def __init__(
         self,
@@ -188,15 +149,18 @@ class KVCache(nn.Module):
         n_heads: int,
         head_dim: int,
         transpose_cache: bool,
+        enable_dynamic_shape: bool,
         dtype=torch.float32,
     ):
         super().__init__()
+        self.max_seq_length = max_seq_length
         if transpose_cache:
             cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
         else:
             cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
 
         self.transpose_cache = transpose_cache
+        self.enable_dynamic_shape = enable_dynamic_shape
         self.register_buffer(
             "k_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
         )
@@ -208,12 +172,31 @@ class KVCache(nn.Module):
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # input_pos: [S], k_val: [B, H, S, D] or [B, S, H, D] depending on transpose_cache
-        k_out = self.k_cache
-        v_out = self.v_cache
-        k_out[:, :, input_pos] = k_val
-        v_out[:, :, input_pos] = v_val
+        if self.enable_dynamic_shape:
+            start_pos = input_pos[-1].item()
+            torch._check_is_size(start_pos)
+            torch._check(start_pos < self.max_seq_length)
+            seq_length = k_val.size(2)
+            # Replace the entry in the cache for this token
+            # The following lines are equivalent to:
+            # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+            # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+            # We use .narrow() here to make the compiler happy
+            # pyre-ignore: Incompatible parameter type [6]
+            narrowed_k = self.k_cache.narrow(2, start_pos, seq_length)
+            # pyre-ignore: Incompatible parameter type [6]
+            narrowed_v = self.v_cache.narrow(2, start_pos, seq_length)
 
-        return k_out, v_out
+            narrowed_k.copy_(k_val)
+            narrowed_v.copy_(v_val)
+            return self.k_cache, self.v_cache
+        else:
+            k_out = self.k_cache
+            v_out = self.v_cache
+            k_out[:, :, input_pos] = k_val
+            v_out[:, :, input_pos] = v_val
+
+            return k_out, v_out
 
 
 class SDPA(nn.Module):
@@ -223,12 +206,16 @@ class SDPA(nn.Module):
         dim: int,
         head_dim: int,
         n_rep: int,
+        max_seq_len: int,
+        enable_dynamic_shape: bool,
     ):
         super().__init__()
         self.kv_cache = kv_cache
         self.dim = dim
         self.head_dim = head_dim
         self.n_rep = n_rep
+        self.max_seq_len = max_seq_len
+        self.enable_dynamic_shape = enable_dynamic_shape
 
     def forward(
         self,
@@ -245,7 +232,15 @@ class SDPA(nn.Module):
         v = v.transpose(1, 2)
 
         k, v = self.kv_cache.update(input_pos, k, v)
-        attn_mask = mask[None, None, input_pos]
+        if self.enable_dynamic_shape:
+            start_pos = input_pos[-1].item()
+            torch._check_is_size(start_pos)
+            torch._check(start_pos < self.max_seq_len)
+            seq_length = q.size(2)
+            # pyre-ignore: Incompatible parameter type [6]
+            attn_mask = mask.narrow(0, start_pos, seq_length)
+        else:
+            attn_mask = mask[None, None, input_pos]
 
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
@@ -293,13 +288,20 @@ class Attention(nn.Module):
                 self.n_kv_heads,
                 self.head_dim,
                 not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op dont transpose the cache. Expect untransposed q k v
+                args.enable_dynamic_shape,
             )
             self.SDPA = SDPA(
                 kv_cache=self.kv_cache,
                 dim=self.dim,
                 head_dim=self.head_dim,
                 n_rep=self.n_rep,
+                max_seq_len=self.max_seq_len,
+                enable_dynamic_shape=args.enable_dynamic_shape,
             )
+        if args.use_hf_rope:
+            self.apply_rotary_emb = hf_apply_rotary_emb
+        else:
+            self.apply_rotary_emb = apply_rotary_emb
 
     def forward(
         self,
@@ -318,7 +320,7 @@ class Attention(nn.Module):
         v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
         # RoPE relative positional embeddings
-        q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+        q, k = self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
 
         if self.use_kv_cache:
             assert input_pos is not None
@@ -447,8 +449,12 @@ class Transformer(nn.Module):
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
-
-        freqs_cos, freqs_sin = precompute_freqs_cis(
+        self.max_seq_len = params.max_seq_len
+        if params.use_hf_rope:
+            self.precompute_freqs_cis = hf_precompute_freqs_cis
+        else:
+            self.precompute_freqs_cis = precompute_freqs_cis
+        freqs_cos, freqs_sin = self.precompute_freqs_cis(
             params.dim // params.n_heads,
             (
                 params.max_seq_len  # Normal llama2.
@@ -462,22 +468,42 @@ class Transformer(nn.Module):
 
     def forward(
         self,
-        tokens: torch.Tensor,
+        tokens: Optional[torch.LongTensor] = None,  # tokens
         input_pos: Optional[
-            torch.Tensor
+            torch.LongTensor
         ] = None,  # Scalar tensor indicating size of window of the caches
+        h: Optional[torch.FloatTensor] = None,  # embeddings
     ) -> torch.Tensor:
-        _bsz, seqlen = tokens.shape
-        h = self.tok_embeddings(tokens)
+        if (tokens is None) ^ (h is not None):
+            raise ValueError(
+                "You cannot specify both tokens and h at the same time, and must specify either one"
+            )
+        if tokens is not None and h is None:
+            h = self.tok_embeddings(tokens)
+        seqlen = h.shape[1]
 
         if self.use_kv_cache:
             assert (
                 input_pos is not None
             ), "input_pos must be provided when use_kv_cache is True"
 
-            # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
-            freqs_cos = self.freqs_cos[input_pos]
-            freqs_sin = self.freqs_sin[input_pos]
+            if self.params.enable_dynamic_shape:
+                # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
+                input_pos_item = input_pos[-1].item()
+                torch._check_is_size(input_pos_item)
+                torch._check(input_pos_item < self.params.max_seq_len)
+                # pyre-ignore: Incompatible parameter type [6]: torch.narrow does expect int or Tensor
+                freqs_cos = self.freqs_cos.narrow(0, input_pos_item, seqlen)
+                # pyre-ignore: Incompatible parameter type [6]
+                freqs_sin = self.freqs_sin.narrow(0, input_pos_item, seqlen)
+            else:
+                # When not using dynamic shape, use of the .item results in
+                # symints, due to querying the data from tensor.
+                # this path avoids that for mps backend, although probably mps backend
+                # can support dynamic shape?
+                freqs_cos = self.freqs_cos[input_pos]
+                freqs_sin = self.freqs_sin[input_pos]
+
         else:
             assert input_pos is None, "input_pos is unused when use_kv_cache is False"
             freqs_cos = self.freqs_cos[:seqlen]

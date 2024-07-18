@@ -14,8 +14,7 @@ python_unittest(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/transforms:i64_to_i32",
-        "//executorch/backends/transforms:mean_to_sum_div",
+        "//executorch/backends/transforms:convert_dtype_pass",
         "//executorch/backends/vulkan:vulkan_preprocess",
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/exir:lib",

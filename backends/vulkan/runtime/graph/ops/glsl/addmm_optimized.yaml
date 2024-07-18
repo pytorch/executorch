@@ -10,7 +10,12 @@ addmm_optimized:
     NDIM: 3
     PACKING: C_packed
     MAT2_IS_TRANSPOSED: false
+    BATCH_MODE: false
+    TILE_ROW: tile_row_4
   generate_variant_forall:
+    TILE_ROW:
+      - VALUE: tile_row_4
+      - VALUE: tile_row_2
     DTYPE:
       - VALUE: float
       - VALUE: half
@@ -18,3 +23,8 @@ addmm_optimized:
     - NAME: addmm_optimized
     - NAME: linear_optimized
       MAT2_IS_TRANSPOSED: true
+    - NAME: batch_addmm_optimized
+      BATCH_MODE: true
+    - NAME: batch_linear_optimized
+      MAT2_IS_TRANSPOSED: true
+      BATCH_MODE: true

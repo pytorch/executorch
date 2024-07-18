@@ -18,12 +18,12 @@
 namespace vkcompute {
 
 void check_embedding_args(
-    const vTensor& weight,
-    const vTensor& in,
-    const vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(weight, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+    const api::vTensor& weight,
+    const api::vTensor& in,
+    const api::vTensor& out) {
+  VK_CHECK_COND(check_memory_layout_is(weight, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 }
 
 void add_embedding_node(
@@ -41,16 +41,13 @@ void add_embedding_node(
   kernel_name.reserve(kShaderNameReserve);
   add_dtype_suffix(kernel_name, *t_out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
-      {{out, api::MemoryAccessType::WRITE},
-       {{in, weight}, api::MemoryAccessType::READ}},
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{in, weight}, vkapi::MemoryAccessType::READ}},
       {t_out->sizes_ubo()}));
 }
 

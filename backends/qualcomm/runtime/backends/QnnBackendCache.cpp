@@ -29,7 +29,8 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG_WARN(
         "Failed to interpret QNN Context "
-        "binary. Error code %d",
+        "binary. Error code %d. "
+        "Try verifying binary with online-prepare format.",
         QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
@@ -87,17 +88,6 @@ QnnBackendCache::QnnBackendCache(
     state_ = SERIALIZE;
     QNN_EXECUTORCH_LOG_INFO("Caching: Caching is in SAVE MODE.");
     return;
-  } else {
-    // check if context binary came from flatbuffer
-    flatbuffers::FlatBufferBuilder builder;
-    flatbuffers::Verifier verifier(
-        static_cast<const uint8_t* const>(qnn_context_blob_.buffer),
-        qnn_context_blob_.nbytes);
-
-    if (qcir::VerifyGraphBuffer(verifier)) {
-      state_ = ONLINE_PREPARE;
-      return;
-    }
   }
 
   if (qnn_sys_impl_.Load() != Error::Ok) {
@@ -127,6 +117,17 @@ QnnBackendCache::QnnBackendCache(
   QNN_EXECUTORCH_LOG_INFO("Caching: Caching is in RESTORE MODE.");
   Error status = GetQnnGraphInfoFromBinary();
   if (status == Error::Internal) {
+    // check if context binary came from flatbuffer
+    flatbuffers::FlatBufferBuilder builder;
+    flatbuffers::Verifier verifier(
+        static_cast<const uint8_t* const>(qnn_context_blob_.buffer),
+        qnn_context_blob_.nbytes);
+
+    if (qcir::VerifyGraphBuffer(verifier)) {
+      state_ = ONLINE_PREPARE;
+      return;
+    }
+
     QNN_EXECUTORCH_LOG_ERROR(
         "Failed to parse QNN Graph Info. The cache "
         "might be broken. Please consider to re-generate the "

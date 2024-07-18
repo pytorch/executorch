@@ -10,7 +10,7 @@ import torch
 from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
-from .utils import get_conv1d_output_size
+from .utils import get_conv1d_output_size, get_conv2d_output_size
 
 lib = Library("cadence", "DEF")
 
@@ -122,7 +122,7 @@ def quantized_conv_meta(
     out_multiplier: torch.Tensor,
     out_shift: torch.Tensor,
     channel_last: bool = False,
-):
+) -> torch.Tensor:
     out_channels, _in_channels, *kernel_size = weight.shape
     in_size = input.shape
     # Assert that the input tensor has at least 3 dimensions, and at most 6
@@ -130,8 +130,14 @@ def quantized_conv_meta(
     assert len(in_size) < 6
 
     # Compute the output tensor size
-    output_size = get_conv1d_output_size(
-        in_size, out_channels, stride[0], padding[0], dilation[0], kernel_size[0]
+    output_size = (
+        get_conv1d_output_size(
+            in_size, out_channels, stride[1], padding[1], dilation[1], kernel_size[0]
+        )
+        if len(in_size) == 3
+        else get_conv2d_output_size(
+            in_size, out_channels, stride, padding, dilation, kernel_size, channel_last
+        )
     )
 
     return input.new_empty(output_size, dtype=input.dtype)

@@ -42,8 +42,8 @@ void add_slice_tensor_out_node(
   vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
 
-  VK_CHECK_COND(check_memory_layout_is(*t_in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(*t_out, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(*t_in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(*t_out, utils::kChannelsPacked));
 
   // Need normalize the dim
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
@@ -80,9 +80,6 @@ void add_slice_tensor_out_node(
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
 
-    api::utils::uvec3 global_size = t_out->image_extents();
-    api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
     const struct Block final {
       int offset;
       int step;
@@ -94,10 +91,10 @@ void add_slice_tensor_out_node(
     graph.execute_nodes().emplace_back(new ExecuteNode(
         graph,
         VK_KERNEL_FROM_STR(kernel_name),
-        global_size,
-        local_size,
-        {{out, api::MemoryAccessType::WRITE},
-         {in, api::MemoryAccessType::READ}},
+        graph.create_global_wg_size(out),
+        graph.create_local_wg_size(out),
+        {{out, vkapi::MemoryAccessType::WRITE},
+         {in, vkapi::MemoryAccessType::READ}},
         {t_out->sizes_ubo(),
          t_in->sizes_ubo(),
          graph.create_params_buffer(params)}));
@@ -117,7 +114,7 @@ void add_slice_tensor_out_node(
 
       // Due to channel packing, each batch value is span over stride planes
       int64_t n_channels = dim_at(in_sizes, kChannel4D);
-      stride = api::utils::div_up_4(n_channels);
+      stride = utils::div_up_4(n_channels);
     } else {
       VK_THROW("Unexpected ncwh_dim!");
     }
@@ -126,8 +123,8 @@ void add_slice_tensor_out_node(
     kernel_name.reserve(kShaderNameReserve);
     add_dtype_suffix(kernel_name, *t_out);
 
-    api::utils::uvec3 global_size = t_out->image_extents();
-    api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+    utils::uvec3 global_size = t_out->image_extents();
+    utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
     const struct Block final {
       int dim;
@@ -146,8 +143,8 @@ void add_slice_tensor_out_node(
         VK_KERNEL_FROM_STR(kernel_name),
         global_size,
         local_size,
-        {{out, api::MemoryAccessType::WRITE},
-         {in, api::MemoryAccessType::READ}},
+        {{out, vkapi::MemoryAccessType::WRITE},
+         {in, vkapi::MemoryAccessType::READ}},
         {t_out->sizes_ubo(), graph.create_params_buffer(params)}));
   }
 }

@@ -18,9 +18,9 @@
 namespace vkcompute {
 
 void check_binary_op_args(
-    const vTensor& self,
-    const vTensor& other,
-    const vTensor& out) {
+    const api::vTensor& self,
+    const api::vTensor& other,
+    const api::vTensor& out) {
   VK_CHECK_COND(check_same_memory_layout(self, other, out));
   std::vector<int64_t> broadcasted_sizes =
       calculate_broadcasted_output_size(self, other);
@@ -61,9 +61,6 @@ void add_binary_op_node(
 
   check_binary_op_args(*t_in1, *t_in2, *t_out);
 
-  api::utils::uvec3 global_size = t_out->image_extents();
-  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
-
   float alpha_val = 1.0f;
   // String is checked since floor_div passes in an unused string argument in
   // place of alpha
@@ -71,8 +68,7 @@ void add_binary_op_node(
     alpha_val = graph.extract_scalar<float>(alpha);
   }
 
-  const api::utils::ivec2 broadcast_params =
-      create_broadcast_params(*t_in1, *t_in2);
+  const utils::ivec2 broadcast_params = create_broadcast_params(*t_in1, *t_in2);
 
   std::string kernel_name("binary_");
   kernel_name.reserve(kShaderNameReserve);
@@ -82,11 +78,11 @@ void add_binary_op_node(
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       VK_KERNEL_FROM_STR(kernel_name),
-      global_size,
-      local_size,
+      graph.create_global_wg_size(out),
+      graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {{arg1, arg2}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{arg1, arg2}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->sizes_ubo(),
        t_in1->sizes_ubo(),
@@ -122,6 +118,7 @@ DEFINE_BINARY_OP_WITH_ALPHA_FN(floor_divide);
 DEFINE_BINARY_OP_FN(mul);
 DEFINE_BINARY_OP_FN(div);
 DEFINE_BINARY_OP_FN(pow);
+DEFINE_BINARY_OP_FN(minimum);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.add.Tensor, add);
@@ -130,6 +127,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.div.Tensor, div);
   VK_REGISTER_OP(aten.div.Tensor_mode, floor_divide);
   VK_REGISTER_OP(aten.pow.Tensor_Tensor, pow);
+  VK_REGISTER_OP(aten.minimum.default, minimum);
 }
 
 } // namespace vkcompute

@@ -80,7 +80,7 @@ if __name__ == "__main__":
 
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-        artifact_path=f"{args.build_folder}",
+        build_path=f"{args.build_folder}",
         pte_path=f"{args.artifact}/{pte_filename}.pte",
         workspace=f"/data/local/tmp/executorch/{pte_filename}",
         device_id=args.device,

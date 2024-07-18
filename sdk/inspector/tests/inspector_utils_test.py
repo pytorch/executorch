@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from typing import Dict, Tuple
 
+import torch
+
 from executorch.sdk import generate_etrecord, parse_etrecord
 
 from executorch.sdk.debug_format.base_schema import (
@@ -25,6 +27,7 @@ from executorch.sdk.inspector._inspector_utils import (
     EDGE_DIALECT_GRAPH_KEY,
     find_populated_event,
     gen_graphs_from_etrecord,
+    is_inference_output_equal,
 )
 
 
@@ -73,6 +76,8 @@ class TestInspectorUtils(unittest.TestCase):
         debug_event = flatcc.DebugEvent(
             chain_index=1,
             instruction_id=0,
+            delegate_debug_id_str="56",
+            delegate_debug_id_int=-1,
             debug_entry=flatcc.Value(
                 val=flatcc.ValueType.TENSOR.value,
                 tensor=flatcc.Tensor(
@@ -125,6 +130,45 @@ class TestInspectorUtils(unittest.TestCase):
             profile_event=profile_event, debug_event=debug_event, allocation_event=None
         )
         self.assertEqual(find_populated_event(event), profile_event)
+
+    def test_is_inference_output_equal_returns_false_for_different_tensor_values(self):
+        self.assertFalse(
+            is_inference_output_equal(
+                torch.tensor([[2, 1], [4, 3]]),
+                torch.tensor([[5, 6], [7, 8]]),
+            )
+        )
+
+    def test_is_inference_output_equal_returns_false_for_different_tensor_lists(self):
+        tensor_list_1 = (
+            [
+                torch.tensor([[1, 2], [3, 4]]),
+                torch.tensor([[1, 2], [3, 4]]),
+                torch.tensor([[1, 2], [3, 4]]),
+            ],
+        )
+        tensor_list_2 = [
+            torch.tensor([[1, 2], [3, 4]]),
+            torch.tensor([[1, 2], [3, 4]]),
+        ]
+        # Not equal because of different number of tensors
+        self.assertFalse(is_inference_output_equal(tensor_list_1, tensor_list_2))
+
+    def test_is_inference_output_equal_returns_true_for_same_tensor_values(self):
+        self.assertTrue(
+            is_inference_output_equal(
+                torch.tensor([[2, 1], [4, 3]]),
+                torch.tensor([[2, 1], [4, 3]]),
+            )
+        )
+
+    def test_is_inference_output_equal_returns_true_for_same_strs(self):
+        self.assertTrue(
+            is_inference_output_equal(
+                "value_string",
+                "value_string",
+            )
+        )
 
 
 def gen_mock_operator_graph_with_expected_map() -> (

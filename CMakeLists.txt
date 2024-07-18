@@ -70,6 +70,16 @@ else()
   set(_default_release_disabled_options ON)
 endif()
 
+# Let users override which PAL defaults to use.
+#
+# TODO(dbort): Add another option that lets users point to a specific source
+# file; if set, would override the default option.
+set(EXECUTORCH_PAL_DEFAULT
+    "posix"
+    CACHE STRING
+          "Which PAL default implementation to use: one of {posix, minimal}"
+)
+
 option(EXECUTORCH_ENABLE_LOGGING "Build with ET_LOG_ENABLED"
        ${_default_release_disabled_options}
 )
@@ -184,6 +194,12 @@ option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
 option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 
 option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
+
+option(BUILD_EXECUTORCH_PORTABLE_OPS "Build portable_ops library" ON)
+
+option(EXECUTORCH_USE_DL "Use libdl library" ON)
+
+option(EXECUTORCH_BUILD_CADENCE "Build the Cadence DSP backend" OFF)
 
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
@@ -424,18 +440,40 @@ endif()
 add_subdirectory(schema)
 
 #
-# executorch: Core runtime library
+# executorch_no_prim_ops: Minimal runtime library
 #
-# Only contains primitive operators; does not contain portable kernels or other
-# full operators. Does not contain any backends.
+# The bare-minimum runtime library, supporting the Program and Method
+# interfaces. Does not contain any operators, including primitive ops. Does not
+# contain any backends.
 #
+
+# Remove any PAL-definition files from the sources.
+list(FILTER _executorch_no_prim_ops__srcs EXCLUDE REGEX
+     "runtime/platform/default/[^/]*.cpp$"
+)
+
+# Add the source file that maps to the requested default PAL implementation.
+if(EXECUTORCH_PAL_DEFAULT MATCHES "^(posix|minimal)$")
+  message(STATUS "executorch: Using PAL default '${EXECUTORCH_PAL_DEFAULT}'")
+  list(APPEND _executorch_no_prim_ops__srcs
+       "runtime/platform/default/${EXECUTORCH_PAL_DEFAULT}.cpp"
+  )
+else()
+  message(
+    FATAL_ERROR "Unknown EXECUTORCH_PAL_DEFAULT \"${EXECUTORCH_PAL_DEFAULT}\". "
+                "Expected one of {posix, minimal}."
+  )
+endif()
+
 add_library(executorch_no_prim_ops ${_executorch_no_prim_ops__srcs})
 target_link_libraries(executorch_no_prim_ops PRIVATE program_schema)
-# Check if dl exists for this toolchain and only then link it.
-find_library(DL_LIBRARY_EXISTS NAMES dl)
-# Check if the library was found
-if(DL_LIBRARY_EXISTS)
-  target_link_libraries(executorch_no_prim_ops PRIVATE dl) # For dladdr()
+if(EXECUTORCH_USE_DL)
+  # Check if dl exists for this toolchain and only then link it.
+  find_library(DL_LIBRARY_EXISTS NAMES dl)
+  # Check if the library was found
+  if(DL_LIBRARY_EXISTS)
+    target_link_libraries(executorch_no_prim_ops PRIVATE dl) # For dladdr()
+  endif()
 endif()
 target_include_directories(
   executorch_no_prim_ops PUBLIC ${_common_include_directories}
@@ -447,6 +485,35 @@ if(MAX_KERNEL_NUM)
   )
 endif()
 
+if(EXECUTORCH_BUILD_PYBIND AND APPLE)
+  # shared version
+  add_library(
+    executorch_no_prim_ops_shared SHARED ${_executorch_no_prim_ops__srcs}
+  )
+  target_link_libraries(executorch_no_prim_ops_shared PRIVATE program_schema)
+  if(DL_LIBRARY_EXISTS)
+    target_link_libraries(executorch_no_prim_ops_shared PRIVATE dl) # For dladdr()
+  endif()
+  target_include_directories(
+    executorch_no_prim_ops_shared PUBLIC ${_common_include_directories}
+  )
+  target_compile_options(
+    executorch_no_prim_ops_shared PUBLIC ${_common_compile_options}
+  )
+  if(MAX_KERNEL_NUM)
+    target_compile_definitions(
+      executorch_no_prim_ops_shared PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
+    )
+  endif()
+endif()
+
+#
+# executorch: Primary runtime library with primitive operators.
+#
+# Provides the Program and Method interfaces, along with primitive operators.
+# Does not contain portable kernels or other full operators. Does not contain
+# any backends.
+#
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE executorch_no_prim_ops)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
@@ -460,13 +527,8 @@ target_link_options_shared_lib(executorch)
 # Real integrations should supply their own YAML file that only lists the
 # operators necessary for the models that will run.
 #
+if(BUILD_EXECUTORCH_PORTABLE_OPS)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
-
-if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops
-  )
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
@@ -513,6 +575,8 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
 
   if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
+  elseif(EXECUTORCH_BUILD_CADENCE)
+    list(APPEND _executor_runner_libs cadence_ops_lib)
   else()
     list(APPEND _executor_runner_libs portable_ops_lib)
   endif()
@@ -583,6 +647,10 @@ if(EXECUTORCH_BUILD_COREML)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
 endif()
 
+if(EXECUTORCH_BUILD_CADENCE)
+   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/cadence)
+endif()
+
 if(EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 
@@ -607,6 +675,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       executorch
       extension_data_loader
       portable_ops_lib
+      quantized_ops_aot_lib
       util
       torch
   )
@@ -630,17 +699,6 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs quantized_kernels quantized_ops_lib)
   endif()
 
-  # TODO(larryliu): Fix macOS 2 dylibs having 2 sets of static variables issue
-  if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT AND NOT APPLE)
-    list(APPEND _dep_libs custom_ops_aot_lib)
-  endif()
-  # TODO(laryliu): Fix linux duplicate registation problem. In GH CI worker
-  # libcustom_ops.a doesn't dedup with the one indirectly linked from
-  # libcustom_ops_aot_lib.a
-  if(EXECUTORCH_BUILD_KERNELS_CUSTOM AND APPLE)
-    target_link_options_shared_lib(custom_ops)
-    list(APPEND _dep_libs custom_ops)
-  endif()
   # compile options for pybind
   set(_pybind_compile_options
       -Wno-deprecated-declarations
@@ -665,7 +723,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_link_libraries(util PRIVATE torch c10 executorch)
 
   # pybind portable_lib
-  pybind11_add_module(portable_lib extension/pybindings/pybindings.cpp)
+  pybind11_add_module(portable_lib SHARED extension/pybindings/pybindings.cpp)
   # The actual output file needs a leading underscore so it can coexist with
   # portable_lib.py in the same python package.
   set_target_properties(portable_lib PROPERTIES OUTPUT_NAME "_portable_lib")
@@ -674,7 +732,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   )
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
-  target_link_libraries(portable_lib PUBLIC ${_dep_libs})
+  target_link_libraries(portable_lib PRIVATE ${_dep_libs})
   if(APPLE)
     # pip wheels will need to be able to find the torch libraries. On Linux, the
     # .so has non-absolute dependencies on libs like "libtorch.so" without
@@ -697,6 +755,13 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings
+  )
+endif()
+
+if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
+  # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops
   )
 endif()
 

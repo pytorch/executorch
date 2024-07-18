@@ -31,7 +31,7 @@ void set_staging_zeros(api::StorageBuffer& staging, const size_t nbytes);
 // Functions to get shaders
 //
 
-api::ShaderInfo get_nchw_to_tensor_shader(const vTensor& v_dst);
-api::ShaderInfo get_tensor_to_nchw_shader(const vTensor& v_src);
+vkapi::ShaderInfo get_nchw_to_tensor_shader(const api::vTensor& v_dst);
+vkapi::ShaderInfo get_tensor_to_nchw_shader(const api::vTensor& v_src);
 
 } // namespace vkcompute
