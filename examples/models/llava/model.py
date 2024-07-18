@@ -230,12 +230,9 @@ class Llava(torch.nn.Module):
 
     def forward(
         self,
-        prompt_before_image: torch.Tensor,
         images: torch.Tensor,
-        prompt_after_image: torch.Tensor,
     ) -> torch.Tensor:
-        """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
-        return self.prefill(prompt_before_image, images, prompt_after_image)
+        return self.image_embedding(images)
 
 
 def get_prompt(query: str, mm_use_im_start_end: bool, model_name: str) -> str:
@@ -320,7 +317,22 @@ class LlavaModel(EagerModelBase):
         return model
 
     def get_example_inputs(self):
+        """Returns a resized image as input to model.forward()."""
+        if self.resized_image:
+            return self.resized_image
+        imagr = torchvision.transforms.functional.pil_to_tensor(self.image)
+        ratio = (
+            max(imagr.shape[1], imagr.shape[2])
+            / self.image_processor.crop_size["height"]
+        )
+        output_size = (int(imagr.shape[1] / ratio), int(imagr.shape[2] / ratio))
+        self.resized_image = torchvision.transforms.Resize(size=output_size)(imagr)
+        return self.resized_image
 
+    def get_inputs_for_prefill(self):
+        """Returns prompts as well as image."""
+        if self.input:
+            return self.input
         model_name = get_model_name_from_path(self.model_path)
         self.prompt = get_prompt(self.args.query, False, model_name)
         self.input_ids = (
@@ -331,26 +343,29 @@ class LlavaModel(EagerModelBase):
             .cpu()
         )
         index = torch.where(self.input_ids == IMAGE_TOKEN_INDEX)[1]
-        prompt_before_image = self.input_ids[:, :index]
+        self.prompt_before_image = self.input_ids[:, :index]
         # print(prompt_before_image.shape)
-        prompt_after_image = self.input_ids[:, index + 1 :]
+        self.prompt_after_image = self.input_ids[:, index + 1 :]
         # print(prompt_after_image.shape)
-        imagr = torchvision.transforms.functional.pil_to_tensor(self.image)
-        ratio = (
-            max(imagr.shape[1], imagr.shape[2])
-            / self.image_processor.crop_size["height"]
+        self.input = (
+            self.prompt_before_image,
+            self.get_example_inputs(),
+            self.prompt_after_image,
         )
-        output_size = (int(imagr.shape[1] / ratio), int(imagr.shape[2] / ratio))
-        resized = torchvision.transforms.Resize(size=output_size)(imagr)
-        self.inputs = (prompt_before_image, resized, prompt_after_image)
-        return self.inputs
+        return self.input
 
     def get_dynamic_shapes(self):
+        return self._get_image_dynamic_shapes()
+
+    def _get_image_dynamic_shapes(self):
         height = Dim("height", min=8, max=336)
         # height = Dim("height", min=8, max=4091)
-        token_dim_1 = Dim("token_dim_1", min=2, max=3518)
-        token_dim_2 = Dim("token_dim_2", min=2, max=3518)
         width = Dim("width", min=28, max=336)
         # width = Dim("width", min=9, max=4092)
-        dynamic_shapes = [{1: token_dim_1}, {1: height, 2: width}, {1: token_dim_2}]
+        dynamic_shapes = [{1: height, 2: width}]
+        return dynamic_shapes
+
+    def _get_prompt_dynamic_shapes(self):
+        token_dim = Dim("token_dim", min=2, max=3518)
+        dynamic_shapes = [{1: token_dim}, {1: 1}]
         return dynamic_shapes
