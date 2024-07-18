@@ -340,33 +340,6 @@ Result<const void*> Program::get_constant_buffer_data(
   }
 }
 
-Result<int64_t> Program::get_non_const_buffer_size(
-    size_t buffer_index,
-    const char* method_name) const {
-  auto plan = get_execution_plan(internal_program_, method_name);
-  if (!plan.ok()) {
-    return plan.error();
-  }
-  auto non_const_buffer_sizes = plan.get()->non_const_buffer_sizes();
-  if (buffer_index >= non_const_buffer_sizes->size()) {
-    ET_LOG(
-        Error,
-        "invalid buffer index %zu for size %zu",
-        buffer_index,
-        (size_t)non_const_buffer_sizes->size());
-    return Error::InvalidArgument;
-  }
-  return (*(plan.get()->non_const_buffer_sizes()))[buffer_index];
-}
-
-Result<size_t> Program::num_non_const_buffers(const char* method_name) const {
-  auto plan = get_execution_plan(internal_program_, method_name);
-  if (!plan.ok()) {
-    return plan.error();
-  }
-  return plan.get()->non_const_buffer_sizes()->size();
-}
-
 Result<const char*> Program::get_output_flattening_encoding(
     const char* method_name) const {
   auto plan = get_execution_plan(internal_program_, method_name);

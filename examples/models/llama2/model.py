@@ -229,7 +229,7 @@ the checkpoint format to avoid generating faulty models.
         if self.enable_dynamic_shape:
             return (
                 torch.tensor([[2, 3, 4]], dtype=torch.long),
-                torch.tensor([0, 1, 2], dtype=torch.long),
+                torch.tensor([0], dtype=torch.long),
             )
         else:
             return (
