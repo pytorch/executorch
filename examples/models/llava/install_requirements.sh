@@ -17,8 +17,14 @@ pip install protobuf
 # Reinstall bitsandbytes to make it compatible.
 pip install bitsandbytes -I
 
+# numpy needs to be pin to 1.24. 1.26.4 will error out
+pip install numpy==1.24
+
+# Newer transformer will give TypeError: LlavaLlamaForCausalLM.forward() got an unexpected keyword argument 'cache_position'
+pip install transformers==4.37.2
+
 # The deps of llava can have different versions than deps of ExecuTorch.
 # For example, torch version required from llava is older than ExecuTorch.
 # To make both work, recover ExecuTorch's original dependencies by rerunning
 # the install_requirements.sh.
-bash -x ./install_requirements.sh
+bash -x ./install_requirements.sh --pybind xnnpack
