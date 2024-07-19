@@ -487,15 +487,7 @@
 <p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
 <dl class="cpp function">
 <dt class="sig sig-object cpp">
-<span class="target" id="classtorch_1_1executor_1_1DataLoader_1ae1e2d721134592477404b821478d18fa"></span><span class="sig-name descname"><span class="pre">virtual</span> <span class="pre">__ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">FreeableBuffer</span> <span class="pre">&gt;</span> <span class="pre">Load</span> <span class="pre">(size_t</span> <span class="pre">offset,</span> <span class="pre">size_t</span> <span class="pre">size)=0</span></span></dt>
-<dd><p>DEPRECATED: Use <code class="docutils literal notranslate"><a class="reference internal" href="#classtorch_1_1executor_1_1DataLoader_1a55ecc35a7a6496ac3e64bf8f6f11c6ea"><span class="std std-ref"><span class="pre">load()</span></span></a></code> going forward for access to segment info during the load.</p>
-<p>Loads <code class="docutils literal notranslate"><span class="pre">size</span></code> bytes at byte offset <code class="docutils literal notranslate"><span class="pre">offset</span></code> from the underlying data source into a <code class="docutils literal notranslate"><span class="pre">FreeableBuffer</span></code>, which owns the memory.</p>
-<p>NOTE: This must be thread-safe. If this call modifies common state, the implementation must do its own locking. </p>
-</dd></dl>
-
-<dl class="cpp function">
-<dt class="sig sig-object cpp">
-<span class="target" id="classtorch_1_1executor_1_1DataLoader_1a55ecc35a7a6496ac3e64bf8f6f11c6ea"></span><span class="sig-name descname"><span class="pre">inline</span> <span class="pre">virtual</span> <span class="pre">__ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">FreeableBuffer</span> <span class="pre">&gt;</span> <span class="pre">load</span> <span class="pre">(size_t</span> <span class="pre">offset,</span> <span class="pre">size_t</span> <span class="pre">size,</span> <span class="pre">const</span> <span class="pre">SegmentInfo</span> <span class="pre">&amp;segment_info)</span></span></dt>
+<span class="target" id="classtorch_1_1executor_1_1DataLoader_1aff3168779b1040fe832d4ec98d818dd9"></span><span class="sig-name descname"><span class="pre">virtual</span> <span class="pre">__ET_NODISCARD</span> <span class="pre">Result&lt;</span> <span class="pre">FreeableBuffer</span> <span class="pre">&gt;</span> <span class="pre">load</span> <span class="pre">(size_t</span> <span class="pre">offset,</span> <span class="pre">size_t</span> <span class="pre">size,</span> <span class="pre">const</span> <span class="pre">SegmentInfo</span> <span class="pre">&amp;segment_info)=0</span></span></dt>
 <dd><p>Loads data from the underlying data source.</p>
 <p>NOTE: This must be thread-safe. If this call modifies common state, the implementation must do its own locking.</p>
 <dl class="field-list simple">
