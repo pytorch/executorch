@@ -547,6 +547,14 @@ If you need to run other models like LLaMA2, skip this skip.</p></li>
 </pre></div>
 </div>
 <ol class="arabic simple" start="4">
+<li><p>Build the Android Java extension code:</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">pushd</span><span class="w"> </span>extension/android
+./gradlew<span class="w"> </span>build
+<span class="nb">popd</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="5">
 <li><p>Run the following command set up the required JNI library:</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">pushd</span><span class="w"> </span>examples/demo-apps/android/LlamaDemo
