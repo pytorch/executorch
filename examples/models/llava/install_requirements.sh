@@ -7,8 +7,8 @@
 
 set -x
 
-# install llava from the submodule. Try not forcing install, as it may break other dependencies.
-pip install examples/third-party/LLaVA
+# install llava from the submodule
+pip install --force-reinstall -e examples/third-party/LLaVA
 
 # not included in the pip install package, but needed in llava
 pip install protobuf
@@ -24,7 +24,7 @@ pip install numpy==1.24
 # For example, torch version required from llava is older than ExecuTorch.
 # To make both work, recover ExecuTorch's original dependencies by rerunning
 # the install_requirements.sh.
-bash -x ./install_requirements.sh --pybind xnnpack
+bash -x ./install_requirements.sh
 
 # Newer transformer will give TypeError: LlavaLlamaForCausalLM.forward() got an unexpected keyword argument 'cache_position'
 pip install timm==0.6.13
