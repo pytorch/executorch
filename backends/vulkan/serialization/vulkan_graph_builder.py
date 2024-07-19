@@ -148,6 +148,8 @@ class VkGraphBuilder:
             new_id = self.create_value_list_value(spec)
             self.node_to_value_ids[node] = new_id
             return new_id
+        elif isinstance(spec, NoneType):
+            return self.create_null_value()
         else:
             raise RuntimeError(f"Cannot create value for spec of type {type(spec)}")
 
