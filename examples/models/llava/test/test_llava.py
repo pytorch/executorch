@@ -9,7 +9,7 @@ import unittest
 
 import torch
 
-from ..model import LlavaModel
+from executorch.examples.models.llava.model import LlavaModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
