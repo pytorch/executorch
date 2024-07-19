@@ -64,7 +64,7 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
       }
       return result;
     }
-    return null;
+    return new String[0];
   }
 
   private void setLocalModel(String modelPath, String tokenizerPath) {
