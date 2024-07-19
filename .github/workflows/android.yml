@@ -91,7 +91,7 @@ jobs:
         # like https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b-0717.zip when this is
         # updated to run Llama3
         tokenizer: [bpe]
-    with:
+    with: 
       device-type: android
       runner: linux.2xlarge
       test-infra-ref: ''
