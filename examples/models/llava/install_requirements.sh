@@ -7,8 +7,8 @@
 
 set -x
 
-# install llava from the submodule
-pip install --force-reinstall -e examples/third-party/LLaVA
+# install llava from the submodule. Try not forcing install, as it may break other dependencies.
+pip install examples/third-party/LLaVA
 
 # not included in the pip install package, but needed in llava
 pip install protobuf
