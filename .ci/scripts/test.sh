@@ -71,10 +71,9 @@ test_model() {
   if [[ "${MODEL_NAME}" == "llava" ]]; then
     # Install requirements for llava
     bash examples/models/llava/install_requirements.sh
-    STRICT="--no-strict"
   fi
   # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
-  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
+  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
   run_portable_executor_runner
 }
 
