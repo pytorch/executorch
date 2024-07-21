@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+
 import torch
 from executorch.extension.llm.export.builder import LLMEdgeManager
 
@@ -19,6 +20,7 @@ from transformers import Phi3Config, Phi3ForCausalLM
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
 
 def main() -> None:
     torch.manual_seed(42)

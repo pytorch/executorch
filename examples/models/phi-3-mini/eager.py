@@ -8,37 +8,42 @@
 # Script to run phi-3-mini model in eager mode.
 
 import argparse
+import time
+
 import torch
 
-from transformers import Phi3Config, Phi3ForCausalLM, AutoTokenizer
+from transformers import AutoTokenizer, Phi3ForCausalLM
 
 end_of_text_token = 32000
+
 
 def _generate_token(args, model, prompt_tokens):
     current_token = 0
     generated_tokens = []
 
-    print(f"Generating tokens:", end='')
+    print("Generating tokens:", end="", flush=True)
 
     while current_token != end_of_text_token and len(generated_tokens) < args.seq_len:
         outputs = model.forward(input_ids=prompt_tokens)
         current_token = torch.argmax(outputs.logits[:, -1, :], dim=-1).item()
-        print(f" {current_token}", end='')
+        print(f" {current_token}", end="", flush=True)
         generated_tokens.append(current_token)
-        prompt_tokens.append(current_token)
+        prompt_tokens = torch.cat([prompt_tokens, torch.tensor([[current_token]], dtype=torch.long)], dim=-1)
+
+    print("", flush=True)
 
     return generated_tokens
 
 
 def _generate_token_with_kv_cache(args, model, prompt_tokens):
-    print(f"Generating tokens:", end='')
+    print("Generating tokens:", end="", flush=True)
 
     result = model.forward(input_ids=prompt_tokens, use_cache=True, return_dict=True)
 
     current_token = torch.argmax(result.logits[:, -1, :], dim=-1).item()
     current_key_value = result.past_key_values
 
-    print(f" {current_token}", end='')
+    print(f" {current_token}", end="", flush=True)
 
     generated_tokens = [current_token]
 
@@ -47,11 +52,14 @@ def _generate_token_with_kv_cache(args, model, prompt_tokens):
             input_ids=torch.tensor([[current_token]], dtype=torch.long),
             use_cache=True,
             return_dict=True,
-            past_key_values=current_key_value)
+            past_key_values=current_key_value,
+        )
         current_token = torch.argmax(result.logits[:, -1, :], dim=-1).item()
         current_key_value = result.past_key_values
-        print(f" {current_token}", end='')
+        print(f" {current_token}", end="", flush=True)
         generated_tokens.append(current_token)
+
+    print("", flush=True)
 
     return generated_tokens
 
@@ -63,34 +71,50 @@ def main(args):
     model = Phi3ForCausalLM.from_pretrained(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    tokens = tokenizer.encode(args, return_tensors="pt")
+    tokens = tokenizer.encode(args.prompt, return_tensors="pt")
 
-    generated_tokens = _generate_token_with_kv_cache(args, model, tokens) if args.use_kv_cach else _generate_token(args, model, tokens)
+    start = time.time()
+    generated_tokens = (
+        _generate_token_with_kv_cache(args, model, tokens)
+        if args.use_kv_cache
+        else _generate_token(args, model, tokens)
+    )
+    end = time.time()
 
-    print("Generated response: \n {}".format(
-        tokenizer.decode(
-            generated_tokens,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False)
-    ))
+    print(
+        "Generated response: \n {}".format(
+            tokenizer.decode(
+                generated_tokens,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
+        ),
+        flush=True
+    )
+    print(f"Time spent: {end - start}", flush=True)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-s"
-                        "--seq_len",
-                        type=int,
-                        default=128,
-                        help="Maximum number tokens to generate"
-                        )
-    parser.add_argument("-kv"
-                        "--use_kv_cache",
-                        default=False,
-                        action="store_true",
-                        help="Whether or not to use KV cache")
-    parser.add_argument("-p",
-                        "--prompt",
-                        type=str,
-                        default="Hello!",
-                        help="Prompt as input for the model"
-                        )
-    args = parser.parse_args()
+    parser.add_argument(
+        "-s",
+        "--seq_len",
+        type=int,
+        default=128,
+        help="Maximum number of tokens to generate",
+    )
+    parser.add_argument(
+        "-kv",
+        "--use_kv_cache",
+        default=False,
+        action="store_true",
+        help="Whether or not to use KV cache",
+    )
+    parser.add_argument(
+        "-p",
+        "--prompt",
+        type=str,
+        default="Tell me a story",
+        help="Prompt as input for the model",
+    )
+    main(parser.parse_args())
