@@ -18,8 +18,8 @@ pip install timm==0.6.13
 pip install protobuf
 
 # bitsandbytes depends on numpy 1.x, which is not compatible with numpy 2.x.
-# Reinstall bitsandbytes to make it compatible.
-pip install bitsandbytes -I
+# Reinstall bitsandbytes to make it compatible. Do not install deps because it messes up torch version.
+pip install bitsandbytes -I --no-deps
 
 # numpy needs to be pin to 1.24. 1.26.4 will error out
 pip install numpy==1.24
