@@ -28,7 +28,9 @@ def _generate_token(args, model, prompt_tokens):
         current_token = torch.argmax(outputs.logits[:, -1, :], dim=-1).item()
         print(f" {current_token}", end="", flush=True)
         generated_tokens.append(current_token)
-        prompt_tokens = torch.cat([prompt_tokens, torch.tensor([[current_token]], dtype=torch.long)], dim=-1)
+        prompt_tokens = torch.cat(
+            [prompt_tokens, torch.tensor([[current_token]], dtype=torch.long)], dim=-1
+        )
 
     print("", flush=True)
 
@@ -89,7 +91,7 @@ def main(args):
                 clean_up_tokenization_spaces=False,
             )
         ),
-        flush=True
+        flush=True,
     )
     print(f"Time spent: {end - start}", flush=True)
 

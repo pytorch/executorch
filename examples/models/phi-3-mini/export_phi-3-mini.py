@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
-
 import torch
 from executorch.extension.llm.export.builder import LLMEdgeManager
 
@@ -16,19 +14,14 @@ from executorch.extension.llm.export.quantizer_lib import (
     PT2EQuantOptions,
 )
 
-from transformers import Phi3Config, Phi3ForCausalLM
-
-FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.INFO, format=FORMAT)
+from transformers import Phi3ForCausalLM
 
 
 def main() -> None:
     torch.manual_seed(42)
 
     # pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
-    configuration = Phi3Config.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
-    logging.info(f"Phi-3-mini model configuration: {configuration}")
-    model = Phi3ForCausalLM(configuration)
+    model = Phi3ForCausalLM.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
 
     modelname = "phi-3-mini"
 
@@ -37,7 +30,7 @@ def main() -> None:
             model=model,
             modelname=modelname,
             max_seq_len=128,
-            dtype=configuration.torch_dtype,
+            dtype=model.dtype,
             use_kv_cache=False,
             example_inputs=(torch.randint(0, 100, (1, 100), dtype=torch.long),),
             dynamic_shapes={
