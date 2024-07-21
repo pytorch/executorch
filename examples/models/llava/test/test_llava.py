@@ -34,7 +34,6 @@ class TestLlava(unittest.TestCase):
 
     def test_generated_output(self):
         # source of truth, using HF llava
-        breakpoint()
         preprocessed = self.llava.image_preprocess(self.resized)
         with torch.inference_mode():
             output_ids = self.llava_model.model.generate(
