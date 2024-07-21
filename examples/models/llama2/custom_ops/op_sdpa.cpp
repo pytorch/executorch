@@ -239,6 +239,12 @@ void cpu_flash_attention(
   at::Tensor value = v.transpose(1, 2);
   */
 
+  // Without this we have out-of-bounds writes for
+  // causal masking
+  static_assert(
+      kv_split_size > q_split_size,
+      "KV_split_size must be greater than q_split_size");
+
   constexpr bool is_reduced_type =
       torch::executor::is_reduced_floating_point<scalar_t>::value;
 
@@ -417,7 +423,31 @@ void cpu_flash_attention(
       // Initialize max and sum
       fill_stub(
           qk_max_data, -std::numeric_limits<accum_t>::infinity(), qBlockSize);
+      // Original flash sdpa wasnt really meant to be used
+      // for decode the way we are using via start_pos here.
+      // Thus when num_keys is 1 during decode phase, we
+      // still need to iterate through all the kv_splits
+      // Take start_pos = 130 and k_split_size = 128
+      // Here we have to produce [1x130] of q @ k.T
+      // when seq_len = 1
+      // But if num_keys = 1 then we dont really loop over
+      // all kv_splits.
+      // When k_split_size > 130, this is not an issue because
+      // there is only one iteration of the following loop anyway.
+      // Outside of determining how many loop iterations are needed
+      // num_keys participates only in causal attention.
+      // Rest of the calculation of q @ k.T and @ v.T is same.
+      // We dont run into this bug when k_split_size < start_pos + seqlen
+      // since there is only one iteration and that applies
+      // causal attention correctly.
+      // Howeve when k_split_size > start_pos + seqlen, we have
+      // more than one iteration, however if we dont adjust num_keys
+      // we dont get more than one iteration
+      // This is unique to this deployment of flash attention since
+      // original implementation wasnt deployed on this way.
+
       int64_t num_keys = is_causal ? std::min(m + qBlockSize, kvSize) : kvSize;
+      num_keys = num_keys + start_pos;
       auto j_kv = j / num_reps;
       for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
         int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
@@ -452,6 +482,7 @@ void cpu_flash_attention(
         // entries need masked out. In our example n = 4
         // will qualify for that
         if (is_causal && num_keys - n <= kvSplitSize) {
+          // For this fn to work k_split_size > q_split_size
           for (int32_t row = 0; row < qBlockSize; ++row) {
             int64_t last_col = m + (row + start_pos) - n;
             accum_t* row_ptr = qk_data + row * kvBlockSize;
