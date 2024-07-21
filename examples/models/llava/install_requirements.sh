@@ -27,5 +27,5 @@ pip install numpy==1.24
 bash -x ./install_requirements.sh
 
 # Newer transformer will give TypeError: LlavaLlamaForCausalLM.forward() got an unexpected keyword argument 'cache_position'
+pip install transformers==4.37.2
 pip install timm==0.6.13
-pip install transformers==4.38.2
