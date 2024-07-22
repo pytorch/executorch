@@ -27,6 +27,7 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 def _to_core_aten(
     model: Union[torch.fx.GraphModule, torch.nn.Module],
     example_inputs: Tuple[Value, ...],
+    kwargs: Optional[Dict[str, Any]] = None,
     dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
     strict=True,
     verbose=True,
@@ -39,7 +40,11 @@ def _to_core_aten(
             f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
         )
     core_aten_ep = export(
-        model, example_inputs, dynamic_shapes=dynamic_shapes, strict=strict
+        model,
+        example_inputs,
+        kwargs=kwargs,
+        dynamic_shapes=dynamic_shapes,
+        strict=strict,
     )
     if verbose:
         logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
@@ -70,6 +75,7 @@ def _core_aten_to_edge(
 def export_to_edge(
     model: Union[torch.fx.GraphModule, torch.nn.Module],
     example_inputs: Tuple[Value, ...],
+    kwargs: Optional[Dict[str, Any]] = None,
     dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
     edge_constant_methods: Optional[Dict[str, Any]] = None,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
@@ -77,7 +83,12 @@ def export_to_edge(
     verbose=True,
 ) -> EdgeProgramManager:
     core_aten_ep = _to_core_aten(
-        model, example_inputs, dynamic_shapes, strict=strict, verbose=verbose
+        model,
+        example_inputs,
+        kwargs=kwargs,
+        dynamic_shapes=dynamic_shapes,
+        strict=strict,
+        verbose=verbose,
     )
     return _core_aten_to_edge(
         core_aten_ep, edge_constant_methods, edge_compile_config, verbose=verbose
@@ -97,7 +108,9 @@ def export_to_exec_prog(
     # pre-autograd export. eventually this will become torch.export
     m = capture_pre_autograd_graph(m, example_inputs)
 
-    core_aten_ep = _to_core_aten(m, example_inputs, dynamic_shapes, strict=strict)
+    core_aten_ep = _to_core_aten(
+        m, example_inputs, dynamic_shapes=dynamic_shapes, strict=strict
+    )
 
     edge_m = _core_aten_to_edge(
         core_aten_ep, edge_constant_methods, edge_compile_config

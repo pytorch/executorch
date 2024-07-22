@@ -10,7 +10,7 @@
 
 import logging
 from enum import Enum
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
@@ -69,6 +69,7 @@ class LLMEdgeManager:
         verbose: bool = False,
         metadata: Optional[dict] = None,
         dynamic_shapes: Optional[Any] = None,
+        kwargs: Optional[Dict[str, Any]] = None,
     ):
         self.model = model
         # graph module returned from capture_pre_autograd_graph
@@ -86,6 +87,7 @@ class LLMEdgeManager:
         self.export_program = None
         self.output_dir = "."
         self.dynamic_shapes = dynamic_shapes
+        self.kwargs = kwargs
         self._saved_pte_filename = None
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
@@ -162,7 +164,10 @@ class LLMEdgeManager:
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             self.pre_autograd_graph_module = capture_pre_autograd_graph(
-                self.model, self.example_inputs, dynamic_shapes=dynamic_shape
+                self.model,
+                self.example_inputs,
+                kwargs=self.kwargs,
+                dynamic_shapes=dynamic_shape,
             )
         return self
 
@@ -189,7 +194,11 @@ class LLMEdgeManager:
                 ), "Please run capture_pre_autograd_graph first"
                 m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
                 # Calibrate
-                m(*self.example_inputs)
+                (
+                    m(*self.example_inputs)
+                    if self.kwargs is None
+                    else m(*self.example_inputs, **self.kwargs)
+                )
                 m = convert_pt2e(m)
                 DuplicateDynamicQuantChainPass()(m)
                 self.pre_autograd_graph_module = m
@@ -210,7 +219,10 @@ class LLMEdgeManager:
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             if self.pre_autograd_graph_module is None:
                 self.pre_autograd_graph_module = capture_pre_autograd_graph(
-                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape
+                    self.model,
+                    self.example_inputs,
+                    kwargs=self.kwargs,
+                    dynamic_shapes=dynamic_shape,
                 )
             self.edge_manager = export_to_edge(
                 self.pre_autograd_graph_module,
