@@ -61,7 +61,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     needs: gather-models
     strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      matrix: [mv3, vit]
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
