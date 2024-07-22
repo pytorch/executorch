@@ -8,8 +8,6 @@ import codecs
 import getpass
 import json
 import os
-import shutil
-import stat
 import time
 from multiprocessing.connection import Client
 
@@ -62,7 +60,6 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
     """
     This function is specific for matmul op 16a8w.
     """
-    from typing import Sequence
 
     from executorch.backends.qualcomm.quantizer.quantizer import (
         get_16a8w_qnn_ptq_config,
@@ -294,9 +291,9 @@ class SingleLlama:
         fx_graph_module = None
 
         with torch.no_grad():
-            fx_graph_module = torch._export.capture_pre_autograd_graph(
+            fx_graph_module = torch.export.export(
                 self.llama_model, self.inputs
-            )
+            ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
         print("Quantizing the model...")
         calibrate(
@@ -343,16 +340,6 @@ class SingleLlama:
                 constant_methods=self.llama_meta,
                 compile_config=EdgeCompileConfig(_check_ir_validity=False),
             )
-
-            setattr(
-                edge_prog_mgr.exported_program(),
-                "_graph_signature",
-                _get_updated_graph_signature(
-                    edge_prog_mgr.exported_program().graph_signature,
-                    edge_prog_mgr.exported_program().graph_module,
-                ),
-            )
-
             edge_prog_mgr = edge_prog_mgr.to_backend(partitioner)
             exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
             with open(f"{work_space}/{pte_filename}.pte", "wb") as file:
@@ -520,7 +507,6 @@ if __name__ == "__main__":
         "-P",
         "--ptq",
         help="If specified, will do PTQ quantization. default is 16bits activation and 4bits weight. Support 8a8w and 16a4w.",
-        required=True,
         default="16a4w",
     )
 
