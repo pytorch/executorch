@@ -6,9 +6,10 @@
 import collections
 import copy
 import os
+import subprocess
 import tempfile
 import unittest
-from typing import Callable, List, Literal, Optional, Tuple
+from typing import Callable, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
@@ -31,12 +32,78 @@ from executorch.examples.qualcomm.scripts.utils import SimpleADB
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program._program import ExecutorchProgram
 from executorch.sdk import generate_etrecord
 from executorch.sdk.inspector import Inspector
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+
+def generate_context_binary(
+    module: torch.nn.Module,
+    inputs: Dict[str, torch.Tensor],
+    quantized: bool,
+    artifact_dir: str,
+):
+    # we also expect clang showing in PATH or context may fail to generate
+    qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
+    ndk = os.environ.get("ANDROID_NDK_ROOT", None)
+    assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
+    assert ndk, "ANDROID_NDK_ROOT was not found in environment variable"
+
+    inputs_tup = tuple(inputs.values())
+    jit_module = torch.jit.trace(module, inputs_tup)
+    torch.jit.save(jit_module, f"{artifact_dir}/jit_module.pt")
+
+    # input data
+    if quantized:
+        input_list = []
+        for name, data in inputs.items():
+            file_name = f"{artifact_dir}/{name}.raw"
+            data.detach().numpy().tofile(file_name)
+            input_list.append(file_name)
+
+        with open(f"{artifact_dir}/input_list.txt", "w") as f:
+            f.write(" ".join(input_list))
+
+    # flow of qnn tools
+    target = "x86_64-linux-clang"
+    inputs_str = [
+        f"-d '{k}' {str(tuple(v.shape)).replace(' ', '')[1:-1]}"
+        for k, v in inputs.items()
+    ]
+    cmds = [
+        # setup qnn env
+        f"source {qnn_sdk}/bin/envsetup.sh;"
+        # qnn-pytorch-converter
+        f"{qnn_sdk}/bin/{target}/qnn-pytorch-converter",
+        f"-i {artifact_dir}/jit_module.pt",
+        *inputs_str,
+        f"--input_list {artifact_dir}/input_list.txt" if quantized else "",
+        "--preserve_io",
+        f"-o {artifact_dir}/model.cpp;",
+        # qnn-model-lib-generator
+        f"{qnn_sdk}/bin/{target}/qnn-model-lib-generator",
+        f"-c {artifact_dir}/model.cpp",
+        f"-t {target}",
+        "-l model",
+        f"-o {artifact_dir}/model_libs;",
+        # qnn-context-binary-generator
+        f"{qnn_sdk}/bin/{target}/qnn-context-binary-generator",
+        f"--model {artifact_dir}/model_libs/{target}/libmodel.so",
+        f"--backend {qnn_sdk}/lib/{target}/libQnnHtp.so",
+        "--binary_file model_ctx",
+        f"--output_dir {artifact_dir};",
+    ]
+    result = subprocess.run(
+        " ".join(cmds),
+        shell=True,
+        executable="/bin/bash",
+        capture_output=True,
+    )
+    assert os.path.isfile(f"{artifact_dir}/model_ctx.bin"), print(result.stderr)
 
 
 class TestQNN(unittest.TestCase):
@@ -113,18 +180,23 @@ class TestQNN(unittest.TestCase):
         self,
         module: torch.nn.Module,
         sample_inputs: Tuple[torch.Tensor],
-        executorch_prog: ExecutorchProgram,
+        executorch_prog: ExecutorchProgram | LoweredBackendModule,
         etrecord_path: str = "etrecord.bin",
         expected_profile_events: int = -1,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
+            buffer = (
+                executorch_prog.buffer
+                if isinstance(executorch_prog, ExecutorchProgram)
+                else executorch_prog.buffer()
+            )
             (
                 input_list,
                 ref_outputs,
                 pte_fname,
             ) = self._save_model_and_expected_output(
                 module,
-                executorch_prog.buffer,
+                buffer,
                 sample_inputs,
                 tmp_dir,
             )
@@ -134,8 +206,8 @@ class TestQNN(unittest.TestCase):
             etdump_path = f"{tmp_dir}/etdump.etdp"
 
             def post_process():
-                for i, _f in enumerate(os.listdir(device_output_dir)):
-                    filename = os.path.join(device_output_dir, f"output_0_{i}.raw")
+                for i, f in enumerate(sorted(os.listdir(device_output_dir))):
+                    filename = os.path.join(device_output_dir, f)
                     output = np.fromfile(filename, dtype=ref_outputs[i].numpy().dtype)
                     output = torch.from_numpy(output).reshape(ref_outputs[i].shape)
                     device_outputs.append(output)
@@ -148,7 +220,7 @@ class TestQNN(unittest.TestCase):
 
             adb = SimpleADB(
                 qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-                artifact_path=self.build_folder,
+                build_path=self.build_folder,
                 pte_path=pte_fname,
                 workspace="/data/local/tmp/qnn_executorch_test",
                 device_id=self.device,

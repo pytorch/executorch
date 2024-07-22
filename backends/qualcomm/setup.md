@@ -15,7 +15,7 @@ Please finish tutorial [Setting up executorch](../../docs/source/getting-started
 `$QNN_SDK_ROOT` refers to the root of Qualcomm AI Engine Direct SDK,
 i.e., the directory containing `QNN_README.txt`.
 
-`$ANDROID_NDK` refers to the root of Android NDK.
+`$ANDROID_NDK_ROOT` refers to the root of Android NDK.
 
 `$EXECUTORCH_ROOT` refers to the root of executorch git repository.
 
@@ -105,7 +105,7 @@ cmake .. \
     -DEXECUTORCH_BUILD_SDK=ON \
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
     -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
-    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
     -DANDROID_NATIVE_API_LEVEL=23 \
     -B$PWD
@@ -113,7 +113,7 @@ cmake .. \
 cmake --build $PWD -j16 --target install
 
 cmake ../examples/qualcomm \
-    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
     -DANDROID_NATIVE_API_LEVEL=23 \
     -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \

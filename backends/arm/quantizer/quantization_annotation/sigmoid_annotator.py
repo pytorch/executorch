@@ -40,7 +40,7 @@ def _annotate_sigmoid(
             continue
         input_node = node.args[0]
 
-        if not arm_quantizer_utils.is_annotated([node]):
+        if not arm_quantizer_utils.is_annotated(node):
             _annotate_input_qspec_map(
                 node,
                 input_node,

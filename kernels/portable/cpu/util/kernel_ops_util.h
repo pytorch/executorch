@@ -72,7 +72,9 @@ void calculate_kernel_output_sizes(
     IntArrayRef padding,
     IntArrayRef dilation,
     exec_aten::SizesType* out_sizes,
-    bool ceil_mode = false);
+    bool ceil_mode = false,
+    bool transposed = false,
+    IntArrayRef output_padding = {});
 
 //
 // Utility functions to apply reduction over a N-dimensional kernel window
@@ -417,6 +419,9 @@ void get_convolution_out_target_size(
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
+    bool transposed,
+    IntArrayRef output_padding,
+    int64_t groups,
     exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 

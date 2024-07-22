@@ -9,22 +9,23 @@
 #pragma once
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
-#include <executorch/backends/vulkan/runtime/api/ParamsBuffer.h>
 #include <executorch/backends/vulkan/runtime/api/ShaderRegistry.h>
-#include <executorch/backends/vulkan/runtime/api/StorageBuffer.h>
-#include <executorch/backends/vulkan/runtime/api/Tensor.h>
 
-#include <executorch/backends/vulkan/runtime/api/utils/VecUtils.h>
+#include <executorch/backends/vulkan/runtime/api/containers/ParamsBuffer.h>
+#include <executorch/backends/vulkan/runtime/api/containers/StorageBuffer.h>
+#include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
 
-#include <executorch/backends/vulkan/runtime/api/vk_api/Adapter.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/Command.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/Descriptor.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/Fence.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/Pipeline.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/Runtime.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/Shader.h>
+#include <executorch/backends/vulkan/runtime/utils/VecUtils.h>
 
-#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Allocation.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Allocator.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Buffer.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/memory/Image.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Command.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Fence.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Pipeline.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
+
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Allocation.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Allocator.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
+#include <executorch/backends/vulkan/runtime/vk_api/memory/Image.h>

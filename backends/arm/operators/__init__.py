@@ -9,7 +9,6 @@ from . import (  # noqa
     op_addmm,
     op_avg_pool2d,
     op_batch_norm,
-    op_clone,
     op_conv2d,
     op_dequant,
     op_div,
