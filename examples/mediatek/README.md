@@ -7,6 +7,7 @@ examples/mediatek
 ├── aot_utils                         # Utils for AoT export
     ├── llm_utils                     # Utils for LLM models
         ├── preformatter_templates    # Model specific prompt preformatter templates
+        ├── prompts                   # Calibration Prompts
         ├── tokenizers_               # Model tokenizer scripts
 ├── model_export_scripts              # Model specifc export scripts
 ├── models                            # Model definitions
@@ -26,19 +27,22 @@ In addition to the Executorch environment setup, refer to the `requirements.txt`
 1. Exporting Models to `.pte`
 - In the `examples/mediatek directory`, run:
 ```bash
-source shell_scripts/export_llama.sh <model_name> <num_chunks> <prompt_num_tokens> <cache_size>
+source shell_scripts/export_llama.sh <model_name> <num_chunks> <prompt_num_tokens> <cache_size> <calibration_set_name>
 ```
 - Defaults:
     - `model_name` = llama3
     - `num_chunks` = 4
     - `prompt_num_tokens` = 128
     - `cache_size` = 1024
+    - `calibration_set_name` = None
 - Argument Explanations/Options:
     - `model_name`: llama2/llama3
     <sub>**Note: Currently Only Tested on Llama2 7B Chat and Llama3 8B Instruct.**</sub>
     - `num_chunks`: Number of chunks to split the model into. Each chunk contains the same number of decoder layers. Will result in `num_chunks` number of `.pte` files being generated. Typical values are 1, 2 and 4.
     - `prompt_num_tokens`: Number of tokens (> 1) consumed each forward pass for the prompt processing stage.
     - `cache_size`: Cache Size.
+    - `calibration_set_name`: Name of calibration dataset with extension that is found inside the `aot_utils/llm_utils/prompts` directory. Example: `alpaca.txt`. If `"None"`, will use dummy data to calibrate.
+    <sub>**Note: Export script example only tested on `.txt` file.**</sub>
 
 2. `.pte` files will be generated in `examples/mediatek/pte`
 

@@ -47,7 +47,7 @@ class NeuropilotBackend(BackendDetails):
         for spec in module_compile_spec:
             if spec.key in SKIP_COMPILE_SPEC_KEYS:
                 continue
-            if spec.value is None:
+            if spec.value == b'':
                 compile_options.append(f'--{spec.key}')
             else:
                 value = spec.value.decode('utf-8')
