@@ -6,10 +6,10 @@
 
 Computation times
 =================
-**00:02.690** total execution time for **tutorials** files:
+**00:02.588** total execution time for **tutorials** files:
 
 +---------------------------------------------------------------------------------------------------+-----------+--------+
-| :ref:`sphx_glr_tutorials_export-to-executorch-tutorial.py` (``export-to-executorch-tutorial.py``) | 00:01.561 | 0.0 MB |
+| :ref:`sphx_glr_tutorials_export-to-executorch-tutorial.py` (``export-to-executorch-tutorial.py``) | 00:01.497 | 0.0 MB |
 +---------------------------------------------------------------------------------------------------+-----------+--------+
-| :ref:`sphx_glr_tutorials_sdk-integration-tutorial.py` (``sdk-integration-tutorial.py``)           | 00:01.129 | 0.0 MB |
+| :ref:`sphx_glr_tutorials_sdk-integration-tutorial.py` (``sdk-integration-tutorial.py``)           | 00:01.091 | 0.0 MB |
 +---------------------------------------------------------------------------------------------------+-----------+--------+
