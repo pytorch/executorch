@@ -43,6 +43,8 @@
 		03729F132BB2042B00152F2E /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F112BB2042B00152F2E /* sampler.cpp */; };
 		03729F162BB2043600152F2E /* bpe_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F142BB2043600152F2E /* bpe_tokenizer.cpp */; };
 		03729F172BB2043600152F2E /* tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F152BB2043600152F2E /* tokenizer.h */; };
+		038D678C2C482C1E00B88CF2 /* llama_tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 038D678A2C482C1D00B88CF2 /* llama_tiktoken.cpp */; };
+		038D678D2C482C1E00B88CF2 /* llama_tiktoken.h in Headers */ = {isa = PBXBuildFile; fileRef = 038D678B2C482C1E00B88CF2 /* llama_tiktoken.h */; };
 		03BADE202BD2E88600DDFDC2 /* bpe_tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */; };
 		03BADE232BD2EB6700DDFDC2 /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03BADE212BD2EB6600DDFDC2 /* tiktoken.cpp */; };
 		03BADE242BD2EB6700DDFDC2 /* tiktoken.h in Headers */ = {isa = PBXBuildFile; fileRef = 03BADE222BD2EB6700DDFDC2 /* tiktoken.h */; };
@@ -95,12 +97,14 @@
 		03729F092BB203B300152F2E /* util.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
 		03729F102BB2042B00152F2E /* sampler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = sampler.h; sourceTree = "<group>"; };
 		03729F112BB2042B00152F2E /* sampler.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = sampler.cpp; sourceTree = "<group>"; };
-		03729F142BB2043600152F2E /* bpe_tokenizer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = bpe_tokenizer.cpp; sourceTree = "<group>"; };
-		03729F152BB2043600152F2E /* tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = tokenizer.h; sourceTree = "<group>"; };
-		03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = bpe_tokenizer.h; sourceTree = "<group>"; };
-		03BADE212BD2EB6600DDFDC2 /* tiktoken.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = tiktoken.cpp; sourceTree = "<group>"; };
-		03BADE222BD2EB6700DDFDC2 /* tiktoken.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = tiktoken.h; sourceTree = "<group>"; };
-		03DDA0FA2BD6368100D234B3 /* base64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = base64.h; sourceTree = "<group>"; };
+		03729F142BB2043600152F2E /* bpe_tokenizer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = bpe_tokenizer.cpp; path = ../../../../extension/llm/tokenizer/bpe_tokenizer.cpp; sourceTree = "<group>"; };
+		03729F152BB2043600152F2E /* tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = tokenizer.h; path = ../../../../extension/llm/tokenizer/tokenizer.h; sourceTree = "<group>"; };
+		038D678A2C482C1D00B88CF2 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = llama_tiktoken.cpp; sourceTree = "<group>"; };
+		038D678B2C482C1E00B88CF2 /* llama_tiktoken.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = llama_tiktoken.h; sourceTree = "<group>"; };
+		03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = bpe_tokenizer.h; path = ../../../../extension/llm/tokenizer/bpe_tokenizer.h; sourceTree = "<group>"; };
+		03BADE212BD2EB6600DDFDC2 /* tiktoken.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = tiktoken.cpp; path = ../../../../extension/llm/tokenizer/tiktoken.cpp; sourceTree = "<group>"; };
+		03BADE222BD2EB6700DDFDC2 /* tiktoken.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = tiktoken.h; path = ../../../../extension/llm/tokenizer/tiktoken.h; sourceTree = "<group>"; };
+		03DDA0FA2BD6368100D234B3 /* base64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = base64.h; path = ../../../../extension/llm/tokenizer/base64.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -243,6 +247,8 @@
 				03DDA0FA2BD6368100D234B3 /* base64.h */,
 				03729F142BB2043600152F2E /* bpe_tokenizer.cpp */,
 				03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */,
+				038D678A2C482C1D00B88CF2 /* llama_tiktoken.cpp */,
+				038D678B2C482C1E00B88CF2 /* llama_tiktoken.h */,
 				03BADE212BD2EB6600DDFDC2 /* tiktoken.cpp */,
 				03BADE222BD2EB6700DDFDC2 /* tiktoken.h */,
 				03729F152BB2043600152F2E /* tokenizer.h */,
@@ -274,6 +280,7 @@
 				03DDA0FB2BD6368100D234B3 /* base64.h in Headers */,
 				03BADE242BD2EB6700DDFDC2 /* tiktoken.h in Headers */,
 				03729F122BB2042B00152F2E /* sampler.h in Headers */,
+				038D678D2C482C1E00B88CF2 /* llama_tiktoken.h in Headers */,
 				03729F0C2BB203B300152F2E /* util.h in Headers */,
 				03729F0B2BB203B300152F2E /* runner.h in Headers */,
 			);
@@ -415,7 +422,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"cmake not found, please install cmake.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"10.15\"\nfi\n\ncmake_build() {\n    local src_dir=$1\n    shift\n    local extra_args=(\"$@\")\n    local build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n\n    mkdir -p \"$build_dir\" && cd \"$build_dir\"\n    cmake -G Xcode \\\n          -DCMAKE_BUILD_TYPE=\"Release\" \\\n          -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n          -DPLATFORM=\"$PLATFORM\" \\\n          -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n          \"${extra_args[@]}\" \\\n          \"$src_dir\"\n    cmake --build . --config \"Release\"\n    cmake --install . --prefix \"$CMAKE_DIR\"\n}\n\ncmake_build \"$SRCROOT/../../../models/llama2/third-party/abseil-cpp\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../../models/llama2/third-party/re2\" \\\n    -DCMAKE_PREFIX_PATH=\"$CMAKE_DIR/lib/cmake/absl\"\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
+			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"cmake not found, please install cmake.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"10.15\"\nfi\n\ncmake_build() {\n    local src_dir=$1\n    shift\n    local extra_args=(\"$@\")\n    local build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n\n    mkdir -p \"$build_dir\" && cd \"$build_dir\"\n    cmake -G Xcode \\\n          -DCMAKE_BUILD_TYPE=\"Release\" \\\n          -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n          -DPLATFORM=\"$PLATFORM\" \\\n          -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n          \"${extra_args[@]}\" \\\n          \"$src_dir\"\n    cmake --build . --config \"Release\"\n    cmake --install . --prefix \"$CMAKE_DIR\"\n}\n\ncmake_build \"$SRCROOT/../../../../extension/llm/third-party/abseil-cpp\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../../../extension/llm/third-party/re2\" \\\n    -DCMAKE_PREFIX_PATH=\"$CMAKE_DIR/lib/cmake/absl\"\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -442,6 +449,7 @@
 			files = (
 				03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */,
 				03BADE232BD2EB6700DDFDC2 /* tiktoken.cpp in Sources */,
+				038D678C2C482C1E00B88CF2 /* llama_tiktoken.cpp in Sources */,
 				03729F162BB2043600152F2E /* bpe_tokenizer.cpp in Sources */,
 				03729F0A2BB203B300152F2E /* runner.cpp in Sources */,
 				03729F132BB2042B00152F2E /* sampler.cpp in Sources */,

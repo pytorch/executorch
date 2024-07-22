@@ -189,6 +189,19 @@ class CompositeDelegateModule(torch.nn.Module):
         return CompositeReferenceModule(self.modules)
 
 
+class ContextBinaryExample(torch.nn.Module):
+    def forward(self, x, y):
+        x = torch.nn.functional.relu(x)
+        y = torch.nn.functional.relu(y)
+        return x, y
+
+    def example_inputs(self):
+        return {
+            "x": torch.randn((1, 3, 3, 3)),
+            "y": torch.randn((2, 1, 5, 5)),
+        }
+
+
 class Conv1dSequential(torch.nn.Module):
     def __init__(self):
         super().__init__()

@@ -9,8 +9,10 @@ from collections import defaultdict
 from typing import final, List
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
-from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 
+import torch  # noqa: F401
+from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
+from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.qualcomm.passes.fuse_consecutive_transpose import (
     FuseConsecutiveTranspose,
@@ -77,9 +79,24 @@ class QnnBackend(BackendDetails):
                         else:
                             py_op_wrapper_list.append(py_op_wrapper)
                 else:
-                    raise RuntimeError(
-                        f"For {node}, {node.op}:{node.target.__name__} is not supported in Qnn Delegate"
+                    err_msg = (
+                        f"For {node}, {node.op}:{node.target.__name__} "
+                        "is not supported in Qnn Delegate"
                     )
+                    try:
+                        context_loader_target = eval(
+                            f"torch.ops.{OpContextLoader.namespace}.{node.name}.default",
+                            globals().update(torch.__dict__),
+                        )
+                        assert node.target == context_loader_target, err_msg
+                        # if graph has context binary loader node, return directly
+                        return PreprocessResult(
+                            processed_bytes=node.meta[OpContextLoader.meta_ctx_bin],
+                            debug_handle_map={},
+                        )
+                    except:
+                        raise RuntimeError(err_msg)
+
             elif node.op in [
                 "get_attr",
                 "placeholder",
