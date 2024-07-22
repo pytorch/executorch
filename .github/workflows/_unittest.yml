@@ -32,6 +32,9 @@ jobs:
         source .ci/scripts/setup-vulkan-linux-deps.sh
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        # Install torch, torchvision etc that requires nightly
+        bash install_requirements.sh
+
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_PYBIND=ON \
         CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
@@ -67,6 +70,9 @@ jobs:
         trap 'rm -rfv ${TMP_DIR}' EXIT
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        # Install torch, torchvision etc that requires nightly
+        bash install_requirements.sh
+
         PYTHON_EXECUTABLE=python \
         EXECUTORCH_BUILD_PYBIND=ON \
         CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
