@@ -168,36 +168,15 @@ class DataLoaderSpy : public DataLoader {
  public:
   /// A record of an operation performed on this DataLoader.
   struct Operation {
-    enum { Load, Free, DeprecatedLoad } op;
-    size_t offset; // Set for Load/DeprecatedLoad; zero for Free.
-    void* data; // Set for Free; nullptr for Load/DeprecatedLoad.
-    size_t size; // Set for Load/DeprecatedLoad and Free.
+    enum { Load, Free } op;
+    size_t offset; // Set for Load; zero for Free.
+    void* data; // Set for Free; nullptr for Load.
+    size_t size; // Set for Load and Free.
     std::unique_ptr<const DataLoader::SegmentInfo>
-        segment_info; // Set for Load; nullptr for Free/DeprecatedLoad.
+        segment_info; // Set for Load; nullptr for Free.
   };
 
   explicit DataLoaderSpy(DataLoader* delegate) : delegate_(delegate) {}
-
-  /**
-   * Override the deprecated "Load" method. We will be looking to test that
-   * this function is not called if the new "load" method is called.
-   */
-  Result<FreeableBuffer> Load(size_t offset, size_t size) override {
-    Result<FreeableBuffer> buf = delegate_->Load(offset, size);
-    if (!buf.ok()) {
-      return buf.error();
-    }
-    operations_.push_back(
-        {Operation::DeprecatedLoad,
-         offset,
-         /*data=*/nullptr,
-         size,
-         /*segment_info=*/nullptr});
-    auto* context = new SpyContext(&operations_, std::move(buf.get()));
-    // Use context->buffer since buf has been moved.
-    return FreeableBuffer(
-        context->buffer.data(), context->buffer.size(), FreeBuffer, context);
-  }
 
   Result<FreeableBuffer>
   load(size_t offset, size_t size, const SegmentInfo& segment_info) override {
@@ -240,10 +219,6 @@ class DataLoaderSpy : public DataLoader {
       DataLoader::SegmentInfo::Type segment_type,
       const char* descriptor = nullptr) const {
     for (const auto& op : operations_) {
-      // We should not be using the deprecated DataLoader::Load() function.
-      if (op.op == Operation::DeprecatedLoad) {
-        return false;
-      }
       if (op.op != Operation::Load) {
         continue;
       }

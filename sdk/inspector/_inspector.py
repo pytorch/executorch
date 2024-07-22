@@ -65,6 +65,8 @@ log: logging.Logger = logging.getLogger(__name__)
 class InstructionEventSignature:
     instruction_id: int
     chain_index: int
+    delegate_id: Optional[int] = None
+    delegate_id_str: Optional[str] = None
 
 
 # Aggregated Runtime Events for a single instruction
@@ -92,8 +94,12 @@ class InstructionEvent:
 
             # Get existing InstructionEvent or insert a new one
             signature = InstructionEventSignature(
-                populated_event.instruction_id, populated_event.chain_index
+                instruction_id=populated_event.instruction_id,
+                chain_index=populated_event.chain_index,
+                delegate_id=populated_event.delegate_debug_id_int,
+                delegate_id_str=populated_event.delegate_debug_id_str,
             )
+
             instruction_event = instruction_events.setdefault(
                 signature, InstructionEvent(signature=signature)
             )
@@ -104,6 +110,7 @@ class InstructionEvent:
                     instruction_event.profile_events = []
                 instruction_event.profile_events.append(populated_event)
             elif isinstance(populated_event, DebugEvent):
+                # Ignore run_output events
                 if not is_debug_output(populated_event.debug_entry):
                     if instruction_event.debug_events is None:
                         instruction_event.debug_events = []
@@ -139,7 +146,9 @@ class ProfileEventSignature:
 # Signature of a DebugEvent
 @dataclass(frozen=True, order=True)
 class DebugEventSignature:
-    instruction_id: Optional[int]
+    instruction_id: Optional[int] = -1
+    delegate_id: Optional[int] = None
+    delegate_id_str: Optional[str] = None
 
     @staticmethod
     def _gen_from_event(event: DebugEvent) -> "DebugEventSignature":
@@ -150,7 +159,9 @@ class DebugEventSignature:
         The Signature will convert these back to the intended None value
         """
         return DebugEventSignature(
-            event.instruction_id if event.instruction_id != -1 else None
+            event.instruction_id if event.instruction_id != -1 else None,
+            event.delegate_debug_id_int if event.delegate_debug_id_int != -1 else None,
+            event.delegate_debug_id_str if event.delegate_debug_id_str != "" else None,
         )
 
 
@@ -562,6 +573,7 @@ class Event:
         Fields Updated:
             debug_data
         """
+
         debug_data: List[flatcc.Value] = []
         for event in events:
             if (debug_events := event.debug_events) is None:

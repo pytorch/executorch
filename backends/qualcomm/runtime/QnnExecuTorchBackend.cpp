@@ -190,8 +190,9 @@ Error QnnExecuTorchBackend::execute(
     if (qnn_manager->RegisterMem(
             args[i]->toTensor().mutable_data_ptr(), input_tensors[i]) !=
         Error::Ok) {
+      // update data ptr only should be fine
       input_tensors[i]->FillDataBuffer(
-          args[i]->toTensor().const_data_ptr(), true /* copy_data */);
+          args[i]->toTensor().const_data_ptr(), false /* copy_data */);
     }
     input_tensor_structs.push_back(input_tensors[i]->CloneTensorStruct());
   }
