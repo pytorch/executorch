@@ -1632,3 +1632,22 @@ class TestBackends(unittest.TestCase):
             (torch.tensor([[[0, 1], [0, 1]], [[4, 2], [3, 3]]]),),
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
+
+    def test_vulkan_backend_meshgrid(self):
+        class MeshgridModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                return torch.meshgrid(x, y, indexing="ij")
+
+        sample_inputs = (
+            torch.randn(size=(3,), dtype=torch.float32),
+            torch.randn(size=(2,), dtype=torch.float32),
+        )
+
+        self.lower_module_and_test_output(
+            MeshgridModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )

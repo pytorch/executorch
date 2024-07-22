@@ -113,6 +113,7 @@ INDEXING_OPS = [
 
 ORCHESTRATION_OPS = [
     exir_ops.edge.aten.cat.default,
+    exir_ops.edge.aten.meshgrid.default,
     exir_ops.edge.aten.split_with_sizes_copy.default,
     exir_ops.edge.aten.split.Tensor,
     exir_ops.edge.aten.repeat.default,
