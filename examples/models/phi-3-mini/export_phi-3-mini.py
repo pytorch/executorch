@@ -23,12 +23,12 @@ def main() -> None:
     # pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
     model = Phi3ForCausalLM.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
 
-    modelname = "phi-3-mini"
+    model_name = "phi-3-mini"
 
     (
         LLMEdgeManager(
             model=model,
-            modelname=modelname,
+            modelname=model_name,
             max_seq_len=128,
             dtype=model.dtype,
             use_kv_cache=False,
@@ -47,7 +47,7 @@ def main() -> None:
         .export_to_edge()
         .to_backend([get_xnnpack_partitioner()])
         .to_executorch()
-        .save_to_pte(f"{modelname}.pte")
+        .save_to_pte(f"{model_name}.pte")
     )
 
 
