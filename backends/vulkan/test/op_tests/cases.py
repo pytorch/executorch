@@ -52,8 +52,8 @@ def get_binary_elementwise_inputs():
         ]
     )
     test_suite.layouts = [
-        "vkapi::kWidthPacked",
-        "vkapi::kChannelsPacked",
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
     ]
     return test_suite
 
@@ -71,8 +71,8 @@ def get_mm_inputs():
     # ATen matmul doesn't support half
     test_suite.dtypes = ["at::kFloat"]
     test_suite.layouts = [
-        "vkapi::kWidthPacked",
-        "vkapi::kChannelsPacked",
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
     ]
     return test_suite
 
@@ -90,8 +90,8 @@ def get_bmm_inputs():
     # ATen matmul doesn't support half
     test_suite.dtypes = ["at::kFloat"]
     test_suite.layouts = [
-        "vkapi::kWidthPacked",
-        "vkapi::kChannelsPacked",
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
     ]
     return test_suite
 
@@ -112,8 +112,8 @@ def get_addmm_inputs():
     # ATen matmul doesn't support half
     test_suite.dtypes = ["at::kFloat"]
     test_suite.layouts = [
-        "vkapi::kWidthPacked",
-        "vkapi::kChannelsPacked",
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
     ]
     return test_suite
 
@@ -137,8 +137,8 @@ def get_linear_inputs():
     test_suite = VkTestSuite(inputs_list)
     test_suite.dtypes = ["at::kFloat"]
     test_suite.layouts = [
-        "vkapi::kWidthPacked",
-        "vkapi::kChannelsPacked",
+        "utils::kWidthPacked",
+        "utils::kChannelsPacked",
     ]
     return test_suite
 
@@ -151,8 +151,8 @@ def get_weight_int8pack_mm_inputs():
 
     test_suite = VkTestSuite(inputs_list)
     test_suite.dtypes = ["at::kFloat", "at::kHalf"]
-    test_suite.layouts = ["vkapi::kWidthPacked"]
-    test_suite.storage_types = ["vkapi::kTexture3D", "vkapi::kBuffer"]
+    test_suite.layouts = ["utils::kWidthPacked"]
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.prepacked_args = ["mat2"]
 
     test_suite.arg_dtype["mat2"] = "at::kChar"
@@ -432,7 +432,7 @@ def get_permute_inputs():
         ]
     )
 
-    test_suite.layouts = ["vkapi::kChannelsPacked"]
+    test_suite.layouts = ["utils::kChannelsPacked"]
     return test_suite
 
 
@@ -457,9 +457,9 @@ def get_view_inputs():
         ]
     )
     test_suite.layouts = [
-        "vkapi::kWidthPacked",
-        "vkapi::kHeightPacked",
-        "vkapi::kChannelsPacked",
+        "utils::kWidthPacked",
+        "utils::kHeightPacked",
+        "utils::kChannelsPacked",
     ]
     return test_suite
 
@@ -542,7 +542,7 @@ def get_slice_inputs():
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.dtypes = ["at::kFloat", "at::kHalf"]
-    test_suite.layouts = ["vkapi::kChannelsPacked"]
+    test_suite.layouts = ["utils::kChannelsPacked"]
     test_suite.data_gen = "make_seq_tensor"
     return test_suite
 
@@ -567,7 +567,7 @@ def get_index_select_inputs():
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.dtypes = ["at::kFloat"]
-    test_suite.layouts = ["vkapi::kChannelsPacked"]
+    test_suite.layouts = ["utils::kChannelsPacked"]
     return test_suite
 
 
@@ -587,7 +587,7 @@ def get_embedding_inputs():
     test_suite = VkTestSuite([tuple(tc) + (-1, "false", "false") for tc in test_cases])
 
     test_suite.dtypes = ["at::kFloat"]
-    test_suite.layouts = ["vkapi::kChannelsPacked"]
+    test_suite.layouts = ["utils::kChannelsPacked"]
     return test_suite
 
 
@@ -612,7 +612,7 @@ def get_unsqueeze_inputs():
         ]
     )
     test_suite.layouts = [
-        "vkapi::kChannelsPacked",
+        "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
     return test_suite
@@ -636,7 +636,7 @@ def get_clone_inputs():
         ]
     )
     test_suite.layouts = [
-        "vkapi::kChannelsPacked",
+        "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
     return test_suite
@@ -680,7 +680,7 @@ def get_repeat_inputs():
         ]
     )
     test_suite.layouts = [
-        "vkapi::kChannelsPacked",
+        "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
     test_suite.dtypes = ["at::kFloat"]
@@ -742,7 +742,7 @@ def get_cat_inputs():
         ]
     )
     test_suite.layouts = [
-        "vkapi::kChannelsPacked",
+        "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
     test_suite.dtypes = ["at::kFloat"]
@@ -778,7 +778,7 @@ def get_split_with_sizes_inputs():
     test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
 
     test_suite.layouts = [
-        "vkapi::kChannelsPacked",
+        "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
     test_suite.dtypes = ["at::kFloat"]
@@ -829,7 +829,7 @@ def get_split_tensor_inputs():
     )
 
     test_suite.layouts = [
-        "vkapi::kChannelsPacked",
+        "utils::kChannelsPacked",
     ]
     test_suite.data_gen = "make_seq_tensor"
     test_suite.dtypes = ["at::kFloat"]
@@ -863,7 +863,7 @@ def get_softmax_inputs():
         ]
     )
     test_suite.layouts = [
-        "vkapi::kChannelsPacked",
+        "utils::kChannelsPacked",
     ]
     return test_suite
 
@@ -888,7 +888,7 @@ def get_unary_ops_inputs():
             (S1, S2, S2, M2),
         ]
     )
-    test_suite.storage_types = ["vkapi::kTexture3D", "vkapi::kBuffer"]
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.atol = "1e-4"
     test_suite.rtol = "1e-4"
     return test_suite
@@ -1002,7 +1002,7 @@ def get_arange_inputs():
     )
 
     test_suite.layouts = [
-        "vkapi::kChannelsPacked",
+        "utils::kChannelsPacked",
     ]
     return test_suite
 
@@ -1019,6 +1019,41 @@ def get_constant_pad_nd_inputs():
             ([L, M, M1, M2], [3, 5, 3, 5], 12.2),
             ([M, M1, M2], [1, 2, 3, 4, 5, 6], 23.2),
             ([L, M, M1, M2], [3, 3, 3, 3, 3, 3], 12.2),
+        ]
+    )
+    return test_suite
+
+
+@register_test_suite("aten.minimum.default")
+def get_minimum_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((M1, M2), (M2)),
+            ((M1, M2), (M1, M2)),
+            ((M1, M2, M), (M2, M)),
+            ((M1, M1, S1, S2), (M1, M1, S1, S2)),
+            ((S1, S1, S2, S), (S1, S2, S)),
+            ((M1, S1, S2), (L, M1, S1, S2)),
+            ((S1, S2), (L, M1, S1, S2)),
+        ]
+    )
+    return test_suite
+
+
+@register_test_suite("aten.squeeze_copy.dims")
+def get_squeeze_copy_dim_inputs():
+    test_suite = VkTestSuite(
+        [
+            ([S, S, S, 1], 3),
+            ([S, 1, S, S], 1),
+            ([S, 1, 1, S], [1, 2]),
+            ([1, S, S, S], 0),
+            ([S, S, S, S], 3),
+            ([S, S, S, S], 2),
+            ([S, S, S, S], 1),
+            ([M, M1, 1], 2),
+            ([M, 1, M1], 1),
+            ([1, M1, M1], 0),
         ]
     )
     return test_suite

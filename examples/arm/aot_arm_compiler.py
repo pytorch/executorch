@@ -18,13 +18,13 @@ from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_quantization_config,
 )
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
 # Quantize model if required using the standard export quantizaion flow.
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
-from ..portable.utils import export_to_edge, save_pte_program
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)

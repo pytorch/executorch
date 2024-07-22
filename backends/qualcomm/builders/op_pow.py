@@ -53,14 +53,14 @@ class PowTensorScalar(NodeVisitor):
 
         # scalar input
         scalar = node.args[1]
-        scalar_tensor = torch.full(input_tensor.size(), scalar).to(torch.float32)
+        scalar_tensor = torch.tensor(scalar).to(torch.float32)
 
         # 'graph', 'name', 'op', 'target', 'args', and 'kwargs'
         scalar_node = torch.fx.Node(
             node.graph,
             node.name + "_runtime_scalar",
             "call_function",
-            exir_ops.edge.aten.full.default,
+            exir_ops.edge.aten.scalar_tensor.default,
             (),  # args
             {},  # kwargs
         )

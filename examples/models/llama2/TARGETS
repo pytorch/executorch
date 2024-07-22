@@ -10,7 +10,10 @@ define_common_targets()
 
 runtime.python_library(
     name = "llama_transformer",
-    srcs = ["llama_transformer.py"],
+    srcs = [
+        "llama_transformer.py",
+        "rope.py",
+    ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama2",
     visibility = [
@@ -64,7 +67,6 @@ runtime.python_binary(
 runtime.python_library(
     name = "export_library",
     srcs = [
-        "builder.py",
         "export_llama.py",
         "export_llama_lib.py",
         "model.py",
@@ -82,12 +84,9 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
         "//executorch/examples/models/llama2/custom_ops:custom_ops_aot_py",
-        "//executorch/examples/portable:utils",
-        "//executorch/exir:lib",
         "//executorch/extension/llm/export:export_lib",
         # one definition has to be included in the user of the libarary
         # depending on what library the client wants to use

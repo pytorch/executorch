@@ -19,25 +19,24 @@
 
 #include <gflags/gflags.h>
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/util.h>
-#include <executorch/sdk/bundled_program/bundled_program.h>
-#include <executorch/extension/data_loader/buffer_data_loader.h>
-#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/sdk/bundled_program/bundled_program.h>
 #include <executorch/sdk/etdump/etdump_flatcc.h>
 
 #include <chrono>
 using namespace std::chrono;
 
-static constexpr size_t kRuntimeMemorySize = 4 * 1024U * 1024U; // 4 MB
-static uint8_t runtime_pool[kRuntimeMemorySize];
+static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
 DEFINE_string(model_path, "model.ff", "Model serialized in flatbuffer format.");
 DEFINE_string(
@@ -101,137 +100,6 @@ DEFINE_int32(
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
 
-/**
- * Helps handle bundled and non-bundled program inputs.
- */
-class ProgramData {
- public:
-  /**
-   * Tries loading the named file as a plain Program or a bundled program,
-   * failing with an ET_CHECK on any failure.
-   */
-  static ProgramData load_or_die(std::string& filename) {
-    // Create a DataLoader that wraps the input file. It may be a plain Program,
-    // or it may be a BundledProgram that contains a Program.
-    Result<util::FileDataLoader> loader =
-        util::FileDataLoader::From(filename.c_str());
-    ET_CHECK_MSG(
-        loader.ok(),
-        "Could not create loader for file '%s': 0x%x",
-        filename.c_str(),
-        (unsigned int)loader.error());
-
-    // Figure out the file type. Create a scope to destroy the header after the
-    // check.
-    {
-      Result<FreeableBuffer> header =
-          loader->Load(/*offset=*/0, Program::kMinHeadBytes);
-      ET_CHECK_MSG(
-          header.ok(),
-          "Could not load header of file '%s': 0x%x",
-          filename.c_str(),
-          (unsigned int)loader.error());
-      Program::HeaderStatus hs =
-          Program::check_header(header->data(), header->size());
-      if (hs == Program::HeaderStatus::CompatibleVersion) {
-        // It's a plain Program. We can use the existing loader, and there is no
-        // bundled program data.
-        return ProgramData(
-            new util::FileDataLoader(std::move(*loader)),
-            /*bundled_program_data=*/FreeableBuffer());
-      }
-    }
-
-    // Read in the entire file.
-    Result<FreeableBuffer> file_data = loader->Load(0, loader->size().get());
-    ET_CHECK_MSG(
-        file_data.ok(),
-        "Could not load contents of file '%s': 0x%x",
-        filename.c_str(),
-        (unsigned int)file_data.error());
-
-    // Find the offset to the embedded Program.
-    const void* program_data;
-    size_t program_data_len;
-    Error status = torch::executor::bundled_program::GetProgramData(
-        const_cast<void*>(file_data->data()),
-        file_data->size(),
-        &program_data,
-        &program_data_len);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "GetProgramData() failed on file '%s': 0x%x",
-        filename.c_str(),
-        (unsigned int)status);
-
-    // Wrap the Program in a loader, and pass on the FreeableBuffer that
-    // contains the full bundled program data.
-    return ProgramData(
-        new util::BufferDataLoader(program_data, program_data_len),
-        std::move(*file_data));
-  }
-
-  /**
-   * Returns the loader for the plain Program. May or may not be inside a
-   * bundled program wrapper.
-   */
-  DataLoader* program_loader() {
-    return loader_.get();
-  }
-
-  /**
-   * If the file was a bundled program, returns a pointer to the file data.
-   * Otherwise returns nullptr.
-   */
-  const void* bundled_program_data() const {
-    if (bundled_program_data_.size() > 0) {
-      return bundled_program_data_.data();
-    } else {
-      return nullptr;
-    }
-  }
-
- private:
-  /// Takes ownership of both params.
-  ProgramData(DataLoader* loader, FreeableBuffer&& bundled_program_data)
-      : loader_(loader),
-        bundled_program_data_(std::move(bundled_program_data)) {}
-
-  std::unique_ptr<DataLoader> loader_;
-  FreeableBuffer bundled_program_data_;
-};
-
-struct TensorData {
-  std::vector<uint8_t> data;
-  ssize_t numel;
-  size_t nbytes;
-  ScalarType scalar_type;
-};
-
-template <typename T>
-bool data_is_close_(
-    const T* a,
-    const T* b,
-    size_t numel,
-    double rtol,
-    double atol) {
-  for (size_t i = 0; i < numel; i++) {
-    if (rtol == 0 && atol == 0) {
-      // Exact comparison; avoid unnecessary math.
-      if (a[i] != b[i]) {
-        return false;
-      }
-    } else {
-      auto allowed_error = atol + fabs(rtol * b[i]);
-      auto actual_error = fabs(a[i] - b[i]);
-      if (!isfinite(actual_error) || actual_error > allowed_error) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
 int main(int argc, char** argv) {
   {
     const char* usage = R"(MPS Executor Runner. Sample usage:
@@ -261,12 +129,12 @@ int main(int argc, char** argv) {
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
   const char* model_path = FLAGS_model_path.c_str();
-  Result<FileDataLoader> loader = FileDataLoader::From(model_path);
+  Result<FileDataLoader> loader = FileDataLoader::from(model_path);
   ET_CHECK_MSG(
-      loader.ok(), "FileDataLoader::From() failed: 0x%" PRIx32, loader.error());
+      loader.ok(), "FileDataLoader::from() failed: 0x%" PRIx32, loader.error());
 
   // Read in the entire file.
-  Result<FreeableBuffer> file_data = loader->Load(0, loader->size().get());
+  Result<FreeableBuffer> file_data = loader->load(0, loader->size().get(), DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ET_CHECK_MSG(
       file_data.ok(),
       "Could not load contents of file '%s': 0x%x",
@@ -287,12 +155,13 @@ int main(int argc, char** argv) {
       model_path,
       (unsigned int)status);
 
+  // Wrap the buffer in a DataLoader.
   auto buffer_data_loader =
       util::BufferDataLoader(program_data, program_data_len);
 
-  // Parse the program file. This is immutable, and can also be reused
-  // between multiple execution invocations across multiple threads.
-  Result<Program> program = Program::Load(&buffer_data_loader);
+  // Parse the program file. This is immutable, and can also be reused between
+  // multiple execution invocations across multiple threads.
+  Result<Program> program = Program::load(&buffer_data_loader);
   if (!program.ok()) {
     ET_LOG(Error, "Failed to parse model file %s", model_path);
     return 1;
@@ -300,12 +169,21 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Model file %s is loaded.", model_path);
 
   // Use the first method in the program.
-  const auto method_name_result = program->get_method_name(0);
-  ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
-  const char* method_name = *method_name_result;
-  ET_LOG(Info, "Program methods: %zu", program->num_methods());
+  const char* method_name = nullptr;
+  {
+    const auto method_name_result = program->get_method_name(0);
+    ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
+    method_name = *method_name_result;
+  }
+  ET_LOG(Info, "Using method %s", method_name);
 
-  ET_LOG(Info, "Running method %s", method_name);
+  // MethodMeta describes the memory requirements of the method.
+  Result<MethodMeta> method_meta = program->method_meta(method_name);
+  ET_CHECK_MSG(
+      method_meta.ok(),
+      "Failed to get method_meta for %s: 0x%" PRIx32,
+      method_name,
+      (uint32_t)method_meta.error());
 
   //
   // The runtime does not use malloc/new; it allocates all memory using the
@@ -314,98 +192,61 @@ int main(int argc, char** argv) {
   // do it dynamically.
   //
 
-  // The runtime allocator is used to allocate all dynamic C++ metadata/objects
-  // used to represent the loaded program. This allocator is only used during
+  // The method allocator is used to allocate all dynamic C++ metadata/objects
+  // used to represent the loaded method. This allocator is only used during
   // loading a method of the program, which will return an error if there was
   // not enough memory.
   //
-  // The amount of memory required depends on the loaded program and the runtime
+  // The amount of memory required depends on the loaded method and the runtime
   // code itself. The amount of memory here is usually determined by running the
-  // program and seeing how much memory is actually used, though it's possible
-  // to subclass MemoryAllocator so that it calls malloc() under the hood.
-
-  // In this example we using statically allocated gloabl runtime_pool of
-  // size kRuntimeMemorySize
-  MemoryAllocator runtime_allocator{
-      MemoryAllocator(kRuntimeMemorySize, runtime_pool)};
-  runtime_allocator.enable_profiling("runtime allocator");
-
-  // The non-const allocator is used to provide the memory-planned buffers that
-  // back mutable tensors. Since it was planned ahead of time, the Program knows
-  // how big each of the allocators needs to be.
+  // method and seeing how much memory is actually used, though it's possible to
+  // subclass MemoryAllocator so that it calls malloc() under the hood (see
+  // MallocMemoryAllocator).
   //
-  // These buffers correspond to different hardware memory banks. Most mobile
-  // environments will only have a single buffer. Some embedded environments may
-  // have more than one for, e.g., slow/large DRAM and fast/small SRAM.
-  std::vector<std::unique_ptr<uint8_t[]>> non_const_buffers;
-  std::vector<MemoryAllocator> non_const_allocators;
-  size_t num_non_const_buffers = 0;
-  {
-    auto result = program->num_non_const_buffers(method_name);
-    ET_CHECK_MSG(
-        result.ok(),
-        "Failed to get number of non-const buffers for method %s: 0x%x",
-        method_name,
-        (unsigned int)result.error());
-    num_non_const_buffers = *result;
+  // In this example we use a statically allocated memory pool.
+  MemoryAllocator method_allocator{
+      MemoryAllocator(sizeof(method_allocator_pool), method_allocator_pool)};
+
+  // The memory-planned buffers will back the mutable tensors used by the
+  // method. The sizes of these buffers were determined ahead of time during the
+  // memory-planning pasees.
+  //
+  // Each buffer typically corresponds to a different hardware memory bank. Most
+  // mobile environments will only have a single buffer. Some embedded
+  // environments may have more than one for, e.g., slow/large DRAM and
+  // fast/small SRAM, or for memory associated with particular cores.
+  std::vector<std::unique_ptr<uint8_t[]>> planned_buffers; // Owns the memory
+  std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
+  size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
+  for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
+    // .get() will always succeed because id < num_memory_planned_buffers.
+    size_t buffer_size =
+        static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
+    ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
+    planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
+    planned_spans.push_back({planned_buffers.back().get(), buffer_size});
   }
-  // Note that this loop starts at ID 1, because ID 0 is reserved. But, the
-  // HierarchicalAllocator indices are zero-based, so it's later adjusted by -1.
-  for (size_t id = 1; id < num_non_const_buffers; ++id) {
-    auto buffer_size = program->get_non_const_buffer_size(id, method_name);
-    ET_CHECK_MSG(
-        buffer_size.ok(),
-        "Failed to get size of non-const buffer %zu for method %s: 0x%x",
-        id,
-        method_name,
-        (unsigned int)buffer_size.error());
-    ET_LOG(
-        Info, "Setting up non-const buffer %zu, size %lld.", id, *buffer_size);
-    non_const_buffers.push_back(std::make_unique<uint8_t[]>(*buffer_size));
-    // Since the list of allocators began empty, buffer ID N will live at index
-    // N-1.
-    non_const_allocators.push_back(
-        MemoryAllocator(*buffer_size, non_const_buffers.back().get()));
-    non_const_allocators.back().enable_profiling("non_const_allocators");
-  }
+  HierarchicalAllocator planned_memory(
+      {planned_spans.data(), planned_spans.size()});
 
-  HierarchicalAllocator non_const_allocator(
-      non_const_allocators.size(), non_const_allocators.data());
-
-  // The constant allocator is not currently used. Please initialize with a
-  // zero-sized allocator.
-  MemoryAllocator const_allocator{MemoryAllocator(0, nullptr)};
-  const_allocator.enable_profiling("const allocator");
-
-  // The kernel temporary allocator is not currently used. Please initialize
-  // with a zero-sized allocator.
-  MemoryAllocator temp_allocator{MemoryAllocator(0, nullptr)};
-  temp_allocator.enable_profiling("temp allocator");
-
-  ET_LOG(
-      Info, "Setting up memory manager");
   // Assemble all of the allocators into the MemoryManager that the Executor
   // will use.
-  MemoryManager memory_manager(
-      &const_allocator,
-      &non_const_allocator,
-      &runtime_allocator,
-      &temp_allocator);
+  MemoryManager memory_manager(&method_allocator, &planned_memory);
 
   //
-  // Load method from the program, using the provided
-  // allocators. Running the method can mutate allocated non_const buffers,
-  // so should only be used by a single thread at at time, but it can be reused.
+  // Load the method from the program, using the provided allocators. Running
+  // the method can mutate the memory-planned buffers, so the method should only
+  // be used by a single thread at at time, but it can be reused.
   //
+
   torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
-  ET_LOG(
-      Info, "Loading method name from plan");
-  Result<Method> method = program->load_method(method_name, &memory_manager, &etdump_gen);
+  Result<Method> method =
+      program->load_method(method_name, &memory_manager, &etdump_gen);
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
-      method.error());
+      (uint32_t)method.error());
   ET_LOG(Info, "Method loaded.");
 
   void* debug_buffer = malloc(FLAGS_debug_buffer_size);
@@ -422,9 +263,9 @@ int main(int argc, char** argv) {
   }
 
   // Prepare the inputs.
-  exec_aten::ArrayRef<void*> inputs;
+  std::unique_ptr<util::BufferCleanup> inputs;
   if (FLAGS_bundled_program) {
-    ET_LOG(Debug, "Loading bundled program");
+    ET_LOG(Info, "Loading bundled program...");
     // Use the inputs embedded in the bundled program.
     status = torch::executor::bundled_program::LoadBundledInput(
         *method,
@@ -437,9 +278,14 @@ int main(int argc, char** argv) {
   } else {
     ET_LOG(Info, "Loading non-bundled program...\n");
     // Use ones-initialized inputs.
-    inputs = torch::executor::util::PrepareInputTensors(*method);
+    auto inputs_result = torch::executor::util::prepare_input_tensors(*method);
+    if (inputs_result.ok()) {
+      // Will free the inputs when destroyed.
+      inputs =
+          std::make_unique<util::BufferCleanup>(std::move(inputs_result.get()));
+    }
   }
-  ET_LOG(Debug, "Inputs prepared");
+  ET_LOG(Info, "Inputs prepared.");
 
   int num_iterations = FLAGS_num_runs + (FLAGS_skip_warmup ? 0 : 1);
   std::vector<float> exec_times;
@@ -469,12 +315,7 @@ int main(int argc, char** argv) {
     const float avg_time = (std::reduce(itr, exec_times.end()) / static_cast<float>(FLAGS_num_runs)) / 1000.f;
     std::cout << "Average inference time: " << std::setprecision(2) << std::fixed << avg_time << " miliseconds\n";
   }
-  ET_LOG(Debug, "Model executed successfully.");
-
-  auto output_list =
-      runtime_allocator.allocateList<EValue>(method->outputs_size());
-  status = method->get_outputs(output_list, method->outputs_size());
-  ET_CHECK(status == Error::Ok);
+  ET_LOG(Info, "Model executed successfully.");
 
   // Print the outputs.
   std::vector<EValue> outputs(method->outputs_size());
@@ -533,8 +374,6 @@ int main(int argc, char** argv) {
         "Bundle verification failed with status 0x%" PRIx32,
         status);
     ET_LOG(Info, "Model verified successfully.");
-  } else {
-    util::FreeInputs(inputs);
   }
 
   if (FLAGS_dump_outputs || FLAGS_dump_intermediate_outputs) {

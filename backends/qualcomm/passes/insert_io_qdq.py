@@ -11,7 +11,7 @@ from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .utils import dq_ops, q_ops
+from .utils import q_io_key, q_ops
 
 
 class InsertIOQDQ(ExportPass):
@@ -47,7 +47,7 @@ class InsertIOQDQ(ExportPass):
             if name == "out_dtype":
                 continue
             value = quant_attrs[name]
-            if isinstance(arg_schema.type, torch.tensor) and (
+            if isinstance(arg_schema.type, torch.Tensor) and (
                 isinstance(value, int) or isinstance(value, float)
             ):
                 value = torch.tensor(value)
@@ -109,41 +109,18 @@ class InsertIOQDQ(ExportPass):
                 if user.op == "output":
                     user.replace_input_with(node, inserted_node)
 
-    # When having requantization dq/q nodes at the input,
-    # such as the case: input1 -> dq_node1 -> q_node1 -> node1,
-    # we should fold the dq_node1 and connect input -> q_node1 -> node1.
-    def _fold_mix_quantization_dq_node(self, graph_module, input_node):
-        input_users = list(input_node.users.keys())
-        for input_user in input_users:
-            if input_user.target not in dq_ops:
-                continue
-            dq_users = list(input_user.users.keys())
-            for dq_user in dq_users:
-                dq_user.replace_input_with(input_user, input_node)
-
-    # When having requantization dq/q nodes at the output,
-    # such as the case: node(int32) -> dq(int32) -> q(uint8) -> output(int32),
-    # we should fold the q node and connect node(int32) -> dq(int32) -> output(int32).
-    def _fold_mix_quantization_q_node(self, graph_module, node, users):
-        for user in users:
-            if user.op == "output":
-                output_node = user
-                break
-
-        dq_node = node.args[0]
-        for out_node in output_node.meta["val"]:
-            if dq_node.meta["val"].dtype == out_node.dtype:
-                user.replace_input_with(node, dq_node)
-
     def _insert(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
+            # do nothing when a node is expected to output a quant tensor
+            if n.meta.get(q_io_key):
+                continue
+
             # insert q after input or fold mix_quantization dq if applicable
             if (
                 n.op == "placeholder"
                 and n.meta.get("quant_attrs")
                 and not is_parameter(n, self.edge_program)
             ):
-                self._fold_mix_quantization_dq_node(graph_module, n)
                 self._insert_quant_node(
                     graph_module, n, n.meta["quant_attrs"]["encoding"]
                 )
@@ -151,10 +128,6 @@ class InsertIOQDQ(ExportPass):
             # insert dq before output or fold mix_quantization q if applicable
             users = list(n.users.keys())
             if n.meta.get("quant_attrs") and any(user.op == "output" for user in users):
-                if n.target in q_ops:
-                    self._fold_mix_quantization_q_node(graph_module, n, users)
-                # If q_node is fold, it will have no users,
-                # so it won't insert dequant node in following function.
                 self._insert_dequant_node(
                     graph_module,
                     n,

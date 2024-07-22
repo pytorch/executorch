@@ -85,7 +85,7 @@ def is_option_enabled(option: str, fail_if_not_enabled: bool = False) -> bool:
             return False
 
 
-def get_tosa_compile_spec(permute_memory_to_nhwc=False, custom_path=None):
+def get_tosa_compile_spec(permute_memory_to_nhwc=True, custom_path=None):
     """
     Default compile spec for TOSA tests.
     """
@@ -111,17 +111,19 @@ def get_tosa_compile_spec_unbuilt(
     return compile_spec_builder
 
 
-def get_u55_compile_spec(permute_memory_to_nhwc=False, custom_path=None):
+def get_u55_compile_spec(
+    permute_memory_to_nhwc=False, quantize_io=False, custom_path=None
+):
     """
     Default compile spec for Ethos-U55 tests.
     """
     return get_u55_compile_spec_unbuilt(
-        permute_memory_to_nhwc, custom_path=custom_path
+        permute_memory_to_nhwc, quantize_io=quantize_io, custom_path=custom_path
     ).build()
 
 
 def get_u55_compile_spec_unbuilt(
-    permute_memory_to_nhwc=False, custom_path=None
+    permute_memory_to_nhwc=False, quantize_io=False, custom_path=None
 ) -> ArmCompileSpecBuilder:
     """Get the ArmCompileSpecBuilder for the default TOSA tests, to modify
     the compile spec before calling .build() to finalize it.
@@ -137,7 +139,7 @@ def get_u55_compile_spec_unbuilt(
             memory_mode="Shared_Sram",
             extra_flags=None,
         )
-        .set_quantize_io(is_option_enabled("quantize_io"))
+        .set_quantize_io(is_option_enabled("quantize_io") or quantize_io)
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(artifact_path)
     )

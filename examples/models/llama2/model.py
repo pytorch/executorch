@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
 
 import json
 import os
@@ -51,36 +52,18 @@ class Llama2Model(EagerModelBase):
             ckpt_dir = Path(__file__).absolute().parent / "params"
 
         # Check if checkpoint_dir was provided for a sharded checkpoint.
-        checkpoint_dir = (
-            kwargs["checkpoint_dir"] if "checkpoint_dir" in kwargs else None
-        )
+        checkpoint_dir = kwargs.get("checkpoint_dir", None)
 
         # Use single checkpoint file.
-        checkpoint_path = (
-            kwargs["checkpoint"]
-            if "checkpoint" in kwargs
-            else ckpt_dir / "demo_rand_params.pth"
-        )
+        checkpoint_path = kwargs.get("checkpoint", ckpt_dir / "demo_rand_params.pth")
 
-        params_path = (
-            kwargs["params"] if "params" in kwargs else ckpt_dir / "demo_config.json"
-        )
+        params_path = kwargs.get("params", ckpt_dir / "demo_config.json")
 
-        self.use_kv_cache = (
-            kwargs["use_kv_cache"] if "use_kv_cache" in kwargs else False
-        )
-        self.use_sdpa_with_kv_cache_op = (
-            kwargs["use_sdpa_with_kv_cache"]
-            if "use_sdpa_with_kv_cache" in kwargs
-            else False
-        )
-        self.enable_dynamic_shape = (
-            kwargs["enable_dynamic_shape"]
-            if "enable_dynamic_shape" in kwargs
-            else False
-        )
+        self.use_kv_cache = kwargs.get("use_kv_cache", False)
+        self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
+        self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
 
-        self.max_seq_len = kwargs["max_seq_len"] if "max_seq_len" in kwargs else 128
+        self.max_seq_len = kwargs.get("max_seq_len", 128)
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
@@ -229,7 +212,7 @@ the checkpoint format to avoid generating faulty models.
         if self.enable_dynamic_shape:
             return (
                 torch.tensor([[2, 3, 4]], dtype=torch.long),
-                torch.tensor([0, 1, 2], dtype=torch.long),
+                torch.tensor([0], dtype=torch.long),
             )
         else:
             return (

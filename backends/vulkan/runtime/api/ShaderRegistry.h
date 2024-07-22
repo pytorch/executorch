@@ -10,7 +10,7 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/vk_api/Shader.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Shader.h>
 
 #include <string>
 #include <unordered_map>
