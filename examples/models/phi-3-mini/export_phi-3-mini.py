@@ -14,14 +14,19 @@ from executorch.extension.llm.export.quantizer_lib import (
     PT2EQuantOptions,
 )
 
-from transformers import Phi3ForCausalLM
+from transformers import Phi3ForCausalLM, AutoTokenizer
 
 
 def main() -> None:
     torch.manual_seed(42)
 
+    pre_trained_model_name = "microsoft/Phi-3-mini-4k-instruct"
     # pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
-    model = Phi3ForCausalLM.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
+    model = Phi3ForCausalLM.from_pretrained(pre_trained_model_name)
+    tokenizer = AutoTokenizer.from_pretrained(pre_trained_model_name)
+
+    tokens = tokenizer.encode("Tell me a story", return_tensors="pt")
+    result = model.forward(input_ids=tokens, use_cache=True, return_dict=True)
 
     model_name = "phi-3-mini"
 
@@ -32,12 +37,17 @@ def main() -> None:
             max_seq_len=128,
             dtype=model.dtype,
             use_kv_cache=False,
-            example_inputs=(torch.randint(0, 100, (1, 100), dtype=torch.long),),
+            example_inputs=tokens,
             dynamic_shapes={
                 "input_ids": {1: torch.export.Dim("sequence_length", max=128)}
             },
             enable_dynamic_shape=True,
             verbose=True,
+            kwargs={
+                "use_cache": True,
+                "return_dict": True,
+                "past_key_values": result.past_key_values
+            }
         )
         .set_output_dir(".")
         .capture_pre_autograd_graph()
