@@ -12,7 +12,8 @@ set -x
 # Manually install llava dependencies because torch
 # Newer transformer will give TypeError: LlavaLlamaForCausalLM.forward() got an unexpected keyword argument 'cache_position'
 pip install transformers==4.37.2
-pip install timm==0.6.13
+# timm 0.6.13 downloads torchvision 0.18.1 which is too old.
+pip install timm==0.6.13 --no-deps
 
 # not included in the pip install package, but needed in llava
 pip install protobuf sentencepiece accelerate

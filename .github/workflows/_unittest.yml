@@ -76,6 +76,9 @@ jobs:
         # Setup examples llava dependencies
         bash examples/models/llava/install_requirements.sh
 
+        # Print pip list
+        pip list
+
         # Run pytest with coverage
         ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
         # Run gtest
