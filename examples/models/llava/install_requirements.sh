@@ -5,25 +5,26 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# WARNING: Only run this after root level install_requirements.sh!
-echo "WARNING: Only run this after root level install_requirements.sh!"
 set -x
 
-# Manually install llava dependencies because torch
-# Newer transformer will give TypeError: LlavaLlamaForCausalLM.forward() got an unexpected keyword argument 'cache_position'
-pip install transformers==4.37.2 --no-deps
-# timm 0.6.13 downloads torchvision 0.18.1 which is too old.
-pip install timm==0.6.13 --no-deps
+# install llava from the submodule
+pip install --force-reinstall -e examples/third-party/LLaVA
 
 # not included in the pip install package, but needed in llava
-pip install protobuf sentencepiece accelerate
+pip install protobuf
 
 # bitsandbytes depends on numpy 1.x, which is not compatible with numpy 2.x.
-# Reinstall bitsandbytes to make it compatible. Do not install deps because it messes up torch version.
-pip install bitsandbytes -I --no-deps
+# Reinstall bitsandbytes to make it compatible.
+pip install bitsandbytes -I
 
-# 1.24 is not installable on mac python3.12 which is the CI job env. Try 1.26.4
-pip install numpy==1.26.4
+# numpy needs to be pin to 1.24. 1.26.4 will error out
+pip install numpy==1.24
 
-# install llava from the submodule. Do not install deps because it messes up torch version.
-pip install --force-reinstall -e examples/third-party/LLaVA --no-deps
+# The deps of llava can have different versions than deps of ExecuTorch.
+# For example, torch version required from llava is older than ExecuTorch.
+# To make both work, recover ExecuTorch's original dependencies by rerunning
+# the install_requirements.sh. Notice this won't install executorch.
+bash -x ./install_requirements.sh --deps-only
+
+# Newer transformer will give TypeError: LlavaLlamaForCausalLM.forward() got an unexpected keyword argument 'cache_position'
+pip install transformers==4.37.2

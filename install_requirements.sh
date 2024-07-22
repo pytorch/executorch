@@ -90,6 +90,9 @@ for arg in "$@"; do
     --pybind)
       EXECUTORCH_BUILD_PYBIND=ON
       ;;
+    --deps-only)
+      INSTALL_DEPS_ONLY=ON
+      ;;
     coreml|mps|xnnpack)
       if [[ "$EXECUTORCH_BUILD_PYBIND" == "ON" ]]; then
         arg_upper="$(echo "${arg}" | tr '[:lower:]' '[:upper:]')"
@@ -166,8 +169,11 @@ $PIP_EXECUTABLE install --extra-index-url "${TORCH_NIGHTLY_URL}" \
 # pre-release or nightly version of a torch package.
 #
 
-EXECUTORCH_BUILD_PYBIND="${EXECUTORCH_BUILD_PYBIND}" \
-    CMAKE_ARGS="${CMAKE_ARGS}" \
-    CMAKE_BUILD_ARGS="${CMAKE_BUILD_ARGS}" \
-    $PIP_EXECUTABLE install . --no-build-isolation -v \
-        --extra-index-url "${TORCH_URL}"
+if [[ -z "$INSTALL_DEPS_ONLY" ]];
+then
+  EXECUTORCH_BUILD_PYBIND="${EXECUTORCH_BUILD_PYBIND}" \
+      CMAKE_ARGS="${CMAKE_ARGS}" \
+      CMAKE_BUILD_ARGS="${CMAKE_BUILD_ARGS}" \
+      $PIP_EXECUTABLE install . --no-build-isolation -v \
+          --extra-index-url "${TORCH_URL}"
+fi
