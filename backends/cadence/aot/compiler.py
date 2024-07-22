@@ -76,6 +76,7 @@ def quantize_pt2(
 def export_program(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
+    dump_graphs: bool = False,
 ) -> ExportedProgram:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
@@ -99,7 +100,13 @@ def export_program(
     torch._C._set_mkldnn_enabled(False)
 
     # else: capture the model and return it.
-    return export(model, inputs)
+    expo_program = export(model, inputs)
+
+    if dump_graphs:
+        logging.info("Exported graph:")
+        expo_program.graph_module.graph.print_tabular()
+
+    return expo_program
 
 
 # Export the model and lower it to an EdgeProgramManager (in edge IR).
@@ -111,11 +118,7 @@ def export_to_edge(
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
     # Export the model into an ExportedProgram.
-    expo_program = export_program(model, inputs)
-
-    if dump_graphs:
-        logging.info("Exported graph:")
-        expo_program.graph_module.graph.print_tabular()
+    expo_program = export_program(model, inputs, dump_graphs=dump_graphs)
 
     # Call to_edge to convert the graph to edge IR.
     # Note: dim_order is skipped (https://github.com/pytorch/executorch/issues/3704)
