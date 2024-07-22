@@ -367,7 +367,7 @@ class SDPATestWithMQA(unittest.TestCase):
         self.assertTrue(torch.allclose(ref_output, op_output))
 
 
-class SDPATestForLargeSeqLength(unittest.TestCase):
+class SDPATestCommon(unittest.TestCase):
 
     def setup_caches(self):
         self.k_cache = torch.zeros(
@@ -390,7 +390,9 @@ class SDPATestForLargeSeqLength(unittest.TestCase):
         self.max_seq_len = 2048
         self.setup_caches()
 
-    def _test_sdpa_common(self, n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len):
+    def _test_sdpa_common(
+        self, n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, next_iter_seq_len=1
+    ):
         self.n_heads_kv = n_heads_kv
         self.n_heads_q = n_heads_q
         self.head_dim = head_dim
@@ -410,9 +412,9 @@ class SDPATestForLargeSeqLength(unittest.TestCase):
         )
         self.assertTrue(torch.allclose(ref_output, op_output))
 
-        q = torch.rand((1, 1, self.n_heads_kv, self.head_dim))
-        k = torch.rand((1, 1, self.n_heads_kv, self.head_dim))
-        v = torch.rand((1, 1, self.n_heads_kv, self.head_dim))
+        q = torch.rand((1, next_iter_seq_len, self.n_heads_kv, self.head_dim))
+        k = torch.rand((1, next_iter_seq_len, self.n_heads_kv, self.head_dim))
+        v = torch.rand((1, next_iter_seq_len, self.n_heads_kv, self.head_dim))
         start_pos = seq_len
         seq_len = q.size(1)
         attn_mask = self.mask[start_pos : start_pos + seq_len, :]
@@ -424,6 +426,9 @@ class SDPATestForLargeSeqLength(unittest.TestCase):
             q, k, v, self.k_cache, self.v_cache, start_pos, seq_len, None, 0, True
         )
         self.assertTrue(torch.allclose(ref_output, op_output))
+
+
+class SDPATestForLargeSeqLength(SDPATestCommon):
 
     def test_sdpa_with_cache_seq_len_130(self):
         n_heads_kv = 32
@@ -464,3 +469,50 @@ class SDPATestForLargeSeqLength(unittest.TestCase):
         max_seq_len = 2048
         seq_len = 634
         self._test_sdpa_common(n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len)
+
+
+class SDPATestForSpeculativeDecode(SDPATestCommon):
+
+    def test_sdpa_with_cache_seq_len_130(self):
+        n_heads_kv = 32
+        n_heads_q = 32
+        head_dim = 128
+        max_seq_len = 2048
+        seq_len = 130
+        next_iter_seq_len = 17
+        self._test_sdpa_common(
+            n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, next_iter_seq_len
+        )
+
+    def test_sdpa_with_cache_seq_len_llava_example(self):
+        n_heads_kv = 32
+        n_heads_q = 32
+        head_dim = 128
+        max_seq_len = 2048
+        seq_len = 634
+        next_iter_seq_len = 64
+        self._test_sdpa_common(
+            n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, next_iter_seq_len
+        )
+
+    def test_sdpa_with_cache_seq_len_130_gqa(self):
+        n_heads_kv = 8
+        n_heads_q = 32
+        head_dim = 128
+        max_seq_len = 2048
+        seq_len = 130
+        next_iter_seq_len = 33
+        self._test_sdpa_common(
+            n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, next_iter_seq_len
+        )
+
+    def test_sdpa_with_cache_seq_len_llava_example_gqa(self):
+        n_heads_kv = 16
+        n_heads_q = 32
+        head_dim = 128
+        max_seq_len = 2048
+        seq_len = 634
+        next_iter_seq_len = 117
+        self._test_sdpa_common(
+            n_heads_kv, n_heads_q, head_dim, max_seq_len, seq_len, next_iter_seq_len
+        )
