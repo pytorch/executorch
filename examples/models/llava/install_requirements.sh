@@ -15,16 +15,14 @@ pip install transformers==4.37.2
 pip install timm==0.6.13
 
 # not included in the pip install package, but needed in llava
-pip install protobuf
-pip install sentencepiece
-pip install accelerate
+pip install protobuf sentencepiece accelerate
 
 # bitsandbytes depends on numpy 1.x, which is not compatible with numpy 2.x.
 # Reinstall bitsandbytes to make it compatible. Do not install deps because it messes up torch version.
 pip install bitsandbytes -I --no-deps
 
-# numpy needs to be pin to 1.24. 1.26.4 will error out
-pip install numpy==1.24
+# 1.24 is not installable on mac python3.12 which is the CI job env. Try 1.26.4
+pip install numpy==1.26.4
 
 # install llava from the submodule. Do not install deps because it messes up torch version.
 pip install --force-reinstall -e examples/third-party/LLaVA --no-deps
