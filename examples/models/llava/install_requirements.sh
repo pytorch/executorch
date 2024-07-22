@@ -16,6 +16,8 @@ pip install timm==0.6.13
 
 # not included in the pip install package, but needed in llava
 pip install protobuf
+pip install sentencepiece
+pip install accelerate
 
 # bitsandbytes depends on numpy 1.x, which is not compatible with numpy 2.x.
 # Reinstall bitsandbytes to make it compatible. Do not install deps because it messes up torch version.
