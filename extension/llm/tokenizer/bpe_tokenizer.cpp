@@ -8,7 +8,7 @@
 
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 
-#include <string>
+#include <cstring>
 
 namespace torch {
 namespace executor {
