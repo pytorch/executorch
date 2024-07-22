@@ -446,8 +446,12 @@ void cpu_flash_attention(
       // This is unique to this deployment of flash attention since
       // original implementation wasnt deployed on this way.
 
-      int64_t num_keys = is_causal ? std::min(m + qBlockSize, kvSize) : kvSize;
-      num_keys = num_keys + start_pos;
+      // Some of these bugs can be resolved by relying on attention mask
+      // but that requires storing attention mask in float as the current
+      // code doesnt support bool attention mask.
+      // However, lets just fix that as well.
+      int64_t num_keys =
+          is_causal ? std::min(m + start_pos + qBlockSize, kvSize) : kvSize;
       auto j_kv = j / num_reps;
       for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
         int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
