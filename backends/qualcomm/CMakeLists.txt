@@ -235,6 +235,9 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   set_target_properties(
     PyQnnManagerAdaptor PROPERTIES CXX_VISIBILITY_PRESET hidden
   )
+  set_target_properties(
+    PyQnnWrapperAdaptor PROPERTIES CXX_VISIBILITY_PRESET hidden
+  )
 
   target_link_libraries(
     PyQnnManagerAdaptor

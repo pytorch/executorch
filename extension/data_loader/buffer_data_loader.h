@@ -29,8 +29,10 @@ class BufferDataLoader : public DataLoader {
   BufferDataLoader(const void* data, size_t size)
       : data_(reinterpret_cast<const uint8_t*>(data)), size_(size) {}
 
-  __ET_NODISCARD Result<FreeableBuffer> Load(size_t offset, size_t size)
-      override {
+  __ET_NODISCARD Result<FreeableBuffer> load(
+      size_t offset,
+      size_t size,
+      __ET_UNUSED const DataLoader::SegmentInfo& segment_info) override {
     ET_CHECK_OR_RETURN_ERROR(
         offset + size <= size_,
         InvalidArgument,

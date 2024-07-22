@@ -10,7 +10,10 @@ define_common_targets()
 
 runtime.python_library(
     name = "llama_transformer",
-    srcs = ["llama_transformer.py"],
+    srcs = [
+        "llama_transformer.py",
+        "rope.py",
+    ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama2",
     visibility = [
