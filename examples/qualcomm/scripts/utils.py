@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from typing import Optional
+from typing import Callable, List, Optional
 
 import numpy as np
 
@@ -30,9 +30,11 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
 )
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
+from torch.ao.quantization.observer import MovingAverageMinMaxObserver
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -40,7 +42,7 @@ class SimpleADB:
     def __init__(
         self,
         qnn_sdk,
-        artifact_path,
+        build_path,
         pte_path,
         workspace,
         device_id,
@@ -48,14 +50,15 @@ class SimpleADB:
         host_id=None,
         error_only=False,
         shared_buffer=False,
+        runner="examples/qualcomm/qnn_executor_runner",
     ):
         self.qnn_sdk = qnn_sdk
-        self.artifact_path = artifact_path
-        self.pte_path = pte_path
+        self.build_path = build_path
+        self.pte_path = pte_path if isinstance(pte_path, list) else [pte_path]
         self.workspace = workspace
         self.device_id = device_id
         self.host_id = host_id
-        self.working_dir = Path(self.pte_path).parent.absolute()
+        self.working_dir = Path(self.pte_path[0]).parent.absolute()
         self.input_list_filename = "input_list.txt"
         self.etdump_path = f"{self.workspace}/etdump.etdp"
         self.output_folder = f"{self.workspace}/outputs"
@@ -68,6 +71,7 @@ class SimpleADB:
         self.soc_model = arch_table[soc_model]
         self.error_only = error_only
         self.shared_buffer = shared_buffer
+        self.runner = runner
 
     def _adb(self, cmd):
         if not self.host_id:
@@ -80,19 +84,13 @@ class SimpleADB:
             cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
         )
 
-    def push(self, inputs, input_list):
+    def push(self, inputs=None, input_list=None, files=None):
         self._adb(["shell", f"rm -rf {self.workspace}"])
         self._adb(["shell", f"mkdir -p {self.workspace}"])
 
-        # prepare input list
-        input_list_file = f"{self.working_dir}/{self.input_list_filename}"
-        with open(input_list_file, "w") as f:
-            f.write(input_list)
-            f.flush()
-
         # necessary artifacts
-        for artifact in [
-            f"{self.pte_path}",
+        artifacts = [
+            *self.pte_path,
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
             (
                 f"{self.qnn_sdk}/lib/hexagon-v{self.soc_model}/"
@@ -104,48 +102,67 @@ class SimpleADB:
             ),
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
-            f"{self.artifact_path}/examples/qualcomm/qnn_executor_runner",
-            f"{self.artifact_path}/backends/qualcomm/libqnn_executorch_backend.so",
-            input_list_file,
-        ]:
+            f"{self.build_path}/{self.runner}",
+            f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
+        ]
+
+        # prepare input list
+        if input_list is not None:
+            input_list_file = f"{self.working_dir}/{self.input_list_filename}"
+            with open(input_list_file, "w") as f:
+                f.write(input_list)
+                f.flush()
+            artifacts.append(input_list_file)
+
+        for artifact in artifacts:
             self._adb(["push", artifact, self.workspace])
 
         # input data
-        for idx, data in enumerate(inputs):
-            for i, d in enumerate(data):
-                file_name = f"{self.working_dir}/input_{idx}_{i}.raw"
-                d.detach().numpy().tofile(file_name)
+        if inputs is not None:
+            for idx, data in enumerate(inputs):
+                for i, d in enumerate(data):
+                    file_name = f"{self.working_dir}/input_{idx}_{i}.raw"
+                    d.detach().numpy().tofile(file_name)
+                    self._adb(["push", file_name, self.workspace])
+
+        # custom files
+        if files is not None:
+            for file_name in files:
                 self._adb(["push", file_name, self.workspace])
 
-    def execute(self):
+    def execute(self, custom_runner_cmd=None):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
-        qnn_executor_runner_args = " ".join(
-            [
-                f"--model_path {os.path.basename(self.pte_path)}",
-                f"--output_folder_path {self.output_folder}",
-                f"--input_list_path {self.input_list_filename}",
-                f"--etdump_path {self.etdump_path}",
-                "--shared_buffer" if self.shared_buffer else "",
-            ]
-        )
-        qnn_executor_runner_cmds = " ".join(
-            [
-                f"cd {self.workspace} &&",
-                "export ADSP_LIBRARY_PATH=. &&",
-                "export LD_LIBRARY_PATH=. &&",
-                f"./qnn_executor_runner {qnn_executor_runner_args}",
-            ]
-        )
+        if custom_runner_cmd is None:
+            qnn_executor_runner_args = " ".join(
+                [
+                    f"--model_path {os.path.basename(self.pte_path[0])}",
+                    f"--output_folder_path {self.output_folder}",
+                    f"--input_list_path {self.input_list_filename}",
+                    f"--etdump_path {self.etdump_path}",
+                    "--shared_buffer" if self.shared_buffer else "",
+                ]
+            )
+            qnn_executor_runner_cmds = " ".join(
+                [
+                    f"cd {self.workspace} &&",
+                    "export ADSP_LIBRARY_PATH=. &&",
+                    "export LD_LIBRARY_PATH=. &&",
+                    f"./qnn_executor_runner {qnn_executor_runner_args}",
+                ]
+            )
+        else:
+            qnn_executor_runner_cmds = custom_runner_cmd
+
         self._adb(["shell", f"{qnn_executor_runner_cmds}"])
 
     def pull(self, output_path, callback=None):
-        self._adb(["pull", "-a", f"{self.output_folder}", output_path])
+        self._adb(["pull", "-a", self.output_folder, output_path])
         if callback:
             callback()
 
     def pull_etdump(self, output_path, callback=None):
-        self._adb(["pull", f"{self.etdump_path}", output_path])
+        self._adb(["pull", self.etdump_path, output_path])
         if callback:
             callback()
 
@@ -156,25 +173,33 @@ def build_executorch_binary(
     inputs,  # noqa: B006
     soc_model,
     file_name,
-    dataset,
+    dataset: List[torch.Tensor] | Callable[[torch.fx.GraphModule], None],
     custom_annotations=(),
     skip_node_id_set=None,
     skip_node_op_set=None,
     quant_dtype: Optional[QuantDtype] = None,
+    per_channel_linear=False,  # TODO: remove this once QNN fully supports linear
     shared_buffer=False,
+    metadata=None,
+    act_observer=MovingAverageMinMaxObserver,
 ):
     if quant_dtype is not None:
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_annotations)
+        quantizer.set_per_channel_linear_quant(per_channel_linear)
 
         if quant_dtype == QuantDtype.use_8a8w:
             pass  # default setting
         elif quant_dtype == QuantDtype.use_16a16w:
             quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
+            quantizer.set_bit16_op_quant_config(
+                get_default_16bit_qnn_ptq_config(act_observer=act_observer)
+            )
         elif quant_dtype == QuantDtype.use_16a4w:
             quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config())
+            quantizer.set_bit16_op_quant_config(
+                get_16a4w_qnn_ptq_config(act_observer=act_observer)
+            )
             quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
         else:
             raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
@@ -183,8 +208,11 @@ def build_executorch_binary(
         annotated_model = prepare_pt2e(captured_model, quantizer)
         print("Quantizing the model...")
         # calibration
-        for data in dataset:
-            annotated_model(*data)
+        if callable(dataset):
+            dataset(annotated_model)
+        else:
+            for data in dataset:
+                annotated_model(*data)
         quantized_model = convert_pt2e(annotated_model)
 
         edge_prog = capture_program(quantized_model, inputs)
@@ -208,29 +236,45 @@ def build_executorch_binary(
             debug=False,
             saver=False,
             shared_buffer=shared_buffer,
+            profile=False,
         ),
         skip_node_id_set,
         skip_node_op_set,
     )
-    edge_prog.exported_program = to_backend(edge_prog.exported_program, qnn_partitioner)
-    edge_prog.exported_program.graph_module.graph.print_tabular()
-    exec_prog = edge_prog.to_executorch(
-        config=ExecutorchBackendConfig(
-            extract_constant_segment=False,
-            # For shared buffer, user must pass the memory address
-            # which is allocated by RPC memory to executor runner.
-            # Therefore, won't want to pre-allocate
-            # by memory manager in runtime.
-            memory_planning_pass=MemoryPlanningPass(
-                memory_planning_algo="greedy",
-                alloc_graph_input=not shared_buffer,
-                alloc_graph_output=not shared_buffer,
-            ),
-            extract_delegate_segments=True,
-        )
+
+    executorch_config = ExecutorchBackendConfig(
+        extract_constant_segment=False,
+        # For shared buffer, user must pass the memory address
+        # which is allocated by RPC memory to executor runner.
+        # Therefore, won't want to pre-allocate
+        # by memory manager in runtime.
+        memory_planning_pass=MemoryPlanningPass(
+            memory_planning_algo="greedy",
+            alloc_graph_input=not shared_buffer,
+            alloc_graph_output=not shared_buffer,
+        ),
+        extract_delegate_segments=True,
     )
-    with open(f"{file_name}.pte", "wb") as file:
-        file.write(exec_prog.buffer)
+
+    if metadata is None:
+        edge_prog.exported_program = to_backend(
+            edge_prog.exported_program, qnn_partitioner
+        )
+        edge_prog.exported_program.graph_module.graph.print_tabular()
+        exec_prog = edge_prog.to_executorch(config=executorch_config)
+        with open(f"{file_name}.pte", "wb") as file:
+            file.write(exec_prog.buffer)
+    else:
+        edge_prog_mgr = EdgeProgramManager(
+            edge_programs={"forward": edge_prog.exported_program},
+            constant_methods=metadata,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+
+        edge_prog_mgr = edge_prog_mgr.to_backend(qnn_partitioner)
+        exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
+        with open(f"{file_name}.pte", "wb") as file:
+            file.write(exec_prog_mgr.buffer)
 
 
 def make_output_dir(path: str):

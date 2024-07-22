@@ -31,7 +31,7 @@ Once we have the model binary (pte) file, then let's run it with ExecuTorch runt
 cd executorch
 
 # Get a clean cmake-out directory
-rm- -rf cmake-out
+rm -rf cmake-out
 mkdir cmake-out
 
 # Configure cmake
@@ -85,7 +85,7 @@ After exporting the XNNPACK Delegated model, we can now try running it with exam
 cd executorch
 
 # Get a clean cmake-out directory
-rm- -rf cmake-out
+rm -rf cmake-out
 mkdir cmake-out
 
 # Configure cmake

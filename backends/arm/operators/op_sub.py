@@ -32,24 +32,19 @@ class SubVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
         is_quant_node: bool,
-        permute_memory_to_nhwc: bool,
     ) -> None:
         if is_quant_node:
             input_nodes = tutils.get_two_inputs(node)
 
             # Rescale inputs to 32 bit
             rescaled_inputs, scale = tqutils.rescale_nodes_to_int32(
-                input_nodes, tosa_graph, permute_memory_to_nhwc
+                input_nodes, tosa_graph
             )
 
-            # Prepare broadcasted tensor for output
-            tensor1_shape = tutils.get_input_tensor(input_nodes[0]).shape
-            tensor2_shape = tutils.get_input_tensor(input_nodes[1]).shape
-            broadcasted_shape = tutils.broadcast_shapes(tensor1_shape, tensor2_shape)
-            if permute_memory_to_nhwc:
-                NHWC_Order = [0, 2, 3, 1]
-                broadcasted_shape = [broadcasted_shape[i] for i in NHWC_Order]
-
+            # Preapre sub output tensor
+            broadcasted_shape = tutils.broadcast_shapes(
+                rescaled_inputs[0].shape, rescaled_inputs[0].shape
+            )
             sub_output = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
 
             # Do the INT32 Sub

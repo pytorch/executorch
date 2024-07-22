@@ -97,8 +97,14 @@ if(EXECUTORCH_USE_TIKTOKEN)
   set(ABSL_PROPAGATE_CXX_STD ON)
   set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/abseil-cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
+  )
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/re2
+    ${CMAKE_CURRENT_BINARY_DIR}/re2
+  )
   set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
   target_link_libraries(llama_runner PUBLIC re2::re2)
 endif()
@@ -187,6 +193,20 @@ if(TARGET mpsdelegate)
     "-weak_framework Metal"
   )
   target_link_options_shared_lib(mpsdelegate)
+endif()
+
+if(TARGET coremldelegate)
+  find_library(SQLITE_LIBRARY sqlite3)
+  list(
+    APPEND
+    link_libraries
+    coremldelegate
+    sqlite3
+    "-framework Foundation"
+    "-framework CoreML"
+    "-framework Accelerate"
+  )
+  target_link_options_shared_lib(coremldelegate)
 endif()
 
 # This one is needed for cpuinfo where it uses android specific log lib

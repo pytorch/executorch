@@ -23,10 +23,10 @@ struct GraphConfig final {
   float descriptor_pool_safety_factor;
 
   bool enable_storage_type_override;
-  vkapi::StorageType storage_type_override;
+  utils::StorageType storage_type_override;
 
   bool enable_memory_layout_override;
-  vkapi::GPUMemoryLayout memory_layout_override;
+  utils::GPUMemoryLayout memory_layout_override;
 
   bool enable_querypool;
 
@@ -36,8 +36,8 @@ struct GraphConfig final {
   // Generate a default graph config with pre-configured settings
   explicit GraphConfig();
 
-  void set_storage_type_override(vkapi::StorageType storage_type);
-  void set_memory_layout_override(vkapi::GPUMemoryLayout memory_layout);
+  void set_storage_type_override(utils::StorageType storage_type);
+  void set_memory_layout_override(utils::GPUMemoryLayout memory_layout);
   void set_local_wg_size_override(const utils::uvec3& local_wg_size);
 };
 

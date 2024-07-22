@@ -1,5 +1,5 @@
-This subtree contains operator implementations that ExecuTorch clients can
-use and contribute to.
+This subtree contains operator implementations that ExecuTorch clients can use and
+contribute to. For internal users, please see `executorch/kernels/fb/README.md`.
 
 ## Layout
 
@@ -50,16 +50,6 @@ code that works with the ExecuTorch types, then that same code should work when
 built against ATen/c10. But, there are features of `at::Tensor` and other
 ATen/c10 types that may not be present. In many cases this is intentional, but
 in other cases we can consider adding the missing features.
-
-### Do your initial work in fbcode (skip this if in OSS)
-
-Although ExecuTorch is mapped into both `xplat` and `fbcode`, we recommend
-setting up the initial targets while working from `fbcode`. Once everything's in
-place, you should be able to build from either spot.
-
-The most important thing is to consistently work out of one root or the other.
-And, if you're getting weird build failures, `hg commit` your edited files
-locally to make sure that both `xplat` and `fbcode` are in sync with each other.
 
 ### Declare the operator in a YAML file
 
@@ -189,14 +179,13 @@ When using macros that require a `NAME` argument, eg. `#define ET_SWITCH_REAL_TY
 
 ### Overview of files and targets
 
-For the operator base name `<name>`, you should work with these files and Buck
-targets. Sections below give more details about what they should contain.
+For the operator base name `<name>`, you should work with these files. Sections below give more details about what they should contain.
 
 - `./kernels/portable/cpu/op_<name>.cpp`: The implementations of operator overloads
   with base name `<name>`. This is the file that clients will link into their
   runtimes.
-- `//executorch/kernels/portable/cpu:op_<name>`: The build target for
-  `op_<name>.cpp`, defined in `targets.bzl` in the same directory.
+- `./kernels/portable/CMakeLists.txt`: The CMake build file for all the
+  `op_<name>.cpp` files in the same directory.
 - `./kernels/test/op_<name>_test.cpp`: Unit tests for the operator overloads
   with base name `<name>`.
   - Note that tests under this directory are for portable kernel specific. To
@@ -204,53 +193,36 @@ targets. Sections below give more details about what they should contain.
   - Note that the tests do not live under `cpu`; tests should be
     implementation-agnostic. This will let us run the same tests against all
     implementations of a given operator, which should behave identically.
-- `//executorch/kernels/portable/test:op_<name>_test`: The test target for
-  `op_<name>_test.cpp`, defined in `targets.bzl` in the same directory.
+- `./kernels/test/CMakeLists.txt`: The CMake build file for all the
+  `op_<name>_test.cpp` files in the same directory.
 
 For an example, see the `add` operator (note that these are slightly different
 from the `add` examples in this doc):
-- [`//executorch/kernels/portable/cpu/op_add.cpp`](https://www.internalfb.com/code/fbsource/fbcode/executorch/kernels/portable/cpu/op_add.cpp):
+- [`executorch/kernels/portable/cpu/op_add.cpp`](https://github.com/pytorch/executorch/blob/main/kernels/portable/cpu/op_add.cpp):
   Implementations.
-- [`//executorch/kernels/portable/cpu/targets.bzl`](https://www.internalfb.com/code/fbsource/fbcode/executorch/kernels/portable/cpu/targets.bzl):
-  Definition of the `:op_add` target.
-- [`//executorch/kernels/portable/test/op_add_test.cpp`](https://www.internalfb.com/code/fbsource/fbcode/executorch/kernels/portable/test/op_add_test.cpp):
+- [`./kernels/portable/CMakeLists.txt`](https://github.com/pytorch/executorch/blob/main/kernels/portable/CMakeLists.txt):
+  Build portable ops.
+- [`executorch/kernels/portable/test/op_add_test.cpp`](https://github.com/pytorch/executorch/blob/main/kernels/test/op_add_test.cpp):
   Unit tests.
-- [`//executorch/kernels/portable/test/targets.bzl`](https://www.internalfb.com/code/fbsource/fbcode/executorch/kernels/portable/test/targets.bzl):
-  Definition of the `:op_add_test` target.
+- [`./kernels/test/CMakeLists.txt`](https://github.com/pytorch/executorch/blob/main/kernels/test/CMakeLists.txt):
+  Build kernel tests.
 
-### Define the build target for the operator implementation
+### Add the operator implementation to CMakeLists.txt
 
-Define a build target by adding an entry to
-`//executorch/kernels/portable/cpu/targets.bzl`, inside
-`define_common_targets()`, in sorted order with other `_op_target` entries:
-```
-_op_target(name = "op_<name>")
-```
+The portable operator files are collected by [`./kernels/portable/CMakeLists.txt`](https://github.com/pytorch/executorch/blob/main/kernels/portable/CMakeLists.txt) with a glob on `./kernels/portable/cpu/*.cpp`. Ensure your operator file is in that directory.
 
-If your operator overload group is ATen-compatible, its `_op_target` entry
-belongs in the `_ATEN_OPS` list, otherwise it belongs in the `_CUSTOM_OPS` list.
-Note that this means that a given `op_<name>` cannot implement both
-ATen-compatible and non-ATen-compatible (i.e., custom) operators. We suggest
-adding the suffix `_custom` if necessary: e.g., `op_add` for ATen-compatible
-overloads of the `add` operator, and `op_add_custom` for non-ATen-compatible
-overloads.
+NOTE: a given `op_<name>` cannot implement both ATen-compatible and
+non-ATen-compatible (i.e., custom) operators. We suggest adding the suffix
+`_custom` if necessary: e.g., `op_add` for ATen-compatible overloads of
+the `add` operator, and `op_add_custom` for non-ATen-compatible overloads.
 
-By default, this target will depend on the core ExecuTorch types, but you can
-add additional deps if you want to.
-
-NOTE: An `op_<name>` target may not depend on another `op_<name>` target. If two
-`op_` targets need to share code, define a separate `runtime.cxx_library` target
-under `//executorch/kernels/portable/cpu/lib` that they both depend on. This
-keeps the dependencies more managable, especially for selective builds where
-only a subset of operators are used.
-
-NOTE: An `op_<name>` target may not depend on targets outside of `//executorch`.
+NOTE: An `op_<name>` may not have dependencies outside of `//executorch`.
 This library is intended to be portable, open-sourceable, and self-contained.
 
 ### Create a skeleton .cpp file for the operator implementation
 
 If not already present, create the file
-`//executorch/kernels/portable/cpu/op_<name>.cpp`, which should follow the
+`executorch/kernels/portable/cpu/op_<name>.cpp`, which should follow the
 pattern:
 ```
 // Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -271,39 +243,30 @@ namespace {
 } // namespace torch
 ```
 
-With the target and cpp file in place, you should be able to build it:
-```
-cd ${HOME}/fbsource/fbcode/executorch
-buck build fbcode//executorch/kernels/portable/cpu:op_<name>
-```
-
 ### Find the function signature for the operator overload
 
 When you add an entry to the YAML file, the codegen tools will generate an
 expected function signature for you to implement in a file called
-`NativeFunctions.h`.
+`NativeFunctions.h`. To build and find that generated header:
 
-To build and find that generated header, run the script
-`fbsource/fbcode/executorch/kernels/portable/find_op_header.sh`. It will print
-output like:
+1. Build executorch
 ```
-===== Generating header files =====
-File changed: fbcode//executorch/kernels/portable/functions.yaml
-Buck UI:    https://www.internalfb.com/buck2/e5a6f22a-5b6e-4931-9a7f-df18bdf97ab6
-RE Session: reSessionID-4b735cfa-e66f-43d8-a73b-94f22d5936c5
-Jobs completed: 3. Time elapsed: 0.2s. Cache hits: 100%. Commands: 1 (cached: 1, remote: 0, local: 0)
-BUILD SUCCEEDED
+cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DPYTHON_EXECUTABLE=python \
+          -Bcmake-out .
+cmake --build cmake-out -j9 --target install --config Release
+```
+2. The generated `NativeFunctions.h` file is located in
+```
+cmake-out/kernels/portable/portable_ops_lib/NativeFunctions.h
+```
 
-Header file: /data/users/USER/fbsource/buck-out/v2/gen/fbcode/d839c731f5505c62/executorch/codegen/__generated_lib_generate__/out/NativeFunctions.h
-```
-The path will be different in your environment, so be sure to use the output
-from the script instead of copy-pasting this path. And, since this header is
-generated from the YAML files, re-run the script if you have modified your
+Since this header is generated from the YAML files, re-run the script if you have modified your
 operator's entry in those files.
 
-Open that file and look for the function with the same name that you earlier
-added under `CPU: dispatch:` in the YAML file. For `add_out`, this might look
-like
+Open the file and look for the function with the same name that you earlier
+added in the YAML file. For `add_out`, this might look like
 ```
 TORCH_API torch::executor::Tensor & add_out(const at::Tensor & self, const at::Tensor & other, at::Tensor & out);
 ```
@@ -325,31 +288,10 @@ Tensor& add_out(
 
 Note that you should drop the `TORCH_API` attribute, and should drop `at::`.
 
-Try building again with
-```
-cd ${HOME}/fbsource/fbcode/executorch
-buck build fbcode//executorch/kernels/portable/cpu:op_<name>
-```
-
-### Create a test build target
-
-Define a test build target by adding an entry to
-`//executorch/kernels/portable/test/targets.bzl`, inside
-`define_common_targets()`, in sorted order with other `_op_test` entries:
-```
-_op_target(name = "op_<name>_test")
-```
-
-By default, this target will depend on
-`//executorch/kernels/portable/cpu:op_<name>`, the core Executor types, and
-some helper test utilities ([see
-headers](https://www.internalfb.com/code/fbsource/fbcode/executorch/runtime/core/exec_aten/testing_util/)),
-but you can add additional deps if you want to.
-
 ### Create a skeleton test .cpp file
 
 If not already present, create the file
-`//executorch/kernels/portable/test/op_<name>_test.cpp`. Here's a suggested
+`executorch/kernels/portable/test/op_<name>_test.cpp`. Here's a suggested
 starting point:
 ```
 // Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -383,22 +325,69 @@ TEST(Op<Name>Test, SmokeTest) {
 }
 ```
 
-Try running the test:
-```
-cd ${HOME}/fbsource/fbcode/executorch
-buck test fbcode//executorch/kernels/test:op_<name>_test
-```
+### Add operator test to CMakeLists.txt
+
+Now, we have to add this to [executorch/kernels/tests/CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/kernels/test/CMakeLists.txt). Note that this builds all the kernel tests.
+
+For portable kernels, add your test file to [`all_test_sources`](https://github.com/pytorch/executorch/blob/main/kernels/test/CMakeLists.txt#L69).
+
+For optimized kernels, add your test file to [`_optimized_kernels_test_sources](https://github.com/pytorch/executorch/blob/main/kernels/test/CMakeLists.txt#L230).
 
 ### Implement and test the operator
 
 You should now be able to implement and test your operator. It's helpful to see
 how other operators do it, so take a look at `op_add`:
-- [`//executorch/kernels/portable/cpu/op_add.cpp`](https://www.internalfb.com/code/fbsource/fbcode/executorch/kernels/portable/cpu/op_add.cpp)
-- [`//executorch/kernels/portable/test/op_add_test.cpp`](https://www.internalfb.com/code/fbsource/fbcode/executorch/kernels/portable/test/op_add_test.cpp)
+- [`executorch/kernels/portable/cpu/op_add.cpp`](https://github.com/pytorch/executorch/blob/main/kernels/portable/cpu/op_add.cpp)
+- [`executorch/kernels/portable/test/op_add_test.cpp`](https://github.com/pytorch/executorch/blob/main/kernels/test/op_add_test.cpp):
 
 Check out how it uses helper macros like `ET_CHECK_SAME_SHAPE_AND_DTYPE` and
 `ET_FORALL_REAL_TYPES` when implementing the operator, and test helpers like
 `TensorFactory` and `IsCloseTo()` when testing.
+
+Once you have your operator and corresponding tests in place, we can try it out.
+
+1. Build ExecuTorch.
+```
+cmake . \
+  -DCMAKE_INSTALL_PREFIX=cmake-out \
+  -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
+  -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+  -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
+  -DEXECUTORCH_BUILD_SDK=ON \
+  -DEXECUTORCH_BUILD_VULKAN=OFF \
+  -DEXECUTORCH_BUILD_XNNPACK=ON \
+  -Bcmake-out
+
+cmake --build cmake-out -j9 --target install
+```
+2. Build gtest.
+```
+mkdir -p third-party/googletest/build
+cd third-party/googletest/build
+cmake .. -DCMAKE_INSTALL_PREFIX=.
+make -j4
+make install
+cd ../../../
+```
+
+3. Build kernel tests.
+```
+cmake kernels/test \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_INSTALL_PREFIX=cmake-out \
+  -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
+  -DCMAKE_PREFIX_PATH="$(pwd)/third-party/googletest/build" \
+  -Bcmake-out/kernels/test
+cmake --build cmake-out/kernels/test -j9
+```
+4. Run tests. You should see your test here.
+```
+./cmake-out/kernels/test/portable_kernels_test
+./cmake-out/kernels/test/optimized_kernels_test
+```
 
 #### Implementation restrictions
 
@@ -437,22 +426,12 @@ target-specific APIs to do so. But, since this library is only for portable
 operator implementations, the operators it contains can't depend on
 target-specific APIs like that.
 
-### Shared kernel tests (//executorch/kernels/test)
-The portable kernel impelemntation and its corresponding tests can be used as a
+### Shared kernel tests (executorch/kernels/test)
+The portable kernel implementation and its corresponding tests can be used as a
 reference for other kernels. We can also share the test cases in
 `//executorch/kernels/test`, which contains common resources for kernel testing.
 
-*util.bzl* contains common BUCK targets for other test libs to include:
-- op_test(): Defines a cxx_test() for an "op_*_test.cpp" file
-- define_supported_features_lib(): Defines the corresponding supported features library
-
-*targets.bzl* has targets shared by other kernels tests:
-- supported_features_header: header file for SupportedFeatures
-- supported_features_header_aten: ATen implementation of SupportedFeatures
-- _codegen_function_header_wrapper: a wrapper to include the right Functions.h header
-- _common_op_test: generates <kernel>_<op_test>
-
-*_codegen_function_header_wrapper* generates a header FunctionHeaderWrapper.h, which simply
+*generate_wrapper* generates a header FunctionHeaderWrapper.h, which simply
 includes the corresponding Functions.h file for the specified kernel:
 `#include <executorch/kernels/{}/Functions.h>`. With that, the test sources don't need to know
 about which kernel we are testing and which Functions.h we should use.
@@ -463,7 +442,7 @@ it can be used to test multiple kernels.
 
 In <kernel>/test/ we can put kernel-specific test cases.
 
-*SupportedFeatures* is used to distinguish between different kernel features. For example,
+*supported_features* is used to distinguish between different kernel features. For example,
 ATen supports mixing input and output dtype while portable doesn't. When we expect death in
 portable testing in such case, we can check the supported features by the running kernel and
 bypass if it's supported.

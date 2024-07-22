@@ -15,6 +15,7 @@ import os
 import re
 import sys
 from itertools import product
+from multiprocessing.pool import ThreadPool
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import subprocess
@@ -230,6 +231,7 @@ def layout_declare_tensor(
     var_name: str,
     dtype: str,
     storage_type: str,
+    is_scalar_array: bool = False,
     precision: str = "PRECISION",
 ) -> str:
     assert storage_type.lower() in ["buffer", "texture3d", "texture2d"]
@@ -241,7 +243,12 @@ def layout_declare_tensor(
     # Create buffer binding
     if storage_type.lower() == "buffer":
         return layout_declare_buffer(
-            slot, access_type, var_name, dtype, precision, is_scalar_array=False
+            slot,
+            access_type,
+            var_name,
+            dtype,
+            precision,
+            is_scalar_array=is_scalar_array,
         )
 
     # Create image/sampler binding
@@ -524,8 +531,29 @@ class SPVGenerator:
             if param_name not in exclude_params:
                 param_values = []
                 for value in value_list:
-                    suffix = value.get("SUFFIX", value["VALUE"])
-                    param_values.append((param_name, suffix, value["VALUE"]))
+                    if "RANGE" in value:
+                        value_range = value["RANGE"]
+                        suffix = value.get("SUFFIX", "")
+                        if isinstance(value_range, list) and len(value_range) == 2:
+                            for i in range(value_range[0], value_range[1] + 1):
+                                curr_suffix = (
+                                    suffix + "_" + str(i) if suffix else str(i)
+                                )
+                                param_values.append((param_name, curr_suffix, i))
+                        else:
+                            raise ValueError(
+                                f"{value['RANGE']} is not a valid range. Must be in format [start, end] (inclusive)."
+                            )
+
+                    elif "VALUE" in value:
+                        suffix = value.get("SUFFIX", value["VALUE"])
+                        param_values.append((param_name, suffix, value["VALUE"]))
+
+                    else:
+                        raise KeyError(
+                            "Parameter must be 'VALUE: string' or 'RANGE: [a, b]'"
+                        )
+
                 all_iterated_params.append(param_values)
 
         return list(product(*all_iterated_params))
@@ -573,7 +601,7 @@ class SPVGenerator:
                             variant_name = variant["NAME"]
                             for param_value in combination:
                                 default_params_copy[param_value[0]] = param_value[2]
-                                if len(param_value[1]) > 0:
+                                if len(str(param_value[1])) > 0:
                                     variant_name = f"{variant_name}_{param_value[1]}"
 
                             default_params_copy["NAME"] = variant_name
@@ -620,9 +648,12 @@ class SPVGenerator:
 
     def generateSPV(self, output_dir: str) -> Dict[str, str]:
         output_file_map = {}
-        for shader_name in self.output_shader_map:
-            source_glsl = self.output_shader_map[shader_name][0]
-            shader_params = self.output_shader_map[shader_name][1]
+
+        def process_shader(shader_paths_pair):
+            shader_name = shader_paths_pair[0]
+
+            source_glsl = shader_paths_pair[1][0]
+            shader_params = shader_paths_pair[1][1]
 
             with codecs.open(source_glsl, "r", encoding="utf-8") as input_file:
                 input_text = input_file.read()
@@ -651,10 +682,15 @@ class SPVGenerator:
                     for arg in ["-I", src_dir_path]
                 ]
 
-                print("glslc cmd:", cmd)
-                # pyre-ignore
                 subprocess.check_call(cmd)
 
+                return (spv_out_path, glsl_out_path)
+
+        # Parallelize shader compilation as much as possible to optimize build time.
+        with ThreadPool(os.cpu_count()) as pool:
+            for spv_out_path, glsl_out_path in pool.map(
+                process_shader, self.output_shader_map.items()
+            ):
                 output_file_map[spv_out_path] = glsl_out_path
 
         return output_file_map

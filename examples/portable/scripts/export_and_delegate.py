@@ -17,10 +17,10 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.capture._config import ExecutorchBackendConfig
 
+from executorch.extension.export_util import export_to_edge
+
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
-
-from ..utils import export_to_edge
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"

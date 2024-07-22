@@ -67,12 +67,14 @@ test_model() {
     run_portable_executor_runner
     rm "./${MODEL_NAME}.pte"
   fi
-  if [[ "${MODEL_NAME}" == "llava_encoder" ]]; then
+  STRICT="--strict"
+  if [[ "${MODEL_NAME}" == "llava" ]]; then
     # Install requirements for llava
-    bash examples/models/llava_encoder/install_requirements.sh
+    bash examples/models/llava/install_requirements.sh
+    STRICT="--no-strict"
   fi
   # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
-  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
+  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
   run_portable_executor_runner
 }
 

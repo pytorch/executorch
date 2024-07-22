@@ -43,7 +43,6 @@ class TestSimpleAdd(unittest.TestCase):
 
         def __init__(self):
             super().__init__()
-            self.permute_memory_to_nhwc = False
 
         def forward(self, x, y):
             return x + y

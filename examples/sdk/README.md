@@ -33,8 +33,12 @@ python3 -m examples.sdk.scripts.export_bundled_program -m mv2 # for MobileNetv2
 3. Once we have the BundledProgram binary (`.bpte`) file, then let's run and verify it with ExecuTorch runtime and BundledProgram APIs using the [sdk_example_runner](sdk_example_runner/sdk_example_runner.cpp).
 
 ```bash
-buck2 run examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bpte --output_verification
-```
+   cd executorch
+   rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
+   cd ..
+   cmake --build cmake-out -j8 -t sdk_example_runner
+   ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bpte --output_verification
+   ```
 
 
 ## ETDump
@@ -46,19 +50,7 @@ We offer an example runner that accepts a `BundledProgram` (`.bpte`) and runs a 
 
 Running the program will generate an `ETDump` file (`.etdp`) at the location specified by `--etdump_path`. Make sure to build the program as specified below to enable the event tracer.
 
-**Buck**
-
 ```bash
-   python3 -m examples.sdk.scripts.export_bundled_program -m mv2
-   buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bpte --etdump_path mv2_etdump.etdp
-```
- **CMake**
-
-```bash
-   cd executorch
-   rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
-   cd ..
-   cmake --build cmake-out -j8 -t sdk_example_runner
    ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bpte --etdump_path mv2_etdump.etdp
    ```
 

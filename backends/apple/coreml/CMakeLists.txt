@@ -187,3 +187,10 @@ set(TARGET coremldelegate APPEND_STRING PROPERTY COMPILE_FLAGS
 set(TARGET coremldelegate APPEND_STRING PROPERTY COMPILE_FLAGS
            "-Wno-receiver-expr"
 )
+
+install(
+  TARGETS coremldelegate
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories}
+)

@@ -16,7 +16,7 @@ usage() {
   echo "Usage: Build the aarch64 version of executor runner or the python interface of Qnn Manager"
   echo "First, you need to set the environment variable for QNN_SDK_ROOT"
   echo ", and if you want to build the aarch64 version of executor runner"
-  echo ", you need to set ANDROID_NDK"
+  echo ", you need to set ANDROID_NDK_ROOT"
   echo "e.g.: executorch$ ./backends/qualcomm/scripts/build.sh --skip_x86_64"
   exit 1
 }
@@ -56,8 +56,8 @@ done
 PRJ_ROOT="$( cd "$(dirname "$0")/../../.." ; pwd -P)"
 
 if [ "$BUILD_AARCH64" = true ]; then
-    if [[ -z ${ANDROID_NDK} ]]; then
-        echo "Please export ANDROID_NDK=/path/to/android_ndk"
+    if [[ -z ${ANDROID_NDK_ROOT} ]]; then
+        echo "Please export ANDROID_NDK_ROOT=/path/to/android_ndk"
         exit -1
     fi
     BUILD_ROOT=$PRJ_ROOT/$CMAKE_AARCH64
@@ -71,13 +71,13 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_SDK=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
-        -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+        -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI='arm64-v8a' \
         -DANDROID_NATIVE_API_LEVEL=23 \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
-        -DBUCK2=$BUCK2 \
         -B$BUILD_ROOT
 
     cmake --build $BUILD_ROOT -j16 --target install
@@ -86,13 +86,12 @@ if [ "$BUILD_AARCH64" = true ]; then
     CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"
 
     cmake $PRJ_ROOT/$EXAMPLE_ROOT \
-        -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+        -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI='arm64-v8a' \
         -DANDROID_NATIVE_API_LEVEL=23 \
         -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
-        -DBUCK2=$BUCK2 \
         -B$EXAMPLE_ROOT
 
     cmake --build $EXAMPLE_ROOT -j16

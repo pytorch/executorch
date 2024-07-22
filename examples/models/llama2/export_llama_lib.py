@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 # Example script for exporting Llama2 to flatbuffer
 
 import argparse
@@ -21,6 +23,8 @@ import pkg_resources
 import torch
 
 from executorch.examples.models.llama2.llama_transformer import ModelArgs
+
+from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
@@ -40,8 +44,6 @@ from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
-
-from .builder import DType, LlamaEdgeManager
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
@@ -333,12 +335,12 @@ def export_llama(modelname, args) -> str:
         return filename
 
 
-def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
+def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
     """
     Helper function for export_llama. Loads the model from checkpoint and params,
-    and sets up a LlamaEdgeManager with initial transforms and dtype conversion.
+    and sets up a LLMEdgeManager with initial transforms and dtype conversion.
 
-    Returns a LlamaEdgeManager prior to calling export_to_edge with quantizers
+    Returns a LLMEdgeManager prior to calling export_to_edge with quantizers
     """
 
     # load model from checkpoint and params.json
@@ -425,11 +427,11 @@ def _validate_args(args):
     if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
         raise ValueError(
             "Dynamic shape is not supported with coreml, MPS or qnn backends."
-            " Please us --disble_dynamic_shape."
+            " Please use --disable_dynamic_shape."
         )
 
 
-def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
+def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
     _validate_args(args)
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
@@ -579,12 +581,12 @@ def _load_llama_model(
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
-) -> "LlamaEdgeManager":
+) -> "LLMEdgeManager":
     """
-    A helper util that builds a Llama2 model. It returns a LlamaEdgeManager that
+    A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
     can help further lower the model to ExecuTorch.
     Returns:
-        An instance of LlamaEdgeManager which contains the eager mode model.
+        An instance of LLMEdgeManager which contains the eager mode model.
     """
     assert (
         checkpoint or checkpoint_dir
@@ -622,13 +624,12 @@ def _load_llama_model(
     else:
         raise ValueError(f"Unsupported dtype {dtype}")
 
-    return LlamaEdgeManager(
+    return LLMEdgeManager(
         model=model,
         modelname=modelname,
-        weight_type=weight_type,
+        max_seq_len=model.params.max_seq_len,
         dtype=dtype,
         use_kv_cache=use_kv_cache,
-        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
         example_inputs=example_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
         verbose=verbose,

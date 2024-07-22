@@ -89,27 +89,27 @@ ComputeGraph::~ComputeGraph() {
   context_->flush();
 }
 
-vkapi::StorageType ComputeGraph::suggested_storage_type() {
+utils::StorageType ComputeGraph::suggested_storage_type() {
   if (config_.enable_storage_type_override) {
     return config_.storage_type_override;
   }
-  return vkapi::kTexture3D;
+  return utils::kTexture3D;
 }
 
-vkapi::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
+utils::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
     const std::vector<int64_t>& sizes) {
   if (config_.enable_memory_layout_override) {
     return config_.memory_layout_override;
   }
   if (sizes.size() < 3) {
-    return vkapi::kWidthPacked;
+    return utils::kWidthPacked;
   }
   // For 3 dimensional tensors that only have a channels dimension of 1, still
   // prefer width packed.
   if (utils::val_at(-3, sizes) == 1) {
-    return vkapi::kWidthPacked;
+    return utils::kWidthPacked;
   }
-  return vkapi::kChannelsPacked;
+  return utils::kChannelsPacked;
 }
 
 void ComputeGraph::check_no_active_value_ptrs() {
@@ -144,8 +144,8 @@ vkapi::ScalarType ComputeGraph::dtype_of(const ValueRef idx) const {
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
-    const vkapi::StorageType storage_type,
-    const vkapi::GPUMemoryLayout memory_layout,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout,
     const int64_t shared_object_idx) {
   bool allocate_memory = shared_object_idx < 0;
 
@@ -163,7 +163,7 @@ ValueRef ComputeGraph::add_tensor(
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
-    const vkapi::StorageType storage_type,
+    const utils::StorageType storage_type,
     const int64_t shared_object_idx) {
   return add_tensor(
       sizes,
@@ -176,7 +176,7 @@ ValueRef ComputeGraph::add_tensor(
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
-    const vkapi::GPUMemoryLayout memory_layout,
+    const utils::GPUMemoryLayout memory_layout,
     const int64_t shared_object_idx) {
   return add_tensor(
       sizes, dtype, suggested_storage_type(), memory_layout, shared_object_idx);
@@ -184,14 +184,14 @@ ValueRef ComputeGraph::add_tensor(
 
 ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
-    const vkapi::StorageType storage_type,
-    const vkapi::GPUMemoryLayout memory_layout) {
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout) {
   return add_tensor(sizes_of(idx), dtype_of(idx), storage_type, memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor_like(
     const ValueRef idx,
-    const vkapi::GPUMemoryLayout memory_layout) {
+    const utils::GPUMemoryLayout memory_layout) {
   return add_tensor(sizes_of(idx), dtype_of(idx), memory_layout);
 }
 

@@ -187,6 +187,37 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
+  test-export-llava-linux:
+    name: test-export-llava-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.12xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
+
+        # install Llava requirements
+        bash examples/models/llama2/install_requirements.sh
+        bash examples/models/llava/install_requirements.sh
+
+        # run export_llava.sh
+        python examples/models/llava/export_llava.py
+
+        # verify file exists
+        if [ ! -f "llava_combined_xnnpack.pte" ]; then
+            echo "llava_combined_xnnpack.pte not found!"
+            exit 1
+        fi
+
   test-quantized-aot-lib-linux:
     name: test-quantized-aot-lib-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main

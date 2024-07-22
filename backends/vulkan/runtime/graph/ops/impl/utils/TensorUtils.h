@@ -36,7 +36,7 @@ bool check_same_sizes_at(
 
 bool check_memory_layout_is(
     const api::vTensor& t,
-    vkapi::GPUMemoryLayout layout);
+    utils::GPUMemoryLayout layout);
 
 bool check_same_memory_layout(const api::vTensor& t1, const api::vTensor& t2);
 

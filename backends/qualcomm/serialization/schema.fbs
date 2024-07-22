@@ -175,6 +175,9 @@ table QnnExecuTorchOptions {
   
   /// Enables usage of shared buffer between application and backend for graph I/O.
   shared_buffer:bool;
+
+  /// Is model from qnn context binary
+  is_from_context_binary: bool;
 }
 
 root_type QnnExecuTorchOptions;
