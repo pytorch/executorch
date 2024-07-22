@@ -21,9 +21,9 @@ void check_embedding_args(
     const api::vTensor& weight,
     const api::vTensor& in,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(weight, vkapi::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(in, vkapi::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(weight, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 }
 
 void add_embedding_node(

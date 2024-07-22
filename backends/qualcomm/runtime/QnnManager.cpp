@@ -9,12 +9,26 @@
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <string>
+
 namespace torch {
 namespace executor {
 namespace qnn {
+
+bool CompareExportedInput(
+    const std::shared_ptr<TensorWrapper>& a,
+    const std::shared_ptr<TensorWrapper>& b) {
+  // Using the order of the nodes as external_id in AOT
+  // to extract the right arg from *args at runtime
+  int numA = std::stoi(a->GetName().substr(a->GetName().find('_') + 1));
+  int numB = std::stoi(b->GetName().substr(b->GetName().find('_') + 1));
+  return numA < numB;
+}
+
 QnnManager::~QnnManager() {
   backend_params_ptr_.reset(new BackendConfigParameters());
   logger_.reset();
@@ -84,6 +98,52 @@ Error QnnManager::LoadQnnLibrary() {
   return ret;
 }
 
+Error QnnManager::PreRegisterMem() {
+  SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
+  for (const auto info : shared_buffer_manager.GetCustomMemTensorInfoSet()) {
+    void* unaligned_custom_mem_base =
+        shared_buffer_manager.GetUnAlignedAddr(info.custom_mem);
+
+    size_t tensor_offset = (static_cast<char*>(info.custom_mem) -
+                            static_cast<char*>(unaligned_custom_mem_base)) +
+        info.pos;
+    size_t total_custom_mem_size =
+        shared_buffer_manager.GetAllocatedSize(info.custom_mem);
+
+    int32_t mem_fd = shared_buffer_manager.MemToFd(unaligned_custom_mem_base);
+    if (mem_fd == -1) {
+      QNN_EXECUTORCH_LOG_WARN(
+          "PreRegisterMem failed to get file descriptor.",
+          "custom_mem: %p",
+          "tensor_addr: %p",
+          "pos: %uz",
+          "tensor_bytes: %uz",
+          "shape: %p",
+          "rank: %zu",
+          "qnn_dtype: %X",
+          info.custom_mem,
+          info.tensor_addr,
+          info.pos,
+          info.tensor_bytes,
+          info.shape,
+          info.rank,
+          info.dtype);
+      return Error::Internal;
+    }
+
+    ET_CHECK_OR_RETURN_ERROR(
+        backend_params_ptr_->qnn_mem_manager_ptr_->PreRegisterCustomMemHandle(
+            mem_fd,
+            unaligned_custom_mem_base,
+            total_custom_mem_size,
+            tensor_offset,
+            info) == Error::Ok,
+        Internal,
+        "Fail to register to shared memory.");
+  }
+  return Error::Ok;
+}
+
 Error QnnManager::RegisterMem(
     void* data_ptr,
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
@@ -100,6 +160,17 @@ Error QnnManager::RegisterMem(
     return Error::Internal;
   }
 
+  void* custom_mem_base = shared_buffer_manager.GetCustomMemBase(data_ptr);
+  if (custom_mem_base != nullptr) {
+    return RegisterCustomMem(data_ptr, custom_mem_base, tensor_wrapper);
+  }
+  return RegisterIonMem(data_ptr, tensor_wrapper);
+}
+
+Error QnnManager::RegisterIonMem(
+    void* data_ptr,
+    const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
+  SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
   if (!shared_buffer_manager.IsAllocated(data_ptr)) {
     // It means two scenarios here:
     // 1. the input and output partitioned graph
@@ -107,7 +178,7 @@ Error QnnManager::RegisterMem(
     // QnnExecuTorchAllocCustomMem API
     return Error::Internal;
   } else if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
-                 tensor_wrapper->GetMemHandle())) {
+                 tensor_wrapper->GetMemHandle(), data_ptr)) {
     if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo)
       QNN_EXECUTORCH_LOG_INFO(
           "Tensor name %s has been registered shared memory.",
@@ -115,7 +186,7 @@ Error QnnManager::RegisterMem(
     return Error::Ok;
   }
 
-  int32_t mem_fd = SharedBuffer::GetSharedBufferManager().MemToFd(data_ptr);
+  int32_t mem_fd = shared_buffer_manager.MemToFd(data_ptr);
   if (mem_fd == -1) {
     QNN_EXECUTORCH_LOG_WARN(
         "Tensor name %s is failed to get file descriptor.",
@@ -123,8 +194,74 @@ Error QnnManager::RegisterMem(
     return Error::Internal;
   }
   ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_mem_manager_ptr_->RegisterMem(
-          tensor_wrapper, mem_fd) == Error::Ok,
+      backend_params_ptr_->qnn_mem_manager_ptr_->RegisterIonMem(
+          tensor_wrapper, mem_fd, data_ptr) == Error::Ok,
+      Internal,
+      "Fail to register to shared memory.");
+
+  return Error::Ok;
+}
+
+Error QnnManager::RegisterCustomMem(
+    void* data_ptr,
+    void* custom_mem_base,
+    const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
+  if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
+          tensor_wrapper->GetMemHandle(), data_ptr)) {
+    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo)
+      QNN_EXECUTORCH_LOG_INFO(
+          "Tensor name %s has been registered shared memory.",
+          tensor_wrapper->GetName().c_str());
+    return Error::Ok;
+  }
+
+  CustomMemTensorInfo info{
+      custom_mem_base,
+      data_ptr,
+      static_cast<size_t>(
+          static_cast<char*>(data_ptr) - static_cast<char*>(custom_mem_base)),
+      tensor_wrapper->GetBytes(),
+      tensor_wrapper->GetDims(),
+      tensor_wrapper->GetRank(),
+      qnn_dtype_to_scalar_type_[tensor_wrapper->GetDataType()]};
+
+  Qnn_MemHandle_t pre_registered_handle =
+      backend_params_ptr_->qnn_mem_manager_ptr_->GetPreRegisteredHandle(info);
+  if (pre_registered_handle != nullptr) {
+    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+      QNN_EXECUTORCH_LOG_INFO(
+          "Tensor name %s found a pre-registered memHandle.",
+          tensor_wrapper->GetName().c_str());
+    }
+    return backend_params_ptr_->qnn_mem_manager_ptr_->SetMemHandle(
+        tensor_wrapper, data_ptr, pre_registered_handle);
+  }
+
+  SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
+  void* unaligned_custom_mem_base =
+      shared_buffer_manager.GetUnAlignedAddr(custom_mem_base);
+
+  size_t tensor_offset = static_cast<char*>(custom_mem_base) -
+      static_cast<char*>(unaligned_custom_mem_base) + info.pos;
+  size_t total_custom_mem_size =
+      shared_buffer_manager.GetAllocatedSize(custom_mem_base);
+
+  int32_t mem_fd = shared_buffer_manager.MemToFd(unaligned_custom_mem_base);
+  if (mem_fd == -1) {
+    QNN_EXECUTORCH_LOG_WARN(
+        "Tensor name %s failed to get file descriptor.",
+        tensor_wrapper->GetName().c_str());
+    return Error::Internal;
+  }
+
+  ET_CHECK_OR_RETURN_ERROR(
+      backend_params_ptr_->qnn_mem_manager_ptr_->RegisterCustomMem(
+          tensor_wrapper,
+          mem_fd,
+          data_ptr,
+          unaligned_custom_mem_base,
+          total_custom_mem_size,
+          tensor_offset) == Error::Ok,
       Internal,
       "Fail to register to shared memory.");
 
@@ -164,6 +301,12 @@ Error QnnManager::Init() {
         BackendInitializeState::INITIALIZED;
   }
 
+#if defined(__aarch64__)
+  ET_CHECK_OR_RETURN_ERROR(
+      PreRegisterMem() == Error::Ok,
+      Internal,
+      "Fail to pre register custom memory handle");
+#endif
   return Error::Ok;
 }
 
@@ -178,10 +321,20 @@ Error QnnManager::AllocateTensor() {
     tensor_wrapper->UpdateQnnTensorMeta(tensor);
     input_tensors_.emplace_back(std::move(tensor_wrapper));
   }
-
-  for (auto& tensor : output_tensors) {
-    std::shared_ptr<TensorWrapper> tensor_wrapper = CreateTensorWrapper(tensor);
-    tensor_wrapper->UpdateQnnTensorMeta(tensor);
+  if (!options_->is_from_context_binary()) {
+    std::sort(
+        input_tensors_.begin(), input_tensors_.end(), CompareExportedInput);
+  }
+  for (size_t i = 0; i < output_tensors.size(); ++i) {
+    std::shared_ptr<TensorWrapper> tensor_wrapper =
+        CreateTensorWrapper(output_tensors[i]);
+    tensor_wrapper->UpdateQnnTensorMeta(output_tensors[i]);
+    const std::string& tensor_name = tensor_wrapper->GetName();
+    // this is required by identifying shared buffer mechanism
+    // info might be missed if context binary came from qnn_converter
+    if (tensor_name.find("output_") == std::string::npos) {
+      tensor_wrapper->SetName("output_" + tensor_name);
+    }
     if (IsTensorDump()) {
       tensor_wrapper->AllocateDataBuffer();
     }
@@ -198,6 +351,10 @@ Error QnnManager::AllocateTensor(
     if (IsTensorDump()) {
       output_tensor->AllocateDataBuffer();
     }
+  }
+  if (!options_->is_from_context_binary()) {
+    std::sort(
+        input_tensors_.begin(), input_tensors_.end(), CompareExportedInput);
   }
   output_tensors_ = std::move(outputs);
   return Error::Ok;
@@ -371,13 +528,23 @@ Error QnnManager::Compile(
 } // namespace executor
 } // namespace torch
 void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment) {
-  using torch::executor::qnn::SharedBuffer;
   void* buffer_ptr =
-      SharedBuffer::GetSharedBufferManager().AllocMem(bytes, alignment);
+      torch::executor::qnn::SharedBuffer::GetSharedBufferManager().AllocMem(
+          bytes, alignment);
   return buffer_ptr;
 }
 
 void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
-  using torch::executor::qnn::SharedBuffer;
-  SharedBuffer::GetSharedBufferManager().FreeMem(buffer_ptr);
+  torch::executor::qnn::SharedBuffer::GetSharedBufferManager().FreeMem(
+      buffer_ptr);
+}
+
+void QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem) {
+  torch::executor::qnn::SharedBuffer::GetSharedBufferManager()
+      .AddCusomMemTensorAddr(tensor_addr, custom_mem);
+}
+
+void QnnExecuTorchAddCustomMemTensorInfo(const CustomMemTensorInfo& info) {
+  torch::executor::qnn::SharedBuffer::GetSharedBufferManager()
+      .AddCusomMemTensorInfo(info);
 }

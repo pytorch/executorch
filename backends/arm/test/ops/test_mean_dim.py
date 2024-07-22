@@ -55,7 +55,7 @@ class TestMeanDim(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
             .check(["torch.ops.aten.adaptive_avg_pool2d.default"])
@@ -75,7 +75,7 @@ class TestMeanDim(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
             .export()
@@ -96,7 +96,7 @@ class TestMeanDim(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
+                compile_spec=common.get_u55_compile_spec(),
             )
             .quantize()
             .export()

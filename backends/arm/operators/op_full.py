@@ -13,6 +13,7 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import get_quant_node_args
+from executorch.backends.arm.tosa_utils import tosa_shape
 from torch.fx import Node
 
 
@@ -30,13 +31,9 @@ class FullVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
         is_quant_node: bool,
-        permute_memory_to_nhwc: bool,
     ) -> None:
 
-        shape = inputs[0].special
-        if permute_memory_to_nhwc:
-            NHWC_Order = [0, 2, 3, 1]
-            shape = [shape[i] for i in NHWC_Order]
+        shape = tosa_shape(inputs[0].special, output.dim_order)
 
         value = inputs[1].number
         if is_quant_node:

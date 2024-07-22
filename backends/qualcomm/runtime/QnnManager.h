@@ -16,6 +16,7 @@
 #include <executorch/runtime/core/error.h>
 
 #include <memory>
+#include <unordered_map>
 
 namespace torch {
 namespace executor {
@@ -65,6 +66,9 @@ class QnnManager {
       void* data_ptr,
       const std::shared_ptr<TensorWrapper>& tensor_wrapper);
 
+  // Pre-register custom memory handle from the SharedBuffer before execution
+  Error PreRegisterMem();
+
   std::vector<std::shared_ptr<TensorWrapper>> GetGraphInputs() {
     return input_tensors_;
   }
@@ -86,6 +90,21 @@ class QnnManager {
   const QnnExecuTorchOptions* options_;
   std::vector<std::shared_ptr<TensorWrapper>> input_tensors_;
   std::vector<std::shared_ptr<TensorWrapper>> output_tensors_;
+  Error RegisterIonMem(
+      void* data_ptr,
+      const std::shared_ptr<TensorWrapper>& tensor_wrapper);
+  Error RegisterCustomMem(
+      void* data_ptr,
+      void* custom_mem_base,
+      const std::shared_ptr<TensorWrapper>& tensor_wrapper);
+  std::unordered_map<Qnn_DataType_t, ScalarType> qnn_dtype_to_scalar_type_ = {
+      {Qnn_DataType_t::QNN_DATATYPE_INT_32, ScalarType::Int},
+      {Qnn_DataType_t::QNN_DATATYPE_FLOAT_32, ScalarType::Float},
+      {Qnn_DataType_t::QNN_DATATYPE_SFIXED_POINT_8, ScalarType::Char},
+      {Qnn_DataType_t::QNN_DATATYPE_SFIXED_POINT_16, ScalarType::Short},
+      {Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_8, ScalarType::Byte},
+      {Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_16, ScalarType::Bits16},
+  };
 };
 } // namespace qnn
 } // namespace executor

@@ -18,9 +18,16 @@ from executorch.backends.cadence.aot.passes import (
     ReplaceSqueezeAndUnsqueezeWithViewPass,
 )
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
-from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
+from executorch.backends.cadence.aot.quantizer.quantizer import (
+    CadenceAtenQuantizer,
+    CadenceQuantizer,
+)
 from executorch.backends.cadence.aot.utils import model_is_quantized
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
+from pyre_extensions import assert_is_instance
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.pt2e.export_utils import model_is_exported
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -43,6 +50,9 @@ def quantize_pt2(
     # Export with dynamo
     model_exp = capture_pre_autograd_graph(model, inputs)
 
+    # Decompose SDPA
+    DecomposeScaledDotProductAttention(False)(model_exp)
+
     # Prepare
     prepared_model = prepare_pt2e(model_exp, quantizer)
 
@@ -53,8 +63,10 @@ def quantize_pt2(
     converted_model = convert_pt2e(prepared_model)
 
     # Get patterns and apply fusion of dq -> op -> q to qop
-    # pyre-fixme[16]: Pyre doesn't get that CadenceQuantizer has a patterns attribute
-    patterns = [q.pattern for q in quantizer.quantizers]
+    patterns = [
+        assert_is_instance(q, CadenceAtenQuantizer).pattern
+        for q in quantizer.quantizers
+    ]
     QuantFusion(patterns)(converted_model)
 
     return converted_model

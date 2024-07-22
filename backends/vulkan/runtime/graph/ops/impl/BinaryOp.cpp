@@ -118,6 +118,7 @@ DEFINE_BINARY_OP_WITH_ALPHA_FN(floor_divide);
 DEFINE_BINARY_OP_FN(mul);
 DEFINE_BINARY_OP_FN(div);
 DEFINE_BINARY_OP_FN(pow);
+DEFINE_BINARY_OP_FN(minimum);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.add.Tensor, add);
@@ -126,6 +127,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.div.Tensor, div);
   VK_REGISTER_OP(aten.div.Tensor_mode, floor_divide);
   VK_REGISTER_OP(aten.pow.Tensor_Tensor, pow);
+  VK_REGISTER_OP(aten.minimum.default, minimum);
 }
 
 } // namespace vkcompute

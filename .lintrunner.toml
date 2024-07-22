@@ -7,6 +7,7 @@ exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
     '.github/scripts/**',
+    'exir/serde/**',
 ]
 command = [
     'python',
@@ -37,6 +38,7 @@ include_patterns = [
 exclude_patterns = [
     'third-party/**',
     '**/third-party/**',
+    'exir/serde/**',
 ]
 command = [
     'python',

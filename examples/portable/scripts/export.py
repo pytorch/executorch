@@ -12,10 +12,14 @@ import logging
 import torch
 
 from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.extension.export_util.utils import (
+    export_to_edge,
+    export_to_exec_prog,
+    save_pte_program,
+)
 
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
-from ..utils import export_to_edge, export_to_exec_prog, save_pte_program
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -29,6 +33,13 @@ def main() -> None:
         "--model_name",
         required=True,
         help=f"provide a model name. Valid ones: {list(MODEL_NAME_TO_MODEL.keys())}",
+    )
+
+    parser.add_argument(
+        "-s",
+        "--strict",
+        action=argparse.BooleanOptionalAction,
+        help="whether to export with strict mode. Default is True",
     )
 
     parser.add_argument(
@@ -64,6 +75,7 @@ def main() -> None:
             edge_compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
+            strict=args.strict,
         )
         prog = edge_manager.to_executorch(config=backend_config)
     else:
@@ -72,6 +84,7 @@ def main() -> None:
             example_inputs,
             dynamic_shapes=dynamic_shapes,
             backend_config=backend_config,
+            strict=args.strict,
         )
     save_pte_program(prog, args.model_name, args.output_dir)
 

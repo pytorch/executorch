@@ -11,15 +11,12 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/schema_generated.h>
-
-#include <string>
 namespace torch {
 namespace executor {
 // ========== Public method implementations =========================
 using namespace qnn;
 using namespace qnn_delegate;
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
-
 Result<DelegateHandle*> QnnExecuTorchBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
@@ -193,8 +190,9 @@ Error QnnExecuTorchBackend::execute(
     if (qnn_manager->RegisterMem(
             args[i]->toTensor().mutable_data_ptr(), input_tensors[i]) !=
         Error::Ok) {
+      // update data ptr only should be fine
       input_tensors[i]->FillDataBuffer(
-          args[i]->toTensor().const_data_ptr(), true /* copy_data */);
+          args[i]->toTensor().const_data_ptr(), false /* copy_data */);
     }
     input_tensor_structs.push_back(input_tensors[i]->CloneTensorStruct());
   }

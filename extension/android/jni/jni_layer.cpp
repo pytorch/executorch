@@ -233,7 +233,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
 class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
  private:
   friend HybridBase;
-  std::unique_ptr<torch::executor::Module> module_;
+  std::unique_ptr<Module> module_;
 
  public:
   constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/NativePeer;";
@@ -252,9 +252,8 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       facebook::jni::alias_ref<
           facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
           extraFiles) {
-    module_ = std::make_unique<torch::executor::Module>(
-        modelPath->toStdString(),
-        torch::executor::Module::MlockConfig::NoMlock);
+    module_ = std::make_unique<Module>(
+        modelPath->toStdString(), Module::LoadMode::Mmap);
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> forward(

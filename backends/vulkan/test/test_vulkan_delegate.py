@@ -15,7 +15,6 @@ import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_
 import torch
 
 from executorch.backends.transforms.convert_dtype_pass import I64toI32
-from executorch.backends.transforms.mean_to_sum_div import MeanToSumDiv
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
@@ -125,7 +124,6 @@ class TestBackends(unittest.TestCase):
                 program,
                 transform_passes=[
                     I64toI32(self._edge_compile_config._skip_dim_order),
-                    MeanToSumDiv(),
                 ],
                 partitioner=[VulkanPartitioner(compile_options)],
             )
@@ -1074,6 +1072,25 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_minimum(self):
+        class MinimumModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                return torch.minimum(x, y)
+
+        sample_inputs = (
+            torch.rand(size=(3, 5, 6, 4), dtype=torch.float32),
+            torch.rand(size=(6, 4), dtype=torch.float32),
+        )
+
+        self.lower_module_and_test_output(
+            MinimumModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_reshape(self):
         class ReshapeModule(torch.nn.Module):
             def __init__(self):
@@ -1136,6 +1153,22 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(
             UnsqueezeModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_squeeze(self):
+        class SqueezeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.squeeze(x, 0)
+
+        sample_inputs = (torch.randn(size=(1, 2, 2, 1), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            SqueezeModule(),
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )

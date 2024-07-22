@@ -14,7 +14,13 @@ import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from .utils import get_parameter, is_graph_input, is_graph_output, is_parameter
+from .utils import (
+    deduce_dtype,
+    get_parameter,
+    is_graph_input,
+    is_graph_output,
+    is_parameter,
+)
 
 
 QNN_QUANT_TYPE_MAP = {
@@ -217,21 +223,7 @@ class NodeVisitor:
         quant_config: Dict,
     ) -> PyQnnWrapper.Qnn_TensorType_t:
         if quant_config:
-            quant_range = quant_config["quant_max"] - quant_config["quant_min"]
-            unsigned = quant_config["quant_min"] >= 0
-            if quant_range <= torch.iinfo(torch.int8).max - torch.iinfo(torch.int8).min:
-                if unsigned:
-                    quant_config["dtype"] = torch.uint8
-                else:
-                    quant_config["dtype"] = torch.int8
-            elif (
-                quant_range
-                <= torch.iinfo(torch.int16).max - torch.iinfo(torch.int16).min
-            ):
-                if unsigned:
-                    quant_config["dtype"] = torch.uint16
-                else:
-                    quant_config["dtype"] = torch.int16
+            quant_config["dtype"] = deduce_dtype(tensor, quant_config)
             return QNN_QUANT_TYPE_MAP[quant_config["dtype"]]
 
         return QNN_TENSOR_TYPE_MAP[tensor.dtype]
@@ -277,7 +269,6 @@ class NodeVisitor:
         nodes_to_wrappers: Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
         is_input_tensor: bool,
         node_name: str = None,
-        is_tensor: bool = True,
         wrapper_idx: int = 0,
     ) -> PyQnnWrapper.TensorWrapper:
         """
@@ -296,7 +287,10 @@ class NodeVisitor:
 
         if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
             return cached
-        tensor_name = node.name
+
+        tensor_name = f"{node.name}_{wrapper_idx}"
+        if is_graph_input(node, self.edge_program):
+            tensor_name = "input_" + str(self.external_ids[node]) + "_" + tensor_name
         if is_graph_output(node):
             tensor_name = "output_" + tensor_name
         dims = [1] if len(tensor.size()) == 0 else tensor.size()

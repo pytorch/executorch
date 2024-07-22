@@ -72,8 +72,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   size_t segment_base_offset = 0;
   {
     EXECUTORCH_SCOPE_PROF("Program::check_header");
-    Result<FreeableBuffer> header =
-        loader->Load(/*offset=*/0, ExtendedHeader::kNumHeadBytes);
+    Result<FreeableBuffer> header = loader->load(
+        /*offset=*/0,
+        ExtendedHeader::kNumHeadBytes,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     if (!header.ok()) {
       return header.error();
     }
@@ -95,8 +97,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
   // Load the flatbuffer data as a segment.
   uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("Program::load_data");
-  Result<FreeableBuffer> program_data =
-      loader->Load(/*offset=*/0, program_size);
+  Result<FreeableBuffer> program_data = loader->load(
+      /*offset=*/0,
+      program_size,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   if (!program_data.ok()) {
     return program_data.error();
   }
@@ -173,8 +177,12 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
     const executorch_flatbuffer::DataSegment* data_segment =
         segments->Get(constant_segment->segment_index());
-    Result<FreeableBuffer> constant_segment_data = loader->Load(
-        segment_base_offset + data_segment->offset(), data_segment->size());
+    Result<FreeableBuffer> constant_segment_data = loader->load(
+        segment_base_offset + data_segment->offset(),
+        data_segment->size(),
+        DataLoader::SegmentInfo(
+            DataLoader::SegmentInfo::Type::Constant,
+            constant_segment->segment_index()));
     if (!constant_segment_data.ok()) {
       return constant_segment_data.error();
     }
@@ -332,33 +340,6 @@ Result<const void*> Program::get_constant_buffer_data(
   }
 }
 
-Result<int64_t> Program::get_non_const_buffer_size(
-    size_t buffer_index,
-    const char* method_name) const {
-  auto plan = get_execution_plan(internal_program_, method_name);
-  if (!plan.ok()) {
-    return plan.error();
-  }
-  auto non_const_buffer_sizes = plan.get()->non_const_buffer_sizes();
-  if (buffer_index >= non_const_buffer_sizes->size()) {
-    ET_LOG(
-        Error,
-        "invalid buffer index %zu for size %zu",
-        buffer_index,
-        (size_t)non_const_buffer_sizes->size());
-    return Error::InvalidArgument;
-  }
-  return (*(plan.get()->non_const_buffer_sizes()))[buffer_index];
-}
-
-Result<size_t> Program::num_non_const_buffers(const char* method_name) const {
-  auto plan = get_execution_plan(internal_program_, method_name);
-  if (!plan.ok()) {
-    return plan.error();
-  }
-  return plan.get()->non_const_buffer_sizes()->size();
-}
-
 Result<const char*> Program::get_output_flattening_encoding(
     const char* method_name) const {
   auto plan = get_execution_plan(internal_program_, method_name);
@@ -406,8 +387,10 @@ Error Program::get_backend_delegate_data(
   return HeaderStatus::NotPresent;
 }
 
-Result<FreeableBuffer> Program::LoadSegment(size_t index) const {
+Result<FreeableBuffer> Program::LoadSegment(
+    const DataLoader::SegmentInfo& segment_info) const {
   EXECUTORCH_SCOPE_PROF("Program::LoadSegment");
+  size_t index = segment_info.segment_index;
   if (loader_ == nullptr || segment_base_offset_ == 0) {
     ET_LOG(Error, "No segments in program: requested index %zu", index);
     return Error::NotFound;
@@ -423,8 +406,8 @@ Result<FreeableBuffer> Program::LoadSegment(size_t index) const {
   // Could fail if offset and size are out of bound for the data, or if this
   // is reading from a file and fails, or for many other reasons depending on
   // the implementation of the loader.
-  return loader_->Load(
-      segment_base_offset_ + segment->offset(), segment->size());
+  return loader_->load(
+      segment_base_offset_ + segment->offset(), segment->size(), segment_info);
 }
 
 } // namespace executor

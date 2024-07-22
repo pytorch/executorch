@@ -91,9 +91,7 @@ class TestFull(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_full_tosa_u55_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple
-    ):
+    def _test_full_tosa_u55_pipeline(self, module: torch.nn.Module, test_data: Tuple):
         (
             ArmTester(
                 module,
@@ -123,7 +121,9 @@ class TestFull(unittest.TestCase):
 
     @parameterized.expand(AddVariableFull.test_parameters)
     def test_full_tosa_MI(self, test_tensor: Tuple):
-        self._test_full_tosa_MI_pipeline(self.AddVariableFull(), example_data=test_tensor)
+        self._test_full_tosa_MI_pipeline(
+            self.AddVariableFull(), example_data=test_tensor
+        )
 
     @parameterized.expand(AddVariableFull.test_parameters)
     def test_full_tosa_BI(self, test_tensor: Tuple):
@@ -145,8 +145,9 @@ class TestFull(unittest.TestCase):
             self.AddVariableFull(), example_data=(_input, integer_fill_value)
         )
 
-    # This fails since the fill value in the full tensor is set at compile time by the example data (4).
-    # Test data tries to set it again at runtime (to 5) but it doesn't do anything.
+    # This fails since the fill value in the full tensor is set at compile time by the example data (1.).
+    # Test data tries to set it again at runtime (to 2.) but it doesn't do anything.
+    # In eager mode, the fill value can be set at runtime, causing the outputs to not match.
     @unittest.expectedFailure
     def test_set_value_at_runtime(self):
         _input = torch.ones((2, 2))

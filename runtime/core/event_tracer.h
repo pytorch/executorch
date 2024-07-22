@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/platform.h>
 #include <stdlib.h>
@@ -255,6 +256,106 @@ class EventTracer {
   virtual void log_evalue(
       const EValue& evalue,
       LoggedEValueType evalue_type) = 0;
+
+  /**
+   * Log an intermediate tensor output from a delegate.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   * @param[in] output The tensor type output to be logged.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const Tensor& output) = 0;
+
+  /**
+   * Log an intermediate tensor array output from a delegate.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   * @param[in] output The tensor array type output to be logged.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const ArrayRef<Tensor> output) = 0;
+
+  /**
+   * Log an intermediate int output from a delegate.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   * @param[in] output The int type output to be logged.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const int& output) = 0;
+
+  /**
+   * Log an intermediate bool output from a delegate.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   * @param[in] output The bool type output to be logged.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const bool& output) = 0;
+
+  /**
+   * Log an intermediate double output from a delegate.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   * @param[in] output The double type output to be logged.
+   */
+  virtual void log_intermediate_output_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      const double& output) = 0;
 
   /**
    * Helper function to set the chain id ands debug handle. Users have two

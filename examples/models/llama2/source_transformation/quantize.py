@@ -12,9 +12,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from sentencepiece import SentencePieceProcessor
+from executorch.extension.llm.export.builder import DType
 
-from ..builder import DType
+from sentencepiece import SentencePieceProcessor
 
 try:
     from fairseq2.nn.embedding import (

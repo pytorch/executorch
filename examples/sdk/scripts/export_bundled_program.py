@@ -13,6 +13,7 @@ from typing import List
 import torch
 
 from executorch.exir import ExecutorchProgramManager
+from executorch.extension.export_util.utils import export_to_exec_prog
 from executorch.sdk import BundledProgram
 from executorch.sdk.bundled_program.config import (
     MethodInputType,
@@ -25,7 +26,6 @@ from executorch.sdk.bundled_program.serialize import (
 
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
-from ...portable.utils import export_to_exec_prog
 
 
 def save_bundled_program(

@@ -103,7 +103,10 @@ int main(int argc, char** argv) {
       loader.ok(), "FileDataLoader::from() failed: 0x%" PRIx32, loader.error());
 
   // Read in the entire file.
-  Result<FreeableBuffer> file_data = loader->Load(0, loader->size().get());
+  Result<FreeableBuffer> file_data = loader->load(
+      0,
+      loader->size().get(),
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ET_CHECK_MSG(
       file_data.ok(),
       "Could not load contents of file '%s': 0x%x",

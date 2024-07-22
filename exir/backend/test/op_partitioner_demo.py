@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import itertools
 from typing import Callable, Dict, final, List, Optional, Tuple
 
 import torch
@@ -24,6 +25,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
 from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export import ExportedProgram
+from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 
@@ -145,10 +147,12 @@ class OpsToNotDecomposeOperatorSupport(OperatorSupportBase):
 @final
 class NonDecompTestPartitioner(Partitioner):
     """
-    Partitions all add/mul nodes regardless of order
+    Non Decomp Test Partitioner, preserves aten ops from decomposition for delegate
+    consumption. Ensures that non_decomposed_edge_ops are all within their own delegate
     """
 
     def __init__(self) -> None:
+        self.supported_non_decomposed_edge_ops = edge_ops_non_decomposed
         self.op_support = any_chain(OpsToNotDecomposeOperatorSupport())
         self.delegation_spec = DelegationSpec(
             BackendWithCompilerDemo.__name__,
@@ -171,14 +175,29 @@ class NonDecompTestPartitioner(Partitioner):
 
         return (ops_not_to_decompose, filter_ops)
 
+    def _generate_single_node_partition(
+        self, gm: torch.fx.GraphModule
+    ) -> List[Partition]:
+        partitions = []
+        partition_id = itertools.count()
+        nodes_seen = set()
+        for node in gm.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target in self.supported_non_decomposed_edge_ops
+                and node not in nodes_seen
+            ):
+                partitions.append(Partition(nodes=[node], id=next(partition_id)))
+                nodes_seen.add(node)
+
+        return partitions
+
     def _partition_graph_module(
         self,
         graph_module: torch.fx.GraphModule,
     ) -> Dict[str, DelegationSpec]:
         partition_tags: Dict[str, DelegationSpec] = {}
-        partition_list = generate_pattern_op_partitions(
-            graph_module, op_support=self.op_support
-        )
+        partition_list = self._generate_single_node_partition(graph_module)
         for partition in partition_list:
             for node in partition.nodes:
                 delegation_tag = f"tag{partition.id}"

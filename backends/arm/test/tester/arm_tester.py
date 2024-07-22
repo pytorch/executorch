@@ -245,9 +245,15 @@ class ArmTester(Tester):
         for run_iteration in range(num_runs):
             reference_input = inputs if inputs else next(self.generate_random_inputs())
             if is_nhwc:
-                test_input = self.transpose_data_format(reference_input[0], "NHWC")
+                test_input = self.transpose_data_format(reference_input, "NHWC")
             else:
                 test_input = reference_input
+
+            # Test parameters can include constants that are used in eager mode but are already set as attributes
+            # in TOSA. Therefore, only accept torch.Tensor inputs.
+            test_input = [
+                tensor for tensor in test_input if isinstance(tensor, torch.Tensor)
+            ]
 
             input_shapes = [
                 generated_input.shape if hasattr(generated_input, "shape") else (1,)
@@ -256,7 +262,7 @@ class ArmTester(Tester):
             print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
             reference_output = reference_stage.run_artifact(reference_input)
-            test_output = test_stage.run_artifact(test_input)
+            test_output = (test_stage.run_artifact(test_input),)
             if is_nhwc:
                 test_output = self.transpose_data_format(test_output, "NCHW")
 
@@ -266,15 +272,18 @@ class ArmTester(Tester):
 
         return self
 
-    def transpose_data_format(self, input, to: Literal["NHWC", "NCHW"]):
-        if len(input.shape) != 4:
-            return (input,)
+    def transpose_data_format(
+        self, data: Tuple[torch.Tensor], to: Literal["NHWC", "NCHW"]
+    ):
         if to == "NCHW":
-            NCHW_Order = (0, 3, 1, 2)
-            return (np.transpose(input, NCHW_Order),)
+            dim_order = (0, 3, 1, 2)
         if to == "NHWC":
-            NHWC_Order = (0, 2, 3, 1)
-            return (np.transpose(input, NHWC_Order),)
+            dim_order = (0, 2, 3, 1)
+        inputs_transposed = list(data)
+        for i in range(len(data)):
+            if hasattr(data[i], "shape") and len(data[i].shape) == 4:
+                inputs_transposed[i] = np.transpose(data[i], dim_order)
+        return tuple(inputs_transposed)
 
     def _compare_outputs(
         self,
@@ -296,7 +305,8 @@ class ArmTester(Tester):
             path_to_tosa_files = self.runner_util.intermediate_path
 
             export_stage = self.stages.get(self.stage_name(tester.Export), None)
-            if export_stage is not None:
+            quantize_stage = self.stages.get(self.stage_name(tester.Quantize), None)
+            if export_stage is not None and quantize_stage is not None:
                 input_names = _get_input_names(export_stage.artifact)
                 output_node = _get_output_node(export_stage.artifact)
                 qp_input = _get_input_quantization_params(

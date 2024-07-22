@@ -15,7 +15,7 @@ from executorch.backends.arm.tosa_quant_utils import (
     build_rescale_conv_output,
     get_quant_node_args,
 )
-from executorch.backends.arm.tosa_utils import build_reshape, getNodeArgs
+from executorch.backends.arm.tosa_utils import build_reshape, getNodeArgs, tosa_shape
 
 from serializer.tosa_serializer import TosaOp
 
@@ -107,7 +107,9 @@ class Conv2dVisitor(NodeVisitor):
         # The output type is int32 when input type is int8.
         conv2d_output_name = output.name
         if is_quant_node:
-            conv2d_res = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
+            conv2d_res = tosa_graph.addIntermediate(
+                tosa_shape(output.shape, output.dim_order), ts.DType.INT32
+            )
             conv2d_output_name = conv2d_res.name
 
         # Given input.shape is (N, Ci, H, W), and weight.shape is (Co, Ci/G, H, W)
