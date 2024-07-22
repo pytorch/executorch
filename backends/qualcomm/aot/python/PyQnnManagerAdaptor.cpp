@@ -26,12 +26,16 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
 
   py::class_<PyQnnManager, std::shared_ptr<PyQnnManager>>(m, "QnnManager")
       .def(py::init<const py::bytes&>())
+      .def(py::init<const py::bytes&, const py::bytes&>())
       .def("Init", &PyQnnManager::Init)
       .def("IsNodeSupportedByBackend", &PyQnnManager::IsNodeSupportedByBackend)
       .def("Compile", &PyQnnManager::Compile)
       .def("Destroy", &PyQnnManager::Destroy)
       .def("IsAvailable", &PyQnnManager::IsAvailable)
-      .def("IsTensorDump", &PyQnnManager::IsTensorDump);
+      .def("IsTensorDump", &PyQnnManager::IsTensorDump)
+      .def("AllocateTensor", &PyQnnManager::AllocateTensor)
+      .def("GetGraphInputs", &PyQnnManager::GetGraphInputs)
+      .def("GetGraphOutputs", &PyQnnManager::GetGraphOutputs);
 }
 } // namespace qnn
 } // namespace executor

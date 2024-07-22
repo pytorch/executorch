@@ -104,6 +104,8 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
 }
 
 PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
+  PYBIND11_NUMPY_DTYPE(PyQnnTensorWrapper::EncodingData, scale, offset);
+
   py::enum_<Qnn_TensorType_t>(m, "Qnn_TensorType_t")
       .value(
           "QNN_TENSOR_TYPE_APP_WRITE",
@@ -234,6 +236,18 @@ PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
           "GetOpWrapper",
           &PyQnnOpWrapper::GetOpWrapper,
           "A function which get op wrapper");
+
+  py::class_<PyQnnTensorWrapper::Encoding>(m, "Encoding")
+      .def_readonly("data", &PyQnnTensorWrapper::Encoding::data)
+      .def_readonly("axis", &PyQnnTensorWrapper::Encoding::axis);
+
+  py::class_<PyQnnTensorWrapper, std::shared_ptr<PyQnnTensorWrapper>>(
+      m, "PyQnnTensorWrapper")
+      .def(py::init<const std::shared_ptr<TensorWrapper>&>())
+      .def("GetDims", &PyQnnTensorWrapper::GetDims)
+      .def("GetDataType", &PyQnnTensorWrapper::GetDataType)
+      .def("GetName", &PyQnnTensorWrapper::GetName)
+      .def("GetEncodings", &PyQnnTensorWrapper::GetEncodings);
 }
 } // namespace qnn
 } // namespace executor

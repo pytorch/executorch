@@ -283,6 +283,8 @@ class TestInspector(unittest.TestCase):
         debug_event_0 = flatcc.DebugEvent(
             chain_index=1,
             instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
             debug_entry=flatcc.Value(
                 val=flatcc.ValueType.TENSOR.value,
                 tensor=flatcc.Tensor(
@@ -304,6 +306,8 @@ class TestInspector(unittest.TestCase):
         debug_event_1 = flatcc.DebugEvent(
             chain_index=1,
             instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
             debug_entry=flatcc.Value(
                 val=flatcc.ValueType.TENSOR.value,
                 tensor=flatcc.Tensor(
@@ -346,6 +350,8 @@ class TestInspector(unittest.TestCase):
         debug_event_0 = flatcc.DebugEvent(
             chain_index=1,
             instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
             debug_entry=flatcc.Value(
                 val=flatcc.ValueType.TENSOR.value,
                 tensor=flatcc.Tensor(
@@ -367,6 +373,8 @@ class TestInspector(unittest.TestCase):
         debug_event_1 = flatcc.DebugEvent(
             chain_index=1,
             instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
             debug_entry=flatcc.Value(
                 val=flatcc.ValueType.TENSOR.value,
                 tensor=flatcc.Tensor(
