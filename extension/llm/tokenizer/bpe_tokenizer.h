@@ -9,7 +9,7 @@
 #pragma once
 
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
-#include <cstdint>
+#include <memory>
 
 namespace torch {
 namespace executor {
