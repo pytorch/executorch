@@ -72,7 +72,14 @@ If you need to run other models like LLaMA2, skip this skip.
 export EXECUTORCH_USE_TIKTOKEN=ON # Only for LLaMA3
 ```
 
-4. Run the following command set up the required JNI library:
+4. Build the Android Java extension code:
+```bash
+pushd extension/android
+./gradlew build
+popd
+```
+
+5. Run the following command set up the required JNI library:
 ```bash
 pushd examples/demo-apps/android/LlamaDemo
 ./gradlew :app:setup

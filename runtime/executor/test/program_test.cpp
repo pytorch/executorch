@@ -50,8 +50,11 @@ class ProgramTest : public ::testing::Test {
     ASSERT_EQ(loader.error(), Error::Ok);
 
     // This file should always be compatible.
-    Result<FreeableBuffer> header =
-        loader->Load(/*offset=*/0, Program::kMinHeadBytes);
+    Result<FreeableBuffer> header = loader->load(
+        /*offset=*/0,
+        Program::kMinHeadBytes,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(header.error(), Error::Ok);
     EXPECT_EQ(
         Program::check_header(header->data(), header->size()),
@@ -65,8 +68,11 @@ class ProgramTest : public ::testing::Test {
     ASSERT_EQ(multi_loader.error(), Error::Ok);
 
     // This file should always be compatible.
-    Result<FreeableBuffer> multi_header =
-        multi_loader->Load(/*offset=*/0, Program::kMinHeadBytes);
+    Result<FreeableBuffer> multi_header = multi_loader->load(
+        /*offset=*/0,
+        Program::kMinHeadBytes,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(multi_header.error(), Error::Ok);
     EXPECT_EQ(
         Program::check_header(multi_header->data(), multi_header->size()),
@@ -126,7 +132,11 @@ TEST_F(ProgramTest, BadMagicFailsToLoad) {
   size_t data_len = add_loader_->size().get();
   auto data = std::make_unique<char[]>(data_len);
   {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(src.error(), Error::Ok);
     ASSERT_EQ(src->size(), data_len);
     memcpy(data.get(), src->data(), data_len);
@@ -169,8 +179,11 @@ TEST_F(ProgramTest, BadMagicFailsToLoad) {
 TEST_F(ProgramTest, VerificationCatchesTruncation) {
   // Get the program data.
   size_t full_data_len = add_loader_->size().get();
-  Result<FreeableBuffer> full_data =
-      add_loader_->Load(/*offset=*/0, full_data_len);
+  Result<FreeableBuffer> full_data = add_loader_->load(
+      /*offset=*/0,
+      full_data_len,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ASSERT_EQ(full_data.error(), Error::Ok);
 
   // Make a loader that only exposes half of the data.
@@ -187,7 +200,11 @@ TEST_F(ProgramTest, VerificationCatchesCorruption) {
   size_t data_len = add_loader_->size().get();
   auto data = std::make_unique<char[]>(data_len);
   {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(src.error(), Error::Ok);
     ASSERT_EQ(src->size(), data_len);
     memcpy(data.get(), src->data(), data_len);
@@ -211,7 +228,11 @@ TEST_F(ProgramTest, UnalignedProgramDataFails) {
   size_t data_len = add_loader_->size().get();
   auto data = std::make_unique<char[]>(data_len + 1);
   {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(src.error(), Error::Ok);
     ASSERT_EQ(src->size(), data_len);
     memcpy(data.get() + 1, src->data(), data_len);
@@ -244,8 +265,11 @@ TEST_F(ProgramTest, LoadSegmentWithNoSegments) {
 }
 
 TEST_F(ProgramTest, ShortDataHeader) {
-  Result<FreeableBuffer> header =
-      add_loader_->Load(/*offset=*/0, Program::kMinHeadBytes);
+  Result<FreeableBuffer> header = add_loader_->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ASSERT_EQ(header.error(), Error::Ok);
 
   // Provide less than the required amount of data.
@@ -259,7 +283,11 @@ TEST_F(ProgramTest, IncompatibleHeader) {
   size_t data_len = Program::kMinHeadBytes;
   auto data = std::make_unique<char[]>(data_len);
   {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(src.error(), Error::Ok);
     ASSERT_EQ(src->size(), data_len);
     memcpy(data.get(), src->data(), data_len);
@@ -291,7 +319,11 @@ TEST_F(ProgramTest, HeaderNotPresent) {
   size_t data_len = Program::kMinHeadBytes;
   auto data = std::make_unique<char[]>(data_len);
   {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
+    Result<FreeableBuffer> src = add_loader_->load(
+        /*offset=*/0,
+        data_len,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     ASSERT_EQ(src.error(), Error::Ok);
     ASSERT_EQ(src->size(), data_len);
     memcpy(data.get(), src->data(), data_len);
@@ -345,8 +377,11 @@ TEST_F(ProgramTest, LoadConstantSegment) {
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
   // This file should always be compatible.
-  Result<FreeableBuffer> linear_header =
-      linear_loader->Load(/*offset=*/0, Program::kMinHeadBytes);
+  Result<FreeableBuffer> linear_header = linear_loader->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ASSERT_EQ(linear_header.error(), Error::Ok);
   EXPECT_EQ(
       Program::check_header(linear_header->data(), linear_header->size()),
@@ -387,8 +422,11 @@ TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
   // This file should always be compatible.
-  Result<FreeableBuffer> linear_header =
-      linear_loader->Load(/*offset=*/0, Program::kMinHeadBytes);
+  Result<FreeableBuffer> linear_header = linear_loader->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      /*segment_info=*/
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
   ASSERT_EQ(linear_header.error(), Error::Ok);
   EXPECT_EQ(
       Program::check_header(linear_header->data(), linear_header->size()),

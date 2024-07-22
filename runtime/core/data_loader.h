@@ -72,20 +72,6 @@ class DataLoader {
   virtual ~DataLoader() = default;
 
   /**
-   * DEPRECATED: Use `load()` going forward for access to segment info during
-   * the load.
-   *
-   * Loads `size` bytes at byte offset `offset` from the underlying data source
-   * into a `FreeableBuffer`, which owns the memory.
-   *
-   * NOTE: This must be thread-safe. If this call modifies common state, the
-   * implementation must do its own locking.
-   */
-  __ET_NODISCARD virtual Result<FreeableBuffer> Load(
-      size_t offset,
-      size_t size) = 0;
-
-  /**
    * Loads data from the underlying data source.
    *
    * NOTE: This must be thread-safe. If this call modifies common state, the
@@ -98,10 +84,7 @@ class DataLoader {
    * @returns a `FreeableBuffer` that owns the loaded data.
    */
   __ET_NODISCARD virtual Result<FreeableBuffer>
-  load(size_t offset, size_t size, const SegmentInfo& segment_info) {
-    (void)segment_info;
-    return Load(offset, size); // NOLINT(facebook-hte-Deprecated)
-  }
+  load(size_t offset, size_t size, const SegmentInfo& segment_info) = 0;
 
   /**
    * Returns the length of the underlying data source, typically the file size.
