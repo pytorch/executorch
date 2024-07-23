@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 #include <iostream>
 
 #include "stats.h"
@@ -20,6 +21,7 @@ class App {
   uint32_t max_shared_mem_size_;
   uint32_t sm_count_;
   uint32_t nthread_logic_;
+  uint32_t subgroup_size_;
 
  public:
   App() {
@@ -34,11 +36,24 @@ class App {
     nthread_logic_ = cl_device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
     buf_cache_size_ = cl_device.getInfo<CL_DEVICE_GLOBAL_MEM_CACHE_SIZE>();
     max_shared_mem_size_ = cl_device.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>();
+
+    VkPhysicalDeviceSubgroupProperties subgroup_props{};
+    VkPhysicalDeviceProperties2 props2{};
+
+    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    props2.pNext = &subgroup_props;
+    subgroup_props.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
+    vkGetPhysicalDeviceProperties2(
+        context()->adapter_ptr()->physical_handle(), &props2);
+    subgroup_size_ = subgroup_props.subgroupSize;
+
     std::cout << std::endl;
     std::cout << "SM count," << sm_count_ << std::endl;
     std::cout << "Logic Thread Count," << nthread_logic_ << std::endl;
     std::cout << "Cache Size," << buf_cache_size_ << std::endl;
     std::cout << "Shared Memory Size," << max_shared_mem_size_ << std::endl;
+    std::cout << "SubGroup Size," << subgroup_size_ << std::endl;
   }
 
   void reg_count() {
@@ -313,6 +328,60 @@ class App {
     const uint32_t RANGE = max_shared_mem_size_;
     _bandwidth("Shared", RANGE);
   }
+
+  void warp_size() {
+    std::cout << "\n------ Warp Size ------" << std::endl;
+    const double COMPENSATE = 0.01;
+    const double THRESHOLD = 3;
+
+    uint32_t NITER;
+
+    auto bench = [&](uint32_t nthread) {
+      StorageBuffer out_buf(context(), vkapi::kInt, nthread_logic_);
+      vkapi::PipelineBarrier pipeline_barrier{};
+
+      auto shader_name = "warp_size";
+
+      auto time = benchmark_on_gpu(shader_name, 10, [&]() {
+        context()->submit_compute_job(
+            VK_KERNEL_FROM_STR(shader_name),
+            pipeline_barrier,
+            // Large number of work groups selected to potentially saturate all
+            // ALUs and thus have a better baseline for comparison.
+            {nthread, 1024, 1},
+            {nthread, 1, 1},
+            {SV(NITER)},
+            VK_NULL_HANDLE,
+            0,
+            out_buf.buffer());
+      });
+
+      return time;
+    };
+
+    ensure_min_niter(1000, NITER, [&]() { return bench(1); });
+
+    uint32_t warp_size = subgroup_size_;
+    DtJumpFinder<5> dj(COMPENSATE, THRESHOLD);
+
+    // We increase the number of threads until we hit a jump in the data.
+    uint32_t nthread = 1;
+    for (; nthread <= nthread_logic_; ++nthread) {
+      double time = bench(nthread);
+      std::cout << "nthread=\t" << nthread << "\t(\t" << time << "\tus)"
+                << std::endl;
+      if (dj.push(time)) {
+        warp_size = nthread - 1;
+        break;
+      }
+    }
+    if (nthread >= nthread_logic_) {
+      std::cout
+          << "Unable to conclude a physical warp size. Assuming warp_size == subgroup_size"
+          << std::endl;
+    }
+    std::cout << "WarpSize," << warp_size << std::endl;
+  }
 };
 
 int main(int argc, const char** argv) {
@@ -324,6 +393,7 @@ int main(int argc, const char** argv) {
   app.buf_bandwidth();
   app.ubo_bandwidth();
   app.shared_mem_bandwidth();
+  app.warp_size();
 
   return 0;
 }

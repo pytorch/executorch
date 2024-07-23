@@ -10,17 +10,11 @@
 // model won't work with this class, it needs to go through tokenizer.py first.
 #pragma once
 
-#include <cctype>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <memory>
+#include <cinttypes>
 #include <string>
 #include <vector>
 
 #include <executorch/runtime/core/error.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/result.h>
 
 namespace torch {
