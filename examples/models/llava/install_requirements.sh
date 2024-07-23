@@ -35,10 +35,10 @@ pip install bitsandbytes -I
 # For example, torch version required from llava is older than ExecuTorch.
 # To make both work, recover ExecuTorch's original dependencies by rerunning
 # the install_requirements.sh. Notice this won't install executorch.
-bash -x ./install_requirements.sh --deps-only
+bash -x ./install_requirements.sh --pybind xnnpack
 
-# Newer transformer (4.48) will give TypeError: LlavaLlamaForCausalLM.forward() got an unexpected keyword argument 'cache_position'
+# Newer transformer (4.38) will give TypeError: LlavaLlamaForCausalLM.forward() got an unexpected keyword argument 'cache_position'
 pip install timm==0.6.13
-pip install transformers==4.38.2
+pip install transformers==4.37.2
 
 pip list
