@@ -463,6 +463,7 @@ class Transformer(nn.Module):
                 else params.max_seq_len * 2  # Sharded checkpoint.
             ),
             params.rope_freq_base,
+            params.use_scaled_rope,
         )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
