@@ -19,11 +19,11 @@ namespace executor {
 namespace util {
 
 /**
- * A DataLoader that loads sements from a file, allocating the memory
+ * A DataLoader that loads segments from a file, allocating the memory
  * with `malloc()`.
  *
  * Note that this will keep the file open for the duration of its lifetime, to
- * avoid the overhead of opening it again for every Load() call.
+ * avoid the overhead of opening it again for every load() call.
  */
 class FileDataLoader : public DataLoader {
  public:
@@ -65,8 +65,10 @@ class FileDataLoader : public DataLoader {
 
   ~FileDataLoader() override;
 
-  __ET_NODISCARD Result<FreeableBuffer> Load(size_t offset, size_t size)
-      override;
+  __ET_NODISCARD Result<FreeableBuffer> load(
+      size_t offset,
+      size_t size,
+      const DataLoader::SegmentInfo& segment_info) override;
 
   __ET_NODISCARD Result<size_t> size() const override;
 

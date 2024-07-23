@@ -136,7 +136,7 @@ Use [ExecuTorch Dump](sdk-etdump.md) to trace model execution. Create an instanc
 
 using namespace ::torch::executor;
 
-Module module("/path/to/model.pte", Module::MlockConfig::UseMlock, std::make_unique<ETDumpGen>());
+Module module("/path/to/model.pte", Module::LoadMode::MmapUseMlock, std::make_unique<ETDumpGen>());
 
 // Execute a method, e.g. module.forward(...); or module.execute("my_method", ...);
 

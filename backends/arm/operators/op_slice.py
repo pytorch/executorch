@@ -29,32 +29,27 @@ class SliceVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
         is_quant_node: bool,
-        permute_memory_to_nhwc: bool,
     ) -> None:
 
         # aten.slice_copy supports slicing in 1d at a time.
         # The arguments are dimension of slicing, start index and end index.
         assert len(inputs) == 4
-        input, dim, start, end = inputs
-        input_rank = len(input.shape)
+        input_node, dim, start, end = inputs
 
+        # Translate and check parameters in Pytorch dim order.
+        shape = input_node.shape
         dim = dim.number
-        output_shape = input.shape
-        if permute_memory_to_nhwc and input_rank == 4:
-            NCHW_to_NHWC = [0, 3, 1, 2]
-            dim = NCHW_to_NHWC[dim]
-            NHWC_to_NCHW = [0, 2, 3, 1]
-            output_shape = [output_shape[NHWC_to_NCHW[i]] for i in range(input_rank)]
-
-        end = (output_shape[dim] + end.number) % output_shape[dim]
+        end = (shape[dim] + end.number) % shape[dim]
         size = end - start.number
         assert size > 0
-        assert size <= output_shape[dim]
+        assert size <= shape[dim]
 
-        # Convert aten args to Tosa's start and size attributes.
+        # Convert aten args to Tosa's start and size attributes and in TOSA dim order.
         attr = ts.TosaSerializerAttribute()
-        start_attr = [start.number if i == dim else 0 for i in range(input_rank)]
-        size_attr = [size if i == dim else output_shape[i] for i in range(input_rank)]
+        start_attr = [start.number if i == dim else 0 for i in input_node.dim_order]
+        size_attr = [size if i == dim else shape[i] for i in input_node.dim_order]
         attr.SliceAttribute(start_attr, size_attr)
 
-        tosa_graph.addOperator(TosaOp.Op().SLICE, [input.name], [output.name], attr)
+        tosa_graph.addOperator(
+            TosaOp.Op().SLICE, [input_node.name], [output.name], attr
+        )

@@ -28,18 +28,13 @@ void check_args(
     const api::vTensor& in,
     const std::vector<int64_t>& permute_dims,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, vkapi::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 
   // This implementation doesn't not requires the input tensor to have the same
   // dim size as the argument. The code will work as long as the input tensor's
   // dim size is shorter than the permute dim array. In this case, the code
   // assume size of 1 at the higher dimensions.
-
-  int64_t out_dim = out.dim();
-  VK_CHECK_COND(
-      out_dim == permute_dims.size(),
-      "Output tensor dim size must match argument");
 }
 
 } // namespace
@@ -56,15 +51,18 @@ void add_permute_node(
 
   ivec4 out_dims{0, 1, 2, 3};
 
-  int64_t out_dim = t_out->dim();
-  std::vector<bool> seen(out_dim);
-  for (int i = 0; i < t_out->dim(); i++) {
+  // Special cases of squeeze/unsqueeze. Because the input dim size can be
+  // different with output dim size. So pick t_in->dim() if squeeze, and
+  // t_out->dim() if unsqueeze to create parameter for permute.
+  int64_t out_ndim = std::max(t_in->dim(), t_out->dim());
+  std::vector<bool> seen(out_ndim);
+  for (int i = 0; i < out_ndim; i++) {
     int64_t permute_dim = permute_dims[i];
     VK_CHECK_COND(
         !seen[permute_dim], "Argument dim ", permute_dim, "  is repeated");
     seen[permute_dim] = true;
 
-    out_dims.data[(4u - out_dim) + i] = permute_dim + (4 - out_dim);
+    out_dims.data[(4u - out_ndim) + i] = permute_dim + (4 - out_ndim);
   }
 
   std::string kernel_name = "permute";

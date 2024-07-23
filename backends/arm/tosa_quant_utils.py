@@ -10,7 +10,7 @@ from typing import NamedTuple
 
 import serializer.tosa_serializer as ts
 import torch.fx
-from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp, TosaSerializerTensor
 
@@ -27,27 +27,61 @@ class QuantArgs(NamedTuple):
 
 
 def is_quant_node(node: torch.fx.Node):
+
+    consumer_node_condition = False
+    if len(list(node.users)) > 0:
+        consumer_node = list(node.users)[0]
+
+        # For Rank > 2 Linear layers, the quant node is after the view_copy
+        if (
+            node.target == exir_ops.edge.aten.addmm.default
+            and consumer_node.target == exir_ops.edge.aten.view_copy.default
+        ):
+            consumer_consumer_node = list(consumer_node.users)[0]
+            return True if consumer_consumer_node.target == q_op else False
+        consumer_node_condition = consumer_node.target == q_op
+
+    input_node_condition = False
+    if len(node.all_input_nodes) > 0:
+        input = node.all_input_nodes[0]
+        input_node_condition = input.target in dq_q_ops
+
+    return node.target in dq_q_ops or consumer_node_condition or input_node_condition
+
+
+def get_quant_node_dtype(node: torch.fx.Node):
+    if "tosa" in node.target.__name__:
+        return node.meta["val"].dtype
+
+    if node.target in dq_q_ops:
+        return node.args[5]
+
+    # if not a tosa node, nor a q/dq op, walk the graph until we find a q op
     consumer_node = list(node.users)[0]
-    input = node.all_input_nodes[0]
+    while True:
+        if consumer_node.target in dq_q_ops:
+            return consumer_node.args[5]
 
-    # For Rank > 2 Linear layers, the quant node is after the view_copy
-    if (
-        node.target == exir_ops.edge.aten.addmm.default
-        and consumer_node.target == exir_ops.edge.aten.view_copy.default
-    ):
-        consumer_consumer_node = list(consumer_node.users)[0]
-        return True if consumer_consumer_node.target == q_op else False
-
-    return (
-        consumer_node.target == q_op
-        or node.target in dq_q_ops
-        or input.target in dq_q_ops
-    )
+        # Try to move on to the next node
+        if len(consumer_node.users) == 0:
+            raise RuntimeError("No quantized node found in graph")
+        consumer_node = list(consumer_node.users)[0]
 
 
 def is_quant_arg(arg):
     consumer_node = list(arg.users)[0]
     return consumer_node.target == q_op
+
+
+def get_quant_arg_dtype(node: torch.fx.Node):
+    consumer_node = list(node.users)[0]
+
+    # Get type of quant node, args differ from per_tensor and per_channel.
+    if consumer_node.target == q_op:
+        if is_quant_arg(node):
+            return map_dtype(consumer_node.args[5])
+        else:
+            raise RuntimeError("Quantization argument not found")
 
 
 def get_quant_node_args(node: torch.fx.Node):

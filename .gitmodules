@@ -55,15 +55,15 @@
 [submodule "examples/third-party/LLaVA"]
 	path = examples/third-party/LLaVA
 	url = https://github.com/haotian-liu/LLaVA.git
-[submodule "examples/models/llama2/third-party/re2"]
-	path = examples/models/llama2/third-party/re2
-	url = https://github.com/google/re2.git
-[submodule "examples/models/llama2/third-party/abseil-cpp"]
-	path = examples/models/llama2/third-party/abseil-cpp
-	url = https://github.com/abseil/abseil-cpp.git
 [submodule "third-party/ios-cmake"]
 	path = third-party/ios-cmake
 	url = https://github.com/leetal/ios-cmake
 [submodule "examples/models/phi-3-mini/third-party/sentencepiece"]
 	path = examples/models/phi-3-mini/third-party/sentencepiece
 	url = https://github.com/google/sentencepiece.git
+[submodule "extension/llm/third-party/re2"]
+	path = extension/llm/third-party/re2
+	url = https://github.com/google/re2.git
+[submodule "extension/llm/third-party/abseil-cpp"]
+	path = extension/llm/third-party/abseil-cpp
+	url = https://github.com/abseil/abseil-cpp.git

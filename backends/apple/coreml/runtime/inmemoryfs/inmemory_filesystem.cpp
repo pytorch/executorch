@@ -115,12 +115,6 @@ InMemoryFileSystem::InMemoryNode* get_node(InMemoryFileSystem::InMemoryNode* nod
     return node;
 }
 
-std::string toString(time_t time) {
-    constexpr auto format = "%Y-%m-%dT%TZ";
-    std::stringstream stream;
-    stream << std::put_time(gmtime(&time), format);
-    return stream.str();
-}
 
 time_t toTime(const std::string& str) {
     constexpr auto format = "%Y-%m-%dT%TZ";

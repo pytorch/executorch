@@ -136,36 +136,6 @@ class Program final {
   Result<MethodMeta> method_meta(const char* method_name) const;
 
   /**
-   * DEPRECATED: Use MethodMeta instead.
-   *
-   * Get the size of the buffer with index buffer_index. Note that this function
-   * does not return the correct value for index 0 which denotes constant
-   * memory. Only index >= 1 should be used to retrieve the size of
-   * non-constant pools.
-   * @param[in] buffer_index the index of the buffer in the non_const_buffer
-   * list
-   * @param[in] method_name The name of the method to retrieve buffer
-   * information from.
-   * @return The size of the non_constant buffer corresponding to buffer_index,
-   * or Error if it cannot be retrieved.
-   */
-  __ET_DEPRECATED Result<int64_t> get_non_const_buffer_size(
-      size_t buffer_index,
-      const char* method_name = "forward") const;
-
-  /**
-   * DEPRECATED: Use MethodMeta instead.
-   *
-   * Get the number of non_constant buffers.
-   * @param[in] method_name The name of the method to get the buffer amounts
-   * for.
-   * @return The number of non_constant buffers, or Error if it cannot be
-   * retrieved.
-   */
-  __ET_DEPRECATED Result<size_t> num_non_const_buffers(
-      const char* method_name = "forward") const;
-
-  /**
    * DEPRECATED: Get the pytree encoding string for the output. Deprecated as
    * this functionality will eventually move out of the core program into a
    * higher level structure, but that does not exist at this time.
@@ -239,8 +209,9 @@ class Program final {
   /**
    * Loads a segment by index.
    *
-   * @param[in] index The sement index to load. This should be an index into
-   *     the Program.segments list.
+   * @param[in] SegmentInfo Struct containing an index to load from the
+   * Program.segments list. The other fields of the struct, such as
+   * `segment_type` and `descriptor`, need to also be correct.
    *
    * @returns The data as a FreeableBuffer, if the index is valid.
    * @retval Error::NotFound The program does not contain any segments or the
@@ -249,7 +220,8 @@ class Program final {
    *     DataLoader: The Program.segment table is inconsistent, or the
    *     data cannot be accessed.
    */
-  __ET_NODISCARD Result<FreeableBuffer> LoadSegment(size_t index) const;
+  __ET_NODISCARD Result<FreeableBuffer> LoadSegment(
+      const DataLoader::SegmentInfo& segment_info) const;
 
  private:
   Program(

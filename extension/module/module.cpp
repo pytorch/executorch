@@ -8,6 +8,7 @@
 
 #include <executorch/extension/module/module.h>
 
+#include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -36,10 +37,10 @@ namespace torch::executor {
 
 Module::Module(
     const std::string& file_path,
-    const Module::MlockConfig mlock_config,
+    const Module::LoadMode load_mode,
     std::unique_ptr<EventTracer> event_tracer)
     : file_path_(file_path),
-      mlock_config_(mlock_config),
+      load_mode_(load_mode),
       memory_allocator_(std::make_unique<util::MallocMemoryAllocator>()),
       temp_allocator_(std::make_unique<util::MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
@@ -49,17 +50,15 @@ Module::Module(
 Module::Module(
     std::unique_ptr<DataLoader> data_loader,
     std::unique_ptr<MemoryAllocator> memory_allocator,
-    std::unique_ptr<MemoryAllocator> tmp_memory_allocator,
+    std::unique_ptr<MemoryAllocator> temp_allocator,
     std::unique_ptr<EventTracer> event_tracer)
     : data_loader_(std::move(data_loader)),
       memory_allocator_(
           memory_allocator ? std::move(memory_allocator)
                            : std::make_unique<util::MallocMemoryAllocator>()),
       temp_allocator_(
-
-          tmp_memory_allocator
-              ? std::move(tmp_memory_allocator)
-              : std::make_unique<util::MallocMemoryAllocator>()),
+          temp_allocator ? std::move(temp_allocator)
+                         : std::make_unique<util::MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
   runtime_init();
 }
@@ -67,18 +66,25 @@ Module::Module(
 Error Module::load(const Program::Verification verification) {
   if (!is_loaded()) {
     if (!data_loader_) {
-      data_loader_ = ET_UNWRAP_UNIQUE(
-          util::MmapDataLoader::from(file_path_.c_str(), [this] {
-            switch (mlock_config_) {
-              case MlockConfig::NoMlock:
-                return util::MmapDataLoader::MlockConfig::NoMlock;
-              case MlockConfig::UseMlock:
-                return util::MmapDataLoader::MlockConfig::UseMlock;
-              case MlockConfig::UseMlockIgnoreErrors:
-                return util::MmapDataLoader::MlockConfig::UseMlockIgnoreErrors;
-            }
-            ET_ASSERT_UNREACHABLE();
-          }()));
+      switch (load_mode_) {
+        case LoadMode::File:
+          data_loader_ =
+              ET_UNWRAP_UNIQUE(util::FileDataLoader::from(file_path_.c_str()));
+          break;
+        case LoadMode::Mmap:
+          data_loader_ =
+              ET_UNWRAP_UNIQUE(util::MmapDataLoader::from(file_path_.c_str()));
+          break;
+        case LoadMode::MmapUseMlock:
+          data_loader_ = ET_UNWRAP_UNIQUE(util::MmapDataLoader::from(
+              file_path_.c_str(), util::MmapDataLoader::MlockConfig::NoMlock));
+          break;
+        case LoadMode::MmapUseMlockIgnoreErrors:
+          data_loader_ = ET_UNWRAP_UNIQUE(util::MmapDataLoader::from(
+              file_path_.c_str(),
+              util::MmapDataLoader::MlockConfig::UseMlockIgnoreErrors));
+          break;
+      }
     };
     program_ =
         ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
@@ -163,6 +169,13 @@ Result<std::vector<EValue>> Module::execute(
       method->get_outputs(outputs.data(), outputs_size));
 
   return outputs;
+}
+
+Error Module::set_output_data_ptr(Tensor& output_tensor, size_t output_index) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method("forward"));
+  auto& method = methods_.at("forward").method;
+  return method->set_output_data_ptr(
+      output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
 } // namespace torch::executor

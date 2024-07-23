@@ -68,14 +68,14 @@ TEST_F(VulkanComputeAPITest, print_adapter) {
 
 std::vector<int64_t> get_reference_strides(
     const std::vector<int64_t>& sizes,
-    const vkapi::GPUMemoryLayout layout,
+    const utils::GPUMemoryLayout layout,
     const bool texel_strides) {
   int64_t C = utils::val_at(-3, sizes);
   int64_t H = utils::val_at(-2, sizes);
   int64_t W = utils::val_at(-1, sizes);
 
   switch (layout) {
-    case vkapi::kWidthPacked:
+    case utils::kWidthPacked:
       if (texel_strides) {
         W = utils::div_up(W, INT64_C(4));
       }
@@ -92,7 +92,7 @@ std::vector<int64_t> get_reference_strides(
           return {};
       }
       break;
-    case vkapi::kHeightPacked:
+    case utils::kHeightPacked:
       if (texel_strides) {
         H = utils::div_up(H, INT64_C(4));
       }
@@ -108,7 +108,7 @@ std::vector<int64_t> get_reference_strides(
         default:
           return {};
       }
-    case vkapi::kChannelsPacked:
+    case utils::kChannelsPacked:
       if (texel_strides) {
         C = utils::div_up(C, INT64_C(4));
       }
@@ -134,7 +134,7 @@ TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
       continue;
     }
     for (const auto& layout :
-         {vkapi::kWidthPacked, vkapi::kHeightPacked, vkapi::kChannelsPacked}) {
+         {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
       // texel_strides = true
       {
         std::vector<int64_t> strides = calculate_strides(sizes, layout);
@@ -432,10 +432,10 @@ TEST_F(VulkanComputeAPITest, buffer_tensor_sanity_check) {
         continue;
       }
       for (const auto& layout :
-           {vkapi::kWidthPacked,
-            vkapi::kHeightPacked,
-            vkapi::kChannelsPacked}) {
-        vTensor a = vTensor(context(), sizes, dtype, vkapi::kBuffer, layout);
+           {utils::kWidthPacked,
+            utils::kHeightPacked,
+            utils::kChannelsPacked}) {
+        vTensor a = vTensor(context(), sizes, dtype, utils::kBuffer, layout);
         switch (dtype) {
           case vkapi::kFloat:
             run_buffer_tensor_sanity_check<float>(a);
@@ -844,11 +844,11 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_buffer) {
 
   // Build graph
 
-  IOValueRef a = graph.add_input_tensor(sizes, vkapi::kFloat, vkapi::kBuffer);
+  IOValueRef a = graph.add_input_tensor(sizes, vkapi::kFloat, utils::kBuffer);
 
   IOValueRef out = {};
 
-  out.value = graph.add_tensor(sizes, vkapi::kFloat, vkapi::kBuffer);
+  out.value = graph.add_tensor(sizes, vkapi::kFloat, utils::kBuffer);
 
   auto addFn = VK_GET_OP_FN("aten.abs.default");
   addFn(graph, {a.value, out.value, kDummyValueRef, kDummyValueRef});
@@ -1216,8 +1216,8 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_node) {
   int64_t c = 12;
   int64_t h = 4;
   int64_t w = 8;
-  vkapi::GPUMemoryLayout memory_layout =
-      vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+  utils::GPUMemoryLayout memory_layout =
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
 
   std::vector<int64_t> size = {n, c, h, w};
 
@@ -1298,8 +1298,8 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_channel_offset_node) {
   int64_t c = 12;
   int64_t h = 4;
   int64_t w = 8;
-  vkapi::GPUMemoryLayout memory_layout =
-      vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+  utils::GPUMemoryLayout memory_layout =
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
 
   std::vector<int64_t> size = {n, c, h, w};
 
@@ -1361,8 +1361,8 @@ TEST(
   int64_t c = 12;
   int64_t h = 4;
   int64_t w = 8;
-  vkapi::GPUMemoryLayout memory_layout =
-      vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+  utils::GPUMemoryLayout memory_layout =
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
 
   std::vector<int64_t> size = {n, c, h, w};
 
@@ -1484,8 +1484,8 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_offset_int_node) {
   int64_t c = 12;
   int64_t h = 4;
   int64_t w = 8;
-  vkapi::GPUMemoryLayout memory_layout =
-      vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+  utils::GPUMemoryLayout memory_layout =
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
 
   std::vector<int64_t> size = {n, c, h, w};
 
@@ -1566,8 +1566,8 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_channel_offset_int_node) {
   int64_t c = 12;
   int64_t h = 4;
   int64_t w = 8;
-  vkapi::GPUMemoryLayout memory_layout =
-      vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+  utils::GPUMemoryLayout memory_layout =
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
 
   std::vector<int64_t> size = {n, c, h, w};
 
@@ -1616,17 +1616,17 @@ TEST(VulkanComputeGraphTest, test_etvk_copy_channel_offset_int_node) {
 }
 
 TEST(VulkanComputeGraphTest, test_view_change_packing) {
-  std::vector<std::pair<vkapi::GPUMemoryLayout, vkapi::GPUMemoryLayout>>
+  std::vector<std::pair<utils::GPUMemoryLayout, utils::GPUMemoryLayout>>
       layout_pairs = {
-          {vkapi::kWidthPacked, vkapi::kChannelsPacked},
-          {vkapi::kWidthPacked, vkapi::kHeightPacked},
-          {vkapi::kWidthPacked, vkapi::kWidthPacked},
-          {vkapi::kHeightPacked, vkapi::kChannelsPacked},
-          {vkapi::kHeightPacked, vkapi::kHeightPacked},
-          {vkapi::kHeightPacked, vkapi::kHeightPacked},
-          {vkapi::kChannelsPacked, vkapi::kChannelsPacked},
-          {vkapi::kChannelsPacked, vkapi::kHeightPacked},
-          {vkapi::kChannelsPacked, vkapi::kHeightPacked},
+          {utils::kWidthPacked, utils::kChannelsPacked},
+          {utils::kWidthPacked, utils::kHeightPacked},
+          {utils::kWidthPacked, utils::kWidthPacked},
+          {utils::kHeightPacked, utils::kChannelsPacked},
+          {utils::kHeightPacked, utils::kHeightPacked},
+          {utils::kHeightPacked, utils::kHeightPacked},
+          {utils::kChannelsPacked, utils::kChannelsPacked},
+          {utils::kChannelsPacked, utils::kHeightPacked},
+          {utils::kChannelsPacked, utils::kHeightPacked},
       };
 
   int64_t n = 3;
@@ -1685,10 +1685,10 @@ class VulkanToFromGPUShaderTest : public ::testing::Test {
 template <typename T>
 void run_from_gpu_test(
     std::vector<int64_t>& sizes,
-    vkapi::GPUMemoryLayout memory_layout =
-        vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
+    utils::GPUMemoryLayout memory_layout =
+        utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     vkapi::ScalarType dtype = vkapi::kFloat,
-    vkapi::StorageType storage_type = vkapi::StorageType::TEXTURE_3D) {
+    utils::StorageType storage_type = utils::StorageType::TEXTURE_3D) {
   if (dtype == vkapi::kHalf && !context()->adapter_ptr()->has_16bit_storage()) {
     return;
   }
@@ -1737,10 +1737,10 @@ void run_from_gpu_test(
 template <typename T>
 void run_to_gpu_test(
     std::vector<int64_t>& sizes,
-    vkapi::GPUMemoryLayout memory_layout =
-        vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
+    utils::GPUMemoryLayout memory_layout =
+        utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     vkapi::ScalarType dtype = vkapi::kFloat,
-    vkapi::StorageType storage_type = vkapi::StorageType::TEXTURE_3D) {
+    utils::StorageType storage_type = utils::StorageType::TEXTURE_3D) {
   if (dtype == vkapi::kHalf && !context()->adapter_ptr()->has_16bit_storage()) {
     return;
   }
@@ -1825,11 +1825,11 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
 
 #define RUN_TESTS(ctype, dtype)                                      \
   run_to_gpu_test<ctype>(                                            \
-      sizes, vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, dtype); \
+      sizes, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, dtype); \
   run_to_gpu_test<ctype>(                                            \
-      sizes, vkapi::GPUMemoryLayout::TENSOR_WIDTH_PACKED, dtype);    \
+      sizes, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, dtype);    \
   run_to_gpu_test<ctype>(                                            \
-      sizes, vkapi::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, dtype);
+      sizes, utils::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, dtype);
 
   for (auto& sizes : to_test) {
     RUN_TESTS(float, vkapi::kFloat)
@@ -1852,7 +1852,7 @@ void test_binary_op(
     std::vector<int64_t> sizes_big,
     std::vector<int64_t> sizes_small,
     vkapi::ScalarType dtype,
-    vkapi::GPUMemoryLayout memory_layout,
+    utils::GPUMemoryLayout memory_layout,
     bool prepack = true) {
   GraphConfig config;
   ComputeGraph graph(config);
@@ -1912,20 +1912,20 @@ void test_binary_op(
 }
 
 #define CALL_TEST_FN_FORALL_CONDITIONS(_)                                 \
-  _(vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false)    \
-  _(vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, false)   \
-  _(vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
-  _(vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)     \
-  _(vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, true)    \
-  _(vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
+  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false)    \
+  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, false)   \
+  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
+  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)     \
+  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, true)    \
+  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
 
 #define CALL_TEST_FN_FOR_W_PACKED(_)                                   \
-  _(vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false) \
-  _(vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)
+  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false) \
+  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)
 
 #define CALL_TEST_FN_FOR_C_PACKED(_)                                      \
-  _(vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
-  _(vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
+  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
+  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
 
 TEST(VulkanComputeGraphOpsTest, add_smoke_test) {
 #define RUN_TESTS(dtype, layout, prepack)                                  \
@@ -1949,7 +1949,7 @@ void test_mm(
     int K,
     int N,
     vkapi::ScalarType dtype,
-    vkapi::GPUMemoryLayout memory_layout,
+    utils::GPUMemoryLayout memory_layout,
     bool prepack = true) {
   GraphConfig config;
   ComputeGraph graph(config);
@@ -2064,13 +2064,13 @@ void test_max_pool2d(
   out_size[w] = in_size[w] - kernel[1] + 1;
 
   IOValueRef in_ioval = graph.add_input_tensor(
-      in_size, vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+      in_size, vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
   IOValueRef out_ioval;
   out_ioval.value = graph.add_tensor(
-      out_size, vkapi::kFloat, vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+      out_size, vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
   IOValueRef idx_ioval;
   idx_ioval.value = graph.add_tensor(
-      out_size, vkapi::kInt, vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+      out_size, vkapi::kInt, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
   ValueRef out = graph.add_value_list({out_ioval.value, idx_ioval.value});
 
   std::vector<int64_t> kernel_copy(kernel);
@@ -2147,8 +2147,8 @@ void test_conv2d(
       context(),
       gpu_sizes,
       vkapi::kFloat,
-      vkapi::StorageType::TEXTURE_2D,
-      vkapi::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+      utils::StorageType::TEXTURE_2D,
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
 
   // Create and fill input staging buffer
   const int64_t in_numel = utils::multiply_integers(original_sizes);

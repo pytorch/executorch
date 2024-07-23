@@ -17,12 +17,12 @@
  * all fp32 tensors.
  */
 
+#include <fstream>
 #include <memory>
 
 #include <gflags/gflags.h>
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
-#include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
@@ -79,7 +79,18 @@ DEFINE_int32(
     "Size of the debug buffer in bytes to allocate for intermediate outputs and program outputs logging.");
 
 using namespace torch::executor;
-using torch::executor::util::FileDataLoader;
+
+std::vector<uint8_t> load_file_or_die(const char* path) {
+  std::ifstream file(path, std::ios::binary | std::ios::ate);
+  const size_t nbytes = file.tellg();
+  file.seekg(0, std::ios::beg);
+  auto file_data = std::vector<uint8_t>(nbytes);
+  ET_CHECK_MSG(
+      file.read(reinterpret_cast<char*>(file_data.data()), nbytes),
+      "Could not load contents of file '%s'",
+      path);
+  return file_data;
+}
 
 int main(int argc, char** argv) {
   runtime_init();
@@ -94,28 +105,16 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // Create a loader to get the data of the program file. There are other
-  // DataLoaders that use mmap() or point to data that's already in memory, and
-  // users can create their own DataLoaders to load from arbitrary sources.
-  const char* bundled_program_path = FLAGS_bundled_program_path.c_str();
-  Result<FileDataLoader> loader = FileDataLoader::from(bundled_program_path);
-  ET_CHECK_MSG(
-      loader.ok(), "FileDataLoader::from() failed: 0x%" PRIx32, loader.error());
-
   // Read in the entire file.
-  Result<FreeableBuffer> file_data = loader->Load(0, loader->size().get());
-  ET_CHECK_MSG(
-      file_data.ok(),
-      "Could not load contents of file '%s': 0x%x",
-      bundled_program_path,
-      (unsigned int)file_data.error());
+  const char* bundled_program_path = FLAGS_bundled_program_path.c_str();
+  std::vector<uint8_t> file_data = load_file_or_die(bundled_program_path);
 
   // Find the offset to the embedded Program.
   const void* program_data;
   size_t program_data_len;
   Error status = torch::executor::bundled_program::GetProgramData(
-      const_cast<void*>(file_data->data()),
-      file_data->size(),
+      reinterpret_cast<void*>(file_data.data()),
+      file_data.size(),
       &program_data,
       &program_data_len);
   ET_CHECK_MSG(
@@ -230,7 +229,7 @@ int main(int argc, char** argv) {
   }
   // Use the inputs embedded in the bundled program.
   status = torch::executor::bundled_program::LoadBundledInput(
-      *method, file_data->data(), FLAGS_testset_idx);
+      *method, file_data.data(), FLAGS_testset_idx);
   ET_CHECK_MSG(
       status == Error::Ok,
       "LoadBundledInput failed with status 0x%" PRIx32,
@@ -279,7 +278,7 @@ int main(int argc, char** argv) {
     status =
         torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput(
             *method,
-            file_data->data(),
+            file_data.data(),
             FLAGS_testset_idx,
             1e-3, // rtol
             1e-5 // atol

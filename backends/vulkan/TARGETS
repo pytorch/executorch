@@ -26,6 +26,7 @@ runtime.python_library(
         "//executorch/backends/transforms:fuse_batch_norm_with_conv",
         "//executorch/backends/transforms:fuse_conv_with_clamp",
         "//executorch/backends/transforms:fuse_view_copy",
+        "//executorch/backends/transforms:mean_to_sum_div",
         "//executorch/backends/transforms:remove_clone_ops",
         "//executorch/exir:graph_module",
         "//executorch/exir/_serialize:_bindings",
