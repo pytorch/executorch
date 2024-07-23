@@ -43,6 +43,10 @@ class PReLU(NodeVisitor):
             coeff_node = node.args[1]
             coeff_tensor = torch.zeros(input_node.meta["val"].shape)
             coeff = get_parameter(coeff_node, self.edge_program)
+            # param nodes will be FakeTensor when doing partition
+            # fill in random numeric for validation
+            if isinstance(coeff, torch._subclasses.fake_tensor.FakeTensor):
+                coeff = torch.ones(coeff.shape)
             # per-channel activation
             if coeff_node.meta["val"].shape[0] > 1:
                 for i in range(input_node.meta["val"].shape[1]):

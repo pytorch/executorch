@@ -249,8 +249,15 @@ class ArmTester(Tester):
             else:
                 test_input = reference_input
 
+            # Test parameters can include constants that are used in eager mode but are already set as attributes
+            # in TOSA. Therefore, only accept torch.Tensor inputs.
+            test_input = [
+                tensor for tensor in test_input if isinstance(tensor, torch.Tensor)
+            ]
+
             input_shapes = [
-                generated_input.shape for generated_input in reference_input
+                generated_input.shape if hasattr(generated_input, "shape") else (1,)
+                for generated_input in reference_input
             ]
             print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
@@ -274,7 +281,7 @@ class ArmTester(Tester):
             dim_order = (0, 2, 3, 1)
         inputs_transposed = list(data)
         for i in range(len(data)):
-            if len(data[i].shape) == 4:
+            if hasattr(data[i], "shape") and len(data[i].shape) == 4:
                 inputs_transposed[i] = np.transpose(data[i], dim_order)
         return tuple(inputs_transposed)
 
@@ -298,7 +305,8 @@ class ArmTester(Tester):
             path_to_tosa_files = self.runner_util.intermediate_path
 
             export_stage = self.stages.get(self.stage_name(tester.Export), None)
-            if export_stage is not None:
+            quantize_stage = self.stages.get(self.stage_name(tester.Quantize), None)
+            if export_stage is not None and quantize_stage is not None:
                 input_names = _get_input_names(export_stage.artifact)
                 output_node = _get_output_node(export_stage.artifact)
                 qp_input = _get_input_quantization_params(

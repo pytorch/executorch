@@ -63,9 +63,6 @@ endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
   # strip symbols
   add_link_options("-s")
-  # hide dynamic symbols
-  set(CMAKE_C_VISIBILITY_PRESET hidden)
-  set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
   # --gc-sections is added by torch.
   add_compile_options(
