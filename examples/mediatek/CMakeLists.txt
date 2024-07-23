@@ -84,6 +84,12 @@ if(${ANDROID})
         ${LLAMA2_TOKENIZER_DIR}/bpe_tokenizer.cpp
     )
 
+    # Include directory for neuron headers
+    include_directories(
+        BEFORE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/mediatek/runtime/include
+    )
+
     # Build Llama Executor static library
     add_subdirectory(executor_runner/llama_runner)
 

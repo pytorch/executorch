@@ -6,10 +6,10 @@
  * directory of this source tree for more details.
  */
 
-#include <string>
-#include <vector>
-#include <unordered_map>
 #include <numeric>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
@@ -20,16 +20,18 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/util.h>
 
-#include "llm_helper/include/llm_types.h"
 #include "LlamaConfig.h"
 #include "LlamaModelChunk.h"
+#include "llm_helper/include/llm_types.h"
 
 #include "llm_helper/include/mask_builder.h"
 #include "llm_helper/include/rotary_embedding.h"
 
 namespace torch::executor {
 
-inline std::vector<size_t> getIndexRange(const size_t startIndex, const size_t count) {
+inline std::vector<size_t> getIndexRange(
+    const size_t startIndex,
+    const size_t count) {
   std::vector<size_t> indexes(count);
   size_t counter = startIndex;
   for (auto& idx : indexes) {
@@ -54,7 +56,8 @@ LlamaModelChunk::LlamaModelChunk(
       kCacheTypeSize(llm_helper::getLLMTypeSize(kCacheType)),
       kMaskInputIndex(1),
       kRotEmbInputIndexes(getIndexRange(2, numRotEmbInputs)),
-      kCacheInputIndexes(getIndexRange(kRotEmbInputIndexes.back() + 1, numCache)),
+      kCacheInputIndexes(
+          getIndexRange(kRotEmbInputIndexes.back() + 1, numCache)),
       kCacheOutputIndexes(getIndexRange(1, numCache)) {}
 
 LlamaModelChunk::~LlamaModelChunk() {}
@@ -103,7 +106,8 @@ void LlamaModelChunk::CheckIoCount() {
 bool LlamaModelChunk::HotSwapModel(const size_t tokenBatchSize) {
   const auto status = ModelChunk::HotSwapModel(tokenBatchSize);
 
-  // Force rebuild mask because different batch size values will produce different mask shapes
+  // Force rebuild mask because different batch size values will produce
+  // different mask shapes.
   mMaskBuilder->markMaskDirty();
 
   // Update mask size
@@ -144,54 +148,59 @@ size_t LlamaModelChunk::GetRightPadding() const {
 }
 
 void LlamaModelChunk::PaddingPostprocess() {
-    if (mCurrentPadSize == 0) {
-        return;
-    }
+  if (mCurrentPadSize == 0) {
+    return;
+  }
 
-    if (mPaddingMode == PaddingMode::RIGHT) {
-        RightPaddingCachePostprocess();
-    } else if (mPaddingMode == PaddingMode::LEFT) {
-        LeftPaddingCachePostprocess();
-    }
+  if (mPaddingMode == PaddingMode::RIGHT) {
+    RightPaddingCachePostprocess();
+  } else if (mPaddingMode == PaddingMode::LEFT) {
+    LeftPaddingCachePostprocess();
+  }
 }
 
 void LlamaModelChunk::LeftPaddingCachePostprocess() {
-    // NOTE: This part might not actually be needed
+  // NOTE: This part might not actually be needed
 
-    // Stride size is same across caches
-    const size_t strideSizeBytes = GetCacheStrideSize();
-    const size_t rowSize = kCacheLength * strideSizeBytes;
+  // Stride size is same across caches
+  const size_t strideSizeBytes = GetCacheStrideSize();
+  const size_t rowSize = kCacheLength * strideSizeBytes;
 
-    const size_t numRows = GetCacheNumRows();
+  const size_t numRows = GetCacheNumRows();
 
-    const size_t offset = (kCacheLength - mTokenBatchSize) * strideSizeBytes;
-    const size_t zeroCount = mCurrentPadSize * strideSizeBytes;
+  const size_t offset = (kCacheLength - mTokenBatchSize) * strideSizeBytes;
+  const size_t zeroCount = mCurrentPadSize * strideSizeBytes;
 
-    // Fill padded sections with zeros
-    for (const auto cacheInputIdx : kCacheInputIndexes) {
-        auto cacheBuffer = reinterpret_cast<char*>(mInputBufferInfos[cacheInputIdx].data);
-        for (size_t rowIdx = 0; rowIdx < numRows; rowIdx++) {
-            auto cacheBufRow = cacheBuffer + rowIdx * rowSize; // Pointer pointing to start of row
-            std::memset(cacheBufRow + offset, 0, zeroCount);
-        }
+  // Fill padded sections with zeros
+  for (const auto cacheInputIdx : kCacheInputIndexes) {
+    auto cacheBuffer =
+        reinterpret_cast<char*>(mInputBufferInfos[cacheInputIdx].data);
+    for (size_t rowIdx = 0; rowIdx < numRows; rowIdx++) {
+      // cacheBufRow points at the start of row
+      auto cacheBufRow = cacheBuffer + rowIdx * rowSize;
+      std::memset(cacheBufRow + offset, 0, zeroCount);
     }
+  }
 }
 
 void LlamaModelChunk::RightPaddingCachePostprocess() {
-    // NOTE: AdvanceTokenIndex() haven't been called for this inference step yet.
-    const size_t numSeenToken = mCurrentTokenIndex + mTokenBatchSize;
-    RollbackCache(mCurrentPadSize, numSeenToken);
+  // NOTE: AdvanceTokenIndex() haven't been called for this inference step yet.
+  const size_t numSeenToken = mCurrentTokenIndex + mTokenBatchSize;
+  RollbackCache(mCurrentPadSize, numSeenToken);
 }
 
-void LlamaModelChunk::RollbackCache(const size_t rollbackTokCount, const size_t numSeenToken) {
+void LlamaModelChunk::RollbackCache(
+    const size_t rollbackTokCount,
+    const size_t numSeenToken) {
   if (rollbackTokCount == 0) {
-      return; // do nothing
+    return; // do nothing
   }
 
   const size_t numSeenTokenAlive = std::min(numSeenToken, kCacheLength);
   const size_t firstNonEmptyIdx = kCacheLength - numSeenTokenAlive;
   const size_t preserveTokCount = (numSeenTokenAlive > rollbackTokCount)
-                                  ? numSeenTokenAlive - rollbackTokCount : 0;
+      ? numSeenTokenAlive - rollbackTokCount
+      : 0;
 
   if (!preserveTokCount) {
     // Clear cache to zeros
@@ -205,18 +214,21 @@ void LlamaModelChunk::RollbackCache(const size_t rollbackTokCount, const size_t 
 
   // Shift right and truncate rollbackTokCount, then fill left with zeros
   for (const auto cacheInputIdx : kCacheInputIndexes) {
-    auto cacheBuffer = reinterpret_cast<char*>(mInputBufferInfos[cacheInputIdx].data);
+    auto cacheBuffer =
+        reinterpret_cast<char*>(mInputBufferInfos[cacheInputIdx].data);
 
     for (size_t rowIdx = 0; rowIdx < numRows; rowIdx++) {
       // Get the addr pointing to the start of row
       auto cacheBufRow = cacheBuffer + rowIdx * rowSize;
 
       // Move right for the section to be preserved
-      const size_t dstOffset = strideSizeBytes * (firstNonEmptyIdx + rollbackTokCount);
+      const size_t dstOffset =
+          strideSizeBytes * (firstNonEmptyIdx + rollbackTokCount);
       const size_t srcOffset = strideSizeBytes * firstNonEmptyIdx;
       const size_t preserveSize = strideSizeBytes * preserveTokCount;
       ET_DCHECK(dstOffset + preserveSize <= rowSize);
-      std::memmove(cacheBufRow + dstOffset, cacheBufRow + srcOffset, preserveSize);
+      std::memmove(
+          cacheBufRow + dstOffset, cacheBufRow + srcOffset, preserveSize);
 
       // Then fill zeros to the section being moved out
       const size_t offset = firstNonEmptyIdx * strideSizeBytes;
@@ -271,12 +283,17 @@ void LlamaModelChunk::SetPosEmbed(const size_t tokenIndex) {
 
   auto getRotEmbInputs = [&]() {
     std::vector<void*> rotEmbInputs;
+    rotEmbInputs.reserve(kRotEmbInputIndexes.size());
     for (const auto inputIdx : kRotEmbInputIndexes)
       rotEmbInputs.push_back(mInputBufferInfos[inputIdx].data);
     return rotEmbInputs;
   };
   kRotEmbMasterLut->setEmbed(
-      getRotEmbInputs(), tokenIndex, mTokenBatchSize, GetLeftPadding(), GetRightPadding());
+      getRotEmbInputs(),
+      tokenIndex,
+      mTokenBatchSize,
+      GetLeftPadding(),
+      GetRightPadding());
 }
 
 void LlamaModelChunk::PrepareCacheIOs() {
@@ -288,22 +305,24 @@ void LlamaModelChunk::PrepareCacheIOs() {
   // Link cache IOs
   const size_t numCaches = kCacheInputIndexes.size();
   for (size_t i = 0; i < numCaches; i++) {
-      this->LinkModelIO(kCacheInputIndexes[i], kCacheOutputIndexes[i]);
+    this->LinkModelIO(kCacheInputIndexes[i], kCacheOutputIndexes[i]);
   }
 }
 
 size_t LlamaModelChunk::GetCacheNumRows() const {
-  return std::reduce(mCacheShape.begin(),
-                     mCacheShape.begin() + kCacheLengthDim,
-                     1,
-                     std::multiplies<>());
+  return std::reduce(
+      mCacheShape.begin(),
+      mCacheShape.begin() + kCacheLengthDim,
+      1,
+      std::multiplies<>());
 }
 
 size_t LlamaModelChunk::GetCacheStrideSize() const {
-  return std::reduce(mCacheShape.begin() + kCacheLengthDim + 1,
-                     mCacheShape.end(),
-                     kCacheTypeSize,
-                     std::multiplies<>());
+  return std::reduce(
+      mCacheShape.begin() + kCacheLengthDim + 1,
+      mCacheShape.end(),
+      kCacheTypeSize,
+      std::multiplies<>());
 }
 
 void LlamaModelChunk::InitMaskBuilder() {

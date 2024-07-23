@@ -6,15 +6,15 @@
  * directory of this source tree for more details.
  */
 
-#include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/log.h>
 
 #include "MultiModelLoader.h"
 
-#include <string>
-#include <vector>
-#include <unordered_map>
 #include <sstream>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace torch::executor {
 
@@ -22,8 +22,10 @@ template <typename IdType>
 void MultiModelLoader<IdType>::LoadModels() {
   // Init empty model instance map
   for (const auto& [id, _] : mModelPathMap) {
-      ET_CHECK_MSG(!HasModel(id), "Model is already initialized before calling LoadModels.");
-      mModelInstanceMap[id] = nullptr;
+    ET_CHECK_MSG(
+        !HasModel(id),
+        "Model is already initialized before calling LoadModels.");
+    mModelInstanceMap[id] = nullptr;
   }
   const size_t numModels = mModelPathMap.size();
   if (!AllowModelsCoexist()) {
@@ -33,7 +35,10 @@ void MultiModelLoader<IdType>::LoadModels() {
         "Model is already initialized before calling LoadModels.");
     void* instance = CreateModelInstance(mModelPathMap[mDefaultModelId]);
     SetModelInstance(instance);
-    ET_LOG(Debug, "LoadModels(): Loaded single exclusive model (Total=%zu)", numModels);
+    ET_LOG(
+        Debug,
+        "LoadModels(): Loaded single exclusive model (Total=%zu)",
+        numModels);
     return;
   }
   for (const auto& [id, modelPath] : mModelPathMap) {
@@ -41,7 +46,7 @@ void MultiModelLoader<IdType>::LoadModels() {
     ET_CHECK_MSG(
         GetModelInstance() == nullptr,
         "Model is already initialized before calling LoadModels.");
-    void* instance = CreateModelInstance(mModelPathMap[id]);
+    void* instance = CreateModelInstance(modelPath);
     SetModelInstance(instance);
   }
   SelectModel(mDefaultModelId); // Select the default instance
@@ -66,13 +71,19 @@ void MultiModelLoader<IdType>::ReleaseModels() {
 
 template <typename IdType>
 void* MultiModelLoader<IdType>::GetModelInstance() const {
-  ET_DCHECK_MSG(HasModel(mCurrentModelId), "Invalid id: %s", GetIdString(mCurrentModelId).c_str());
+  ET_DCHECK_MSG(
+      HasModel(mCurrentModelId),
+      "Invalid id: %s",
+      GetIdString(mCurrentModelId).c_str());
   return mModelInstanceMap.at(mCurrentModelId);
 }
 
 template <typename IdType>
 void MultiModelLoader<IdType>::SetModelInstance(void* instance) {
-  ET_DCHECK_MSG(HasModel(mCurrentModelId), "Invalid id: %s", GetIdString(mCurrentModelId).c_str());
+  ET_DCHECK_MSG(
+      HasModel(mCurrentModelId),
+      "Invalid id: %s",
+      GetIdString(mCurrentModelId).c_str());
   mModelInstanceMap[mCurrentModelId] = instance;
 }
 
@@ -118,31 +129,38 @@ size_t MultiModelLoader<IdType>::GetNumModels() const {
 }
 
 template <typename IdType>
-std::string MultiModelLoader<IdType>::GetModelPath() const {
-  ET_CHECK_MSG(HasModel(mCurrentModelId), "Invalid id: %s", GetIdString(mCurrentModelId).c_str());
+const std::string& MultiModelLoader<IdType>::GetModelPath() const {
+  ET_CHECK_MSG(
+      HasModel(mCurrentModelId),
+      "Invalid id: %s",
+      GetIdString(mCurrentModelId).c_str());
   return mModelPathMap.at(mCurrentModelId);
 }
 
 template <typename IdType>
-void MultiModelLoader<IdType>::AddModel(const IdType& id, const std::string& modelPath) {
+void MultiModelLoader<IdType>::AddModel(
+    const IdType& id,
+    const std::string& modelPath) {
   if (HasModel(id)) {
-    ET_LOG(Info, "Overlapping model identifier detected. Replacing existing model instance.");
+    ET_LOG(
+        Info,
+        "Overlapping model identifier detected. Replacing existing model instance.");
     auto& oldInstance = mModelInstanceMap[id];
     if (oldInstance != nullptr)
-        ReleaseModelInstance(oldInstance);
+      ReleaseModelInstance(oldInstance);
     oldInstance = nullptr;
   }
   mModelPathMap[id] = modelPath;
 
   // Create runtime immediately if can coexist
   mModelInstanceMap[id] = AllowModelsCoexist()
-                          ? CreateModelInstance(mModelPathMap[mDefaultModelId])
-                          : nullptr;
+      ? CreateModelInstance(mModelPathMap[mDefaultModelId])
+      : nullptr;
 }
 
 template <typename IdType>
 bool MultiModelLoader<IdType>::HasModel(const IdType& id) const {
-    return mModelInstanceMap.find(id) != mModelInstanceMap.end();
+  return mModelInstanceMap.find(id) != mModelInstanceMap.end();
 }
 
 template <typename IdType>

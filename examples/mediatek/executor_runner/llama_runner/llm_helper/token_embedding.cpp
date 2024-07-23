@@ -6,101 +6,87 @@
  * directory of this source tree for more details.
  */
 
-#include "llm_types.h"
 #include "llm_helper/include/token_embedding.h"
+#include "FileMemMapper.h"
+#include "llm_helper/include/llm_types.h"
 
-#include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/log.h>
 
-#include <string>
-#include <fstream>
 #include <filesystem>
+#include <fstream>
+#include <string>
 
 namespace fs = std::filesystem;
 
 namespace torch::executor {
 namespace llm_helper {
 
-TokenEmbeddingLut::TokenEmbeddingLut(const std::string& tokenEmbLutPath,
-                                     const LLMType tokenEmbLutType, const size_t hiddenSize)
+TokenEmbeddingLut::TokenEmbeddingLut(
+    const std::string& tokenEmbLutPath,
+    const LLMType tokenEmbLutType,
+    const size_t hiddenSize)
     : kTokenEmbLutType(tokenEmbLutType),
       kTokenEmbLutTypeSize(getLLMTypeSize(tokenEmbLutType)),
       kHiddenSize(hiddenSize),
       kLutRowSizeBytes(kHiddenSize * kTokenEmbLutTypeSize) {
-    std::ifstream file(tokenEmbLutPath, std::ios::binary);
-    if (!file) {
-        ET_LOG(Fatal, "Token embedding lookup table file not found: %s", tokenEmbLutPath.c_str());
-    }
-    ET_LOG(Debug, "Loading token embedding lookup table: %s", tokenEmbLutPath.c_str());
+  ET_CHECK_MSG(
+      fs::exists(tokenEmbLutPath),
+      "Token embedding lookup table file not found: %s",
+      tokenEmbLutPath.c_str());
 
-    const size_t lutFileSize = fs::file_size(tokenEmbLutPath);
+  ET_LOG(
+      Debug,
+      "Loading token embedding lookup table: %s",
+      tokenEmbLutPath.c_str());
 
-    mVocabSize = lutFileSize / hiddenSize / kTokenEmbLutTypeSize;
-    ET_LOG(Debug, "TokenEmbeddingLut: Vocab size = %zu", mVocabSize);
+  mMemMappedEmbFile = std::make_unique<FileMemMapper>(tokenEmbLutPath);
+  mLutBuffer = mMemMappedEmbFile->getAddr<uint8_t*>();
+  const size_t lutFileSize = mMemMappedEmbFile->getSize();
 
-    mLutBuffer = new uint8_t [lutFileSize];
-
-    file.read(reinterpret_cast<char*>(mLutBuffer), lutFileSize);
-    ET_CHECK(file.gcount() == lutFileSize);
+  mVocabSize = lutFileSize / hiddenSize / kTokenEmbLutTypeSize;
+  ET_LOG(Debug, "TokenEmbeddingLut: Vocab size = %zu", mVocabSize);
 }
 
-TokenEmbeddingLut::~TokenEmbeddingLut() {
-    if (mLutBuffer != nullptr) {
-        delete mLutBuffer;
-    }
-}
+TokenEmbeddingLut::~TokenEmbeddingLut() {}
 
 void TokenEmbeddingLut::setOutput(void* buffer, const size_t size) {
-    setOutput(buffer, size, kTokenEmbLutType);
-}
-
-void TokenEmbeddingLut::setOutput(void* buffer, const size_t size, const LLMType type,
-                                  const float qscale) {
-    mOutputBuffer = reinterpret_cast<uint8_t*>(buffer);
-    mOutputBufferSize = size;
-    mTokenEmbOutputType = type;
-    mTokenEmbOutputTypeSize = getLLMTypeSize(type);
-    mTokenEmbQuantScale = qscale;
+  mOutputBuffer = reinterpret_cast<uint8_t*>(buffer);
+  mOutputBufferSize = size;
 }
 
 void TokenEmbeddingLut::lookupEmbedding(const std::vector<uint64_t>& tokens) {
-    const auto numTokens = tokens.size();
-    const size_t requiredOutputSize = numTokens * kHiddenSize * mTokenEmbOutputTypeSize;
-    if (mOutputBufferSize < requiredOutputSize) {
-        ET_LOG(
-            Error,
-            "Token embedding buffer size (%zu) is insufficient to hold embedding for %zu tokens "
-            "(requires %zu).",
-            mOutputBufferSize,
-            numTokens,
-            requiredOutputSize);
-        return;
-    }
-    if (mOutputBuffer == nullptr) {
-        ET_LOG(Error, "TokenEmbeddingLut: Output is not yet set for embedding lookup.");
-        return;
-    }
-
-    // Same type, so we can simply memcpy.
-    if (kTokenEmbLutType == mTokenEmbOutputType) {
-        size_t outputOffset = 0;
-        for (const auto token : tokens) {
-            // Copy one row from lookup table per token
-            ET_CHECK_MSG(token < mVocabSize, "Token id exceeds embedding lookup table range.");
-            const auto& rowIdx = token;
-            const size_t lutOffset = rowIdx * kLutRowSizeBytes;
-            std::memcpy(mOutputBuffer + outputOffset, mLutBuffer + lutOffset, kLutRowSizeBytes);
-            outputOffset += kLutRowSizeBytes;
-        }
-        return;
-    }
-
+  const auto numTokens = tokens.size();
+  const size_t requiredOutputSize =
+      numTokens * kHiddenSize * kTokenEmbLutTypeSize;
+  if (mOutputBufferSize < requiredOutputSize) {
     ET_LOG(
-        Fatal,
-        "Unimplemented: Mismatch between token embedding lookup table type (%s) "
-        "and model input embedding type (%s)",
-        getLLMTypeName(kTokenEmbLutType),
-        getLLMTypeName(mTokenEmbOutputType));
+        Error,
+        "Token embedding buffer size (%zu) is insufficient to hold embedding for %zu tokens "
+        "(requires %zu).",
+        mOutputBufferSize,
+        numTokens,
+        requiredOutputSize);
+    return;
+  }
+  if (mOutputBuffer == nullptr) {
+    ET_LOG(
+        Error,
+        "TokenEmbeddingLut: Output is not yet set for embedding lookup.");
+    return;
+  }
+  size_t outputOffset = 0;
+  for (const auto token : tokens) {
+    // Copy one row from lookup table per token
+    ET_CHECK_MSG(
+        token < mVocabSize, "Token id exceeds embedding lookup table range.");
+    const auto& rowIdx = token;
+    const size_t lutOffset = rowIdx * kLutRowSizeBytes;
+    std::memcpy(
+        mOutputBuffer + outputOffset, mLutBuffer + lutOffset, kLutRowSizeBytes);
+    outputOffset += kLutRowSizeBytes;
+  }
+  return;
 }
 
 } // namespace llm_helper

@@ -7,8 +7,8 @@
  */
 
 #include <string>
-#include <vector>
 #include <thread>
+#include <vector>
 
 #include <executorch/runtime/platform/log.h>
 
@@ -20,7 +20,9 @@
 
 namespace torch::executor {
 
-void LlamaRuntime::Initialize(const LlamaModelOptions& modelOptions, const LlamaModelPaths& modelPaths) {
+void LlamaRuntime::Initialize(
+    const LlamaModelOptions& modelOptions,
+    const LlamaModelPaths& modelPaths) {
   mModelOptions = modelOptions;
   const size_t numChunk = modelPaths.gen_model_paths.size();
   const size_t numCache = 2 * modelOptions.num_layer / numChunk;
@@ -28,7 +30,7 @@ void LlamaRuntime::Initialize(const LlamaModelOptions& modelOptions, const Llama
 
   // Initialize rotary embedding master lookup table
   const size_t rotEmbDim = modelOptions.hidden_size / modelOptions.num_head;
-  mRotEmbMasterLut = new llm_helper::RotaryEmbeddingMasterLut(
+  mRotEmbMasterLut = std::make_unique<llm_helper::RotaryEmbeddingMasterLut>(
       modelOptions.rot_emb_type,
       modelOptions.max_token_length,
       rotEmbDim,
@@ -37,7 +39,8 @@ void LlamaRuntime::Initialize(const LlamaModelOptions& modelOptions, const Llama
 
   constexpr size_t numRotEmbInputs = 1;
   const bool usePromptModel = !modelPaths.prompt_model_paths.empty();
-  const size_t initBatchSize = usePromptModel ? modelOptions.prompt_token_batch_size : 1;
+  const size_t initBatchSize =
+      usePromptModel ? modelOptions.prompt_token_batch_size : 1;
   mTokenBatchSize = initBatchSize;
 
   for (size_t chunkIdx = 0; chunkIdx < numChunk; chunkIdx++) {
@@ -47,26 +50,35 @@ void LlamaRuntime::Initialize(const LlamaModelOptions& modelOptions, const Llama
         return;
       modelPathMap[batchSize] = modelPaths[chunkIdx];
     };
-    addModelPath(modelPaths.prompt_model_paths, modelOptions.prompt_token_batch_size);
+    addModelPath(
+        modelPaths.prompt_model_paths, modelOptions.prompt_token_batch_size);
     addModelPath(modelPaths.gen_model_paths, 1);
-    auto llamaChunk = new LlamaModelChunk(
-        modelPathMap, modelOptions, initBatchSize, numCache, numRotEmbInputs, mRotEmbMasterLut);
-    mLlamaModelChunks.push_back(llamaChunk);
+    auto llamaChunk = std::make_unique<LlamaModelChunk>(
+        modelPathMap,
+        modelOptions,
+        initBatchSize,
+        numCache,
+        numRotEmbInputs,
+        mRotEmbMasterLut.get());
+    mLlamaModelChunks.push_back(std::move(llamaChunk));
   }
 
   for (size_t i = 0; i < numChunk; i++) {
-    auto modelChunk = mLlamaModelChunks[i];
+    auto& modelChunk = mLlamaModelChunks[i];
     if (i > 0) {
-      const auto prevModelChunk = mLlamaModelChunks[i - 1];
+      const auto& prevModelChunk = mLlamaModelChunks[i - 1];
       modelChunk->SetInputBuffer(prevModelChunk->GetOutputBuffer());
     }
     modelChunk->Initialize();
     // modelChunk->LogIoSummary();
   }
 
-  // NOTE: Token embedding type here is assumed to follow the model input embedding type.
-  mTokenEmbLut = new llm_helper::TokenEmbeddingLut(
-      modelPaths.token_embedding_path, modelOptions.model_input_type, modelOptions.hidden_size);
+  // NOTE: Token embedding type here is assumed to follow the model input
+  // embedding type.
+  mTokenEmbLut = std::make_unique<llm_helper::TokenEmbeddingLut>(
+      modelPaths.token_embedding_path,
+      modelOptions.model_input_type,
+      modelOptions.hidden_size);
 
   // Link first chunk emb input to token emb lut output
   const auto& tokenEmbInput = mLlamaModelChunks.front()->GetInputBuffer();
@@ -74,13 +86,12 @@ void LlamaRuntime::Initialize(const LlamaModelOptions& modelOptions, const Llama
 }
 
 void LlamaRuntime::Release() {
-  for (auto llamaChunk : mLlamaModelChunks) {
+  for (auto& llamaChunk : mLlamaModelChunks) {
     llamaChunk->Release();
-    delete llamaChunk;
   }
   mLlamaModelChunks.clear();
-  delete mRotEmbMasterLut;
-  delete mTokenEmbLut;
+  mRotEmbMasterLut.reset();
+  mTokenEmbLut.reset();
 }
 
 void LlamaRuntime::SwapModel(const size_t batchSize) {
@@ -101,15 +112,18 @@ void LlamaRuntime::SwapModel(const size_t batchSize) {
 }
 
 void LlamaRuntime::Reset() {
-  for (auto modelChunk : mLlamaModelChunks) {
-    static_cast<LlamaModelChunk*>(modelChunk)->Reset();
+  for (auto& modelChunk : mLlamaModelChunks) {
+    static_cast<LlamaModelChunk*>(modelChunk.get())->Reset();
   }
   mTokenIndex = 0;
 }
 
-void* LlamaRuntime::Run(const std::vector<uint64_t>& inputTokens, const bool lastLogits) {
-  const auto firstLlamaChunk = mLlamaModelChunks.front();
-  const auto tokenIndex = static_cast<LlamaModelChunk*>(firstLlamaChunk)->GetTokenIndex();
+void* LlamaRuntime::Run(
+    const std::vector<uint64_t>& inputTokens,
+    const bool lastLogits) {
+  const auto& firstLlamaChunk = mLlamaModelChunks.front();
+  const auto tokenIndex =
+      static_cast<LlamaModelChunk*>(firstLlamaChunk.get())->GetTokenIndex();
   const auto numNewInputToken = inputTokens.size();
 
   ET_CHECK_MSG(
@@ -124,15 +138,15 @@ void* LlamaRuntime::Run(const std::vector<uint64_t>& inputTokens, const bool las
   constexpr uint64_t padToken = 0;
 
   // Use left-padding if possible as it has lower overhead than right-padding.
-  // Right-padding involves cache shifting (for non-ring buffer) which incurs additional overhead.
+  // Right-padding involves cache shifting which incurs additional overhead.
   const bool isLeftPadAllowed = (tokenIndex == 0);
   if (padSize > 0) {
     if (isLeftPadAllowed) {
       // Pad left since the cache is fresh new.
       curInputTokens.insert(curInputTokens.begin(), padSize, padToken);
     } else {
-      // Pad right since left side of cache is occupied either by loaded cache or previous
-      // inference pass.
+      // Pad right since left side of cache is occupied either by loaded cache
+      // or previous inference pass.
       curInputTokens.insert(curInputTokens.end(), padSize, padToken);
     }
     ET_LOG(Debug, "Padding size = %zu", padSize);
@@ -144,8 +158,8 @@ void* LlamaRuntime::Run(const std::vector<uint64_t>& inputTokens, const bool las
   mTokenEmbLut->lookupEmbedding(curInputTokens);
 
   // Decoder chunks
-  for (auto modelChunk : mLlamaModelChunks) {
-    auto llamaChunk = static_cast<LlamaModelChunk*>(modelChunk);
+  for (auto& modelChunk : mLlamaModelChunks) {
+    auto llamaChunk = static_cast<LlamaModelChunk*>(modelChunk.get());
 
     // Set padding if needed.
     if (isLeftPadAllowed)
@@ -157,18 +171,20 @@ void* LlamaRuntime::Run(const std::vector<uint64_t>& inputTokens, const bool las
     llamaChunk->Run();
   }
 
-  mTokenIndex += inputTokens.size(); // Only consider valid tokens by ignoring padding
+  // Only consider valid tokens by ignoring padding
+  mTokenIndex += inputTokens.size();
 
   // Return logits
-  const auto finalChunk = mLlamaModelChunks.back();
+  const auto& finalChunk = mLlamaModelChunks.back();
   const auto logitsBuffer = finalChunk->GetOutputBuffer();
   const auto logitsData = reinterpret_cast<char*>(logitsBuffer.data);
   const auto logitsSize = logitsBuffer.nbytesUsed;
   size_t offset = 0;
   const size_t rightPadSize = !isLeftPadAllowed * padSize;
   if (lastLogits && mTokenBatchSize > 1) {
-      offset = (logitsSize / mTokenBatchSize) * (mTokenBatchSize - 1 - rightPadSize);
-      ET_DCHECK(offset <= logitsSize);
+    offset =
+        (logitsSize / mTokenBatchSize) * (mTokenBatchSize - 1 - rightPadSize);
+    ET_DCHECK(offset <= logitsSize);
   }
   return logitsData + offset;
 }

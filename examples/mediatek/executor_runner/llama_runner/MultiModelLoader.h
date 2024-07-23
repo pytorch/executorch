@@ -9,32 +9,36 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 namespace torch::executor {
 
-template <typename IdType>
+template <typename IdType = size_t>
 class MultiModelLoader {
-public:
+ public:
   using ModelPathMap = std::unordered_map<IdType, std::string>;
   using ModelInstanceMap = std::unordered_map<IdType, void*>;
 
-  explicit MultiModelLoader(const ModelPathMap& modelPathMap,
-                            const IdType defaultModelId = 0)
-    : mModelPathMap(modelPathMap),
-      mDefaultModelId(defaultModelId),
-      mCurrentModelId(defaultModelId) {}
+  explicit MultiModelLoader(
+      const ModelPathMap& modelPathMap,
+      const IdType defaultModelId = {})
+      : mModelPathMap(modelPathMap),
+        mDefaultModelId(defaultModelId),
+        mCurrentModelId(defaultModelId) {}
 
-  explicit MultiModelLoader(const std::string& modelPath, const IdType defaultModelId = 0)
-    : mModelPathMap({{defaultModelId, modelPath}}),
-      mDefaultModelId(defaultModelId),
-      mCurrentModelId(defaultModelId) {}
+  explicit MultiModelLoader(
+      const std::string& modelPath,
+      const IdType defaultModelId = {})
+      : mModelPathMap({{defaultModelId, modelPath}}),
+        mDefaultModelId(defaultModelId),
+        mCurrentModelId(defaultModelId) {}
 
   virtual ~MultiModelLoader() {}
 
-protected:
-  // Initialize all models if they can coexist, otherwise initialize the default model.
+ protected:
+  // Initialize all models if they can coexist, otherwise initialize the default
+  // model.
   void LoadModels();
 
   // Release all active model instances.
@@ -59,7 +63,7 @@ protected:
   size_t GetNumModels() const;
 
   // Get the model path of the current active model.
-  std::string GetModelPath() const;
+  const std::string& GetModelPath() const;
 
   // Add new model post initialization, and returns the model id.
   void AddModel(const IdType& id, const std::string& modelPath);
@@ -68,21 +72,24 @@ protected:
 
   static std::string GetIdString(const IdType& id);
 
-private:
-  // Create and returns a model instance given a model path. To be implemented by subclass.
+ private:
+  // Create and returns a model instance given a model path. To be implemented
+  // by subclass.
   virtual void* CreateModelInstance(const std::string& modelPath) = 0;
 
   // Release a model instance. To be implemented by subclass.
   virtual void ReleaseModelInstance(void* modelInstance) = 0;
 
   // Determine whether multiple models are allowed to be alive concurrently.
-  virtual bool AllowModelsCoexist() const { return false; }
+  virtual bool AllowModelsCoexist() const {
+    return false;
+  }
 
-private:
+ private:
   ModelPathMap mModelPathMap;
   ModelInstanceMap mModelInstanceMap;
-  size_t mDefaultModelId = 0;
-  size_t mCurrentModelId = 0;
+  IdType mDefaultModelId = 0;
+  IdType mCurrentModelId = 0;
 };
 
 } // namespace torch::executor

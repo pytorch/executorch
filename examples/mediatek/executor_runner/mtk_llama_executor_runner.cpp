@@ -42,7 +42,7 @@
  * applicable license agreements with MediaTek Inc.
  */
 
-#include "include/NeuronBufferAllocator.h"
+#include "executorch/backends/mediatek/runtime/include/NeuronBufferAllocator.h"
 
 #include <iostream>
 #include <memory>
@@ -285,11 +285,9 @@ Error inference(
 std::unique_ptr<Tokenizer> load_tokenizer() {
   std::unique_ptr<Tokenizer> tokenizer;
   if (FLAGS_tokenizer_type == "bpe") {
-    tokenizer = std::make_unique<torch::executor::BPETokenizer>(
-        FLAGS_vocab_size, FLAGS_bos_token, FLAGS_eos_token);
+    tokenizer = std::make_unique<torch::executor::BPETokenizer>();
   } else if (FLAGS_tokenizer_type == "tiktoken") {
-    tokenizer = std::make_unique<torch::executor::Tiktoken>(
-        FLAGS_vocab_size, FLAGS_bos_token, FLAGS_eos_token);
+    tokenizer = std::make_unique<torch::executor::Tiktoken>();
   }
   ET_CHECK_MSG(
       tokenizer,

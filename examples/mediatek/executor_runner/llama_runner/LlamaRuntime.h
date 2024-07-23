@@ -13,9 +13,9 @@
 
 #include <executorch/runtime/platform/log.h>
 
-#include "llm_helper/include/llm_types.h"
 #include "LlamaConfig.h"
 #include "LlamaModelChunk.h"
+#include "llm_helper/include/llm_types.h"
 
 #include "llm_helper/include/rotary_embedding.h"
 #include "llm_helper/include/token_embedding.h"
@@ -23,17 +23,21 @@
 namespace torch::executor {
 
 class LlamaRuntime {
-public:
+ public:
   explicit LlamaRuntime() {}
   ~LlamaRuntime() {}
 
-  void Initialize(const LlamaModelOptions& modelOptions, const LlamaModelPaths& modelPaths);
+  void Initialize(
+      const LlamaModelOptions& modelOptions,
+      const LlamaModelPaths& modelPaths);
 
   void Release();
 
   void SwapModel(const size_t batchSize);
 
-  void* Run(const std::vector<uint64_t>& inputTokens, const bool lastLogits = true);
+  void* Run(
+      const std::vector<uint64_t>& inputTokens,
+      const bool lastLogits = true);
 
   void Reset();
 
@@ -43,11 +47,11 @@ public:
 
   const LlamaModelOptions& GetModelOptions() const;
 
-private:
-  std::vector<ModelChunk*> mLlamaModelChunks; // Assuming embedding layer is part of the chunk
+ private:
   LlamaModelOptions mModelOptions;
-  llm_helper::TokenEmbeddingLut* mTokenEmbLut = nullptr;
-  llm_helper::RotaryEmbeddingMasterLut* mRotEmbMasterLut = nullptr;
+  std::vector<std::unique_ptr<ModelChunk>> mLlamaModelChunks;
+  std::unique_ptr<llm_helper::TokenEmbeddingLut> mTokenEmbLut;
+  std::unique_ptr<llm_helper::RotaryEmbeddingMasterLut> mRotEmbMasterLut;
   size_t mTokenBatchSize = 1;
   size_t mTokenIndex = 0;
 };

@@ -8,20 +8,22 @@
 
 #pragma once
 
+#include "llm_helper/include/llm_types.h"
+
+#include <chrono>
+#include <fstream>
+#include <regex>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
-#include <sstream>
-#include <fstream>
-#include <regex>
-#include <chrono>
 
 namespace torch::executor {
 namespace utils {
 
 class Timer {
-public:
-  explicit Timer(std::function<void(double)> callback): mCallback(callback) {}
+ public:
+  explicit Timer(std::function<void(double)> callback) : mCallback(callback) {}
 
   void Start() {
     mTimeStart = std::chrono::high_resolution_clock::now();
@@ -31,11 +33,13 @@ public:
     const auto time_end = std::chrono::high_resolution_clock::now();
     const double elapsed_time_sec =
         std::chrono::duration_cast<std::chrono::microseconds>(
-            time_end - mTimeStart).count() / 1000000.0;
+            time_end - mTimeStart)
+            .count() /
+        1000000.0;
     mCallback(elapsed_time_sec);
   }
 
-private:
+ private:
   std::chrono::high_resolution_clock::time_point mTimeStart;
   std::function<void(double)> mCallback;
 };
@@ -76,16 +80,22 @@ static uint64_t argmax(const void* logits_buffer, const size_t vocab_size) {
   return index;
 }
 
-static uint64_t argmax(const LLMType logitsType, const void* logits_buffer, const size_t vocab_size) {
+static uint64_t argmax(
+    const llm_helper::LLMType logitsType,
+    const void* logits_buffer,
+    const size_t vocab_size) {
   switch (logitsType) {
-    case LLMType::INT16:
+    case llm_helper::LLMType::INT16:
       return argmax<int16_t>(logits_buffer, vocab_size);
-    case LLMType::FP16:
+    case llm_helper::LLMType::FP16:
       return argmax<__fp16>(logits_buffer, vocab_size);
-    case LLMType::FP32:
+    case llm_helper::LLMType::FP32:
       return argmax<float>(logits_buffer, vocab_size);
     default:
-      ET_LOG(Error, "Unsupported logits type for argmax: %s", getLLMTypeName(logitsType));
+      ET_LOG(
+          Error,
+          "Unsupported logits type for argmax: %s",
+          getLLMTypeName(logitsType));
       return 0;
   }
 }
@@ -96,7 +106,7 @@ static std::string to_string(const std::vector<T> vec) {
   auto iter = vec.cbegin();
   ss << "{" << *iter++;
   while (iter != vec.cend()) {
-      ss << ", " << *iter++;
+    ss << ", " << *iter++;
   }
   ss << "}";
   return ss.str();

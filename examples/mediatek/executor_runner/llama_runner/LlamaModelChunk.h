@@ -9,8 +9,8 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
@@ -21,27 +21,27 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/util.h>
 
-#include "llm_helper/include/llm_types.h"
 #include "LlamaConfig.h"
 #include "ModelChunk.h"
+#include "llm_helper/include/llm_types.h"
 
 #include "llm_helper/include/mask_builder.h"
 #include "llm_helper/include/rotary_embedding.h"
 
 namespace torch::executor {
 
-using llm_helper::RotaryEmbeddingMasterLut;
 using llm_helper::MaskBuilder;
+using llm_helper::RotaryEmbeddingMasterLut;
 
 using TensorShape = Span<const int32_t>;
 using ModelIndexMap = std::unordered_map<size_t, size_t>;
 
 // Llama decoder chunk
 class LlamaModelChunk : public ModelChunk {
-private:
+ private:
   static constexpr size_t kCacheLengthDim = 2;
 
-public:
+ public:
   explicit LlamaModelChunk(
       const ModelPathMap& modelPathMap,
       const LlamaModelOptions& modelOptions,
@@ -70,7 +70,7 @@ public:
 
   size_t GetTokenIndex() const;
 
-private:
+ private:
   void SetPosEmbed(const size_t tokenIndex);
 
   void InitMaskBuilder();
@@ -93,16 +93,18 @@ private:
 
   virtual void RightPaddingCachePostprocess();
 
-  virtual void RollbackCache(const size_t rollbackTokCount, const size_t numSeenToken);
+  virtual void RollbackCache(
+      const size_t rollbackTokCount,
+      const size_t numSeenToken);
 
-private:
+ private:
   void CheckIoCount();
 
   size_t GetExpectedInputCount() const;
 
   size_t GetExpectedOutputCount() const;
 
-private:
+ private:
   // Input/Output Indexes
   const size_t kMaskInputIndex;
   const std::vector<size_t> kRotEmbInputIndexes;

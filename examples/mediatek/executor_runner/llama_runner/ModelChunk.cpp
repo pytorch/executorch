@@ -67,17 +67,15 @@ void ModelChunk::Release() {
 
 void ModelChunk::Run() {
   ENSURE_INIT
-  auto before_exec = std::chrono::high_resolution_clock::now();
+  auto beforeExec = std::chrono::high_resolution_clock::now();
   Error status = Error::Ok;
   status = GetModelMethod().execute();
-  auto after_exec = std::chrono::high_resolution_clock::now();
-  double elapsed_time =
+  auto afterExec = std::chrono::high_resolution_clock::now();
+  const double elapsedTime =
       std::chrono::duration_cast<std::chrono::microseconds>(
-          after_exec - before_exec).count() / 1000.0;
-  ET_LOG(
-      Debug,
-      "Inference took %f ms",
-      elapsed_time);
+          afterExec - beforeExec)
+          .count();
+  ET_LOG(Debug, "Inference took %f ms", elapsedTime / 1000.0);
   ET_CHECK_MSG(
       status == Error::Ok,
       "Execution of method failed with status 0x%" PRIx32,
@@ -92,7 +90,10 @@ bool ModelChunk::HotSwapModel(const size_t tokenBatchSize) {
   const auto oldTokenBatchSize = mTokenBatchSize;
 
   if (!HasModel(tokenBatchSize)) {
-    ET_LOG(Error, "Model swap: No model with batchSize=%zu is available", tokenBatchSize);
+    ET_LOG(
+        Error,
+        "Model swap: No model with batchSize=%zu is available",
+        tokenBatchSize);
     return false;
   }
 
@@ -123,7 +124,10 @@ bool ModelChunk::HotSwapModel(const size_t tokenBatchSize) {
   return true;
 }
 
-void ModelChunk::SetInputBuffer(const void* data, const size_t size, const size_t index) {
+void ModelChunk::SetInputBuffer(
+    const void* data,
+    const size_t size,
+    const size_t index) {
   ENSURE_INIT
   auto& targetBufInfo = mInputBufferInfos[index];
   ET_CHECK_MSG(
@@ -135,8 +139,11 @@ void ModelChunk::SetInputBuffer(const void* data, const size_t size, const size_
   std::memcpy(targetBufInfo.data, data, size);
 }
 
-void ModelChunk::SetInputBuffer(const BufferInfo& bufferInfo, const size_t index) {
-  // Allow calling this method without initialized first to assign preallocated buffers.
+void ModelChunk::SetInputBuffer(
+    const BufferInfo& bufferInfo,
+    const size_t index) {
+  // Allow calling this method without initialized first to assign preallocated
+  // buffers.
   if (index >= mInputBufferInfos.size()) {
     mInputBufferInfos.resize(index + 1);
   }
@@ -170,7 +177,7 @@ BufferInfo ModelChunk::GetOutputBuffer(const size_t index) {
   return mOutputBufferInfos[index];
 }
 
-void ModelChunk::LogIoSummary(){
+void ModelChunk::LogIoSummary() {
   ENSURE_INIT
   const auto& method = GetModelMethod();
   const auto method_meta = method.method_meta();
@@ -199,8 +206,15 @@ void ModelChunk::LogIoSummary(){
     }
     const auto nbytes = method_meta.input_tensor_meta(i)->nbytes();
     const auto shape = getShapeStr(method_meta.input_tensor_meta(i)->sizes());
-    const auto type = static_cast<int>(method_meta.input_tensor_meta(i)->scalar_type());
-    ET_LOG(Info, "  Input %zu: Shape: %s, Size: %zu bytes, Type: %d", i, shape.c_str(), nbytes, type);
+    const auto type =
+        static_cast<int>(method_meta.input_tensor_meta(i)->scalar_type());
+    ET_LOG(
+        Info,
+        "  Input %zu: Shape: %s, Size: %zu bytes, Type: %d",
+        i,
+        shape.c_str(),
+        nbytes,
+        type);
   }
 
   for (size_t i = 0; i < output_size; i++) {
@@ -210,8 +224,15 @@ void ModelChunk::LogIoSummary(){
     }
     const auto nbytes = method_meta.output_tensor_meta(i)->nbytes();
     const auto shape = getShapeStr(method_meta.output_tensor_meta(i)->sizes());
-    const auto type = static_cast<int>(method_meta.output_tensor_meta(i)->scalar_type());
-    ET_LOG(Info, "  Output %zu: Shape: %s, Size: %zu bytes, Type: %d", i, shape.c_str(), nbytes, type);
+    const auto type =
+        static_cast<int>(method_meta.output_tensor_meta(i)->scalar_type());
+    ET_LOG(
+        Info,
+        "  Output %zu: Shape: %s, Size: %zu bytes, Type: %d",
+        i,
+        shape.c_str(),
+        nbytes,
+        type);
   }
 }
 
@@ -238,11 +259,11 @@ void ModelChunk::GetModelIoInfo() {
           i,
           nbytes,
           bufInfo.nbytes);
-      bufInfo.nbytesUsed = nbytes / 2; // FIXME: Workaround hardcode divide by 2
+      bufInfo.nbytesUsed = nbytes;
       continue;
     }
     bufInfo.nbytes = nbytes;
-    bufInfo.nbytesUsed = nbytes / 2; // FIXME: Workaround hardcode divide by 2
+    bufInfo.nbytesUsed = nbytes;
   }
 
   mOutputBufferInfos.resize(output_size);
@@ -261,11 +282,11 @@ void ModelChunk::GetModelIoInfo() {
           i,
           nbytes,
           bufInfo.nbytes);
-      bufInfo.nbytesUsed = nbytes / 2; // FIXME: Workaround hardcode divide by 2
+      bufInfo.nbytesUsed = nbytes;
       continue;
     }
     bufInfo.nbytes = nbytes;
-    bufInfo.nbytesUsed = nbytes / 2; // FIXME: Workaround hardcode divide by 2
+    bufInfo.nbytesUsed = nbytes;
   }
 }
 
@@ -300,8 +321,8 @@ void ModelChunk::UpdateModelIoInfo() {
     auto& sizeRequired = mInputBufferInfos[inputIdx].nbytesUsed;
     const auto before = sizeRequired;
 
-    sizeRequired = method_meta.input_tensor_meta(inputIdx)->nbytes(); // Update
-    sizeRequired /= 2; // FIXME: Workaround hardcode divide by 2
+    // Update
+    sizeRequired = method_meta.input_tensor_meta(inputIdx)->nbytes();
     if (sizeAllocated < sizeRequired) {
       ET_LOG(
           Error,
@@ -311,7 +332,12 @@ void ModelChunk::UpdateModelIoInfo() {
           sizeAllocated);
     }
     if (before != sizeRequired) {
-      ET_LOG(Debug, "Update input[%zu] size:  %zu -> %zu", inputIdx, before, sizeRequired);
+      ET_LOG(
+          Debug,
+          "Update input[%zu] size:  %zu -> %zu",
+          inputIdx,
+          before,
+          sizeRequired);
     }
   }
   mOutputBufferInfos.resize(numModelOutputs);
@@ -320,8 +346,8 @@ void ModelChunk::UpdateModelIoInfo() {
     auto& sizeRequired = mOutputBufferInfos[outputIdx].nbytesUsed;
     const auto before = sizeRequired;
 
-    sizeRequired = method_meta.output_tensor_meta(outputIdx)->nbytes(); // Update
-    sizeRequired /= 2; // FIXME: Workaround hardcode divide by 2
+    // Update
+    sizeRequired = method_meta.output_tensor_meta(outputIdx)->nbytes();
     if (sizeAllocated < sizeRequired) {
       ET_LOG(
           Error,
@@ -331,16 +357,24 @@ void ModelChunk::UpdateModelIoInfo() {
           sizeAllocated);
     }
     if (before != sizeRequired) {
-      ET_LOG(Debug, "Update output[%zu] size:  %zu -> %zu", outputIdx, before, sizeRequired);
+      ET_LOG(
+          Debug,
+          "Update output[%zu] size:  %zu -> %zu",
+          outputIdx,
+          before,
+          sizeRequired);
     }
   }
 }
 
-void ModelChunk::LinkModelIO(const size_t inputIndex, const size_t outputIndex) {
+void ModelChunk::LinkModelIO(
+    const size_t inputIndex,
+    const size_t outputIndex) {
   mModelOutToInIndexLinks.emplace(outputIndex, inputIndex);
 }
 
-std::optional<size_t> ModelChunk::GetLinkedInputIndex(const size_t outputIndex) const {
+std::optional<size_t> ModelChunk::GetLinkedInputIndex(
+    const size_t outputIndex) const {
   auto hasKey = [](const auto& map, const auto& key) {
     return map.find(key) != map.end();
   };
@@ -403,7 +437,8 @@ void ModelChunk::AllocateIoBuffers() {
   }
 
   // Outputs
-  for (size_t outputIdx = 0; outputIdx < mOutputBufferInfos.size(); outputIdx++) {
+  const auto numOutputBuffers = mOutputBufferInfos.size();
+  for (size_t outputIdx = 0; outputIdx < numOutputBuffers; outputIdx++) {
     auto& outBufInfo = mOutputBufferInfos[outputIdx];
     if (outBufInfo.data != nullptr) {
       continue; // Already allocated
@@ -464,8 +499,10 @@ void* ModelChunk::CreateModelInstance(const std::string& modelPath) {
   }
   ET_LOG(Debug, "Model file %s is loaded.", modelPath.c_str());
 
-  // Extract program out to a persistent storage before calling any of its methods.
-  modelInstance->program = std::make_unique<Program>(std::move(program_loaded.get()));
+  // Extract program out to a persistent storage before calling any of its
+  // methods.
+  modelInstance->program =
+      std::make_unique<Program>(std::move(program_loaded.get()));
   auto& program = modelInstance->program;
 
   // Use the first method in the program.
@@ -514,7 +551,8 @@ void* ModelChunk::CreateModelInstance(const std::string& modelPath) {
   auto& memory_manager = modelInstance->memory_manager;
 
   ET_LOG(Debug, "Begin loading method %s", method_name);
-  Result<Method> method = program->load_method(method_name, memory_manager.get());
+  Result<Method> method =
+      program->load_method(method_name, memory_manager.get());
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,

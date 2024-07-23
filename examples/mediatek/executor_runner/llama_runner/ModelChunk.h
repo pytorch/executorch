@@ -8,9 +8,9 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
-#include <optional>
 
 #include <executorch/runtime/executor/method.h>
 
@@ -24,16 +24,22 @@ struct BufferInfo {
   size_t nbytesUsed = 0;
 };
 
-using MultiBatchSizeModelLoader = MultiModelLoader<size_t>;
-using ModelPathMap = MultiBatchSizeModelLoader::ModelPathMap;
+using MultiTokenSizeModelLoader = MultiModelLoader<size_t>;
+using ModelPathMap = MultiTokenSizeModelLoader::ModelPathMap;
 
-class ModelChunk : protected MultiBatchSizeModelLoader {
-public:
-  explicit ModelChunk(const ModelPathMap& modelPathMap, const size_t initBatchSize = 1)
-      : MultiBatchSizeModelLoader(modelPathMap, initBatchSize), mTokenBatchSize(initBatchSize) {}
+class ModelChunk : protected MultiTokenSizeModelLoader {
+ public:
+  explicit ModelChunk(
+      const ModelPathMap& modelPathMap,
+      const size_t initBatchSize = 1)
+      : MultiTokenSizeModelLoader(modelPathMap, initBatchSize),
+        mTokenBatchSize(initBatchSize) {}
 
-  explicit ModelChunk(const std::string& modelPath, const size_t initBatchSize = 1)
-      : MultiBatchSizeModelLoader(modelPath, initBatchSize), mTokenBatchSize(initBatchSize) {}
+  explicit ModelChunk(
+      const std::string& modelPath,
+      const size_t initBatchSize = 1)
+      : MultiTokenSizeModelLoader(modelPath, initBatchSize),
+        mTokenBatchSize(initBatchSize) {}
 
   ~ModelChunk() {}
 
@@ -45,7 +51,8 @@ public:
 
   virtual bool HotSwapModel(const size_t tokenBatchSize);
 
-  void SetInputBuffer(const void* data, const size_t size, const size_t index = 0);
+  void
+  SetInputBuffer(const void* data, const size_t size, const size_t index = 0);
 
   void SetInputBuffer(const BufferInfo& bufferInfo, const size_t index = 0);
 
@@ -55,7 +62,7 @@ public:
 
   void LogIoSummary();
 
-protected:
+ protected:
   // Check if model chunk has been initialized
   bool Initialized();
 
@@ -65,7 +72,8 @@ protected:
   // Update IO sizes actually used by the model
   void UpdateModelIoInfo();
 
-  // Model IO linkage to share the same buffer among a pair of linked input and output
+  // Model IO linkage to share the same buffer among a pair of linked input and
+  // output
   void LinkModelIO(const size_t inputIndex, const size_t outputIndex);
 
   // Return the input index that the given output should share the same buffer
@@ -85,16 +93,18 @@ protected:
 
   Method& GetModelMethod();
 
-private:
+ private:
   // Override the virtual functions
   void* CreateModelInstance(const std::string& modelPath) override;
 
   void ReleaseModelInstance(void* modelInstance) override;
 
-private:
-  bool AllowModelsCoexist() const override { return false; }
+ private:
+  bool AllowModelsCoexist() const override {
+    return false;
+  }
 
-protected:
+ protected:
   // State of initialization
   bool mIsInitialized = false;
 
