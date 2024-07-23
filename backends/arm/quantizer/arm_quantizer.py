@@ -255,6 +255,7 @@ class ArmQuantizer(Quantizer):
         "max_pool2d",
         "add",
         "mul",
+        "sigmoid",
     ]
 
     def __init__(self) -> None:
