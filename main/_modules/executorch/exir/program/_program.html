@@ -663,8 +663,8 @@
         <span class="n">range_constraints</span><span class="o">=</span><span class="n">_get_updated_range_constraints</span><span class="p">(</span><span class="n">transformed_gm</span><span class="p">),</span>
         <span class="n">module_call_graph</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_module_call_graph</span><span class="p">),</span>
         <span class="n">example_inputs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
-        <span class="n">verifier</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">verifier</span><span class="p">,</span>
         <span class="n">constants</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
+        <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">verifier</span><span class="p">],</span>
     <span class="p">)</span>
     <span class="n">transformed_ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
     <span class="n">transformed_ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
@@ -1060,8 +1060,8 @@
                 <span class="n">range_constraints</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
                 <span class="n">module_call_graph</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
                 <span class="n">example_inputs</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
-                <span class="n">verifier</span><span class="o">=</span><span class="n">get_aten_verifier</span><span class="p">(</span><span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">),</span>
                 <span class="n">constants</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
+                <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span><span class="n">get_aten_verifier</span><span class="p">(</span><span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">)],</span>
             <span class="p">),</span>
             <span class="kc">False</span><span class="p">,</span>
         <span class="p">)</span>
@@ -1096,11 +1096,13 @@
         <span class="n">range_constraints</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
         <span class="n">module_call_graph</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
         <span class="n">example_inputs</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
-        <span class="n">verifier</span><span class="o">=</span><span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
-            <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
-            <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-        <span class="p">),</span>
         <span class="n">constants</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
+        <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
+                <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
+                <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">],</span>
     <span class="p">)</span>
     <span class="n">new_ep</span><span class="o">.</span><span class="n">after_to_edge_passes</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="k">return</span> <span class="n">new_ep</span>
@@ -1178,12 +1180,14 @@
         <span class="n">range_constraints</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
         <span class="n">module_call_graph</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
         <span class="n">example_inputs</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
-        <span class="n">verifier</span><span class="o">=</span><span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
-            <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
-            <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-            <span class="n">exception_list</span><span class="o">=</span><span class="n">ops_set_to_not_decompose</span><span class="p">,</span>
-        <span class="p">),</span>
         <span class="n">constants</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
+        <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
+                <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">config</span><span class="p">,</span>
+                <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">exception_list</span><span class="o">=</span><span class="n">ops_set_to_not_decompose</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">],</span>
     <span class="p">)</span>
     <span class="c1"># Lift the tensor constants created in ScalarToTensorPass</span>
     <span class="n">edge_program</span> <span class="o">=</span> <span class="n">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
