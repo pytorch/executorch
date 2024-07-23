@@ -26,7 +26,7 @@ pip install protobuf
 pip install bitsandbytes -I
 
 OS=$(uname)
-if [[ $OS ~= "Darwin" ]];
+if [[ $OS != "Darwin" ]];
 then
     # numpy needs to be pin to 1.24. 1.26.4 will error out: Could not infer dtype of numpy.uint8
     # On macos, numpy 1.24.4 is not available, 1.26.4 works fine.
