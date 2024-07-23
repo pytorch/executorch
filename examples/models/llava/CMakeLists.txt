@@ -73,8 +73,8 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 
-find_package(Torch CONFIG REQUIRED)
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
+# find_package(Torch CONFIG REQUIRED)
+# add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
 
 #
 # llama_main: test binary to run llama, with tokenizer and sampler integrated
@@ -112,7 +112,7 @@ if(EXECUTORCH_USE_TIKTOKEN)
   target_link_libraries(multimodal_runner PUBLIC re2::re2)
 endif()
 
-set(link_libraries gflags torch)
+set(link_libraries gflags)
 set(_srcs main.cpp)
 
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
