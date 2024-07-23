@@ -477,8 +477,8 @@
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">executorch.aar</span></code></p>
 <ul>
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/release/0.2/extension/android/src/main/java/org/pytorch/executorch">Java library</a></p></li>
-<li><p>JNI contains the JNI binding for <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.2/extension/android/src/main/java/org/pytorch/executorch/NativePeer.java">NativePeer.java</a> and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, and Quantized kernels.</p>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/release/0.3/extension/android/src/main/java/org/pytorch/executorch">Java library</a></p></li>
+<li><p>JNI contains the JNI binding for <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.3/extension/android/src/main/java/org/pytorch/executorch/NativePeer.java">NativePeer.java</a> and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, and Quantized kernels.</p>
 <ul>
 <li><p>Comes with two ABI variants, arm64-v8a and x86_64.</p></li>
 </ul>
@@ -487,8 +487,8 @@
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">executorch_llama.aar</span></code></p>
 <ul>
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/release/0.2/extension/android/src/main/java/org/pytorch/executorch">Java library</a> (Note: it contains the same Java classes as the previous Java, but it does not contain the JNI binding for generic Module/NativePeer Java code).</p></li>
-<li><p>JNI contains the JNI binding for <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.2/extension/android/src/main/java/org/pytorch/executorch/LlamaModule.java">LlamaModule.java</a> and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, Quantized kernels, and LLAMA-specific Custom ops library.</p>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/tree/release/0.3/extension/android/src/main/java/org/pytorch/executorch">Java library</a> (Note: it contains the same Java classes as the previous Java, but it does not contain the JNI binding for generic Module/NativePeer Java code).</p></li>
+<li><p>JNI contains the JNI binding for <a class="reference external" href="https://github.com/pytorch/executorch/blob/release/0.3/extension/android/src/main/java/org/pytorch/executorch/LlamaModule.java">LlamaModule.java</a> and ExecuTorch native library, including core ExecuTorch runtime libraries, XNNPACK backend, Portable kernels, Optimized kernels, Quantized kernels, and LLAMA-specific Custom ops library.</p>
 <ul>
 <li><p>Comes with two ABI variants, arm64-v8a and x86_64.</p></li>
 </ul>
@@ -499,15 +499,16 @@
 </div>
 <div class="section" id="downloading-aar">
 <h2>Downloading AAR<a class="headerlink" href="#downloading-aar" title="Permalink to this heading">¶</a></h2>
-<p><a class="reference external" href="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.2.1/executorch.aar">executorch.aar</a> (sha1sum: af7690394fd978603abeff40cf64bd2df0dc793a)
-<a class="reference external" href="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.2.1/executorch-llama.aar">executorch_llama.aar</a> (sha1sum: 2973b1c41aa2c2775482d7cc7c803d0f6ca282c1)</p>
+<p><a class="reference external" href="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.3/executorch.aar">executorch.aar</a>
+<a class="reference external" href="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.3/executorch-llama.aar">executorch_llama.aar</a>
+<a class="reference external" href="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.3/SHA1SUMS">SHA1SUMS</a></p>
 </div>
 <div class="section" id="using-prebuilt-libraries">
 <h2>Using prebuilt libraries<a class="headerlink" href="#using-prebuilt-libraries" title="Permalink to this heading">¶</a></h2>
 <p>To add the Java library to your app, simply download the AAR, and add it to your gradle build rule.</p>
 <p>In your app working directory, such as example executorch/examples/demo-apps/android/LlamaDemo,</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span>
-<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">us</span><span class="o">-</span><span class="n">west</span><span class="o">-</span><span class="mf">1.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="mf">0.2.1</span><span class="o">/</span><span class="n">executorch</span><span class="o">-</span><span class="n">llama</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
+<span class="n">curl</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">ossci</span><span class="o">-</span><span class="n">android</span><span class="o">.</span><span class="n">s3</span><span class="o">.</span><span class="n">us</span><span class="o">-</span><span class="n">west</span><span class="o">-</span><span class="mf">1.</span><span class="n">amazonaws</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">release</span><span class="o">/</span><span class="mf">0.3</span><span class="o">/</span><span class="n">executorch</span><span class="o">-</span><span class="n">llama</span><span class="o">.</span><span class="n">aar</span> <span class="o">-</span><span class="n">o</span> <span class="n">app</span><span class="o">/</span><span class="n">libs</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">aar</span>
 </pre></div>
 </div>
 <p>And include it in gradle:</p>
