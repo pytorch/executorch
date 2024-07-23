@@ -50,7 +50,7 @@ if(EXECUTORCH_USE_TIKTOKEN)
        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizer/tiktoken.cpp
   )
   list(APPEND _multimodal_runner__srcs
-       ${CMAKE_CURRENT_SOURCE_DIR}/../tokenizer/llama_tiktoken.cpp
+       ${CMAKE_CURRENT_SOURCE_DIR}/../../llama2/tokenizer/llama_tiktoken.cpp
   )
   set(_preprocessor_flag -DET_USE_TIKTOKEN)
 endif()

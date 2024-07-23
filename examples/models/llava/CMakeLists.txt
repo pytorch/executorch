@@ -113,7 +113,7 @@ if(EXECUTORCH_USE_TIKTOKEN)
   target_link_libraries(multimodal_runner PUBLIC re2::re2)
 endif()
 
-set(link_libraries gflags torch)
+set(link_libraries gflags)
 set(_srcs main.cpp)
 
 if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)

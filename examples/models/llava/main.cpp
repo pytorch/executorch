@@ -8,7 +8,6 @@
 
 #include <executorch/examples/models/llava/runner/multimodal_runner.h>
 #include <gflags/gflags.h>
-#include <torch/torch.h>
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/backends/xnnpack/threadpool/cpuinfo_utils.h>
@@ -88,17 +87,6 @@ int32_t main(int32_t argc, char** argv) {
   //   cv::Mat resized_image;
   //   cv::resize(image, resized_image, new_size);
   //   image_data.assign(resized_image.datastart, resized_image.dataend);
-  torch::Tensor image_tensor;
-  torch::load(image_tensor, image_path); // CHW
-  ET_LOG(
-      Info,
-      "image size(0): %zu, size(1): %zu, size(2): %zu",
-      image_tensor.size(0),
-      image_tensor.size(1),
-      image_tensor.size(2));
-  image_data.assign(
-      image_tensor.data_ptr<uint8_t>(),
-      image_tensor.data_ptr<uint8_t>() + image_tensor.numel());
   torch::executor::Image image{
       .data = image_data,
       .width = static_cast<int32_t>(image_tensor.size(2)),
