@@ -130,6 +130,9 @@ testsuite_u55.remove(("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_s
 
 
 class TestDepthwiseConv2D(unittest.TestCase):
+    """Tests Conv2D where groups == in_channels and out_channels = K * in_channels. This
+    is a special case enables depthwise convolution."""
+
     def _test_dw_conv2d_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
