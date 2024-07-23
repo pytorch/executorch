@@ -365,3 +365,135 @@ class SDPATestWithMQA(unittest.TestCase):
             q, k, v, self.k_cache, self.v_cache, 1, 1, None, 0, False
         )
         self.assertTrue(torch.allclose(ref_output, op_output))
+
+
+class SDPATestForLargeSeqLength(unittest.TestCase):
+
+    def setup_caches(self):
+        self.k_cache = torch.zeros(
+            (1, self.max_seq_len, self.n_heads_kv, self.head_dim)
+        )
+        self.v_cache = torch.zeros(
+            (1, self.max_seq_len, self.n_heads_kv, self.head_dim)
+        )
+        self.mask = torch.full(
+            (self.max_seq_len, self.max_seq_len),
+            float("-inf"),
+        )
+        self.mask = torch.triu(self.mask, diagonal=1)
+
+    def setUp(self):
+        torch.manual_seed(42)
+        self.n_heads_kv = 32
+        self.n_heads_q = 32
+        self.head_dim = 128
+        self.max_seq_len = 2048
+        self.setup_caches()
+
+    def test_sdpa_with_cache_seq_len_130(self):
+        self.n_heads_kv = 32
+        self.n_heads_q = 32
+        self.head_dim = 128
+        self.max_seq_len = 2048
+        self.setup_caches()
+        seq_len = 130
+        q = torch.rand((1, seq_len, self.n_heads_kv, self.head_dim))
+        k = torch.rand((1, seq_len, self.n_heads_kv, self.head_dim))
+        v = torch.rand((1, seq_len, self.n_heads_kv, self.head_dim))
+        start_pos = 0
+        attn_mask = self.mask[start_pos : start_pos + seq_len, :]
+        attn_mask = attn_mask[:, : start_pos + seq_len]
+        ref_output = _sdpa_with_kv_cache_ref(
+            q, k, v, self.k_cache, self.v_cache, attn_mask, start_pos, seq_len
+        )
+        op_output = torch.ops.llama.sdpa_with_kv_cache(
+            q, k, v, self.k_cache, self.v_cache, start_pos, seq_len, None, 0, True
+        )
+        self.assertTrue(torch.allclose(ref_output, op_output))
+
+        q = torch.rand((1, 1, self.n_heads_kv, self.head_dim))
+        k = torch.rand((1, 1, self.n_heads_kv, self.head_dim))
+        v = torch.rand((1, 1, self.n_heads_kv, self.head_dim))
+        start_pos = seq_len
+        seq_len = q.size(1)
+        attn_mask = self.mask[start_pos : start_pos + seq_len, :]
+        attn_mask = attn_mask[:, : start_pos + seq_len]
+        ref_output = _sdpa_with_kv_cache_ref(
+            q, k, v, self.k_cache, self.v_cache, attn_mask, start_pos, seq_len
+        )
+        op_output = torch.ops.llama.sdpa_with_kv_cache(
+            q, k, v, self.k_cache, self.v_cache, start_pos, seq_len, None, 0, True
+        )
+        self.assertTrue(torch.allclose(ref_output, op_output))
+
+    def test_sdpa_with_cache_seq_len_small(self):
+        self.n_heads_kv = 4
+        self.n_heads_q = 4
+        self.head_dim = 4
+        self.max_seq_len = 8
+        self.setup_caches()
+        q = torch.rand((1, 4, self.n_heads_q, 4))
+        k = torch.rand((1, 4, self.n_heads_q, 4))
+        v = torch.rand((1, 4, self.n_heads_q, 4))
+        start_pos = 0
+        seq_len = q.size(1)
+        attn_mask = self.mask[start_pos : start_pos + seq_len, :]
+        attn_mask = attn_mask[:, : start_pos + seq_len]
+        ref_output = _sdpa_with_kv_cache_ref(
+            q, k, v, self.k_cache, self.v_cache, attn_mask, start_pos, seq_len
+        )
+        op_output = torch.ops.llama.sdpa_with_kv_cache(
+            q, k, v, self.k_cache, self.v_cache, start_pos, seq_len, None, 0, True
+        )
+        self.assertTrue(torch.allclose(ref_output, op_output))
+
+        q = torch.rand((1, 1, self.n_heads_q, 4))
+        k = torch.rand((1, 1, self.n_heads_q, 4))
+        v = torch.rand((1, 1, self.n_heads_q, 4))
+        start_pos = 4
+        seq_len = q.size(1)
+        attn_mask = self.mask[start_pos : start_pos + seq_len, :]
+        attn_mask = attn_mask[:, : start_pos + seq_len]
+        ref_output = _sdpa_with_kv_cache_ref(
+            q, k, v, self.k_cache, self.v_cache, attn_mask, start_pos, seq_len
+        )
+        op_output = torch.ops.llama.sdpa_with_kv_cache(
+            q, k, v, self.k_cache, self.v_cache, start_pos, seq_len, None, 0, True
+        )
+        self.assertTrue(torch.allclose(ref_output, op_output))
+
+    def test_sdpa_with_cache_seq_len_llava_example(self):
+        self.n_heads_kv = 32
+        self.n_heads_q = 32
+        self.head_dim = 128
+        self.max_seq_len = 2048
+        self.setup_caches()
+        seq_len = 634
+        q = torch.rand((1, seq_len, self.n_heads_kv, self.head_dim))
+        k = torch.rand((1, seq_len, self.n_heads_kv, self.head_dim))
+        v = torch.rand((1, seq_len, self.n_heads_kv, self.head_dim))
+        start_pos = 0
+        attn_mask = self.mask[start_pos : start_pos + seq_len, :]
+        attn_mask = attn_mask[:, : start_pos + seq_len]
+        ref_output = _sdpa_with_kv_cache_ref(
+            q, k, v, self.k_cache, self.v_cache, attn_mask, start_pos, seq_len
+        )
+        op_output = torch.ops.llama.sdpa_with_kv_cache(
+            q, k, v, self.k_cache, self.v_cache, start_pos, seq_len, None, 0, True
+        )
+        self.assertTrue(torch.allclose(ref_output, op_output))
+
+        q = torch.rand((1, 1, self.n_heads_kv, self.head_dim))
+        k = torch.rand((1, 1, self.n_heads_kv, self.head_dim))
+        v = torch.rand((1, 1, self.n_heads_kv, self.head_dim))
+        start_pos = seq_len
+        seq_len = q.size(1)
+        attn_mask = self.mask[start_pos : start_pos + seq_len, :]
+        attn_mask = attn_mask[:, : start_pos + seq_len]
+        ref_output = _sdpa_with_kv_cache_ref(
+            q, k, v, self.k_cache, self.v_cache, attn_mask, start_pos, seq_len
+        )
+        op_output = torch.ops.llama.sdpa_with_kv_cache(
+            q, k, v, self.k_cache, self.v_cache, start_pos, seq_len, None, 0, True
+        )
+        self.assertTrue(torch.allclose(ref_output, op_output))

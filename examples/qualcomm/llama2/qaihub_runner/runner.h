@@ -18,8 +18,8 @@
 #include <unordered_map>
 
 #include <executorch/examples/models/llama2/sampler/sampler.h>
-#include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <executorch/examples/qualcomm/llama2/qaihub_runner/io_memory.h>
+#include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 

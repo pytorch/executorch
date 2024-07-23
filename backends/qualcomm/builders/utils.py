@@ -7,7 +7,14 @@
 from typing import Dict, Optional
 
 import torch
-from torch._export.utils import get_buffer, get_param, is_buffer, is_param
+from torch._export.utils import (
+    get_buffer,
+    get_lifted_tensor_constant,
+    get_param,
+    is_buffer,
+    is_lifted_tensor_constant,
+    is_param,
+)
 
 
 def is_parameter(
@@ -16,7 +23,7 @@ def is_parameter(
     return (
         is_param(edge_program, node)
         or is_buffer(edge_program, node)
-        or node.name in edge_program.graph_signature.inputs_to_lifted_tensor_constants
+        or is_lifted_tensor_constant(edge_program, node)
     )
 
 
@@ -28,9 +35,8 @@ def get_parameter(
         param = get_param(edge_program, node)
     if is_buffer(edge_program, node):
         param = get_buffer(edge_program, node)
-    if node.name in edge_program.graph_signature.inputs_to_lifted_tensor_constants:
-        name = edge_program.graph_signature.inputs_to_lifted_tensor_constants[node.name]
-        param = edge_program.constants[name]
+    if is_lifted_tensor_constant(edge_program, node):
+        param = get_lifted_tensor_constant(edge_program, node)
     if param is not None:
         # update node.meta["val"] to qualified QNN datatype (e.g. i64 to i32)
         assert isinstance(param, torch.Tensor), "Expect parameter to be tensor"

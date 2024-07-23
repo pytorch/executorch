@@ -58,6 +58,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize impor
 from executorch.exir import ExirExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
+from executorch.exir.program._program import _get_updated_graph_signature
 from torch._decomp import core_aten_decompositions as torch_core_aten_decompositions
 from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
@@ -223,7 +224,12 @@ def capture_program(
     core_ep.transform(ConvertBinaryOpsWithScalar())
     edge_ep = core_ep.to_edge(qnn_edge_config())
     _transform(edge_ep.exported_program)
-
+    # Since QDQ nodes are stripped, update graph signature again to validate program
+    edge_ep.exported_program._graph_signature = _get_updated_graph_signature(
+        edge_ep.exported_program.graph_signature,
+        edge_ep.exported_program.graph_module,
+    )
+    edge_ep.exported_program._validate()
     return edge_ep
 
 
