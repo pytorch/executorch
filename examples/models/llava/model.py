@@ -73,7 +73,7 @@ class Llava(torch.nn.Module):
             max_batch_size=1,  # doesn't work with default batch size 32
             ffn_dim_multiplier=1,  # TODO: a hack to make rotary embedding happy
             enable_dynamic_shape=True,  # allow parallel prefill
-            use_sdpa_with_kv_cache_op=True, # use sdpa_with_kv_cache op
+            use_sdpa_with_kv_cache_op=True,  # use sdpa_with_kv_cache op
             use_hf_rope=True,
         )
         self.embed_tokens = nn.Embedding(
