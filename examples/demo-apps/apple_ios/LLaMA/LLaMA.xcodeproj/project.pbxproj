@@ -1115,7 +1115,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = latest;
+				branch = 0.3.0;
 				kind = branch;
 			};
 		};
