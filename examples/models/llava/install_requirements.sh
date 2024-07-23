@@ -31,13 +31,6 @@ pip install protobuf
 # Reinstall bitsandbytes to make it compatible.
 pip install bitsandbytes -I
 
-if [[ $OS != "Darwin" ]];
-then
-    # numpy needs to be pin to 1.24. 1.26.4 will error out: Could not infer dtype of numpy.uint8
-    # On macos, numpy 1.24 is not available, 1.26.4 works fine.
-    pip install numpy==1.24
-fi
-
 # The deps of llava can have different versions than deps of ExecuTorch.
 # For example, torch version required from llava is older than ExecuTorch.
 # To make both work, recover ExecuTorch's original dependencies by rerunning
@@ -46,4 +39,6 @@ bash -x ./install_requirements.sh --deps-only
 
 # Newer transformer (4.48) will give TypeError: LlavaLlamaForCausalLM.forward() got an unexpected keyword argument 'cache_position'
 pip install timm==0.6.13
-pip install transformers==4.37.2
+pip install transformers==4.38.2
+
+pip list
