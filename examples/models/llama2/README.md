@@ -107,7 +107,6 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
 ### Option C: Download and export Llama 3 8B instruct model
 
 You can export and run the original Llama 3 8B instruct model.
-> :warning: **use the main branch**: Llama 3 is only supported on the ExecuTorch main branch (not release 2.0)
 
 1. Llama 3 pretrained parameters can be downloaded from [Meta's official Llama 3 repository](https://github.com/meta-llama/llama3/).
 
