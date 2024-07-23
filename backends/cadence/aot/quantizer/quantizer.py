@@ -18,7 +18,8 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LinearPattern,
     MatmulPattern,
     QuantizationPattern,
-    ReluPattern,
+    ReluPattern0,
+    ReluPattern1,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
     find_sequential_partitions_aten,
@@ -159,6 +160,7 @@ class CadenceQuantizer(ComposableQuantizer):
                 CadenceAtenQuantizer(LayerNormPattern(), static_qconfig),
                 CadenceAtenQuantizer(LinearPattern(), static_qconfig),
                 CadenceAtenQuantizer(MatmulPattern(), static_qconfig),
-                CadenceAtenQuantizer(ReluPattern(), static_qconfig),
+                CadenceAtenQuantizer(ReluPattern0(), static_qconfig),
+                CadenceAtenQuantizer(ReluPattern1(), static_qconfig),
             ]
         )
