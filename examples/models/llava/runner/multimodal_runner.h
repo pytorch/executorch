@@ -68,9 +68,20 @@ class MultiModalRunner {
 
   bool is_loaded() const;
   Error load();
+
+  Result<torch::executor::Tensor> prefill_image(
+      Image& image,
+      int64_t start_pos);
+
+  Result<torch::executor::Tensor> prefill_prompt(
+      const std::string& prompt,
+      int64_t start_pos,
+      std::function<void(const std::string&)> token_callback);
+
   Error generate(
       Image& image,
       const std::string& prompt,
+      int64_t start_pos,
       int32_t seq_len = 1024,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
@@ -80,21 +91,7 @@ class MultiModalRunner {
   // metadata
   template <typename T>
   T getMetadataHelper(const std::string& method_name, T default_val);
-  int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
-  Result<torch::executor::Tensor> prefillImage(
-      ManagedTensor& managed_images,
-      ManagedTensor& managed_start_pos);
-
-  Result<torch::executor::Tensor> prefillPrompt(
-      ManagedTensor& managed_tokens,
-      ManagedTensor& managed_start_pos,
-      std::function<void(const std::string&)> token_callback);
-
-  // Result<torch::executor::Tensor> prefill(
-  //   Image& image,
-  //   const std::string& prompt,
-  //   int32_t seq_len = 1024,
-  //   std::function<void(const std::string&)> token_callback = {});
+  int32_t logits_to_token(const exec_aten::Tensor& logits_tensor);
 
   Result<torch::executor::Tensor> step(
       int64_t input_token,

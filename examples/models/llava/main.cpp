@@ -84,5 +84,6 @@ int32_t main(int32_t argc, char** argv) {
   //   runner.generate(image, prompt, seq_len);
 
   // prefill prompt
-  runner.prefillPrompt() return 0;
+  runner.prefill_prompt(prompt, 0, nullptr);
+  return 0;
 }
