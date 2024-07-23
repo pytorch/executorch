@@ -7,8 +7,9 @@
 
 # Different RoPE implementations
 
-from typing import Tuple
 import math
+from typing import Tuple
+
 import torch
 
 # ======================== Stock Implementation ========================
