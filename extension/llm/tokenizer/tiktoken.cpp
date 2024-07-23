@@ -27,16 +27,8 @@
 
 #include <executorch/extension/llm/tokenizer/base64.h>
 #include <executorch/extension/llm/tokenizer/tiktoken.h>
-#include <cctype>
-#include <cstdint>
 #include <fstream>
-#include <functional>
 #include <limits>
-#include <memory>
-#include <regex>
-#include <string>
-#include <unordered_set>
-#include <vector>
 
 namespace torch {
 namespace executor {

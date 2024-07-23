@@ -12,6 +12,7 @@ from . import (  # noqa
     op_conv2d,
     op_dequant,
     op_div,
+    op_full,
     op_get_item,
     op_hardtanh,
     op_mean_dim,
