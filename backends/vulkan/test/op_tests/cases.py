@@ -1057,3 +1057,15 @@ def get_squeeze_copy_dim_inputs():
         ]
     )
     return test_suite
+
+
+@register_test_suite("aten.meshgrid.default")
+def get_meshgrid_inputs():
+    test_suite = VkTestSuite(
+        [
+            ([(S), (S1)],),
+            ([(M), (M1)],),
+            ([(L), (L)],),
+        ]
+    )
+    return test_suite
