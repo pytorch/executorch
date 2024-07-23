@@ -101,6 +101,7 @@ class ModelArgs:
         None  # The official name to override self.rope_freq_base.
     )
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
+    use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     # Additional Model Metadata needed at runtime
     bos_idx: int = 1
     eos_idx: int = 3
