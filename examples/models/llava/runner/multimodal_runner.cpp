@@ -9,7 +9,7 @@
 // A simple llama2 runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
 
-#include <executorch/examples/models/llama2/runner/runner.h>
+#include <executorch/examples/models/llava/runner/multimodal_runner.h>
 #if ET_USE_TIKTOKEN
 #include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 #else /* BPE */
@@ -34,8 +34,8 @@
 namespace torch::executor {
 namespace {
 static constexpr auto kTopp = 0.9f;
-void printReport(const Runner::Stats& stats);
-std::string statsToJsonString(const Runner::Stats& stats);
+void printReport(const MultiModalRunner::Stats& stats);
+std::string statsToJsonString(const MultiModalRunner::Stats& stats);
 } // namespace
 
 MultiModalRunner::MultiModalRunner(
@@ -50,20 +50,22 @@ MultiModalRunner::MultiModalRunner(
       temperature_(temperature) {
   ET_LOG(
       Info,
-      "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
+      "Creating Multimodal LLM runner: model_path=%s, tokenizer_path=%s",
       model_path.c_str(),
       tokenizer_path.c_str());
 }
 
-bool Runner::is_loaded() const {
+bool MultiModalRunner::is_loaded() const {
   return module_->is_loaded() && tokenizer_ && sampler_;
 }
 
-Error Runner::load() {
+Error MultiModalRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
-  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
+  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("image_encoder"));
+  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("token_embedding"));
+  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("text_model"));
 
   // Read out metadata: vocab_size (expected by the model), BOS, EOS, n_BOS,
   // n_EOS max_seq_len from the model
@@ -125,27 +127,70 @@ int32_t MultiModalRunner::logitsToToken(
   }
 }
 
-Result<torch::executor::Tensor> MultiModalRunner::prefill(
-    const std::vector<uint64_t>& tokens,
+Result<torch::executor::Tensor> MultiModalRunner::prefillImage(
+    ManagedTensor& managed_images,
+    ManagedTensor& managed_start_pos) {
+  // enable_parallel_prefill_ maybe set even when not using kv cache
+  // When kv cache is not used, start pos is ignored
+  auto image_tensor = managed_images.get_aliasing_tensor();
+  auto start_pos = managed_start_pos.get_aliasing_tensor();
+
+  // image encoder input
+  std::vector<EValue> image_encoder_input = {image_tensor};
+
+  // Run image encoder
+  Result<std::vector<EValue>> image_encoder_outputs =
+      module_->execute("image_encoder", image_encoder_input);
+
+  ET_CHECK_OK_OR_RETURN_ERROR(image_encoder_outputs.error());
+
+  // inputs:[start_pos, embeds]
+  std::vector<EValue> inputs;
+  inputs.push_back(start_pos);
+  inputs.push_back(image_encoder_outputs.get()[0]);
+
+  // Run text model
+  Result<std::vector<EValue>> outputs_res =
+      module_->execute("text_model", inputs);
+  ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
+  ET_CHECK_MSG(
+      outputs_res.get()[0].isTensor(),
+      "Non Tensor Output returned from executing LLM");
+  ET_CHECK_MSG(
+      outputs_res.get()[0].toTensor().size(1) == num_tokens,
+      "Expected number of output tokens %d does not match returned value %zu.",
+      num_tokens,
+      outputs_res.get()[0].toTensor().size(1));
+
+  // Return the logits tensor
+  stats_.first_token_ms = util::time_in_ms();
+  stats_.prompt_eval_end_ms = util::time_in_ms();
+  return outputs_res.get()[0].toTensor();
+}
+
+Result<torch::executor::Tensor> MultiModalRunner::prefillPrompt(
     ManagedTensor& managed_tokens,
     ManagedTensor& managed_start_pos,
     std::function<void(const std::string&)> token_callback) {
   // enable_parallel_prefill_ maybe set even when not using kv cache
   // When kv cache is not used, start pos is ignored
-  int32_t num_tokens = tokens.size();
-  managed_tokens.resize({1, num_tokens});
-  int64_t* tokens_ptr =
-      managed_tokens.get_aliasing_tensor().mutable_data_ptr<int64_t>();
-  for (int i = 0; i < num_tokens; i++) {
-    // The following assumes batch size = 1
-    tokens_ptr[i] = tokens[i];
-  }
-  std::vector<EValue> inputs;
+
   auto tokens_tensor = managed_tokens.get_aliasing_tensor();
   auto start_pos = managed_start_pos.get_aliasing_tensor();
 
+  int32_t num_tokens = tokens_tensor.numel();
+
+  // token embedding input
+  std::vector<EValue> token_embedding_input = {tokens_tensor};
+
+  // Run token embedding
+  Result<std::vector<EValue>> token_embedding_outputs =
+      module_->execute("token_embedding", token_embedding_input);
+  ET_CHECK_OK_OR_RETURN_ERROR(token_embedding_outputs.error());
+
   // inputs:[tokens, start_pos]
-  inputs.push_back(tokens_tensor);
+  std::vector<EValue> inputs;
+  inputs.push_back(token_embedding_outputs.get()[0]);
   inputs.push_back(start_pos);
 
   Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
@@ -158,29 +203,26 @@ Result<torch::executor::Tensor> MultiModalRunner::prefill(
       "Expected number of output tokens %d does not match returned value %zu.",
       num_tokens,
       outputs_res.get()[0].toTensor().size(1));
+  if (token_callback) {
+    start_pos.mutable_data_ptr<int64_t>()[0] = num_tokens;
 
-  start_pos.mutable_data_ptr<int64_t>()[0] = num_tokens;
-
-  uint64_t prev = tokens[0];
-  uint64_t cur;
-  for (int i = 1; i < num_tokens; i++) {
-    cur = tokens[i];
-    auto piece_res = tokenizer_->decode(prev, cur);
-    ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error());
-    util::safe_printf(piece_res.get().c_str());
-    fflush(stdout);
-    prev = cur;
-    if (token_callback) {
+    uint64_t prev = tokens_tensor.const_data_ptr<int64_t>()[0];
+    uint64_t cur;
+    for (int i = 1; i < num_tokens; i++) {
+      cur = tokens_tensor.const_data_ptr<int64_t>()[i];
+      auto piece_res = tokenizer_->decode(prev, cur);
+      ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error());
+      util::safe_printf(piece_res.get().c_str());
+      fflush(stdout);
+      prev = cur;
       token_callback(piece_res.get().c_str());
     }
-  }
-  cur = logitsToToken(outputs_res.get()[0].toTensor());
-  auto piece_res = tokenizer_->decode(prev, cur);
-  ET_CHECK(piece_res.ok());
-  const char* piece = piece_res.get().c_str();
-  util::safe_printf(piece);
-  fflush(stdout);
-  if (token_callback) {
+    cur = logitsToToken(outputs_res.get()[0].toTensor());
+    auto piece_res = tokenizer_->decode(prev, cur);
+    ET_CHECK(piece_res.ok());
+    const char* piece = piece_res.get().c_str();
+    util::safe_printf(piece);
+    fflush(stdout);
     token_callback(piece_res.get().c_str());
   }
 
@@ -223,6 +265,7 @@ Result<torch::executor::Tensor> MultiModalRunner::run_model_step(
 }
 
 Error MultiModalRunner::generate(
+    Image& image,
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
@@ -273,6 +316,9 @@ Error MultiModalRunner::generate(
   std::vector<int64_t> start_pos_data; // allocate space for the tokens
   std::vector<exec_aten::SizesType> start_pos_shape = {1};
 
+  std::vector<exec_aten::SizesType> image_shape = {
+      1, 3, image.height, image.width}; // NCHW
+
   token_data.resize(seq_len);
   // hard code these to size 1.
   start_pos_data.resize(1);
@@ -288,14 +334,16 @@ Error MultiModalRunner::generate(
   ManagedTensor start_pos_managed(
       start_pos_data.data(), start_pos_shape, ScalarType::Long);
 
+  ManagedTensor image_managed(image.data.data(), image_shape, ScalarType::Byte);
+
   int64_t prev_token;
-  int64_t cur_token = prompt_tokens[0];
+  int64_t cur_token;
 
   // Prefill first
   // Here feed all tokens to the model and get the next predicted token
   // after the prompt. After that we will enter generate loop.
   auto prefill_res =
-      prefill(prompt_tokens, tokens_managed, start_pos_managed, token_callback);
+      prefill(tokens_managed, image_managed, start_pos_managed, token_callback);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   exec_aten::Tensor& prefill_res_tensor = prefill_res.get();
   cur_token = logitsToToken(prefill_res_tensor);
@@ -371,7 +419,7 @@ Error MultiModalRunner::generate(
 }
 
 namespace {
-void printReport(const Runner::Stats& stats) {
+void printReport(const MultiModalRunner::Stats& stats) {
   printf("PyTorchObserver %s\n", statsToJsonString(stats).c_str());
 
   ET_LOG(
@@ -431,7 +479,7 @@ void printReport(const Runner::Stats& stats) {
           stats.SCALING_FACTOR_UNITS_PER_SECOND);
 }
 
-std::string statsToJsonString(const Runner::Stats& stats) {
+std::string statsToJsonString(const MultiModalRunner::Stats& stats) {
   std::stringstream ss;
   ss << "{\"prompt_tokens\":" << stats.num_prompt_tokens << ","
      << "\"generated_tokens\":" << stats.num_generated_tokens << ","
@@ -448,7 +496,7 @@ std::string statsToJsonString(const Runner::Stats& stats) {
 }
 } // namespace
 
-void Runner::stop() {
+void MultiModalRunner::stop() {
   shouldStop_ = true;
 }
 
