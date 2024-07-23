@@ -106,7 +106,9 @@ target_link_libraries(
   qnn_executor_runner qnn_executorch_backend full_portable_ops_lib etdump
   ${FLATCCRT_LIB} gflags
 )
-target_link_options(qnn_executor_runner PUBLIC -fsanitize=undefined)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_link_options(qnn_executor_runner PUBLIC -fsanitize=undefined)
+endif()
 
 # build llama runner
 add_executable(qnn_llama_runner ${_qnn_llama_runner__srcs})
