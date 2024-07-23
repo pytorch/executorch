@@ -1,12 +1,11 @@
 name: periodic
 
 on:
+  pull_request:
   schedule:
     # We have several schedules so jobs can check github.event.schedule to activate only for a fraction of the runs.
     # Also run less frequently on weekends.
-    - cron: 45 0,8,16 * * 1-5
-    - cron: 45 4 * * 0,6
-    - cron: 29 8 * * *  # about 1:29am PDT, for mem leak check and rerun disabled tests
+    - cron: 45 0,8,16 * * *
   push:
     tags:
       - ciflow/periodic/*
