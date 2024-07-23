@@ -399,6 +399,6 @@ def _(
         range_constraints=copy.deepcopy(edge_program.range_constraints),
         module_call_graph=copy.deepcopy(edge_program.module_call_graph),
         example_inputs=None,
-        verifier=edge_program.verifier,
         constants=new_constants,
+        verifiers=[edge_program.verifier],
     )
