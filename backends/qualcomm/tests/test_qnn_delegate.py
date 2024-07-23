@@ -1581,8 +1581,11 @@ class TestExampleOssScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["top_1"], 60)
-            self.assertGreaterEqual(msg["top_5"], 90)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 90)
 
     def test_gMLP(self):
         if not self.required_envs([self.image_dataset]):
@@ -1614,8 +1617,11 @@ class TestExampleOssScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["top_1"], 60)
-            self.assertGreaterEqual(msg["top_5"], 90)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 90)
 
     def test_ssd300_vgg16(self):
         if not self.required_envs([self.pretrained_weight, self.oss_repo]):
@@ -1649,7 +1655,10 @@ class TestExampleOssScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["mAP"], 0.70)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["mAP"], 0.70)
 
     def test_dino_v2(self):
         if not self.required_envs([self.image_dataset]):
@@ -1680,8 +1689,11 @@ class TestExampleOssScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["top_1"], 70)
-            self.assertGreaterEqual(msg["top_5"], 85)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 70)
+                self.assertGreaterEqual(msg["top_5"], 85)
 
     def test_esrgan(self):
         if not self.required_envs():
@@ -1714,8 +1726,11 @@ class TestExampleOssScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["PSNR"], 24)
-            self.assertGreaterEqual(msg["SSIM"], 0.8)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["PSNR"], 24)
+                self.assertGreaterEqual(msg["SSIM"], 0.8)
 
     def test_squeezenet(self):
         if not self.required_envs([self.image_dataset]):
@@ -1747,8 +1762,11 @@ class TestExampleOssScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["top_1"], 40)
-            self.assertGreaterEqual(msg["top_5"], 70)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 40)
+                self.assertGreaterEqual(msg["top_5"], 70)
 
 
 class TestExampleScript(TestQNN):
@@ -1794,8 +1812,11 @@ class TestExampleScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["top_1"], 60)
-            self.assertGreaterEqual(msg["top_5"], 80)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 80)
 
     def test_mobilenet_v3(self):
         if not self.required_envs([self.image_dataset]):
@@ -1829,8 +1850,11 @@ class TestExampleScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["top_1"], 60)
-            self.assertGreaterEqual(msg["top_5"], 80)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 80)
 
     def test_inception_v3(self):
         if not self.required_envs([self.image_dataset]):
@@ -1864,8 +1888,11 @@ class TestExampleScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["top_1"], 60)
-            self.assertGreaterEqual(msg["top_5"], 80)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 80)
 
     def test_inception_v4(self):
         if not self.required_envs([self.image_dataset]):
@@ -1899,8 +1926,11 @@ class TestExampleScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["top_1"], 60)
-            self.assertGreaterEqual(msg["top_5"], 80)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 60)
+                self.assertGreaterEqual(msg["top_5"], 80)
 
     def test_vit(self):
         if not self.required_envs([self.image_dataset]):
@@ -1934,8 +1964,11 @@ class TestExampleScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["top_1"], 70)
-            self.assertGreaterEqual(msg["top_5"], 90)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["top_1"], 70)
+                self.assertGreaterEqual(msg["top_5"], 90)
 
     def test_edsr(self):
         if not self.required_envs():
@@ -1968,8 +2001,11 @@ class TestExampleScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["PSNR"], 25)
-            self.assertGreaterEqual(msg["SSIM"], 0.8)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["PSNR"], 25)
+                self.assertGreaterEqual(msg["SSIM"], 0.8)
 
     def test_deeplab_v3(self):
         if not self.required_envs():
@@ -2002,9 +2038,12 @@ class TestExampleScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            self.assertGreaterEqual(msg["PA"], 0.85)
-            self.assertGreaterEqual(msg["MPA"], 0.70)
-            self.assertGreaterEqual(msg["MIoU"], 0.55)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                self.assertGreaterEqual(msg["PA"], 0.85)
+                self.assertGreaterEqual(msg["MPA"], 0.70)
+                self.assertGreaterEqual(msg["MIoU"], 0.55)
 
     def test_stories_single_llama(self):
         if not self.required_envs():
@@ -2049,8 +2088,11 @@ class TestExampleScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            model_out = msg["result"][0]
-            self.assertTrue(model_out.startswith(golden_start_with))
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                model_out = msg["result"][0]
+                self.assertTrue(model_out.startswith(golden_start_with))
 
     def test_mobilebert(self):
         if not self.required_envs([self.pretrained_weight]):
@@ -2085,9 +2127,12 @@ class TestExampleScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            cpu, htp = msg["CPU"], msg["HTP"]
-            for k, v in cpu.items():
-                self.assertLessEqual(abs(v[0] - htp[k][0]), 2)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                cpu, htp = msg["CPU"], msg["HTP"]
+                for k, v in cpu.items():
+                    self.assertLessEqual(abs(v[0] - htp[k][0]), 2)
 
     @unittest.skip("will be enabled after TODOs got resolved")
     def test_ptq_mobilebert(self):
@@ -2127,9 +2172,12 @@ class TestExampleScript(TestQNN):
             conn = listener.accept()
             p.communicate()
             msg = json.loads(conn.recv())
-            cpu, htp = msg["CPU"], msg["HTP"]
-            for k, v in cpu.items():
-                self.assertLessEqual(abs(v[0] - htp[k][0]), 5)
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                cpu, htp = msg["CPU"], msg["HTP"]
+                for k, v in cpu.items():
+                    self.assertLessEqual(abs(v[0] - htp[k][0]), 5)
 
     def test_export_example(self):
         if not self.required_envs([self.model_name]):
