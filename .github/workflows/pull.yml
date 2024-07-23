@@ -204,8 +204,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
-        bash install_requirements.sh
-        
+
         # install Llava requirements
         bash examples/models/llama2/install_requirements.sh
         bash examples/models/llava/install_requirements.sh
@@ -218,6 +217,9 @@ jobs:
             echo "llava_combined_xnnpack.pte not found!"
             exit 1
         fi
+
+        # run python unittest
+        python -m unittest examples.models.llava.test.test_llava
 
   test-quantized-aot-lib-linux:
     name: test-quantized-aot-lib-linux

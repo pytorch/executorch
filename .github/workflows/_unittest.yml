@@ -37,12 +37,6 @@ jobs:
         CMAKE_ARGS="-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
         .ci/scripts/setup-linux.sh cmake
 
-        # Setup examples llava dependencies
-        bash examples/models/llava/install_requirements.sh
-
-        # Print pip list
-        pip list
-
         # Run pytest with coverage
         pytest -n auto --cov=./ --cov-report=xml
         # Run gtest
@@ -72,12 +66,6 @@ jobs:
         CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON" \
         ${CONDA_RUN} --no-capture-output \
         .ci/scripts/setup-macos.sh cmake
-
-        # Setup examples llava dependencies
-        bash examples/models/llava/install_requirements.sh
-
-        # Print pip list
-        pip list
 
         # Run pytest with coverage
         ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
