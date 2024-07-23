@@ -10,15 +10,11 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
 import torch
-import torch._export.exported_program as ep
 from torch._export.pass_base import _ExportPassBaseDeprecatedDoNotUse
 from torch._export.pass_infra.node_metadata import NodeMetadata
 from torch._export.pass_infra.proxy_value import ProxyValue
-from torch._subclasses import FakeTensor
-from torch.export import export
 from torch.fx.node import Argument, Target
 from torch.library import Library
-from torch.utils._pytree import tree_unflatten
 
 lib = Library("aten", "FRAGMENT")
 impl_lib = Library("aten", "IMPL")
@@ -211,34 +207,6 @@ class GraphModuleOpUpgrader:
             )
 
         return upgrader_passes
-
-    def upgrade(self, exported_program: ep.ExportedProgram) -> ep.ExportedProgram:
-        """Run each upgrader pass and then retrace to decompose it. Each upgrader pass replaces the old version of
-        operators with a custom operator. The custom operator contains a CompositeImplicitAutograd kernel (the
-        upgrading function itself). After retrace, this custom operator will be decomposed into the ops used in the
-        upgrader. After all passes are applied, the exported program will be upgraded to the target version.
-        """
-        if not self.upgrader_passes:
-            return exported_program
-
-        args = [
-            n.meta.get("val", None)
-            for n in exported_program.graph.nodes
-            if n.op == "placeholder"
-        ]
-        args_real_tensors = [
-            (
-                torch.ones(tuple(arg.size()), dtype=arg.dtype)
-                if isinstance(arg, FakeTensor)
-                else arg
-            )
-            for arg in args
-        ]
-        assert exported_program.call_spec.in_spec is not None
-        args, kwargs = tree_unflatten(
-            args_real_tensors, exported_program.call_spec.in_spec
-        )
-        assert kwargs == {}
 
     def upgrade(self, exported_program):
         return exported_program
