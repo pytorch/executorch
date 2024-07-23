@@ -35,8 +35,10 @@ set(EXECUTORCH_SRCS_FILE
 # include(${EXECUTORCH_SRCS_FILE})
 
 # build multimodal_runner library
-set(_multimodal_runner__srcs 
-    "${CMAKE_CURRENT_SOURCE_DIR}/multimodal_runner.cpp" 
+set(_multimodal_runner__srcs
+    "${CMAKE_CURRENT_SOURCE_DIR}/multimodal_runner.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../llama2/sampler/sampler.cpp"
+    "${EXECUTORCH_ROOT}/extension/llm/tokenizer/bpe_tokenizer.cpp"
 )
 
 target_include_directories(

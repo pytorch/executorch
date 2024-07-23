@@ -69,9 +69,9 @@ class MultiModalRunner {
   bool is_loaded() const;
   Error load();
   Error generate(
-      const Image& image,
+      Image& image,
       const std::string& prompt,
-      int32_t seq_len = 128,
+      int32_t seq_len = 1024,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
   void stop();
@@ -81,16 +81,27 @@ class MultiModalRunner {
   template <typename T>
   T getMetadataHelper(const std::string& method_name, T default_val);
   int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
-  Result<torch::executor::Tensor> prefill(
-      const std::vector<uint64_t>& tokens,
+  Result<torch::executor::Tensor> prefillImage(
+      ManagedTensor& managed_images,
+      ManagedTensor& managed_start_pos);
+
+  Result<torch::executor::Tensor> prefillPrompt(
       ManagedTensor& managed_tokens,
       ManagedTensor& managed_start_pos,
       std::function<void(const std::string&)> token_callback);
-  Result<torch::executor::Tensor> run_model_step(
+
+  // Result<torch::executor::Tensor> prefill(
+  //   Image& image,
+  //   const std::string& prompt,
+  //   int32_t seq_len = 1024,
+  //   std::function<void(const std::string&)> token_callback = {});
+
+  Result<torch::executor::Tensor> step(
       int64_t input_token,
       ManagedTensor& tokens,
       ManagedTensor& start_pos,
       size_t max_seq_len);
+
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
@@ -107,7 +118,7 @@ class MultiModalRunner {
   std::unique_ptr<Tokenizer> tokenizer_;
   std::unique_ptr<Sampler> sampler_;
   bool shouldStop_{false};
-  Stats stats_;
+  MultiModalRunner::Stats stats_;
 };
 
 } // namespace torch::executor
