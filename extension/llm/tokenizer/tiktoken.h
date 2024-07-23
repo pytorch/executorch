@@ -10,10 +10,8 @@
 
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <re2/re2.h>
-#include <cstdint>
-#include <functional>
+#include <memory>
 #include <optional>
-#include <regex>
 #include <unordered_map>
 
 namespace torch {

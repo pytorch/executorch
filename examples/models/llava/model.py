@@ -17,6 +17,7 @@ import requests
 import torch
 import torchvision
 from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
+
 from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
@@ -72,7 +73,7 @@ class Llava(torch.nn.Module):
             max_batch_size=1,  # doesn't work with default batch size 32
             ffn_dim_multiplier=1,  # TODO: a hack to make rotary embedding happy
             enable_dynamic_shape=True,  # allow parallel prefill
-            use_sdpa_with_kv_cache_op=True,
+            use_sdpa_with_kv_cache_op=True,  # use sdpa_with_kv_cache op
             use_hf_rope=True,
         )
         self.embed_tokens = nn.Embedding(
@@ -81,7 +82,7 @@ class Llava(torch.nn.Module):
             self.model_.config.pad_token_id,
         )
         self.text_model = Transformer(self.text_model_args)
-        # use custom op for SDPA
+        # use custom op for SDPA.
         self.text_model = replace_sdpa_with_custom_op(self.text_model)
         # load state dict
         self.text_model.load_state_dict(
