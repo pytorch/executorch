@@ -24,7 +24,7 @@ class RecomposePixelUnshuffle(ExportPass):
 
         self.quantization_capture = quantization_capture
         if quantization_capture:
-            self.reshape_target = torch.ops.aten.reshape.default
+            self.reshape_target = torch.ops.aten._unsafe_view.default
             self.permute_target = torch.ops.aten.permute.default
             self.view_target = torch.ops.aten.view.default
             self.op = torch.ops.aten.pixel_unshuffle.default
