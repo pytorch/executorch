@@ -25,8 +25,13 @@ pip install protobuf
 # Reinstall bitsandbytes to make it compatible.
 pip install bitsandbytes -I
 
-# numpy needs to be pin to 1.24. 1.26.4 will error out
-pip install numpy==1.26.4
+OS=$(uname)
+if [[ $OS ~= "Darwin" ]];
+then
+    # numpy needs to be pin to 1.24. 1.26.4 will error out: Could not infer dtype of numpy.uint8
+    # On macos, numpy 1.24.4 is not available, 1.26.4 works fine.
+    pip install numpy==1.24.4
+fi
 
 # The deps of llava can have different versions than deps of ExecuTorch.
 # For example, torch version required from llava is older than ExecuTorch.
