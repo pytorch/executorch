@@ -424,6 +424,11 @@ if(EXECUTORCH_BUILD_FLATC)
       CACHE BOOL ""
   )
   add_subdirectory(third-party/flatbuffers)
+
+  # exir lets users set the alignment of tensor data embedded in the flatbuffer,
+  # and some users need an alignment larger than the default, which is typically
+  # 32.
+  target_compile_definitions(flatc PRIVATE FLATBUFFERS_MAX_ALIGNMENT=1024)
 endif()
 if(NOT FLATC_EXECUTABLE)
   message(
