@@ -9,6 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpPoolMax2d, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -134,7 +135,7 @@ class MaxPool2d(NodeVisitor):
         max_pool2d_op.AddScalarParam(
             OpPoolMax2d.param_rounding_mode,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(mode)},
+            {QCOM_DATA: np.uint32(mode)},
         )
 
         return max_pool2d_op

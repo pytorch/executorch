@@ -19,6 +19,12 @@ from executorch.backends.qualcomm.tests.utils import (
     TestQNN,
     to_backend,
 )
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_ANNOTATION,
+    QCOM_MODULE,
+    QCOM_QUANT_DTYPE,
+    QCOM_SAMPLE_INPUTS,
+)
 
 from executorch.backends.qualcomm.utils.utils import (
     canonicalize_program,
@@ -114,22 +120,22 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_element_wise_add(self):
         test_comb = [
             {
-                "module": [Add()],  # noqa: F405
-                "sample_inputs": [
+                QCOM_MODULE: [Add()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
                     (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
                     (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
                 ],
             },
             {
-                "module": [AddConstantFloat()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [AddConstantFloat()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
@@ -143,22 +149,22 @@ class TestQNNFloatingPointOperator(TestQNN):
         eps = 1e-03
         test_comb = [
             {
-                "module": [Div()],  # noqa: F405
-                "sample_inputs": [
+                QCOM_MODULE: [Div()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
                     (torch.randn(2, 5, 1, 3), eps + torch.randn(2, 5, 1, 3)),
                     (torch.randn([2, 5, 1, 3]), eps + torch.randn([4, 1])),
                 ],
             },
             {
-                "module": [DivConstantFloat()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [DivConstantFloat()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
@@ -166,26 +172,26 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_element_wise_mul(self):
         test_comb = [
             {
-                "module": [Mul()],  # noqa: F405
-                "sample_inputs": [
+                QCOM_MODULE: [Mul()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
                     (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
                     (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
                 ],
             },
             {
-                "module": [MulConstantFloat()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [MulConstantFloat()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
             {
-                "module": [MulScalar()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [MulScalar()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
@@ -200,22 +206,22 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_element_wise_sub(self):
         test_comb = [
             {
-                "module": [Sub()],  # noqa: F405
-                "sample_inputs": [
+                QCOM_MODULE: [Sub()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
                     (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
                     (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
                 ],
             },
             {
-                "module": [SubConstantFloat()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [SubConstantFloat()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
@@ -269,19 +275,19 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_leaky_relu(self):
         test_comb = [
             {
-                "module": [LeakyReLUDefault()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [LeakyReLUDefault()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
             {
-                "module": [LeakyReLUCustom(0.05)],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [LeakyReLUCustom(0.05)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
@@ -340,19 +346,19 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_prelu(self):
         test_comb = [
             {
-                "module": [PReLUDefault()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [PReLUDefault()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
             {
-                "module": [PReLUPerChannel(5)],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [PReLUPerChannel(5)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
@@ -673,22 +679,22 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_element_wise_add(self):
         test_comb = [
             {
-                "module": [Add()],  # noqa: F405
-                "sample_inputs": [
+                QCOM_MODULE: [Add()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
                     (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
                     (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
                 ],
             },
             {
-                "module": [AddConstantFloat(), AddConstantLong()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [AddConstantFloat(), AddConstantLong()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
@@ -704,22 +710,22 @@ class TestQNNQuantizedOperator(TestQNN):
         eps = 1e-03
         test_comb = [
             {
-                "module": [Div()],  # noqa: F405
-                "sample_inputs": [
+                QCOM_MODULE: [Div()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
                     (torch.randn(2, 5, 1, 3), eps + torch.randn(2, 5, 1, 3)),
                     (torch.randn([2, 5, 1, 3]), eps + torch.randn([4, 1])),
                 ],
             },
             {
-                "module": [DivConstantFloat(), DivConstantLong()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [DivConstantFloat(), DivConstantLong()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
@@ -728,26 +734,26 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_element_wise_mul(self):
         test_comb = [
             {
-                "module": [Mul()],  # noqa: F405
-                "sample_inputs": [
+                QCOM_MODULE: [Mul()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
                     (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
                     (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
                 ],
             },
             {
-                "module": [MulConstantFloat(), MulConstantLong()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [MulConstantFloat(), MulConstantLong()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
             {
-                "module": [MulScalar()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [MulScalar()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
@@ -764,22 +770,22 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_element_wise_sub(self):
         test_comb = [
             {
-                "module": [Sub()],  # noqa: F405
-                "sample_inputs": [
+                QCOM_MODULE: [Sub()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [
                     (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
                     (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
                 ],
             },
             {
-                "module": [SubConstantFloat(), SubConstantLong()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [SubConstantFloat(), SubConstantLong()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
@@ -842,19 +848,19 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_leaky_relu(self):
         test_comb = [
             {
-                "module": [LeakyReLUDefault()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [LeakyReLUDefault()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
             {
-                "module": [LeakyReLUCustom(0.05)],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [LeakyReLUCustom(0.05)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
@@ -919,19 +925,19 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_prelu(self):
         test_comb = [
             {
-                "module": [PReLUDefault()],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [PReLUDefault()],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
             {
-                "module": [PReLUPerChannel(5)],  # noqa: F405
-                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+                QCOM_MODULE: [PReLUPerChannel(5)],  # noqa: F405
+                QCOM_SAMPLE_INPUTS: [(torch.randn(2, 5, 1, 3),)],
             },
         ]
 
         index = 0
         for comb in test_comb:
-            for module in comb["module"]:
-                for sample_input in comb["sample_inputs"]:
+            for module in comb[QCOM_MODULE]:
+                for sample_input in comb[QCOM_SAMPLE_INPUTS]:
                     with self.subTest(i=index):
                         module = self.get_qdq_module(module, sample_input)
                         self.lower_module_and_test_output(module, sample_input)
@@ -1128,48 +1134,48 @@ class TestQNNQuantizedModel(TestQNN):
     def test_qnn_backend_example_models(self):
         instances = [
             {
-                "module": DeepLabV3ResNet101Model(),
-                "annotation": (),
-                "quant_dtype": QuantDtype.use_8a8w,
+                QCOM_MODULE: DeepLabV3ResNet101Model(),
+                QCOM_ANNOTATION: (),
+                QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
             {
-                "module": EdsrModel(),
-                "annotation": (),
-                "quant_dtype": QuantDtype.use_8a8w,
+                QCOM_MODULE: EdsrModel(),
+                QCOM_ANNOTATION: (),
+                QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
             {
-                "module": InceptionV3Model(),
-                "annotation": (),
-                "quant_dtype": QuantDtype.use_8a8w,
+                QCOM_MODULE: InceptionV3Model(),
+                QCOM_ANNOTATION: (),
+                QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
             {
-                "module": InceptionV4Model(),
-                "annotation": (),
-                "quant_dtype": QuantDtype.use_8a8w,
+                QCOM_MODULE: InceptionV4Model(),
+                QCOM_ANNOTATION: (),
+                QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
             # The module of llama is changing frequently. Reopen it when it's stable
-            # {"module": Llama2Model(), "annotation": (), "quant_dtype": QuantDtype.use_8a8w},
+            # {QCOM_MODULE: Llama2Model(), QCOM_ANNOTATION: (), QCOM_QUANT_DTYPE: QuantDtype.use_8a8w},
             {
-                "module": MV2Model(),
-                "annotation": (),
-                "quant_dtype": QuantDtype.use_8a8w,
+                QCOM_MODULE: MV2Model(),
+                QCOM_ANNOTATION: (),
+                QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
             {
-                "module": MV3Model(),
-                "annotation": (),
-                "quant_dtype": QuantDtype.use_8a8w,
+                QCOM_MODULE: MV3Model(),
+                QCOM_ANNOTATION: (),
+                QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
             # only works on QNN 2.12 so far
-            # { 'module': MobileBertModelExample(), 'annotation': (), "quant_dtype": QuantDtype.use_8a8w },
+            # { 'module': MobileBertModelExample(), 'annotation': (), QCOM_QUANT_DTYPE: QuantDtype.use_8a8w },
             {
-                "module": TorchVisionViTModel(),
-                "annotation": (),
-                "quant_dtype": QuantDtype.use_8a8w,
+                QCOM_MODULE: TorchVisionViTModel(),
+                QCOM_ANNOTATION: (),
+                QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
             {
-                "module": Wav2LetterModel(),
-                "annotation": (),
-                "quant_dtype": QuantDtype.use_8a8w,
+                QCOM_MODULE: Wav2LetterModel(),
+                QCOM_ANNOTATION: (),
+                QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
         ]
         expected_partitions = [
@@ -1189,13 +1195,13 @@ class TestQNNQuantizedModel(TestQNN):
         disable_validation()
         for i, instance in enumerate(instances):
             with self.subTest(i=i):
-                module = instance["module"].get_eager_model().eval()
-                sample_input = instance["module"].get_example_inputs()
+                module = instance[QCOM_MODULE].get_eager_model().eval()
+                sample_input = instance[QCOM_MODULE].get_example_inputs()
                 module = self.get_qdq_module(
                     module,
                     sample_input,
-                    custom_quant_annotations=instance["annotation"],
-                    quant_dtype=instance["quant_dtype"],
+                    custom_quant_annotations=instance[QCOM_ANNOTATION],
+                    quant_dtype=instance[QCOM_QUANT_DTYPE],
                 )
                 self.lower_module_and_test_output(
                     module,
