@@ -26,9 +26,9 @@ qcir::DataType ToDataType(Qnn_DataType_t type);
 Qnn_DataType_t ToDataType(qcir::DataType type);
 
 flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
-    const Qnn_QuantizeParams_t& param,
+    const Qnn_Tensor_t& tensor,
     flatbuffers::FlatBufferBuilder* builder);
-Qnn_QuantizeParams_t ToQuantizeParam(const qparam_type& type);
+Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor);
 
 flatbuffers::Offset<qcir::Tensor> ToTensor(
     const Qnn_Tensor_t& tensor,

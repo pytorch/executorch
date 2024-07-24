@@ -87,7 +87,12 @@ SharedBuffer& SharedBuffer::GetSharedBufferManager() {
   std::lock_guard<std::mutex> lk(init_mutex_);
   static SharedBuffer shared_buffer_manager;
   if (!shared_buffer_manager.GetInitialize()) {
+#if defined(__aarch64__)
     Error status = shared_buffer_manager.Load();
+#else
+    // For x86_64 platform
+    Error status = Error::Ok;
+#endif
     if (status == Error::Ok) {
       shared_buffer_manager.SetInitialize(true);
     }
@@ -96,9 +101,11 @@ SharedBuffer& SharedBuffer::GetSharedBufferManager() {
 }
 
 SharedBuffer::~SharedBuffer() {
+#if defined(__aarch64__)
   if (initialize_) {
     SharedBuffer::GetSharedBufferManager().UnLoad();
   }
+#endif
 };
 
 void* SharedBuffer::AllocMem(size_t bytes, size_t alignment) {
