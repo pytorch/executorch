@@ -17,4 +17,5 @@ $ADB_PATH wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; d
 echo "List all running emulators"
 $ADB_PATH devices
 
-# TODO: Run tests on emulator here
+# TODO: Run tests on emulator here, atm the script only boots up the emulator
+# and exits without doing anything yet

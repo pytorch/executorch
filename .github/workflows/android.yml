@@ -80,8 +80,7 @@ jobs:
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
-    # DEBUG
-    # needs: build-llm-demo
+    needs: build-llm-demo
     runs-on: amz2023.linux.12xlarge
     env:
       ANDROID_NDK_VERSION: r26c
