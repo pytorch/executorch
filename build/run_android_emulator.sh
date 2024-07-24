@@ -11,6 +11,7 @@ set -ex
 ADB_PATH=$ANDROID_HOME/platform-tools/adb
 
 echo "Waiting for emulator boot to complete"
+# shellcheck disable=SC2016
 $ADB_PATH wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 30; done;'
 
 # The device will be created by ReactiveCircus/android-emulator-runner GHA
