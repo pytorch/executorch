@@ -55,16 +55,8 @@ if(EXECUTORCH_USE_TIKTOKEN)
   set(_preprocessor_flag -DET_USE_TIKTOKEN)
 endif()
 
-if(CMAKE_TOOLCHAIN_IOS
-   OR ANDROID
-   OR APPLE
-)
-  # Building a share library on iOS requires code signing On Android we see
-  # duplicated registration when using shared lib
-  add_library(multimodal_runner STATIC ${_multimodal_runner__srcs})
-else()
-  add_library(multimodal_runner SHARED ${_multimodal_runner__srcs})
-endif()
+
+add_library(multimodal_runner STATIC ${_multimodal_runner__srcs})
 
 set(multimodal_runner_deps executorch extension_module extension_data_loader)
 

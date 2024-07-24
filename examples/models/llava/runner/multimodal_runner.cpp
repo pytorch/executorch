@@ -130,8 +130,12 @@ int32_t MultiModalRunner::logits_to_token(
 Result<torch::executor::Tensor> MultiModalRunner::prefill_image(
     Image& image,
     int64_t start_pos) {
+  ET_CHECK_MSG(!image.data.empty(), "Image cannot be empty");
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
   std::vector<exec_aten::SizesType> image_shape = {
-      1, 3, image.height, image.width}; // NCHW
+      3, image.height, image.width}; // CHW
   std::vector<exec_aten::SizesType> start_pos_shape = {1};
 
   ManagedTensor managed_images(
@@ -175,6 +179,10 @@ Result<torch::executor::Tensor> MultiModalRunner::prefill_prompt(
     const std::string& prompt,
     int64_t start_pos,
     std::function<void(const std::string&)> token_callback) {
+  ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
+  if (!is_loaded()) {
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+  }
   // enable_parallel_prefill_ maybe set even when not using kv cache
   // When kv cache is not used, start pos is ignored
   Result<std::vector<uint64_t>> encode_res =
@@ -215,12 +223,21 @@ Result<torch::executor::Tensor> MultiModalRunner::prefill_prompt(
       module_->execute("token_embedding", token_embedding_input);
   ET_CHECK_OK_OR_RETURN_ERROR(token_embedding_outputs.error());
 
-  // inputs:[tokens, start_pos]
+  ET_LOG(
+      Info,
+      "Token embedding output numel(): %zu",
+      token_embedding_outputs.get()[0].toTensor().numel());
+  // inputs:[start_pos, tokens]
   std::vector<EValue> inputs;
-  inputs.push_back(token_embedding_outputs.get()[0]);
   inputs.push_back(start_pos_tensor);
+  inputs.push_back(token_embedding_outputs.get()[0]);
 
-  Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
+  Result<std::vector<EValue>> outputs_res =
+      module_->execute("text_model", inputs);
+  ET_LOG(
+      Info,
+      "Prefill token result numel(): %zu",
+      outputs_res.get()[0].toTensor().numel());
   ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
   ET_CHECK_MSG(
       outputs_res.get()[0].isTensor(),
@@ -292,7 +309,6 @@ Result<torch::executor::Tensor> MultiModalRunner::step(
 Error MultiModalRunner::generate(
     Image& image,
     const std::string& prompt,
-    int64_t start_pos,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
@@ -315,20 +331,53 @@ Error MultiModalRunner::generate(
   seq_len = (seq_len > 0 && seq_len <= max_seq_len_) ? seq_len : max_seq_len_;
 
   // start the main loop
-  // Prefill first
+
+  // Prefill preset prompt
   // Here feed all tokens to the model and get the next predicted token
   // after the prompt. After that we will enter generate loop.
-  auto prefill_image_res = prefill_image(image, start_pos);
-  ET_CHECK_OK_OR_RETURN_ERROR(prefill_image_res.error());
+  int64_t pos = 0;
+  auto preset_prompt_prefill_res = prefill_prompt(kPresetPrompt, pos, nullptr);
+  ET_LOG(
+      Info,
+      "prefill preset prompt res sizes(0): %zu, sizes(1): %zu, sizes(2): %zu",
+      preset_prompt_prefill_res.get().size(0),
+      preset_prompt_prefill_res.get().size(1),
+      preset_prompt_prefill_res.get().size(2));
 
-  start_pos += prefill_image_res.get().size(1);
+  // logits.size(1) is token length of the prompt
+  pos += preset_prompt_prefill_res.get().size(1);
+  ET_LOG(Info, "pos: %d", pos);
 
-  auto prefill_prompt_res = prefill_prompt(prompt, start_pos, token_callback);
-  start_pos += prefill_prompt_res.get().size(1);
+  // prefill image
+  auto image_prefill_res = prefill_image(image, pos);
+  ET_LOG(
+      Info,
+      "prefill image res sizes(0): %zu, sizes(1): %zu, sizes(2): %zu",
+      image_prefill_res.get().size(0),
+      image_prefill_res.get().size(1),
+      image_prefill_res.get().size(2));
 
-  ET_CHECK_OK_OR_RETURN_ERROR(prefill_prompt_res.error());
-  exec_aten::Tensor& prefill_res_tensor = prefill_prompt_res.get();
+  // update pos to include prefilled image tokens
+  pos += image_prefill_res.get().size(1);
+  ET_LOG(Info, "pos: %d", pos);
 
+  // prefill prompt
+  auto prompt_prefill_res = prefill_prompt(prompt, pos, token_callback);
+  ET_LOG(
+      Info,
+      "prefill prompt res sizes(0): %zu, sizes(1): %zu, sizes(2): %zu",
+      prompt_prefill_res.get().size(0),
+      prompt_prefill_res.get().size(1),
+      prompt_prefill_res.get().size(2));
+
+  // update pos to include prefilled prompt tokens
+  pos += prompt_prefill_res.get().size(1);
+  ET_LOG(Info, "pos: %d", pos);
+
+  auto prefill_res_tensor = prompt_prefill_res.get();
+  int64_t start_pos =
+      pos; // keep a record of how many prompt tokens are prefilled
+  // Generate the tokens
   int64_t prev_token;
   int64_t cur_token;
   cur_token = logits_to_token(prefill_res_tensor);
@@ -341,7 +390,6 @@ Error MultiModalRunner::generate(
   //  kv cache:
   //     - tokens_managed should be resized to 1, as inference expects one
   //     token at a time.
-  int64_t pos = start_pos;
   ManagedTensor tokens_managed(&cur_token, {1, 1}, ScalarType::Long);
   ManagedTensor start_pos_managed(&pos, {1}, ScalarType::Long);
 

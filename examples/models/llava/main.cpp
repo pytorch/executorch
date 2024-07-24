@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <gflags/gflags.h>
-
 #include <executorch/examples/models/llava/runner/multimodal_runner.h>
+#include <gflags/gflags.h>
+#include <torch/torch.h>
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/backends/xnnpack/threadpool/cpuinfo_utils.h>
@@ -23,6 +23,11 @@ DEFINE_string(
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
+
+DEFINE_string(
+    image_path,
+    "",
+    "The path to a .pt file, a serialized torch tensor for an image, longest edge resized to 336.");
 
 DEFINE_double(
     temperature,
@@ -51,6 +56,8 @@ int32_t main(int32_t argc, char** argv) {
 
   const char* prompt = FLAGS_prompt.c_str();
 
+  std::string image_path = FLAGS_image_path;
+
   double temperature = FLAGS_temperature;
 
   int32_t seq_len = FLAGS_seq_len;
@@ -69,21 +76,34 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  ::torch::executor::MultiModalRunner runner(
+  torch::executor::MultiModalRunner runner(
       model_path, tokenizer_path, temperature);
 
-  // all one image
+  // read image and resize the longest edge to 336
   std::vector<uint8_t> image_data;
-  image_data.resize(336 * 336 * 3);
-  for (int i = 0; i < 336 * 336 * 3; i++) {
-    image_data[i] = 1;
-  }
+  //   cv::Mat image = cv::imread(image_path, cv::IMREAD_COLOR);
+  //   int longest_edge = std::max(image.rows, image.cols);
+  //   float scale_factor = 336.0f / longest_edge;
+  //   cv::Size new_size(image.cols * scale_factor, image.rows * scale_factor);
+  //   cv::Mat resized_image;
+  //   cv::resize(image, resized_image, new_size);
+  //   image_data.assign(resized_image.datastart, resized_image.dataend);
+  torch::Tensor image_tensor;
+  torch::load(image_tensor, image_path); // CHW
+  ET_LOG(
+      Info,
+      "image size(0): %zu, size(1): %zu, size(2): %zu",
+      image_tensor.size(0),
+      image_tensor.size(1),
+      image_tensor.size(2));
+  image_data.assign(
+      image_tensor.data_ptr<uint8_t>(),
+      image_tensor.data_ptr<uint8_t>() + image_tensor.numel());
   torch::executor::Image image{
-      .data = image_data, .width = 336, .height = 336, .channels = 3};
+      .data = image_data,
+      .width = image_tensor.size(2),
+      .height = image_tensor.size(1)};
   // generate
-  //   runner.generate(image, prompt, seq_len);
-
-  // prefill prompt
-  runner.prefill_prompt(prompt, 0, nullptr);
+  runner.generate(image, prompt, seq_len);
   return 0;
 }
