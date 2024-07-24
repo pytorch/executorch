@@ -19,8 +19,8 @@ from torch.fx import Node
 
 
 @register_node_visitor
-class AddVisitor(NodeVisitor):
-    target = "aten.add.Tensor"
+class SubVisitor(NodeVisitor):
+    target = "aten.sub.Tensor"
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -45,25 +45,24 @@ class AddVisitor(NodeVisitor):
             broadcasted_shape = tutils.broadcast_shapes(
                 rescaled_inputs[0].shape, rescaled_inputs[0].shape
             )
-            add_output = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
+            sub_output = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
 
-            # Do the INT32 Add
+            # Do the INT32 Sub
             tosa_graph.addOperator(
-                TosaOp.Op().ADD,
+                TosaOp.Op().SUB,
                 [
                     rescaled_inputs[0].name,
                     rescaled_inputs[1].name,
                 ],
-                [add_output.name],
-                None,
+                [sub_output.name],
             )
 
             # Scale output back to 8 bit
-            tqutils.rescale_node_back_to_int8(node, add_output, scale, tosa_graph)
+            tqutils.rescale_node_back_to_int8(node, sub_output, scale, tosa_graph)
         else:
-            # FP32 Add lowering
+            # FP32 Sub lowering
             tosa_graph.addOperator(
-                TosaOp.Op().ADD,
+                TosaOp.Op().SUB,
                 [inputs[0].name, inputs[1].name],
                 [output.name],
                 None,
