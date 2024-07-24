@@ -19,7 +19,7 @@ from executorch.examples.models.llama2.rope import (
     hf_precompute_freqs_cis,
     precompute_freqs_cis,
 )
-from function import partial
+from functools import partial
 
 from torch import nn
 
