@@ -75,6 +75,7 @@ install_sdk() {
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "tools"
 
   # Create a softlink to cmdline-tools
+  mkdir -p "${SDK_INSTALLATION_DIR}/cmdline-tools"
   ln -s /opt/cmdline-tools "${SDK_INSTALLATION_DIR}/cmdline-tools/latest"
 }
 
