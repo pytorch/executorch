@@ -20,10 +20,10 @@ endif()
 
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_add.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_embedding.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_full.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/op_view_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_add.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_embedding.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_full.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/activation_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/copy_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/broadcast_util.cpp"
@@ -58,8 +58,8 @@ target_include_directories(aten_ops_cadence PUBLIC ${ROOT_DIR}/..
 
 # Custom ops that are needed to run the test model.
 add_library(
-  custom_ops "quantized_linear_out.cpp" "quantized_conv_out.cpp"
-  "quantized_relu_out.cpp" "quantized_layer_norm.cpp"
+  custom_ops "quantized_linear_out.cpp"
+  "quantized_layer_norm.cpp"
   "quantize_per_tensor.cpp" "dequantize_per_tensor.cpp")
 target_include_directories(custom_ops PUBLIC ${ROOT_DIR}/..
                                              ${CMAKE_BINARY_DIR}
@@ -72,11 +72,11 @@ target_link_libraries(custom_ops PRIVATE cadence_kernels)
 # Executorch (for runtime). Here select all ops in functions.yaml
 gen_selected_ops(
   LIB_NAME "cadence_ops_lib" OPS_SCHEMA_YAML
-  "${CMAKE_CURRENT_LIST_DIR}/../../aot/functions.yaml" "" ""
+  "${CMAKE_CURRENT_LIST_DIR}/../../aot/functions_hifi.yaml" "" ""
 )
 generate_bindings_for_kernels(
   LIB_NAME "cadence_ops_lib" OPS_SCHEMA_YAML
-  FUNCTIONS_YAML ${CMAKE_CURRENT_SOURCE_DIR}/../../aot/functions.yaml
+  FUNCTIONS_YAML ${CMAKE_CURRENT_SOURCE_DIR}/../../aot/functions_hifi.yaml
 )
 message("Generated files ${gen_command_sources}")
 

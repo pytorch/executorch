@@ -37,8 +37,7 @@ void quantize_per_tensor_out(
         out_data, input_data, 1. / scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Char) {
     int8_t* out_data = out.mutable_data_ptr<int8_t>();
-    impl::HiFi::kernels::quantize<int8_t>(
-        out_data, input_data, 1. / scale, zero_point, numel);
+    xa_nn_elm_quantize_f32_asym8s(out_data, input_data, scale, zero_point, numel);
   } else if (out.scalar_type() == ScalarType::Int) {
     int32_t* out_data = out.mutable_data_ptr<int32_t>();
     impl::HiFi::kernels::quantize<int32_t>(
