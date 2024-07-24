@@ -19,6 +19,7 @@ from executorch.examples.models.llama2.rope import (
     hf_precompute_freqs_cis,
     precompute_freqs_cis,
 )
+from function import partial
 
 from torch import nn
 
@@ -454,7 +455,9 @@ class Transformer(nn.Module):
         if params.use_hf_rope:
             self.precompute_freqs_cis = hf_precompute_freqs_cis
         else:
-            self.precompute_freqs_cis = precompute_freqs_cis
+            self.precompute_freqs_cis = partial(
+                precompute_freqs_cis, use_scaled=params.use_scaled_rope
+            )
         freqs_cos, freqs_sin = self.precompute_freqs_cis(
             params.dim // params.n_heads,
             (
@@ -463,7 +466,6 @@ class Transformer(nn.Module):
                 else params.max_seq_len * 2  # Sharded checkpoint.
             ),
             params.rope_freq_base,
-            params.use_scaled_rope,
         )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
