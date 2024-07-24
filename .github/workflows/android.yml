@@ -97,7 +97,8 @@ jobs:
         with:
           submodules: false
 
-      - uses: actions/setup-python@v4
+      - name: Setup conda
+        uses: pytorch/test-infra/.github/actions/setup-miniconda@main
         with:
           python-version: '3.10'
 
