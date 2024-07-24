@@ -234,3 +234,15 @@ class MulConfig(SingleNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class BMMConfig(SingleNodePartitionerConfig):
+    """
+    Despite being a GEMM Kernel, BMM Can be partitioned like a single node partitioner
+    because it does not perform any packing on the inputs being matrix multiplied
+    """
+
+    target_name = "bmm.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
