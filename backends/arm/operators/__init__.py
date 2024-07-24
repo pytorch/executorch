@@ -19,6 +19,8 @@ from . import (  # noqa
     op_permute,
     op_quant,
     op_slice,
+    op_sigmoid,
     op_softmax,
+    op_sub,
     op_view,
 )

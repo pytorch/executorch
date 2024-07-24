@@ -31,7 +31,7 @@ from executorch.exir.backend.backend_details import (
     CompileSpec,
     PreprocessResult,
 )
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)

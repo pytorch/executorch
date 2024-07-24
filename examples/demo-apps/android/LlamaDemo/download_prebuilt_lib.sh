@@ -7,8 +7,8 @@
 
 set -eu
 
-AAR_URL="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.2.1/executorch-llama.aar"
-AAR_SHASUM="2973b1c41aa2c2775482d7cc7c803d0f6ca282c1"
+AAR_URL="https://ossci-android.s3.us-west-1.amazonaws.com/executorch/release/0.3/executorch-llama.aar"
+AAR_SHASUM="f06cc1606e5e05f00fd0ae721f5d37d56124fd28"
 
 LIBS_PATH="$(dirname "$0")/app/libs"
 AAR_PATH="${LIBS_PATH}/executorch-llama.aar"
