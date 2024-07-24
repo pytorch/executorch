@@ -8,6 +8,7 @@
 # Please refer to README.md in the same folder for more information.
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Optional, Tuple
 
 import torch
@@ -19,7 +20,6 @@ from executorch.examples.models.llama2.rope import (
     hf_precompute_freqs_cis,
     precompute_freqs_cis,
 )
-from functools import partial
 
 from torch import nn
 
