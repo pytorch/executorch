@@ -80,9 +80,8 @@ jobs:
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
-    # DEBUG
-    # needs: build-llm-demo
-    runs-on: amz2023.linux.12xlarge
+    needs: build-llm-demo
+    runs-on: amz2023.linux.4xlarge
     env:
       ANDROID_NDK_VERSION: r26c
     steps:
@@ -112,6 +111,7 @@ jobs:
           # Reuse the script that install Android on ET Docker image
           sudo -E bash .ci/docker/common/install_android.sh
 
+      # NB: It takes about 10m to cold boot the emulator here
       - name: Run Android emulator
         env:
           ANDROID_HOME: /opt/android/sdk
