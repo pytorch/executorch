@@ -29,6 +29,7 @@ CMAKE_X86_64="build_x86_64"
 BUILD_AARCH64="true"
 CMAKE_AARCH64="build_android"
 CLEAN="true"
+BUILD_TYPE="Debug"
 
 if [ -z PYTHON_EXECUTABLE ]; then
   PYTHON_EXECUTABLE="python3"
@@ -38,7 +39,7 @@ if [ -z BUCK2 ]; then
   BUCK2="buck2"
 fi
 
-long_options=skip_x86_64,skip_aarch64,no_clean
+long_options=skip_x86_64,skip_aarch64,no_clean,release
 
 parsed_args=$(getopt -a --options '' --longoptions $long_options --name "$0" -- "$@")
 eval set -- "$parsed_args"
@@ -49,6 +50,7 @@ while true ; do
         --skip_x86_64) BUILD_X86_64="false"; shift;;
         --skip_aarch64) BUILD_AARCH64="false"; shift;;
         --no_clean) CLEAN="false"; shift;;
+        --release) BUILD_TYPE="Release"; shift;;
         --) shift; break;;
     esac
 done
@@ -66,9 +68,9 @@ if [ "$BUILD_AARCH64" = true ]; then
     fi
 
     cd $BUILD_ROOT
-    # If we build debug type, we need to change flatcc to flatcc_d
     cmake .. \
         -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
+        -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_SDK=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
@@ -87,6 +89,7 @@ if [ "$BUILD_AARCH64" = true ]; then
 
     cmake $PRJ_ROOT/$EXAMPLE_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+        -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
         -DANDROID_ABI='arm64-v8a' \
         -DANDROID_NATIVE_API_LEVEL=23 \
         -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \

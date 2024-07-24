@@ -91,8 +91,8 @@ class LoweredBackendModule(torch.nn.Module):
             module_call_graph=copy.deepcopy(
                 self._original_exported_program.module_call_graph
             ),
-            verifier=copy.deepcopy(self._original_exported_program.verifier),
             constants=self._original_exported_program.constants,
+            verifiers=[copy.deepcopy(self._original_exported_program.verifier)],
         )
 
         res = LoweredBackendModule(
@@ -322,7 +322,7 @@ class LoweredBackendModule(torch.nn.Module):
             range_constraints=lowered_exported_program.range_constraints,
             module_call_graph=lowered_exported_program.module_call_graph,
             example_inputs=None,
-            verifier=lowered_exported_program.verifier,
+            verifiers=[lowered_exported_program.verifier],
         )
         if memory_planning is None:
             memory_planning = MemoryPlanningPass("greedy")
@@ -616,8 +616,8 @@ def create_exported_program_from_submodule(
                 ),
             )
         ],
-        verifier=owning_program.verifier,
         constants=subgraph_constants,
+        verifiers=[owning_program.verifier],
     )
 
 

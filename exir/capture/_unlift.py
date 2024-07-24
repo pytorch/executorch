@@ -104,7 +104,7 @@ def _unlift(gm, inp_pos_to_param_buffer_name, in_spec, out_spec, state_dict):
 
 
 def unlift_exported_program_lifted_states(
-    ep: torch._export.exported_program.ExportedProgram,
+    ep: torch.export.exported_program.ExportedProgram,
 ):
     new_gm = copy.deepcopy(ep.graph_module)
 

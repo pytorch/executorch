@@ -54,4 +54,5 @@ from . import (  # noqa
     max_pool2d_annotator,
     mul_annotator,
     sub_annotator,
+    sigmoid_annotator,
 )
