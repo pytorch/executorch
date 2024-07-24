@@ -129,8 +129,8 @@ jobs:
           # NB: The name here needs to match the upload-artifact name from build-frameworks-ios job
           name: executorch-frameworks-ios
           path: ${{ runner.temp }}/frameworks-ios/
-      - name: Only push to S3 when running the workflow manually from main branch
-        if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+      - name: Only push to S3 when running the workflow manually from release/0.3 branch
+        if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/release/0.3' }}
         shell: bash
         run: |
           set -eux
