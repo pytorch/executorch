@@ -129,15 +129,21 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
-          arch: x86_64
+          # NB: x86_64 emulator is slow because the lack of KVM support on AWS, it
+          # seems that we can use metal instance for that but it hasn't been tried
+          # out yet
+          arch: arm64-v8a
           script: ./build/run_android_emulator.sh
           # NB: This is to boot the emulator faster following the instructions on
-          # https://github.com/ReactiveCircus/android-emulator-runner
-          cores: 8
+          # https://github.com/ReactiveCircus/android-emulator-runner. The max number
+          # of cores we can set is 6, any higher number will be reduced to 6.
+          cores: 6
           ram-size: 12288M
           force-avd-creation: false
           disable-animations: true
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # This is to make sure that the job doesn't fail flakily
+          emulator-boot-timeout: 900
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   test-llama-app:
