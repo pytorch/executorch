@@ -112,6 +112,14 @@ jobs:
           # Reuse the script that install Android on ET Docker image
           sudo -E bash .ci/docker/common/install_android.sh
 
+      - name: Run Android emulator
+        env:
+          ANDROID_HOME: /opt/android/sdk
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          script: ./build/run_android_emulator.sh
+
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   test-llama-app:
     needs: upload-artifacts
