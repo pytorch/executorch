@@ -9,6 +9,7 @@ from typing import List, Type
 
 from executorch.backends.xnnpack.partition.config.gemm_configs import (
     AddmmConfig,
+    ConvolutionConfig,
     LinearConfig,
 )
 
@@ -19,14 +20,20 @@ from executorch.backends.xnnpack.partition.config.single_node_configs import (
     QuantizedPerTensorConfig,
     ReLUConfig,
 )
+from executorch.backends.xnnpack.partition.config.special_node_configs import (
+    BatchNormConfig,
+)
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
 )
 
 ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
-    # Linear/Addmm Configs
+    # GEMM-like Configs
     AddmmConfig,
     LinearConfig,
+    ConvolutionConfig,
+    # BatchNorm Config
+    BatchNormConfig,
     # Single Node Configs
     HardtanhConfig,
     AddConfig,
