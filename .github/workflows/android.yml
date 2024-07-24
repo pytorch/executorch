@@ -82,7 +82,7 @@ jobs:
   run-emulator:
     # DEBUG
     # needs: build-llm-demo
-    runs-on: linux.4xlarge
+    runs-on: amz2023.linux.12xlarge
     env:
       ANDROID_NDK_VERSION: r26c
     steps:
