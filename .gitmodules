@@ -28,9 +28,6 @@
 [submodule "backends/xnnpack/third-party/pthreadpool"]
 	path = backends/xnnpack/third-party/pthreadpool
 	url = https://github.com/Maratyszcza/pthreadpool.git
-[submodule "examples/models/phi-3-mini/third-party/sentencepiece"]
-	path = examples/models/phi-3-mini/third-party/sentencepiece
-	url = https://github.com/google/sentencepiece.git
 [submodule "examples/third-party/LLaVA"]
 	path = examples/third-party/LLaVA
 	url = https://github.com/haotian-liu/LLaVA.git
@@ -43,6 +40,9 @@
 [submodule "extension/llm/third-party/re2"]
 	path = extension/llm/third-party/re2
 	url = https://github.com/google/re2.git
+[submodule "extension/llm/third-party/sentencepiece"]
+	path = extension/llm/third-party/sentencepiece
+	url = https://github.com/google/sentencepiece.git
 [submodule "kernels/optimized/third-party/eigen"]
 	path = kernels/optimized/third-party/eigen
 	url = https://gitlab.com/libeigen/eigen.git
