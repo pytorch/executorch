@@ -14,7 +14,9 @@ from executorch.backends.xnnpack.partition.config.gemm_configs import (
 )
 
 from executorch.backends.xnnpack.partition.config.single_node_configs import (
+    AbsConfig,
     AddConfig,
+    AvgPoolingConfig,
     DeQuantizedPerTensorConfig,
     HardtanhConfig,
     QuantizedPerTensorConfig,
@@ -36,6 +38,8 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     BatchNormConfig,
     # Single Node Configs
     HardtanhConfig,
+    AbsConfig,
+    AvgPoolingConfig,
     AddConfig,
     ReLUConfig,
     # Quantization Op Configs
