@@ -105,10 +105,12 @@ class XnnpackBackend(BackendDetails):
             range_constraints=edge_program.range_constraints,
             module_call_graph=edge_program.module_call_graph,
             example_inputs=edge_program.example_inputs,
-            verifier=EXIREdgeDialectVerifier(
-                edge_compile_config=xnnpack_edge_compile_config, class_only=True
-            ),
             constants=edge_program.constants,
+            verifiers=[
+                EXIREdgeDialectVerifier(
+                    edge_compile_config=xnnpack_edge_compile_config, class_only=True
+                )
+            ],
         )
 
         passes = []

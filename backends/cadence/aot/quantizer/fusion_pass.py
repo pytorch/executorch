@@ -17,7 +17,8 @@ from executorch.backends.cadence.aot.quantizer.patterns import (
     LayerNormPattern,
     LinearPattern,
     MatmulPattern,
-    ReluPattern,
+    ReluPattern0,
+    ReluPattern1,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
     create_zero_bias_int32,
@@ -35,6 +36,9 @@ from torch.fx.passes.utils.fuser_utils import legalize_graph
 # Use this to avoid pyre errors
 # pyre-ignore[33]: `_ModelInputsType` cannot alias to `Any`.
 ArgsType = Any
+
+# Use this part for patterns with multiple aten ops
+ReluPatterns = (ReluPattern0, ReluPattern1)
 
 
 # Helper function to get the args and kwargs for the linear replacement op
@@ -411,7 +415,7 @@ class QuantFusion(ExportPass):
                             bias_inputs,
                             quant_node,
                         )
-                    elif isinstance(pattern, ReluPattern):
+                    elif isinstance(pattern, ReluPatterns):
                         args, kwargs = get_args_and_kwargs_relu(
                             graph_module,
                             inputs_inputs,

@@ -355,7 +355,7 @@ def capture(  # noqa: C901
             )
         ],
         example_inputs=None,
-        verifier=EXIRATenDialectVerifierBase,
+        verifiers=[EXIRATenDialectVerifierBase],
     )
     return ExirExportedProgram(ep, False)
 
