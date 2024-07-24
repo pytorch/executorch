@@ -37,7 +37,7 @@ install_prerequiresites() {
 
 install_ndk() {
   NDK_INSTALLATION_DIR=/opt/ndk
-  mkdir -p "${NDK_INSTALLATION_DIR}"
+  rm -rf "${NDK_INSTALLATION_DIR}" && mkdir -p "${NDK_INSTALLATION_DIR}"
 
   pushd /tmp
   # The NDK installation is cached on ossci-android S3 bucket
@@ -65,7 +65,7 @@ install_cmdtools() {
 
 install_sdk() {
   SDK_INSTALLATION_DIR=/opt/android/sdk
-  mkdir -p "${SDK_INSTALLATION_DIR}"
+  rm -rf "${SDK_INSTALLATION_DIR}" && mkdir -p "${SDK_INSTALLATION_DIR}"
 
   # These are the tools needed to build Android apps
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "platforms;android-34"
