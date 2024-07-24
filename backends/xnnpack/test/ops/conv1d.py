@@ -7,13 +7,16 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackFloatingPointPartitioner,
+from executorch.backends.xnnpack.partition.config.xnnpack_config import (
+    ConfigPrecisionType,
+)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
+    XnnpackPartitioner,
 )
 from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
 
-from executorch.backends.xnnpack.test.tester import RunPasses, Tester
-from executorch.backends.xnnpack.test.tester.tester import Partition
+from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 
 
@@ -93,8 +96,7 @@ class TestConv1d(unittest.TestCase):
         conv_count,
         quantized=False,
         dynamic_shape=None,
-        partition=None,
-        passes=None,
+        stage=None,
         skip_to_executorch=False,
     ):
         tester = (
@@ -105,14 +107,7 @@ class TestConv1d(unittest.TestCase):
             )
             .export()
             .check_count({"torch.ops.aten.conv1d.default": conv_count})
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_aten_convolution_default": conv_count
-                }
-            )
-            .run_passes(passes)
-            .partition(partition)
+            .to_edge_transform_and_lower(stage)
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
         )
@@ -170,7 +165,11 @@ class TestConv1d(unittest.TestCase):
             1,
             quantized=True,
             dynamic_shape=dynamic_shapes,
-            partition=Partition(XnnpackFloatingPointPartitioner()),
-            passes=RunPasses(pass_functions=[constant_prop_pass]),
+            stage=ToEdgeTransformAndLower(
+                partitioners=[
+                    XnnpackPartitioner(config_precisions=ConfigPrecisionType.FP32)
+                ],
+                transform_fn=[constant_prop_pass],
+            ),
             skip_to_executorch=True,
         )

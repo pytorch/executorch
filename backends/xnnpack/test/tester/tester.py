@@ -267,6 +267,7 @@ class ToEdgeTransformAndLower(Stage):
         self,
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
+        transform_fn: Optional[List[Callable]] = None,
     ):
         from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
             XnnpackPartitioner,
@@ -277,9 +278,15 @@ class ToEdgeTransformAndLower(Stage):
             edge_compile_config or get_xnnpack_edge_compile_config()
         )
         self.edge_dialect_program = None
+        self.transform_fn = transform_fn or []
 
     def run(self, artifact: ExportedProgram, inputs=None) -> None:
         artifact_to_run = copy.deepcopy(artifact)
+        # We use transform_fn here for now because to_edge_transform_and_lowere
+        # does not support transform passes that take in ExportedPrograms
+        for pass_fn in self.transform_fn:
+            artifact_to_run = pass_fn(artifact_to_run)
+
         self.edge_dialect_program = _to_edge_transform_and_lower(
             artifact_to_run,
             compile_config=self.edge_compile_conf,
