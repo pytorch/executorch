@@ -329,8 +329,33 @@ class App {
     _bandwidth("Shared", RANGE);
   }
 
-  void warp_size() {
+  // Warp size is a difficult metric to obtain because the hardware limitations
+  // do not always coincide with the way the SM divides the workload. For
+  // instance, the hardware can have a warp size of 64 threads, but an SM might
+  // be able to simulate concurrency of 128 threads with a single scheduler.
+
+  // Because of this, it is important to measure the warp size different ways,
+  // that can evidence both the physical limitations of the hardware, and the
+  // actual behavior of the driver.
+
+  // Additionally,the SM can behave in two different ways when the assigned
+  // workload is smaller than the warp size.
+
+  // In Case 1, like ARM Mali, the SM can assign dummy workloads to fill empty
+  // threads and maintain a uniform workload.
+
+  // In Case 2, like in Adreno, the driver might decide to pack multiple works
+  // together and dispatch them at once.
+  void warp_size(bool verbose = false) {
     std::cout << "\n------ Warp Size ------" << std::endl;
+
+    // Method A: Stress test with a kernel that uses complex ALU operations like
+    // integer division to avoid latency hiding. Increase the number of threads
+    // until a jump in latency is detected.
+
+    // This timing-based method helps us identify physical warp sizes. It also
+    // helps with Case 2, when threads of multiple warps are managed by the same
+    // scheduler at the same time.
     const double COMPENSATE = 0.01;
     const double THRESHOLD = 3;
 
@@ -340,7 +365,7 @@ class App {
       StorageBuffer out_buf(context(), vkapi::kInt, nthread_logic_);
       vkapi::PipelineBarrier pipeline_barrier{};
 
-      auto shader_name = "warp_size";
+      auto shader_name = "warp_size_physical";
 
       auto time = benchmark_on_gpu(shader_name, 10, [&]() {
         context()->submit_compute_job(
@@ -380,7 +405,80 @@ class App {
           << "Unable to conclude a physical warp size. Assuming warp_size == subgroup_size"
           << std::endl;
     }
-    std::cout << "WarpSize," << warp_size << std::endl;
+
+    // Method B: Let all the threads in a warp race and atomically fetch-add
+    // a counter, then store the counter values to the output buffer in the
+    // scheduling order of these threads. If all the order numbers follow an
+    // ascending order, then the threads are likely executing within a warp.
+    // Threads in different warps are not managed by the same scheduler, so they
+    // would race for a same ID out of order, unaware of each other.
+
+    // This method evidences the actual driver behavior when running
+    // concurrency, regardless of the physical limitations of the hardware.
+
+    // Likewise, this method helps us identify warp sizes when the SM
+    // sub-divides its ALUs into independent groups, like the three execution
+    // engines in a Mali G76 core. It helps warp-probing in Case 1 because it
+    // doesn't depend on kernel timing, so the extra wait time doesn't lead to
+    // inaccuracy.
+    auto bench_sm = [&](uint32_t nthread) {
+      StorageBuffer out_buf(context(), vkapi::kInt, nthread_logic_);
+      vkapi::PipelineBarrier pipeline_barrier{};
+
+      auto shader_name = "warp_size_scheduler";
+
+      benchmark_on_gpu(shader_name, 1, [&]() {
+        context()->submit_compute_job(
+            VK_KERNEL_FROM_STR(shader_name),
+            pipeline_barrier,
+            {nthread, 1, 1},
+            {nthread, 1, 1},
+            {},
+            VK_NULL_HANDLE,
+            0,
+            out_buf.buffer());
+      });
+
+      std::vector<int32_t> data(nthread_logic_);
+      copy_staging_to_ptr(out_buf, data.data(), out_buf.nbytes());
+
+      if (verbose) {
+        std::stringstream ss;
+        for (auto j = 0; j < nthread; ++j) {
+          ss << data[j] << " ";
+        }
+        std::cout << ss.str() << std::endl;
+      }
+
+      // Check until which point is the data in ascending order.
+      int32_t last = -1;
+      int32_t j = 0;
+      for (; j < nthread; ++j) {
+        if (last >= data[j]) {
+          break;
+        }
+        last = data[j];
+      }
+
+      return j;
+    };
+
+    // Test increasing sizes until the data is no longer in ascending order.
+    uint32_t warp_size_scheduler = warp_size;
+    int i = 1;
+    for (; i <= nthread_logic_; ++i) {
+      uint32_t nascend = bench_sm(i);
+      if (nascend != i) {
+        warp_size_scheduler = nascend;
+        break;
+      }
+    }
+    if (i > nthread_logic_) {
+      std::cout << "Unable to conclude an SM Warp Size." << std::endl;
+    }
+
+    std::cout << "PhysicalWarpSize," << warp_size << std::endl;
+    std::cout << "SMWarpSize," << warp_size_scheduler << std::endl;
   }
 };
 

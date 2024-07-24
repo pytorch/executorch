@@ -7,7 +7,7 @@ import logging
 import time
 
 import torch
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 
 def assert_outputs_equal(model_output, ref_output):

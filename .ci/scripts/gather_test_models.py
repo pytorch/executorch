@@ -56,7 +56,7 @@ def parse_args() -> Any:
         "-e",
         "--event",
         type=str,
-        choices=["pull_request", "push"],
+        choices=["pull_request", "push", "schedule"],
         required=True,
         help="GitHub CI Event. See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on",
     )
@@ -83,7 +83,7 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     We put higher priority and fast models to pull request and rest to push.
     """
     if event == "pull_request":
-        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit", "llava"]
+        return model in ["mv3", "vit"]
     return True
 
 

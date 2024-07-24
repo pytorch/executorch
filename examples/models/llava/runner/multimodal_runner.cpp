@@ -147,12 +147,9 @@ Result<torch::executor::Tensor> MultiModalRunner::prefill_image(
   auto image_tensor = managed_images.get_aliasing_tensor();
   auto start_pos_tensor = managed_start_pos.get_aliasing_tensor();
 
-  // image encoder input
-  std::vector<EValue> image_encoder_input = {image_tensor};
-
   // Run image encoder
   Result<std::vector<EValue>> image_encoder_outputs =
-      module_->execute("image_encoder", image_encoder_input);
+      module_->execute("image_encoder", {image_tensor});
 
   ET_CHECK_OK_OR_RETURN_ERROR(image_encoder_outputs.error());
 

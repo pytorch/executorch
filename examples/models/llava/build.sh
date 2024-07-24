@@ -27,8 +27,11 @@ cmake                                       \
     ${dir}
 
 
-cmake-out/examples/models/llava/multimodal_main \
-    --tokenizer_path /data/users/larryliu/llava/tokenizer.bin \
-    --model_path /data/users/larryliu/llava/llava_combined_xnnpack.pte \
-    --prompt "What are the things I should be cautious about when I visit here?" \
-    --image_path /data/users/larryliu/llava/image.pt
+cmake --build cmake-out/${dir} -j9 --config Debug
+
+# cmake-out/examples/models/llava/multimodal_main                                     \
+#     --tokenizer_path /data/users/larryliu/llava/tokenizer.bin                       \
+#     --model_path /data/users/larryliu/llava/llava_combined_xnnpack.pte              \
+#     --prompt "\nWhat are the things I should be cautious about when I visit here?"  \
+#     --image_path /data/users/larryliu/llava/image.pt                                \
+#     --temperature 0

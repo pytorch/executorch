@@ -8,6 +8,7 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import NodeVisitor, register_node_visitor
@@ -65,14 +66,14 @@ class PowTensorScalar(NodeVisitor):
             {},  # kwargs
         )
 
-        if pow_quant_attrs := node.meta.get("quant_attrs"):
+        if pow_quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
             quant_attrs = pow_quant_attrs.copy()
             quant_range = quant_attrs["quant_max"] - quant_attrs["quant_min"]
             quant_attrs["zero_point"] = 0 if scalar >= 0 else quant_attrs["quant_max"]
             quant_attrs["scale"] = (
                 scalar / quant_range if scalar >= 0 else -scalar / quant_range
             )
-            scalar_node.meta["quant_attrs"] = quant_attrs
+            scalar_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
 
         scalar_tensor_wrapper = self.define_tensor(
             scalar_node,

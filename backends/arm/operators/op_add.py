@@ -5,19 +5,17 @@
 
 from typing import List
 
+import executorch.backends.arm.tosa_quant_utils as tqutils
+import executorch.backends.arm.tosa_utils as tutils
+
 import serializer.tosa_serializer as ts
-import torch
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import (
-    build_rescale_from_int32,
-    build_rescale_to_int32,
-)
-from executorch.backends.arm.tosa_utils import broadcast_shapes, getNodeArgs, tosa_shape
 from serializer.tosa_serializer import TosaOp
+from torch.fx import Node
 
 
 @register_node_visitor
@@ -29,75 +27,44 @@ class AddVisitor(NodeVisitor):
 
     def define_node(
         self,
-        node: torch.fx.Node,
+        node: Node,
         tosa_graph: ts.TosaSerializer,
         inputs: List[TosaArg],
         output: TosaArg,
         is_quant_node: bool,
     ) -> None:
         if is_quant_node:
-            # Single input or not
-            if len(node.all_input_nodes) == 1:
-                input_node_A = node.all_input_nodes[0]
-                input_node_B = node.all_input_nodes[0]
-            else:
-                input_node_A, input_node_B = node.all_input_nodes
+            input_nodes = tutils.get_two_inputs(node)
 
-            # Get input scale_factor and zero_points for A, B
-            input_A, input_A_scale, input_A_zp, _, _, _ = getNodeArgs(input_node_A)
-            input_B, input_B_scale, input_B_zp, _, _, _ = getNodeArgs(input_node_B)
-
-            # Scale the int8 quantized input to a common scale in the integer
-            # domain.
-            min_scale = min(input_A_scale.number, input_B_scale.number)
-            inputA_rescale_scale = input_A_scale.number / min_scale
-            inputB_rescale_scale = input_B_scale.number / min_scale
-
-            input_A.shape = tosa_shape(input_A.shape, input_A.dim_order)
-            input_B.shape = tosa_shape(input_B.shape, input_B.dim_order)
-            broadcasted_shape = broadcast_shapes(input_A.shape, input_B.shape)
-
-            input_A_rescaled_to_int32 = build_rescale_to_int32(
-                tosa_graph,
-                input_A,
-                input_A_zp.number,
-                inputA_rescale_scale,
+            # Rescale inputs to 32 bit
+            rescaled_inputs, scale = tqutils.rescale_nodes_to_int32(
+                input_nodes, tosa_graph
             )
 
-            input_B_rescaled_to_int32 = build_rescale_to_int32(
-                tosa_graph,
-                input_B,
-                input_B_zp.number,
-                inputB_rescale_scale,
+            # Preapre sub output tensor
+            broadcasted_shape = tutils.broadcast_shapes(
+                rescaled_inputs[0].shape, rescaled_inputs[0].shape
             )
+            add_output = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
 
-            ## Do the INT32 Add
-            add_res = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
+            # Do the INT32 Add
             tosa_graph.addOperator(
                 TosaOp.Op().ADD,
                 [
-                    input_A_rescaled_to_int32.name,
-                    input_B_rescaled_to_int32.name,
+                    rescaled_inputs[0].name,
+                    rescaled_inputs[1].name,
                 ],
-                [add_res.name],
+                [add_output.name],
                 None,
             )
 
-            # Output
-            output_node = list(node.users)[0]
-            _, output_scale, output_zp, _, _, _ = getNodeArgs(output_node)
-            output_rescale_scale = min_scale / output_scale.number
-
-            # Rescale Back to INT8
-            build_rescale_from_int32(
-                tosa_graph,
-                add_res.name,
-                output.name,
-                output_zp.number,
-                output_rescale_scale,
-            )
+            # Scale output back to 8 bit
+            tqutils.rescale_node_back_to_int8(node, add_output, scale, tosa_graph)
         else:
             # FP32 Add lowering
             tosa_graph.addOperator(
-                TosaOp.Op().ADD, [inputs[0].name, inputs[1].name], [output.name], None
+                TosaOp.Op().ADD,
+                [inputs[0].name, inputs[1].name],
+                [output.name],
+                None,
             )

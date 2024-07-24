@@ -76,3 +76,34 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
           path: ${{ runner.temp }}/artifacts/
+
+  # Let's see how expensive this job is, we might want to tone it down by running it periodically
+  test-llama-app:
+    needs: upload-artifacts
+    permissions:
+      id-token: write
+      contents: read
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    strategy:
+      matrix:
+        # https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/README.md#alternative-2-build-from-local-machine
+        # mentions that tiktoken is only for Llama3. So, we can export it later in another archive
+        # like https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b-0717.zip when this is
+        # updated to run Llama3
+        tokenizer: [bpe]
+    with:
+      device-type: android
+      runner: linux.2xlarge
+      test-infra-ref: ''
+      # This is the ARN of ExecuTorch project on AWS
+      project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
+      # This is the custom Android device pool that only includes Samsung Galaxy S2x
+      device-pool-arn: arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa
+      # Uploaded to S3 from the previous job, the name of the app comes from the project itself
+      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_${{ matrix.tokenizer }}/app-debug.apk
+      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_${{ matrix.tokenizer }}/app-debug-androidTest.apk
+      # The test spec can be downloaded from https://ossci-assets.s3.amazonaws.com/android-llama2-device-farm-test-spec.yml
+      test-spec: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/abd86868-fa63-467e-a5c7-218194665a77
+      # Among the input, this is the biggest file, so it is cached on AWS to make the test faster. Note that the file is deleted by AWS after 30
+      # days and the job will automatically re-upload the file when that happens.
+      extra-data: https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b-0717.zip

@@ -93,7 +93,9 @@ class RecomposePixelUnshuffle(ExportPass):
 
                         op = self.op
                         pixel_unshuffle_node = graph.create_node(
-                            "call_function", op, (input_node, int(downscale_factor))
+                            "call_function",
+                            op,
+                            (input_node, int(downscale_factor)),
                         )
                         users = output_node.users.copy()
                         for user in users:
