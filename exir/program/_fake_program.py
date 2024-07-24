@@ -49,8 +49,8 @@ def get_fake_program(real_exported_program: ExportedProgram) -> ExportedProgram:
         state_dict=new_state_dict,
         range_constraints=copy.deepcopy(real_exported_program.range_constraints),
         module_call_graph=copy.deepcopy(real_exported_program.module_call_graph),
-        verifier=real_exported_program.verifier,
         constants=real_exported_program.constants,
+        verifiers=[real_exported_program.verifier],
     )
     return fake_exported_program
 
