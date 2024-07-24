@@ -76,7 +76,8 @@ class MultiModalRunner {
   Result<torch::executor::Tensor> prefill_prompt(
       const std::string& prompt,
       int64_t start_pos,
-      std::function<void(const std::string&)> token_callback);
+      bool add_bos = false,
+      std::function<void(const std::string&)> token_callback = {});
 
   Error generate(
       Image& image,
@@ -90,13 +91,11 @@ class MultiModalRunner {
   inline static const std::string kPresetPrompt =
       "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: ";
   // metadata
-  int32_t logits_to_token(const exec_aten::Tensor& logits_tensor);
+  int32_t logits_to_token(const torch::executor::Tensor& logits_tensor);
 
   Result<torch::executor::Tensor> step(
-      int64_t input_token,
       ManagedTensor& tokens,
-      ManagedTensor& start_pos,
-      size_t max_seq_len);
+      ManagedTensor& start_pos);
 
   // metadata
   int32_t vocab_size_;

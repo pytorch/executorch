@@ -178,6 +178,7 @@ Result<torch::executor::Tensor> MultiModalRunner::prefill_image(
 Result<torch::executor::Tensor> MultiModalRunner::prefill_prompt(
     const std::string& prompt,
     int64_t start_pos,
+    bool add_bos,
     std::function<void(const std::string&)> token_callback) {
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
   if (!is_loaded()) {
@@ -185,8 +186,8 @@ Result<torch::executor::Tensor> MultiModalRunner::prefill_prompt(
   }
   // enable_parallel_prefill_ maybe set even when not using kv cache
   // When kv cache is not used, start pos is ignored
-  Result<std::vector<uint64_t>> encode_res =
-      tokenizer_->encode(prompt, n_bos_, append_eos_ ? n_eos_ : 0);
+  Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
+      prompt, add_bos ? n_bos_ : 0, append_eos_ ? n_eos_ : 0);
 
   ET_CHECK_OK_OR_RETURN_ERROR(
       encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
@@ -210,48 +211,23 @@ Result<torch::executor::Tensor> MultiModalRunner::prefill_prompt(
   ManagedTensor managed_start_pos(
       &start_pos, start_pos_shape, ScalarType::Long);
 
-  auto tokens_tensor = managed_tokens.get_aliasing_tensor();
-  auto start_pos_tensor = managed_start_pos.get_aliasing_tensor();
+  Result<torch::executor::Tensor> outputs_res =
+      step(managed_tokens, managed_start_pos);
 
-  int32_t num_tokens = tokens_tensor.numel();
-
-  // token embedding input
-  std::vector<EValue> token_embedding_input = {tokens_tensor};
-
-  // Run token embedding
-  Result<std::vector<EValue>> token_embedding_outputs =
-      module_->execute("token_embedding", token_embedding_input);
-  ET_CHECK_OK_OR_RETURN_ERROR(token_embedding_outputs.error());
-
-  ET_LOG(
-      Info,
-      "Token embedding output numel(): %zu",
-      token_embedding_outputs.get()[0].toTensor().numel());
-  // inputs:[start_pos, tokens]
-  std::vector<EValue> inputs;
-  inputs.push_back(start_pos_tensor);
-  inputs.push_back(token_embedding_outputs.get()[0]);
-
-  Result<std::vector<EValue>> outputs_res =
-      module_->execute("text_model", inputs);
-  ET_LOG(
-      Info,
-      "Prefill token result numel(): %zu",
-      outputs_res.get()[0].toTensor().numel());
   ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
+  ET_LOG(Info, "Prefill token result numel(): %zu", outputs_res.get().numel());
   ET_CHECK_MSG(
-      outputs_res.get()[0].isTensor(),
-      "Non Tensor Output returned from executing LLM");
-  ET_CHECK_MSG(
-      outputs_res.get()[0].toTensor().size(1) == num_tokens,
+      outputs_res.get().size(1) == num_prompt_tokens,
       "Expected number of output tokens %d does not match returned value %zu.",
-      num_tokens,
-      outputs_res.get()[0].toTensor().size(1));
+      num_prompt_tokens,
+      outputs_res.get().size(1));
   if (token_callback) {
-    uint64_t prev = tokens_tensor.const_data_ptr<int64_t>()[0];
+    // insert new token into prompt_tokens
+    prompt_tokens.push_back(logits_to_token(outputs_res.get()));
+    uint64_t prev = prompt_tokens[0];
     uint64_t cur;
-    for (int i = 1; i < num_tokens; i++) {
-      cur = tokens_tensor.const_data_ptr<int64_t>()[i];
+    for (int i = 1; i < prompt_tokens.size(); i++) {
+      cur = prompt_tokens[i];
       auto piece_res = tokenizer_->decode(prev, cur);
       ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error());
       util::safe_printf(piece_res.get().c_str());
@@ -259,38 +235,32 @@ Result<torch::executor::Tensor> MultiModalRunner::prefill_prompt(
       prev = cur;
       token_callback(piece_res.get().c_str());
     }
-    cur = logits_to_token(outputs_res.get()[0].toTensor());
-    auto piece_res = tokenizer_->decode(prev, cur);
-    ET_CHECK(piece_res.ok());
-    const char* piece = piece_res.get().c_str();
-    util::safe_printf(piece);
-    fflush(stdout);
-    token_callback(piece_res.get().c_str());
   }
 
   // Return the logits tensor
   stats_.first_token_ms = util::time_in_ms();
   stats_.prompt_eval_end_ms = util::time_in_ms();
-  return outputs_res.get()[0].toTensor();
+  return outputs_res;
 }
 
 // Given an input token. Set up the inputs for the model and execute a single
 // step. Returning the logits tensor.
 Result<torch::executor::Tensor> MultiModalRunner::step(
-    int64_t input_token,
     ManagedTensor& managed_tokens,
-    ManagedTensor& managed_start_pos,
-    size_t max_seq_len) {
+    ManagedTensor& managed_start_pos) {
   // ET_LOG(Info, "Input token %" PRIu64, input_token);
   auto tokens = managed_tokens.get_aliasing_tensor();
   auto start_pos = managed_start_pos.get_aliasing_tensor();
 
-  // When using kv-cache our input is always 1 token, so just update to the
-  // latest.
-  tokens.mutable_data_ptr<int64_t>()[0] = input_token;
+  // run token embedding
+  Result<std::vector<EValue>> token_embedding_outputs =
+      module_->execute("token_embedding", {tokens});
+  ET_CHECK_OK_OR_RETURN_ERROR(token_embedding_outputs.error());
 
-  Result<std::vector<EValue>> outputs_res =
-      module_->forward({tokens, start_pos});
+  // run text model
+  Result<std::vector<EValue>> outputs_res = module_->execute(
+      "text_model", {start_pos, token_embedding_outputs.get()[0]});
+
   ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
   ET_CHECK_MSG(
       outputs_res.get().size() == 1,
@@ -298,9 +268,6 @@ Result<torch::executor::Tensor> MultiModalRunner::step(
   ET_CHECK_MSG(
       outputs_res.get()[0].isTensor(),
       "Non Tensor Output returned from executing LLM");
-
-  // Bump start_pos by 1
-  start_pos.mutable_data_ptr<int64_t>()[0]++;
 
   // Return the logits tensor
   return outputs_res.get()[0].toTensor();
@@ -336,7 +303,7 @@ Error MultiModalRunner::generate(
   // Here feed all tokens to the model and get the next predicted token
   // after the prompt. After that we will enter generate loop.
   int64_t pos = 0;
-  auto preset_prompt_prefill_res = prefill_prompt(kPresetPrompt, pos, nullptr);
+  auto preset_prompt_prefill_res = prefill_prompt(kPresetPrompt, pos, true);
   ET_LOG(
       Info,
       "prefill preset prompt res sizes(0): %zu, sizes(1): %zu, sizes(2): %zu",
@@ -361,8 +328,8 @@ Error MultiModalRunner::generate(
   pos += image_prefill_res.get().size(1);
   ET_LOG(Info, "pos: %d", pos);
 
-  // prefill prompt
-  auto prompt_prefill_res = prefill_prompt(prompt, pos, token_callback);
+  // prefill prompt. Do not append bos because preset prompt has it.
+  auto prompt_prefill_res = prefill_prompt(prompt, pos, false, token_callback);
   ET_LOG(
       Info,
       "prefill prompt res sizes(0): %zu, sizes(1): %zu, sizes(2): %zu",
@@ -397,7 +364,7 @@ Error MultiModalRunner::generate(
   while (pos < seq_len - 1) {
     // Run the model
     Result<torch::executor::Tensor> logits_res =
-        step(cur_token, tokens_managed, start_pos_managed, seq_len);
+        step(tokens_managed, start_pos_managed);
 
     ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
     exec_aten::Tensor& logits_tensor = logits_res.get();
@@ -405,10 +372,13 @@ Error MultiModalRunner::generate(
     prev_token = cur_token;
 
     long sample_start_time_ms = util::time_in_ms();
+    // implicitly update tokens_managed to next token
     cur_token = logits_to_token(logits_tensor);
+
     stats_.aggregate_sampling_time_ms +=
         util::time_in_ms() - sample_start_time_ms;
 
+    // implicitly update start_pos_managed to next position
     pos++;
 
     // print the token as string, decode it with the Tokenizer object
