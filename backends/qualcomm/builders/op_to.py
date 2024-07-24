@@ -8,6 +8,7 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpCast, OpConvert, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -35,7 +36,12 @@ class To(NodeVisitor):
         input_node = node.args[0]
 
         # Not a case which has two quant node, no need to consider the convert op
-        if not all([input_node.meta.get("quant_attrs"), node.meta.get("quant_attrs")]):
+        if not all(
+            [
+                input_node.meta.get(QCOM_QUANT_ATTRS),
+                node.meta.get(QCOM_QUANT_ATTRS),
+            ]
+        ):
             return True
 
         input_tensor = self.get_tensor(input_node, node)

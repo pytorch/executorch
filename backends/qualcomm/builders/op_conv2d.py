@@ -10,6 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import (
@@ -79,7 +80,7 @@ class Conv2d(NodeVisitor):
             conv_op.AddScalarParam(
                 OP.param_group,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-                {"data": np.uint32(groups)},
+                {QCOM_DATA: np.uint32(groups)},
             )
 
         return conv_op
@@ -130,7 +131,7 @@ class Conv2d(NodeVisitor):
         unsqueeze_op.AddScalarParam(
             OpExpandDims.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(1)},
+            {QCOM_DATA: np.uint32(1)},
         )
         op_wrapper_list.append(unsqueeze_op)
 
