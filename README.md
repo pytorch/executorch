@@ -3,7 +3,7 @@
 ## Adding docs for a new release
 
 The documentation build in this repository is automated. The documentation "build" job runs on every PR.
-The "upload" to gh-pages job runs on tags and the "main" branch. 
+The "upload" to gh-pages job runs on tags and the "main" branch.
 
 For any release tag, such as "v1.1.1" or "v1.1.1-rc1", a GH action generates documentation and uploads
 it to gh-pages. A directory is created, named after the tag, with the "-rc" suffix, the "v" prefix, and
@@ -13,7 +13,7 @@ the docs will be uploaded to the 0.1 directory. This allows you to preview your 
 the official release.
 
 When the first release candidate tag directory for a new release is uploaded to the gh-pages branch,
-you will need to manually update the `versions.html` file as follows: 
+you will need to manually update the `versions.html` file as follows:
 
 ```
 <li class="toctree-l1">
@@ -25,7 +25,7 @@ you will need to manually update the `versions.html` file as follows:
 <li class="toctree-l1">
   <a class="reference internal" href="0.1/">v0.1.0 (stable)</a>
 </li>
-... 
+...
 ```
 This adds that new tag to the website dropdown so that the release candidate documentation is available
 for the users to preview.
@@ -38,7 +38,7 @@ release version. For example:
 
 ```
 git checkout gh-pages # checkout the gh-pages branch
-git checkout -b update-symlink-<NEW_VERSION> # create a branch from the gh-pages 
+git checkout -b update-symlink-<NEW_VERSION> # create a branch from the gh-pages
 NEW_VERSION=0.1   # substitute the correct version number here
 git checkout gh-pages
 rm stable # remove the existing symlink. **Do not** edit!
@@ -57,7 +57,7 @@ In addition to updating stable, you need to update the dropdown to include
 the latest version of docs.
 
 In `versions.html`, rename (release candidate) to (stable), and remove the
-old (stable). Here is an example: 
+old (stable). Here is an example:
 
 ```
 <li class="toctree-l1">
@@ -74,13 +74,13 @@ old (stable). Here is an example:
 ### Adding a <noindex> tag to old versions
 
 You don't want your old documentation to be discoverable by search
-engines. Therefore, you can run the following script to add a 
+engines. Therefore, you can run the following script to add a
 `noindex` tag to all .html files in the old version of the docs.
 For exampla, when releasing 0.2, you want to add a noindex tag to all
 0.1 documentation. Here is the script:
 
 ```
-!/bin/bash
+#!/bin/bash
 # Adds <meta name="robots" content="noindex"> tags to all html files in a
 # directory (recursively)
 #
