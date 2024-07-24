@@ -81,10 +81,10 @@ jobs:
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
     # needs: build-llm-demo
-    runs-on: 4-core-ubuntu
-    # runs-on: amz2023.linux.4xlarge
+    runs-on: amz2023.linux.4xlarge
     env:
       ANDROID_NDK_VERSION: r26c
+      API_LEVEL: 34
     steps:
       - name: Setup SSH (Click me for login details)
         uses: pytorch/test-infra/.github/actions/setup-ssh@main
@@ -102,12 +102,6 @@ jobs:
         with:
           python-version: '3.10'
 
-      # NB: Need this to setup Java on GH runner
-      - uses: actions/setup-java@v4
-        with:
-          distribution: corretto
-          java-version: 17
-
       - name: Install Android dependencies
         shell: bash
         run: |
@@ -116,15 +110,34 @@ jobs:
           # Reuse the script that install Android on ET Docker image
           sudo -E bash .ci/docker/common/install_android.sh
 
+      - name: Gradle cache
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ env.API_LEVEL }}
+
       # NB: It takes about 10m to cold boot the emulator here
       - name: Run Android emulator
         env:
           ANDROID_HOME: /opt/android/sdk
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: ${{ env.API_LEVEL }}
           arch: x86_64
           script: ./build/run_android_emulator.sh
+          # NB: This is to boot the emulator faster following the instructions on
+          # https://github.com/ReactiveCircus/android-emulator-runner
+          cores: 8
+          ram-size: 12288M
+          force-avd-creation: false
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   test-llama-app:
