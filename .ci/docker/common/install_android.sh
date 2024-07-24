@@ -73,6 +73,9 @@ install_sdk() {
   # And some more tools for future emulator tests
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "platform-tools"
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "tools"
+
+  # Create a softlink to cmdline-tools
+  ln -s /opt/cmdline-tools "${SDK_INSTALLATION_DIR}/cmdline-tools/latest"
 }
 
 install_prerequiresites

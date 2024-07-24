@@ -80,19 +80,18 @@ jobs:
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
-    needs: build-llm-demo
-    runs-on: amz2023.linux.4xlarge
+    # needs: build-llm-demo
+    runs-on: ubuntu-22.04-4core
+    # runs-on: amz2023.linux.4xlarge
     env:
       ANDROID_NDK_VERSION: r26c
     steps:
       - name: Setup SSH (Click me for login details)
         uses: pytorch/test-infra/.github/actions/setup-ssh@main
-        if: ${{ !contains(matrix.runner, 'gcp.a100') }}
         with:
           github-secret: ${{ secrets.GITHUB_TOKEN }}
           instructions: |
-            All testing is done inside the container, to start an interactive session run:
-              docker exec -it $(docker container ps --format '{{.ID}}') bash
+            This is used to run Android emulators, ANDROID_HOME is installed at /opt/android/sdk
 
       - uses: actions/checkout@v3
         with:
