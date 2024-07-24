@@ -19,11 +19,11 @@ MAX_TOKEN_LENGTH=8192
 ROT_EMB_BASE=500000
 
 # Model IO Types
-INPUT_TYPE=int16
-OUTPUT_TYPE=int16
-CACHE_TYPE=int16
-MASK_TYPE=int16
-ROT_EMB_TYPE=int16
+INPUT_TYPE=fp32
+OUTPUT_TYPE=fp32
+CACHE_TYPE=fp32
+MASK_TYPE=fp32
+ROT_EMB_TYPE=fp32
 
 # Tokenizer
 VOCAB_SIZE=128000
@@ -33,7 +33,7 @@ TOKENIZER_TYPE=tiktoken  # Use "bpe" for LLAMA2, "tiktoken" for LLAMA3
 
 # Paths
 TOKENIZER_PATH="/data/local/tmp/llama3/tokenizer.model"
-TOKEN_EMBEDDING_PATH="/data/local/tmp/llama3/embedding_llama3_8b_instruct.bin"
+TOKEN_EMBEDDING_PATH="/data/local/tmp/llama3/embedding_llama3_8b_instruct_fp32.bin"
 
 # Comma-Separated Paths
 PROMPT_MODEL_PATHS="\
