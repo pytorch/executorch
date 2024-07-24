@@ -93,6 +93,16 @@ An interface that enables the ExecuTorch runtime to read from a file or other da
 
 To run parts (or all) of a program on a specific backend (eg. XNNPACK) while the rest of the program (if any) runs on the basic ExecuTorch runtime. Delegation enables us to leverage the performance and efficiency benefits of specialized backends and hardware.
 
+## Dim Order
+
+ExecuTorch introduces `Dim Order` to describe tensor's memory format by returning a permutation of the dimensions, from the outermost to the innermost one.
+
+For example, for a tensor with memory format [N, C, H, W], or [contiguous](https://pytorch.org/blog/tensor-memory-format-matters/) memory format, [0, 1, 2, 3] will be its dim order.
+
+Also, for a tensor with memory format [N, H, W, C], or [channels_last memory format](https://pytorch.org/tutorials/intermediate/memory_format_tutorial.html), we return [0, 2, 3, 1] for its dim order.
+
+Currently ExecuTorch only supports dim order representation for [contiguous](https://pytorch.org/blog/tensor-memory-format-matters/) and [channels_last](https://pytorch.org/tutorials/intermediate/memory_format_tutorial.html) memory format.
+
 ## DSP (Digital Signal Processor)
 
 Specialized microprocessor chip with architecture optimized for digital signal processing.

@@ -389,6 +389,10 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
 </ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
+</ul>
 
          
 
@@ -583,10 +587,9 @@ but the URLs can't be in the requirements.txt, so not recommending this for now.
 <h2>C++ Dependencies<a class="headerlink" href="#c-dependencies" title="Permalink to this heading">¶</a></h2>
 <p>The recommended approach is to include a git submodule for a given C++
 dependency in the <code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/third-party</span></code> directory.</p>
-<div class="section" id="buck2-cmake-support">
-<h3>buck2/CMake Support<a class="headerlink" href="#buck2-cmake-support" title="Permalink to this heading">¶</a></h3>
-<p>At a minimum CMake support is required. Adding buck2 support is optional, but
-will make the delegate available to more ExecuTorch users.</p>
+<div class="section" id="cmake-support">
+<h3>CMake Support<a class="headerlink" href="#cmake-support" title="Permalink to this heading">¶</a></h3>
+<p>At a minimum CMake support is required.</p>
 <!---
 TODO: Add more details about: complying with ET runtime build configurations;
 standard switches for library linking (i.e. static, PIC), optimization flags
@@ -655,7 +658,7 @@ pass through, etc.
 </ul>
 </li>
 <li><a class="reference internal" href="#c-dependencies">C++ Dependencies</a><ul>
-<li><a class="reference internal" href="#buck2-cmake-support">buck2/CMake Support</a></li>
+<li><a class="reference internal" href="#cmake-support">CMake Support</a></li>
 </ul>
 </li>
 </ul>

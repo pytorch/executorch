@@ -389,6 +389,10 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
 </ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
+</ul>
 
          
 
@@ -468,7 +472,7 @@
               
   <div class="section" id="kernel-library-selective-build">
 <h1>Kernel Library Selective Build<a class="headerlink" href="#kernel-library-selective-build" title="Permalink to this heading">¶</a></h1>
-<p><em>Selective build</em> is a build mode on ExecuTorch that uses model metadata to guide ExecuTorch build. This build mode contains build tool APIs available on both CMake and buck2. ExecuTorch users can use selective build APIs to build an ExecuTorch runtime binary with minimal binary size by only including operators required by models.</p>
+<p><em>Selective build</em> is a build mode on ExecuTorch that uses model metadata to guide ExecuTorch build. This build mode contains build tool APIs available on CMake. ExecuTorch users can use selective build APIs to build an ExecuTorch runtime binary with minimal binary size by only including operators required by models.</p>
 <p>This document aims to help ExecuTorch users better use selective build, by listing out available APIs, providing an overview of high level architecture and showcasing examples.</p>
 <p>Preread: <a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Overview of the ExecuTorch runtime</span></a>, <a class="reference internal" href="getting-started-architecture.html"><span class="doc std std-doc">High-level architecture and components of ExecuTorch</span></a></p>
 <div class="section" id="design-principles">
@@ -490,12 +494,9 @@
 </div>
 <div class="section" id="apis">
 <h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
-<p>We expose build macros for CMake and Buck2, to allow users specifying op info.</p>
-<p>On CMake:</p>
+<p>We expose build macros for CMake, to allow users specifying op info:</p>
 <p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/build/Codegen.cmake#L12">gen_selected_ops</a></p>
-<p>On Buck2:</p>
-<p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/shim/xplat/executorch/codegen/codegen.bzl#L44C21-L44C21">et_operator_library</a></p>
-<p>Both of these build macros take the following inputs:</p>
+<p>Build macros take the following inputs:</p>
 <div class="section" id="select-all-ops">
 <h3>Select all ops<a class="headerlink" href="#select-all-ops" title="Permalink to this heading">¶</a></h3>
 <p>If this input is set to true, it means we are registering all the kernels from all the kernel libraries linked into the application. If set to true it is effectively turning off selective build mode.</p>
@@ -511,47 +512,6 @@
 </div>
 <div class="section" id="example-walkthrough">
 <h2>Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Permalink to this heading">¶</a></h2>
-<div class="section" id="buck2-example">
-<h3>Buck2 example<a class="headerlink" href="#buck2-example" title="Permalink to this heading">¶</a></h3>
-<p>Let’s take a look at the following build:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Select a list of operators: defined in `ops`</span>
-<span class="n">et_operator_library</span><span class="p">(</span>
-    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_in_list&quot;</span><span class="p">,</span>
-    <span class="n">ops</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="s2">&quot;aten::add.out&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;aten::mm.out&quot;</span><span class="p">,</span>
-    <span class="p">],</span>
-<span class="p">)</span>
-</pre></div>
-</div>
-<p>This target generates the yaml file containing op info for these two ops.</p>
-<p>In addition to that, if we want to select all ops from a kernel library, we can do:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Select all ops from a yaml file</span>
-<span class="n">et_operator_library</span><span class="p">(</span>
-    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_from_yaml&quot;</span><span class="p">,</span>
-    <span class="n">ops_schema_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;</span><span class="p">,</span>
-<span class="p">)</span>
-</pre></div>
-</div>
-<p>Then in the kernel registration library we can do:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">executorch_generated_lib</span><span class="p">(</span>
-    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_lib&quot;</span><span class="p">,</span>
-    <span class="n">custom_ops_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;</span><span class="p">,</span>
-<span class="n">functions_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/kernels/portable:functions.yaml&quot;</span><span class="p">,</span>
-    <span class="n">deps</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops_1&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
-        <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops_2&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
-        <span class="s2">&quot;//executorch/kernels/portable:operators&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
-        <span class="s2">&quot;:select_ops_from_yaml&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;:select_ops_in_list&quot;</span><span class="p">,</span>
-    <span class="p">],</span>
-<span class="p">)</span>
-</pre></div>
-</div>
-<p>Notice we are allowlisting both add.out, mm.out from the list, and the ones from the schema yaml (<code class="docutils literal notranslate"><span class="pre">custom_ops.yaml</span></code>).</p>
-</div>
-<div class="section" id="cmake-example">
-<h3>CMake example<a class="headerlink" href="#cmake-example" title="Permalink to this heading">¶</a></h3>
 <p>In CMakeLists.txt we have the following logic:</p>
 <div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="nb">set</span><span class="p">(</span><span class="s">_kernel_lib</span><span class="p">)</span>
 <span class="nb">if</span><span class="p">(</span><span class="s">SELECT_ALL_OPS</span><span class="p">)</span>
@@ -573,7 +533,6 @@
 </pre></div>
 </div>
 <p>To select from either an operator name list or a schema yaml from kernel library.</p>
-</div>
 </div>
 </div>
 
@@ -631,11 +590,7 @@
 <li><a class="reference internal" href="#select-root-ops-from-operator-list">Select root ops from operator list</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#example-walkthrough">Example Walkthrough</a><ul>
-<li><a class="reference internal" href="#buck2-example">Buck2 example</a></li>
-<li><a class="reference internal" href="#cmake-example">CMake example</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#example-walkthrough">Example Walkthrough</a></li>
 </ul>
 </li>
 </ul>

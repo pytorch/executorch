@@ -389,6 +389,10 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
 </ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
+</ul>
 
          
 
@@ -556,6 +560,13 @@
 <div class="section" id="delegation">
 <h2><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Delegation</span></a><a class="headerlink" href="#delegation" title="Permalink to this heading">¶</a></h2>
 <p>To run parts (or all) of a program on a specific backend (eg. XNNPACK) while the rest of the program (if any) runs on the basic ExecuTorch runtime. Delegation enables us to leverage the performance and efficiency benefits of specialized backends and hardware.</p>
+</div>
+<div class="section" id="dim-order">
+<h2>Dim Order<a class="headerlink" href="#dim-order" title="Permalink to this heading">¶</a></h2>
+<p>ExecuTorch introduces <code class="docutils literal notranslate"><span class="pre">Dim</span> <span class="pre">Order</span></code> to describe tensor’s memory format by returning a permutation of the dimensions, from the outermost to the innermost one.</p>
+<p>For example, for a tensor with memory format [N, C, H, W], or <a class="reference external" href="https://pytorch.org/blog/tensor-memory-format-matters/">contiguous</a> memory format, [0, 1, 2, 3] will be its dim order.</p>
+<p>Also, for a tensor with memory format [N, H, W, C], or <a class="reference external" href="https://pytorch.org/tutorials/intermediate/memory_format_tutorial.html">channels_last memory format</a>, we return [0, 2, 3, 1] for its dim order.</p>
+<p>Currently ExecuTorch only supports dim order representation for <a class="reference external" href="https://pytorch.org/blog/tensor-memory-format-matters/">contiguous</a> and <a class="reference external" href="https://pytorch.org/tutorials/intermediate/memory_format_tutorial.html">channels_last</a> memory format.</p>
 </div>
 <div class="section" id="dsp-digital-signal-processor">
 <h2>DSP (Digital Signal Processor)<a class="headerlink" href="#dsp-digital-signal-processor" title="Permalink to this heading">¶</a></h2>
@@ -827,6 +838,7 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <li><a class="reference internal" href="#custom-operator">Custom operator</a></li>
 <li><a class="reference internal" href="#dataloader">DataLoader</a></li>
 <li><a class="reference internal" href="#delegation"><span class="xref myst">Delegation</span></a></li>
+<li><a class="reference internal" href="#dim-order">Dim Order</a></li>
 <li><a class="reference internal" href="#dsp-digital-signal-processor">DSP (Digital Signal Processor)</a></li>
 <li><a class="reference internal" href="#dtype">dtype</a></li>
 <li><a class="reference internal" href="#dynamic-quantization">Dynamic Quantization</a></li>

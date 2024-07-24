@@ -389,6 +389,10 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
 </ul>
+<p class="caption" role="heading"><span class="caption-text">Contributing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributing to ExecuTorch</a></li>
+</ul>
 
          
 
@@ -468,16 +472,13 @@
               
   <div class="section" id="building-with-cmake">
 <h1>Building with CMake<a class="headerlink" href="#building-with-cmake" title="Permalink to this heading">¶</a></h1>
-<p>Although buck2 is the main build system for the ExecuTorch project, it’s also
-possible to build core pieces of the runtime using <a class="reference external" href="https://cmake.org/">CMake</a>
-for easier integration with other build systems. Even if you don’t use CMake
-directly, CMake can emit scripts for other format like Make, Ninja or Xcode.
-For information, see <a class="reference external" href="https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html">cmake-generators(7)</a>.</p>
+<p>ExecuTorch uses <a class="reference external" href="https://cmake.org/">CMake</a>  as its primary build system.
+Even if you don’t use CMake directly, CMake can emit scripts for other format
+like Make, Ninja or Xcode. For information, see <a class="reference external" href="https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html">cmake-generators(7)</a>.</p>
 <div class="section" id="targets-built-by-the-cmake-build-system">
 <h2>Targets Built by the CMake Build System<a class="headerlink" href="#targets-built-by-the-cmake-build-system" title="Permalink to this heading">¶</a></h2>
-<p>ExecuTorch’s CMake build system doesn’t cover everything that the buck2 build
-system covers. It can only build pieces of the runtime that are likely to be
-useful to embedded systems users.</p>
+<p>ExecuTorch’s CMake build system covers the pieces of the runtime that are
+likely to be useful to embedded systems users.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch.a</span></code>: The core of the ExecuTorch runtime. Does not contain any
 operator/kernel definitions or backend definitions.</p></li>
@@ -502,20 +503,9 @@ implements.</p></li>
 <h2>One-time setup to prepare for CMake Build<a class="headerlink" href="#one-time-setup-to-prepare-for-cmake-build" title="Permalink to this heading">¶</a></h2>
 <p>Follow the steps below to have the tools ready before using CMake to build on your machine.</p>
 <ol class="arabic simple">
-<li><p>Clone the repo and install buck2 as described in the “Building a Runtime” section
-of <span class="xref myst">Setting Up ExecuTorch</span></p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">buck2</span></code> is necessary because the CMake build system runs <code class="docutils literal notranslate"><span class="pre">buck2</span></code> commands
-to extract source lists from the primary build system. It will be possible
-to configure the CMake system to avoid calling <code class="docutils literal notranslate"><span class="pre">buck2</span></code>, though.</p></li>
-</ul>
-</li>
 <li><p>If your system’s version of python3 is older than 3.11:</p>
 <ul class="simple">
 <li><p>Run <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">tomli</span></code></p></li>
-<li><p>This provides an import required by a script that the CMake build system
-calls to extract source lists from <code class="docutils literal notranslate"><span class="pre">buck2</span></code>. Consider doing this <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> inside your Python or Conda virtual environment if you created
-one already by following <a class="reference internal" href="getting-started-setup.html#setting-up-executorch"><span class="std std-doc">Setting up ExecuTorch</span></a>.</p></li>
 </ul>
 </li>
 <li><p>Install CMake version 3.19 or later:</p>
@@ -534,9 +524,6 @@ dependencies may have changed.</p>
 
 <span class="c1"># Clean and configure the CMake build system. It&#39;s good practice to do this</span>
 <span class="c1"># whenever cloning or pulling the upstream repo.</span>
-<span class="c1">#</span>
-<span class="c1"># NOTE: If your `buck2` binary is not on the PATH, you can change this line to</span>
-<span class="c1"># say something like `-DBUCK2=/tmp/buck2` to point directly to the tool.</span>
 <span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
 </pre></div>
 </div>
@@ -612,7 +599,6 @@ by the output values.</p>
 rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-android-out
 
 <span class="c1"># point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed</span>
-<span class="c1"># Run `which buck2`, if it returns empty (meaning the system doesn&#39;t know where buck2 is installed), pass in this flag `-DBUCK2=/path/to/buck2` pointing to buck2</span>
 cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>/Users/<span class="o">{</span>user_name<span class="o">}</span>/Library/Android/sdk/ndk/25.2.9519653/build/cmake/android.toolchain.cmake<span class="w">  </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span>..
 
 <span class="nb">cd</span><span class="w">  </span>..
