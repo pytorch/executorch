@@ -80,7 +80,8 @@ jobs:
 
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
-    needs: build-llm-demo
+    # DEBUG
+    # needs: build-llm-demo
     # Should I use 12xlarge here?
     runs-on: amz2023.linux.4xlarge
     env:
