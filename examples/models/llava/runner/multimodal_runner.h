@@ -87,7 +87,7 @@ class MultiModalRunner {
   void stop();
 
  private:
-  const std::string& kPresetPrompt =
+  inline static const std::string kPresetPrompt =
       "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: ";
   // metadata
   int32_t logits_to_token(const exec_aten::Tensor& logits_tensor);
