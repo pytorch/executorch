@@ -13,6 +13,7 @@ ADB_PATH=$ANDROID_HOME/platform-tools/adb
 echo "List all running emulators"
 $ADB_PATH devices
 
+# These devices should have already been created by ReactiveCircus/android-emulator-runner GHA
 DEVICES_COUNT=$($ADB_PATH devices | awk 'NF' | wc -l)
 echo "DEVICES_COUNT:$DEVICES_COUNT"
 
