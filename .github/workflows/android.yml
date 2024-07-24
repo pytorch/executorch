@@ -81,8 +81,7 @@ jobs:
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
     # needs: build-llm-demo
-    # runs-on: amz2023.linux.4xlarge
-    runs-on: amz2023.linux.arm64.2xlarge
+    runs-on: amz2023.linux.4xlarge
     env:
       ANDROID_NDK_VERSION: r26c
       API_LEVEL: 34
@@ -132,8 +131,8 @@ jobs:
           api-level: ${{ env.API_LEVEL }}
           # NB: x86_64 emulator is slow because the lack of KVM support on AWS, it
           # seems that we can use metal instance for that but it hasn't been tried
-          # out yet
-          arch: arm64-v8a
+          # out yet. Also arm64-v8a arch requires an ARM runner
+          arch: x86_64
           script: ./build/run_android_emulator.sh
           # NB: This is to boot the emulator faster following the instructions on
           # https://github.com/ReactiveCircus/android-emulator-runner. The max number
