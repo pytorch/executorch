@@ -1197,7 +1197,7 @@ class EdgeProgramManager:
                 if name in partitioner.keys():
                     new_edge_programs[name] = to_backend(program, partitioner[name])
                 else:
-                    new_edge_programs[name] = copy.deepcopy(program)
+                    new_edge_programs[name] = program
 
         else:  # apply partitioner to every method
             for name, program in self._edge_programs.items():
