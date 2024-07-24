@@ -81,16 +81,15 @@ class MultiModalRunner {
   Error generate(
       Image& image,
       const std::string& prompt,
-      int64_t start_pos,
       int32_t seq_len = 1024,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
   void stop();
 
  private:
+  const std::string& kPresetPrompt =
+      "A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: ";
   // metadata
-  template <typename T>
-  T getMetadataHelper(const std::string& method_name, T default_val);
   int32_t logits_to_token(const exec_aten::Tensor& logits_tensor);
 
   Result<torch::executor::Tensor> step(
