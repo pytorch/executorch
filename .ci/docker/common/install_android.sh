@@ -14,9 +14,10 @@ install_prerequiresites() {
   OS=$(grep -oP '(?<=^ID=).+' /etc/os-release | tr -d '"')
   case "$OS" in
     amzn)
-      yum install -y java-1.7.0-openjdk \
+      # https://docs.aws.amazon.com/corretto/latest/corretto-17-ug/amazon-linux-install.html
+      yum install -y java-17-amazon-corretto \
         ca-certificates \
-        and
+        ant
       ;;
     *)
       apt-get update
