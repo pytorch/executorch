@@ -5,9 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from executorch.backends.xnnpack.partition.config.xnnpack_config import (
+    ConfigPrecisionType,
+)
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
     # XnnpackFloatingPointPartitioner,
+)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
+    XnnpackPartitioner,
 )
 from executorch.examples.models.llama2.export_llama_lib import (
     build_args_parser,
@@ -20,6 +26,7 @@ from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
 from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir.program._program import _to_edge_transform_and_lower
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from model import LlavaModel
@@ -176,22 +183,27 @@ def main():
 
     token_embedding_ep = export_token_embedding(llava, prompt_before_image)
 
-    edge_ep = to_edge(
+    lowered_and_edge = _to_edge_transform_and_lower(
         {
             "image_encoder": image_encoder_ep,
             "token_embedding": token_embedding_ep,
             "text_model": text_model_ep,
         },
+        partitioner={
+            "image_encoder": [
+                XnnpackPartitioner(config_precisions=ConfigPrecisionType.FP32)
+            ],
+            "text_model": [
+                XnnpackPartitioner(
+                    config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+                    per_op_mode=True,
+                )
+            ],
+        },
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
 
-    executorch_program = edge_ep.to_backend(
-        {
-            # TODO: Fix Xnnpack partitioner issue on image encoder.
-            # "image_encoder": XnnpackFloatingPointPartitioner(),
-            "text_model": XnnpackDynamicallyQuantizedPartitioner(),
-        }
-    ).to_executorch()
+    executorch_program = lowered_and_edge.to_executorch()
 
     with open("llava_combined_xnnpack.pte", "wb") as f:
         executorch_program.write_to_file(f)
