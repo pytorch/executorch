@@ -8,5 +8,9 @@ warp_size:
   parameter_names_with_default_values:
     DTYPE: int
     STORAGE: buffer
+  generate_variant_forall:
+    METHOD:
+      - VALUE: scheduler
+      - VALUE: physical
   shader_variants:
     - NAME: warp_size

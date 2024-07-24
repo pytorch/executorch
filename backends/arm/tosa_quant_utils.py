@@ -8,11 +8,14 @@
 import math
 from typing import NamedTuple
 
+import numpy as np
+
 import serializer.tosa_serializer as ts
 import torch.fx
 from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp, TosaSerializerTensor
+from torch.fx import Node
 
 q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
@@ -26,23 +29,39 @@ class QuantArgs(NamedTuple):
     qmax: int
 
 
+def quantize_value(x, qargs: QuantArgs, dtype=np.int8):
+    return np.clip(
+        np.round(x / qargs.scale) + qargs.zp,
+        qargs.qmin,
+        qargs.qmax,
+    ).astype(dtype)
+
+
+def dequantize_value(qx, qargs: QuantArgs):
+    return (qx - qargs.zp) * qargs.scale
+
+
 def is_quant_node(node: torch.fx.Node):
-    consumer_node = list(node.users)[0]
-    input = node.all_input_nodes[0]
 
-    # For Rank > 2 Linear layers, the quant node is after the view_copy
-    if (
-        node.target == exir_ops.edge.aten.addmm.default
-        and consumer_node.target == exir_ops.edge.aten.view_copy.default
-    ):
-        consumer_consumer_node = list(consumer_node.users)[0]
-        return True if consumer_consumer_node.target == q_op else False
+    consumer_node_condition = False
+    if len(list(node.users)) > 0:
+        consumer_node = list(node.users)[0]
 
-    return (
-        consumer_node.target == q_op
-        or node.target in dq_q_ops
-        or input.target in dq_q_ops
-    )
+        # For Rank > 2 Linear layers, the quant node is after the view_copy
+        if (
+            node.target == exir_ops.edge.aten.addmm.default
+            and consumer_node.target == exir_ops.edge.aten.view_copy.default
+        ):
+            consumer_consumer_node = list(consumer_node.users)[0]
+            return True if consumer_consumer_node.target == q_op else False
+        consumer_node_condition = consumer_node.target == q_op
+
+    input_node_condition = False
+    if len(node.all_input_nodes) > 0:
+        input = node.all_input_nodes[0]
+        input_node_condition = input.target in dq_q_ops
+
+    return node.target in dq_q_ops or consumer_node_condition or input_node_condition
 
 
 def get_quant_node_dtype(node: torch.fx.Node):
@@ -232,6 +251,69 @@ def build_rescale_from_int32(
     )
 
     return
+
+
+def rescale_nodes_to_int32(
+    nodes: list[Node], tosa_graph: ts.TosaSerializer
+) -> tuple[list[TosaSerializerTensor], float]:
+    """Rescales all 'nodes' to int32, adding suitable RESCALE ops to 'tosa_graph'.
+    The scales are adjusted using the smallest scale of all 'nodes'.
+
+    Returns a list of the rescaled nodes and the scale factor used,
+    needed by rescale_node_back_to_int8.
+    """
+
+    tensors = [TosaArg(node.args[0]) for node in nodes]
+
+    # Reshape tensor according to tosa dim order
+    for tensor in tensors:
+        dim_order = tensor.dim_order
+        tensor.shape = [tensor.shape[i] for i in dim_order]
+
+    qargs = [get_quant_node_args(node) for node in nodes]
+
+    # Scale the int8 quantized input to a common scale in the integer
+    # domain
+    min_scale = min([qarg.scale for qarg in qargs])
+    scales = [qarg.scale / min_scale for qarg in qargs]
+
+    rescaled_nodes: list[TosaSerializerTensor] = []
+    for tensor, qarg, scale in zip(tensors, qargs, scales):
+        rescaled_nodes.append(
+            build_rescale_to_int32(
+                tosa_graph,
+                tensor,
+                qarg.zp,
+                scale,
+            )
+        )
+    return rescaled_nodes, min_scale
+
+
+def rescale_node_back_to_int8(
+    node: Node,
+    last_tensor: TosaSerializerTensor,
+    scale: float,
+    tosa_graph: ts.TosaSerializer,
+):
+    """Rescales the node back to int8, adding a suitable RESCALE op to 'tosa_graph'.
+    Parameters:
+        node: The original node that is being handled by the rescales.
+        last_tensor:the tosa tensor to rescale back.
+        scale: the scaling factor used to rescale to int32, from the function 'rescale_nodes_to_int32'
+        tosa_graph: the tosa_graph to manipulate.
+    """
+    qargs_out = get_quant_node_args(list(node.users)[0])
+    output_rescale_scale = scale / qargs_out.scale
+
+    # Rescale Back to INT8
+    build_rescale_from_int32(
+        tosa_graph,
+        last_tensor.name,
+        node.name,
+        qargs_out.zp,
+        output_rescale_scale,
+    )
 
 
 """ Creates a TOSA rescale op based on conv2d parameters. """

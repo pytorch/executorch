@@ -288,9 +288,11 @@ class MatmulPattern(QuantizationPattern):
         return torch.ops.cadence.quantized_matmul.default
 
 
-class ReluPattern(QuantizationPattern):
+# This is a base class for ReLU, since it can be used with two different aten ops
+class ReluBasePattern(QuantizationPattern):
+    @abstractmethod
     def partition_types(self) -> List[OpOverload]:
-        return [torch.ops.aten.relu.default]
+        pass
 
     def get_anchors(
         self, gm: fx.GraphModule, fused_partition: List[fx.GraphModule]
@@ -308,3 +310,15 @@ class ReluPattern(QuantizationPattern):
 
     def replacement_op(self) -> OpOverload:
         return torch.ops.cadence.quantized_relu.default
+
+
+# Regular relu op
+class ReluPattern0(ReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.relu.default]
+
+
+# Alternate relu op
+class ReluPattern1(ReluBasePattern):
+    def partition_types(self) -> List[OpOverload]:
+        return [torch.ops.aten.relu_.default]

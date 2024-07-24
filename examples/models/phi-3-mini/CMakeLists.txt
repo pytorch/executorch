@@ -21,14 +21,14 @@ add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../..
     ${CMAKE_BINARY_DIR}/../../..)
 add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece
-    ${CMAKE_BINARY_DIR}/third-party/sentencepiece)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/sentencepiece
+    ${CMAKE_BINARY_DIR}/sentencepiece)
 
 add_executable(phi_3_mini_runner main.cpp)
 target_include_directories(
     phi_3_mini_runner
     PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/sentencepiece/src)
 target_link_libraries(
     phi_3_mini_runner
     PRIVATE

@@ -218,6 +218,9 @@ jobs:
             exit 1
         fi
 
+        # run python unittest
+        python -m unittest examples.models.llava.test.test_llava
+
   test-quantized-aot-lib-linux:
     name: test-quantized-aot-lib-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main

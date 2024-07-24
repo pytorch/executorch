@@ -9,6 +9,12 @@ from typing import List, Tuple
 import torch
 
 from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_INSERTED_PERMUTE,
+    QCOM_QUANT_ATTRS,
+    QCOM_REQUANTIZE,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.sym_util import eval_shape
@@ -66,9 +72,6 @@ class LayoutTransform(ExportPass):
         _operator.getitem,
     }
 
-    layout_transformed_tag = "axis_order"
-    inserted_permute_tag = "qnn_permute"
-
     layout_type = {
         1: ("N", "N"),
         2: ("NC", "NC"),
@@ -101,18 +104,18 @@ class LayoutTransform(ExportPass):
                     f"got {getitem_node.target.__name__}"
                 )
             index = getitem_node.args[1]
-            node.meta[self.layout_transformed_tag] = self.get_axis_order(
+            node.meta[QCOM_AXIS_ORDER] = self.get_axis_order(
                 eval_shape(node.meta["val"][index].shape)
             )
         else:
-            node.meta[self.layout_transformed_tag] = self.get_axis_order(
+            node.meta[QCOM_AXIS_ORDER] = self.get_axis_order(
                 eval_shape(node.meta["val"].shape)
             )
 
     def is_transformed_node(self, node: torch.fx.Node) -> bool:
         if not hasattr(node, "meta"):
             return False
-        return self.layout_transformed_tag in node.meta
+        return QCOM_AXIS_ORDER in node.meta
 
     def is_layout_sensitive(self, node: torch.fx.Node) -> bool:
         return node.target in self.layout_sensitive_ops
@@ -126,7 +129,7 @@ class LayoutTransform(ExportPass):
             if len(node.args) < 3 or not node.args[2]:
                 return False
         if node.target in self.qdq_opset:
-            return "requantize" in node.meta
+            return QCOM_REQUANTIZE in node.meta
         return node.target in self.layout_agnostic_ops
 
     def is_edge_condition(self, node):
@@ -139,7 +142,7 @@ class LayoutTransform(ExportPass):
                 node.op == "get_attr",
                 (
                     node.target == exir_ops.edge.aten.permute_copy.default
-                    and node.meta.get(self.inserted_permute_tag, False)
+                    and node.meta.get(QCOM_INSERTED_PERMUTE, False)
                 ),
                 (
                     node.op != "output"
@@ -178,9 +181,9 @@ class LayoutTransform(ExportPass):
                 ),
             )
             permute.meta["val"] = tensor
-            permute.meta["quant_attrs"] = node.meta.get("quant_attrs")
+            permute.meta[QCOM_QUANT_ATTRS] = node.meta.get(QCOM_QUANT_ATTRS)
             # we need this to check the annotation boundary
-            permute.meta[self.inserted_permute_tag] = True
+            permute.meta[QCOM_INSERTED_PERMUTE] = True
 
             for user in users:
                 user.replace_input_with(node, permute)

@@ -11,6 +11,7 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
 from executorch.backends.qualcomm.builders import node_visitor
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
 
 from executorch.exir.backend.backend_details import CompileSpec
@@ -147,7 +148,7 @@ class QnnPartitioner(Partitioner):
             if hasattr(node, "meta"):
                 # pop certain keys in meta for not affecting the passes in compilation
                 # TODO: need to put property name in common definitions
-                node.meta.pop("axis_order", "")
+                node.meta.pop(QCOM_AXIS_ORDER, "")
         del self.op_support_checker
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags

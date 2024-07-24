@@ -11,6 +11,16 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_BITWIDTH,
+    QCOM_ENCODING,
+    QCOM_QUANT_ATTRS,
+    QCOM_REQUANTIZE,
+    QCOM_SCALE_OFFSET,
+    QCOM_SCALES,
+    QCOM_ZERO_POINTS,
+)
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -89,15 +99,15 @@ class NodeVisitor:
             return node.meta["val"]
 
         tensor = _get_tensor(input_node, idx)
-        if len(tensor.shape) != 0 and "axis_order" in op_node.meta:
-            tensor = tensor.permute(dims=op_node.meta["axis_order"]).contiguous()
+        if len(tensor.shape) != 0 and QCOM_AXIS_ORDER in op_node.meta:
+            tensor = tensor.permute(dims=op_node.meta[QCOM_AXIS_ORDER]).contiguous()
         return tensor
 
     def make_qnn_per_channel_config(self, node: torch.fx.Node, quant_attrs: Dict):
         quant_config = copy.deepcopy(quant_attrs)
 
-        scales = quant_attrs["scales"]
-        zero_points = quant_attrs["zero_points"]
+        scales = quant_attrs[QCOM_SCALES]
+        zero_points = quant_attrs[QCOM_ZERO_POINTS]
         assert len(scales) == len(
             zero_points
         ), f"Per channel encoding of node {node}, has different size for scales {len(scales)} and zero_points {len(zero_points)}"
@@ -120,13 +130,13 @@ class NodeVisitor:
         else:
             quant_config["axis"] = quant_attrs["axis"]
 
-        quant_config["scale_offset"] = scale_offset
+        quant_config[QCOM_SCALE_OFFSET] = scale_offset
         # special case for 4 bits
         if (
             quant_config["dtype"] == torch.int8
             and quant_config["quant_max"] - quant_config["quant_min"] <= 15
         ):
-            quant_config["bitwidth"] = 4
+            quant_config[QCOM_BITWIDTH] = 4
             return (
                 PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
                 quant_config,
@@ -145,7 +155,7 @@ class NodeVisitor:
             quant_config["dtype"] == torch.int8
             and quant_config["quant_max"] - quant_config["quant_min"] <= 15
         ):
-            quant_config["bitwidth"] = 4
+            quant_config[QCOM_BITWIDTH] = 4
             return (
                 PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET,
                 quant_config,
@@ -158,17 +168,17 @@ class NodeVisitor:
     def get_quant_encoding_conf(
         self, node: torch.fx.Node, is_input_tensor: bool = False
     ) -> Tuple[Any, Dict]:
-        if not node.meta.get("quant_attrs", None):
+        if not node.meta.get(QCOM_QUANT_ATTRS, None):
             return (
                 PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
                 {},
             )
         quant_attrs = (
-            node.meta["requantize"]
-            if "requantize" in node.meta and is_input_tensor
-            else node.meta["quant_attrs"]
+            node.meta[QCOM_REQUANTIZE]
+            if QCOM_REQUANTIZE in node.meta and is_input_tensor
+            else node.meta[QCOM_QUANT_ATTRS]
         )
-        if quant_attrs["encoding"] in PER_CHANNEL_ENCODING:
+        if quant_attrs[QCOM_ENCODING] in PER_CHANNEL_ENCODING:
             return self.make_qnn_per_channel_config(node, quant_attrs)
 
         return self.make_qnn_per_tensor_config(quant_attrs)
@@ -176,18 +186,18 @@ class NodeVisitor:
     def get_quant_tensor_value(
         self, tensor: torch.Tensor, quant_attrs: Dict, quant_configs: Dict
     ) -> torch.Tensor:
-        if quant_attrs["encoding"] in PER_TENSOR_ENCODING:
+        if quant_attrs[QCOM_ENCODING] in PER_TENSOR_ENCODING:
             scale = quant_attrs["scale"]
             zero_point = quant_attrs["zero_point"]
         else:  # per channel case
-            scale = quant_attrs["scales"]
-            zero_point = quant_attrs["zero_points"]
+            scale = quant_attrs[QCOM_SCALES]
+            zero_point = quant_attrs[QCOM_ZERO_POINTS]
 
         dtype = quant_configs["dtype"]
 
         tensor = tensor.div(scale).add(zero_point).round().to(dtype)
         # Make the backends access data correctly
-        if quant_configs.get("bitwidth") == 4:
+        if quant_configs.get(QCOM_BITWIDTH) == 4:
             mask = torch.full(tensor.size(), 0x0F, dtype=torch.int8)
             tensor = torch.bitwise_and(mask, tensor)
         return tensor
@@ -315,7 +325,7 @@ class NodeVisitor:
             if quant_configs:
                 tensor = self.get_quant_tensor_value(
                     tensor,
-                    node.meta["quant_attrs"],
+                    node.meta[QCOM_QUANT_ATTRS],
                     quant_configs,
                 )
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
