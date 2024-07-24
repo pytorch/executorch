@@ -11,17 +11,27 @@ set -ex
 [ -n "${ANDROID_NDK_VERSION}" ]
 
 install_prerequiresites() {
-  apt-get update
+  OS=$(grep -oP '(?<=^ID=).+' /etc/os-release | tr -d '"')
+  case "$OS" in
+    amzn)
+      yum install -y java-1.7.0-openjdk \
+        ca-certificates \
+        and
+      ;;
+    *)
+      apt-get update
 
-  # NB: Need OpenJDK 17 at the minimum
-  apt-get install -y --no-install-recommends \
-    openjdk-17-jdk \
-    ca-certificates-java \
-    ant
+      # NB: Need OpenJDK 17 at the minimum
+      apt-get install -y --no-install-recommends \
+        openjdk-17-jdk \
+        ca-certificates-java \
+        ant
 
-  # Cleanup package manager
-  apt-get autoclean && apt-get clean
-  rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+      # Cleanup package manager
+      apt-get autoclean && apt-get clean
+      rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    ;;
+  esac
 }
 
 install_ndk() {

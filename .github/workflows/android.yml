@@ -45,6 +45,7 @@ jobs:
 
         # Build LLM Demo for Android
         bash build/build_android_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
+
   # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-artifacts:
     needs: build-llm-demo
@@ -76,6 +77,34 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
           path: ${{ runner.temp }}/artifacts/
+
+  # Running Android emulator directly on the runner, not using Docker
+  run-emulator:
+    # DEBUG
+    # needs: build-llm-demo
+    runs-on: linux.4xlarge
+    env:
+      ANDROID_NDK_VERSION: r26c
+    steps:
+      - name: Setup SSH (Click me for login details)
+        uses: pytorch/test-infra/.github/actions/setup-ssh@main
+        if: ${{ !contains(matrix.runner, 'gcp.a100') }}
+        with:
+          github-secret: ${{ secrets.GITHUB_TOKEN }}
+          instructions: |
+            All testing is done inside the container, to start an interactive session run:
+              docker exec -it $(docker container ps --format '{{.ID}}') bash
+
+      - name: Checkout PyTorch
+        uses: pytorch/pytorch/.github/actions/checkout-pytorch@main
+
+      - name: Install Android dependencies
+        shell: bash
+        run: |
+          set -eux
+
+          # Reuse the script that install Android on ET Docker image
+          sudo bash .ci/docker/common/install_android.sh
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   test-llama-app:
