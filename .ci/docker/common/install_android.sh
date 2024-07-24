@@ -73,9 +73,6 @@ install_sdk() {
   # And some more tools for future emulator tests
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "platform-tools"
   yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "tools"
-
-  # Install Android emulator package
-  yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "system-images;android-34;google_apis;x86_64"
 }
 
 install_prerequiresites

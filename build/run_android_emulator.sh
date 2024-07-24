@@ -10,17 +10,11 @@ set -ex
 # This script is originally adopted from https://github.com/pytorch/pytorch/blob/main/android/run_tests.sh
 ADB_PATH=$ANDROID_HOME/platform-tools/adb
 
+echo "Waiting for emulator boot to complete"
+$ADB_PATH wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 30; done;'
+
+# The device will be created by ReactiveCircus/android-emulator-runner GHA
 echo "List all running emulators"
 $ADB_PATH devices
 
-# These devices should have already been created by ReactiveCircus/android-emulator-runner GHA
-DEVICES_COUNT=$($ADB_PATH devices | awk 'NF' | wc -l)
-echo "DEVICES_COUNT:$DEVICES_COUNT"
-
-if [ "$DEVICES_COUNT" -eq 1 ]; then
-  echo "Unable to found connected android emulators"
-  exit 1
-fi
-
-echo "Waiting for emulator boot completed"
-$ADB_PATH wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done;'
+# TODO: Run tests on emulator here
