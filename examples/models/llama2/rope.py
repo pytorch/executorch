@@ -48,8 +48,8 @@ def precompute_freqs_cis(
     )
     t = torch.arange(end, device=freqs.device)  # pyre-ignore
     if use_scaled:
-        freqs = apply_scaling(freqs)
-    freqs = torch.outer(t, freqs).float()  # pyre-ignorex   x
+        freqs = apply_scaling(freqs)  # pyre-ignore
+    freqs = torch.outer(t, freqs).float()
     freqs_cos = torch.cos(freqs)
     freqs_sin = torch.sin(freqs)
     return freqs_cos, freqs_sin
