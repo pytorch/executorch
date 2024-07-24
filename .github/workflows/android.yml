@@ -83,6 +83,8 @@ jobs:
     # DEBUG
     # needs: build-llm-demo
     runs-on: linux.4xlarge
+    env:
+      ANDROID_NDK_VERSION: r26c
     steps:
       - name: Setup SSH (Click me for login details)
         uses: pytorch/test-infra/.github/actions/setup-ssh@main
@@ -107,9 +109,8 @@ jobs:
         run: |
           set -eux
 
-          export ANDROID_NDK_VERSION=r26c
           # Reuse the script that install Android on ET Docker image
-          sudo bash .ci/docker/common/install_android.sh
+          sudo -E bash .ci/docker/common/install_android.sh
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   test-llama-app:
