@@ -170,6 +170,16 @@ def chunk_and_tokenize_prompt(prompt, tokenizer, sub_responses, max_len, respons
                         print(curr_chunk)
                 return curr_chunk_tokens, None
 
+def dump_embedding_lut_for_cmdline(weight_dir, state_dict, config):
+    model_name = os.path.basename(weight_dir)
+    output_path = os.path.join(weight_dir, f"embedding_{model_name}_fp32.bin")
+    if not os.path.exists(output_path):
+        embedding = _get_embedding_weight(config, weight_dir, state_dict).to(torch.float32).cpu().numpy()
+
+        with open(output_path, "wb") as f:
+            f.write(embedding.flatten().tobytes())
+        print(f"cmdline LUT embedding bin exported to {output_path}")
+
 def generate_alibi(
     cache_size,
     valid_cache,

@@ -13,7 +13,7 @@ from executorch import exir
 from datasets import load_dataset
 from aot_utils.llm_utils.sanity_checks import *
 from aot_utils.llm_utils.utils import (
-    resolve_model_classes,
+    dump_embedding_lut_for_cmdline,
     get_normalized_config,
     generate_mask,
     get_dest_path,
@@ -23,6 +23,7 @@ from aot_utils.llm_utils.utils import (
     get_export_shapes,
     get_master_rot_emb,
     load_checkpoints,
+    resolve_model_classes
 )
 from aot_utils.llm_utils.preformatter import Preformatter
 import warnings
@@ -338,6 +339,8 @@ def main():
 
     # Load all collected checkpoint files into one giant state_dict
     state_dict = load_checkpoints(weight_dir)
+
+    dump_embedding_lut_for_cmdline(weight_dir, state_dict, config)
 
     export_shapes, max_num_token, max_cache_size = get_export_shapes(args.shapes)
     print(f"export shapes: {export_shapes}"
