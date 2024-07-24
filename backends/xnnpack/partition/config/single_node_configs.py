@@ -146,3 +146,91 @@ class AvgPoolingConfig(SingleNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class CatConfig(SingleNodePartitionerConfig):
+    target_name = "cat.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Only support concatenation of 2 - 4 tensors
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        num_tensors = len(node.all_input_nodes)
+        return num_tensors >= 2 and num_tensors <= 4
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class CeilConfig(SingleNodePartitionerConfig):
+    target_name = "ceil.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class ClampConfig(SingleNodePartitionerConfig):
+    target_name = "clamp.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class DivConfig(SingleNodePartitionerConfig):
+    target_name = "div.Tensor"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class EluConfig(SingleNodePartitionerConfig):
+    target_name = "elu.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.elu.default
+
+
+class SoftmaxConfig(SingleNodePartitionerConfig):
+    target_name = "_softmax.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Check that dim is always the last dim
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        dim = cast(int, node.args[1])
+        node_input = node.all_input_nodes[0]
+        tensor_dims = node_input.meta["val"].dim()
+        return dim == -1 or dim == tensor_dims - 1
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class PermuteConfig(SingleNodePartitionerConfig):
+    target_name = "permute_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class SigmoidConfig(SingleNodePartitionerConfig):
+    target_name = "sigmoid.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class MulConfig(SingleNodePartitionerConfig):
+    target_name = "mul.Tensor"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]

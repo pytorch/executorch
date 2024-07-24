@@ -53,6 +53,8 @@ class GEMMConfig(XNNPartitionerConfig):
             return False
 
         precision = self._detect_precision(node)
+        print("detected_precision:")
+        print(precision)
         if precision not in self.enabled_precision_types:
             # detected precision but it is either disabled or not supported
             return False
