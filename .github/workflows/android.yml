@@ -102,6 +102,12 @@ jobs:
         with:
           python-version: '3.10'
 
+      # NB: Need this to setup Java on GH runner
+      - uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: 17
+
       - name: Install Android dependencies
         shell: bash
         run: |

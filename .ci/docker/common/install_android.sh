@@ -31,8 +31,6 @@ install_prerequiresites() {
       # Cleanup package manager
       apt-get autoclean && apt-get clean
       rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-      update-java-alternatives -s java-1.17.0-openjdk-amd64
     ;;
   esac
 }
