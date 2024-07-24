@@ -4,3 +4,4 @@ ciflow_push_tags:
 - ciflow/trunk
 - ciflow/binaries
 - ciflow/binaries/all
+- ciflow/periodic
