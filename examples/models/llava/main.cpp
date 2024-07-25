@@ -101,8 +101,8 @@ int32_t main(int32_t argc, char** argv) {
       image_tensor.data_ptr<uint8_t>() + image_tensor.numel());
   torch::executor::Image image{
       .data = image_data,
-      .width = image_tensor.size(2),
-      .height = image_tensor.size(1)};
+      .width = static_cast<int32_t>(image_tensor.size(2)),
+      .height = static_cast<int32_t>(image_tensor.size(1))};
   // generate
   runner.generate(image, prompt, seq_len);
   return 0;
