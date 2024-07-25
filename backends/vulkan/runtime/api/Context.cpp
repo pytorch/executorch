@@ -7,7 +7,8 @@
  */
 
 #include <executorch/backends/vulkan/runtime/api/Context.h>
-#include <executorch/backends/vulkan/runtime/api/VkUtils.h>
+
+#include <executorch/backends/vulkan/runtime/vk_api/VkUtils.h>
 
 #ifndef VULKAN_DESCRIPTOR_POOL_SIZE
 #define VULKAN_DESCRIPTOR_POOL_SIZE 1024u
@@ -23,7 +24,7 @@ namespace api {
 Context::Context(size_t adapter_i, const ContextConfig& config)
     : config_(config),
       // Important handles
-      adapter_p_(runtime()->get_adapter_p(adapter_i)),
+      adapter_p_(vkapi::runtime()->get_adapter_p(adapter_i)),
       device_(adapter_p_->device_handle()),
       queue_(adapter_p_->request_queue()),
       // Resource pools
@@ -72,8 +73,8 @@ void Context::report_shader_dispatch_start(
         cmd_,
         dispatch_id,
         shader_name,
-        create_extent3d(global_wg_size),
-        create_extent3d(local_wg_size));
+        vkapi::create_extent3d(global_wg_size),
+        vkapi::create_extent3d(local_wg_size));
   }
 }
 
@@ -83,17 +84,17 @@ void Context::report_shader_dispatch_end() {
   }
 }
 
-DescriptorSet Context::get_descriptor_set(
-    const ShaderInfo& shader_descriptor,
+vkapi::DescriptorSet Context::get_descriptor_set(
+    const vkapi::ShaderInfo& shader_descriptor,
     const utils::uvec3& local_workgroup_size,
-    const SpecVarList& additional_constants) {
+    const vkapi::SpecVarList& additional_constants) {
   VkDescriptorSetLayout shader_layout =
       shader_layout_cache().retrieve(shader_descriptor.kernel_layout);
 
   VkPipelineLayout pipeline_layout =
       pipeline_layout_cache().retrieve(shader_layout);
 
-  SpecVarList spec_constants = {
+  vkapi::SpecVarList spec_constants = {
       SV(local_workgroup_size.data[0u]),
       SV(local_workgroup_size.data[1u]),
       SV(local_workgroup_size.data[2u])};
@@ -112,9 +113,9 @@ DescriptorSet Context::get_descriptor_set(
 }
 
 void Context::register_shader_dispatch(
-    const DescriptorSet& descriptors,
-    PipelineBarrier& pipeline_barrier,
-    const ShaderInfo& shader_descriptor,
+    const vkapi::DescriptorSet& descriptors,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::ShaderInfo& shader_descriptor,
     const utils::uvec3& global_workgroup_size) {
   // Adjust the global workgroup size based on the output tile size
   uint32_t global_wg_w = utils::div_up(
@@ -180,12 +181,12 @@ Context* context() {
     try {
       const uint32_t cmd_submit_frequency = 16u;
 
-      const CommandPoolConfig cmd_config{
+      const vkapi::CommandPoolConfig cmd_config{
           32u, // cmdPoolInitialSize
           8u, // cmdPoolBatchSize
       };
 
-      const DescriptorPoolConfig descriptor_pool_config{
+      const vkapi::DescriptorPoolConfig descriptor_pool_config{
           VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorPoolMaxSets
           VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorUniformBufferCount
           VULKAN_DESCRIPTOR_POOL_SIZE, // descriptorStorageBufferCount
@@ -194,7 +195,7 @@ Context* context() {
           32u, // descriptorPileSizes
       };
 
-      const QueryPoolConfig query_pool_config{
+      const vkapi::QueryPoolConfig query_pool_config{
           VULKAN_QUERY_POOL_SIZE, // maxQueryCount
           256u, // initialReserveSize
       };
@@ -206,7 +207,7 @@ Context* context() {
           query_pool_config,
       };
 
-      return new Context(runtime()->default_adapter_i(), config);
+      return new Context(vkapi::runtime()->default_adapter_i(), config);
     } catch (...) {
     }
 

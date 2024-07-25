@@ -21,9 +21,9 @@ void check_index_select_args(
     const api::vTensor& in,
     const api::vTensor& idx,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(idx, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(idx, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 }
 
 void add_index_select_channel_node(
@@ -46,8 +46,8 @@ void add_index_select_channel_node(
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
-      {{out, api::MemoryAccessType::WRITE},
-       {{in, idx}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{in, idx}, vkapi::MemoryAccessType::READ}},
       {t_out->sizes_ubo(), t_in->sizes_ubo()}));
 }
 
@@ -95,8 +95,8 @@ void add_index_select_node(
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
-      {{out, api::MemoryAccessType::WRITE},
-       {{in, idx}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{in, idx}, vkapi::MemoryAccessType::READ}},
       {t_out->sizes_ubo(), graph.create_params_buffer(params)}));
 }
 

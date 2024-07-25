@@ -94,7 +94,7 @@ void add_arange_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}},
+      {{out, vkapi::MemoryAccessType::WRITE}},
       // Shader params buffers
       {t_out->sizes_ubo(),
        graph.create_params_buffer(start_val),

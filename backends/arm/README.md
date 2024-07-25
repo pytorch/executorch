@@ -15,10 +15,18 @@ ethos-u-vela compilation stack. which follows the fully AoT flow.
 ## Layout
 
 Export:
-- `arm_backend.py` - Main entrypoint for the ArmPartitioner and ArmBackend. For more information see the section on [Arm Bac
-kend Architecture](#arm-backend-architecture). For examples of use see `executorch/examples/arm`.
+- `arm_backend.py` - Main entrypoint for the ArmPartitioner and ArmBackend. For more information see the section on
+[Arm Backend Architecture](#arm-backend-architecture). For examples of use see `executorch/examples/arm`.
 - `tosa_mapping.py` - utilities for mapping edge dialect to TOSA
 - `tosa_quant_utils.py` - utilities for mapping quantization information to TOSA encoding
+
+Operators:
+- `node_visitor.py` - Base class for edge operator lowering
+- `op_*.py` - Edge operator lowering/serialization to TOSA
+
+Passes:
+- `arm_pass_manager.py` - Pass manager. Will decide which passes need to be applied depending on the compile_spec.
+- `*_pass.py` - Compiler passes derived from ExportPass
 
 Quantization:
 - `arm_quantizer.py` - Quantizer for Arm backend
@@ -36,8 +44,10 @@ This is the structure of the test directory
 
 ```
 test                            #  Root test folder
+├── misc                        #  Testing of debug features
 ├── models                      #  Full model tests
 ├── ops                         #  Single op tests
+├── passes                      #  Compiler passes tests
 ├── tester                      #  Arm Tester class
 ├── tosautil                    #  Utility functions for TOSA artifacts
 ├ common.py                     #  Common functions and definitions used by many tests

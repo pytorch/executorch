@@ -18,33 +18,33 @@
 
 using namespace vkcompute;
 
-#define CREATE_FLOAT_TEXTURE(sizes, allocate_memory) \
-  api::vTensor(                                      \
-      api::context(),                                \
-      sizes,                                         \
-      api::kFloat,                                   \
-      api::StorageType::TEXTURE_3D,                  \
-      api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,  \
+#define CREATE_FLOAT_TEXTURE(sizes, allocate_memory)  \
+  api::vTensor(                                       \
+      api::context(),                                 \
+      sizes,                                          \
+      vkapi::kFloat,                                  \
+      utils::StorageType::TEXTURE_3D,                 \
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, \
       allocate_memory);
 
 #define CREATE_FLOAT_BUFFER(sizes, allocate_memory) \
   api::vTensor(                                     \
       api::context(),                               \
       sizes,                                        \
-      api::kFloat,                                  \
-      api::StorageType::BUFFER,                     \
-      api::GPUMemoryLayout::TENSOR_WIDTH_PACKED,    \
+      vkapi::kFloat,                                \
+      utils::StorageType::BUFFER,                   \
+      utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED,  \
       allocate_memory);
 
 #define DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(tensor) \
   api::StorageBuffer staging_buffer_##tensor(               \
-      api::context(), api::kFloat, tensor.gpu_numel());     \
+      api::context(), vkapi::kFloat, tensor.gpu_numel());   \
   record_nchw_to_image_op(                                  \
       api::context(), staging_buffer_##tensor.buffer(), tensor);
 
 #define DEFINE_STAGING_BUFFER_AND_RECORD_FROM_GPU_FOR(tensor) \
   api::StorageBuffer staging_buffer_##tensor(                 \
-      api::context(), api::kFloat, tensor.gpu_numel());       \
+      api::context(), vkapi::kFloat, tensor.gpu_numel());     \
   record_image_to_nchw_op(                                    \
       api::context(), tensor, staging_buffer_##tensor.buffer());
 
@@ -64,27 +64,27 @@ using namespace vkcompute;
 
 void record_nchw_to_buffer_op(
     api::Context* const context,
-    api::VulkanBuffer& src_buffer,
+    vkapi::VulkanBuffer& src_buffer,
     api::vTensor& v_dst);
 
 void record_buffer_to_nchw_op(
     api::Context* const context,
     api::vTensor& v_src,
-    api::VulkanBuffer& dst_buffer);
+    vkapi::VulkanBuffer& dst_buffer);
 
 void record_nchw_to_image_op(
     api::Context* const context,
-    api::VulkanBuffer& src_buffer,
+    vkapi::VulkanBuffer& src_buffer,
     api::vTensor& v_dst);
 
 void record_image_to_nchw_op(
     api::Context* const context,
     api::vTensor& v_src,
-    api::VulkanBuffer& dst_buffer);
+    vkapi::VulkanBuffer& dst_buffer);
 
 void record_conv2d_prepack_weights_op(
     api::Context* const context,
-    api::VulkanBuffer& src_buffer,
+    vkapi::VulkanBuffer& src_buffer,
     api::vTensor& v_dst,
     const std::vector<int64_t>& original_sizes,
     const bool transposed);
@@ -181,7 +181,7 @@ inline int64_t get_buf_idx(
 
 void submit_to_gpu();
 
-api::Allocation allocate_memory_for(const api::vTensor& vten);
+vkapi::Allocation allocate_memory_for(const api::vTensor& vten);
 
 VmaTotalStatistics get_vma_stats();
 

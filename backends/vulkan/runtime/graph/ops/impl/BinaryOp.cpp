@@ -81,8 +81,8 @@ void add_binary_op_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {{arg1, arg2}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{arg1, arg2}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->sizes_ubo(),
        t_in1->sizes_ubo(),
@@ -118,6 +118,7 @@ DEFINE_BINARY_OP_WITH_ALPHA_FN(floor_divide);
 DEFINE_BINARY_OP_FN(mul);
 DEFINE_BINARY_OP_FN(div);
 DEFINE_BINARY_OP_FN(pow);
+DEFINE_BINARY_OP_FN(minimum);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.add.Tensor, add);
@@ -126,6 +127,7 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.div.Tensor, div);
   VK_REGISTER_OP(aten.div.Tensor_mode, floor_divide);
   VK_REGISTER_OP(aten.pow.Tensor_Tensor, pow);
+  VK_REGISTER_OP(aten.minimum.default, minimum);
 }
 
 } // namespace vkcompute

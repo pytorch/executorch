@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #ifdef __cplusplus
 #include <cstddef>
 #include <cstdint>
@@ -33,12 +34,33 @@ typedef struct {
   }
 // clang-format on
 
+/// Allocate memory in different way, check qnn document for more details.
+enum QnnMemDescriptor { kIon, kCustom };
+
+struct CustomMemTensorInfo {
+  void* custom_mem;
+  void* tensor_addr;
+  size_t pos;
+  size_t tensor_bytes;
+  uint32_t* shape;
+  uint32_t rank;
+  torch::executor::ScalarType dtype;
+};
+
 /// Allocate specific tensors (usually graph inputs and outputs) on shared
 /// memory. Users are responsible to allocate "enough" tensor bytes, and set
 /// alignment as MemoryAllocator::kDefaultAlignment.
 /// See runtime/core/memory_allocator.h. The function returns a valid pointer
 /// if allocation is successful.
 void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment);
+
+/// Add tensor to custom memory with custom type descriptor. Create memory
+/// handle to tensor wrapper during execution
+void QnnExecuTorchAddCustomMemTensorAddr(void* tensor_addr, void* custom_mem);
+
+/// Add custom mem tensor info. Help to bring forward the memHandle creating
+/// time from execution to initialization.
+void QnnExecuTorchAddCustomMemTensorInfo(const CustomMemTensorInfo& info);
 
 /// Free the allocated shared memory.
 void QnnExecuTorchFreeCustomMem(void* buffer_ptr);

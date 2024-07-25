@@ -10,6 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER, QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpReduceMean, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -42,9 +43,9 @@ class MeanDim(NodeVisitor):
         mean_dims = [
             mean_dim % len(input_node.meta["val"].shape) for mean_dim in mean_dims
         ]
-        if "axis_order" in node.meta:
+        if QCOM_AXIS_ORDER in node.meta:
             mean_dims = [
-                node.meta["axis_order"].index(mean_dim) for mean_dim in mean_dims
+                node.meta[QCOM_AXIS_ORDER].index(mean_dim) for mean_dim in mean_dims
             ]
         mean_dims_shape = [len(mean_dims)]
 
@@ -77,7 +78,7 @@ class MeanDim(NodeVisitor):
             reduce_mean_op.AddScalarParam(
                 OpReduceMean.param_keep_dims,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-                {"data": keep_dims},
+                {QCOM_DATA: keep_dims},
             )
 
         return reduce_mean_op

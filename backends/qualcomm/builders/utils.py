@@ -4,8 +4,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Dict, Optional
+
 import torch
-from torch._export.utils import get_buffer, get_param, is_buffer, is_param
+from torch._export.utils import (
+    get_buffer,
+    get_lifted_tensor_constant,
+    get_param,
+    is_buffer,
+    is_lifted_tensor_constant,
+    is_param,
+)
 
 
 def is_parameter(
@@ -14,7 +23,7 @@ def is_parameter(
     return (
         is_param(edge_program, node)
         or is_buffer(edge_program, node)
-        or node.name in edge_program.graph_signature.inputs_to_lifted_tensor_constants
+        or is_lifted_tensor_constant(edge_program, node)
     )
 
 
@@ -26,9 +35,8 @@ def get_parameter(
         param = get_param(edge_program, node)
     if is_buffer(edge_program, node):
         param = get_buffer(edge_program, node)
-    if node.name in edge_program.graph_signature.inputs_to_lifted_tensor_constants:
-        name = edge_program.graph_signature.inputs_to_lifted_tensor_constants[node.name]
-        param = edge_program.constants[name]
+    if is_lifted_tensor_constant(edge_program, node):
+        param = get_lifted_tensor_constant(edge_program, node)
     if param is not None:
         # update node.meta["val"] to qualified QNN datatype (e.g. i64 to i32)
         assert isinstance(param, torch.Tensor), "Expect parameter to be tensor"
@@ -100,3 +108,20 @@ def is_constant(
         return tensor.meta["val"].constant is not None
 
     return False
+
+
+def deduce_dtype(
+    tensor: torch.Tensor, quant_infos: Optional[Dict] = None
+) -> torch.dtype:
+    if quant_infos:
+        quant_range = quant_infos["quant_max"] - quant_infos["quant_min"]
+        unsigned = quant_infos["quant_min"] >= 0
+        if quant_range <= torch.iinfo(torch.int8).max - torch.iinfo(torch.int8).min:
+            return torch.uint8 if unsigned else torch.int8
+
+        elif quant_range <= torch.iinfo(torch.int16).max - torch.iinfo(torch.int16).min:
+            return torch.uint16 if unsigned else torch.int16
+
+        return quant_infos["dtype"]
+
+    return tensor.dtype

@@ -14,21 +14,6 @@ set -e
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../../../.ci/scripts/utils.sh"
 
-test_buck2_custom_op_1() {
-  local model_name='custom_ops_1'
-  echo "Exporting ${model_name}.pte"
-  ${PYTHON_EXECUTABLE} -m "examples.portable.custom_ops.${model_name}"
-  # should save file custom_ops_1.pte
-
-  echo 'Running executor_runner'
-  $BUCK run //examples/portable/executor_runner:executor_runner \
-      --config=executorch.register_custom_op=1 -- --model_path="./${model_name}.pte"
-  # should give correct result
-
-  echo "Removing ${model_name}.pte"
-  rm "./${model_name}.pte"
-}
-
 test_cmake_custom_op_1() {
   local model_name='custom_ops_1'
   echo "Exporting ${model_name}.pte"
@@ -49,23 +34,6 @@ test_cmake_custom_op_1() {
 
   echo 'Running custom_ops_executor_runner'
   ${build_dir}/custom_ops_executor_runner --model_path="./${model_name}.pte"
-}
-
-test_buck2_custom_op_2() {
-  local model_name='custom_ops_2'
-
-  echo 'Building custom ops shared library'
-  SO_LIB=$($BUCK build //examples/portable/custom_ops:custom_ops_aot_lib_2 --show-output | grep "buck-out" | cut -d" " -f2)
-
-  echo "Exporting ${model_name}.pte"
-  ${PYTHON_EXECUTABLE} -m "examples.portable.custom_ops.${model_name}" --so_library="$SO_LIB"
-  # should save file custom_ops_2.pte
-
-  $BUCK run //examples/portable/executor_runner:executor_runner \
-      --config=executorch.register_custom_op=2 -- --model_path="./${model_name}.pte"
-  # should give correct result
-  echo "Removing ${model_name}.pte"
-  rm "./${model_name}.pte"
 }
 
 get_shared_lib_ext() {
@@ -115,24 +83,6 @@ then
   PYTHON_EXECUTABLE=python3
 fi
 
-if [[ -z $BUCK ]];
-then
-  BUCK=buck2
-fi
-
-if [[ $1 == "cmake" ]];
-then
-  cmake_install_executorch_lib
-  test_cmake_custom_op_1
-  test_cmake_custom_op_2
-elif [[ $1 == "buck2" ]];
-then
-  test_buck2_custom_op_1
-  test_buck2_custom_op_2
-else
-  cmake_install_executorch_lib
-  test_cmake_custom_op_1
-  test_cmake_custom_op_2
-  test_buck2_custom_op_1
-  test_buck2_custom_op_2
-fi
+cmake_install_executorch_lib
+test_cmake_custom_op_1
+test_cmake_custom_op_2

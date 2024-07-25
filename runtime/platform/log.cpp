@@ -17,9 +17,6 @@ namespace torch {
 namespace executor {
 namespace internal {
 
-/// Maximum length of a log message.
-static constexpr size_t kMaxLogMessageLength = 256;
-
 /**
  * Get the current timestamp to construct a log event.
  *
@@ -85,6 +82,8 @@ void vlogf(
     va_list args) {
 #if ET_LOG_ENABLED
 
+  // Maximum length of a log message.
+  static constexpr size_t kMaxLogMessageLength = 256;
   char buf[kMaxLogMessageLength];
   size_t len = vsnprintf(buf, kMaxLogMessageLength, format, args);
   if (len >= kMaxLogMessageLength - 1) {

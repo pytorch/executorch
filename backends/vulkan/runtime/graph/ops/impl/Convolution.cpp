@@ -88,8 +88,8 @@ ValueRef prepack_biases(
     const ValueRef vref,
     const ValueRef weight,
     const bool transposed,
-    const api::StorageType storage_type,
-    const api::GPUMemoryLayout memory_layout) {
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout) {
   auto sizes = graph.sizes_of(weight);
   const int64_t out_channels = transposed ? sizes.at(1) : sizes.at(0);
 
@@ -97,7 +97,7 @@ ValueRef prepack_biases(
       {out_channels}, graph.dtype_of(weight), storage_type, memory_layout);
   vTensorPtr t = graph.get_tensor(v);
 
-  api::ShaderInfo shader = get_nchw_to_tensor_shader(*t);
+  vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(*t);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
@@ -120,7 +120,7 @@ enum class Conv2dMethod : uint8_t {
   Transposed,
 };
 
-api::ShaderInfo get_conv2d_shader(
+vkapi::ShaderInfo get_conv2d_shader(
     ComputeGraph& graph,
     const api::vTensor& t_out,
     const bool prepack_weights,
@@ -196,10 +196,13 @@ ValueRef prepack_weights(
   const auto final_sizes = get_final_sizes(original_sizes, method);
 
   ValueRef v = graph.add_tensor(
-      final_sizes, graph.dtype_of(vref), api::kTexture2D, api::kChannelsPacked);
+      final_sizes,
+      graph.dtype_of(vref),
+      utils::kTexture2D,
+      utils::kChannelsPacked);
   vTensorPtr t = graph.get_tensor(v);
 
-  api::ShaderInfo shader =
+  vkapi::ShaderInfo shader =
       get_conv2d_shader(graph, *t, /*prepack_weights = */ true, method, vref);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
@@ -219,8 +222,8 @@ ValueRef prepack_weights(
 }
 
 void check_conv_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 }
 
 struct Conv2dParams final {
@@ -340,8 +343,8 @@ void add_conv2d_node(
       bias,
       weight,
       transposed_val,
-      /* storage_type = */ api::kTexture2D,
-      /* memory_layout = */ api::kWidthPacked);
+      /* storage_type = */ utils::kTexture2D,
+      /* memory_layout = */ utils::kWidthPacked);
 
   vTensorPtr t_in = graph.get_tensor(arg_in);
   vTensorPtr t_out = graph.get_tensor(out);
@@ -364,7 +367,7 @@ void add_conv2d_node(
 
   check_conv2d_params(kernel_params, transposed_val);
 
-  api::ShaderInfo shader = get_conv2d_shader(
+  vkapi::ShaderInfo shader = get_conv2d_shader(
       graph, *t_out, /*prepack_weights = */ false, method, weight, clamp_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
@@ -373,8 +376,8 @@ void add_conv2d_node(
       create_conv2d_global_wg_size(graph, method, out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
           t_out->texture_limits_ubo(),
@@ -404,14 +407,15 @@ void add_conv1d_node(
     const ValueRef out,
     const bool clamp_out) {
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight = prepack_if_tensor_ref(graph, weight, api::kWidthPacked);
+  ValueRef arg_weight =
+      prepack_if_tensor_ref(graph, weight, utils::kWidthPacked);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,
       weight,
       /*transposed = */ false,
-      /*storage_type = */ api::kTexture3D,
-      /*memory_layout = */ api::kChannelsPacked);
+      /*storage_type = */ utils::kTexture3D,
+      /*memory_layout = */ utils::kChannelsPacked);
 
   float out_min_val = 0.0f;
   float out_max_val = 0.0f;
@@ -470,8 +474,8 @@ void add_conv1d_node(
       global_size,
       local_size,
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {
           t_out->texture_limits_ubo(),

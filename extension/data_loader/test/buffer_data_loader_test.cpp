@@ -16,6 +16,7 @@
 #include <executorch/runtime/platform/runtime.h>
 
 using namespace ::testing;
+using torch::executor::DataLoader;
 using torch::executor::Error;
 using torch::executor::FreeableBuffer;
 using torch::executor::Result;
@@ -47,7 +48,11 @@ TEST_F(BufferDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Load the first bytes of the data.
   {
-    Result<FreeableBuffer> fb = edl.Load(/*offset=*/0, /*size=*/8);
+    Result<FreeableBuffer> fb = edl.load(
+        /*offset=*/0,
+        /*size=*/8,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_TRUE(fb.ok());
     EXPECT_EQ(fb->size(), 8);
     EXPECT_EQ(
@@ -69,8 +74,11 @@ TEST_F(BufferDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Load the last few bytes of the data, a different size than the first time.
   {
-    Result<FreeableBuffer> fb =
-        edl.Load(/*offset=*/sizeof(data) - 3, /*size=*/3);
+    Result<FreeableBuffer> fb = edl.load(
+        /*offset=*/sizeof(data) - 3,
+        /*size=*/3,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_TRUE(fb.ok());
     EXPECT_EQ(fb->size(), 3);
     EXPECT_EQ(0, std::memcmp(fb->data(), "\xfd\xfe\xff", fb->size()));
@@ -78,7 +86,11 @@ TEST_F(BufferDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Loading all of the data succeeds.
   {
-    Result<FreeableBuffer> fb = edl.Load(/*offset=*/0, /*size=*/sizeof(data));
+    Result<FreeableBuffer> fb = edl.load(
+        /*offset=*/0,
+        /*size=*/sizeof(data),
+        /*segment_info*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_TRUE(fb.ok());
     EXPECT_EQ(fb->size(), sizeof(data));
     EXPECT_EQ(0, std::memcmp(fb->data(), data, fb->size()));
@@ -86,7 +98,11 @@ TEST_F(BufferDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Loading zero-sized data succeeds, even at the end of the data.
   {
-    Result<FreeableBuffer> fb = edl.Load(/*offset=*/sizeof(data), /*size=*/0);
+    Result<FreeableBuffer> fb = edl.load(
+        /*offset=*/sizeof(data),
+        /*size=*/0,
+        /*segment_info*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_TRUE(fb.ok());
     EXPECT_EQ(fb->size(), 0);
   }
@@ -99,15 +115,21 @@ TEST_F(BufferDataLoaderTest, OutOfBoundsLoadFails) {
 
   // Loading beyond the end of the data should fail.
   {
-    Result<FreeableBuffer> fb =
-        edl.Load(/*offset=*/0, /*size=*/sizeof(data) + 1);
+    Result<FreeableBuffer> fb = edl.load(
+        /*offset=*/0,
+        /*size=*/sizeof(data) + 1,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
   }
 
   // Loading zero bytes still fails if it's past the end of the data.
   {
-    Result<FreeableBuffer> fb =
-        edl.Load(/*offset=*/sizeof(data) + 1, /*size=*/0);
+    Result<FreeableBuffer> fb = edl.load(
+        /*offset=*/sizeof(data) + 1,
+        /*size=*/0,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
     EXPECT_NE(fb.error(), Error::Ok);
   }
 }

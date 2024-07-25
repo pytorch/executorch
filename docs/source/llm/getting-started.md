@@ -313,6 +313,8 @@ penalties for repeated tokens, and biases to prioritize or de-prioritize specifi
 ```cpp
 // main.cpp
 
+using namespace torch::executor;
+
 int main() {
     // Set up the prompt. This provides the seed text for the model to elaborate.
     std::cout << "Enter model prompt: ";
@@ -327,7 +329,7 @@ int main() {
     BasicSampler sampler = BasicSampler();
 
     // Load the exported nanoGPT program, which was generated via the previous steps.
-    Module model("nanogpt.pte", torch::executor::Module::MlockConfig::UseMlockIgnoreErrors);
+    Module model("nanogpt.pte", Module::LoadMode::MmapUseMlockIgnoreErrors);
 
     const auto max_input_tokens = 1024;
     const auto max_output_tokens = 30;
@@ -787,15 +789,14 @@ Include the ETDump header in your code.
 
 Create an Instance of the ETDumpGen class and pass it to the Module constructor.
 ```cpp
-std::unique_ptr<torch::executor::ETDumpGen> etdump_gen_ = std::make_unique<torch::executor::ETDumpGen>();
-Module model("nanogpt.pte", torch::executor::Module::MlockConfig::UseMlockIgnoreErrors, std::move(etdump_gen_));
+std::unique_ptr<ETDumpGen> etdump_gen_ = std::make_unique<ETDumpGen>();
+Module model("nanogpt.pte", Module::LoadMode::MmapUseMlockIgnoreErrors, std::move(etdump_gen_));
 ```
 
 After calling `generate()`, save the ETDump to a file. You can capture multiple
 model runs in a single trace, if desired.
 ```cpp
-torch::executor::ETDumpGen* etdump_gen =
-    static_cast<torch::executor::ETDumpGen*>(model.event_tracer());
+ETDumpGen* etdump_gen = static_cast<ETDumpGen*>(model.event_tracer());
 
 ET_LOG(Info, "ETDump size: %zu blocks", etdump_gen->get_num_blocks());
 etdump_result result = etdump_gen->get_etdump_data();

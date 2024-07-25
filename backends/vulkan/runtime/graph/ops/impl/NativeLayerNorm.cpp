@@ -49,8 +49,8 @@ void resize_native_layer_norm_node(
 }
 
 void check_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 }
 
 void add_native_layer_norm_node(
@@ -106,8 +106,8 @@ void add_native_layer_norm_node(
       local_size,
       // Inputs and Outputs
       {{{out_val->at(0), out_val->at(1), out_val->at(2)},
-        api::MemoryAccessType::WRITE},
-       {{arg_in, arg_weight, arg_bias}, api::MemoryAccessType::READ}},
+        vkapi::MemoryAccessType::WRITE},
+       {{arg_in, arg_weight, arg_bias}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       {t_out->texture_limits_ubo(),
        t_out->sizes_ubo(),

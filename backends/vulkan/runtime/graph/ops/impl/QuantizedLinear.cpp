@@ -72,9 +72,9 @@ void add_q_8w_linear_node(
     const ValueRef scales_data,
     const ValueRef out) {
   ValueRef q_mat2 =
-      prepack_if_tensor_ref(graph, q_mat2_data, api::kWidthPacked);
+      prepack_if_tensor_ref(graph, q_mat2_data, utils::kWidthPacked);
   ValueRef scales =
-      prepack_if_tensor_ref(graph, scales_data, api::kWidthPacked);
+      prepack_if_tensor_ref(graph, scales_data, utils::kWidthPacked);
 
   std::string kernel_name = "q_8w_linear";
   kernel_name.reserve(kShaderNameReserve);
@@ -83,7 +83,7 @@ void add_q_8w_linear_node(
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
   add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
 
-  api::ParamsBindList ubos({});
+  vkapi::ParamsBindList ubos({});
   if (graph.is_buffer_storage(out)) {
     ubos.append(
         {graph.sizes_ubo(out),
@@ -103,8 +103,8 @@ void add_q_8w_linear_node(
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE},
-       {{mat1, q_mat2, scales}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{mat1, q_mat2, scales}, vkapi::MemoryAccessType::READ}},
       // Shader params buffers
       ubos,
       // Specialization Constants

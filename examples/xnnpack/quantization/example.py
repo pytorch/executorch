@@ -12,6 +12,7 @@ import time
 import torch
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 from torch.ao.ns.fx.utils import compute_sqnr
 from torch.ao.quantization import (  # @manual
     default_per_channel_symmetric_qnnpack_qconfig,
@@ -30,7 +31,6 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
-from ...portable.utils import export_to_edge, save_pte_program
 
 from .. import MODEL_NAME_TO_OPTIONS
 from .utils import quantize

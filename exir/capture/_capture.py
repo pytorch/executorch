@@ -215,7 +215,7 @@ def capture(  # noqa: C901
             ep = _transform(ep, ReplaceViewOpsWithViewCopyOpsPass())
             if not config._unlift:
                 return ExirExportedProgram(ep, False)
-            graph_module = ep.module()
+            graph_module = cast(torch.fx.GraphModule, ep.module())
 
         elif config.enable_dynamic_shape:
             graph_module, _ = dynamo_trace(
@@ -355,7 +355,7 @@ def capture(  # noqa: C901
             )
         ],
         example_inputs=None,
-        verifier=EXIRATenDialectVerifierBase,
+        verifiers=[EXIRATenDialectVerifierBase],
     )
     return ExirExportedProgram(ep, False)
 
