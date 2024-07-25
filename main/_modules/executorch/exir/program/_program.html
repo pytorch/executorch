@@ -1369,7 +1369,7 @@
             <span class="c1"># check on which ops need to be preserved and which ops need to be decomposed</span>
             <span class="c1"># Those which are truly preserved will be replaced with transformed ops</span>
             <span class="n">ops_set_to_not_decompose_by_program</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="n">_replace_aten_ops_with_transformed_ops</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">program</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">)</span>
+                <span class="n">_replace_aten_ops_with_transformed_ops</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">program</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
             <span class="p">)</span>
         <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span><span class="n">_default_decomposition_table</span><span class="p">())</span>
 
@@ -1452,8 +1452,8 @@
 
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">partitioner</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="n">partitioner</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">partitioner</span><span class="p">}</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">partitioner</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">elif</span> <span class="n">partitioner</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">partitioner</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="p">[]}</span>
 
     <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">_gen_edge_manager_for_partitioners</span><span class="p">(</span>
         <span class="n">partitioner</span><span class="p">,</span> <span class="n">aten_programs</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">constant_methods</span>
