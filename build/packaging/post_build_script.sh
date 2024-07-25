@@ -7,4 +7,5 @@
 
 set -eux
 
+rm -rf pip-out/
 echo "This script is run after building ExecuTorch binaries"
