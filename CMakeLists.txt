@@ -699,7 +699,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       PROPERTIES # Assume that this library will be installed in
                  # `site-packages/executorch/extension/pybindings`, and that
                  # the custom_ops_aot_lib should be found with relative path.
-		 BUILD_RPATH "$ORIGIN:$ORIGIN/../../examplesmodels/llama2/custom_ops"
+		 BUILD_RPATH "$ORIGIN:$ORIGIN/../../examples/models/llama2/custom_ops"
     )
   endif()
 
