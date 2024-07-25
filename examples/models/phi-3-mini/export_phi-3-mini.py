@@ -4,6 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# import os
+#
+# os.environ["TORCH_LOGS"] = "+dynamo"
+# os.environ['TORCHDYNAMO_VERBOSE'] = "1"
+# os.environ['TORCHDYNAMO_EXTENDED_DEBUG_CREATE_SYMBOL'] = "u3"
+# os.environ['TORCHDYNAMO_EXTENDED_DEBUG_CPP'] = "1"
+
 import torch
 
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
@@ -20,29 +27,45 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from transformers import Phi3ForCausalLM
+from transformers import AutoTokenizer, Phi3ForCausalLM
+
+from phi_3_mini import Phi3Mini
 
 
 def main() -> None:
     torch.manual_seed(0)
 
-    # pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
-    model = Phi3ForCausalLM.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
+    model_name = "microsoft/Phi-3-mini-4k-instruct"
 
-    example_inputs = (torch.randint(0, 100, (1, 100), dtype=torch.long),)
-    dynamic_shape = {"input_ids": {1: torch.export.Dim("sequence_length", max=128)}}
 
-    xnnpack_quant_config = get_symmetric_quantization_config(
-        is_per_channel=True, is_dynamic=True
-    )
-    xnnpack_quantizer = XNNPACKQuantizer()
-    xnnpack_quantizer.set_global(xnnpack_quant_config)
+    with torch.no_grad():
+        model = Phi3Mini(
+            # pyre-ignore: Undefined attribute [16]: Module `transformers` has no attribute `Phi3ForCausalLM`
+            model=Phi3ForCausalLM.from_pretrained(model_name),
+            max_batch_size=1,
+            max_seq_len=128,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    with torch.nn.attention.sdpa_kernel(
-        [torch.nn.attention.SDPBackend.MATH]
-    ), torch.no_grad():
+        tokens = tokenizer.encode("Tell me a story", return_tensors="pt")
+        for input_pos in range(tokens.shape[-1]):
+            result = model.forward(
+                input_ids=tokens[:, input_pos: input_pos + 1],
+            )
+        current_token = torch.argmax(result[:, -1, :], dim=-1).item()
+
+        example_inputs = (
+            torch.tensor([[current_token]], dtype=torch.long, requires_grad=False),
+        )
+
+        xnnpack_quant_config = get_symmetric_quantization_config(
+            is_per_channel=True, is_dynamic=True
+        )
+        xnnpack_quantizer = XNNPACKQuantizer()
+        xnnpack_quantizer.set_global(xnnpack_quant_config)
+
         model = capture_pre_autograd_graph(
-            model, example_inputs, dynamic_shapes=dynamic_shape
+            model, example_inputs
         )
         model = prepare_pt2e(model, xnnpack_quantizer)
         model(*example_inputs)
@@ -50,17 +73,14 @@ def main() -> None:
         DuplicateDynamicQuantChainPass()(model)
         # TODO(lunwenh): update it to use export once
         # https://github.com/pytorch/pytorch/issues/128394 is resolved.
-        model = torch.export._trace._export(
+        model = torch.export.export(
             model,
             example_inputs,
-            dynamic_shapes=dynamic_shape,
-            strict=False,
-            pre_dispatch=False,
         )
 
     edge_config = get_xnnpack_edge_compile_config()
     edge_manager = to_edge(model, compile_config=edge_config)
-    edge_manager = edge_manager.to_backend(XnnpackPartitioner(has_dynamic_shapes=True))
+    edge_manager = edge_manager.to_backend(XnnpackPartitioner())
     et_program = edge_manager.to_executorch()
 
     with open("phi-3-mini.pte", "wb") as file:

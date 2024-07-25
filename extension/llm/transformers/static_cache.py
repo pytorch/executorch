@@ -102,11 +102,7 @@ class ETStaticCache(torch.nn.Module, StaticCache):
         v_out = self.value_cache[layer_idx]
         k_out[:, :, cache_position] = key_states
         v_out[:, :, cache_position] = value_states
-        seq_len = self.get_seq_length(layer_idx)
-        return (
-            k_out[:, :, torch.arange(0, seq_len, device=k_out.device), :],
-            v_out[:, :, torch.arange(0, seq_len, device=v_out.device), :],
-        )
+        return k_out, v_out
 
     def get_seq_length(self, layer_idx: Optional[int] = 0) -> int:
         """Returns the sequence length of the cached states that were seen by the model."""
@@ -118,7 +114,7 @@ class ETStaticCache(torch.nn.Module, StaticCache):
     def get_usable_length(
         self, new_seq_length: int, layer_idx: Optional[int] = 0
     ) -> int:
-        return self.get_seq_length(layer_idx)
+        return 0
 
     def get_max_length(self) -> Optional[int]:
         """Returns the maximum sequence length of the cached states."""

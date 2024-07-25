@@ -25,12 +25,10 @@ class Phi3Mini(torch.nn.Module):
     def forward(
         self,
         input_ids: torch.LongTensor = None,
-        cache_position: torch.LongTensor = None,
     ) -> torch.FloatTensor:
         return self.model.forward(
             input_ids=input_ids,
             use_cache=True,
             return_dict=True,
             past_key_values=self.cache,
-            cache_position=cache_position,
         ).logits

@@ -14,7 +14,7 @@ import torch
 
 from transformers import AutoTokenizer, Phi3ForCausalLM
 
-from .phi_3_mini import Phi3Mini
+from phi_3_mini import Phi3Mini
 
 end_of_text_token = 32000
 
@@ -46,8 +46,7 @@ def _generate_token_with_kv_cache(args, model, prompt_tokens):
 
     for input_pos in range(prompt_tokens.shape[-1]):
         result = model.forward(
-            input_ids=prompt_tokens[:, input_pos : input_pos + 1],
-            cache_position=torch.arange(0, input_pos, device=model.model.device),
+            input_ids=prompt_tokens[:, input_pos : input_pos + 1]
         )
 
     current_token = torch.argmax(result[:, -1, :], dim=-1).item()
@@ -56,12 +55,7 @@ def _generate_token_with_kv_cache(args, model, prompt_tokens):
 
     while current_token != end_of_text_token and len(generated_tokens) < args.seq_len:
         result = model.forward(
-            input_ids=torch.tensor([[current_token]], dtype=torch.long),
-            cache_position=torch.arange(
-                0,
-                prompt_tokens.shape[-1] + len(generated_tokens),
-                device=model.model.device,
-            ),
+            input_ids=torch.tensor([[current_token]], dtype=torch.long)
         )
         current_token = torch.argmax(result[:, -1, :], dim=-1).item()
         print(f" {current_token}", end="", flush=True)
@@ -114,7 +108,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-kv",
         "--use_kv_cache",
-        default=False,
+        default=True,
         action="store_true",
         help="Whether or not to use KV cache",
     )
