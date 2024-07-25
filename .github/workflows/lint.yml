@@ -18,7 +18,7 @@ jobs:
   lintrunner:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     with:
-      runner: linux.2xlarge
+      runner: amz2023.linux.2xlarge
       docker-image: executorch-ubuntu-22.04-linter
       fetch-depth: 0
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

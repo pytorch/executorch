@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   docker-build:
-    runs-on: [self-hosted, linux.2xlarge]
+    runs-on: [self-hosted, amz2023.linux.2xlarge]
     timeout-minutes: 240
     strategy:
       fail-fast: false
