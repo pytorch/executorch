@@ -12,9 +12,9 @@ import time
 
 import torch
 
-from extension.llm.transformers.static_cache import ETStaticCache
-
 from transformers import AutoTokenizer, Phi3ForCausalLM
+
+from .phi_3_mini import Phi3Mini
 
 end_of_text_token = 32000
 
@@ -42,38 +42,28 @@ def _generate_token(args, model, prompt_tokens):
 def _generate_token_with_kv_cache(args, model, prompt_tokens):
     print("Generating tokens:", end="", flush=True)
 
-    result = model.forward(
-        input_ids=prompt_tokens,
-        use_cache=True,
-        return_dict=True,
-        past_key_values=ETStaticCache(
-            model.config,
-            prompt_tokens.shape[0],
-            args.seq_len + prompt_tokens.shape[-1],
-            device=model.device,
-            dtype=model.dtype,
-        ),
-    )
+    model = Phi3Mini(model, 1, args.seq_len + prompt_tokens.shape[-1])
 
-    current_token = torch.argmax(result.logits[:, -1, :], dim=-1).item()
-    current_key_value = result.past_key_values
+    for input_pos in range(prompt_tokens.shape[-1]):
+        result = model.forward(
+            input_ids=prompt_tokens[:, input_pos : input_pos + 1],
+            cache_position=torch.arange(0, input_pos, device=model.model.device),
+        )
 
+    current_token = torch.argmax(result[:, -1, :], dim=-1).item()
     print(f" {current_token}", end="", flush=True)
-
     generated_tokens = [current_token]
 
     while current_token != end_of_text_token and len(generated_tokens) < args.seq_len:
         result = model.forward(
             input_ids=torch.tensor([[current_token]], dtype=torch.long),
-            use_cache=True,
-            return_dict=True,
-            past_key_values=current_key_value,
             cache_position=torch.arange(
-                0, prompt_tokens.shape[-1] + len(generated_tokens), device=model.device
+                0,
+                prompt_tokens.shape[-1] + len(generated_tokens),
+                device=model.model.device,
             ),
         )
-        current_token = torch.argmax(result.logits[:, -1, :], dim=-1).item()
-        current_key_value = result.past_key_values
+        current_token = torch.argmax(result[:, -1, :], dim=-1).item()
         print(f" {current_token}", end="", flush=True)
         generated_tokens.append(current_token)
 
