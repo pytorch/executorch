@@ -14,19 +14,19 @@ from examples.models import MODEL_NAME_TO_MODEL
 from examples.xnnpack import MODEL_NAME_TO_OPTIONS
 
 DEFAULT_RUNNERS = {
-    "linux": "linux.2xlarge",
+    "linux": "amz2023.linux.2xlarge",
     "macos": "macos-m1-stable",
 }
 CUSTOM_RUNNERS = {
     "linux": {
         # This one runs OOM on smaller runner, the root cause is unclear (T163016365)
-        "w2l": "linux.12xlarge",
-        "ic4": "linux.12xlarge",
-        "resnet50": "linux.12xlarge",
-        "llava": "linux.12xlarge",
+        "w2l": "amz2023.linux.12xlarge",
+        "ic4": "amz2023.linux.12xlarge",
+        "resnet50": "amz2023.linux.12xlarge",
+        "llava": "amz2023.linux.12xlarge",
         # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
-        "dl3": "linux.12xlarge",
-        "emformer_join": "linux.12xlarge",
+        "dl3": "amz2023.linux.12xlarge",
+        "emformer_join": "amz2023.linux.12xlarge",
     }
 }
 
@@ -116,7 +116,7 @@ def export_models_for_ci() -> dict[str, dict]:
                 "build-tool": "buck2",
                 "model": "mv3",
                 "backend": backend,
-                "runner": "linux.2xlarge",
+                "runner": "amz2023.linux.2xlarge",
                 "timeout": DEFAULT_TIMEOUT,
             }
             models["include"].append(record)
@@ -145,7 +145,7 @@ def export_models_for_ci() -> dict[str, dict]:
             "build-tool": "cmake",
             "model": name,
             "backend": backend,
-            "runner": DEFAULT_RUNNERS.get(target_os, "linux.2xlarge"),
+            "runner": DEFAULT_RUNNERS.get(target_os, "amz2023.linux.2xlarge"),
             "timeout": DEFAULT_TIMEOUT,
         }
 
