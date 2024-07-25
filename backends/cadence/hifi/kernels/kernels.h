@@ -12,19 +12,9 @@
 #include "stddef.h"
 #include "xa_type_def.h"
 
-/* NNLIB C APIs */
-
-extern "C" WORD32 xa_nn_elm_quantize_f32_asym8s(WORD8 * __restrict__ p_out,
-                                     const FLOAT32 * __restrict__ p_inp,
-                                     FLOAT32 out_scale,
-                                     WORD32  out_zero_bias,
-                                     WORD32  num_elm);
-                                     
-extern "C" WORD32 xa_nn_elm_dequantize_asym8s_f32(FLOAT32 * __restrict__ p_out,
-                                       const WORD8 * __restrict__ p_inp,
-                                       WORD32  inp_zero_bias,
-                                       FLOAT32 inp_scale,
-                                       WORD32  num_elm);                                     
+/* For NNLIB APIs */
+#include "xa_nnlib_kernels_api.h"
+                              
 
 namespace impl {
 namespace HiFi {
