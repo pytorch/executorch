@@ -134,15 +134,19 @@ class ExecuTorchMultiModalJni
       jint startPos,
       facebook::jni::alias_ref<ExecuTorchMultiModalCallbackJni> callback) {
     auto image_size = image->size();
-    std::vector<jint> image_data_jint(image_size);
-    std::vector<uint8_t> image_data(image_size);
-    image->getRegion(0, image_size, image_data_jint.data());
-    for (int i = 0; i < image_size; i++) {
-      image_data[i] = image_data_jint[i];
+    std::vector<Image> images;
+    if (image_size != 0) {
+      std::vector<jint> image_data_jint(image_size);
+      std::vector<uint8_t> image_data(image_size);
+      image->getRegion(0, image_size, image_data_jint.data());
+      for (int i = 0; i < image_size; i++) {
+        image_data[i] = image_data_jint[i];
+      }
+      Image image_runner{image_data, width, height, channels};
+      images.push_back(image_runner);
     }
-    Image image_runner{image_data, width, height, channels};
     runner_->generate(
-        image_runner,
+        images,
         prompt->toStdString(),
         1024,
         [callback](std::string result) { callback->onResult(result); },
