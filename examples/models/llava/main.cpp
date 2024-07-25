@@ -104,6 +104,6 @@ int32_t main(int32_t argc, char** argv) {
       .width = static_cast<int32_t>(image_tensor.size(2)),
       .height = static_cast<int32_t>(image_tensor.size(1))};
   // generate
-  runner.generate(image, prompt, seq_len);
+  runner.generate({image}, prompt, seq_len);
   return 0;
 }

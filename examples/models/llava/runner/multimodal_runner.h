@@ -80,7 +80,7 @@ class MultiModalRunner {
       std::function<void(const std::string&)> token_callback = {});
 
   Error generate(
-      Image& image,
+      std::vector<Image> images,
       const std::string& prompt,
       int32_t seq_len = 1024,
       std::function<void(const std::string&)> token_callback = {},
