@@ -21,9 +21,9 @@ void check_embedding_args(
     const api::vTensor& weight,
     const api::vTensor& in,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(weight, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(weight, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 }
 
 void add_embedding_node(
@@ -46,8 +46,8 @@ void add_embedding_node(
       VK_KERNEL_FROM_STR(kernel_name),
       graph.create_global_wg_size(out),
       graph.create_local_wg_size(out),
-      {{out, api::MemoryAccessType::WRITE},
-       {{in, weight}, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{in, weight}, vkapi::MemoryAccessType::READ}},
       {t_out->sizes_ubo()}));
 }
 

@@ -10,23 +10,23 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/Adapter.h>
-#include <executorch/backends/vulkan/runtime/api/Command.h>
-#include <executorch/backends/vulkan/runtime/api/Descriptor.h>
-#include <executorch/backends/vulkan/runtime/api/Fence.h>
-#include <executorch/backends/vulkan/runtime/api/QueryPool.h>
-#include <executorch/backends/vulkan/runtime/api/Runtime.h>
+#include <executorch/backends/vulkan/runtime/utils/MacroUtils.h>
 
-#include <executorch/backends/vulkan/runtime/api/utils/MacroUtils.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Command.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Fence.h>
+#include <executorch/backends/vulkan/runtime/vk_api/QueryPool.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
 
 namespace vkcompute {
 namespace api {
 
 struct ContextConfig final {
   uint32_t cmd_submit_frequency;
-  CommandPoolConfig cmd_pool_config;
-  DescriptorPoolConfig descriptor_pool_config;
-  QueryPoolConfig query_pool_config;
+  vkapi::CommandPoolConfig cmd_pool_config;
+  vkapi::DescriptorPoolConfig descriptor_pool_config;
+  vkapi::QueryPoolConfig query_pool_config;
 };
 
 //
@@ -54,29 +54,29 @@ class Context final {
   // Config
   ContextConfig config_;
   // Important handles
-  Adapter* adapter_p_;
+  vkapi::Adapter* adapter_p_;
   VkDevice device_;
-  Adapter::Queue queue_;
+  vkapi::Adapter::Queue queue_;
   // Resource Pools
-  CommandPool command_pool_;
-  DescriptorPool descriptor_pool_;
-  FencePool fences_;
+  vkapi::CommandPool command_pool_;
+  vkapi::DescriptorPool descriptor_pool_;
+  vkapi::FencePool fences_;
   // Diagnostics
-  QueryPool querypool_;
+  vkapi::QueryPool querypool_;
   // Command buffers submission
   std::mutex cmd_mutex_;
-  CommandBuffer cmd_;
+  vkapi::CommandBuffer cmd_;
   uint32_t submit_count_;
   // Memory Management
   std::mutex buffer_clearlist_mutex_;
-  std::vector<VulkanBuffer> buffers_to_clear_;
+  std::vector<vkapi::VulkanBuffer> buffers_to_clear_;
   std::mutex image_clearlist_mutex_;
-  std::vector<VulkanImage> images_to_clear_;
+  std::vector<vkapi::VulkanImage> images_to_clear_;
 
  public:
   // Adapter access
 
-  inline Adapter* adapter_ptr() {
+  inline vkapi::Adapter* adapter_ptr() {
     return adapter_p_;
   }
 
@@ -90,35 +90,35 @@ class Context final {
 
   // Device Caches
 
-  inline ShaderLayoutCache& shader_layout_cache() {
+  inline vkapi::ShaderLayoutCache& shader_layout_cache() {
     return adapter_ptr()->shader_layout_cache();
   }
 
-  inline ShaderCache& shader_cache() {
+  inline vkapi::ShaderCache& shader_cache() {
     return adapter_ptr()->shader_cache();
   }
 
-  inline PipelineLayoutCache& pipeline_layout_cache() {
+  inline vkapi::PipelineLayoutCache& pipeline_layout_cache() {
     return adapter_ptr()->pipeline_layout_cache();
   }
 
-  inline ComputePipelineCache& pipeline_cache() {
+  inline vkapi::ComputePipelineCache& pipeline_cache() {
     return adapter_ptr()->compute_pipeline_cache();
   }
 
   // Resource Pools
 
-  inline DescriptorPool& descriptor_pool() {
+  inline vkapi::DescriptorPool& descriptor_pool() {
     return descriptor_pool_;
   }
 
-  inline FencePool& fences() {
+  inline vkapi::FencePool& fences() {
     return fences_;
   }
 
   // Diagnostics
 
-  inline QueryPool& querypool() {
+  inline vkapi::QueryPool& querypool() {
     return querypool_;
   }
 
@@ -155,12 +155,12 @@ class Context final {
 
   // Memory Management
 
-  void register_buffer_cleanup(VulkanBuffer& buffer) {
+  void register_buffer_cleanup(vkapi::VulkanBuffer& buffer) {
     std::lock_guard<std::mutex> bufferlist_lock(buffer_clearlist_mutex_);
     buffers_to_clear_.emplace_back(std::move(buffer));
   }
 
-  void register_image_cleanup(VulkanImage& image) {
+  void register_image_cleanup(vkapi::VulkanImage& image) {
     std::lock_guard<std::mutex> imagelist_lock(image_clearlist_mutex_);
     images_to_clear_.emplace_back(std::move(image));
   }
@@ -178,30 +178,30 @@ class Context final {
     }
   }
 
-  DescriptorSet get_descriptor_set(
-      const ShaderInfo&,
+  vkapi::DescriptorSet get_descriptor_set(
+      const vkapi::ShaderInfo&,
       const utils::uvec3&,
-      const SpecVarList&);
+      const vkapi::SpecVarList&);
 
-  inline DescriptorSet get_descriptor_set(
-      const ShaderInfo& shader_descriptor,
+  inline vkapi::DescriptorSet get_descriptor_set(
+      const vkapi::ShaderInfo& shader_descriptor,
       const utils::uvec3& local_work_group_size) {
     return get_descriptor_set(shader_descriptor, local_work_group_size, {});
   }
 
   void register_shader_dispatch(
-      const DescriptorSet&,
-      PipelineBarrier&,
-      const ShaderInfo&,
+      const vkapi::DescriptorSet&,
+      vkapi::PipelineBarrier&,
+      const vkapi::ShaderInfo&,
       const utils::uvec3&);
 
   template <typename... Arguments>
   bool submit_compute_job(
-      const ShaderInfo&,
-      PipelineBarrier&,
+      const vkapi::ShaderInfo&,
+      vkapi::PipelineBarrier&,
       const utils::uvec3&,
       const utils::uvec3&,
-      const SpecVarList&,
+      const vkapi::SpecVarList&,
       VkFence fence_handle,
       const uint32_t dispatch_id,
       Arguments&&...);
@@ -221,17 +221,21 @@ Context* context();
 
 namespace detail {
 
-inline void arg_is_empty(bool& any_is_empty, const VulkanBuffer& buffer) {
+inline void arg_is_empty(
+    bool& any_is_empty,
+    const vkapi::VulkanBuffer& buffer) {
   // bool(buffer) will evaluate to false if no memory has been allocated
   any_is_empty = any_is_empty || !buffer;
 }
 
-inline void arg_is_empty(bool& any_is_empty, const VulkanImage& image) {
+inline void arg_is_empty(bool& any_is_empty, const vkapi::VulkanImage& image) {
   // bool(image) will evaluate to false if no memory has been allocated
   any_is_empty = any_is_empty || !image;
 }
 
-inline void arg_is_empty(bool& any_is_empty, const BufferBindInfo& bind_info) {
+inline void arg_is_empty(
+    bool& any_is_empty,
+    const vkapi::BufferBindInfo& bind_info) {
   any_is_empty = any_is_empty || (bind_info.handle == VK_NULL_HANDLE);
 }
 
@@ -252,7 +256,7 @@ inline bool any_arg_is_empty(Arguments&&... arguments) {
 
 template <size_t... Indices, typename... Arguments>
 inline void bind(
-    DescriptorSet& descriptor_set,
+    vkapi::DescriptorSet& descriptor_set,
     const std::index_sequence<Indices...>&,
     Arguments&&... arguments) {
   VK_UNUSED const int _[]{
@@ -272,11 +276,11 @@ inline void bind(
  */
 template <typename... Arguments>
 inline bool Context::submit_compute_job(
-    const ShaderInfo& shader,
-    PipelineBarrier& pipeline_barrier,
+    const vkapi::ShaderInfo& shader,
+    vkapi::PipelineBarrier& pipeline_barrier,
     const utils::uvec3& global_work_group,
     const utils::uvec3& local_work_group_size,
-    const SpecVarList& specialization_constants,
+    const vkapi::SpecVarList& specialization_constants,
     VkFence fence_handle,
     const uint32_t dispatch_id,
     Arguments&&... arguments) {
@@ -315,7 +319,7 @@ inline bool Context::submit_compute_job(
       dispatch_id);
 
   // Factor out template parameter independent code to minimize code bloat.
-  DescriptorSet descriptor_set = get_descriptor_set(
+  vkapi::DescriptorSet descriptor_set = get_descriptor_set(
       shader, local_work_group_size, specialization_constants);
 
   detail::bind(

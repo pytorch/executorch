@@ -1167,6 +1167,7 @@ ATEN_OPS = (
     op_target(
         name = "op__to_dim_order_copy",
         deps = [
+            ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),

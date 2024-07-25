@@ -24,7 +24,7 @@ class RecomposePixelUnshuffle(ExportPass):
 
         self.quantization_capture = quantization_capture
         if quantization_capture:
-            self.reshape_target = torch.ops.aten.reshape.default
+            self.reshape_target = torch.ops.aten._unsafe_view.default
             self.permute_target = torch.ops.aten.permute.default
             self.view_target = torch.ops.aten.view.default
             self.op = torch.ops.aten.pixel_unshuffle.default
@@ -93,7 +93,9 @@ class RecomposePixelUnshuffle(ExportPass):
 
                         op = self.op
                         pixel_unshuffle_node = graph.create_node(
-                            "call_function", op, (input_node, int(downscale_factor))
+                            "call_function",
+                            op,
+                            (input_node, int(downscale_factor)),
                         )
                         users = output_node.users.copy()
                         for user in users:

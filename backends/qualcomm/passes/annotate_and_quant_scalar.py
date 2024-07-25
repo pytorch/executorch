@@ -9,6 +9,7 @@ from typing import Dict
 
 import torch
 from executorch.backends.qualcomm.builders.utils import get_parameter
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
@@ -40,7 +41,6 @@ class AnnotateAndQuantScalar(ExportPass):
         "mul",
         "truediv",
     ]
-    quant_attrs_key = "quant_attrs"
 
     def __init__(self, edge_program: torch.export.ExportedProgram):
         super(AnnotateAndQuantScalar, self).__init__()
@@ -81,7 +81,7 @@ class AnnotateAndQuantScalar(ExportPass):
         ]:
             return
 
-        be_annotated_node.meta[self.quant_attrs_key] = quant_attrs
+        be_annotated_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
 
     def _traverse_binary_node(self, graph_module: torch.fx.GraphModule):
         src_partitions = get_source_partitions(
@@ -91,7 +91,7 @@ class AnnotateAndQuantScalar(ExportPass):
         for src_partition in src_partitions:
             output = src_partition.output_nodes[0]
             if (
-                output.meta.get(self.quant_attrs_key)
+                output.meta.get(QCOM_QUANT_ATTRS)
                 and len(src_partition.input_nodes) == 1
             ):
                 dq_node = src_partition.input_nodes[0]

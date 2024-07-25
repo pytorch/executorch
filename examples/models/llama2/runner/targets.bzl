@@ -31,9 +31,6 @@ def define_common_targets():
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
-            deps = [
-                "//executorch/extension/data_loader:file_data_loader",
-            ],
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
                 "//executorch/examples/models/llama2/sampler:sampler" + aten_suffix,
@@ -46,7 +43,7 @@ def define_common_targets():
             ] + ([
                 "//executorch/examples/models/llama2/tokenizer:tiktoken",
             ] if use_tiktoken() else [
-                "//executorch/examples/models/llama2/tokenizer:bpe_tokenizer",
+                "//executorch/extension/llm/tokenizer:bpe_tokenizer",
             ]) + (_get_operator_lib(aten)) + ([
                 # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
                 # Therefore enable it explicitly for now to avoid failing tests

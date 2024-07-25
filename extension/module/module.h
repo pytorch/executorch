@@ -24,15 +24,17 @@ namespace torch::executor {
 class Module final {
  public:
   /**
-   * Enum to define memory locking behavior.
+   * Enum to define loading behavior.
    */
-  enum class MlockConfig {
-    /// Do not use memory locking.
-    NoMlock,
+  enum class LoadMode {
+    /// Load the whole file as a buffer.
+    File,
+    /// Use mmap to load pages into memory.
+    Mmap,
     /// Use memory locking and handle errors.
-    UseMlock,
+    MmapUseMlock,
     /// Use memory locking and ignore errors.
-    UseMlockIgnoreErrors,
+    MmapUseMlockIgnoreErrors,
   };
 
   /**
@@ -40,11 +42,11 @@ class Module final {
    * memory locking behavior.
    *
    * @param[in] file_path The path to the ExecuTorch program file to load.
-   * @param[in] mlock_config The memory locking configuration to use.
+   * @param[in] load_mode The loading mode to use.
    */
   explicit Module(
       const std::string& file_path,
-      const MlockConfig mlock_config = MlockConfig::UseMlock,
+      const LoadMode load_mode = LoadMode::MmapUseMlock,
       std::unique_ptr<EventTracer> event_tracer = nullptr);
 
   /**
@@ -52,14 +54,14 @@ class Module final {
    *
    * @param[in] data_loader A DataLoader used for loading program data.
    * @param[in] memory_allocator A MemoryAllocator used for memory management.
-   * @param[in] tmp_memory_allocator A MemoryAllocator used for allocating
-   * memory during execution time.
+   * @param[in] temp_allocator A MemoryAllocator to use when allocating
+   * temporary data during kernel or delegate execution.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    */
   explicit Module(
       std::unique_ptr<DataLoader> data_loader,
       std::unique_ptr<MemoryAllocator> memory_allocator = nullptr,
-      std::unique_ptr<MemoryAllocator> tmp_memory_allocator = nullptr,
+      std::unique_ptr<MemoryAllocator> temp_allocator = nullptr,
       std::unique_ptr<EventTracer> event_tracer = nullptr);
   Module(const Module&) = delete;
   Module& operator=(const Module&) = delete;
@@ -194,6 +196,16 @@ class Module final {
     return event_tracer_.get();
   }
 
+  /**
+   * Set output data pointer for forward method.
+   *
+   * @param[in] output_tensor A Tensor for the output of 'forward' method.
+   * @param[in] output_index Index of the output in 'forward' method.
+   *
+   * @returns An Error to indicate success or failure of the loading process.
+   */
+  Error set_output_data_ptr(Tensor& output_tensor, size_t output_index);
+
  private:
   struct MethodHolder {
     std::vector<std::vector<uint8_t>> planned_buffers;
@@ -205,7 +217,7 @@ class Module final {
 
  private:
   std::string file_path_;
-  MlockConfig mlock_config_{MlockConfig::NoMlock};
+  LoadMode load_mode_{LoadMode::MmapUseMlock};
   std::unique_ptr<DataLoader> data_loader_;
   std::unique_ptr<MemoryAllocator> memory_allocator_;
   std::unique_ptr<MemoryAllocator> temp_allocator_;

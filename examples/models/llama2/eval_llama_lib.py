@@ -15,13 +15,14 @@ from executorch.examples.models.llama2.export_llama_lib import (
     get_quantizer_and_quant_params,
 )
 from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
-from executorch.examples.models.llama2.tokenizer.tokenizer import (
+
+from executorch.extension.llm.export import LLMEdgeManager
+from executorch.extension.llm.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
 )
 
 from lm_eval.api.model import LM
 
-from .builder import LlamaEdgeManager
 from .export_llama_lib import (
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,
@@ -130,7 +131,7 @@ def gen_eval_wrapper(
 
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
     # GPTFastEvalWrapper: Create a wrapper around a pre-exported model
-    manager: LlamaEdgeManager = _prepare_for_llama_export(model_name, args)
+    manager: LLMEdgeManager = _prepare_for_llama_export(model_name, args)
 
     if len(quantizers) != 0:
         manager = manager.capture_pre_autograd_graph().pt2e_quantize(quantizers)

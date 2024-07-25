@@ -21,7 +21,7 @@ namespace util {
  * with `malloc()`.
  *
  * Note that this will keep the file open for the duration of its lifetime, to
- * avoid the overhead of opening it again for every Load() call.
+ * avoid the overhead of opening it again for every load() call.
  */
 class MmapDataLoader : public DataLoader {
  public:
@@ -47,7 +47,7 @@ class MmapDataLoader : public DataLoader {
    *
    * @param[in] file_name The path to the file to load from. The file will be
    *     kept open until the MmapDataLoader is destroyed, to avoid the
-   *     overhead of opening it again for every Load() call.
+   *     overhead of opening it again for every load() call.
    * @param[in] mlock_config How and whether to lock loaded pages with
    *     `mlock()`.
    */
@@ -86,8 +86,10 @@ class MmapDataLoader : public DataLoader {
 
   ~MmapDataLoader() override;
 
-  __ET_NODISCARD Result<FreeableBuffer> Load(size_t offset, size_t size)
-      override;
+  __ET_NODISCARD Result<FreeableBuffer> load(
+      size_t offset,
+      size_t size,
+      const DataLoader::SegmentInfo& segment_info) override;
 
   __ET_NODISCARD Result<size_t> size() const override;
 

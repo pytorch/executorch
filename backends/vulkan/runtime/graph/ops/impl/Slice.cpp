@@ -42,8 +42,8 @@ void add_slice_tensor_out_node(
   vTensorPtr t_in = graph.get_tensor(in);
   vTensorPtr t_out = graph.get_tensor(out);
 
-  VK_CHECK_COND(check_memory_layout_is(*t_in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(*t_out, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(*t_in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(*t_out, utils::kChannelsPacked));
 
   // Need normalize the dim
   int64_t dim = graph.extract_scalar<int64_t>(dim_ref);
@@ -93,8 +93,8 @@ void add_slice_tensor_out_node(
         VK_KERNEL_FROM_STR(kernel_name),
         graph.create_global_wg_size(out),
         graph.create_local_wg_size(out),
-        {{out, api::MemoryAccessType::WRITE},
-         {in, api::MemoryAccessType::READ}},
+        {{out, vkapi::MemoryAccessType::WRITE},
+         {in, vkapi::MemoryAccessType::READ}},
         {t_out->sizes_ubo(),
          t_in->sizes_ubo(),
          graph.create_params_buffer(params)}));
@@ -143,8 +143,8 @@ void add_slice_tensor_out_node(
         VK_KERNEL_FROM_STR(kernel_name),
         global_size,
         local_size,
-        {{out, api::MemoryAccessType::WRITE},
-         {in, api::MemoryAccessType::READ}},
+        {{out, vkapi::MemoryAccessType::WRITE},
+         {in, vkapi::MemoryAccessType::READ}},
         {t_out->sizes_ubo(), graph.create_params_buffer(params)}));
   }
 }

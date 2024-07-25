@@ -8,6 +8,7 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpResizeNearestNeighbor, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -55,12 +56,12 @@ class ResizeBilinear(NodeVisitor):
         reisze_nearest_op.AddScalarParam(
             OpResizeNearestNeighbor.param_align_corners,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {"data": False},
+            {QCOM_DATA: False},
         )
         reisze_nearest_op.AddScalarParam(
             OpResizeNearestNeighbor.param_half_pixel_centers,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {"data": True},
+            {QCOM_DATA: True},
         )
 
         return reisze_nearest_op

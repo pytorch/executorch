@@ -10,7 +10,7 @@ from typing import Optional, Union
 import lm_eval
 import torch
 from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
-from executorch.examples.models.llama2.tokenizer.tokenizer import (
+from executorch.extension.llm.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
 )
 

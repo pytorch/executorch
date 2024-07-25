@@ -23,8 +23,8 @@ void check_args(
     const api::vTensor& in,
     const std::vector<int64_t>& repeats,
     const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 
   int64_t in_dim = in.dim();
   VK_CHECK_COND(
@@ -104,7 +104,8 @@ void add_repeat_channel_node(
       global_size,
       local_size,
       // Inputs and Outputs
-      {{out, api::MemoryAccessType::WRITE}, {in, api::MemoryAccessType::READ}},
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {in, vkapi::MemoryAccessType::READ}},
       // Parameter buffers
       {graph.create_params_buffer(repeat_channel_args)},
       // Specialization Constants

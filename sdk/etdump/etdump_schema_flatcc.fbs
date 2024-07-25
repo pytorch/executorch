@@ -70,6 +70,12 @@ table DebugEvent {
   // The order of these entries is expected to be the same as the parameters
   // that are passed into a operator.
   debug_entry:Value;
+
+  // Integer based delegate debug identifier.
+  delegate_debug_id_int:int = -1;
+
+  // String based delegate debug identifier.
+  delegate_debug_id_str:string;
 }
 
 // All the details pertaining to an allocation done in the runtime. The main

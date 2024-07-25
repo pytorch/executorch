@@ -424,6 +424,11 @@ if(EXECUTORCH_BUILD_FLATC)
       CACHE BOOL ""
   )
   add_subdirectory(third-party/flatbuffers)
+
+  # exir lets users set the alignment of tensor data embedded in the flatbuffer,
+  # and some users need an alignment larger than the default, which is typically
+  # 32.
+  target_compile_definitions(flatc PRIVATE FLATBUFFERS_MAX_ALIGNMENT=1024)
 endif()
 if(NOT FLATC_EXECUTABLE)
   message(
@@ -485,24 +490,26 @@ if(MAX_KERNEL_NUM)
   )
 endif()
 
-# shared version
-add_library(
-  executorch_no_prim_ops_shared SHARED ${_executorch_no_prim_ops__srcs}
-)
-target_link_libraries(executorch_no_prim_ops_shared PRIVATE program_schema)
-if(DL_LIBRARY_EXISTS)
-  target_link_libraries(executorch_no_prim_ops_shared PRIVATE dl) # For dladdr()
-endif()
-target_include_directories(
-  executorch_no_prim_ops_shared PUBLIC ${_common_include_directories}
-)
-target_compile_options(
-  executorch_no_prim_ops_shared PUBLIC ${_common_compile_options}
-)
-if(MAX_KERNEL_NUM)
-  target_compile_definitions(
-    executorch_no_prim_ops_shared PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
+if(EXECUTORCH_BUILD_PYBIND AND APPLE)
+  # shared version
+  add_library(
+    executorch_no_prim_ops_shared SHARED ${_executorch_no_prim_ops__srcs}
   )
+  target_link_libraries(executorch_no_prim_ops_shared PRIVATE program_schema)
+  if(DL_LIBRARY_EXISTS)
+    target_link_libraries(executorch_no_prim_ops_shared PRIVATE dl) # For dladdr()
+  endif()
+  target_include_directories(
+    executorch_no_prim_ops_shared PUBLIC ${_common_include_directories}
+  )
+  target_compile_options(
+    executorch_no_prim_ops_shared PUBLIC ${_common_compile_options}
+  )
+  if(MAX_KERNEL_NUM)
+    target_compile_definitions(
+      executorch_no_prim_ops_shared PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
+    )
+  endif()
 endif()
 
 #
