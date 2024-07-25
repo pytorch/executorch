@@ -271,7 +271,7 @@ Result<torch::executor::Tensor> MultiModalRunner::step(
 }
 
 Error MultiModalRunner::generate(
-    Image& image,
+    std::vector<Image> images,
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
@@ -313,18 +313,19 @@ Error MultiModalRunner::generate(
   ET_LOG(Info, "pos: %d", pos);
 
   // prefill image
-  auto image_prefill_res = prefill_image(image, pos);
-  ET_LOG(
-      Info,
-      "prefill image res sizes(0): %zu, sizes(1): %zu, sizes(2): %zu",
-      image_prefill_res.get().size(0),
-      image_prefill_res.get().size(1),
-      image_prefill_res.get().size(2));
+  for (auto image : images) {
+    auto image_prefill_res = prefill_image(image, pos);
+    ET_LOG(
+        Info,
+        "prefill image res sizes(0): %zu, sizes(1): %zu, sizes(2): %zu",
+        image_prefill_res.get().size(0),
+        image_prefill_res.get().size(1),
+        image_prefill_res.get().size(2));
 
-  // update pos to include prefilled image tokens
-  pos += image_prefill_res.get().size(1);
-  ET_LOG(Info, "pos: %d", pos);
-
+    // update pos to include prefilled image tokens
+    pos += image_prefill_res.get().size(1);
+    ET_LOG(Info, "pos: %d", pos);
+  }
   // prefill prompt. Do not append bos because preset prompt has it.
   auto prompt_prefill_res = prefill_prompt(prompt, pos, false, token_callback);
   ET_LOG(
