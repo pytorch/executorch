@@ -756,6 +756,14 @@ if(EXECUTORCH_BUILD_PYBIND)
                  BUILD_RPATH "@loader_path/../../../torch/lib"
                  INSTALL_RPATH "@loader_path/../../../torch/lib"
     )
+  else()
+    set_target_properties(
+      portable_lib
+      PROPERTIES # Assume that this library will be installed in
+                 # `site-packages/executorch/extension/pybindings`, and that
+                 # the custom_ops_aot_lib should be found with relative path.
+                 BUILD_RPATH "$ORIGIN:$ORIGIN/../../examples/models/llama2/custom_ops"
+    )
   endif()
 
   install(TARGETS portable_lib
