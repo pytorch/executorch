@@ -67,3 +67,6 @@
 [submodule "extension/llm/third-party/abseil-cpp"]
 	path = extension/llm/third-party/abseil-cpp
 	url = https://github.com/abseil/abseil-cpp.git
+[submodule "backends/cadence/hifi/third-party/nnlib/nnlib-hifi4"]
+	path = backends/cadence/hifi/third-party/nnlib/nnlib-hifi4
+	url = https://github.com/foss-xtensa/nnlib-hifi4.git
