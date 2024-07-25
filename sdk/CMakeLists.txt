@@ -165,13 +165,6 @@ add_custom_command(
   COMMENT "Generating etdump headers"
 )
 
-add_custom_target(
-  etdump_schema_generated
-  DEPENDS ${_etdump_schema__outputs}
-)
-
-add_dependencies(etdump_schema etdump_schema_generated)
-
 add_library(
   etdump ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_flatcc.cpp
          ${CMAKE_CURRENT_SOURCE_DIR}/etdump/emitter.cpp
