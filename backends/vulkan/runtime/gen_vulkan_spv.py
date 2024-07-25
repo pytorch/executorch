@@ -482,6 +482,7 @@ class SPVGenerator:
         src_dir_paths: Union[str, List[str]],
         env: Dict[Any, Any],
         glslc_path: Optional[str],
+        glslc_flags: str = "",
     ) -> None:
         if isinstance(src_dir_paths, str):
             self.src_dir_paths = [src_dir_paths]
@@ -490,6 +491,7 @@ class SPVGenerator:
 
         self.env = env
         self.glslc_path = glslc_path
+        self.glslc_flags = glslc_flags
 
         self.glsl_src_files: Dict[str, str] = {}
         self.template_yaml_files: List[str] = []
@@ -668,19 +670,23 @@ class SPVGenerator:
             if self.glslc_path is not None:
                 spv_out_path = os.path.join(output_dir, f"{shader_name}.spv")
 
-                cmd = [
-                    self.glslc_path,
-                    "-fshader-stage=compute",
-                    glsl_out_path,
-                    "-o",
-                    spv_out_path,
-                    "--target-env=vulkan1.1",
-                    "-Werror",
-                ] + [
-                    arg
-                    for src_dir_path in self.src_dir_paths
-                    for arg in ["-I", src_dir_path]
-                ]
+                cmd = (
+                    [
+                        self.glslc_path,
+                        "-fshader-stage=compute",
+                        glsl_out_path,
+                        "-o",
+                        spv_out_path,
+                        "--target-env=vulkan1.1",
+                        "-Werror",
+                    ]
+                    + [
+                        arg
+                        for src_dir_path in self.src_dir_paths
+                        for arg in ["-I", src_dir_path]
+                    ]
+                    + self.glslc_flags.split()
+                )
 
                 subprocess.check_call(cmd)
 
@@ -966,6 +972,8 @@ def main(argv: List[str]) -> int:
     parser.add_argument("-c", "--glslc-path", required=True, help="")
     parser.add_argument("-t", "--tmp-dir-path", required=True, help="/tmp")
     parser.add_argument("-o", "--output-path", required=True, help="")
+    parser.add_argument("--optimize_size", action="store_true", help="")
+    parser.add_argument("--optimize", action="store_true", help="")
     parser.add_argument(
         "--env", metavar="KEY=VALUE", nargs="*", help="Set a number of key-value pairs"
     )
@@ -984,7 +992,15 @@ def main(argv: List[str]) -> int:
     if not os.path.exists(options.tmp_dir_path):
         os.makedirs(options.tmp_dir_path)
 
-    shader_generator = SPVGenerator(options.glsl_paths, env, options.glslc_path)
+    glslc_flags = ""
+    if options.optimize_size:
+        glslc_flags += "-Os"
+    elif options.optimize:
+        glslc_flags += "-O"
+
+    shader_generator = SPVGenerator(
+        options.glsl_paths, env, options.glslc_path, glslc_flags
+    )
     output_spv_files = shader_generator.generateSPV(options.tmp_dir_path)
 
     genCppFiles(

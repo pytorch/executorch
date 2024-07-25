@@ -1,12 +1,15 @@
+load("@fbcode_macros//build_defs:native_rules.bzl", "buck_genrule")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def get_vulkan_compiler_flags():
     return ["-Wno-missing-prototypes", "-Wno-global-constructors"]
 
 def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
-    gen_vulkan_spv_target = "//executorch/backends/vulkan:gen_vulkan_spv_bin"
-    glslc_path = "//caffe2/fb/vulkan/dotslash:glslc"
+    gen_vulkan_spv_target = "//xplat/executorch/backends/vulkan:gen_vulkan_spv_bin"
+    glslc_path = "//xplat/caffe2/fb/vulkan/dotslash:glslc"
+
     if is_fbcode:
+        gen_vulkan_spv_target = "//executorch/backends/vulkan:gen_vulkan_spv_bin"
         glslc_path = "//caffe2/fb/vulkan/tools:glslc"
 
     glsl_paths = []
@@ -15,21 +18,25 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
     for target, subpath in spv_filegroups.items():
         glsl_paths.append("$(location {})/{}".format(target, subpath))
 
-    genrule_cmd = [
-        "$(exe {})".format(gen_vulkan_spv_target),
-        "--glsl-paths {}".format(" ".join(glsl_paths)),
-        "--output-path $OUT",
-        "--glslc-path=$(exe {})".format(glslc_path),
-        "--tmp-dir-path=$OUT",
-    ]
+    genrule_cmd = (
+        "$(exe {}) ".format(gen_vulkan_spv_target) +
+        "--glsl-paths {} ".format(" ".join(glsl_paths)) +
+        "--output-path $OUT " +
+        "--glslc-path=$(exe {}) ".format(glslc_path) +
+        "--tmp-dir-path=$OUT " +
+        select({
+            "DEFAULT": "",
+            "ovr_config//os:android": "--optimize",
+        })
+    )
 
     genrule_name = "gen_{}_cpp".format(name)
-    runtime.genrule(
+    buck_genrule(
         name = genrule_name,
         outs = {
             "{}.cpp".format(name): ["spv.cpp"],
         },
-        cmd = " ".join(genrule_cmd),
+        cmd = genrule_cmd,
         default_outs = ["."],
         labels = ["uses_dotslash"],
     )
