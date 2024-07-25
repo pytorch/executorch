@@ -24,7 +24,6 @@ from executorch.exir.passes.spec_prop_pass import make_spec, SpecPropPass
 from executorch.exir.schema import Program
 
 from executorch.exir.tracer import Value
-from torch._library.fake_class_registry import FakeScriptObject
 
 from torch._subclasses import FakeTensor
 from torch.export.exported_program import (
@@ -431,7 +430,7 @@ def _get_new_signature(  # noqa: C901
 ) -> Tuple[
     ExportGraphSignature,
     Dict[str, Union[torch.Tensor, torch.nn.Parameter]],
-    Dict[str, Union[torch.Tensor, FakeScriptObject, torch.ScriptObject]],
+    Dict[str, Union[torch.Tensor, torch.ScriptObject]],
 ]:
     """
     Args:
