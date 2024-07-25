@@ -26,6 +26,7 @@ import os
 import tempfile
 from typing import Tuple
 
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import to_edge
 from torch.export import export
 
@@ -60,8 +61,10 @@ def export_linear_model() -> bytes:
     exported_program = export(LinearModel(), example_inputs)
     print("Lowering to edge...")
     edge_program = to_edge(exported_program)
+    print("Lowering to XNNPACK...")
+    edge_delegated = edge.to_backend(XnnpackPartitioner())
     print("Creating ExecuTorch program...")
-    et_program = edge_program.to_executorch()
+    et_program = edge_delegated.to_executorch()
 
     return et_program.buffer
 
