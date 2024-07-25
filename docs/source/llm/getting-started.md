@@ -750,20 +750,20 @@ In the fragment of the output for nanoGPT below, observe that embedding and add 
 
 ### Performance Analysis
 
-Through the ExecuTorch SDK, users are able to profile model execution, giving timing information for each operator in the model.
+Through the ExecuTorch Developer Tools, users are able to profile model execution, giving timing information for each operator in the model.
 
 #### Prerequisites
 
 ##### ETRecord generation (Optional)
 
-An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [the ETRecord docs](../sdk-etrecord.md).
+An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see [the ETRecord docs](../dev-tools-etrecord.md).
 
 
 In your export script, after calling `to_edge()` and `to_executorch()`, call `generate_etrecord()` with the `EdgeProgramManager` from `to_edge()` and the `ExecuTorchProgramManager` from `to_executorch()`. Make sure to copy the `EdgeProgramManager`, as the call to `to_backend()` mutates the graph in-place.
 
 ```
 import copy
-from executorch.sdk import generate_etrecord
+from executorch.dev_tools import generate_etrecord
 
 # Make the deep copy immediately after to to_edge()
 edge_manager_copy = copy.deepcopy(edge_manager)
@@ -778,13 +778,13 @@ Run the export script and the ETRecord will be generated as `etrecord.bin`.
 
 ##### ETDump generation
 
-An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see [the ETDump docs](../sdk-etdump.md).
+An ETDump is an artifact generated at runtime containing a trace of the model execution. For more information, see [the ETDump docs](../dev-tools-etdump.md).
 
 Include the ETDump header in your code.
 ```cpp
 // main.cpp
 
-#include <executorch/sdk/etdump/etdump_flatcc.h>
+#include <executorch/dev_tools/etdump/etdump_flatcc.h>
 ```
 
 Create an Instance of the ETDumpGen class and pass it to the Module constructor.
@@ -809,10 +809,10 @@ if (result.buf != nullptr && result.size > 0) {
 }
 ```
 
-Additionally, update CMakeLists.txt to build with SDK and enable events to be traced and logged into ETDump:
+Additionally, update CMakeLists.txt to build with Developer Tools and enable events to be traced and logged into ETDump:
 
 ```
-option(EXECUTORCH_BUILD_SDK "" ON)
+option(EXECUTORCH_BUILD_DEV_TOOLS "" ON)
 
 # ...
 
@@ -835,7 +835,7 @@ Run the runner, you will see “etdump.etdp” generated.
 Once you’ve collected debug artifacts ETDump (and optionally an ETRecord), you can use the Inspector API to view performance information.
 
 ```python
-from executorch.sdk import Inspector
+from executorch.dev_tools import Inspector
 
 inspector = Inspector(etdump_path="etdump.etdp")
 # If you also generated an ETRecord, then pass that in as well: `inspector = Inspector(etdump_path="etdump.etdp", etrecord="etrecord.bin")`
@@ -847,7 +847,7 @@ This prints the performance data in a tabular format in “inspector_out.txt”,
 ![](../_static/img/llm_manual_print_data_tabular.png)
 <a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a>
 
-To learn more about the Inspector and the rich functionality it provides, see the [Inspector API Reference](../sdk-inspector.md).
+To learn more about the Inspector and the rich functionality it provides, see the [Inspector API Reference](../dev-tools-inspector.md).
 
 ## Custom Kernels
 With the ExecuTorch custom operator APIs, custom operator and kernel authors can easily bring in their kernel into PyTorch/ExecuTorch.

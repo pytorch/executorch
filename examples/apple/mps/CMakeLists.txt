@@ -92,8 +92,8 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   include(${EXECUTORCH_SRCS_FILE})
   target_include_directories(
     bundled_program
-    INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/include
-              ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/bundled_program
+    INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../../dev_tools/include
+              ${CMAKE_CURRENT_BINARY_DIR}/../../../dev_tools/bundled_program
               ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
               ${EXECUTORCH_ROOT}/third-party/flatcc/include
               ${_mps_schema_headers}

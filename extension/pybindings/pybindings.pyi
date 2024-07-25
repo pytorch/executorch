@@ -40,7 +40,7 @@ def _load_for_executorch(
     Args:
         path: File path to the ExecuTorch program as a string.
         enable_etdump: If true, enables an ETDump which can store profiling information.
-            See documentation at https://pytorch.org/executorch/stable/sdk-etdump.html
+            See documentation at https://pytorch.org/executorch/stable/dev_tools-etdump.html
             for how to use it.
         debug_buffer_size: If non-zero, enables a debug buffer which can store
             intermediate results of each instruction in the ExecuTorch program.
@@ -60,7 +60,8 @@ def _load_for_executorch_from_bundled_program(
     module: BundledModule, enable_etdump: bool = False, debug_buffer_size: int = 0
 ) -> ExecuTorchModule:
     """Same as _load_for_executorch, but takes a bundled program instead of a file path.
-    See https://pytorch.org/executorch/stable/sdk-bundled-io.html for documentation."""
+    See https://pytorch.org/executorch/stable/dev_tools-bundled-io.html for documentation.
+    """
     ...
 
 def _load_bundled_program_from_buffer(

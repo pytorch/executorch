@@ -130,7 +130,7 @@ target_include_directories(
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/..)
 target_link_libraries(coremldelegate PRIVATE executorch_no_prim_ops)
 
-if(EXECUTORCH_BUILD_SDK)
+if(EXECUTORCH_BUILD_DEV_TOOLS)
   target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
   target_include_directories(
     coremldelegate
@@ -166,7 +166,7 @@ endif()
 target_compile_options(coremldelegate PRIVATE "-fobjc-arc")
 target_compile_options(coremldelegate PRIVATE "-fno-exceptions")
 
-if(EXECUTORCH_BUILD_SDK)
+if(EXECUTORCH_BUILD_DEV_TOOLS)
   target_compile_options(
     executorch_no_prim_ops PUBLIC -DET_EVENT_TRACER_ENABLED
   )

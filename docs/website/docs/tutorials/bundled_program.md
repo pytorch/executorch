@@ -1,4 +1,4 @@
-DEPRECATED: This document is moving to //executorch/docs/source/sdk-bundled-io.md
+DEPRECATED: This document is moving to //executorch/docs/source/dev-tools-bundled-io.md
 
 # Bundled Program
 
@@ -122,7 +122,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
 
 ### Example
 
-Here we provide an example about how to run the bundled program step by step. Most of the code are borrowed from "fbcode/executorch/sdk/fb/runners/executor_runner.cpp" and please review that file if you need more info and context:
+Here we provide an example about how to run the bundled program step by step. Most of the code are borrowed from "fbcode/executorch/dev_tools/fb/runners/executor_runner.cpp" and please review that file if you need more info and context:
 
 ```c++
     // method_name is the name for the method we want to test

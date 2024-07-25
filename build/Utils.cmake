@@ -97,7 +97,7 @@ function(executorch_print_configuration_summary)
                  "${EXECUTORCH_BUILD_KERNELS_QUANTIZED}"
   )
   message(
-    STATUS "  EXECUTORCH_BUILD_SDK                   : ${EXECUTORCH_BUILD_SDK}"
+    STATUS "  EXECUTORCH_BUILD_DEV_TOOLS                   : ${EXECUTORCH_BUILD_DEV_TOOLS}"
   )
   message(
     STATUS

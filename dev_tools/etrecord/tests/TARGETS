@@ -1,0 +1,30 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "etrecord_test",
+    srcs = ["etrecord_test.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/dev_tools/bundled_program:config",
+        "//executorch/dev_tools/bundled_program:core",
+        "//executorch/dev_tools/etrecord:etrecord",
+        "//executorch/exir:lib",
+        "//executorch/exir/tests:models",
+    ],
+)
+
+python_library(
+    name = "etrecord_test_library",
+    srcs = ["etrecord_test.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/dev_tools/bundled_program:config",
+        "//executorch/dev_tools/bundled_program:core",
+        "//executorch/dev_tools/etrecord:etrecord",
+        "//executorch/exir:lib",
+        "//executorch/exir/tests:models",
+    ],
+)

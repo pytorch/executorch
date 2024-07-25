@@ -24,9 +24,9 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
-from executorch.sdk import BundledProgram, generate_etrecord
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
+from executorch.dev_tools import BundledProgram, generate_etrecord
+from executorch.dev_tools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.dev_tools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 

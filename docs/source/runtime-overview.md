@@ -33,7 +33,7 @@ The runtime is also responsible for:
   semantics of those operators.
 * Dispatching predetermined sections of the model to [backend
   delegates](compiler-delegate-and-partitioner.md) for acceleration.
-* Optionally gathering [profiling data](sdk-profiling.md) during load and
+* Optionally gathering [profiling data](dev-tools-profiling.md) during load and
   execution.
 
 ## Design Goals
@@ -159,7 +159,7 @@ For more details about the ExecuTorch runtime, please see:
 * [Simplified Runtime APIs Tutorial](extension-module.md)
 * [Runtime Build and Cross Compilation](runtime-build-and-cross-compilation.md)
 * [Runtime Platform Abstraction Layer](runtime-platform-abstraction-layer.md)
-* [Runtime Profiling](sdk-profiling.md)
+* [Runtime Profiling](dev-tools-profiling.md)
 * [Backends and Delegates](compiler-delegate-and-partitioner.md)
 * [Backend Delegate Implementation](runtime-backend-delegate-implementation-and-linking.md)
 * [Kernel Library Overview](kernel-library-overview.md)

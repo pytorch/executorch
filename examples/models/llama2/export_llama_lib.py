@@ -22,6 +22,8 @@ import pkg_resources
 
 import torch
 
+from executorch.dev_tools.etrecord import generate_etrecord
+
 from executorch.examples.models.llama2.llama_transformer import ModelArgs
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
@@ -39,8 +41,6 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_pt2e_quantizers,
     get_qnn_quantizer,
 )
-
-from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory

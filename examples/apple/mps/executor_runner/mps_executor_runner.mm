@@ -30,8 +30,8 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/sdk/bundled_program/bundled_program.h>
-#include <executorch/sdk/etdump/etdump_flatcc.h>
+#include <executorch/dev_tools/bundled_program/bundled_program.h>
+#include <executorch/dev_tools/etdump/etdump_flatcc.h>
 
 #include <chrono>
 using namespace std::chrono;

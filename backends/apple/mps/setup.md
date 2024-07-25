@@ -111,18 +111,18 @@ python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --no-use_fp
 ```
 
 ### Profiling:
-1. [Optional] Generate an [ETRecord](./sdk-etrecord.rst) while you're exporting your model.
+1. [Optional] Generate an [ETRecord](./dev-tools-etrecord.rst) while you're exporting your model.
 ```bash
 cd executorch
 python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --generate_etrecord -b
 ```
-2. Run your Program on the ExecuTorch runtime and generate an [ETDump](./sdk-etdump.md).
+2. Run your Program on the ExecuTorch runtime and generate an [ETDump](./dev-tools-etdump.md).
 ```
 ./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_bundled_fp16.pte --bundled_program --dump-outputs
 ```
 3. Create an instance of the Inspector API by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1.
 ```bash
-python3 -m sdk.inspector.inspector_cli --etdump_path etdump.etdp --etrecord_path etrecord.bin
+python3 -m dev_tools.inspector.inspector_cli --etdump_path etdump.etdp --etrecord_path etrecord.bin
 ```
 
 ## Deploying and Running on Device

@@ -127,13 +127,13 @@ static auto success_with_compiler = register_backend(backend);
 ```
 
 
-## SDK Integration: Debuggability
+## Developer Tools Integration: Debuggability
 
-Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native SDK (Software Development Kit) for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it [here](./sdk-etrecord).
+Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native Developer Tools for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it [here](./dev-tools-etrecord).
 
-Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special `call_delegate` instruction, which asks corresponding backend to handle the execution of the subgraph or program. Due to the opaque nature of backend delgates, native SDK does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it's non-delegated counterpart.
+Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special `call_delegate` instruction, which asks corresponding backend to handle the execution of the subgraph or program. Due to the opaque nature of backend delgates, native Developer Tools does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it's non-delegated counterpart.
 
-In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, SDK provides an interface to correlate delegated (sub)graph to original (sub)graph. The SDK does so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to [SDK delegate integration](./sdk-delegate-integration).
+In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, Developer Tools provides an interface to correlate delegated (sub)graph to original (sub)graph. The Developer Tools does so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to [Developer Tools delegate integration](./dev-tools-delegate-integration).
 
 By leveraging the debug identifier, backend developer can embed the debug as part of the delegated blob
 

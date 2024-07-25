@@ -10,7 +10,7 @@ Key value propositions of ExecuTorch are:
 - **Portability:** Compatibility with a wide variety of computing platforms,
   from high-end mobile phones to highly constrained embedded systems and
   microcontrollers.
-- **Productivity:** Enabling developers to use the same toolchains and SDK from
+- **Productivity:** Enabling developers to use the same toolchains from
   PyTorch model authoring and conversion, to debugging and deployment to a wide
   variety of platforms.
 - **Performance:** Providing end users with a seamless and high-performance
@@ -93,7 +93,7 @@ tools.
 ├── schema                          #  ExecuTorch PTE file format flatbuffer
 schemas.
 ├── scripts                         #  Utility scripts for size management, dependency management, etc.
-├── sdk                             #  Model profiling, debugging, and introspection.
+├── dev_tools                             #  Model profiling, debugging, and introspection.
 ├── shim                            #  Compatibility layer between OSS and Internal builds
 ├── test                            #  Broad scoped end-to-end tests.
 ├── third-party                     #  Third-party dependencies.

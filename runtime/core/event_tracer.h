@@ -97,8 +97,8 @@ struct EventTracerEntry {
  * EventTracer is a class that users can inherit and implement to
  * log/serialize/stream etc. the profiling and debugging events that are
  * generated at runtime for a model. An example of this is the ETDump
- * implementation in the SDK codebase that serializes these events to a
- * flatbuffer.
+ * implementation in the Developer Tools codebase that serializes these events
+ * to a flatbuffer.
  */
 class EventTracer {
  public:

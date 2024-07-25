@@ -94,7 +94,7 @@ Topics in this section will help you get started with ExecuTorch.
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
    extension-module
-   tutorials/sdk-integration-tutorial
+   tutorials/dev-tools-integration-tutorial
    apple-runtime
    demo-apps-ios
    demo-apps-android
@@ -192,18 +192,18 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: SDK
+   :caption: Developer Tools
    :hidden:
 
-   sdk-overview
-   sdk-bundled-io
-   sdk-etrecord
-   sdk-etdump
-   sdk-profiling
-   sdk-debugging
-   sdk-inspector
-   sdk-delegate-integration
-   sdk-tutorial
+   dev-tools-overview
+   dev-tools-bundled-io
+   dev-tools-etrecord
+   dev-tools-etdump
+   dev-tools-profiling
+   dev-tools-debugging
+   dev-tools-inspector
+   dev-tools-delegate-integration
+   dev-tools-tutorial
 
 .. toctree::
    :glob:
@@ -243,11 +243,11 @@ ExecuTorch tutorials.
    :tags:
 
 .. customcarditem::
-   :header: Using the ExecuTorch SDK to Profile a Model
-   :card_description: A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.
+   :header: Using the ExecuTorch Developer Tools to Profile a Model
+   :card_description: A tutorial for using the ExecuTorch Developer Tools to profile and analyze a model with linkage back to source code.
    :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/sdk-integration-tutorial.html
-   :tags: SDK
+   :link: tutorials/dev-tools-integration-tutorial.html
+   :tags: Developer Tools
 
 .. customcarditem::
    :header: Integrating and Running ExecuTorch on Apple Platforms

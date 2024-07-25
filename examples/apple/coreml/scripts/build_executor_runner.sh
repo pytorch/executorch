@@ -35,7 +35,7 @@ cmake "$EXECUTORCH_ROOT_PATH" -B"$CMAKE_BUILD_DIR_PATH" \
 -DFLATC_EXECUTABLE="$(which flatc)" \
 -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
 -DEXECUTORCH_BUILD_XNNPACK=OFF \
--DEXECUTORCH_BUILD_SDK=ON \
+-DEXECUTORCH_BUILD_DEV_TOOLS=ON \
 -DEXECUTORCH_BUILD_COREML=ON \
 -DCOREML_BUILD_EXECUTOR_RUNNER=ON \
 -Dprotobuf_BUILD_TESTS=OFF \
@@ -55,7 +55,7 @@ mkdir -p "$EXECUTORCH_INCLUDE_DIR_PATH"
 find extension \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
 find runtime \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
 find util \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
-find sdk \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
+find dev_tools \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
 cp -rf "$COREML_DIR_PATH/runtime/include/" "$INCLUDE_DIR_PATH"
 
 # Copy required libraries

@@ -69,7 +69,7 @@ def _start_with_et_targets(target):
     return False
 
 def _patch_platforms(kwargs):
-    """Platforms and apple_sdks are not supported yet, so pop them out from kwargs.
+    """Platforms and apple_dev_toolss are not supported yet, so pop them out from kwargs.
 
     Args:
         kwargs: The `kwargs` parameter from a rule.
@@ -79,8 +79,8 @@ def _patch_platforms(kwargs):
     """
     if "platforms" in kwargs:
         kwargs.pop("platforms")
-    if "apple_sdks" in kwargs:
-        kwargs.pop("apple_sdks")
+    if "apple_dev_toolss" in kwargs:
+        kwargs.pop("apple_dev_toolss")
     return kwargs
 
 def _patch_deps(kwargs, dep_type):

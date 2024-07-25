@@ -143,7 +143,7 @@ cd build_android
 # build executorch & qnn_executorch_backend
 cmake .. \
     -DCMAKE_INSTALL_PREFIX=$PWD \
-    -DEXECUTORCH_BUILD_SDK=ON \
+    -DEXECUTORCH_BUILD_DEV_TOOLS=ON \
     -DEXECUTORCH_BUILD_QNN=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DQNN_SDK_ROOT=$QNN_SDK_ROOT \

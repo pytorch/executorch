@@ -10,29 +10,29 @@ MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB = [
 PORTABLE_MODULE_DEPS = [
     "//executorch/runtime/kernel:operator_registry",
     "//executorch/runtime/executor:program",
-    "//executorch/sdk/bundled_program/schema:bundled_program_schema_fbs",
+    "//executorch/dev_tools/bundled_program/schema:bundled_program_schema_fbs",
     "//executorch/extension/aten_util:aten_bridge",
-    "//executorch/sdk/bundled_program:runtime",
+    "//executorch/dev_tools/bundled_program:runtime",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/util:util",
     "//executorch/runtime/executor/test:test_backend_compiler_lib",
-    "//executorch/sdk/etdump:etdump_flatcc",
+    "//executorch/dev_tools/etdump:etdump_flatcc",
 ] + get_all_cpu_backend_targets()
 
 ATEN_MODULE_DEPS = [
     "//executorch/runtime/kernel:operator_registry",
     "//executorch/runtime/executor:program_aten",
     "//executorch/runtime/core/exec_aten:lib",
-    "//executorch/sdk/bundled_program/schema:bundled_program_schema_fbs",
+    "//executorch/dev_tools/bundled_program/schema:bundled_program_schema_fbs",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/util:read_file",
-    "//executorch/sdk/bundled_program:runtime_aten",
+    "//executorch/dev_tools/bundled_program:runtime_aten",
     "//executorch/runtime/executor/test:test_backend_compiler_lib_aten",
-    "//executorch/sdk/etdump:etdump_flatcc",
+    "//executorch/dev_tools/etdump:etdump_flatcc",
 ]
 
 # Generated lib for all ATen ops with aten kernel used by models in model inventory

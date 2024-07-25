@@ -187,7 +187,7 @@ option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
 option(EXECUTORCH_BUILD_KERNELS_QUANTIZED "Build the quantized kernels" OFF)
 
-option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
+option(EXECUTORCH_BUILD_DEV_TOOLS "Build the ExecuTorch Developer Tools")
 
 option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
 
@@ -604,12 +604,12 @@ if(EXECUTORCH_BUILD_GTESTS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
 endif()
 
-if(EXECUTORCH_BUILD_SDK)
+if(EXECUTORCH_BUILD_DEV_TOOLS)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
   )
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dev_tools)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
@@ -663,8 +663,8 @@ if(EXECUTORCH_BUILD_PYBIND)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   endif()
 
-  if(NOT EXECUTORCH_BUILD_SDK)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+  if(NOT EXECUTORCH_BUILD_DEV_TOOLS)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dev_tools)
   endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output

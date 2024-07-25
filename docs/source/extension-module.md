@@ -126,13 +126,13 @@ Most of the ExecuTorch APIs, including those described above, return either `Res
 
 ### Profile the Module
 
-Use [ExecuTorch Dump](sdk-etdump.md) to trace model execution. Create an instance of the `ETDumpGen` class and pass it to the `Module` constructor. After executing a method, save the `ETDump` to a file for further analysis. You can capture multiple executions in a single trace if desired.
+Use [ExecuTorch Dump](dev-tools-etdump.md) to trace model execution. Create an instance of the `ETDumpGen` class and pass it to the `Module` constructor. After executing a method, save the `ETDump` to a file for further analysis. You can capture multiple executions in a single trace if desired.
 
 ```cpp
 #include <fstream>
 #include <memory>
 #include <executorch/extension/module/module.h>
-#include <executorch/sdk/etdump/etdump_flatcc.h>
+#include <executorch/dev_tools/etdump/etdump_flatcc.h>
 
 using namespace ::torch::executor;
 
