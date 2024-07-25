@@ -8,6 +8,10 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_QUANT_ATTRS,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import get_parameter, NodeVisitor, register_node_visitor
@@ -53,8 +57,8 @@ class PReLU(NodeVisitor):
                     coeff_tensor = coeff_tensor.index_fill(
                         1, torch.tensor([i]), coeff[i]
                     )
-                if "axis_order" in input_node.meta:
-                    axis_order = input_node.meta["axis_order"]
+                if QCOM_AXIS_ORDER in input_node.meta:
+                    axis_order = input_node.meta[QCOM_AXIS_ORDER]
                     coeff_tensor = coeff_tensor.permute(dims=axis_order).contiguous()
                 # simple min-max quantization
                 coeff = torch.max(coeff).item()
@@ -71,13 +75,13 @@ class PReLU(NodeVisitor):
             (),  # args
             {},  # kwargs
         )
-        if pow_quant_attrs := node.meta.get("quant_attrs"):
+        if pow_quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
             quant_attrs = pow_quant_attrs.copy()
             quant_range = quant_attrs["quant_max"] - quant_attrs["quant_min"]
             # coeff is guaranteed to be positive
             quant_attrs["zero_point"] = 0
             quant_attrs["scale"] = coeff / quant_range
-            scalar_node.meta["quant_attrs"] = quant_attrs
+            scalar_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
 
         scalar_tensor_wrapper = self.define_tensor(
             scalar_node,

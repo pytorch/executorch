@@ -55,6 +55,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize impor
     convert_to_flatbuffer,
     convert_to_option,
 )
+from executorch.backends.qualcomm.utils.constants import QCOM_QNN_COMPILE_SPEC
 from executorch.exir import ExirExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
@@ -63,9 +64,6 @@ from torch._decomp import core_aten_decompositions as torch_core_aten_decomposit
 from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
 from torch.library import Library
-
-
-QNN_COMPILE_SPEC = "qnn_compile_spec"
 
 
 def qnn_capture_config():
@@ -154,7 +152,7 @@ def canonicalize_program(
 
     def update_program(max_sf_buf_size, module_map):
         def set_spec(module, options):
-            spec = CompileSpec(QNN_COMPILE_SPEC, convert_to_flatbuffer(options))
+            spec = CompileSpec(QCOM_QNN_COMPILE_SPEC, convert_to_flatbuffer(options))
             if isinstance(module, ExportedProgram):
                 module.compile_specs[0] = spec
             else:
@@ -321,7 +319,7 @@ def generate_qnn_executorch_option(
     compiler_specs: List[CompileSpec],
 ) -> bytes:
     for compiler_spec in compiler_specs:
-        if compiler_spec.key == QNN_COMPILE_SPEC:
+        if compiler_spec.key == QCOM_QNN_COMPILE_SPEC:
             qnn_compile_spec_buffer = compiler_spec.value
         else:
             raise ValueError(f"unknown compiler spec key value: {compiler_spec.key}")
@@ -454,5 +452,7 @@ def generate_qnn_executorch_compiler_spec(
     qnn_executorch_options.is_from_context_binary = is_from_context_binary
 
     return [
-        CompileSpec(QNN_COMPILE_SPEC, convert_to_flatbuffer(qnn_executorch_options))
+        CompileSpec(
+            QCOM_QNN_COMPILE_SPEC, convert_to_flatbuffer(qnn_executorch_options)
+        )
     ]

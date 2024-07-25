@@ -8,6 +8,7 @@
 # Please refer to README.md in the same folder for more information.
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Optional, Tuple
 
 import torch
@@ -101,6 +102,7 @@ class ModelArgs:
         None  # The official name to override self.rope_freq_base.
     )
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
+    use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     # Additional Model Metadata needed at runtime
     bos_idx: int = 1
     eos_idx: int = 3
@@ -453,7 +455,9 @@ class Transformer(nn.Module):
         if params.use_hf_rope:
             self.precompute_freqs_cis = hf_precompute_freqs_cis
         else:
-            self.precompute_freqs_cis = precompute_freqs_cis
+            self.precompute_freqs_cis = partial(
+                precompute_freqs_cis, use_scaled=params.use_scaled_rope
+            )
         freqs_cos, freqs_sin = self.precompute_freqs_cis(
             params.dim // params.n_heads,
             (
