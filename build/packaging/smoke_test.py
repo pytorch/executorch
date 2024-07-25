@@ -62,7 +62,7 @@ def export_linear_model() -> bytes:
     print("Lowering to edge...")
     edge_program = to_edge(exported_program)
     print("Lowering to XNNPACK...")
-    edge_delegated = edge.to_backend(XnnpackPartitioner())
+    edge_delegated = edge_program.to_backend(XnnpackPartitioner())
     print("Creating ExecuTorch program...")
     et_program = edge_delegated.to_executorch()
 
