@@ -141,14 +141,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
 endif()
 
 if(EXECUTORCH_BUILD_MULTIMODAL_JNI)
-  set(MULTIMODAL_RUNNER_PATH
-      ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llava/runner/libmultimodal_runner.a
-  )
-  add_library(multimodal_runner STATIC IMPORTED)
-  set_property(
-    TARGET multimodal_runner PROPERTY IMPORTED_LOCATION ${MULTIMODAL_RUNNER_PATH}
-  )
-
+  add_subdirectory(${EXECUTORCH_ROOT}/examples/models/llava/runner llava_runner)
   target_link_options_shared_lib(quantized_ops_lib)
 
   if(TARGET pthreadpool)

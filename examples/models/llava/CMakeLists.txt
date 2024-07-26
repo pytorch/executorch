@@ -73,9 +73,10 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
 find_package(gflags REQUIRED)
 
-find_package(Torch CONFIG REQUIRED)
-add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
-
+find_package(Torch CONFIG)
+if(Torch_FOUND)
+    add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
+endif()
 #
 # llama_main: test binary to run llama, with tokenizer and sampler integrated
 #
