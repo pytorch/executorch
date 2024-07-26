@@ -91,3 +91,33 @@ class TestCustomOps(unittest.TestCase):
             "custom op `conv_with_clamp` output shape matches expected",
         )
         self.assertTrue(torch.allclose(custom_out, expected_out))
+
+    def test_grid_priors(self):
+        class GridPriors(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, height, width, stride, offset):
+                return torch.ops.et_vk.grid_priors(height, width, stride, offset)
+
+        model = GridPriors()
+        sample_input = (2, 3, 4, 0.5)
+        custom_out = model(*sample_input)
+
+        def calculate_expected_output(height, width, stride, offset):
+            shift_x = (torch.arange(0, width) + offset) * stride
+            shift_y = (torch.arange(0, height) + offset) * stride
+            shift_xx, shift_yy = torch.meshgrid(shift_y, shift_x)
+            shift_xx = shift_xx.reshape(-1)
+            shift_yy = shift_yy.reshape(-1)
+            shifts = torch.stack((shift_yy, shift_xx), dim=-1)
+            return shifts
+
+        expected_out = calculate_expected_output(*sample_input)
+
+        self.assertEqual(
+            custom_out.shape,
+            expected_out.shape,
+            "custom op `grid_priors` output shape matches expected",
+        )
+        self.assertTrue(torch.allclose(custom_out, expected_out))
