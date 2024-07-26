@@ -31,8 +31,8 @@ build_android_native_library() {
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-23 \
-    -DCMAKE_FIND_ROOT_PATH="${python_lib}" \
-    -DCMAKE_PREFIX_PATH="${python_lib}" \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
+    -DEXECUTORCH_LOG_LEVEL=Info \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
