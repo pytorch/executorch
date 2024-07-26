@@ -26,7 +26,7 @@ export ANDROID_NDK=<path_to_android_ndk>
 
 Download the following libraries from MediaTek's NeuroPilot portal (link to be added):
 
-- `libneuronusdk_adapter.mtk.so.8.1.1`: This universal SDK contains the implementation required for executing target-dependent code on the MediaTek chip.
+- `libneuronusdk_adapter.mtk.so`: This universal SDK contains the implementation required for executing target-dependent code on the MediaTek chip.
 - `libneuron_buffer_allocator.so`: This utility library is designed for allocating DMA buffers necessary for model inference.
 ```bash
 export NEURON_BUFFER_ALLOCATOR_LIB=<path_to_buffer_allocator>
@@ -42,4 +42,9 @@ Follow the steps below to set up your build environment:
 
    ```bash
    ./mtk_build.sh
+   ```
+3. **Push MediaTek universal SDK to the device**: push libneuronusdk_adapter.mtk.so to the phone and export it to the `$LD_LIBRARY_PATH` environment variable before executing ExercuTorch with MediaTek backend.
+
+   ```bash
+   export LD_LIBRARY_PATH=<path_to_usdk>:$LD_LIBRARY_PATH
    ```
