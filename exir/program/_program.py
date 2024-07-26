@@ -225,7 +225,7 @@ def lift_constant_tensor_pass(ep):
         return ep
 
     graph_signature = ep.graph_signature
-    buffers = graph_signature.buffers
+    buffers = list(graph_signature.buffers)
 
     fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
     first_user_input = None
