@@ -695,7 +695,7 @@
         <span class="k">return</span> <span class="n">ep</span>
 
     <span class="n">graph_signature</span> <span class="o">=</span> <span class="n">ep</span><span class="o">.</span><span class="n">graph_signature</span>
-    <span class="n">buffers</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">buffers</span><span class="p">)</span>
+    <span class="n">buffers</span> <span class="o">=</span> <span class="n">graph_signature</span><span class="o">.</span><span class="n">buffers</span>
 
     <span class="n">fake_mode</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">ep</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">fake_mode</span>
     <span class="n">first_user_input</span> <span class="o">=</span> <span class="kc">None</span>
