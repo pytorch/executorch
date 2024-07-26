@@ -25,11 +25,14 @@ build_android_native_library() {
   else
     EXECUTORCH_USE_TIKTOKEN=OFF
   fi
+  python_lib=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
 
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-23 \
+    -DCMAKE_FIND_ROOT_PATH="${python_lib}" \
+    -DCMAKE_PREFIX_PATH="${python_lib}" \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
@@ -60,14 +63,12 @@ build_android_native_library() {
 
   cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}" --config Release
 
-  python_lib=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
-
   cmake examples/models/llava \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="$ANDROID_ABI" \
     -DANDROID_PLATFORM=android-23 \
     -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
-    -DCMAKE_FIND_ROOT_PATH="${python_lib}" \ # See https://github.com/android/ndk/issues/912
+    -DCMAKE_FIND_ROOT_PATH="${python_lib}" \
     -DCMAKE_PREFIX_PATH="${python_lib}" \
     -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
