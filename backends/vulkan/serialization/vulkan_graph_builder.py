@@ -262,6 +262,9 @@ class VkGraphBuilder:
             raise RuntimeError(f"Cannot create value for arg of type {type(arg)}")
 
     def process_placeholder_node(self, node: Node) -> None:
+        # ignores any tensors that don't get used in any ops
+        if len(node.users) == 0:
+            return None
         ids = self.create_node_value(node)
         if not self.is_param_node(node):
             if isinstance(ids, int):
