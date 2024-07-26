@@ -26,7 +26,6 @@ from executorch.backends.cadence.aot.quantizer.utils import (
     is_annotated,
     no_outside_users,
 )
-from pyre_extensions import assert_is_instance
 
 from torch import fx
 
@@ -100,14 +99,11 @@ class CadenceAtenQuantizer(Quantizer):
                 continue
 
             for output, *custom_spec in anchors.output:
-                assert_is_instance(output, fx.Node).meta["quantization_annotation"] = (
-                    QuantizationAnnotation(
-                        # pyre-ignore[6]: incompatible parameter type
-                        output_qspec=(
-                            custom_spec[0] if custom_spec else output_act_qspec
-                        ),
-                        _annotated=True,
-                    )
+                # pyre-ignore[16]: no attribute
+                output.meta["quantization_annotation"] = QuantizationAnnotation(
+                    # pyre-ignore[6]: incompatible parameter type
+                    output_qspec=(custom_spec[0] if custom_spec else output_act_qspec),
+                    _annotated=True,
                 )
 
             def annotate_inputs(
@@ -118,16 +114,18 @@ class CadenceAtenQuantizer(Quantizer):
                 spec: Optional[QuantizationSpec],
             ) -> None:
                 for node, idx, *custom_spec in inputs:
-                    _node = assert_is_instance(node, fx.Node)
-                    annotation = _node.meta.get(
+                    # pyre-ignore[16]: no attribute
+                    annotation = node.meta.get(
                         "quantization_annotation",
                         QuantizationAnnotation(_annotated=True),
                     )
                     # pyre-ignore[6]: incompatible parameter type
-                    annotation.input_qspec_map[_node.args[idx]] = (
+                    # pyre-ignore[16]: no attribute
+                    annotation.input_qspec_map[node.args[idx]] = (
                         custom_spec[0] if custom_spec else spec
                     )
-                    _node.meta["quantization_annotation"] = annotation
+                    # pyre-ignore[16]: no attribute
+                    node.meta["quantization_annotation"] = annotation
 
             annotate_inputs(anchors.inputs, input_act_qspec)
             annotate_inputs(anchors.weights, weight_qspec)
