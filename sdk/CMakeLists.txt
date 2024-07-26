@@ -89,7 +89,9 @@ if(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT)
   # flatcc runtime to a different architecture.
   execute_process(
     COMMAND ${CMAKE_COMMAND} ${_flatcc_source_dir}
-    -DFLATCC_TEST=OFF -DFLATCC_REFLECTION=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+    -DFLATCC_TEST=OFF -DFLATCC_REFLECTION=OFF
+    # See above comment about POSITION_INDEPENDENT_CODE.
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -B${CMAKE_BINARY_DIR}/_host_build
   )
   execute_process(
