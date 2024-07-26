@@ -356,12 +356,49 @@ Error defineTensor(
         size_t group_size = qparams->group_size();
         size_t output_channels = tensor_value->dims()->Get(0);
         size_t input_channels = tensor_value->dims()->Get(1);
+
+        // std::unique_ptr<uint16_t[]> scale_conv_buffer;
+        uint16_t* scale_conv_buffer;
+        const uint16_t* scale_data = nullptr;
+        uint32_t scale_numel = 0;
+
+        // Block scales are preferably serialized as bf16 but can also be serialized as fp32 for
+        // backwards compatability.
+        if (qparams->scale_bf16() != nullptr) {
+          scale_data = static_cast<const uint16_t*>(qparams->scale_bf16()->data());
+          scale_numel = qparams->scale_bf16()->size();
+        } else { 
+          // Read fp32 scales, convert to bf16.
+          // scale_conv_buffer = std::make_unique<uint16_t[]>(qparams->scale()->size());
+          scale_conv_buffer = (uint16_t*) malloc(qparams->scale()->size() * sizeof(uint16_t));
+
+          for (auto i = 0u; i < qparams->scale()->size(); i++) {
+            float scale_fp32 = ((float*) qparams->scale()->data())[i];
+
+            if (scale_fp32 <= 0) {
+              ET_LOG(Error, "Bad scale");
+            }
+
+            uint32_t scale_u32;
+            memcpy(&scale_u32, &scale_fp32, sizeof(float));
+
+            uint16_t scale_bf16 = scale_u32 >> 16;
+            if (scale_bf16 == 0) {
+              ET_LOG(Error, "Small scale");
+            }
+
+            scale_conv_buffer[i] = static_cast<uint16_t>(scale_u32 >> 16);
+          }
+
+          scale_data = scale_conv_buffer; // scale_conv_buffer.get();
+          scale_numel = qparams->scale()->size();
+        }
+
         ET_CHECK_OR_RETURN_ERROR(
-            qparams->scale()->size() ==
-                output_channels * input_channels / group_size,
+            scale_numel == output_channels * input_channels / group_size,
             Internal,
             "scale size %zu != output channels %zu * group size %zu",
-            (size_t)qparams->scale()->size(),
+            (size_t) scale_numel,
             output_channels,
             group_size);
         int32_t zero_point =
@@ -370,18 +407,19 @@ Error defineTensor(
             Debug,
             "define quant tensor (per channel group): buffer_ptr: %p, scale.numel(): %u, channel_dim: %u, grpup_size: %zu, output_channels: %zu, dtype: %u, zero_point: %d, datatype: %d\n",
             buffer_ptr,
-            qparams->scale()->size(),
+            scale_numel,
             qparams->channel_dim(),
             group_size,
             output_channels,
             datatype,
             zero_point,
             datatype);
+
         status = xnn_define_blockwise_quantized_tensor_value(
             /*subgraph=*/subgraph_ptr,
             /*datatype=*/datatype,
             /*zero_point=*/zero_point,
-            /*scale=*/qparams->scale()->data(),
+            /*scale=*/scale_data,
             /*num_dims=*/tensor_value->num_dims(),
             /*channel_dim=*/qparams->channel_dim(),
             /*block_size=*/qparams->group_size(),

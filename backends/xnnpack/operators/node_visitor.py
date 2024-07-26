@@ -275,7 +275,7 @@ class NodeVisitor:
             scale = cast(torch.Tensor, quant_params.scale)
             if quant_params.is_per_channel_group:
                 return PerChannelGroupQuant(
-                    scale=scale.flatten().tolist(),
+                    scale_bf16=scale.flatten().to(torch.bfloat16).view(torch.uint16).tolist(),
                     channel_dim=quant_params.axis,
                     group_size=quant_params.group_size,
                 )
