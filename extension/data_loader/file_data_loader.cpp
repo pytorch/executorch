@@ -191,7 +191,7 @@ Result<FreeableBuffer> FileDataLoader::load(
   size_t needed = size;
   uint8_t* buf = reinterpret_cast<uint8_t*>(aligned_buffer);
   while (needed > 0) {
-    // read on macos would fail with EINVAL if size > INT32_MAX
+    // Reads on macos will fail with EINVAL if size > INT32_MAX.
     ssize_t nread = ::read(
         fd_,
         buf,
