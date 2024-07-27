@@ -8,6 +8,9 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
+import java.io.FileWriter;
+import java.io.IOException;
+
 public class Benchmarking extends Activity implements ModelRunnerCallback {
     ModelRunner mModelRunner;
 
@@ -60,7 +63,6 @@ public class Benchmarking extends Activity implements ModelRunnerCallback {
 
     @Override
     public void onTokenGenerated(String token) {
-
         runOnUiThread(()-> {mTextView.append(token);});
     }
 
@@ -73,6 +75,13 @@ public class Benchmarking extends Activity implements ModelRunnerCallback {
     public void onGeneratinStopped() {
         mStatsDump.generateEnd = System.currentTimeMillis();
         runOnUiThread(()-> {mTextView.append(mStatsDump.toString());});
+
+        try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.txt")) {
+            writer.write(mStatsDump.toString());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
     }
 }
 
