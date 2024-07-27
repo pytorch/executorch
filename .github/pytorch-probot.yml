@@ -5,3 +5,4 @@ ciflow_push_tags:
 - ciflow/binaries
 - ciflow/binaries/all
 - ciflow/periodic
+- ciflow/perf-android
