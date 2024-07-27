@@ -15,38 +15,83 @@ import android.content.Context;
 import android.os.Bundle;
 import android.system.ErrnoException;
 import android.system.Os;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ListView;
+import android.widget.Toast;
+
 import java.io.File;
 import org.pytorch.executorch.LlamaCallback;
 import org.pytorch.executorch.LlamaModule;
 
-public class MainActivity extends Activity implements Runnable, LlamaCallback {
+public class MainActivity extends Activity implements ModelRunnerCallback {
   private EditText mEditTextMessage;
   private Button mSendButton;
   private ImageButton mModelButton;
   private ListView mMessagesView;
   private MessageAdapter mMessageAdapter;
-  private LlamaModule mModule = null;
-  private Message mResultMessage = null;
+    private Message mResultMessage = null;
+  private ModelRunner mModelRunner;
+    private String mModelFilePath = "";
+    private String mTokenizerFilePath = "";
 
-  private String mModelFilePath = "";
-  private String mTokenizerFilePath = "";
+    long mRunStartTime = 0;
+    Message mModelLoadingMessage = null;
+
+    @Override
+    public void onGeneratinStopped() {
+        runOnUiThread(this::changeSendButtonToStart);
+    }
+
+    @Override
+    public void onTokenGenerated(String token) {
+        mResultMessage.appendText(token);
+        runOnUiThread(()->{
+            mMessageAdapter.notifyDataSetChanged();
+        });
+        Toast.makeText(this, "generated", Toast.LENGTH_LONG).show();
+    }
+
+    @Override
+    public void onModelLoaded(int loadResult) {
+        if (loadResult != 0) {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Load failed: " + loadResult);
+            runOnUiThread(
+                    () -> {
+                        AlertDialog alert = builder.create();
+                        alert.show();
+                    });
+        }
+
+        long loadDuration = System.currentTimeMillis() - mRunStartTime;
+        String modelInfo =
+                "Model path: "
+                        + mModelFilePath
+                        + "\nTokenizer path: "
+                        + mTokenizerFilePath
+                        + "\nModel loaded time: "
+                        + loadDuration
+                        + " ms";
+        Message modelLoadedMessage = new Message(modelInfo, false);
+        runOnUiThread(
+                () -> {
+                    mSendButton.setEnabled(true);
+                    mMessageAdapter.remove(mModelLoadingMessage);
+                    mMessageAdapter.add(modelLoadedMessage);
+                    mMessageAdapter.notifyDataSetChanged();
+                });
+    }
+
 
   @Override
-  public void onResult(String result) {
-    mResultMessage.appendText(result);
-    run();
-  }
-
-  @Override
-  public void onStats(float tps) {
+  public void onStats(String tps) {
     runOnUiThread(
         () -> {
           if (mResultMessage != null) {
-            mResultMessage.setTokensPerSecond(tps);
+            mResultMessage.setTokensPerSecond(0f); // TODO: Use tps
             mMessageAdapter.notifyDataSetChanged();
           }
         });
@@ -68,43 +113,15 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
   }
 
   private void setLocalModel(String modelPath, String tokenizerPath) {
-    Message modelLoadingMessage = new Message("Loading model...", false);
+    mModelLoadingMessage = new Message("Loading model...", false);
     runOnUiThread(
         () -> {
           mSendButton.setEnabled(false);
-          mMessageAdapter.add(modelLoadingMessage);
+          mMessageAdapter.add(mModelLoadingMessage);
           mMessageAdapter.notifyDataSetChanged();
         });
-    long runStartTime = System.currentTimeMillis();
-    mModule = new LlamaModule(modelPath, tokenizerPath, 0.8f);
-    int loadResult = mModule.load();
-    if (loadResult != 0) {
-      AlertDialog.Builder builder = new AlertDialog.Builder(this);
-      builder.setTitle("Load failed: " + loadResult);
-      runOnUiThread(
-          () -> {
-            AlertDialog alert = builder.create();
-            alert.show();
-          });
-    }
-
-    long loadDuration = System.currentTimeMillis() - runStartTime;
-    String modelInfo =
-        "Model path: "
-            + modelPath
-            + "\nTokenizer path: "
-            + tokenizerPath
-            + "\nModel loaded time: "
-            + loadDuration
-            + " ms";
-    Message modelLoadedMessage = new Message(modelInfo, false);
-    runOnUiThread(
-        () -> {
-          mSendButton.setEnabled(true);
-          mMessageAdapter.remove(modelLoadingMessage);
-          mMessageAdapter.add(modelLoadedMessage);
-          mMessageAdapter.notifyDataSetChanged();
-        });
+    mRunStartTime = System.currentTimeMillis();
+    mModelRunner = new ModelRunner(modelPath, tokenizerPath, 0.8f, this);
   }
 
   private String memoryInfo() {
@@ -178,72 +195,46 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     mMessagesView.setAdapter(mMessageAdapter);
     mModelButton.setOnClickListener(
         view -> {
-          mModule.stop();
+          mModelRunner.stop();
           mMessageAdapter.clear();
           mMessageAdapter.notifyDataSetChanged();
           modelDialog();
         });
 
-    onModelRunStopped();
+      changeSendButtonToStart();
     modelDialog();
   }
 
-  private void onModelRunStarted() {
+  private void changeSendButtonToStop() {
     mSendButton.setText("Stop");
     mSendButton.setOnClickListener(
         view -> {
-          mModule.stop();
+            onSendButtonStopClicked();
         });
   }
 
-  private void onModelRunStopped() {
+  private void changeSendButtonToStart() {
     setTitle(memoryInfo());
-    mSendButton.setText("Generate");
+      mSendButton.setText("Generate");
     mSendButton.setOnClickListener(
         view -> {
-          String prompt = mEditTextMessage.getText().toString();
-          mMessageAdapter.add(new Message(prompt, true));
-          mMessageAdapter.notifyDataSetChanged();
-          mEditTextMessage.setText("");
-          mResultMessage = new Message("", false);
-          mMessageAdapter.add(mResultMessage);
-          Runnable runnable =
-              new Runnable() {
-                @Override
-                public void run() {
-                  runOnUiThread(
-                      new Runnable() {
-                        @Override
-                        public void run() {
-                          onModelRunStarted();
-                        }
-                      });
-
-                  mModule.generate(prompt, MainActivity.this);
-
-                  runOnUiThread(
-                      new Runnable() {
-                        @Override
-                        public void run() {
-                          onModelRunStopped();
-                        }
-                      });
-                }
-              };
-          new Thread(runnable).start();
+            onSendButtonGenerateClicked();
         });
-    mMessageAdapter.notifyDataSetChanged();
   }
 
-  @Override
-  public void run() {
-    runOnUiThread(
-        new Runnable() {
-          @Override
-          public void run() {
-            mMessageAdapter.notifyDataSetChanged();
-            setTitle(memoryInfo());
-          }
-        });
+  private void onSendButtonGenerateClicked() {
+      Log.wtf("LLAMA", "CR4ACCCCCCCCC===========================SH");
+      String prompt = mEditTextMessage.getText().toString();
+      mEditTextMessage.setText("");
+      mMessageAdapter.add(new Message(prompt, true));
+      mMessageAdapter.notifyDataSetChanged();
+      mResultMessage = new Message("", false);
+      mMessageAdapter.add(mResultMessage);
+      mModelRunner.generate(prompt);
+      changeSendButtonToStop();
+  }
+
+  private void onSendButtonStopClicked() {
+        mModelRunner.stop();
   }
 }
