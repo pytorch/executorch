@@ -36,11 +36,13 @@
             </intent-filter>
         </activity>
 
-<!--        <receiver android:name=".BenchmarkingRequestReceiver" android:exported="true">-->
-<!--            <intent-filter>-->
-<!--                <action android:name="android.intent.action.SEND" />-->
-<!--            </intent-filter>-->
-<!--        </receiver>-->
+        <activity
+            android:name=".Benchmarking"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.executorchllamademo.BENCHMARK" />
+            </intent-filter>
+        </activity>
 
     </application>
 
