@@ -4,8 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import torch
+import logging
 from argparse import ArgumentParser, BooleanOptionalAction
+
+import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
     # XnnpackFloatingPointPartitioner,
@@ -30,10 +32,10 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 )
 from torch.export import Dim
 from torch.nn.attention import SDPBackend
-import logging
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
 
 class LlavaEdgeManager(LLMEdgeManager):
     def capture_pre_autograd_graph(self) -> "LlavaEdgeManager":
@@ -169,11 +171,13 @@ def main():
     parser.add_argument(
         "--pte-name",
         default="llava_combined_xnnpack.pte",
-        help="Name of the exported Executorch program.",
+        help="Name of the exported ExecuTorch program.",
     )
     args = parser.parse_args()
-    logging.info(f"Exporting Llava model to Executorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache_op}")
-    llava_model = LlavaModel(use_sdpa_with_kv_cache_op=False)
+    logging.info(
+        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}"
+    )
+    llava_model = LlavaModel(use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache)
     llava = llava_model.get_eager_model()
 
     prompt_before_image, resized, prompt_after_image = (
@@ -213,7 +217,8 @@ def main():
 
     with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)
-    logging.info(f"Exported Executorch program to {args.pte_name}")
+    logging.info(f"Exported ExecuTorch program to {args.pte_name}")
+
 
 if __name__ == "__main__":
     main()
