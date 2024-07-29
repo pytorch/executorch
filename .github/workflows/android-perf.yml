@@ -51,7 +51,7 @@ jobs:
         id: set-models
         run: |
           MODELS="${{ inputs.models || 'stories110M' }}"
-          echo "::set-output name=models::$(echo $MODELS | jq -R 'split(",")')"
+          echo "models='$(echo $MODELS | jq -Rc 'split(",")')'" >> $GITHUB_OUTPUT
 
   export-models:
     name: export-models
