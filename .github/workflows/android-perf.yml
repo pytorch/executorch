@@ -34,32 +34,6 @@ on:
         description: The list of configs used the benchmark
         required: false
         type: string
-  workflow_call:
-    inputs:      
-      models:
-        description: Models to be benchmarked
-        required: false
-        type: string
-        default: stories110M
-      devices:
-        description: Target devices to run benchmark
-        required: false
-        type: string
-        default: false
-      delegates:
-        description: Backend delegates
-        required: false
-        type: string
-        default: xnnpack
-      threadpool:
-        description: Run with threadpool?
-        required: false
-        type: boolean
-        default: false
-      benchmark_configs:
-        description: The list of configs used the benchmark
-        required: false
-        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -76,7 +50,7 @@ jobs:
       - name: Set models
         id: set-models
         run: |
-          MODELS="${{ inputs.models }}"
+          MODELS="${{ inputs.models || stories110M }}"
           if [[ -z "$MODELS" ]]; then
             echo "No models provided and failed to retrieve the default values."
             exit 1
