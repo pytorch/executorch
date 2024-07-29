@@ -49,7 +49,9 @@ jobs:
     steps:
       - name: Set models
         id: set-models
+        shell: bash
         run: |
+          set -ex        
           MODELS="${{ inputs.models || 'stories110M' }}"
           echo "models='$(echo $MODELS | jq -Rc 'split(",")')'" >> $GITHUB_OUTPUT
 
