@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from argparse import ArgumentParser, BooleanOptionalAction
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
     # XnnpackFloatingPointPartitioner,
@@ -29,7 +30,10 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 )
 from torch.export import Dim
 from torch.nn.attention import SDPBackend
+import logging
 
+FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 class LlavaEdgeManager(LLMEdgeManager):
     def capture_pre_autograd_graph(self) -> "LlavaEdgeManager":
@@ -155,7 +159,21 @@ def export_token_embedding(llava, prompt):
 
 
 def main():
-    llava_model = LlavaModel()
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--use-sdpa-with-kv-cache",
+        default=True,
+        action=BooleanOptionalAction,
+        help="Use sdpa_with_kv_cache custom op in LLava text model.",
+    )
+    parser.add_argument(
+        "--pte-name",
+        default="llava_combined_xnnpack.pte",
+        help="Name of the exported Executorch program.",
+    )
+    args = parser.parse_args()
+    logging.info(f"Exporting Llava model to Executorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache_op}")
+    llava_model = LlavaModel(use_sdpa_with_kv_cache_op=False)
     llava = llava_model.get_eager_model()
 
     prompt_before_image, resized, prompt_after_image = (
@@ -193,9 +211,9 @@ def main():
         }
     ).to_executorch()
 
-    with open("llava_combined_xnnpack.pte", "wb") as f:
+    with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)
-
+    logging.info(f"Exported Executorch program to {args.pte_name}")
 
 if __name__ == "__main__":
     main()
