@@ -3,10 +3,6 @@ name: android-perf
 on:
   schedule:
     - cron: 0 0 * * *
-  push:
-    tags:
-      - ciflow/perf-android
-  pull_request:
   # Note: GitHub has an upper limit of 10 inputs
   workflow_dispatch:
     inputs:
@@ -51,9 +47,9 @@ jobs:
         id: set-models
         shell: bash
         run: |
-          set -ex        
-          MODELS="${{ inputs.models || 'stories110M' }}"
-          echo "models='$(echo $MODELS | jq -Rc 'split(",")')'" >> $GITHUB_OUTPUT
+          set -ex
+          MODELS="${{ inputs.models }}"
+          echo "models=$(echo $MODELS | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
 
   export-models:
     name: export-models
@@ -76,11 +72,12 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
         echo "Exporting model: ${{ matrix.model }}"
+        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}
 
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
         # Test llama2
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}.pt" "cmake" "fp32" "xnnpack+custom+qe" "artifacts-to-be-uploaded"\
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}.pt" "cmake" "fp32" "xnnpack+custom+qe" "${ARTIFACTS_DIR_NAME}"\
 
   # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-models:
@@ -116,7 +113,7 @@ jobs:
     needs: set-models
     strategy:
       matrix:
-          tokenizer: [bpe, tiktoken]
+          tokenizer: [bpe]
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
@@ -130,13 +127,13 @@ jobs:
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # TODO: This needs to be replaced with a generic loader .apk
         # Build LLM Demo for Android
         bash build/build_android_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
-  
+
   # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-android-apps:
     needs: build-llm-demo
@@ -167,20 +164,17 @@ jobs:
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   benchmark-on-device:
-    needs:
-      - upload-models
-      - upload-android-apps
     permissions:
       id-token: write
       contents: read
     uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    needs:
+      - set-models
+      - upload-models
+      - upload-android-apps
     strategy:
       matrix:
-        # https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/README.md#alternative-2-build-from-local-machine
-        # mentions that tiktoken is only for Llama3. So, we can export it later in another archive
-        # like https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b-0717.zip when this is
-        # updated to run Llama3
-        tokenizer: [bpe]
+        model: ${{ fromJson(needs.set-models.outputs.models) }}
     with:
       device-type: android
       runner: linux.2xlarge
@@ -189,10 +183,14 @@ jobs:
       project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
       # This is the custom Android device pool that only includes Samsung Galaxy S2x
       device-pool-arn: arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa
-      # Uploaded to S3 from the previous job, the name of the app comes from the project itself
-      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_${{ matrix.tokenizer }}/app-debug.apk
-      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_${{ matrix.tokenizer }}/app-debug-androidTest.apk
+      # Uploaded to S3 from the previous job, the name of the app comes from the project itself.
+      # Unlike models there are limited numbers of build flavor for apps, and the model controls whether it should build with bpe/tiktoken tokenizer.
+      # It's okay to build all possible apps with all possible flavors in job "build-llm-demo". However, in this job, once a model is given, there is only
+      # one app+flavor that could load and run the model.
+      # TODO: Hard code llm_demo_bpe for now in this job.
+      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_bpe/app-debug.apk
+      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_bpe/app-debug-androidTest.apk
       # The test spec can be downloaded from https://ossci-assets.s3.amazonaws.com/android-llama2-device-farm-test-spec.yml
       test-spec: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/abd86868-fa63-467e-a5c7-218194665a77
       # Uploaded to S3 from the previous job
-      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/model.zip
+      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}/model.zip

@@ -127,10 +127,10 @@ cleanup_files() {
   rm params.json
 }
 
-upload_artifacts() {
+prepare_artifacts_upload() {
   if [ -n "$UPLOAD_DIR" ]; then
-    echo "Uploading generated artifacs"
-    mkdir -p "${UPLOAD_DIR}/model"
+    echo "Preparing for uploading generated artifacs"
+    mkdir -p "${UPLOAD_DIR}"
     zip -j "model.zip" "${MODEL_NAME}" tokenizer.bin
     cp "model.zip" "${UPLOAD_DIR}"
   fi
@@ -215,7 +215,7 @@ if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Actual result: ${RESULT}"
   echo "Success"
 
-  upload_artifacts
+  prepare_artifacts_upload
   cleanup_files
 else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"
