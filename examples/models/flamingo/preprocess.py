@@ -33,7 +33,7 @@ preprocess_op_lib.define(
 )
 
 
-@impl(preprocess_op_lib, "pad.out", dispatch_key="CompositeExplicitAutograd")
+@impl(preprocess_op_lib, "pad.out", dispatch_key="CompositeImplicitAutograd")
 def pad_out_impl(
     image: torch.Tensor, canvas: torch.Tensor, out: torch.Tensor
 ) -> torch.Tensor:
@@ -124,7 +124,7 @@ class Preprocess(torch.nn.Module):
             image,
             size=[ts0, ts1],
             interpolation=self.config.resample,
-            antialias=False,
+            antialias=True,
         )
 
         # Pad
