@@ -14,7 +14,33 @@ on:
         description: Models to be benchmarked
         required: false
         type: string
-        default: 'stories110M'
+        default: stories110M
+      devices:
+        description: Target devices to run benchmark
+        required: false
+        type: string
+        default: false
+      delegates:
+        description: Backend delegates
+        required: false
+        type: string
+        default: xnnpack
+      threadpool:
+        description: Run with threadpool?
+        required: false
+        type: boolean
+        default: false
+      benchmark_configs:
+        description: The list of configs used the benchmark
+        required: false
+        type: string
+  workflow_call:
+    inputs:      
+      models:
+        description: Models to be benchmarked
+        required: false
+        type: string
+        default: stories110M
       devices:
         description: Target devices to run benchmark
         required: false
@@ -56,6 +82,7 @@ jobs:
             exit 1
           fi
           echo "::set-output name=models::$(echo $MODELS | jq -R 'split(",")')"
+
   export-models:
     name: export-models
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
@@ -81,7 +108,8 @@ jobs:
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
         # Test llama2
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}.pt" "cmake" "fp32" "xnnpack+custom+qe" "artifacts-to-be-uploaded"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}.pt" "cmake" "fp32" "xnnpack+custom+qe" "artifacts-to-be-uploaded"\
+
   # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-models:
     needs: export-models
@@ -136,6 +164,7 @@ jobs:
         # TODO: This needs to be replaced with a generic loader .apk
         # Build LLM Demo for Android
         bash build/build_android_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
+  
   # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-android-apps:
     needs: build-llm-demo
