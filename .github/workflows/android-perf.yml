@@ -50,11 +50,7 @@ jobs:
       - name: Set models
         id: set-models
         run: |
-          MODELS="${{ inputs.models || stories110M }}"
-          if [[ -z "$MODELS" ]]; then
-            echo "No models provided and failed to retrieve the default values."
-            exit 1
-          fi
+          MODELS="${{ inputs.models || 'stories110M' }}"
           echo "::set-output name=models::$(echo $MODELS | jq -R 'split(",")')"
 
   export-models:
