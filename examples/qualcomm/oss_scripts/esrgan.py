@@ -40,50 +40,7 @@ def get_instance(repo: str):
     return model.model.eval()
 
 
-if __name__ == "__main__":
-    parser = setup_common_args_and_variables()
-
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. Default ./esrgan",
-        default="./esrgan",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-r",
-        "--hr_ref_dir",
-        help="Path to the high resolution images",
-        default="",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-l",
-        "--lr_dir",
-        help="Path to the low resolution image inputs",
-        default="",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-d",
-        "--default_dataset",
-        help="If specified, download and use B100 dataset by torchSR API",
-        action="store_true",
-        default=False,
-    )
-
-    parser.add_argument(
-        "--oss_repo",
-        help="Path to cloned https://github.com/ai-forever/Real-ESRGAN",
-        type=str,
-        required=True,
-    )
-
-    args = parser.parse_args()
-
+def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     # ensure the working directory exist.
@@ -174,3 +131,56 @@ if __name__ == "__main__":
     else:
         print(f"Average of PSNR is: {avg_PSNR}")
         print(f"Average of SSIM is: {avg_SSIM}")
+
+
+if __name__ == "__main__":
+    parser = setup_common_args_and_variables()
+
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. Default ./esrgan",
+        default="./esrgan",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-r",
+        "--hr_ref_dir",
+        help="Path to the high resolution images",
+        default="",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-l",
+        "--lr_dir",
+        help="Path to the low resolution image inputs",
+        default="",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-d",
+        "--default_dataset",
+        help="If specified, download and use B100 dataset by torchSR API",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--oss_repo",
+        help="Path to cloned https://github.com/ai-forever/Real-ESRGAN",
+        type=str,
+        required=True,
+    )
+
+    args = parser.parse_args()
+    try:
+        main(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)
