@@ -22,7 +22,7 @@ jobs:
           - build-tool: buck2
     with:
       job-name: Build doc
-      runner: linux.2xlarge
+      runner: amz2023.linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
       submodules: 'true'
       repository: pytorch/executorch
