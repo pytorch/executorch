@@ -22,23 +22,18 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 from mtk_converter.python.converters.pytorch import importer_v2
 
 
-def _get_node_type(node: torch.fx.Node) -> str:
-    op = node.target
-    try:
-        op_name = op.name()
-    except AttributeError:
-        # built-in function getitem
-        op_name = op.__name__ if callable(op) else str(op)
-    return op_name
-
-
 class NeuropilotOperatorsSupport(OperatorSupportBase):
 
-    def __init__(self, ops_to_skip: Optional[set] = None) -> None:
-        if ops_to_skip is None:
-            ops_to_skip = set()
+    def __init__(
+        self, op_types_to_skip: Optional[set] = None, op_names_to_skip: Optional[set] = None
+    ) -> None:
+        if op_types_to_skip is None:
+            op_types_to_skip = set()
+        if op_names_to_skip is None:
+            op_names_to_skip = set()
 
-        self._ops_to_skip = ops_to_skip
+        self._op_types_to_skip = op_types_to_skip
+        self._op_names_to_skip = op_names_to_skip
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
         # Handle 'call_function' only cause 'placeholder' and 'output' cannot be tagged.
@@ -46,9 +41,9 @@ class NeuropilotOperatorsSupport(OperatorSupportBase):
         if node.op != "call_function":
             return False
 
-        op_type = _get_node_type(node)
-        if op_type in self._ops_to_skip:
-            print(f'[Neuropilot Backend] The {op_type} operator is skipped.')
+        op_type = node.target.__name__
+        if op_type in self._op_types_to_skip or node.name in self._op_names_to_skip:
+            print(f"[Neuropilot Backend] The {op_type} operator with name '{node.name}' is skipped.")
             return False
 
         return importer_v2.is_fx_node_supported(node)
@@ -57,9 +52,15 @@ class NeuropilotOperatorsSupport(OperatorSupportBase):
 @final
 class NeuropilotPartitioner(Partitioner):
 
-    def __init__(self, compile_spec: List[CompileSpec], ops_to_skip: Optional[set] = None) -> None:
+    def __init__(
+        self,
+        compile_spec: List[CompileSpec],
+        op_types_to_skip: Optional[set] = None,
+        op_names_to_skip: Optional[set] = None,
+    ) -> None:
         self.delegation_spec = DelegationSpec(NeuropilotBackend.__name__, compile_spec)
-        self._ops_to_skip = ops_to_skip
+        self._op_types_to_skip = op_types_to_skip
+        self._op_names_to_skip = op_names_to_skip
 
     def ops_to_not_decompose(
         self, ep: ExportedProgram,
@@ -76,7 +77,7 @@ class NeuropilotPartitioner(Partitioner):
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
-            NeuropilotOperatorsSupport(self._ops_to_skip),
+            NeuropilotOperatorsSupport(self._op_types_to_skip, self._op_names_to_skip),
             allows_single_node_partition=True,
         )
         partition_list = capability_partitioner.propose_partitions()

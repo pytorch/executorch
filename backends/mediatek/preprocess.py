@@ -59,7 +59,6 @@ class NeuropilotBackend(BackendDetails):
         converter.allow_missing_quantization_ranges = True
         converter.prepend_input_quantize_ops = True
         converter.append_output_dequantize_ops = True
-
         with contextlib.redirect_stdout(None):
             mlir_str = converter.convert_to_mlir()
             model_bytes = mtk_neuron.compile(mlir_str, ' '.join(compile_options))
