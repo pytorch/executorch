@@ -23,6 +23,7 @@ import pkg_resources
 import torch
 
 from executorch.examples.models.llama2.llama_transformer import ModelArgs
+from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 
@@ -38,6 +39,10 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
+)
+
+from executorch.extension.llm.tokenizer.tokenizer import (
+    Tokenizer as SentencePieceTokenizer,
 )
 
 from executorch.sdk.etrecord import generate_etrecord
@@ -84,6 +89,15 @@ def set_verbosity(val):
 
 def verbose_export():
     return verbosity_setting
+
+
+def get_tokenizer(tokenizer_path):
+    try:
+        tokenizer = SentencePieceTokenizer(model_path=str(tokenizer_path))
+    except Exception:
+        print("Using Tiktokenizer")
+        tokenizer = Tiktoken(model_path=str(tokenizer_path))
+    return tokenizer
 
 
 def build_model(
