@@ -38,6 +38,7 @@ class TOSASupportedOperators(OperatorSupportBase):
         supported = node.op == "call_function" and node.target in [
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.addmm.default,
+            exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.permute_copy.default,
             exir_ops.edge.aten.hardtanh.default,
             exir_ops.edge.aten.convolution.default,
