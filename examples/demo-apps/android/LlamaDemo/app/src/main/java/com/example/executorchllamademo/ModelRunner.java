@@ -12,13 +12,16 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
-import android.util.Log;
 
 import androidx.annotation.NonNull;
 
 import org.pytorch.executorch.LlamaCallback;
 import org.pytorch.executorch.LlamaModule;
 
+
+/**
+ * A helper class to handle all model running logic within this class.
+ */
 public class ModelRunner implements LlamaCallback {
     LlamaModule mModule = null;
 
@@ -89,7 +92,7 @@ class ModelRunnerHandler extends Handler {
             mModelRunner.mCallback.onModelLoaded(status);
         } else if (msg.what == MESSAGE_GENERATE) {
             mModelRunner.mModule.generate((String) msg.obj, mModelRunner);
-            mModelRunner.mCallback.onGeneratinStopped();
+            mModelRunner.mCallback.onGenerationStopped();
 
         }
     }

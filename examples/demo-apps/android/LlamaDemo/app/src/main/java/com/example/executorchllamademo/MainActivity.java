@@ -41,7 +41,7 @@ public class MainActivity extends Activity implements ModelRunnerCallback {
     Message mModelLoadingMessage = null;
 
     @Override
-    public void onGeneratinStopped() {
+    public void onGenerationStopped() {
         runOnUiThread(this::changeSendButtonToStart);
     }
 
@@ -223,7 +223,6 @@ public class MainActivity extends Activity implements ModelRunnerCallback {
   }
 
   private void onSendButtonGenerateClicked() {
-      Log.wtf("LLAMA", "CR4ACCCCCCCCC===========================SH");
       String prompt = mEditTextMessage.getText().toString();
       mEditTextMessage.setText("");
       mMessageAdapter.add(new Message(prompt, true));

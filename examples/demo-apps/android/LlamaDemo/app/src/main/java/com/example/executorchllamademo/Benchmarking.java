@@ -54,7 +54,7 @@ public class Benchmarking extends Activity implements ModelRunnerCallback {
         mStatsDump.loadEnd = System.currentTimeMillis();
         if (status != 0) {
             Log.e("Benchmarking", "Loaded failed: " + status);
-            onGeneratinStopped();
+            onGenerationStopped();
             return;
         }
         mStatsDump.generateStart = System.currentTimeMillis();
@@ -72,7 +72,7 @@ public class Benchmarking extends Activity implements ModelRunnerCallback {
     }
 
     @Override
-    public void onGeneratinStopped() {
+    public void onGenerationStopped() {
         mStatsDump.generateEnd = System.currentTimeMillis();
         runOnUiThread(()-> {mTextView.append(mStatsDump.toString());});
 
