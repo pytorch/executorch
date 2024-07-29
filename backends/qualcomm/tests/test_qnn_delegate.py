@@ -256,6 +256,19 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([2, 5, 1, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_index(self):
+        module = Index()  # noqa: F405
+        sample_input = (torch.randn([8, 172, 64]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_index_put(self):
+        module = IndexPut()  # noqa: F405
+        sample_input = (
+            torch.tensor([2], dtype=torch.int32),
+            torch.randn([1, 1, 12, 64]),
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_interpolate_bilinear_2d(self):
         module = ResizeBilinear2D()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
@@ -824,6 +837,21 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_hardtanh(self):
         module = HardTanh()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_index(self):
+        module = Index()  # noqa: F405
+        sample_input = (torch.randn([8, 172, 64]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_index_put(self):
+        module = IndexPut()  # noqa: F405
+        sample_input = (
+            torch.tensor([2], dtype=torch.int32),
+            torch.randn([1, 1, 12, 64]),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
