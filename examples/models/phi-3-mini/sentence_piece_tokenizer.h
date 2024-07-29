@@ -21,7 +21,7 @@ class SentencePieceTokenizer {
                          << filePath << " with error " << status.ToString();
       throw std::runtime_error(errorMessageStream.str());
     }
-    processor_.SetEncodeExtraOptions("bos");
+    // processor_.SetEncodeExtraOptions("bos");
   }
 
   std::vector<int64_t> encode(const std::string& piece) {

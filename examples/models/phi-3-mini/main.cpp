@@ -31,44 +31,66 @@ void generate(
   // it, using the string-to-token mapping that the model was trained on.
   // Each token is an integer that represents a word or part of a word.
   std::vector<int64_t> input_tokens = tokenizer.encode(prompt);
+  std::vector<int64_t> output_tokens;
+
+  std::cout << "Input tokens:";
+  for (auto token : input_tokens) {
+    std::cout << " " << token;
+  }
+  std::cout << std::endl;
+  std::cout.flush();
+
+  int64_t current_token = 0;
+
+  for (auto token : input_tokens) {
+    ManagedTensor input_token(&token, {1, 1}, ScalarType::Long);
+    std::vector<EValue> inputs = {input_token.get_aliasing_tensor()};
+
+    auto result = llm_model.forward(inputs);
+
+    const auto error = result.error();
+    auto logits_tensor = result.get()[0].toTensor();
+    std::vector<float> logits(
+        logits_tensor.data_ptr<float>(),
+        logits_tensor.data_ptr<float>() + VOCABULARY_SIZE);
+    current_token =
+        std::max_element(logits.begin(), logits.end()) - logits.begin();
+    output_tokens.push_back(current_token);
+  }
 
   std::cout << "Generating tokens ..." << std::endl;
 
-  std::vector<int64_t> output_tokens;
+  std::cout << current_token << " ";
+  std::cout.flush();
 
-  for (size_t i = 0; i < max_output_length; i++) {
-    ManagedTensor tensor_tokens(
-        input_tokens.data(),
-        {1, static_cast<int>(input_tokens.size())},
-        ScalarType::Long);
+  for (size_t i = 0; i < max_output_length - input_tokens.size(); i++) {
+    ManagedTensor tensor_tokens(&current_token, {1, 1}, ScalarType::Long);
     std::vector<EValue> inputs = {tensor_tokens.get_aliasing_tensor()};
 
     Result<std::vector<EValue>> result_evalue = llm_model.forward(inputs);
 
     const auto error = result_evalue.error();
     Tensor logits_tensor = result_evalue.get()[0].toTensor();
-    const auto sentence_length = logits_tensor.size(1);
     std::vector<float> logits(
-        logits_tensor.data_ptr<float>() +
-            (sentence_length - 1) * VOCABULARY_SIZE,
-        logits_tensor.data_ptr<float>() + sentence_length * VOCABULARY_SIZE);
+        logits_tensor.data_ptr<float>(),
+        logits_tensor.data_ptr<float>() + VOCABULARY_SIZE);
 
     // Sample the next token from the logits.
-    int64_t next_token =
+    current_token =
         std::max_element(logits.begin(), logits.end()) - logits.begin();
 
-    std::cout << next_token << "\t";
+    std::cout << current_token << " ";
     std::cout.flush();
 
     // Break if we reached the end of the text.
-    if (next_token == ENDOFTEXT_TOKEN) {
+    if (current_token == ENDOFTEXT_TOKEN) {
       break;
     }
 
-    output_tokens.push_back(next_token);
+    output_tokens.push_back(current_token);
 
     // Update next input.
-    input_tokens.push_back(next_token);
+    input_tokens.push_back(current_token);
   }
 
   std::cout << std::endl;
@@ -83,7 +105,7 @@ int main() {
 
   SentencePieceTokenizer tokenizer("tokenizer.model");
 
-  Module model("phi-3-mini.pte", Module::LoadMode::MmapUseMlockIgnoreErrors);
+  Module model("phi-3-mini-kv.pte", Module::LoadMode::MmapUseMlockIgnoreErrors);
 
   const auto max_output_tokens = 128;
   generate(model, prompt, tokenizer, max_output_tokens);
