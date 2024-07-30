@@ -4,39 +4,38 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-#
-# Tests the clone op which copies the data of the input tensor (possibly with new data format)
-#
-
 import unittest
 from typing import Tuple
 
 import torch
-
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from parameterized import parameterized
 
 
-class TestSimpleClone(unittest.TestCase):
-    class Clone(torch.nn.Module):
-        sizes = [10, 15, 50, 100]
-        test_parameters = [(torch.ones(n),) for n in sizes]
+class TestSimpleSlice(unittest.TestCase):
 
-        def __init__(self):
-            super().__init__()
+    class Slice(torch.nn.Module):
+
+        sizes = [(10), (10, 10), (10, 10, 10), ((1, 12, 10, 10))]
+        test_tensors = [(torch.ones(n),) for n in sizes]
 
         def forward(self, x: torch.Tensor):
-            x = x.clone()
-            return x
+            if x.dim() == 1:
+                return x[3:-3]
+            elif x.dim() == 2:
+                return x[1:3, 3:5]
+            elif x.dim() == 3:
+                return x[0:7, 0:1, 0:8]
+            elif x.dim() == 4:
+                return x[:, 2:5, 3:5, 4:5]
 
-    def _test_clone_tosa_MI_pipeline(
+    def _test_slice_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: torch.Tensor
     ):
         (
@@ -46,27 +45,31 @@ class TestSimpleClone(unittest.TestCase):
                 compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
-            .check_count({"torch.ops.aten.clone.default": 1})
+            .check(["torch.ops.aten.slice.Tensor"])
             .to_edge()
+            .check(["executorch_exir_dialects_edge__ops_aten_slice_copy"])
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .run_method_and_compare_outputs(inputs=test_data)
         )
 
-    def _test_clone_tosa_BI_pipeline(
-        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
+    def _test_slice_tosa_BI_pipeline(
+        self, module: torch.nn.Module, test_data: Tuple[torch.Tensor], permute: bool
     ):
+
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_tosa_compile_spec(),
+                compile_spec=common.get_tosa_compile_spec(
+                    permute_memory_to_nhwc=permute
+                ),
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
-            .check_count({"torch.ops.aten.clone.default": 1})
+            .check(["torch.ops.aten.slice.Tensor"])
             .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
@@ -74,7 +77,7 @@ class TestSimpleClone(unittest.TestCase):
             .run_method_and_compare_outputs(inputs=test_data, qtol=1)
         )
 
-    def _test_clone_tosa_u55_pipeline(
+    def _test_slice_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
         quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
@@ -86,21 +89,28 @@ class TestSimpleClone(unittest.TestCase):
             )
             .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
-            .check_count({"torch.ops.aten.clone.default": 1})
+            .check(["torch.ops.aten.slice.Tensor"])
             .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )
 
-    @parameterized.expand(Clone.test_parameters)
-    def test_clone_tosa_MI(self, test_tensor: torch.Tensor):
-        self._test_clone_tosa_MI_pipeline(self.Clone(), (test_tensor,))
+    @parameterized.expand(Slice.test_tensors)
+    def test_slice_tosa_MI(self, tensor):
+        self._test_slice_tosa_MI_pipeline(self.Slice(), (tensor,))
 
-    @parameterized.expand(Clone.test_parameters)
-    def test_clone_tosa_BI(self, test_tensor: torch.Tensor):
-        self._test_clone_tosa_BI_pipeline(self.Clone(), (test_tensor,))
+    @parameterized.expand(Slice.test_tensors[:2])
+    def test_slice_nchw_tosa_BI(self, test_tensor: torch.Tensor):
+        self._test_slice_tosa_BI_pipeline(self.Slice(), (test_tensor,), False)
 
-    @parameterized.expand(Clone.test_parameters)
-    def test_clone_u55_BI(self, test_tensor: torch.Tensor):
-        self._test_clone_tosa_u55_pipeline(self.Clone(), (test_tensor,))
+    @parameterized.expand(Slice.test_tensors[2:])
+    def test_slice_nhwc_tosa_BI(self, test_tensor: torch.Tensor):
+        self._test_slice_tosa_BI_pipeline(self.Slice(), (test_tensor,), True)
+
+    # Fails during Vela compilation when trying to use a Tuple as a Named tuple,
+    # Could be Vela Issue, wait until Regor.
+    @parameterized.expand(Slice.test_tensors)
+    @unittest.expectedFailure
+    def test_slice_u55_BI(self, test_tensor: torch.Tensor):
+        self._test_slice_u55_BI_pipeline(self.Slice(), (test_tensor,))
