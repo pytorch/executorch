@@ -2203,3 +2203,75 @@ TEST(VulkanComputeGraphOpsTest, conv2d_prepack_test) {
                                 0, 3, 9, 0, 0, 6, 12, 0, 0, 5,  11,
                                 0, 0, 0, 0, 0, 0, 0,  0, 0, 0});
 }
+
+void test_grid_priors(
+    std::vector<int64_t> input_sizes,
+    std::vector<int64_t> output_sizes,
+    int stride,
+    double offset,
+    const std::vector<float>& data_out_expected) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  // Build graph
+  IOValueRef in = graph.add_input_tensor(
+      input_sizes,
+      vkapi::kFloat,
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+  IOValueRef out;
+  out.value = graph.add_tensor(
+      output_sizes,
+      vkapi::kFloat,
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+
+  VK_GET_OP_FN("grid_priors.default")
+  (graph,
+   {in.value,
+    graph.add_scalar<int64_t>(stride),
+    graph.add_scalar<double>(offset),
+    out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  vTensorPtr t_in = graph.get_tensor(in.value);
+  vTensorPtr t_out = graph.get_tensor(out.value);
+  // Resize input
+  graph.propagate_resize();
+
+  // run graph
+  graph.execute();
+
+  std::vector<float> output_data(t_out->gpu_numel());
+  graph.copy_from_staging(out.staging, output_data.data(), output_data.size());
+
+  // check results
+  int h_out = utils::val_at(-2, t_out->sizes());
+  int w_out = utils::val_at(-1, t_out->sizes());
+  for (size_t i = 0; i < h_out; ++i) {
+    for (size_t j = 0; j < w_out; ++j) {
+      size_t idx_out = i * w_out + j;
+      CHECK_VALUE(output_data, idx_out, data_out_expected[idx_out]);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, grid_priors_test) {
+  test_grid_priors(
+      /*input size = */ {1, 5, 2, 3},
+      /*output size = */ {6, 2},
+      /*stride = */ 1,
+      /*offset = */ 0.0,
+      /*data_out_expected = */ {0, 0, 1, 0, 2, 0, 0, 1, 1, 1, 2, 1});
+
+  test_grid_priors(
+      /*input size = */ {1, 5, 2, 3},
+      /*output size = */ {6, 2},
+      /*stride = */ 8,
+      /*offset = */ 0.5,
+      /*data_out_expected = */ {4, 4, 12, 4, 20, 4, 4, 12, 12, 12, 20, 12});
+}
