@@ -51,7 +51,7 @@ class Tensor:
     dim_order: List[bytes]
     requires_grad: bool
     layout: int
-    constant_buffer_idx: int
+    data_buffer_idx: int
     allocation_info: Optional[AllocationDetails]
 
     # check schema.fbs for explanations

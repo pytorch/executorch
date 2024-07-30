@@ -79,7 +79,7 @@ def _format_evalue(  # noqa: C901
     evstr = "\033[34m"
     if isinstance(evalue.val, Tensor):
         tensor = evalue.val
-        if tensor.constant_buffer_idx > 0:
+        if tensor.data_buffer_idx > 0:
             assert not _is_dynamic_shape_tensor(
                 tensor
             ), "A constant tensor can not be dynamic shape"
