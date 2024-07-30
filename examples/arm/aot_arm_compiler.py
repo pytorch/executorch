@@ -11,7 +11,8 @@ import argparse
 import logging
 
 import torch
-from executorch.backends.arm.arm_backend import generate_ethosu_compile_spec
+
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
@@ -212,12 +213,13 @@ if __name__ == "__main__":
     if args.delegate is True:
         edge = edge.to_backend(
             ArmPartitioner(
-                generate_ethosu_compile_spec(
-                    "ethos-u55-128",
-                    permute_memory_to_nhwc=args.model_name
-                    in MODEL_NAME_TO_MODEL.keys(),
-                    quantize_io=True,
+                ArmCompileSpecBuilder()
+                .ethosu_compile_spec("ethos-u55-128")
+                .set_permute_memory_format(
+                    args.model_name in MODEL_NAME_TO_MODEL.keys()
                 )
+                .set_quantize_io(True)
+                .build()
             )
         )
         logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
