@@ -22,6 +22,9 @@ class App {
   uint32_t sm_count_;
   uint32_t nthread_logic_;
   uint32_t subgroup_size_;
+  uint32_t max_tex_width_;
+  uint32_t max_tex_height_;
+  uint32_t max_tex_depth_;
 
  public:
   App() {
@@ -36,6 +39,9 @@ class App {
     nthread_logic_ = cl_device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
     buf_cache_size_ = cl_device.getInfo<CL_DEVICE_GLOBAL_MEM_CACHE_SIZE>();
     max_shared_mem_size_ = cl_device.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>();
+    max_tex_width_ = cl_device.getInfo<CL_DEVICE_IMAGE3D_MAX_WIDTH>();
+    max_tex_height_ = cl_device.getInfo<CL_DEVICE_IMAGE3D_MAX_HEIGHT>();
+    max_tex_depth_ = cl_device.getInfo<CL_DEVICE_IMAGE3D_MAX_DEPTH>();
 
     VkPhysicalDeviceSubgroupProperties subgroup_props{};
     VkPhysicalDeviceProperties2 props2{};
@@ -54,6 +60,9 @@ class App {
     std::cout << "Cache Size," << buf_cache_size_ << std::endl;
     std::cout << "Shared Memory Size," << max_shared_mem_size_ << std::endl;
     std::cout << "SubGroup Size," << subgroup_size_ << std::endl;
+    std::cout << "MaxTexWidth," << max_tex_width_ << std::endl;
+    std::cout << "MaxTexHeight," << max_tex_height_ << std::endl;
+    std::cout << "MaxTexDepth," << max_tex_depth_ << std::endl;
   }
 
   void reg_count() {
@@ -308,6 +317,15 @@ class App {
               << std::endl;
   }
 
+  std::vector<int64_t> _whd_to_nchw(std::vector<int64_t> sizes) {
+    const int64_t W = sizes[0];
+    const int64_t H = sizes[1];
+    const int64_t D = sizes[2];
+
+    // Channels-packed: {W, H, D} = {W, H, (C / 4) * N}
+    return {1, D * 4, H, W};
+  }
+
  public:
   void buf_bandwidth() {
     std::cout << "\n------ Memory Bandwidth ------" << std::endl;
@@ -323,10 +341,103 @@ class App {
     const uint32_t RANGE = 128 * 1024 * 1024;
     _bandwidth("UBO", RANGE);
   }
+
   void shared_mem_bandwidth() {
     std::cout << "\n------ Shared Bandwidth ------" << std::endl;
     const uint32_t RANGE = max_shared_mem_size_;
     _bandwidth("Shared", RANGE);
+  }
+
+  void tex_bandwidth() {
+    for (int dim = 0; dim < 3; dim++) {
+      std::cout << "\n------ Texture Bandwidth (Dim = " << dim << ") ------"
+                << std::endl;
+      const uint32_t MAX_SIZE = dim == 0 ? max_tex_width_
+          : dim == 1                     ? max_tex_height_
+                                         : max_tex_depth_;
+
+      // rgba, float
+      const uint32_t VEC_WIDTH = 4;
+      const uint32_t VEC_SIZE = VEC_WIDTH * sizeof(float);
+      const uint32_t NVEC = MAX_SIZE;
+
+      const uint32_t RANGE = NVEC * VEC_SIZE;
+
+      // Cache lines flushed
+      const uint32_t NFLUSH = 4;
+      // Number of loop unrolls. Changing this value requires an equal change in
+      // tex_bandwidth.yaml
+      const uint32_t NUNROLL = 16;
+      // Number of iterations. Increasing this value reduces noise in exchange
+      // for higher latency.
+      const uint32_t NITER = 10;
+      // Number of memory reads per thread
+      const uint32_t NREAD_PER_THREAD = NUNROLL * NITER;
+      // Number of threads needed to read all texells
+      const uint32_t NTHREAD = NVEC;
+      // Occupy all threads
+      const uint32_t local_x = nthread_logic_;
+      // Ensure that global is a multiple of local, and distribute across all
+      // SMs
+      const uint32_t global_x =
+          (NTHREAD / local_x * local_x) * sm_count_ * NFLUSH;
+
+      auto shader_name = "tex_bandwidth_" + std::to_string(dim);
+
+      std::vector<int64_t> sizes_whd = {MAX_SIZE, 1, 1};
+      if (dim == 1) {
+        sizes_whd = {1, MAX_SIZE, 1};
+      } else if (dim == 2) {
+        sizes_whd = {1, 1, MAX_SIZE};
+      }
+      auto sizes_nchw = _whd_to_nchw(sizes_whd);
+
+      vTensor in_tensor =
+          api::vTensor(api::context(), sizes_nchw, vkapi::kFloat);
+
+      auto bench = [&](uint32_t access_size, uint32_t dim) {
+        // Number of texels that fit in this iteration
+        const uint32_t ntexel_access = access_size / VEC_SIZE;
+
+        StorageBuffer out_buf(
+            context(), vkapi::kFloat, VEC_WIDTH * nthread_logic_);
+        vkapi::PipelineBarrier pipeline_barrier{};
+
+        auto time = benchmark_on_gpu(shader_name, 10, [&]() {
+          context()->submit_compute_job(
+              VK_KERNEL_FROM_STR(shader_name),
+              pipeline_barrier,
+              {global_x, 1, 1},
+              {local_x, 1, 1},
+              {SV(NITER), SV(ntexel_access), SV(local_x), SV(dim)},
+              VK_NULL_HANDLE,
+              0,
+              in_tensor.image(),
+              out_buf.buffer());
+        });
+
+        const uint32_t SIZE_TRANS = global_x * NREAD_PER_THREAD * VEC_SIZE;
+        double gbps = SIZE_TRANS * 1e-3 / time;
+        std::cout << "Texture bandwidth accessing \t" << access_size
+                  << "\tB unique data is \t" << gbps << " \tgbps (\t" << time
+                  << "\tus)" << std::endl;
+        return gbps;
+      };
+
+      double max_bandwidth = 0;
+      double min_bandwidth = DBL_MAX;
+      for (uint32_t access_size = VEC_SIZE; access_size < RANGE;
+           access_size *= 2) {
+        double gbps = bench(access_size, dim);
+        max_bandwidth = std::max(gbps, max_bandwidth);
+        min_bandwidth = std::min(gbps, min_bandwidth);
+      }
+
+      std::cout << "MaxTextureBandwidthDim" << dim << "(GB/s)," << max_bandwidth
+                << std::endl;
+      std::cout << "MinTextureBandwidthDim" << dim << "(GB/s)," << min_bandwidth
+                << std::endl;
+    }
   }
 
   // Warp size is a difficult metric to obtain because the hardware limitations
@@ -492,6 +603,7 @@ int main(int argc, const char** argv) {
   app.ubo_bandwidth();
   app.shared_mem_bandwidth();
   app.warp_size();
+  app.tex_bandwidth();
 
   return 0;
 }
