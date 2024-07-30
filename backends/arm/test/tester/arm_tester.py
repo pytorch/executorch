@@ -4,7 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Any, List, Literal, Optional, Tuple
+
+from collections import Counter
+from pprint import pformat
+from typing import Any, List, Literal, Optional, Tuple, Union
 
 import executorch.backends.xnnpack.test.tester.tester as tester
 
@@ -31,6 +34,7 @@ from executorch.backends.arm.test.runner_utils import (
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from torch.fx import Graph
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -39,7 +43,6 @@ logger.setLevel(logging.INFO)
 class Partition(tester.Partition):
     def dump_artifact(self, path_to_dump: Optional[str]):
         super().dump_artifact(path_to_dump)
-        from pprint import pformat
 
         to_print = None
         for spec in self.graph_module.lowered_module_0.compile_specs:
@@ -55,12 +58,7 @@ class Partition(tester.Partition):
                     to_print = f"\n Vela command stream: \n{to_print}"
                 break
         assert to_print is not None, "No TOSA nor Vela compile spec found"
-
-        if path_to_dump:
-            with open(path_to_dump, "a") as fp:
-                fp.write(to_print)
-        else:
-            print(to_print)
+        _dump_str(to_print, path_to_dump)
 
 
 class Serialize(tester.Serialize):
@@ -272,6 +270,66 @@ class ArmTester(Tester):
 
         return self
 
+    def get_graph(self, stage: str | None = None) -> Graph:
+        if stage is None:
+            stage = self.cur
+        artifact = self.get_artifact(stage)
+        if self.cur == self.stage_name(tester.ToEdge) or self.cur == self.stage_name(
+            Partition
+        ):
+            graph = artifact.exported_program().graph
+        elif self.cur == self.stage_name(tester.Export) or self.cur == self.stage_name(
+            tester.Quantize
+        ):
+            graph = artifact.graph
+        else:
+            raise RuntimeError(
+                "Can only get a graph from Quantize, ToEdge, Export, and Partition stages."
+            )
+
+        return graph
+
+    def dump_operator_distribution(
+        self, path_to_dump: Optional[str] = None
+    ) -> ArmQuantizer:
+        """Dump a dictionary with {operator: operator count} for the operators in the
+        graph of the current stage.
+
+        Returns self for daisy-chaining.
+        """
+        graph = self.get_graph(self.cur)
+        op_dist = _get_operator_distribution(graph)
+        to_print = self.cur + " operators: " + _format_dict(op_dist) + "\n"
+        _dump_str(to_print, path_to_dump)
+        return self
+
+    def dump_dtype_distribution(
+        self, path_to_dump: Optional[str] = None
+    ) -> ArmQuantizer:
+        """Dump a dictionary with {dtype: dtype count} for the dtypes of the nodes in the
+        graph of the current stage.
+
+        Returns self for daisy-chaining.
+        """
+        graph = self.get_graph(self.cur)
+        op_dist = _get_dtype_distribution(graph)
+        to_print = self.cur + " placeholder data types: " + _format_dict(op_dist) + "\n"
+        _dump_str(to_print, path_to_dump)
+        return self
+
+    @staticmethod
+    def _calculate_reference_output(
+        module: Union[torch.fx.GraphModule, torch.nn.Module], inputs
+    ) -> torch.Tensor:
+        """
+        Note: I'd prefer to use the base class method here, but since it use the
+        exported program, I can't. The partitioner stage clears the state_dict
+        of the exported program, which causes an issue when evaluating the
+        module.
+        """
+
+        return module.forward(*inputs)
+
     def transpose_data_format(
         self, data: Tuple[torch.Tensor], to: Literal["NHWC", "NCHW"]
     ):
@@ -331,3 +389,37 @@ class ArmTester(Tester):
             )
             logger.error(f"{atol=}, {rtol=}, {qtol=}")
             raise e
+
+
+def _get_dtype_distribution(graph: Graph) -> dict:
+    """Counts the occurences of placeholder data types in a graph.
+    The result is a dict {'data type':'number of placeholders'}
+    """
+    return Counter(
+        [
+            node.meta["val"].dtype
+            for node in list(graph.nodes)
+            if node.op == "placeholder"
+        ]
+    )
+
+
+def _get_operator_distribution(graph: Graph) -> dict[str, int]:
+    """Counts the occurences of operator names in a graph.
+    The result is a dict {'operator name':'number of nodes'}
+    """
+    return Counter(
+        [str(node.target) for node in list(graph.nodes) if node.op == "call_function"]
+    )
+
+
+def _dump_str(to_print: str, path_to_dump: Optional[str] = None):
+    if path_to_dump:
+        with open(path_to_dump, "a") as fp:
+            fp.write(to_print)
+    else:
+        print(to_print)
+
+
+def _format_dict(to_print: dict) -> str:
+    return pformat(to_print, compact=True, indent=1)
