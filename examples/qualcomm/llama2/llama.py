@@ -15,13 +15,13 @@ import torch
 
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.passes.build_quant_io import BuildQuantIo
-from executorch.backends.qualcomm.passes.utils import q_io_key
 
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.quantizer.utils import get_16a4w_qnn_ptq_config
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANTIZED_IO
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     convert_linear_to_conv2d,
@@ -260,14 +260,14 @@ class SingleLlama:
                 and len(users := list(n.users)) == 1
                 and users[0].meta["val"].size()[-2:] in input_cache_shape
             ):
-                n.meta[q_io_key] = kv_type
+                n.meta[QCOM_QUANTIZED_IO] = kv_type
             elif n.op == "output":
                 for a in n.args[0]:
                     if (
                         a.meta["val"].flatten().size()[0]
                         == self.llama_meta["get_head_dim"]
                     ):
-                        a.meta[q_io_key] = kv_type
+                        a.meta[QCOM_QUANTIZED_IO] = kv_type
 
     def quantize(self, quant_dtype, custom_annotations=()):
         self.quant_dtype = quant_dtype
@@ -586,4 +586,11 @@ if __name__ == "__main__":
     if args.compile_only:
         exit(f"Finish compile_only and save to {args.artifact}")
 
-    inference(args)
+    try:
+        inference(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)

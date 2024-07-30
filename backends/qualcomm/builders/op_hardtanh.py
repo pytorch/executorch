@@ -10,6 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpReluMinMax, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -66,12 +67,12 @@ class HardTanhVisitor(NodeVisitor):
         hardtanh_op.AddScalarParam(
             OpReluMinMax.param_max_value,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-            {"data": np.float32(output_max)},
+            {QCOM_DATA: np.float32(output_max)},
         )
         hardtanh_op.AddScalarParam(
             OpReluMinMax.param_min_value,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-            {"data": np.float32(output_min)},
+            {QCOM_DATA: np.float32(output_min)},
         )
 
         return hardtanh_op

@@ -35,7 +35,13 @@ class RecomposePixelUnshuffle(ExportPass):
         for node in graph.nodes:
             if node.op == "call_function" and node.target == self.reshape_target:
                 with graph.inserting_after(node):
-                    premute_node = node.args[0]
+
+                    # Clone op still exists between permute and reshape_target during quantization,
+                    # so we need to check for args[0].args[0] to get permute node
+                    if self.quantization_capture:
+                        premute_node = node.args[0].args[0]
+                    else:
+                        premute_node = node.args[0]
                     if any(
                         [
                             len(node.args[1]) != 4,
@@ -93,7 +99,9 @@ class RecomposePixelUnshuffle(ExportPass):
 
                         op = self.op
                         pixel_unshuffle_node = graph.create_node(
-                            "call_function", op, (input_node, int(downscale_factor))
+                            "call_function",
+                            op,
+                            (input_node, int(downscale_factor)),
                         )
                         users = output_node.users.copy()
                         for user in users:

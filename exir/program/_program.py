@@ -225,7 +225,7 @@ def lift_constant_tensor_pass(ep):
         return ep
 
     graph_signature = ep.graph_signature
-    buffers = graph_signature.buffers
+    buffers = list(graph_signature.buffers)
 
     fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
     first_user_input = None
@@ -899,7 +899,7 @@ def _gen_edge_manager_for_partitioners(
             # check on which ops need to be preserved and which ops need to be decomposed
             # Those which are truly preserved will be replaced with transformed ops
             ops_set_to_not_decompose_by_program[name] = (
-                _replace_aten_ops_with_transformed_ops(name, program, partitioner)
+                _replace_aten_ops_with_transformed_ops(name, program, partitioner) or []
             )
         program = program.run_decompositions(_default_decomposition_table())
 
@@ -982,8 +982,8 @@ def _to_edge_transform_and_lower(
 
     if not isinstance(partitioner, dict) and partitioner is not None:
         partitioner = {"forward": partitioner}
-    else:
-        partitioner = {}
+    elif partitioner is None:
+        partitioner = {"forward": []}
 
     edge_manager = _gen_edge_manager_for_partitioners(
         partitioner, aten_programs, config, constant_methods

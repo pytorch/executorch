@@ -61,27 +61,7 @@ def get_dataset(data_size, dataset_dir, download):
     return inputs, targets, input_list
 
 
-if __name__ == "__main__":
-    parser = setup_common_args_and_variables()
-
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. Default ./deeplab_v3",
-        default="./deeplab_v3",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-d",
-        "--download",
-        help="If specified, download VOCSegmentation dataset by torchvision API",
-        action="store_true",
-        default=False,
-    )
-
-    args = parser.parse_args()
-
+def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     # ensure the working directory exist.
@@ -196,3 +176,33 @@ if __name__ == "__main__":
         print(f"MPA  : {mpa}%")
         print(f"MIoU : {miou}%")
         print(f"CIoU : \n{json.dumps(cls_iou, indent=2)}")
+
+
+if __name__ == "__main__":
+    parser = setup_common_args_and_variables()
+
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. Default ./deeplab_v3",
+        default="./deeplab_v3",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-d",
+        "--download",
+        help="If specified, download VOCSegmentation dataset by torchvision API",
+        action="store_true",
+        default=False,
+    )
+
+    args = parser.parse_args()
+    try:
+        main(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)

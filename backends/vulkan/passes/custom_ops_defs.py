@@ -6,6 +6,9 @@
 
 import torch.library
 
+namespace = "et_vk"
+lib = torch.library.Library(namespace, "DEF")
+
 
 def conv_with_clamp_impl(
     input,
@@ -37,11 +40,30 @@ def conv_with_clamp_impl(
     )
 
 
-namespace = "et_vk"
-lib = torch.library.Library(namespace, "DEF")
 name = "conv_with_clamp"
 lib.define(
     f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Scalar? output_min, Scalar? output_max) -> Tensor"
 )
 lib.impl(name, conv_with_clamp_impl, "CompositeExplicitAutograd")
 conv_with_clamp_op = getattr(getattr(torch.ops, namespace), name)
+
+
+def grid_priors_impl(
+    height,
+    width,
+    stride,
+    offset,
+):
+    shift_x = (torch.arange(0, width) + offset) * stride
+    shift_y = (torch.arange(0, height) + offset) * stride
+    shift_xx, shift_yy = torch.meshgrid(shift_y, shift_x)
+    shift_xx = shift_xx.reshape(-1)
+    shift_yy = shift_yy.reshape(-1)
+    shifts = torch.stack((shift_yy, shift_xx), dim=-1)
+    return shifts
+
+
+name = "grid_priors"
+lib.define(f"{name}(int height, int width, int stride, float offset) -> Tensor")
+lib.impl(name, grid_priors_impl)
+grid_priors_op = getattr(getattr(torch.ops, namespace), name)

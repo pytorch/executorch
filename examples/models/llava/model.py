@@ -62,8 +62,10 @@ class Llava(torch.nn.Module):
         llava_model: LlavaMetaForCausalLM,
         image_processor: CLIPVisionTower,
         config: PreprocessConfig,
+        use_sdpa_with_kv_cache_op: bool = True,
     ):
         super().__init__()
+        self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
         self.config = config
         self.model_ = llava_model
         self.text_model_args = ModelArgs(
@@ -73,7 +75,7 @@ class Llava(torch.nn.Module):
             max_batch_size=1,  # doesn't work with default batch size 32
             ffn_dim_multiplier=1,  # TODO: a hack to make rotary embedding happy
             enable_dynamic_shape=True,  # allow parallel prefill
-            use_sdpa_with_kv_cache_op=True,  # use sdpa_with_kv_cache op
+            use_sdpa_with_kv_cache_op=use_sdpa_with_kv_cache_op,  # use sdpa_with_kv_cache op
             use_hf_rope=True,
         )
         self.embed_tokens = nn.Embedding(
@@ -83,7 +85,8 @@ class Llava(torch.nn.Module):
         )
         self.text_model = Transformer(self.text_model_args)
         # use custom op for SDPA.
-        self.text_model = replace_sdpa_with_custom_op(self.text_model)
+        if use_sdpa_with_kv_cache_op:
+            self.text_model = replace_sdpa_with_custom_op(self.text_model)
         # load state dict
         self.text_model.load_state_dict(
             state_dict=self._translate_state_dict_for_text_model(),
@@ -273,7 +276,8 @@ def get_prompt(query: str, mm_use_im_start_end: bool, model_name: str) -> str:
 
 
 class LlavaModel(EagerModelBase):
-    def __init__(self):
+    def __init__(self, use_sdpa_with_kv_cache_op=True):
+        self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
         self.model_path = "liuhaotian/llava-v1.5-7b"
         self.tokenizer, self.model, self.image_processor, context_len = (
             load_pretrained_model(
@@ -316,7 +320,12 @@ class LlavaModel(EagerModelBase):
         self.resized_image = None
 
     def get_eager_model(self):
-        model = Llava(self.model, self.image_processor, self.config)
+        model = Llava(
+            self.model,
+            self.image_processor,
+            self.config,
+            self.use_sdpa_with_kv_cache_op,
+        )
         model.to(dtype=torch.float32)
         return model
 
@@ -368,8 +377,6 @@ class LlavaModel(EagerModelBase):
         return dynamic_shapes
 
     def _get_prompt_dynamic_shapes(self):
-        dim = torch.export.Dim(
-            "token_dim", min=1, max=self.model.config.max_position_embeddings - 1
-        )
+        dim = torch.export.Dim("token_dim", min=2, max=2048)
         text_model_dynamic_shapes = ({0: 1}, {1: dim})
         return text_model_dynamic_shapes

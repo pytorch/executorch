@@ -1,0 +1,48 @@
+{
+  "reg_count": {
+    "enabled": true,
+    "threshold": 3,
+    "compensate": 0.1
+  },
+  "buf_cacheline_size": {
+    "enabled": true,
+    "threshold": 10,
+    "compensate": 0.1
+  },
+  "buffer_bandwidth": {
+    "enabled": true,
+    "range": 134217728,
+    "nflush": 4,
+    "nunroll": 16,
+    "niter": 10
+  },
+  "ubo_bandwidth": {
+    "enabled": true,
+    "range": 134217728,
+    "nflush": 4,
+    "nunroll": 16,
+    "niter": 10
+  },
+  "shared_bandwidth": {
+    "enabled": true,
+    "nflush": 4,
+    "nunroll": 16,
+    "niter": 10
+  },
+  "warp_size": {
+    "enabled": true,
+    "threshold": 3,
+    "compensate": 0.1
+  },
+  "tex_bandwidth": {
+    "enabled": true,
+    "nflush": 4,
+    "nunroll": 16,
+    "niter": 10
+  },
+  "tex_cacheline_concurr": {
+    "enabled": true,
+    "threshold": 3,
+    "compensate": 0.1
+  }
+}

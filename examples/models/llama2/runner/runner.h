@@ -17,7 +17,7 @@
 #include <string>
 #include <unordered_map>
 
-#include <executorch/examples/models/llama2/sampler/sampler.h>
+#include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
