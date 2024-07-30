@@ -33,7 +33,7 @@ class TestSimpleSlice(unittest.TestCase):
             elif x.dim() == 3:
                 return x[0:7, 0:1, 0:8]
             elif x.dim() == 4:
-                return x[:, 2:5, 3:5, 4:5]
+                return x[:, 2:5, 3:5, 4:10]
 
     def _test_slice_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: torch.Tensor
