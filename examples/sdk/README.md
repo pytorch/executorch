@@ -59,11 +59,11 @@ Running the program will generate an `ETDump` file (`.etdp`) at the location spe
 Once an `ETDump` has been generated, it can be viewed using the CLI inspector. This will print a tabular view of the data recorded in the ETDump.
 
 ```bash
-   python3 -m sdk.inspector.inspector_cli --etdump_path mv2_etdump.etdp
+   python3 -m tools.inspector.inspector_cli --etdump_path mv2_etdump.etdp
    ```
 ### ETDump C++ API
 
-ETDump profiling can also be used in a custom C++ program. `ETDumpGen` is an implementation of the abstract `EventTracer` class.  Include the header file located at `sdk/etdump/etdump_flatcc.h`. To initialize the ETDump generator, construct it before loading the method from the program.
+ETDump profiling can also be used in a custom C++ program. `ETDumpGen` is an implementation of the abstract `EventTracer` class.  Include the header file located at `tools/etdump/etdump_flatcc.h`. To initialize the ETDump generator, construct it before loading the method from the program.
 
 ```cpp
    torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();

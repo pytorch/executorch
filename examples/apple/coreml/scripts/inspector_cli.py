@@ -9,8 +9,8 @@ import json
 
 from typing import Any, Dict, Final, List, Tuple, Union
 
-from executorch.sdk import Inspector
-from executorch.sdk.inspector._inspector_utils import compare_results
+from executorch.tools import Inspector
+from executorch.tools.inspector._inspector_utils import compare_results
 
 COREML_METADATA_KEYS: Final[List[Tuple[str, str]]] = [
     ("operatorName", "coreml_operator"),

@@ -38,9 +38,9 @@ Using the ExecuTorch SDK to Profile a Model
 #
 # The first step is to generate an ``ETRecord``. ``ETRecord`` contains model
 # graphs and metadata for linking runtime results (such as profiling) to
-# the eager model. This is generated via ``executorch.sdk.generate_etrecord``.
+# the eager model. This is generated via ``executorch.tools.generate_etrecord``.
 #
-# ``executorch.sdk.generate_etrecord`` takes in an output file path (str), the
+# ``executorch.tools.generate_etrecord`` takes in an output file path (str), the
 # edge dialect model (``EdgeProgramManager``), the ExecuTorch dialect model
 # (``ExecutorchProgramManager``), and an optional dictionary of additional models.
 #
@@ -58,7 +58,7 @@ from executorch.exir import (
     ExecutorchProgramManager,
     to_edge,
 )
-from executorch.sdk import generate_etrecord
+from executorch.tools import generate_etrecord
 from torch.export import export, ExportedProgram
 
 
@@ -131,10 +131,10 @@ from unittest.mock import patch
 import torch
 
 from executorch.exir import to_edge
-from executorch.sdk import BundledProgram
+from executorch.tools import BundledProgram
 
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
+from executorch.tools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.tools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 from torch.export import export
@@ -188,7 +188,7 @@ with open(save_path, "wb") as f:
 #
 # To visualize all runtime events, call Inspector's ``print_data_tabular``.
 
-from executorch.sdk import Inspector
+from executorch.tools import Inspector
 
 # sphinx_gallery_start_ignore
 inspector_patch = patch.object(Inspector, "__init__", return_value=None)

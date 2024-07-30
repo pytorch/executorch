@@ -119,7 +119,7 @@ probe_tests() {
     kernels
     runtime
     schema
-    sdk
+    tools
     test
   )
 

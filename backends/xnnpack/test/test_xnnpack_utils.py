@@ -34,10 +34,10 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
-from executorch.sdk import BundledProgram
+from executorch.tools import BundledProgram
 
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
+from executorch.tools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.tools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 

@@ -9,7 +9,7 @@ Generating an ETDump is a relatively straightforward process. Users can follow t
 
 1. ***Include*** the ETDump header in your code.
 ```C++
-#include <executorch/sdk/etdump/etdump_flatcc.h>
+#include <executorch/tools/etdump/etdump_flatcc.h>
 ```
 
 2. ***Create*** an Instance of the ETDumpGen class and pass it into the `load_method` call that is invoked in the runtime.

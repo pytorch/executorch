@@ -4,9 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Example CMakeLists.txt for building executor_runner with sdk support. In this
-# example we link sdk and bundled_program libraries into executor_runner binary
-cmake_minimum_required(VERSION 3.19)
+# Example CMakeLists.txt for building executor_runner with developers tools
+# support. In this example we link etdump and bundled_program libraries into
+# executor_runner binary cmake_minimum_required(VERSION 3.19)
 project(sdk_example)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -47,7 +47,7 @@ add_executable(sdk_example_runner sdk_example_runner/sdk_example_runner.cpp)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 
 target_include_directories(
-  etdump INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../sdk/include
+  etdump INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../tools/include
                    ${EXECUTORCH_ROOT}/third-party/flatcc/include
 )
 target_link_libraries(

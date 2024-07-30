@@ -38,7 +38,7 @@ For a real example reflecting the steps below, please refer to [sdk_example_runn
 Once a model has been run, using the generated ETDump and debug buffers, users can leverage the [Inspector API's](./sdk-inspector.rst) to inspect these debug outputs.
 
 ```python
-from executorch.sdk import Inspector
+from executorch.tools import Inspector
 
 # Create an Inspector instance with etdump and the debug buffer.
 inspector = Inspector(etdump_path=etdump_path,
@@ -67,7 +67,7 @@ We've also provided a simple set of utilities that let users perform quality ana
 
 
 ```python
-from executorch.sdk.inspector._inspector_utils import compare_results
+from executorch.tools.inspector._inspector_utils import compare_results
 
 # Run a simple quality analysis between the model outputs sourced from the
 # runtime and a set of reference outputs.

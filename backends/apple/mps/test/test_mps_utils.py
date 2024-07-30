@@ -22,9 +22,9 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.tracer import Value
-from executorch.sdk import BundledProgram
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
+from executorch.tools import BundledProgram
+from executorch.tools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.tools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 from torch.export import export, ExportedProgram

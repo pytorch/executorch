@@ -132,7 +132,7 @@ Use [ExecuTorch Dump](sdk-etdump.md) to trace model execution. Create an instanc
 #include <fstream>
 #include <memory>
 #include <executorch/extension/module/module.h>
-#include <executorch/sdk/etdump/etdump_flatcc.h>
+#include <executorch/tools/etdump/etdump_flatcc.h>
 
 using namespace ::torch::executor;
 

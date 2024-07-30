@@ -47,7 +47,7 @@ def define_common_targets(is_xplat = False, platforms = []):
             "//executorch/exir/backend:backend_lib",
             "//executorch/extension/pybindings/...",
             "//executorch/runtime/backend/...",
-            "//executorch/sdk/runners/...",
+            "//executorch/tools/runners/...",
             "//executorch/test/...",
             "@EXECUTORCH_CLIENTS",
         ],

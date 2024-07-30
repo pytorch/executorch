@@ -93,7 +93,7 @@ tools.
 ├── schema                          #  ExecuTorch PTE file format flatbuffer
 schemas.
 ├── scripts                         #  Utility scripts for size management, dependency management, etc.
-├── sdk                             #  Model profiling, debugging, and introspection.
+├── tools                           #  Model profiling, debugging, and introspection.
 ├── shim                            #  Compatibility layer between OSS and Internal builds
 ├── test                            #  Broad scoped end-to-end tests.
 ├── third-party                     #  Third-party dependencies.

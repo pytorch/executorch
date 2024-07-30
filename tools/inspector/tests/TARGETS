@@ -1,0 +1,40 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "inspector_test",
+    srcs = ["inspector_test.py"],
+    deps = [
+        "//executorch/exir:lib",
+        "//executorch/tools:lib",
+        "//executorch/tools/debug_format:et_schema",
+        "//executorch/tools/etdump:schema_flatcc",
+        "//executorch/tools/etrecord/tests:etrecord_test_library",
+        "//executorch/tools/inspector:inspector",
+        "//executorch/tools/inspector:lib",
+    ],
+)
+
+python_unittest(
+    name = "event_blocks_test",
+    srcs = ["event_blocks_test.py"],
+    deps = [
+        "//executorch/tools/etdump:schema_flatcc",
+        "//executorch/tools/inspector:inspector",
+        "//executorch/tools/inspector:lib",
+    ],
+)
+
+python_unittest(
+    name = "inspector_utils_test",
+    srcs = ["inspector_utils_test.py"],
+    deps = [
+        "//executorch/tools:lib",
+        "//executorch/tools/debug_format:base_schema",
+        "//executorch/tools/debug_format:et_schema",
+        "//executorch/tools/etdump:schema_flatcc",
+        "//executorch/tools/etrecord/tests:etrecord_test_library",
+        "//executorch/tools/inspector:inspector_utils",
+    ],
+)

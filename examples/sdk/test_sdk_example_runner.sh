@@ -14,7 +14,7 @@ set -e
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
 
-cmake_install_executorch_sdk_lib() {
+cmake_install_executorch_tools_lib() {
   echo "Installing libexecutorch.a, libportable_kernels.a, libetdump.a, libbundled_program.a"
   rm -rf cmake-out
 
@@ -58,5 +58,5 @@ then
   BUCK=buck2
 fi
 
-cmake_install_executorch_sdk_lib
+cmake_install_executorch_tools_lib
 test_cmake_sdk_example_runner

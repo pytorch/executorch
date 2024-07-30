@@ -57,9 +57,9 @@ python_unittest(
         "//executorch/exir/tests:transformer",
         "//executorch/extension/pybindings:aten_lib",
         "//executorch/extension/pytree:pybindings",
-        "//executorch/sdk:lib",
-        "//executorch/sdk/bundled_program:config",
-        "//executorch/sdk/bundled_program/serialize:lib",
+        "//executorch/tools:lib",
+        "//executorch/tools/bundled_program:config",
+        "//executorch/tools/bundled_program/serialize:lib",
     ],
 )
 
@@ -88,8 +88,8 @@ python_unittest(
         "//executorch/exir/tests:transformer",
         "//executorch/extension/pybindings:portable_lib",
         "//executorch/extension/pytree:pybindings",
-        "//executorch/sdk:lib",
-        "//executorch/sdk/bundled_program:config",
-        "//executorch/sdk/bundled_program/serialize:lib",
+        "//executorch/tools:lib",
+        "//executorch/tools/bundled_program:config",
+        "//executorch/tools/bundled_program/serialize:lib",
     ],
 )

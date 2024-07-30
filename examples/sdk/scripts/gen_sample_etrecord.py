@@ -18,7 +18,7 @@ from executorch.exir import (
     to_edge,
 )
 from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.sdk import generate_etrecord
+from executorch.tools import generate_etrecord
 from torch.export import export
 
 from ...models import MODEL_NAME_TO_MODEL

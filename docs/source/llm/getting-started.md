@@ -763,7 +763,7 @@ In your export script, after calling `to_edge()` and `to_executorch()`, call `ge
 
 ```
 import copy
-from executorch.sdk import generate_etrecord
+from executorch.tools import generate_etrecord
 
 # Make the deep copy immediately after to to_edge()
 edge_manager_copy = copy.deepcopy(edge_manager)
@@ -784,7 +784,7 @@ Include the ETDump header in your code.
 ```cpp
 // main.cpp
 
-#include <executorch/sdk/etdump/etdump_flatcc.h>
+#include <executorch/tools/etdump/etdump_flatcc.h>
 ```
 
 Create an Instance of the ETDumpGen class and pass it to the Module constructor.
@@ -835,7 +835,7 @@ Run the runner, you will see “etdump.etdp” generated.
 Once you’ve collected debug artifacts ETDump (and optionally an ETRecord), you can use the Inspector API to view performance information.
 
 ```python
-from executorch.sdk import Inspector
+from executorch.tools import Inspector
 
 inspector = Inspector(etdump_path="etdump.etdp")
 # If you also generated an ETRecord, then pass that in as well: `inspector = Inspector(etdump_path="etdump.etdp", etrecord="etrecord.bin")`

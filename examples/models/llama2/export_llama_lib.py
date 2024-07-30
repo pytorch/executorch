@@ -40,7 +40,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_qnn_quantizer,
 )
 
-from executorch.sdk.etrecord import generate_etrecord
+from executorch.tools.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory

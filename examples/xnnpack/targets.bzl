@@ -32,7 +32,7 @@ def define_common_targets():
             "//executorch/examples/xnnpack/quantization:quant_utils",
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_api",
-            "//executorch/sdk:lib",
+            "//executorch/tools:lib",
         ],
     )
 

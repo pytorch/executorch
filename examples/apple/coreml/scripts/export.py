@@ -20,7 +20,7 @@ from executorch.backends.apple.coreml.partition import CoreMLPartitioner
 from executorch.exir import to_edge
 
 from executorch.exir.backend.backend_api import to_backend
-from executorch.sdk.etrecord import generate_etrecord
+from executorch.tools.etrecord import generate_etrecord
 from torch.export import export
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent

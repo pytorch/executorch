@@ -13,7 +13,7 @@
 #import <executorch/runtime/executor/program.h>
 #import <executorch/runtime/platform/log.h>
 #import <executorch/runtime/platform/runtime.h>
-#import <executorch/sdk/etdump/etdump_flatcc.h>
+#import <executorch/tools/etdump/etdump_flatcc.h>
 #import <executorch/util/util.h>
 #import <memory>
 #import <numeric>

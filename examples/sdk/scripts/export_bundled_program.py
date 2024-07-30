@@ -14,13 +14,13 @@ import torch
 
 from executorch.exir import ExecutorchProgramManager
 from executorch.extension.export_util.utils import export_to_exec_prog
-from executorch.sdk import BundledProgram
-from executorch.sdk.bundled_program.config import (
+from executorch.tools import BundledProgram
+from executorch.tools.bundled_program.config import (
     MethodInputType,
     MethodTestCase,
     MethodTestSuite,
 )
-from executorch.sdk.bundled_program.serialize import (
+from executorch.tools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 

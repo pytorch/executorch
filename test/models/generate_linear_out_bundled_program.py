@@ -21,13 +21,13 @@ from executorch.exir import ExecutorchBackendConfig, to_edge
 
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
 from executorch.exir.print_program import pretty_print
-from executorch.sdk import BundledProgram
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
-)
 
 from executorch.test.models.linear_model import LinearModel
+from executorch.tools import BundledProgram
+from executorch.tools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.tools.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
 from torch.export import export
 
 

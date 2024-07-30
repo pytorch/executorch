@@ -28,9 +28,9 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/sdk/bundled_program/bundled_program.h>
-#include <executorch/sdk/bundled_program/schema/bundled_program_schema_generated.h>
-#include <executorch/sdk/etdump/etdump_flatcc.h>
+#include <executorch/tools/bundled_program/bundled_program.h>
+#include <executorch/tools/bundled_program/schema/bundled_program_schema_generated.h>
+#include <executorch/tools/etdump/etdump_flatcc.h>
 #include <executorch/util/read_file.h>
 
 #include <ATen/Functions.h>
