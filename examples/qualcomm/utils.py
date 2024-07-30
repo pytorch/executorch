@@ -50,7 +50,7 @@ class SimpleADB:
         host_id=None,
         error_only=False,
         shared_buffer=False,
-        runner="examples/qualcomm/qnn_executor_runner",
+        runner="examples/qualcomm/executor_runner/qnn_executor_runner",
     ):
         self.qnn_sdk = qnn_sdk
         self.build_path = build_path
@@ -105,13 +105,14 @@ class SimpleADB:
             f"{self.build_path}/{self.runner}",
             f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
         ]
-
         input_list_file, input_files = generate_inputs(
             self.working_dir, self.input_list_filename, inputs, input_list
         )
 
-        # prepare input list
-        artifacts.append(input_list_file)
+        if input_list_file is not None:
+            # prepare input list
+            artifacts.append(input_list_file)
+
         for artifact in artifacts:
             self._adb(["push", artifact, self.workspace])
 
@@ -434,7 +435,7 @@ def parse_skip_delegation_node(args):
 
 
 def generate_inputs(dest_path: str, file_name: str, inputs=None, input_list=None):
-    input_list_file = ""
+    input_list_file = None
     input_files = []
 
     # Prepare input list

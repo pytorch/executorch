@@ -124,7 +124,7 @@ cmake --build examples/qualcomm -j16
 ```
 **Note:** If you want to build for release, add `-DCMAKE_BUILD_TYPE=Release` to the `cmake` command options.
 
-You can find `qnn_executor_runner` under `build_android/examples/qualcomm/`.
+You can find `qnn_executor_runner` under `build_android/examples/qualcomm/executor_runner/`.
 
 
 ### Step 3: Compile a model
@@ -134,7 +134,7 @@ python -m examples.qualcomm.scripts.export_example --model_name mv2
 ```
 
 Then the generated `mv2.pte` can be run on the device by
-`build_android/backends/qualcomm/qnn_executor_runner` with Qualcomm AI Engine
+`build_android/examples/qualcomm/executor_runner/qnn_executor_runner` with Qualcomm AI Engine
 Direct backend.
 
 [**Note**] To get proper accuracy, please apply calibrations with representative
@@ -168,7 +168,7 @@ by setting `ADSP_LIBRARY_PATH` and `LD_LIBRARY_PATH`.
 So, we can run `qnn_executor_runner` like
 ```bash
 adb push mv2.pte ${DEVICE_DIR}
-adb push ${EXECUTORCH_ROOT}/build_android/examples/qualcomm/qnn_executor_runner ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/build_android/examples/qualcomm/executor_runner/qnn_executor_runner ${DEVICE_DIR}
 adb shell "cd ${DEVICE_DIR} \
            && export LD_LIBRARY_PATH=${DEVICE_DIR} \
            && export ADSP_LIBRARY_PATH=${DEVICE_DIR} \

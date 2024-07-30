@@ -8,7 +8,7 @@
 
 #include <fstream>
 
-#include <executorch/examples/qualcomm/llama2/qaihub_runner/io_memory.h>
+#include <executorch/examples/qualcomm/qaihub_scripts/llama2/runner/io_memory.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace torch {
