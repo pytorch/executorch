@@ -1090,7 +1090,7 @@ class _Emitter(torch.fx.Interpreter):
                     dim_order=[],
                     requires_grad=False,
                     layout=0,
-                    constant_buffer_idx=0,
+                    data_buffer_idx=0,
                     allocation_info=None,
                     shape_dynamism=TensorShapeDynamism.STATIC,
                 )
