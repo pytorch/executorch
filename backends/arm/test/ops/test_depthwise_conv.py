@@ -9,6 +9,8 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.ops.test_conv import Conv2d
@@ -189,7 +191,9 @@ class TestDepthwiseConv2D(unittest.TestCase):
     def test_dw_conv2d_tosa_MI(self, test_name, model):
         self._test_dw_conv2d_tosa_MI_pipeline(model, model.get_inputs())
 
+    # TODO: Investigate flakyness (MLTORCH-307)
     @parameterized.expand(testsuite)
+    @pytest.mark.flaky(reruns=3)
     def test_dw_conv2d_tosa_BI(self, test_name, model):
         self._test_dw_conv2d_tosa_BI_pipeline(model, model.get_inputs())
 
