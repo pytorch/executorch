@@ -291,10 +291,105 @@ class App {
     if (stride >= MAX_STRIDE) {
       std::cout << "Unable to conclude a top level buffer cacheline size."
                 << std::endl;
-      cacheline_size = MAX_STRIDE;
+      cacheline_size = MAX_STRIDE * sizeof(float);
     }
 
     std::cout << "BufTopLevelCachelineSize," << cacheline_size << std::endl;
+  }
+
+  // Textures are drastically different from buffers in terms of data layout.
+  // While buffers are a contiguous range of memory, textures are opaque objects
+  // defined by the vendor and it is possible that nearby points of data are not
+  // neighboring in memory. Likewise, data points are accessed in
+  // multi-dimensional patches instead of simple lines. This makes the stride
+  // method for figuring out the cache line size not applicable. To go around
+  // this, this experiment runs an increasing amount of threads accessing
+  // different datapoints in the texture and measures latency. If the cache line
+  // is big enough to contain all requested data for the amount of threads,
+  // latency will be low. When there are more threads and hence more data than
+  // what a single cache line can handle, a second line must be fetched,
+  // increasing latency in a measurable way.
+  void tex_cacheline_concurr() {
+    if (!_enabled("tex_cacheline_concurr")) {
+      std::cout << "Skipped Texture Cacheline Optimal Concurrency" << std::endl;
+      return;
+    }
+
+    const uint32_t TEXEL_WIDTH = 4;
+    const uint32_t TEXEL_SIZE = sizeof(float) * TEXEL_WIDTH;
+
+    const double COMPENSATE =
+        _get_config("tex_cacheline_concurr", "compensate");
+    const double THRESHOLD = _get_config("tex_cacheline_concurr", "threshold");
+
+    for (int dim = 0; dim < 3; ++dim) {
+      std::cout << std::endl;
+      std::cout << "------ Texture Cacheline Optimal Concurrency (dim = " << dim
+                << ") ------" << std::endl;
+
+      uint32_t NITER;
+
+      const uint32_t IMG_OTHER_EDGE = dim == 0 ? max_tex_width_
+          : dim == 1                           ? max_tex_height_
+                                               : max_tex_depth_;
+
+      const uint32_t MAX_NTHREAD = std::min(nthread_logic_, IMG_OTHER_EDGE);
+
+      auto bench = [&](uint32_t nthread) {
+        std::vector<int64_t> sizes_whd = {
+            max_tex_width_, max_tex_height_, max_tex_depth_};
+
+        auto sizes_nchw = _whd_to_nchw(sizes_whd);
+
+        vTensor in_tensor =
+            api::vTensor(api::context(), sizes_nchw, vkapi::kFloat);
+
+        StorageBuffer out_buf(context(), vkapi::kFloat, TEXEL_WIDTH);
+
+        vkapi::PipelineBarrier pipeline_barrier{};
+
+        auto shader_name = "tex_cacheline_concurr_" + std::to_string(dim);
+
+        auto time = benchmark_on_gpu(shader_name, 100, [&]() {
+          context()->submit_compute_job(
+              VK_KERNEL_FROM_STR(shader_name),
+              pipeline_barrier,
+              {nthread, 1, 1},
+              {nthread, 1, 1},
+              {SV(NITER)},
+              VK_NULL_HANDLE,
+              0,
+              in_tensor.image(),
+              out_buf.buffer());
+        });
+        return time;
+      };
+
+      ensure_min_niter(1000, NITER, [&]() { return bench(1); });
+
+      DtJumpFinder<5> dj(COMPENSATE, THRESHOLD);
+      uint32_t nthread = 1;
+      for (; nthread <= MAX_NTHREAD; ++nthread) {
+        double time = bench(nthread);
+        std::cout << "Testing nthread=\t" << nthread << "\t, time=\t" << time
+                  << std::endl;
+
+        if (dj.push(time)) {
+          auto max_concurrency = nthread - 1;
+          std::cout << "TextureCachelineConcurrencyDim" << dim << " (B),"
+                    << max_concurrency * TEXEL_SIZE << std::endl;
+          break;
+        }
+      }
+      if (nthread >= MAX_NTHREAD) {
+        std::cout
+            << "Unable to conclude an optimal texture cacheline concurrency for dim "
+            << dim << std::endl;
+      };
+    }
+
+    // TODO: Use concurrency information to obtain the cache line size for
+    // textures as done in https://fburl.com/98xiou3g
   }
 
  private:
@@ -689,6 +784,7 @@ int main(int argc, const char** argv) {
   app.shared_mem_bandwidth();
   app.warp_size();
   app.tex_bandwidth();
+  app.tex_cacheline_concurr();
 
   return 0;
 }
