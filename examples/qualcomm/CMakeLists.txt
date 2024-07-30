@@ -81,3 +81,8 @@ add_subdirectory(
 add_subdirectory(
   ${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama
 )
+
+# build qaihub_stable_diffusion_runner
+add_subdirectory(
+  ${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/stable_diffusion
+)
