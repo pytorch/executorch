@@ -25,6 +25,8 @@ from parameterized import parameterized
 
 
 class TestSimpleClone(unittest.TestCase):
+    """Tests clone."""
+
     class Clone(torch.nn.Module):
         sizes = [10, 15, 50, 100]
         test_parameters = [(torch.ones(n),) for n in sizes]

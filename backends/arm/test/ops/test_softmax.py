@@ -28,6 +28,8 @@ test_data_suite = [
 
 
 class TestSoftmax(unittest.TestCase):
+    """Tests softmax."""
+
     class Softmax(torch.nn.Module):
         def __init__(self, dim: int = -1):
             super().__init__()
