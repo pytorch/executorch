@@ -86,7 +86,10 @@ endif()
 
 # custom ops library
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  add_subdirectory(custom_ops)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/custom_ops
+    ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/custom_ops
+  )
 endif()
 
 # llama_runner library
