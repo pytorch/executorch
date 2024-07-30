@@ -23,7 +23,7 @@
     "nunroll": 16,
     "niter": 10
   },
-  "shared_mem_bandwidth": {
+  "shared_bandwidth": {
     "enabled": true,
     "nflush": 4,
     "nunroll": 16,
