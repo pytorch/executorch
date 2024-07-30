@@ -31,7 +31,6 @@ python_library(
     ],
     typing = True,
     deps = [
-        "fbsource//third-party/pypi/pyre-extensions:pyre-extensions",
         ":patterns",
         ":utils",
         "//caffe2:torch",

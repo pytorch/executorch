@@ -28,13 +28,13 @@ python_library(
         "compiler.py",
     ],
     deps = [
-        "fbsource//third-party/pypi/pyre-extensions:pyre-extensions",
         ":passes",
         ":utils",
         "//caffe2:torch",
         "//executorch/backends/cadence/aot/quantizer:fusion_pass",
         "//executorch/backends/cadence/aot/quantizer:quantizer",
         "//executorch/backends/transforms:decompose_sdpa",
+        "//executorch/backends/transforms:remove_clone_ops",
         "//executorch/exir:lib",
     ],
 )
@@ -49,5 +49,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:spec_prop_pass",
     ],
 )
