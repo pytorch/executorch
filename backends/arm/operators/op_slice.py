@@ -40,6 +40,8 @@ class SliceVisitor(NodeVisitor):
         shape = input_node.shape
         dim = dim.number
         end = (shape[dim] + end.number) % shape[dim]
+        if end == 0:
+            end = shape[dim]
         size = end - start.number
         assert size > 0
         assert size <= shape[dim]
