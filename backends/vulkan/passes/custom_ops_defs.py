@@ -49,11 +49,11 @@ conv_with_clamp_op = getattr(getattr(torch.ops, namespace), name)
 
 
 def grid_priors_impl(
-    height,
-    width,
+    x,
     stride,
     offset,
 ):
+    height, width = x.shape[-2:]
     shift_x = (torch.arange(0, width) + offset) * stride
     shift_y = (torch.arange(0, height) + offset) * stride
     shift_xx, shift_yy = torch.meshgrid(shift_y, shift_x)
@@ -64,6 +64,6 @@ def grid_priors_impl(
 
 
 name = "grid_priors"
-lib.define(f"{name}(int height, int width, int stride, float offset) -> Tensor")
-lib.impl(name, grid_priors_impl)
+lib.define(f"{name}(Tensor self, int stride, float offset) -> Tensor")
+lib.impl(name, grid_priors_impl, "CompositeExplicitAutograd")
 grid_priors_op = getattr(getattr(torch.ops, namespace), name)
