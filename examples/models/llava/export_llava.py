@@ -39,6 +39,8 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 )
 from torch.export import Dim
 from torch.nn.attention import SDPBackend
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -83,7 +85,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         dynamic_shapes=dynamic_shapes,
     )
 
-    dtype_override = DType.fp32
+    dtype_override = DType.fp16
     parser = build_args_parser()
     args = parser.parse_args(
         ["-X", "-qmode", "8da4w", "--group_size", "128", "--embedding-quantize", "4,32"]
@@ -139,12 +141,20 @@ def export_image_encoder(llava, resized, dynamic_shapes):
         use_kv_cache=True,
         example_inputs=(resized,),
         dynamic_shapes=dynamic_shapes,
-    ).capture_pre_autograd_graph()
+    ).to_dtype(DType.fp16).capture_pre_autograd_graph()
+    quantizer = XNNPACKQuantizer()
+    q_config = get_symmetric_quantization_config()
+    quantizer.set_global(q_config)
+    prepared = prepare_pt2e(manager.pre_autograd_graph_module, quantizer)
+
+    # calibrate once
+    prepared(*manager.example_inputs)
+    converted = convert_pt2e(prepared)
 
     # lower to executorch
     with torch.no_grad():
         image_encoder_ep = torch.export.export(
-            manager.pre_autograd_graph_module,
+            converted,
             manager.example_inputs,
             dynamic_shapes=manager.dynamic_shapes,
         )
@@ -160,7 +170,7 @@ def export_token_embedding(llava, prompt):
     embed.load_state_dict(
         llava.model_.get_model().embed_tokens.state_dict(), strict=True, assign=True
     )
-    embed = embed.to(torch.float32)
+    embed = embed.to(torch.float16)
     token_dim_1 = Dim("token_dim_1", min=2, max=3518)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
@@ -216,7 +226,7 @@ def main():
         },
         partitioner={
             "image_encoder": [
-                XnnpackPartitioner(config_precisions=ConfigPrecisionType.FP32)
+                XnnpackPartitioner()
             ],
             "text_model": [
                 XnnpackPartitioner(
