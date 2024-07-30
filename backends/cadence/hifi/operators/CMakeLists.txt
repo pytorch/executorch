@@ -20,10 +20,6 @@ endif()
 
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_add.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_embedding.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_full.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/activation_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/copy_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/broadcast_util.cpp"
@@ -32,10 +28,13 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/matmul_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/reduce_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_add.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_cat.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_embedding.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_full.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mul.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_permute_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_sigmoid.cpp"
@@ -44,6 +43,7 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_split_with_sizes_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_sub.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_to_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_where.cpp")
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)
