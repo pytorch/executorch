@@ -16,7 +16,6 @@ import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
-from executorch.examples.models.llama2.export_llama_lib import get_tokenizer
 from executorch.exir import EdgeProgramManager
 from executorch.exir.backend.partitioner import Partitioner
 
@@ -28,6 +27,7 @@ from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+from executorch.extension.llm.utils import get_tokenizer
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
