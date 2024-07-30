@@ -14,6 +14,8 @@ import torch
 
 from transformers import AutoTokenizer, Phi3ForCausalLM
 
+from .static_cache import ETStaticCache
+
 end_of_text_token = 32000
 
 
@@ -40,7 +42,18 @@ def _generate_token(args, model, prompt_tokens):
 def _generate_token_with_kv_cache(args, model, prompt_tokens):
     print("Generating tokens:", end="", flush=True)
 
-    result = model.forward(input_ids=prompt_tokens, use_cache=True, return_dict=True)
+    result = model.forward(
+        input_ids=prompt_tokens,
+        use_cache=True,
+        return_dict=True,
+        past_key_values=ETStaticCache(
+            model.config,
+            prompt_tokens.shape[0],
+            args.seq_len + prompt_tokens.shape[-1],
+            device=model.device,
+            dtype=model.dtype,
+        ),
+    )
 
     current_token = torch.argmax(result.logits[:, -1, :], dim=-1).item()
     current_key_value = result.past_key_values
