@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
+#include <folly/json.h>
+#include <fstream>
 #include <iostream>
 
 #include "stats.h"
@@ -25,6 +27,46 @@ class App {
   uint32_t max_tex_width_;
   uint32_t max_tex_height_;
   uint32_t max_tex_depth_;
+  folly::dynamic config_;
+
+  std::vector<int64_t> _whd_to_nchw(std::vector<int64_t> sizes) {
+    const int64_t W = sizes[0];
+    const int64_t H = sizes[1];
+    const int64_t D = sizes[2];
+
+    // Channels-packed: {W, H, D} = {W, H, (C / 4) * N}
+    return {1, D * 4, H, W};
+  }
+
+  float _get_config(const std::string& test, const std::string& key) {
+    if (config_[test].empty()) {
+      throw std::runtime_error("Missing config for " + test);
+    }
+
+    if (!config_[test][key].isNumber()) {
+      throw std::runtime_error(
+          "Config for " + test + "." + key + " is not a number");
+    }
+
+    float value;
+    if (config_[test][key].isDouble()) {
+      value = config_[test][key].getDouble();
+    } else {
+      value = config_[test][key].getInt();
+    }
+
+    std::cout << "Read value for " << test << "." << key << " = " << value
+              << std::endl;
+    return value;
+  }
+
+  bool _enabled(const std::string& test) {
+    if (config_.empty() || config_[test].empty() ||
+        !config_[test]["enabled"].isBool()) {
+      return true;
+    }
+    return config_[test]["enabled"].getBool();
+  }
 
  public:
   App() {
@@ -65,16 +107,32 @@ class App {
     std::cout << "MaxTexDepth," << max_tex_depth_ << std::endl;
   }
 
+  void load_config(std::string file_path) {
+    std::ifstream file(file_path);
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    const std::string json_str = buffer.str();
+    if (json_str.empty()) {
+      throw std::runtime_error(
+          "Failed to read config file from " + file_path + ".");
+    }
+    config_ = folly::parseJson(json_str);
+  }
+
   void reg_count() {
+    if (!_enabled("reg_count")) {
+      std::cout << "Skipped Register Count" << std::endl;
+      return;
+    }
+
     std::cout << std::endl;
     std::cout << "------ Register Count ------" << std::endl;
     const uint32_t NREG_MIN = 1;
     const uint32_t NREG_MAX = 512;
     const uint32_t NREG_STEP = 1;
 
-    // TODO: Make these values configurable
-    const double COMPENSATE = 0.01;
-    const double THRESHOLD = 3;
+    const double COMPENSATE = _get_config("reg_count", "compensate");
+    const double THRESHOLD = _get_config("reg_count", "threshold");
 
     const uint32_t NGRP_MIN = 1;
     const uint32_t NGRP_MAX = 64;
@@ -175,12 +233,16 @@ class App {
   }
 
   void buf_cacheline_size() {
+    if (!_enabled("buf_cacheline_size")) {
+      std::cout << "Skipped Buffer Cacheline Size" << std::endl;
+      return;
+    }
+
     std::cout << std::endl;
     std::cout << "------ Buffer Cacheline Size ------" << std::endl;
 
-    // TODO: Make these values configurable
-    const double COMPENSATE = 0.01;
-    const double THRESHOLD = 10;
+    const double COMPENSATE = _get_config("buf_cacheline_size", "compensate");
+    const double THRESHOLD = _get_config("buf_cacheline_size", "threshold");
 
     const uint32_t PITCH = buf_cache_size_ / nthread_logic_;
     const uint32_t BUF_SIZE = buf_cache_size_;
@@ -237,15 +299,23 @@ class App {
 
  private:
   void _bandwidth(std::string memtype, uint32_t range) {
-    // TODO: Make these values configurable
+    auto memtype_lower = memtype;
+    std::transform(
+        memtype_lower.begin(),
+        memtype_lower.end(),
+        memtype_lower.begin(),
+        [](unsigned char c) { return std::tolower(c); });
+
+    auto test_name = memtype_lower + "_bandwidth";
+
     // Cache lines flushed
-    const uint32_t NFLUSH = 4;
+    const uint32_t NFLUSH = _get_config(test_name, "nflush");
     // Number of loop unrolls. Changing this value requires an equal change in
     // buf_bandwidth.yaml
-    const uint32_t NUNROLL = 16;
+    const uint32_t NUNROLL = _get_config(test_name, "nunroll");
     // Number of iterations. Increasing this value reduces noise in exchange for
     // higher latency.
-    const uint32_t NITER = 10;
+    const uint32_t NITER = _get_config(test_name, "niter");
     // Vector dimensions (vec4)
     const uint32_t VEC_WIDTH = 4;
     const uint32_t VEC_SIZE = VEC_WIDTH * sizeof(float);
@@ -273,12 +343,6 @@ class App {
           context(), vkapi::kFloat, VEC_WIDTH * nthread_logic_);
       vkapi::PipelineBarrier pipeline_barrier{};
 
-      auto memtype_lower = memtype;
-      std::transform(
-          memtype_lower.begin(),
-          memtype_lower.end(),
-          memtype_lower.begin(),
-          [](unsigned char c) { return std::tolower(c); });
       auto shader_name = "buf_bandwidth_" + memtype_lower;
 
       auto time = benchmark_on_gpu(shader_name, 10, [&]() {
@@ -317,38 +381,49 @@ class App {
               << std::endl;
   }
 
-  std::vector<int64_t> _whd_to_nchw(std::vector<int64_t> sizes) {
-    const int64_t W = sizes[0];
-    const int64_t H = sizes[1];
-    const int64_t D = sizes[2];
-
-    // Channels-packed: {W, H, D} = {W, H, (C / 4) * N}
-    return {1, D * 4, H, W};
-  }
-
  public:
   void buf_bandwidth() {
+    if (!_enabled("buffer_bandwidth")) {
+      std::cout << "Skipped Memory Bandwidth" << std::endl;
+      return;
+    }
+
     std::cout << "\n------ Memory Bandwidth ------" << std::endl;
     // Maximum memory space read - 128MB
     // For regular devices, bandwidth plateaus at less memory than this, so more
     // is not needed.
-    const uint32_t RANGE = 128 * 1024 * 1024;
+    const uint32_t RANGE = _get_config("buffer_bandwidth", "range");
     _bandwidth("Buffer", RANGE);
   }
 
   void ubo_bandwidth() {
+    if (!_enabled("ubo_bandwidth")) {
+      std::cout << "Skipped UBO Bandwidth" << std::endl;
+      return;
+    }
+
     std::cout << "\n------ UBO Bandwidth ------" << std::endl;
-    const uint32_t RANGE = 128 * 1024 * 1024;
+    const uint32_t RANGE = _get_config("ubo_bandwidth", "range");
     _bandwidth("UBO", RANGE);
   }
 
   void shared_mem_bandwidth() {
+    if (!_enabled("shared_mem_bandwidth")) {
+      std::cout << "Skipped Shared Memory Bandwidth" << std::endl;
+      return;
+    }
+
     std::cout << "\n------ Shared Bandwidth ------" << std::endl;
     const uint32_t RANGE = max_shared_mem_size_;
     _bandwidth("Shared", RANGE);
   }
 
   void tex_bandwidth() {
+    if (!_enabled("tex_bandwidth")) {
+      std::cout << "Skipped Texture Bandwidth" << std::endl;
+      return;
+    }
+
     for (int dim = 0; dim < 3; dim++) {
       std::cout << "\n------ Texture Bandwidth (Dim = " << dim << ") ------"
                 << std::endl;
@@ -364,13 +439,13 @@ class App {
       const uint32_t RANGE = NVEC * VEC_SIZE;
 
       // Cache lines flushed
-      const uint32_t NFLUSH = 4;
+      const uint32_t NFLUSH = _get_config("tex_bandwidth", "nflush");
       // Number of loop unrolls. Changing this value requires an equal change in
       // tex_bandwidth.yaml
-      const uint32_t NUNROLL = 16;
+      const uint32_t NUNROLL = _get_config("tex_bandwidth", "nunroll");
       // Number of iterations. Increasing this value reduces noise in exchange
       // for higher latency.
-      const uint32_t NITER = 10;
+      const uint32_t NITER = _get_config("tex_bandwidth", "niter");
       // Number of memory reads per thread
       const uint32_t NREAD_PER_THREAD = NUNROLL * NITER;
       // Number of threads needed to read all texells
@@ -458,6 +533,11 @@ class App {
   // In Case 2, like in Adreno, the driver might decide to pack multiple works
   // together and dispatch them at once.
   void warp_size(bool verbose = false) {
+    if (!_enabled("warp_size")) {
+      std::cout << "Skipped Warp Size" << std::endl;
+      return;
+    }
+
     std::cout << "\n------ Warp Size ------" << std::endl;
 
     // Method A: Stress test with a kernel that uses complex ALU operations like
@@ -467,8 +547,8 @@ class App {
     // This timing-based method helps us identify physical warp sizes. It also
     // helps with Case 2, when threads of multiple warps are managed by the same
     // scheduler at the same time.
-    const double COMPENSATE = 0.01;
-    const double THRESHOLD = 3;
+    const double COMPENSATE = _get_config("warp_size", "compensate");
+    const double THRESHOLD = _get_config("warp_size", "threshold");
 
     uint32_t NITER;
 
@@ -596,7 +676,12 @@ class App {
 int main(int argc, const char** argv) {
   App app;
 
-  // TODO: Allow user to skip tests
+  std::string file_path = "config.json";
+  if (argc > 1) {
+    file_path = argv[1];
+  };
+  app.load_config(file_path);
+
   app.reg_count();
   app.buf_cacheline_size();
   app.buf_bandwidth();
