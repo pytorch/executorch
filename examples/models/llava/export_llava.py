@@ -83,11 +83,14 @@ def export_text_model(llava, embeddings, dynamic_shapes):
     )
     quant_transform = get_quant_weight_transform(args, dtype_override, False)
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
-
+    source_transforms = []
+    if llava.use_sdpa_with_kv_cache_op:
+        source_transforms.append(replace_sdpa_with_custom_op)
+    source_transforms.append(quant_transform)
     manager = (
         text_model_em.set_output_dir("./")
         .to_dtype(dtype_override)
-        .source_transform([replace_sdpa_with_custom_op, quant_transform])
+        .source_transform(source_transforms)
         .capture_pre_autograd_graph()
         .pt2e_quantize(quantizers)
     )
