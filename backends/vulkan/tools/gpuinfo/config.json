@@ -39,5 +39,10 @@
     "nflush": 4,
     "nunroll": 16,
     "niter": 10
+  },
+  "tex_cacheline_concurr": {
+    "enabled": true,
+    "threshold": 3,
+    "compensate": 0.1
   }
 }
