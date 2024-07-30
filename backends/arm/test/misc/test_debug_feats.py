@@ -41,6 +41,8 @@ class Linear(torch.nn.Module):
 
 
 class TestDumpPartitionedArtifact(unittest.TestCase):
+    """Tests dumping the partition artifact in ArmTester. Both to file and to stdout."""
+
     def _tosa_MI_pipeline(self, module: torch.nn.Module, dump_file=None):
         (
             ArmTester(
@@ -96,6 +98,8 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
 
 
 class TestNumericalDiffPrints(unittest.TestCase):
+    """Tests trigging the exception printout from the ArmTester's run and compare function."""
+
     def test_numerical_diff_prints(self):
         model = Linear(20, 30)
         tester = (
