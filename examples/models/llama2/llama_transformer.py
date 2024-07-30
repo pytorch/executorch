@@ -273,15 +273,14 @@ class Attention(nn.Module):
 
         self.layer_id = layer_id
 
-        causal_mask = torch.tril(
-            torch.ones(
-                self.max_seq_len,
-                self.max_seq_len,
-                dtype=torch.bool,
-                device="cpu",
-            )
+        mask = torch.full(
+            (args.max_seq_len, args.max_seq_len),
+            float("-inf"),
+            device="cpu",
         )
-        self.register_buffer("mask", causal_mask, persistent=False)
+
+        mask = torch.triu(mask, diagonal=1)
+        self.register_buffer("mask", mask, persistent=False)
 
         if self.use_kv_cache:
             self.kv_cache = KVCache(
