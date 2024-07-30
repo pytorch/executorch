@@ -25,6 +25,24 @@ def define_common_targets():
         ],
     )
 
+    runtime.python_library(
+        name = "utils",
+        srcs = [
+            "utils.py",
+        ],
+        base_module = "executorch.extension.llm.utils",
+        visibility = [
+            "//executorch/examples/...",
+            "//executorch/extension/llm/tokenizer/...",
+            "//bento/...",
+            "//bento_kernels/...",
+        ],
+        _is_external_target = True,
+        external_deps = [
+            "sentencepiece-py",
+        ],
+    )
+
     runtime.python_binary(
         name = "tokenizer_py",
         main_module = "executorch.extension.llm.tokenizer.tokenizer",
