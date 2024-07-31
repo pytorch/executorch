@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 # Example script for exporting Llama2 to flatbuffer
 
 import math
@@ -61,7 +63,7 @@ def _replace_sdpa_with_custom_op(module: torch.nn.Module):
 
 
 def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
-    from executorch.examples.models.llama2.custom_ops import sdpa_with_kv_cache  # noqa
+    from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
 
     _replace_sdpa_with_custom_op(module)
     return module

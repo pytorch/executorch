@@ -49,7 +49,7 @@ def _generate_token_with_kv_cache(args, model, prompt_tokens):
             input_ids=prompt_tokens[:, input_pos : input_pos + 1],
         )
 
-    current_token = torch.argmax(result[:, -1, :], dim=-1).item()
+    current_token = torch.argmax(result, dim=-1).item()
     print(f" {current_token}", end="", flush=True)
     generated_tokens = [current_token]
 
@@ -57,7 +57,7 @@ def _generate_token_with_kv_cache(args, model, prompt_tokens):
         result = model.forward(
             input_ids=torch.tensor([[current_token]], dtype=torch.long),
         )
-        current_token = torch.argmax(result[:, -1, :], dim=-1).item()
+        current_token = torch.argmax(result, dim=-1).item()
         print(f" {current_token}", end="", flush=True)
         generated_tokens.append(current_token)
 

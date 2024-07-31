@@ -109,7 +109,7 @@ class TestEmit(unittest.TestCase):
         value = typing.cast(schema.Tensor, values[value_index].val)
         self.assertIsInstance(value, schema.Tensor)
 
-        self.assertEqual(value.constant_buffer_idx, exp_buffer_idx)
+        self.assertEqual(value.data_buffer_idx, exp_buffer_idx)
 
         if not value.allocation_info:
             self.assertIsNone(exp_mem_id)
@@ -810,7 +810,7 @@ class TestEmit(unittest.TestCase):
             < non_const_buffer_size_without_const_prop_pass[1]
         )
 
-    # cant compare plans directly with __eq__ because of the plan names, and constant_buffer_idx in tensor values
+    # cant compare plans directly with __eq__ because of the plan names, and data_buffer_idx in tensor values
     def _compare_execution_plans(
         self, plan_single: ExecutionPlan, plan_merged: ExecutionPlan
     ) -> None:
