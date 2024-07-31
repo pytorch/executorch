@@ -770,7 +770,7 @@ class _Emitter(torch.fx.Interpreter):
         # Increment iter_idx to mark that we have completed an iteration.
         op_index, op = self._get_operator(
             name="executorch_prim::add",
-            overload="int",
+            overload="Scalar",
         )
         kernel = Instruction(
             KernelCall(
@@ -787,7 +787,7 @@ class _Emitter(torch.fx.Interpreter):
         # section.
         op_index, op = self._get_operator(
             name="executorch_prim::eq",
-            overload="int",
+            overload="Scalar",
         )
         kernel = Instruction(
             KernelCall(
@@ -809,7 +809,7 @@ class _Emitter(torch.fx.Interpreter):
         # Reset iter_idx in case we plan to run the model again.
         op_index, op = self._get_operator(
             name="executorch_prim::sub",
-            overload="int",
+            overload="Scalar",
         )
         kernel = Instruction(
             KernelCall(
