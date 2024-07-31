@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -664,3 +664,21 @@ def _tosa_refmodel_loglevel(loglevel: int) -> str:
     }
     clamped_logging_level = max(min(loglevel // 10 * 10, 50), 0)
     return loglevel_map[clamped_logging_level]
+
+
+def corstone300_installed() -> bool:
+    cmd = ["FVP_Corstone_SSE-300_Ethos-U55", "--version"]
+    try:
+        _run_cmd(cmd, check=True)
+    except:
+        return False
+    return True
+
+
+def corstone320_installed() -> bool:
+    cmd = ["FVP_Corstone_SSE-320", "--version"]
+    try:
+        _run_cmd(cmd, check=True)
+    except:
+        return False
+    return True

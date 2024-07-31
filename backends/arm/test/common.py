@@ -1,4 +1,4 @@
-# Copyright 2024 Arm Limited and/or its affiliates.
+# Copyright 2024-2025 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -9,12 +9,16 @@ import os
 
 import tempfile
 from datetime import datetime
-from pathlib import Path
 
+from pathlib import Path
+from typing import Any
+
+import pytest
 from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 
 from executorch.backends.arm.test.conftest import is_option_enabled
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from runner_utils import corstone300_installed, corstone320_installed
 
 
 def get_time_formatted_path(path: str, log_prefix: str) -> str:
@@ -185,3 +189,41 @@ def get_target_board(compile_spec: list[CompileSpec]) -> str | None:
             elif "u85" in flags:
                 return "corstone-320"
     return None
+
+
+u55_fvp_mark = pytest.mark.skipif(
+    not corstone300_installed(), reason="Did not find Corstone-300 FVP on path"
+)
+""" Marks a test as running on Ethos-U55 FVP, e.g. Corstone 300. Skips the test if this is not installed."""
+
+u85_fvp_mark = pytest.mark.skipif(
+    not corstone320_installed(), reason="Did not find Corstone-320 FVP on path"
+)
+""" Marks a test as running on Ethos-U85 FVP, e.g. Corstone 320. Skips the test if this is not installed."""
+
+
+def parametrize(
+    arg_name: str, test_data: dict[str, Any], xfails: dict[str, str] = None
+):
+    """
+    Custom version of pytest.mark.parametrize with some syntatic sugar and added xfail functionality
+        - test_data is expected as a dict of (id, test_data) pairs
+        - alllows to specifiy a dict of (id, failure_reason) pairs to mark specific tests as xfail
+    """
+    if xfails is None:
+        xfails = {}
+
+    def decorator_func(func):
+        pytest_testsuite = []
+        for id, test_parameters in test_data.items():
+            if id in xfails:
+                pytest_param = pytest.param(
+                    test_parameters, id=id, marks=pytest.mark.xfail(reason=xfails[id])
+                )
+            else:
+                pytest_param = pytest.param(test_parameters, id=id)
+            pytest_testsuite.append(pytest_param)
+
+        return pytest.mark.parametrize(arg_name, pytest_testsuite)(func)
+
+    return decorator_func
