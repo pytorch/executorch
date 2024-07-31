@@ -3,6 +3,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+
 import argparse
 
 import torch
@@ -45,7 +47,7 @@ def main(args) -> None:
             result = model.forward(
                 input_ids=tokens[:, input_pos : input_pos + 1],
             )
-        current_token = torch.argmax(result[:, -1, :], dim=-1).item()
+        current_token = torch.argmax(result, dim=-1).item()
 
         example_inputs = (
             torch.tensor([[current_token]], dtype=torch.long, requires_grad=False),

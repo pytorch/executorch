@@ -3,6 +3,8 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+
 import torch.nn
 from transformers import Phi3ForCausalLM
 
@@ -31,4 +33,4 @@ class Phi3Mini(torch.nn.Module):
             use_cache=True,
             return_dict=True,
             past_key_values=self.cache,
-        ).logits
+        ).logits[:, -1, :]

@@ -17,7 +17,7 @@ endif()
 
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
-  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
+  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
@@ -29,7 +29,7 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
 set(EXECUTORCH_SRCS_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/../../../../executorch_srcs.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/../../../executorch_srcs.cmake"
 )
 
 extract_sources(${EXECUTORCH_SRCS_FILE})
@@ -53,8 +53,8 @@ if(NOT EXECUTORCH_BUILD_XNNPACK)
   list(
     APPEND
     _custom_ops__srcs
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool_guard.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/threadpool/threadpool.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/threadpool/threadpool_guard.cpp"
   )
 else()
   list(APPEND custom_ops_libs xnnpack_backend)
@@ -64,7 +64,7 @@ add_library(custom_ops ${_custom_ops__srcs})
 
 target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(
-  custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include"
+  custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
 )
 target_link_libraries(
   custom_ops PUBLIC ${custom_ops_libs} executorch_no_prim_ops
@@ -88,7 +88,7 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   )
   target_include_directories(
     custom_ops_aot_lib
-    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include"
+    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
   )
   if(TARGET portable_lib)
     # If we have portable_lib built, custom_ops_aot_lib gives the ability to use
