@@ -5,7 +5,7 @@
 
 import numpy as np
 import serializer.tosa_serializer as ts
-import torch
+import torch.fx
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
     get_quant_arg_dtype,
@@ -130,6 +130,21 @@ def process_inputs_to_buffers(
     )
 
 
+def process_inputs_to_lifted_tensor_constants(
+    node: torch.fx.Node,
+    tosa_graph: ts.TosaSerializer,
+    edge_program: ExportedProgram,
+):
+    arg = TosaArg(node)
+    tensor_name = edge_program.graph_signature.inputs_to_lifted_tensor_constants[
+        arg.name
+    ]
+    tensor = edge_program.tensor_constants[tensor_name]
+    tensor_data = tensor.detach().numpy()
+
+    tosa_graph.addConst(tensor_data.shape, arg.dtype, tensor_data, name=arg.name)
+
+
 def process_placeholder(
     node: torch.fx.Node,
     tosa_graph: ts.TosaSerializer,
@@ -145,5 +160,11 @@ def process_placeholder(
         process_inputs_to_parameters(node, tosa_graph, edge_program)
     elif node.name in edge_program.graph_signature.inputs_to_buffers:
         process_inputs_to_buffers(node, tosa_graph, edge_program)
+    elif node.name in edge_program.graph_signature.inputs_to_lifted_tensor_constants:
+        process_inputs_to_lifted_tensor_constants(node, tosa_graph, edge_program)
+    elif node.name in edge_program.graph_signature.inputs_to_lifted_custom_objs:
+        raise NotImplementedError(
+            "Placeholder is of type 'lifted custom object' which is not supported."
+        )
     else:
-        raise RuntimeError(f"Unknown placeholder {node.name}")
+        raise RuntimeError(f"Placeholder '{node.name}' is of unknown type.")
