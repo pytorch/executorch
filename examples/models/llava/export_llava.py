@@ -45,15 +45,17 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 class LlavaEdgeManager(LLMEdgeManager):
+    def __init__(self, *args, **kwargs):
+        LLMEdgeManager.__init__(self, *args, **kwargs)
+
     def capture_pre_autograd_graph(self) -> "LlavaEdgeManager":
-        dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             self.export_program = torch.export.export(
                 self.model,
                 self.example_inputs,
-                dynamic_shapes=dynamic_shape,
+                dynamic_shapes=self.dynamic_shapes,
                 strict=False,
             )
             self.pre_autograd_graph_module = self.export_program.module()
@@ -140,13 +142,21 @@ def export_image_encoder(llava, resized, dynamic_shapes):
         example_inputs=(resized,),
         dynamic_shapes=dynamic_shapes,
     ).capture_pre_autograd_graph()
+    quantizer = XNNPACKQuantizer()
+    q_config = get_symmetric_quantization_config()
+    quantizer.set_global(q_config)
+    prepared = prepare_pt2e(manager.pre_autograd_graph_module, quantizer)
+
+    # calibrate once
+    prepared(*manager.example_inputs)
+    converted = convert_pt2e(prepared)
 
     # lower to executorch
     with torch.no_grad():
         image_encoder_ep = torch.export.export(
-            manager.pre_autograd_graph_module,
+            converted,
             manager.example_inputs,
-            dynamic_shapes=manager.dynamic_shapes,
+            dynamic_shapes=dynamic_shapes,
         )
     return image_encoder_ep
 
