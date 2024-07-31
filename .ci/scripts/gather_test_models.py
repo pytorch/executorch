@@ -35,9 +35,11 @@ CUSTOM_TIMEOUT = {
     # Just some examples on how custom timeout can be set
     "linux": {
         "mobilebert": 90,
+        "emformer_predict": 360,
     },
     "macos": {
         "mobilebert": 90,
+        "emformer_predict": 360,
     },
 }
 
@@ -84,7 +86,11 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     """
     if event == "pull_request":
         return model in ["mv3", "vit"]
-    return True
+    elif event == "push":
+        # 'emformer_predict' is running super slow. Only run it periodically
+        return model not in ["emformer_predict"]
+    else:
+        return True
 
 
 def model_should_run_on_target_os(model: str, target_os: str) -> bool:
