@@ -37,10 +37,11 @@ from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGenera
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
+
+from executorch.exir.passes.memory_format_ops_pass import DimOrderOpsRevertPass
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
-
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
@@ -1676,3 +1677,100 @@ class TestPasses(unittest.TestCase):
         )
         new_ep = constant_prop_pass(edge_manager._edge_programs["forward"])
         _ = copy.deepcopy(new_ep.module_call_graph)
+
+    def test_dim_order_revert_pass(self) -> None:
+        aten_op_str = "torch.ops.aten._to_copy.default"
+        edge_aten_op_str = "executorch_exir_dialects_edge__ops_aten__to_copy_default"
+        edge_dim_order_op_str = "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
+
+        class Module(torch.nn.Module):
+            """
+            A simple module that has a single to op that converts to channels last and then back to contiguous.
+            Assuming contiguous input.
+            """
+
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.to(memory_format=torch.channels_last).to(
+                    memory_format=torch.contiguous_format
+                ) + x.to(memory_format=torch.channels_last).to(
+                    memory_format=torch.contiguous_format
+                )
+
+            @staticmethod
+            def to_copy_count():
+                return 4
+
+        def _do_checks(
+            test_str: str, allowed: str, allowed_count: int, not_allowed_list: List[str]
+        ) -> None:
+            for not_allowed in not_allowed_list:
+                FileCheck().check_count(allowed, allowed_count, exactly=True).check_not(
+                    not_allowed
+                ).run(test_str)
+
+        m = Module()
+        n = m.to_copy_count()
+        input = torch.randn([2, 3, 4, 5]).to(memory_format=torch.contiguous_format)
+
+        # 1. vanilla export, no edge ops
+        ep = export(
+            m,
+            (input,),
+        )
+        _do_checks(
+            ep.graph_module.code,
+            aten_op_str,
+            n,
+            [edge_aten_op_str, edge_dim_order_op_str],
+        )
+
+        # 2a. to edge without dim orders, we should see edge aten ops but not dim order ops
+        edge_prog = to_edge(
+            ep, compile_config=exir.EdgeCompileConfig(_skip_dim_order=True)
+        )._edge_programs["forward"]
+        _do_checks(
+            edge_prog.graph_module.code,
+            edge_aten_op_str,
+            n,
+            [aten_op_str, edge_dim_order_op_str],
+        )
+
+        # 3a. expect no change after the pass, we should see edge aten ops but not dim order ops
+        new_res = DimOrderOpsRevertPass()(edge_prog.graph_module)
+        self.assertIsNotNone(new_res)
+        _do_checks(
+            new_res.graph_module.code,
+            edge_aten_op_str,
+            n,
+            [aten_op_str, edge_dim_order_op_str],
+        )
+
+        # 2b. let's try with dim order enabled, we should see edge dim order ops but not edge aten ops
+        edge_prog_dim_order = to_edge(
+            ep, compile_config=exir.EdgeCompileConfig(_skip_dim_order=False)
+        )._edge_programs["forward"]
+        _do_checks(
+            edge_prog_dim_order.graph_module.code,
+            edge_dim_order_op_str,
+            n,
+            [aten_op_str, edge_aten_op_str],
+        )
+
+        # 3b. expect edge aten ops after the pass, we should see not see the edge dim order ops
+        new_res_dim_order = DimOrderOpsRevertPass()(edge_prog_dim_order.graph_module)
+        self.assertIsNotNone(new_res_dim_order)
+        _do_checks(
+            new_res_dim_order.graph_module.code,
+            edge_aten_op_str,
+            n,
+            [aten_op_str, edge_dim_order_op_str],
+        )
+
+        output_no_dim_order = new_res.graph_module(input)
+        output_no_dim_order_revert = new_res_dim_order.graph_module(input)
+        self.assertTrue(
+            torch.allclose(output_no_dim_order[0], output_no_dim_order_revert[0])
+        )
