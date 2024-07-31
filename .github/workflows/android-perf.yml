@@ -15,7 +15,7 @@ on:
         description: Target devices to run benchmark
         required: false
         type: string
-        default: false
+        default: samsung_galaxy_s2x
       delegates:
         description: Backend delegates
         required: false
