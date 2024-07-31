@@ -8,9 +8,8 @@
 
 #include <limits>
 
-#include <executorch/examples/models/llama2/custom_ops/op_sdpa.h> // Declares the operator
+#include <executorch/extension/llm/custom_ops/op_sdpa.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
