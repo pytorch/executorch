@@ -19,6 +19,8 @@ from parameterized import parameterized
 
 
 class TestFull(unittest.TestCase):
+    """Tests the full op which creates a tensor of a given shape filled with a given value."""
+
     class Full(torch.nn.Module):
         # A single full op
         def forward(self):

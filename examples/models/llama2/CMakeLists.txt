@@ -86,7 +86,10 @@ endif()
 
 # custom ops library
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  add_subdirectory(custom_ops)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/custom_ops
+    ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/custom_ops
+  )
 endif()
 
 # llama_runner library
@@ -216,7 +219,11 @@ endif()
 
 add_executable(llama_main ${_srcs})
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
+  if(APPLE)
+    target_link_options(llama_main PRIVATE "LINKER:-dead_strip")
+  else()
+    target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
+  endif()
 endif()
 
 target_include_directories(llama_main PUBLIC ${_common_include_directories})

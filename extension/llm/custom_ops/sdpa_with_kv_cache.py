@@ -8,6 +8,8 @@
 # C++ APIs for registration so here we need to import the shared library.
 # This is only needed for OSS.
 
+# pyre-unsafe
+
 import logging
 from pathlib import Path
 

@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/models/llama2/custom_ops/op_sdpa.h>
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
+#include <executorch/extension/llm/custom_ops/op_sdpa.h>
 
 #include <torch/library.h>
 

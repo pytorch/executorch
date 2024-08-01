@@ -17,6 +17,8 @@ from parameterized import parameterized
 
 
 class TestSimpleAdd(unittest.TestCase):
+    """Tests a single add op, x+x and x+y."""
+
     class Add(torch.nn.Module):
         test_parameters = [
             (torch.FloatTensor([1, 2, 3, 5, 7]),),

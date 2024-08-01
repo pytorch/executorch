@@ -94,9 +94,11 @@ class AnnotateQuantAttrs(ExportPass):
     def _annotate_quant_attrs(
         self, graph_module: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
+        # Keep track of const params that has been dequant, so it does not get
+        # dequant multiple times if the const param has more than 1 user
+        visited_const_param = set()
         for n in graph_module.graph.nodes:
             self._annotate_requant(n)
-
             # With fold_quant enabled, check if the input of dq op is quantized param.
             param = None
             if n.target in dq_ops:
@@ -106,7 +108,8 @@ class AnnotateQuantAttrs(ExportPass):
             quant_attrs = get_quant_attrs(self.edge_program, n)
             self._annotate_source_nodes(n, quant_attrs)
 
-            if param is not None:
+            if param is not None and n.args[0] not in visited_const_param:
+                visited_const_param.add(n.args[0])
                 self._dequant_fold_params(n, quant_attrs, param)
 
         return graph_module
