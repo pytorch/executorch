@@ -8,8 +8,11 @@
 
 // Runner stats for LLM
 #pragma once
-
+#include <cinttypes>
+#include <sstream>
 #include <string>
+
+#include <executorch/runtime/platform/log.h>
 namespace executorch::llm {
 
 struct Stats {
@@ -39,6 +42,22 @@ struct Stats {
 };
 
 static constexpr auto kTopp = 0.9f;
+
+inline std::string stats_to_json_string(const Stats& stats) {
+  std::stringstream ss;
+  ss << "{\"prompt_tokens\":" << stats.num_prompt_tokens << ","
+     << "\"generated_tokens\":" << stats.num_generated_tokens << ","
+     << "\"model_load_start_ms\":" << stats.model_load_start_ms << ","
+     << "\"model_load_end_ms\":" << stats.model_load_end_ms << ","
+     << "\"inference_start_ms\":" << stats.inference_start_ms << ","
+     << "\"inference_end_ms\":" << stats.inference_end_ms << ","
+     << "\"prompt_eval_end_ms\":" << stats.prompt_eval_end_ms << ","
+     << "\"first_token_ms\":" << stats.first_token_ms << ","
+     << "\"aggregate_sampling_time_ms\":" << stats.aggregate_sampling_time_ms
+     << "," << "\"SCALING_FACTOR_UNITS_PER_SECOND\":"
+     << stats.SCALING_FACTOR_UNITS_PER_SECOND << "}";
+  return ss.str();
+}
 
 inline void print_report(const Stats& stats) {
   printf("PyTorchObserver %s\n", stats_to_json_string(stats).c_str());
@@ -100,19 +119,4 @@ inline void print_report(const Stats& stats) {
           stats.SCALING_FACTOR_UNITS_PER_SECOND);
 }
 
-inline std::string stats_to_json_string(const Stats& stats) {
-  std::stringstream ss;
-  ss << "{\"prompt_tokens\":" << stats.num_prompt_tokens << ","
-     << "\"generated_tokens\":" << stats.num_generated_tokens << ","
-     << "\"model_load_start_ms\":" << stats.model_load_start_ms << ","
-     << "\"model_load_end_ms\":" << stats.model_load_end_ms << ","
-     << "\"inference_start_ms\":" << stats.inference_start_ms << ","
-     << "\"inference_end_ms\":" << stats.inference_end_ms << ","
-     << "\"prompt_eval_end_ms\":" << stats.prompt_eval_end_ms << ","
-     << "\"first_token_ms\":" << stats.first_token_ms << ","
-     << "\"aggregate_sampling_time_ms\":" << stats.aggregate_sampling_time_ms
-     << "," << "\"SCALING_FACTOR_UNITS_PER_SECOND\":"
-     << stats.SCALING_FACTOR_UNITS_PER_SECOND << "}";
-  return ss.str();
-}
 } // namespace executorch::llm
