@@ -13,8 +13,8 @@ from transformers import PretrainedConfig, StaticCache
 
 class ETStaticCache(StaticCache):
     """
-    Customized static cache implementation which overrides a few methods to make it exportable by PyTorch.
-    This can be removed once transformers support static cache properly for Phi3.
+    A customized static cache implementation, which overrides a few methods to make it exportable to ExecuTorch.
+    This can be removed once transformers supports static cache for Phi3 properly.
     """
 
     def __init__(
