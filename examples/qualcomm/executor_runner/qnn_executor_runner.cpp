@@ -260,7 +260,7 @@ int main(int argc, char** argv) {
       // This can error if the outputs are already pre-allocated. Ignore
       // this error because it doesn't affect correctness, but log it.
       ET_LOG(
-          Error, "ignoring error from set_output_data_ptr(): 0x%" PRIx32, ret);
+          Info, "ignoring error from set_output_data_ptr(): 0x%" PRIx32, ret);
     }
   }
   ET_LOG(Info, "Inputs prepared.");
