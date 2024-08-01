@@ -27,6 +27,7 @@ CUSTOM_RUNNERS = {
         # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
         "dl3": "linux.12xlarge",
         "emformer_join": "linux.12xlarge",
+        "emformer_predict": "linux.12xlarge",
     }
 }
 
