@@ -22,6 +22,7 @@ class Add(torch.nn.Module):
 
 
 class TestTagIOQuantPass(unittest.TestCase):
+    """Tests the TagIOQuantPass which tags q/dq nodes on model inputs and outputs to not include them in our partitions."""
 
     def _tosa_BI_u55_pipeline(self, module: torch.nn.Module):
         (

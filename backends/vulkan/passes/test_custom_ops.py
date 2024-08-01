@@ -97,14 +97,15 @@ class TestCustomOps(unittest.TestCase):
             def __init__(self):
                 super().__init__()
 
-            def forward(self, height, width, stride, offset):
-                return torch.ops.et_vk.grid_priors(height, width, stride, offset)
+            def forward(self, x, stride, offset):
+                return torch.ops.et_vk.grid_priors(x, stride, offset)
 
         model = GridPriors()
-        sample_input = (2, 3, 4, 0.5)
+        sample_input = (torch.rand(2, 5, 2, 3), 4, 0.5)
         custom_out = model(*sample_input)
 
-        def calculate_expected_output(height, width, stride, offset):
+        def calculate_expected_output(x, stride, offset):
+            height, width = x.shape[-2:]
             shift_x = (torch.arange(0, width) + offset) * stride
             shift_y = (torch.arange(0, height) + offset) * stride
             shift_xx, shift_yy = torch.meshgrid(shift_y, shift_x)

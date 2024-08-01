@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/models/llama2/custom_ops/op_sdpa.h>
+#include <executorch/extension/llm/custom_ops/op_sdpa.h>
 
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 #include <executorch/kernels/optimized/vec/functional.h>
@@ -16,6 +16,7 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 #include <array>
+// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <vector>
 
 #ifdef ET_USE_THREADPOOL
@@ -698,7 +699,7 @@ void update_cache(
     const Tensor& projected_value,
     const Tensor& cache,
     int64_t start_pos,
-    int64_t seq_length) {
+    int64_t seq_length) { // NOLINT: unused parameter 'seq_length'
   ET_CHECK_MSG(
       projected_value.size(0) == 1,
       "projected_value must have batch size of 1");

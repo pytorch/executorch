@@ -22,7 +22,7 @@ def define_common_targets():
         compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
         visibility = [
             "//executorch/...",
-            "//executorch/examples/models/llama2/custom_ops/...",
+            "//executorch/extension/llm/custom_ops/...",
             "@EXECUTORCH_CLIENTS",
         ],
         # @lint-ignore BUCKLINT link_whole

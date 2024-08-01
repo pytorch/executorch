@@ -35,6 +35,7 @@ from executorch.extension.llm.export.partitioner_lib import (
 )
 
 from executorch.extension.llm.export.quantizer_lib import (
+    get_coreml_quantizer,
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
@@ -128,6 +129,11 @@ def build_args_parser() -> argparse.ArgumentParser:
             "qnn_8a8w",
             "qnn_16a16w",
             "qnn_16a4w",
+            "coreml_c4w",
+            "coreml_8a_c8w",
+            "coreml_8a_c4w",
+            "coreml_baseline_8a_c8w",
+            "coreml_baseline_8a_c4w",
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
@@ -416,6 +422,10 @@ def get_quantizer_and_quant_params(args):
             args.pt2e_quantize, args.quantization_mode
         )
         quantizers.append(qnn_quantizer)
+    if args.coreml and args.pt2e_quantize:
+        assert len(quantizers) == 0, "Should not enable both xnnpack / qnn and coreml"
+        coreml_quantizer = get_coreml_quantizer(args.pt2e_quantize)
+        quantizers.append(coreml_quantizer)
     logging.info(f"Applying quantizers: {quantizers}")
     return pt2e_quant_params, quantizers, quant_dtype
 
@@ -469,7 +479,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         modelname = f"mps_{modelname}"
 
     if args.coreml:
-        partitioners.append(get_coreml_partitioner(args.use_kv_cache))
+        coreml_partitioner = get_coreml_partitioner(
+            args.use_kv_cache, args.pt2e_quantize
+        )
+        partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
 
     if args.qnn:

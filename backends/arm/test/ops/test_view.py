@@ -25,6 +25,8 @@ from parameterized import parameterized
 
 
 class TestSimpleView(unittest.TestCase):
+    """Tests the view operation."""
+
     class View(torch.nn.Module):
 
         sizes = [10, 15, 50, 100]

@@ -32,7 +32,7 @@
  * SOFTWARE.
  */
 
-#include <executorch/examples/models/llama2/sampler/sampler.h>
+#include <executorch/extension/llm/sampler/sampler.h>
 
 namespace torch {
 namespace executor {
