@@ -364,10 +364,10 @@ Error defineTensor(
 
         // Block scales are preferably serialized as bf16 but can also be serialized as fp32 for
         // backwards compatability.
-        if (qparams->scale_bf16() != nullptr) {
+        /* if (qparams->scale_bf16() != nullptr) {
           scale_data = static_cast<const uint16_t*>(qparams->scale_bf16()->data());
           scale_numel = qparams->scale_bf16()->size();
-        } else { 
+        } else { */ 
           // Read fp32 scales, convert to bf16.
           // scale_conv_buffer = std::make_unique<uint16_t[]>(qparams->scale()->size());
           scale_conv_buffer = (uint16_t*) malloc(qparams->scale()->size() * sizeof(uint16_t));
@@ -392,7 +392,7 @@ Error defineTensor(
 
           scale_data = scale_conv_buffer; // scale_conv_buffer.get();
           scale_numel = qparams->scale()->size();
-        }
+        // }
 
         ET_CHECK_OR_RETURN_ERROR(
             scale_numel == output_channels * input_channels / group_size,
