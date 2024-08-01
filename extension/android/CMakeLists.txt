@@ -139,3 +139,59 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     target_link_libraries(executorch_llama_jni re2::re2)
   endif()
 endif()
+
+if(EXECUTORCH_BUILD_MULTIMODAL_JNI)
+  add_subdirectory(${EXECUTORCH_ROOT}/examples/models/llava/runner llava_runner)
+  target_link_options_shared_lib(quantized_ops_lib)
+
+  if(TARGET pthreadpool)
+    set(MULTIMODAL_JNI_SRCS jni/jni_layer_multimodal.cpp
+                       ../../backends/xnnpack/threadpool/cpuinfo_utils.cpp
+    )
+  else()
+    set(MULTIMODAL_JNI_SRCS jni/jni_layer_multimodal.cpp)
+  endif()
+  add_library(executorch_multimodal_jni SHARED ${MULTIMODAL_JNI_SRCS})
+  if(TARGET pthreadpool)
+    target_compile_definitions(executorch_multimodal_jni PRIVATE ET_USE_THREADPOOL=1)
+    target_include_directories(
+      executorch_multimodal_jni
+      PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/xnnpack/third-party/cpuinfo/include
+    )
+    target_include_directories(
+      executorch_multimodal_jni
+      PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../backends/xnnpack/third-party/pthreadpool/include
+    )
+  endif()
+  target_include_directories(
+    executorch_multimodal_jni PRIVATE ${_common_include_directories}
+  )
+  target_link_libraries(
+    executorch_multimodal_jni
+    ${link_libraries}
+    multimodal_runner
+    custom_ops
+    cpublas
+    eigen_blas
+    quantized_kernels
+    quantized_ops_lib
+  )
+  target_compile_options(executorch_multimodal_jni PUBLIC ${_common_compile_options})
+  if(EXECUTORCH_USE_TIKTOKEN)
+    set(ABSL_ENABLE_INSTALL ON)
+    set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    add_subdirectory(
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/abseil-cpp
+      ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
+    )
+    add_subdirectory(
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/re2
+      ${CMAKE_CURRENT_BINARY_DIR}/re2
+    )
+    set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
+    target_link_libraries(executorch_multimodal_jni re2::re2)
+  endif()
+endif()

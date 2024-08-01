@@ -8,9 +8,15 @@ import logging
 from argparse import ArgumentParser, BooleanOptionalAction
 
 import torch
+from executorch.backends.xnnpack.partition.config.xnnpack_config import (
+    ConfigPrecisionType,
+)
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
     # XnnpackFloatingPointPartitioner,
+)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
+    XnnpackPartitioner,
 )
 from executorch.examples.models.llama2.export_llama_lib import (
     build_args_parser,
@@ -23,6 +29,7 @@ from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
 from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.exir.program._program import _to_edge_transform_and_lower
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from model import LlavaModel
@@ -38,15 +45,17 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 class LlavaEdgeManager(LLMEdgeManager):
+    def __init__(self, *args, **kwargs):
+        LLMEdgeManager.__init__(self, *args, **kwargs)
+
     def capture_pre_autograd_graph(self) -> "LlavaEdgeManager":
-        dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             self.export_program = torch.export.export(
                 self.model,
                 self.example_inputs,
-                dynamic_shapes=dynamic_shape,
+                dynamic_shapes=self.dynamic_shapes,
                 strict=False,
             )
             self.pre_autograd_graph_module = self.export_program.module()
@@ -133,13 +142,21 @@ def export_image_encoder(llava, resized, dynamic_shapes):
         example_inputs=(resized,),
         dynamic_shapes=dynamic_shapes,
     ).capture_pre_autograd_graph()
+    quantizer = XNNPACKQuantizer()
+    q_config = get_symmetric_quantization_config()
+    quantizer.set_global(q_config)
+    prepared = prepare_pt2e(manager.pre_autograd_graph_module, quantizer)
+
+    # calibrate once
+    prepared(*manager.example_inputs)
+    converted = convert_pt2e(prepared)
 
     # lower to executorch
     with torch.no_grad():
         image_encoder_ep = torch.export.export(
-            manager.pre_autograd_graph_module,
+            converted,
             manager.example_inputs,
-            dynamic_shapes=manager.dynamic_shapes,
+            dynamic_shapes=dynamic_shapes,
         )
     return image_encoder_ep
 
@@ -201,22 +218,27 @@ def main():
 
     token_embedding_ep = export_token_embedding(llava, prompt_before_image)
 
-    edge_ep = to_edge(
+    lowered_and_edge = _to_edge_transform_and_lower(
         {
             "image_encoder": image_encoder_ep,
             "token_embedding": token_embedding_ep,
             "text_model": text_model_ep,
         },
+        partitioner={
+            "image_encoder": [
+                XnnpackPartitioner(config_precisions=ConfigPrecisionType.FP32)
+            ],
+            "text_model": [
+                XnnpackPartitioner(
+                    config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+                    per_op_mode=True,
+                )
+            ],
+        },
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
 
-    executorch_program = edge_ep.to_backend(
-        {
-            # TODO: Fix Xnnpack partitioner issue on image encoder.
-            # "image_encoder": XnnpackFloatingPointPartitioner(),
-            "text_model": XnnpackDynamicallyQuantizedPartitioner(),
-        }
-    ).to_executorch()
+    executorch_program = lowered_and_edge.to_executorch()
 
     with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)

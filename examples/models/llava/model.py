@@ -339,7 +339,21 @@ class LlavaModel(EagerModelBase):
             / self.image_processor.crop_size["height"]
         )
         output_size = (int(imagr.shape[1] / ratio), int(imagr.shape[2] / ratio))
-        self.resized_image = (torchvision.transforms.Resize(size=output_size)(imagr),)
+        img = torchvision.transforms.Resize(size=output_size)(imagr)
+        # pad it to 336x336 so that export is happy
+        w = max(img.shape[1], img.shape[2])
+        # pad the image with median rgb value, to make a square
+        v_padding = (w - img.shape[1]) / 2
+        h_padding = (w - img.shape[2]) / 2
+        l_pad = int(math.ceil(h_padding))
+        t_pad = int(math.ceil(v_padding))
+        r_pad = int(math.floor(h_padding))
+        b_pad = int(math.floor(v_padding))
+        self.resized_image = (F.pad(
+            img,
+            padding=(l_pad, t_pad, r_pad, b_pad),
+            fill=tuple(int(x * 255) for x in self.image_processor.image_mean),
+        ), )
         return self.resized_image
 
     def get_inputs_for_prefill(self):
@@ -371,7 +385,7 @@ class LlavaModel(EagerModelBase):
         return self._get_image_dynamic_shapes()
 
     def _get_image_dynamic_shapes(self):
-        height = Dim("height", min=8, max=336)
+        height = Dim("height", min=28, max=336)
         width = Dim("width", min=28, max=336)
         dynamic_shapes = [{1: height, 2: width}]
         return dynamic_shapes
