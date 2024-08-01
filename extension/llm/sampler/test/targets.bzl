@@ -13,7 +13,7 @@ def define_common_targets():
             "test_sampler.cpp",
         ],
         deps = [
-            "//executorch/examples/models/llama2/sampler:sampler_aten",
+            "//executorch/extension/llm/sampler:sampler_aten",
         ],
         xplat_deps = [
             "//caffe2:torch_mobile_all_ops_et",
