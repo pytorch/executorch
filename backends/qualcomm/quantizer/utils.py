@@ -784,6 +784,38 @@ def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> N
     )
 
 
+@register_annotator([torch.ops.aten.index.Tensor])
+def annotate_index(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_in_out_obs_sharing_op(node, quantization_config)
+    if not _is_annotated([node]):
+        input_qspec_map = {}
+        input = node.args[0]
+        input_qspec_map[input] = quantization_config.input_activation
+        node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+            input_qspec_map=input_qspec_map,
+            output_qspec=SharedQuantizationSpec((input, node)),
+            _annotated=True,
+        )
+
+
+@register_annotator(
+    [torch.ops.aten.index_put.default, torch.ops.aten.index_put_.default]
+)
+def annotate_index_put(node: Node, quantization_config: QuantizationConfig) -> None:
+    input = node.args[0]
+    value = node.args[2]
+
+    input_qspec_map = {}
+    input_qspec_map[input] = quantization_config.input_activation
+    input_qspec_map[value] = SharedQuantizationSpec((input, node))
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=SharedQuantizationSpec((input, node)),
+        _annotated=True,
+    )
+
+
 @register_annotator([torch.ops.aten.expand.default])
 def annotate_expand(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_in_out_obs_sharing_op(node, quantization_config)
