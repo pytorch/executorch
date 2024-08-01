@@ -110,8 +110,11 @@ class _ProgramState:
     # emitted graph modules, not any weights emitted from itself. This should speed up the lookup,
     # from O(N) to O(1)
     cached_spec_hash_values: Dict[str, int] = field(default_factory=dict)
+    cached_spec_mutable_hash_values: Dict[str, int] = field(default_factory=dict)
     # The 0 index is reserved to be pointed to by non-constant tensors, so add an empty placeholder.
     constant_buffer: List[Buffer] = field(default_factory=lambda: [Buffer(storage=b"")])
+    # The 0 index is reserved to be pointed to by non-constant tensors, so add an empty placeholder.
+    mutable_buffer: List[Buffer] = field(default_factory=lambda: [Buffer(storage=b"")])
     # Delegate data stored directly in the flatbuffer. Pointed to by BackendDelegateDataReference,
     # and should be copied to Program.backend_delegate_data.
     backend_delegate_data: List[BackendDelegateInlineData] = field(default_factory=list)
@@ -326,68 +329,83 @@ class _Emitter(torch.fx.Interpreter):
 
     def _tensor_spec_to_evalue(self, spec: TensorSpec) -> EValue:
         """Constructs an EValue from the given TensorSpec."""
-        if not spec.const:
-            if spec.mem_id is not None:
-                # Tensor is an activation.
-                self._internal_assert_emitter(
-                    isinstance(spec.mem_id, int) and spec.mem_id >= 0,
-                    self.node,
-                    "Non-const tensor should be an activation tensor",
-                )
 
-                self._internal_assert_emitter(
-                    isinstance(spec.mem_offset, int) and spec.mem_offset >= 0,
-                    self.node,
-                    "Non-const tensor should be an activation tensor",
+        allocation_info = None
+        buffer_idx = 0
+
+        # Need to memory plan
+        # Some users set mem_id on all tensors and then rely on the
+        # default algos to set offsets, so need to check both.
+        if spec.mem_id is not None and spec.mem_offset is not None:
+            # Tensor is an activation.
+            self._internal_assert_emitter(
+                isinstance(spec.mem_id, int) and spec.mem_id >= 0,
+                self.node,
+                f"Non-const tensor should be an activation tensor: mem_id {spec.mem_id}",
+            )
+
+            self._internal_assert_emitter(
+                isinstance(spec.mem_offset, int) and spec.mem_offset >= 0,
+                self.node,
+                f"Non-const tensor should be an activation tensor: mem_offset {spec.mem_offset}",
+            )
+            allocation_info = make_allocation_info(spec.mem_id, spec.mem_offset)
+
+        if spec.const:
+            # Tensor with a blob we need to serialize. May not actually be constant at runtime
+            # if it's a weight with an associated gradient
+            spec_array_type = (
+                ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
+            )
+
+            buffer_data = (
+                bytes(
+                    ctypes.cast(
+                        typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
+                        ctypes.POINTER(spec_array_type),
+                    ).contents
                 )
-                allocation_info = make_allocation_info(spec.mem_id, spec.mem_offset)
+                if spec.allocated_memory != 0
+                else b""
+            )
+
+            hashed = hashlib.sha256(buffer_data).hexdigest()
+
+            if allocation_info:
+                buffer_idx = self.program_state.cached_spec_mutable_hash_values.get(
+                    hashed, -1
+                )
             else:
-                # Tensor is an input/placeholder.
-                allocation_info = None
+                buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
 
-            # For non-constant tensors, constant_buffer = 0.
-            return EValue(make_tensor_value(0, allocation_info, spec))
+            # Haven't seen this constant before
+            if buffer_idx == -1:
+                # Update buffer_idx to point to the end of the list where we are adding the new buffer.
+                buffer = Buffer(storage=buffer_data)
+                self.program_state.allocated_specs.append(spec)
+                # +1 because the first buffer location is reserved
 
-        # Constant tensor. Reserve a buffer for the constant tensor.
-        spec_array_type = (
-            ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
-        )
+                if allocation_info:
+                    buffer_idx = len(self.program_state.mutable_buffer)
+                    self.program_state.cached_spec_mutable_hash_values[hashed] = (
+                        buffer_idx
+                    )
+                    self.program_state.mutable_buffer.append(buffer)
+                else:
+                    buffer_idx = len(self.program_state.constant_buffer)
+                    self.program_state.cached_spec_hash_values[hashed] = buffer_idx
+                    self.program_state.constant_buffer.append(buffer)
 
-        buffer_data = (
-            bytes(
-                ctypes.cast(
-                    typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
-                    ctypes.POINTER(spec_array_type),
-                ).contents
-            )
-            if spec.allocated_memory != 0
-            else b""
-        )
-
-        hashed = hashlib.sha256(buffer_data).hexdigest()
-
-        buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
-
-        # Haven't seen this constant before
-        if buffer_idx == -1:
-            # Update buffer_idx to point to the end of the list where we are adding the new buffer.
-            buffer = Buffer(storage=buffer_data)
-            buffer_idx = len(self.program_state.constant_buffer)
-            self.program_state.allocated_specs.append(spec)
-            # +1 because the first buffer location is reserved
-            self.program_state.cached_spec_hash_values[hashed] = buffer_idx
-            self.program_state.constant_buffer.append(buffer)
-
-        if spec.const and spec.nbytes() != len(buffer_data):
-            raise InternalError(
-                self._emit_node_specific_error(
-                    self.node,
-                    f"Tensor spec has buffer of size {len(buffer_data)}, but expected nbytes of {spec.nbytes()}",
+            if spec.const and spec.nbytes() != len(buffer_data):
+                raise InternalError(
+                    self._emit_node_specific_error(
+                        self.node,
+                        f"Tensor spec has buffer of size {len(buffer_data)}, but expected nbytes of {spec.nbytes()}",
+                    )
                 )
-            )
 
         # For constant tensors, allocation_info = None.
-        return EValue(make_tensor_value(buffer_idx, None, spec))
+        return EValue(make_tensor_value(buffer_idx, allocation_info, spec))
 
     def _get_list_tuple_jit_type(
         self, val: Union[Tuple[_Argument], List[_Argument]]

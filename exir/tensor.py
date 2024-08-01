@@ -326,11 +326,6 @@ def make_tensor_value(
         else:
             return x
 
-    internal_assert(
-        not spec.const or not allocation_info,
-        "We only create non-constant tensors as the constant tensors are directly written to buffer",
-    )
-
     tensor_size = to_list(spec.shape)
     tensor_dim_order = to_list(spec.dim_order)
 
