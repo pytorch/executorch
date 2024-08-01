@@ -74,6 +74,6 @@ void grid_priors(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 }
 
 REGISTER_OPERATORS {
-  VK_REGISTER_OP(grid_priors.default, grid_priors);
+  VK_REGISTER_OP(et_vk.grid_priors.default, grid_priors);
 }
 } // namespace vkcompute
