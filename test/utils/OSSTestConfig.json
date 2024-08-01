@@ -1,5 +1,11 @@
 { "tests": [
     {
+        "directory": "examples/models/llama2/sampler/test",
+        "sources": [
+            "test_sampler.cpp"
+        ]
+    },
+    {
         "directory": "extension/data_loader/test",
         "sources": [
             "buffer_data_loader_test.cpp",
