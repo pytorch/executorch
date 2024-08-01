@@ -308,7 +308,7 @@ def make_allocation_info(mem_id: int, mem_offset: int) -> schema.AllocationDetai
 
 
 def make_tensor_value(
-    constant_buffer_idx: int,
+    data_buffer_idx: int,
     allocation_info: Optional[schema.AllocationDetails],
     spec: TensorSpec,
 ) -> schema.Tensor:
@@ -341,7 +341,7 @@ def make_tensor_value(
         sizes=tensor_size,
         dim_order=tensor_dim_order,
         requires_grad=spec.requires_grad,
-        constant_buffer_idx=constant_buffer_idx,
+        data_buffer_idx=data_buffer_idx,
         allocation_info=allocation_info,
         layout=layout_enum(spec.layout),
         shape_dynamism=spec.shape_dynamism,

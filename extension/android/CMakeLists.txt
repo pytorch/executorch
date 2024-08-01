@@ -80,7 +80,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   )
 
   set(CUSTOM_OPS_PATH
-      ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/custom_ops/libcustom_ops.a
+      ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/custom_ops/libcustom_ops.a
   )
   add_library(custom_ops STATIC IMPORTED)
   set_property(TARGET custom_ops PROPERTY IMPORTED_LOCATION ${CUSTOM_OPS_PATH})
