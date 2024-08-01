@@ -11,7 +11,7 @@ import math
 import re
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 import torch
@@ -318,6 +318,54 @@ class LlavaModel(EagerModelBase):
         # set input to None and initialize them lazily
         self.input = None
         self.resized_image = None
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        images: Optional[torch.FloatTensor] = None,
+        image_sizes: Optional[List[List[int]]] = None,
+        return_dict: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+    ):
+        """
+        An adapter to the llava_llama.forward(), making it compatible with latest HF interface.
+        """
+        # Do not pass 'cache_position' down to forward() as this old third-party llava can not recongize it.
+        return self.model.forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            labels=labels,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+    @torch.no_grad()
+    def generate(
+        self,
+        inputs: Optional[torch.Tensor] = None,
+        images: Optional[torch.Tensor] = None,
+        image_sizes: Optional[torch.Tensor] = None,
+        **kwargs,
+    ):
+        """
+        A adapter to the llava_llama.generate(), make it compatible with latest HF interface.
+        """
+        return self.model.generate(
+            inputs=inputs, images=images, image_sizes=image_sizes, **kwargs
+        )
 
     def get_eager_model(self):
         model = Llava(

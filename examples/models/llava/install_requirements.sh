@@ -26,19 +26,10 @@ fi
 
 # not included in the pip install package, but needed in llava
 pip install protobuf
-
-# bitsandbytes depends on numpy 1.x, which is not compatible with numpy 2.x.
-# Reinstall bitsandbytes to make it compatible.
-pip install bitsandbytes -I
+pip install triton==3.0.0
 
 # The deps of llava can have different versions than deps of ExecuTorch.
 # For example, torch version required from llava is older than ExecuTorch.
 # To make both work, recover ExecuTorch's original dependencies by rerunning
 # the install_requirements.sh. Notice this won't install executorch.
 bash -x ./install_requirements.sh --pybind xnnpack
-
-# Newer transformer (4.38) will give TypeError: LlavaLlamaForCausalLM.forward() got an unexpected keyword argument 'cache_position'
-pip install timm==0.6.13
-pip install transformers==4.37.2
-
-pip list

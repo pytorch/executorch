@@ -36,7 +36,7 @@ class TestLlava(unittest.TestCase):
         # source of truth, using HF llava
         preprocessed = self.llava.image_preprocess(self.resized)
         with torch.inference_mode():
-            output_ids = self.llava_model.model.generate(
+            output_ids = self.llava_model.generate(
                 self.llava_model.input_ids,
                 images=preprocessed,
                 image_sizes=[preprocessed.size],
