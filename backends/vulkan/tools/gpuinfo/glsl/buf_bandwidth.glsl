@@ -26,6 +26,11 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 layout(constant_id = 3) const int niter = 1;
 layout(constant_id = 4) const int nvec = 1;
 layout(constant_id = 5) const int local_group_size = 1;
+// The address mask works as a modulo because x % 2^n == x & (2^n - 1).
+// This will help us limit address accessing to a specific set of unique
+// addresses depending on the access size we want to measure.
+layout(constant_id = 6) const int addr_mask = 1;
+layout(constant_id = 7) const int workgroup_width = 1;
 
 $if MEMTYPE == "shared":
     shared vec4 A[nvec];
@@ -36,15 +41,7 @@ void main() {
         A[gl_LocalInvocationID[0]][0] = gl_LocalInvocationID[0];
         memoryBarrierShared();
 
-    // The address mask works as a modulo because x % 2^n == x & (2^n - 1).
-    // This will help us limit address accessing to a specific set of unique
-    // addresses depending on the access size we want to measure.
-    const int addr_mask = nvec - 1;
     vec4 sum = vec4(0);
-
-    // This is to distribute the accesses to unique addresses across the workgroups, once the
-    // size of the access excedes the workgroup width.
-    const uint workgroup_width = local_group_size * niter * ${NUNROLL};
     uint offset = (gl_WorkGroupID[0] * workgroup_width  + gl_LocalInvocationID[0]) & addr_mask;
 
     int i = 0;

@@ -164,6 +164,15 @@ void tex_bandwidth(const App& app) {
       // Number of texels that fit in this iteration
       const uint32_t ntexel_access = access_size / VEC_SIZE;
 
+      // The address mask works as a modulo because x % 2^n == x & (2^n - 1).
+      // This will help us limit address accessing to a specific set of unique
+      // addresses depending on the access size we want to measure.
+      const uint32_t addr_mask = ntexel_access - 1;
+
+      // This is to distribute the accesses to unique addresses across the
+      // workgroups, once the size of the access excedes the workgroup width.
+      const uint32_t workgroup_width = local_x * NITER * NUNROLL;
+
       StorageBuffer out_buf(
           context(), vkapi::kFloat, VEC_WIDTH * app.nthread_logic);
       vkapi::PipelineBarrier pipeline_barrier{};
@@ -174,7 +183,11 @@ void tex_bandwidth(const App& app) {
             pipeline_barrier,
             {global_x, 1, 1},
             {local_x, 1, 1},
-            {SV(NITER), SV(ntexel_access), SV(local_x), SV(dim)},
+            {SV(NITER),
+             SV(ntexel_access),
+             SV(local_x),
+             SV(addr_mask),
+             SV(workgroup_width)},
             VK_NULL_HANDLE,
             0,
             in_tensor.image(),
