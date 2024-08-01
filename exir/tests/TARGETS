@@ -102,6 +102,17 @@ python_unittest(
 )
 
 python_unittest(
+    name = "joint_graph",
+    srcs = [
+        "test_joint_graph.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_unittest(
     name = "error",
     srcs = [
         "test_error.py",

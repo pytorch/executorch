@@ -54,6 +54,7 @@ from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
+from executorch.exir.passes.weights_to_outputs_pass import weights_to_outputs_pass
 from torch import fx
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -69,6 +70,7 @@ __all__ = [
     "MemoryPlanningPass",
     "HintBasedSymShapeEvalPass",
     "insert_write_back_for_buffers_pass",
+    "weights_to_outputs_pass",
 ]
 
 Argument = Optional[

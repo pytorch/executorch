@@ -265,3 +265,4 @@ class Program:
     backend_delegate_data: List[BackendDelegateInlineData]
     segments: List[DataSegment]
     constant_segment: SubsegmentOffsets
+    mutable_data_segments: Optional[List[SubsegmentOffsets]] = None
