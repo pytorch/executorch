@@ -10,18 +10,20 @@
 
 #include <sentencepiece_processor.h>
 
+#include <executorch/runtime/platform/log.h>
+
+namespace torch::executor {
+
 // TODO(lunwenh): Add unit tests
 class SentencePieceTokenizer {
  public:
   SentencePieceTokenizer(const std::string& filePath) {
     const auto status = processor_.Load(filePath);
-    if (!status.ok()) {
-      std::ostringstream errorMessageStream;
-      errorMessageStream << "Failed to load SentencePiece model from "
-                         << filePath << " with error " << status.ToString();
-      throw std::runtime_error(errorMessageStream.str());
-    }
-    processor_.SetEncodeExtraOptions("bos");
+    ET_CHECK_MSG(
+        status.ok(),
+        "Failed to load SentencePiece model from %s with error %s",
+        filePath.c_str(),
+        status.ToString().c_str());
   }
 
   std::vector<int64_t> encode(const std::string& piece) {
@@ -41,3 +43,5 @@ class SentencePieceTokenizer {
  private:
   sentencepiece::SentencePieceProcessor processor_;
 };
+
+} // namespace torch::executor
