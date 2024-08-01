@@ -7,6 +7,7 @@
 # pyre-strict
 
 import logging
+from typing import Optional
 
 import torch
 
@@ -36,16 +37,24 @@ from torch.export import export
 from torch.export.exported_program import ExportedProgram
 
 
-def quantize_pt2(
+# Note: this is not meant as a primary API since it can create inconsistencies
+# if the quantizer here is different from the quantizer used to convert. It is
+# however useful for unit tests to separate the converted model from the fused
+# model, to be able to get reference numerics.
+# If this does not apply, please use quantize_and_fuse_pt2 instead.
+def convert_pt2(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
+    quantizer: CadenceQuantizer,
 ) -> torch.fx.GraphModule:
     """
-    Instantiate the CadenceQuantizer (PTQ), prepare, convert and fuse the model.
-    Returns a GraphModule with the quantized model.
+    Prepare and convert a model using the given quantizer.
+    The quantizer must be supplied and be the same as the one used to
+    fuse the model later, if applicable. If you do not expect that behavior,
+    please use quantize_and_fuse_pt2 instead, which will instantiate a
+    default quantizer for you if needed.
+    Returns a GraphModule with the converted model.
     """
-    # Quantizer
-    quantizer = CadenceQuantizer()
 
     # Export with dynamo
     model_exp = capture_pre_autograd_graph(model, inputs)
@@ -62,12 +71,54 @@ def quantize_pt2(
     # Convert
     converted_model = convert_pt2e(prepared_model)
 
+    return converted_model
+
+
+# Note: this is not meant as a primary API since it can create inconsistencies
+# if the quantizer here is different from the quantizer used to convert. It is
+# however useful for unit tests to separate the converted model from the fused
+# model, to be able to get reference numerics.
+# If this does not apply, please use quantize_and_fuse_pt2 instead.
+def fuse_pt2(
+    converted_graph_module: torch.fx.GraphModule,
+    quantizer: CadenceQuantizer,
+) -> torch.fx.GraphModule:
+    """
+    Fuse a converted graph module using the given quantizer.
+    The quantizer must be the same as the one used to convert the model.
+    If you do not expect that behavior, please use quantize_and_fuse_pt2 instead,
+    which will instantiate a default quantizer for you if needed.
+    Returns a GraphModule with the fused model.
+    """
     # Get patterns and apply fusion of dq -> op -> q to qop
     # pyre-ignore[16]: no attribute
     patterns = [q.pattern for q in quantizer.quantizers]
-    QuantFusion(patterns)(converted_model)
+    QuantFusion(patterns)(converted_graph_module)
 
-    return converted_model
+    return converted_graph_module
+
+
+# Note: this is the one-liner API to quantize and fuse a model.
+def quantize_pt2(
+    model: torch.nn.Module,
+    inputs: tuple[object, ...],
+    quantizer: Optional[CadenceQuantizer] = None,
+) -> torch.fx.GraphModule:
+    """
+    Prepare, convert and fuse the model using the given quantizer.
+    Returns a GraphModule with the quantized model.
+    """
+    # Quantizer
+    if not quantizer:
+        quantizer = CadenceQuantizer()
+
+    # Get converted graph module
+    converted_gm = convert_pt2(model, inputs, quantizer)
+
+    # Get fused model
+    fused_gm = fuse_pt2(converted_gm, quantizer)
+
+    return fused_gm
 
 
 # Export the model and lower it to an ExportedProgram (in aten IR)
