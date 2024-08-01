@@ -37,6 +37,9 @@ def define_common_targets():
             "//bento/...",
             "//bento_kernels/...",
         ],
+        deps = [
+            "//executorch/examples/models/llama2/tokenizer:tiktoken",
+        ],
         _is_external_target = True,
         external_deps = [
             "sentencepiece-py",

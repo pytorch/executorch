@@ -187,6 +187,7 @@ def build_executorch_binary(
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_annotations)
         quantizer.set_per_channel_linear_quant(per_channel_linear)
+        quantizer.set_per_channel_conv_quant(True)
 
         if quant_dtype == QuantDtype.use_8a8w:
             pass  # default setting
@@ -214,7 +215,6 @@ def build_executorch_binary(
             for data in dataset:
                 annotated_model(*data)
         quantized_model = convert_pt2e(annotated_model)
-
         edge_prog = capture_program(quantized_model, inputs)
     else:
         edge_prog = capture_program(model, inputs)

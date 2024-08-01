@@ -655,7 +655,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation
             
             NSError *prewarmError = nil;
             if (![asset prewarmAndReturnError:&prewarmError]) {
-                ETCoreMLLogError(localError,
+                ETCoreMLLogError(prewarmError,
                                  "%@: Failed to prewarm asset with identifier = %@",
                                  NSStringFromClass(strongSelf.assetManager.class),
                                  asset.identifier);
