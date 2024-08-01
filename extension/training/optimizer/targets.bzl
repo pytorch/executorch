@@ -26,7 +26,7 @@ def define_common_targets():
             ]
 
         runtime.cxx_library(
-            name = "optimizer" + aten_suffix,
+            name = "sgd" + aten_suffix,
             srcs = [
                 "sgd.cpp",
             ],
