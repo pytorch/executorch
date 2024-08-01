@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/models/llama2/sampler/sampler.h>
+#include <executorch/extension/llm/sampler/sampler.h>
 
 #include <gtest/gtest.h>
 #include <torch/torch.h>
