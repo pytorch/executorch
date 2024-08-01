@@ -427,7 +427,11 @@ def collect_specs_from_nodes(  # noqa: C901
                 continue
             if ignore_graph_output and spec in graph_output_tensors:
                 continue
-            if ignore_const and spec.const:
+            if (
+                ignore_const
+                and spec.const
+                and not node.meta.get("weight_has_gradient", False)
+            ):
                 continue
             if dedup:
                 if spec in unique_spec:
