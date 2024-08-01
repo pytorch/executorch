@@ -244,6 +244,8 @@ testsuite_u55.remove(("2x2_1x1x14x14_st2", conv2d_2x2_1x1x14x14_st2))
 
 
 class TestConv2D(unittest.TestCase):
+    """Tests Conv2D, both single ops and multiple Convolutions in series."""
+
     def _test_conv2d_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):

@@ -11,23 +11,23 @@ import logging
 import torch
 
 from executorch.backends.cadence.aot.passes import (
+    InitializePipeline,
+    RemoveNopExpandOpPass,
     RemoveZeroSizedCatArgsPass,
+    ReplaceLogicalNotBooleanWhereWithWherePass,
     ReplacePT2DequantWithCadenceDequantPass,
     ReplacePT2QuantWithCadenceQuantPass,
     ReplaceScalarTensorWithFullPass,
     ReplaceSqueezeAndUnsqueezeWithViewPass,
 )
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
-from executorch.backends.cadence.aot.quantizer.quantizer import (
-    CadenceAtenQuantizer,
-    CadenceQuantizer,
-)
+from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
 from executorch.backends.cadence.aot.utils import model_is_quantized
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
-from pyre_extensions import assert_is_instance
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.pt2e.export_utils import model_is_exported
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -63,10 +63,8 @@ def quantize_pt2(
     converted_model = convert_pt2e(prepared_model)
 
     # Get patterns and apply fusion of dq -> op -> q to qop
-    patterns = [
-        assert_is_instance(q, CadenceAtenQuantizer).pattern
-        for q in quantizer.quantizers
-    ]
+    # pyre-ignore[16]: no attribute
+    patterns = [q.pattern for q in quantizer.quantizers]
     QuantFusion(patterns)(converted_model)
 
     return converted_model
@@ -148,8 +146,12 @@ def export_to_cadence(
     # Run a couple required passes for quant/dequant ops
     cadence_program_manager = edge_program_manager.transform(
         [
+            InitializePipeline(),
             RemoveZeroSizedCatArgsPass(),
+            ReplaceLogicalNotBooleanWhereWithWherePass(),
             ReplaceScalarTensorWithFullPass(),
+            RemoveCloneOpsTransform(),
+            RemoveNopExpandOpPass(),
             ReplaceSqueezeAndUnsqueezeWithViewPass(),
             ReplacePT2QuantWithCadenceQuantPass(),
             ReplacePT2DequantWithCadenceDequantPass(),

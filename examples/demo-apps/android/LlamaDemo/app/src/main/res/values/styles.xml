@@ -7,4 +7,8 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
+    <style name="DefaultButton" parent="Theme.AppCompat.Light.DarkActionBar">
+        <item name="colorButtonNormal">@drawable/btn</item>
+        <item name="android:textColor">@color/colorPrimaryDark</item>
+    </style>
 </resources>

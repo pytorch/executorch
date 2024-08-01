@@ -36,7 +36,7 @@ from executorch.extension.pybindings.portable_lib import (  # @manual=//executor
 )
 from executorch.extension.pytree import tree_flatten
 from torch._export import capture_pre_autograd_graph
-from torch._export.utils import is_buffer, is_param
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export import export
 from torch.fx.passes.operator_support import any_chain
 
@@ -235,7 +235,11 @@ class TestPartitioner(unittest.TestCase):
         self.assertEqual(
             len(owning_program.state_dict) + len(owning_program.constants), 3
         )
-        self.assertEqual(len(owning_program.graph_signature.buffers), 2)
+        self.assertEqual(
+            len(owning_program.graph_signature.buffers)
+            + len(owning_program.graph_signature.lifted_tensor_constants),
+            2,
+        )
         self.assertEqual(len(owning_program.graph_signature.parameters), 1)
 
         # Check Lowered Module Exported Program does not have any constant data
@@ -290,6 +294,7 @@ class TestPartitioner(unittest.TestCase):
                     if node.op == "placeholder" and (
                         is_param(edge_exported_program, node)
                         or is_buffer(edge_exported_program, node)
+                        or is_lifted_tensor_constant(edge_exported_program, node)
                     ):
                         delegation_tag = "tag0"
                         node.meta["delegation_tag"] = delegation_tag
@@ -324,7 +329,11 @@ class TestPartitioner(unittest.TestCase):
         )
         delegated_ep = lower_module.original_module
         self.assertEqual(len(delegated_ep.state_dict) + len(delegated_ep.constants), 3)
-        self.assertEqual(len(delegated_ep.graph_signature.buffers), 2)
+        self.assertEqual(
+            len(delegated_ep.graph_signature.buffers)
+            + len(delegated_ep.graph_signature.lifted_tensor_constants),
+            2,
+        )
         self.assertEqual(len(delegated_ep.graph_signature.parameters), 1)
 
         # check exported program is still runnable
@@ -380,7 +389,11 @@ class TestPartitioner(unittest.TestCase):
         self.assertEqual(
             len(owning_program.state_dict) + len(owning_program.constants), 2
         )
-        self.assertEqual(len(owning_program.graph_signature.buffers), 2)
+        self.assertEqual(
+            len(owning_program.graph_signature.buffers)
+            + len(owning_program.graph_signature.lifted_tensor_constants),
+            2,
+        )
         self.assertEqual(len(owning_program.graph_signature.parameters), 0)
 
         # Check Lowered Module Exported Program does not own any buffers
@@ -503,6 +516,7 @@ class TestPartitioner(unittest.TestCase):
                     if node.op == "placeholder" and (
                         is_param(edge_exported_program, node)
                         or is_buffer(edge_exported_program, node)
+                        or is_lifted_tensor_constant(edge_exported_program, node)
                     ):
                         delegation_tag = "tag0"
                         node.meta["delegation_tag"] = delegation_tag
@@ -519,9 +533,9 @@ class TestPartitioner(unittest.TestCase):
         with self.assertRaises(RuntimeError) as error:
             _ = edge.to_backend(PartitionerTagData())
 
-        self.assertEqual(
-            "constant data node (b_const) is tagged with (tag0) but has user (aten_sub_tensor) which has tag (None)",
-            str(error.exception),
+        self.assertTrue(
+            "is tagged with (tag0) but has user (aten_sub_tensor) which has tag (None)"
+            in str(error.exception),
         )
 
     def test_not_delegate_mutable_buffers(self) -> None:

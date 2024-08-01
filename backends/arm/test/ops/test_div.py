@@ -78,6 +78,8 @@ test_data_suite = [
 
 
 class TestDiv(unittest.TestCase):
+    """Tests division"""
+
     class Div(torch.nn.Module):
         def __init__(
             self,
