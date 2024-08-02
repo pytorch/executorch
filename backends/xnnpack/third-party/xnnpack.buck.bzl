@@ -41,7 +41,6 @@ load(
     "PROD_SSE41_MICROKERNEL_SRCS",
     "PROD_SSE_MICROKERNEL_SRCS",
     "PROD_SSSE3_MICROKERNEL_SRCS",
-    "PROD_XOP_MICROKERNEL_SRCS",
 )
 
 def define_xnnpack():
@@ -440,38 +439,6 @@ def define_xnnpack():
             "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
         ] + select({
             "DEFAULT": AVX_COMPILER_FLAGS,
-            "ovr_config//cpu:arm32": [],
-            "ovr_config//cpu:arm64": [],
-        }),
-        preferred_linkage = "static",
-        preprocessor_flags = [
-            "-DXNN_LOG_LEVEL=0",
-        ],
-        exported_deps = [
-            ":interface",
-        ],
-    )
-
-    XOP_COMPILER_FLAGS = ["-mxop"]
-
-    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
-    native.cxx_library(
-        name = "ukernels_xop",
-        srcs = select({
-            "DEFAULT": PROD_XOP_MICROKERNEL_SRCS,
-            "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
-            "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
-        }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
-        header_namespace = "",
-        compiler_flags = [
-            "-O2",
-            "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
-        ] + select({
-            "DEFAULT": XOP_COMPILER_FLAGS,
             "ovr_config//cpu:arm32": [],
             "ovr_config//cpu:arm64": [],
         }),
@@ -1215,7 +1182,6 @@ def define_xnnpack():
         ":ukernels_sse2",
         ":ukernels_sse41",
         ":ukernels_ssse3",
-        ":ukernels_xop",
         ":ukernels_avx512vbmi",
         ":ukernels_avx512vnnigfni",
         ":ukernels_avx512vnni",
@@ -1250,7 +1216,7 @@ def define_xnnpack():
             "XNNPACK/src/microkernel-utils.c",
         ],
         headers = subdir_glob([
-            ("XNNPACK/src", "xnnpack/*.h"),
+            ("XNNPACK/src", "**/*.h"),
             ("XNNPACK/include", "**/*.h"),
         ]),
         exported_headers = {
