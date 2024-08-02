@@ -309,7 +309,7 @@ def _extract_delegate_segments(
 
 def _extract_constant_segment(
     constant_buffer: List[Buffer],
-    tensor_alignment: int,
+    tensor_alignment: Optional[int] = None,
 ) -> Tuple[Cord, List[int]]:
     """Copies the tensors from the provided list into a Cord and tracks the offsets
         of each tensor.
@@ -329,7 +329,11 @@ def _extract_constant_segment(
         buffer = constant_buffer[i]
         constant_segment_data.append(buffer.storage)
         buffer_length = len(buffer.storage)
-        pad_length = _padding_required(buffer_length, tensor_alignment)
+        pad_length = (
+            _padding_required(buffer_length, tensor_alignment)
+            if tensor_alignment is not None
+            else 0
+        )
         if i < len(constant_buffer) - 1:
             constant_segment_data.append(b"\x00" * pad_length)
         constant_segment_offsets.append(current_offset)
@@ -341,6 +345,7 @@ def _extract_constant_segment(
 def serialize_pte_binary(
     program: Program,
     *,
+    mutable_data: Optional[List[Buffer]] = None,
     extract_delegate_segments: bool = False,
     extract_constant_segment: bool = False,
     segment_alignment: int = 4096,
@@ -395,6 +400,21 @@ def serialize_pte_binary(
             program.constant_buffer = []
             # Add to the aggregate segments cord.
             segments.append(constant_segment_data)
+
+    if mutable_data is not None:
+        mutable_segment_data, mutable_segment_offsets = _extract_constant_segment(
+            mutable_data,
+            tensor_alignment=None,  # data is copied at Method load so no need to align.
+        )
+        if len(mutable_segment_data) > 0:
+            # Update program.mutable_segment_data with constant subsegment offset information.
+            program.mutable_data_segments = [
+                SubsegmentOffsets(
+                    segment_index=len(segments), offsets=mutable_segment_offsets
+                ),
+            ]
+            # Add to the aggregate segments cord.
+            segments.append(mutable_segment_data)
 
     if extract_delegate_segments:
         _extract_delegate_segments(program, segments)

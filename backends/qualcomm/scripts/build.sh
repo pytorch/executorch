@@ -107,19 +107,33 @@ if [ "$BUILD_X86_64" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     fi
     cd $BUILD_ROOT
+    # TODO: Use CMAKE_BUILD_TYPE=RelWithDebInfo, and handle flatcc issues
     cmake \
-        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
         -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
         -DEXECUTORCH_BUILD_QNN=ON \
+        -DEXECUTORCH_BUILD_SDK=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
-        -DBUCK2=$BUCK2 \
         -S $PRJ_ROOT \
         -B $BUILD_ROOT \
 
-    cmake \
-    --build $BUILD_ROOT \
-    -t "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j16
+    cmake --build $BUILD_ROOT -j16 --target install
 
     rm -f $PRJ_ROOT/backends/qualcomm/python/*
     cp -fv $BUILD_ROOT/backends/qualcomm/Py* "$PRJ_ROOT/backends/qualcomm/python"
+
+   EXAMPLE_ROOT=examples/qualcomm
+   CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"
+
+   cmake $PRJ_ROOT/$EXAMPLE_ROOT \
+       -DCMAKE_BUILD_TYPE=Debug \
+       -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
+       -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+       -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+       -B$EXAMPLE_ROOT
+
+   cmake --build $EXAMPLE_ROOT -j16
 fi

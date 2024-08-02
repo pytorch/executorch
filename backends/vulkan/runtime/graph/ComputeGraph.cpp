@@ -319,24 +319,20 @@ utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
   return image_extents_of(idx);
 }
 
-utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
+utils::uvec3 ComputeGraph::create_local_wg_size(
+    const utils::uvec3 global_wg_size) {
   if (config_.enable_local_wg_size_override) {
     return config_.local_wg_size_override;
   }
 
-  if (is_buffer_storage(idx)) {
-    return {64u, 1u, 1u};
-  }
-
-  const utils::uvec3 image_extents = image_extents_of(idx);
   utils::uvec3 local_group_size = {4, 4, 4};
 
-  if (image_extents.data[2u] == 1) {
-    if (image_extents.data[1u] == 1) {
+  if (global_wg_size.data[2u] == 1) {
+    if (global_wg_size.data[1u] == 1) {
       local_group_size.data[0u] = 64;
       local_group_size.data[1u] = 1;
       local_group_size.data[2u] = 1;
-    } else if (image_extents.data[1u] < 8) {
+    } else if (global_wg_size.data[1u] < 8) {
       local_group_size.data[0u] = 16;
       local_group_size.data[1u] = 4;
       local_group_size.data[2u] = 1;
@@ -347,6 +343,10 @@ utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
     }
   }
   return local_group_size;
+}
+
+utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
+  return create_local_wg_size(image_extents_of(idx));
 }
 
 void ComputeGraph::copy_into_staging(

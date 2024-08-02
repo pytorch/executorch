@@ -1,3 +1,5 @@
+#!/bin/bash
+set +x
 cmake                                               \
     -DCMAKE_INSTALL_PREFIX=cmake-out                \
     -DCMAKE_BUILD_TYPE=Debug                        \

@@ -89,17 +89,26 @@ def get_tosa_compile_spec(permute_memory_to_nhwc=True, custom_path=None):
     """
     Default compile spec for TOSA tests.
     """
+    return get_tosa_compile_spec_unbuilt(permute_memory_to_nhwc, custom_path).build()
+
+
+def get_tosa_compile_spec_unbuilt(
+    permute_memory_to_nhwc=False, custom_path=None
+) -> ArmCompileSpecBuilder:
+    """Get the ArmCompileSpecBuilder for the default TOSA tests, to modify
+    the compile spec before calling .build() to finalize it.
+    """
     intermediate_path = custom_path or tempfile.mkdtemp(prefix="arm_tosa_")
     if not os.path.exists(intermediate_path):
         os.makedirs(intermediate_path, exist_ok=True)
-    compile_spec = (
+    compile_spec_builder = (
         ArmCompileSpecBuilder()
         .tosa_compile_spec()
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(intermediate_path)
-        .build()
     )
-    return compile_spec
+
+    return compile_spec_builder
 
 
 def get_u55_compile_spec(
@@ -108,7 +117,20 @@ def get_u55_compile_spec(
     """
     Default compile spec for Ethos-U55 tests.
     """
+    return get_u55_compile_spec_unbuilt(
+        permute_memory_to_nhwc, quantize_io=quantize_io, custom_path=custom_path
+    ).build()
+
+
+def get_u55_compile_spec_unbuilt(
+    permute_memory_to_nhwc=False, quantize_io=False, custom_path=None
+) -> ArmCompileSpecBuilder:
+    """Get the ArmCompileSpecBuilder for the default TOSA tests, to modify
+    the compile spec before calling .build() to finalize it.
+    """
     artifact_path = custom_path or tempfile.mkdtemp(prefix="arm_u55_")
+    if not os.path.exists(artifact_path):
+        os.makedirs(artifact_path, exist_ok=True)
     compile_spec = (
         ArmCompileSpecBuilder()
         .ethosu_compile_spec(
@@ -120,6 +142,5 @@ def get_u55_compile_spec(
         .set_quantize_io(is_option_enabled("quantize_io") or quantize_io)
         .set_permute_memory_format(permute_memory_to_nhwc)
         .dump_intermediate_artifacts_to(artifact_path)
-        .build()
     )
     return compile_spec

@@ -9,11 +9,11 @@
 
     <TextView
         android:id="@+id/name"
-        android:layout_marginLeft="15dp"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginLeft="15dp"
         android:paddingBottom="4dp"
-        android:text="LLaMA"/>
+        android:text="Llama" />
 
     <TextView
         android:layout_width="wrap_content"
@@ -29,14 +29,36 @@
         android:text="Generated text"
         />
 
-
-    <TextView
-        android:id="@+id/tokens_per_second"
-        android:layout_marginLeft="15dp"
+    <LinearLayout
+        android:id="@+id/subtitles"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/message_text"
-        android:paddingBottom="4dp"
-        android:text=""/>
+        android:layout_below="@+id/message_text">
+        <TextView
+            android:id="@+id/timestamp"
+            android:layout_marginLeft="15dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingBottom="4dp"
+            android:paddingLeft="4dp"
+            android:text=""/>
+        <TextView
+            android:id="@+id/bar"
+            android:layout_marginLeft="15dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingBottom="4dp"
+            android:paddingLeft="4dp"
+            android:text="|"
+            android:visibility="gone"/>
 
+        <TextView
+            android:id="@+id/generation_metrics"
+            android:layout_marginLeft="15dp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_toRightOf="@+id/bar"
+            android:paddingBottom="4dp"
+            android:text=""/>
+    </LinearLayout>
 </RelativeLayout>

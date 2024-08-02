@@ -13,6 +13,7 @@ MODEL_NAME=$1 # stories110M.pt
 BUILD_TOOL=$2 # buck2 or cmake
 DTYPE=$3 # fp16 or fp32
 MODE=${4:-"xnnpack+custom"} # portable or xnnpack+custom or xnnpack+custom+qe
+UPLOAD_DIR=${5:-}
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
     echo "Usage: [...]"
@@ -126,6 +127,15 @@ cleanup_files() {
   rm params.json
 }
 
+prepare_artifacts_upload() {
+  if [ -n "$UPLOAD_DIR" ]; then
+    echo "Preparing for uploading generated artifacs"
+    mkdir -p "${UPLOAD_DIR}"
+    zip -j "model.zip" "${MODEL_NAME}" tokenizer.bin
+    cp "model.zip" "${UPLOAD_DIR}"
+  fi
+}
+
 # Download and create artifacts.
 PARAMS="params.json"
 touch "${PARAMS}"
@@ -205,6 +215,7 @@ if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Actual result: ${RESULT}"
   echo "Success"
 
+  prepare_artifacts_upload
   cleanup_files
 else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"

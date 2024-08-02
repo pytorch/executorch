@@ -13,6 +13,9 @@ namespace impl {
 namespace reference {
 namespace native {
 
+using Tensor = exec_aten::Tensor;
+using RuntimeContext = torch::executor::RuntimeContext;
+
 // The quantized matmul. The quantized matmul accumulates in a wider register,
 // whose type is TA.
 template <
@@ -50,27 +53,32 @@ __attribute__((noinline)) void qmatmul(
   }
 }
 
-template <ctype>
+template <typename T>
 void inline _typed_quantized_matmul(
     const Tensor& X,
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    const c10::optional<Tensor>& bias,
+    const exec_aten::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
     bool transposed,
     Tensor& out) {
-  ctype* __restrict__ out_data = out.mutable_data_ptr<ctype>();
-  const ctype* __restrict__ X_data = X.const_data_ptr<ctype>();
-  const ctype* __restrict__ Y_data = Y.const_data_ptr<ctype>();
+  size_t batch_size = getLeadingDims(X, X.dim() - 2);
+  size_t leading_dim = X.size(X.dim() - 2);
+  size_t out_dim = Y.size(Y.dim() - 1 - transposed);
+  size_t in_dim = X.size(X.dim() - 1);
+
+  T* __restrict__ out_data = out.mutable_data_ptr<T>();
+  const T* __restrict__ X_data = X.const_data_ptr<T>();
+  const T* __restrict__ Y_data = Y.const_data_ptr<T>();
   for (size_t i = 0; i < batch_size; ++i) {
-    const ctype* x = X_data + i * leading_dim * in_dim;
-    const ctype* y = Y_data + i * in_dim * out_dim;
-    ctype* z = out_data + i * leading_dim * out_dim;
+    const T* x = X_data + i * leading_dim * in_dim;
+    const T* y = Y_data + i * in_dim * out_dim;
+    T* z = out_data + i * leading_dim * out_dim;
     if (transposed) {
-      qmatmul<ctype, int32_t, true>(
+      qmatmul<T, int32_t, true>(
           z,
           static_cast<int32_t>(out_multiplier),
           static_cast<int32_t>(out_shift),
@@ -83,7 +91,7 @@ void inline _typed_quantized_matmul(
           in_dim,
           out_dim);
     } else {
-      qmatmul<ctype, int32_t, false>(
+      qmatmul<T, int32_t, false>(
           z,
           static_cast<int32_t>(out_multiplier),
           static_cast<int32_t>(out_shift),
@@ -101,24 +109,18 @@ void inline _typed_quantized_matmul(
 }
 
 void quantized_matmul_out(
+    RuntimeContext& ctx,
     const Tensor& X,
     int64_t X_zero_point,
     const Tensor& Y,
     int64_t Y_zero_point,
-    const c10::optional<Tensor>& bias,
+    const exec_aten::optional<Tensor>& bias,
     int64_t out_multiplier,
     int64_t out_shift,
     int64_t out_zero_point,
     bool transposed,
     Tensor& out) {
-  (void)bias;
-
-  size_t batch_size = getLeadingDims(X, X.dim() - 2);
-  size_t leading_dim = X.size(X.dim() - 2);
-  size_t out_dim = Y.size(Y.dim() - 1 - transposed);
-  size_t in_dim = X.size(X.dim() - 1);
-
-  if (out.ScalarType() == at::ScalarType::Byte) {
+  if (out.scalar_type() == at::ScalarType::Byte) {
     _typed_quantized_matmul<uint8_t>(
         X,
         X_zero_point,
@@ -130,7 +132,7 @@ void quantized_matmul_out(
         out_zero_point,
         transposed,
         out);
-  } else if (out.ScalarType() == at::ScalarType::Char) {
+  } else if (out.scalar_type() == at::ScalarType::Char) {
     _typed_quantized_matmul<int8_t>(
         X,
         X_zero_point,
