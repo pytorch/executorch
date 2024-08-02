@@ -4,9 +4,9 @@ def _get_operator_lib(aten = False):
     if aten:
         return ["//executorch/kernels/aten:generated_lib"]
     elif runtime.is_oss:
-        return ["//executorch/kernels/portable:generated_lib", "//executorch/examples/models/llama2/custom_ops:custom_ops"]
+        return ["//executorch/kernels/portable:generated_lib", "//executorch/extension/llm/custom_ops:custom_ops"]
     else:
-        return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/examples/models/llama2/custom_ops:custom_ops"]
+        return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/extension/llm/custom_ops:custom_ops"]
 
 def use_tiktoken():
     return native.read_config("llama", "use_tiktoken", "0") == "1"
@@ -33,7 +33,8 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
-                "//executorch/examples/models/llama2/sampler:sampler" + aten_suffix,
+                "//executorch/extension/llm/runner:stats",
+                "//executorch/extension/llm/sampler:sampler" + aten_suffix,
                 "//executorch/extension/evalue_util:print_evalue" + aten_suffix,
                 "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,

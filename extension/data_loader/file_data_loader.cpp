@@ -8,9 +8,11 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -189,7 +191,12 @@ Result<FreeableBuffer> FileDataLoader::load(
   size_t needed = size;
   uint8_t* buf = reinterpret_cast<uint8_t*>(aligned_buffer);
   while (needed > 0) {
-    ssize_t nread = ::read(fd_, buf, needed);
+    // Reads on macos will fail with EINVAL if size > INT32_MAX.
+    ssize_t nread = ::read(
+        fd_,
+        buf,
+        std::min<size_t>(
+            needed, static_cast<size_t>(std::numeric_limits<int32_t>::max())));
     if (nread < 0 && errno == EINTR) {
       // Interrupted by a signal; zero bytes read.
       continue;

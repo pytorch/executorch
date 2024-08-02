@@ -572,7 +572,7 @@ def get_ext_modules() -> List[Extension]:
         ext_modules.append(
             # Install the prebuilt library for custom ops used in llama.
             BuiltFile(
-                "examples/models/llama2/custom_ops/libcustom_ops_aot_lib.*",
+                "extension/llm/custom_ops/libcustom_ops_aot_lib.*",
                 "executorch",
             )
         )

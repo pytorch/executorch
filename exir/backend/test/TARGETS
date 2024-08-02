@@ -269,7 +269,6 @@ python_unittest(
         "test_utils.py",
     ],
     deps = [
-        "fbsource//third-party/pypi/pandas:pandas",
         ":op_partitioner_demo",
         "//caffe2:torch",
         "//executorch/exir:lib",

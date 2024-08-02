@@ -54,7 +54,7 @@ runtime.python_binary(
     main_function = "executorch.examples.models.llama2.export_llama.main",
     # visibility = ["//executorch/examples/..."],
     preload_deps = [
-        "//executorch/examples/models/llama2/custom_ops:custom_ops_aot_lib",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
         "//executorch/kernels/quantized:aot_lib",
     ],
     deps = [
@@ -86,7 +86,7 @@ runtime.python_library(
         "//caffe2:torch",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
-        "//executorch/examples/models/llama2/custom_ops:custom_ops_aot_py",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
         "//executorch/extension/llm/export:export_lib",
         # one definition has to be included in the user of the libarary
         # depending on what library the client wants to use

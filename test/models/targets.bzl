@@ -66,6 +66,7 @@ def define_common_targets():
         "ModuleMultipleEntry",
         "ModuleIndex",
         "ModuleDynamicCatUnallocatedIO",
+        "ModuleSimpleTrain",
     ]
 
     # Generates Executorch .pte program files for various modules at build time.

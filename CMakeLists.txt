@@ -774,7 +774,7 @@ endif()
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
   add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops
+    ${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops
   )
 endif()
 

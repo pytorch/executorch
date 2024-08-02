@@ -65,12 +65,15 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             )
             return a
 
+    # Since we may or may not enable dim order, use these ops only for
+    # check_not since we have `to_copy` and `to_dim_order_copy` in the list.
     ops = {
         "executorch_exir_dialects_edge__ops_aten_sub_Tensor",
         "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
         "executorch_exir_dialects_edge__ops_aten_index_Tensor",
         "executorch_exir_dialects_edge__ops_aten_arange_start_step",
         "executorch_exir_dialects_edge__ops_aten__to_copy_default",
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default",
         "executorch_exir_dialects_edge__ops_aten_add_Tensor",
         "executorch_exir_dialects_edge__ops_aten_clamp_default",
     }
@@ -81,7 +84,6 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             Tester(self.StaticResizeBilinear2dModule(), example_inputs)
             .export()
             .to_edge()
-            .check(self.ops)
             .partition()
             .check_not(self.ops)
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
@@ -90,13 +92,12 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
-    def test_fp32_static_resize_bilinear2d_with_align_cornesr(self):
+    def test_fp32_static_resize_bilinear2d_with_align_corners(self):
         example_inputs = (torch.randn(2, 3, 4, 5),)
         (
             Tester(self.StaticResizeBilinear2dModuleWithAlignCorners(), example_inputs)
             .export()
             .to_edge()
-            .check(self.ops)
             .partition()
             .check_not(self.ops)
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})

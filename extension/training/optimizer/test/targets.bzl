@@ -15,7 +15,7 @@ def define_common_targets():
                 "sgd_test.cpp",
             ],
             deps = [
-                "//executorch/extension/training/optimizer:optimizer" + aten_suffix,
+                "//executorch/extension/training/optimizer:sgd" + aten_suffix,
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             ],

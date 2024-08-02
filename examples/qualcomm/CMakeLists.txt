@@ -7,9 +7,6 @@
 set(CMAKE_CXX_STANDARD 17)
 # qnn_executor_runner: Like executor_runner but with QNN
 
-if(NOT ${ANDROID})
-  message(FATAL_ERROR "Not building Android, quitting...")
-endif()
 cmake_minimum_required(VERSION 3.19)
 project(qualcomm_runner_example)
 

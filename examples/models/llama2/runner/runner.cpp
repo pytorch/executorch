@@ -32,11 +32,6 @@
 #include <executorch/runtime/platform/log.h>
 
 namespace torch::executor {
-namespace {
-static constexpr auto kTopp = 0.9f;
-void printReport(const Runner::Stats& stats);
-std::string statsToJsonString(const Runner::Stats& stats);
-} // namespace
 
 Runner::Runner(
     const std::string& model_path,
@@ -96,7 +91,7 @@ Error Runner::load() {
   sampler_ = std::make_unique<Sampler>(
       vocab_size_,
       temperature_,
-      kTopp,
+      ::executorch::llm::kTopp,
       static_cast<unsigned long long>(std::time(nullptr)));
 
   return Error::Ok;
@@ -479,91 +474,13 @@ Error Runner::generate(
 
   stats_.num_prompt_tokens = num_prompt_tokens;
   stats_.num_generated_tokens = pos - num_prompt_tokens;
-  printReport(stats_);
+  ::executorch::llm::print_report(stats_);
   if (stats_callback) {
     stats_callback(stats_);
   }
 
   return Error::Ok;
 }
-
-namespace {
-void printReport(const Runner::Stats& stats) {
-  printf("PyTorchObserver %s\n", statsToJsonString(stats).c_str());
-
-  ET_LOG(
-      Info,
-      "\tPrompt Tokens: %" PRIu64 "    Generated Tokens: %" PRIu64,
-      stats.num_prompt_tokens,
-      stats.num_generated_tokens);
-
-  ET_LOG(
-      Info,
-      "\tModel Load Time:\t\t%f (seconds)",
-      ((double)(stats.model_load_end_ms - stats.model_load_start_ms) /
-       stats.SCALING_FACTOR_UNITS_PER_SECOND));
-  double inference_time_ms =
-      (double)(stats.inference_end_ms - stats.inference_start_ms);
-  ET_LOG(
-      Info,
-      "\tTotal inference time:\t\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
-      inference_time_ms / stats.SCALING_FACTOR_UNITS_PER_SECOND,
-
-      (stats.num_generated_tokens) /
-          (double)(stats.inference_end_ms - stats.inference_start_ms) *
-          stats.SCALING_FACTOR_UNITS_PER_SECOND);
-  double prompt_eval_time =
-      (double)(stats.prompt_eval_end_ms - stats.inference_start_ms);
-  ET_LOG(
-      Info,
-      "\t\tPrompt evaluation:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
-      prompt_eval_time / stats.SCALING_FACTOR_UNITS_PER_SECOND,
-      (stats.num_prompt_tokens) / prompt_eval_time *
-          stats.SCALING_FACTOR_UNITS_PER_SECOND);
-
-  double eval_time =
-      (double)(stats.inference_end_ms - stats.prompt_eval_end_ms);
-  ET_LOG(
-      Info,
-      "\t\tGenerated %" PRIu64
-      " tokens:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
-      stats.num_generated_tokens,
-      eval_time / stats.SCALING_FACTOR_UNITS_PER_SECOND,
-      stats.num_generated_tokens / eval_time *
-          stats.SCALING_FACTOR_UNITS_PER_SECOND);
-
-  // Time to first token is measured from the start of inference, excluding
-  // model load time.
-  ET_LOG(
-      Info,
-      "\tTime to first generated token:\t%f (seconds)",
-      ((double)(stats.first_token_ms - stats.inference_start_ms) /
-       stats.SCALING_FACTOR_UNITS_PER_SECOND));
-
-  ET_LOG(
-      Info,
-      "\tSampling time over %" PRIu64 " tokens:\t%f (seconds)",
-      stats.num_prompt_tokens + stats.num_generated_tokens,
-      (double)stats.aggregate_sampling_time_ms /
-          stats.SCALING_FACTOR_UNITS_PER_SECOND);
-}
-
-std::string statsToJsonString(const Runner::Stats& stats) {
-  std::stringstream ss;
-  ss << "{\"prompt_tokens\":" << stats.num_prompt_tokens << ","
-     << "\"generated_tokens\":" << stats.num_generated_tokens << ","
-     << "\"model_load_start_ms\":" << stats.model_load_start_ms << ","
-     << "\"model_load_end_ms\":" << stats.model_load_end_ms << ","
-     << "\"inference_start_ms\":" << stats.inference_start_ms << ","
-     << "\"inference_end_ms\":" << stats.inference_end_ms << ","
-     << "\"prompt_eval_end_ms\":" << stats.prompt_eval_end_ms << ","
-     << "\"first_token_ms\":" << stats.first_token_ms << ","
-     << "\"aggregate_sampling_time_ms\":" << stats.aggregate_sampling_time_ms
-     << "," << "\"SCALING_FACTOR_UNITS_PER_SECOND\":"
-     << stats.SCALING_FACTOR_UNITS_PER_SECOND << "}";
-  return ss.str();
-}
-} // namespace
 
 void Runner::stop() {
   shouldStop_ = true;

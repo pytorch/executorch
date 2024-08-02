@@ -49,7 +49,7 @@ def get_test_program() -> Program:
                             dim_order=typing.cast(List[bytes], [0, 1]),
                             requires_grad=False,
                             layout=0,
-                            constant_buffer_idx=0,
+                            data_buffer_idx=0,
                             allocation_info=AllocationDetails(
                                 memory_id=1,
                                 memory_offset_high=0,
