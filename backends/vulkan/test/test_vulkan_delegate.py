@@ -1632,3 +1632,21 @@ class TestBackends(unittest.TestCase):
             (torch.tensor([[[0, 1], [0, 1]], [[4, 2], [3, 3]]]),),
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
+
+    def test_vulkan_backend_grid_priors(self):
+        class GridPriorsModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.ops.et_vk.grid_priors(
+                    x,
+                    stride=8,
+                    offset=0.5,
+                )
+
+        self.lower_module_and_test_output(
+            GridPriorsModule(),
+            (torch.rand(size=[1, 5, 2, 3]),),
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )

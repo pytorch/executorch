@@ -375,6 +375,11 @@ python_unittest(
     deps = [
         ":test_memory_format_ops_pass_utils",
         "//caffe2:torch",
+        "//executorch/exir:dim_order_utils",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
         "//executorch/extension/pybindings:portable_lib",  # @manual
     ],
 )

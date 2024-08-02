@@ -2224,7 +2224,7 @@ void test_grid_priors(
       vkapi::kFloat,
       utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
 
-  VK_GET_OP_FN("grid_priors.default")
+  VK_GET_OP_FN("et_vk.grid_priors.default")
   (graph,
    {in.value,
     graph.add_scalar<int64_t>(stride),
