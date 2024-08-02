@@ -28,6 +28,8 @@ test_data_suite = [
 
 
 class TestAvgPool2d(unittest.TestCase):
+    """Tests AvgPool2d."""
+
     class AvgPool2d(torch.nn.Module):
         def __init__(
             self,

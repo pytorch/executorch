@@ -193,3 +193,52 @@ def get_qnn_quantizer(
     ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
     qnn_quantizer.add_custom_quant_annotations(custom_annotations)
     return qnn_quantizer, quant_dtype
+
+
+def get_coreml_quantizer(pt2e_quantize: str):
+    try:
+        from coremltools.optimize.torch.quantization.quantization_config import (
+            LinearQuantizerConfig,
+            QuantizationScheme,
+        )
+
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.quantizer`.
+        from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
+    except ImportError:
+        raise ImportError(
+            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+        )
+
+    if pt2e_quantize == "coreml_8a_c8w":
+        config = LinearQuantizerConfig.from_dict(
+            {
+                "global_config": {
+                    "quantization_scheme": QuantizationScheme.affine,
+                    "activation_dtype": torch.quint8,
+                    "weight_dtype": torch.qint8,
+                    "weight_per_channel": True,
+                }
+            }
+        )
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
+        quantizer = CoreMLQuantizer(config)
+
+    elif pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w"):
+        raise NotImplementedError("4-bit Core ML quantizer is still under development")
+
+    elif pt2e_quantize == "coreml_baseline_8a_c8w":
+        config = get_symmetric_quantization_config(
+            is_per_channel=True, is_dynamic=False
+        )
+        quantizer = XNNPACKQuantizer().set_global(config)
+
+    elif pt2e_quantize == "coreml_baseline_8a_c4w":
+        config = get_symmetric_quantization_config(
+            is_per_channel=True, is_dynamic=False, weight_qmin=-8, weight_qmax=7
+        )
+        quantizer = XNNPACKQuantizer().set_global(config)
+
+    else:
+        raise ValueError(f"Unsupported Core ML quantizer specification {pt2e_quantize}")
+
+    return quantizer

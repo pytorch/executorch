@@ -6,6 +6,9 @@
 
 import torch.library
 
+namespace = "et_vk"
+lib = torch.library.Library(namespace, "DEF")
+
 
 def conv_with_clamp_impl(
     input,
@@ -37,11 +40,51 @@ def conv_with_clamp_impl(
     )
 
 
-namespace = "et_vk"
-lib = torch.library.Library(namespace, "DEF")
 name = "conv_with_clamp"
 lib.define(
     f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Scalar? output_min, Scalar? output_max) -> Tensor"
 )
 lib.impl(name, conv_with_clamp_impl, "CompositeExplicitAutograd")
 conv_with_clamp_op = getattr(getattr(torch.ops, namespace), name)
+
+
+# The dimension of x should be larger than 1
+def grid_priors_impl(
+    x,
+    stride,
+    offset,
+):
+    height, width = x.shape[-2:]
+    # Need to specify device of torch.arange to avoid executorch exporting error
+    shift_x = (torch.arange(0, width, device=x.device) + offset) * stride
+    shift_y = (torch.arange(0, height, device=x.device) + offset) * stride
+    # Need to specify indexing parameter ('ij' is the default value) to avoid executorch exporting error
+    shift_xx, shift_yy = torch.meshgrid([shift_y, shift_x], indexing="ij")
+    shift_xx = shift_xx.reshape(-1)
+    shift_yy = shift_yy.reshape(-1)
+    shifts = torch.stack((shift_yy, shift_xx), dim=-1)
+    return shifts
+
+
+name = "grid_priors"
+lib.define(f"{name}(Tensor self, int stride, float offset) -> Tensor")
+lib.impl(name, grid_priors_impl, "CompositeExplicitAutograd")
+grid_priors_op = getattr(getattr(torch.ops, namespace), name)
+
+
+# When lowering to executorch, ops are converted from default to out variant. Hence, custom ops define both variants.
+def grid_priors_out_impl(
+    x,
+    stride,
+    offset,
+    out,
+):
+    out = grid_priors_impl(x, stride, offset)
+    return out
+
+
+name = "grid_priors_out"
+lib.define(
+    f"{name}(Tensor self, int stride, float offset, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, grid_priors_out_impl, "CompositeExplicitAutograd")

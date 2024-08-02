@@ -157,7 +157,7 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
     if (self.config.should_prewarm_asset) {
         [modelManager prewarmRecentlyUsedAssetsWithMaxCount:1];
     }
-    
+
     return YES;
 }
 
@@ -188,9 +188,14 @@ ETCoreMLAssetManager * _Nullable create_asset_manager(NSString *assets_directory
         return nil;
     }
     
-    return [self.impl loadModelFromAOTData:data
-                             configuration:configuration
-                                     error:error];
+    auto handle = [self.impl loadModelFromAOTData:data
+                                    configuration:configuration
+                                            error:error];
+    if ((handle != NULL) && self.config.should_prewarm_model) {
+        [self.impl prewarmModelWithHandle:handle error:nil];
+    }
+
+    return handle;
 }
 
 - (BOOL)executeModelWithHandle:(ModelHandle*)handle

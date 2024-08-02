@@ -45,6 +45,7 @@ jobs:
 
         # Build LLM Demo for Android
         bash build/build_android_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
+
   # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-artifacts:
     needs: build-llm-demo
@@ -76,6 +77,73 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
           path: ${{ runner.temp }}/artifacts/
+
+  # Running Android emulator directly on the runner and not using Docker
+  run-emulator:
+    needs: build-llm-demo
+    runs-on: amz2023.linux.4xlarge
+    env:
+      ANDROID_NDK_VERSION: r26c
+      API_LEVEL: 34
+    steps:
+      - name: Setup SSH (Click me for login details)
+        uses: pytorch/test-infra/.github/actions/setup-ssh@main
+        with:
+          github-secret: ${{ secrets.GITHUB_TOKEN }}
+          instructions: |
+            This is used to run Android emulators, ANDROID_HOME is installed at /opt/android/sdk
+
+      - uses: actions/checkout@v3
+        with:
+          submodules: false
+
+      - name: Setup conda
+        uses: pytorch/test-infra/.github/actions/setup-miniconda@main
+        with:
+          python-version: '3.10'
+
+      - name: Install Android dependencies
+        shell: bash
+        run: |
+          set -eux
+
+          # Reuse the script that install Android on ET Docker image
+          sudo -E bash .ci/docker/common/install_android.sh
+
+      - name: Gradle cache
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ env.API_LEVEL }}
+
+      # NB: It takes about 10m to cold boot the emulator here
+      - name: Run Android emulator
+        env:
+          ANDROID_HOME: /opt/android/sdk
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          # NB: x86_64 emulator is slow because the lack of KVM support on AWS, it
+          # seems that we can use metal instance for that but it hasn't been tried
+          # out yet. Also arm64-v8a arch requires an ARM runner
+          arch: x86_64
+          script: ./build/run_android_emulator.sh
+          # NB: This is to boot the emulator faster following the instructions on
+          # https://github.com/ReactiveCircus/android-emulator-runner. The max number
+          # of cores we can set is 6, any higher number will be reduced to 6.
+          cores: 6
+          ram-size: 12288M
+          force-avd-creation: false
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # This is to make sure that the job doesn't fail flakily
+          emulator-boot-timeout: 900
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   test-llama-app:

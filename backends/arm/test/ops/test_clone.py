@@ -8,19 +8,25 @@
 # Tests the clone op which copies the data of the input tensor (possibly with new data format)
 #
 
-import logging
 import unittest
 from typing import Tuple
 
 import torch
+
+from executorch.backends.arm.quantizer.arm_quantizer import (
+    ArmQuantizer,
+    get_symmetric_quantization_config,
+)
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
-from parameterized import parameterized
 
-logger = logging.getLogger(__name__)
+from executorch.backends.xnnpack.test.tester.tester import Quantize
+from parameterized import parameterized
 
 
 class TestSimpleClone(unittest.TestCase):
+    """Tests clone."""
+
     class Clone(torch.nn.Module):
         sizes = [10, 15, 50, 100]
         test_parameters = [(torch.ones(n),) for n in sizes]
@@ -53,13 +59,14 @@ class TestSimpleClone(unittest.TestCase):
     def _test_clone_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
+        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_tosa_compile_spec(),
             )
-            .quantize()
+            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .check_count({"torch.ops.aten.clone.default": 1})
             .to_edge()
@@ -72,13 +79,14 @@ class TestSimpleClone(unittest.TestCase):
     def _test_clone_tosa_u55_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
+        quantizer = ArmQuantizer().set_io(get_symmetric_quantization_config())
         (
             ArmTester(
                 module,
                 example_inputs=test_data,
                 compile_spec=common.get_u55_compile_spec(),
             )
-            .quantize()
+            .quantize(Quantize(quantizer, get_symmetric_quantization_config()))
             .export()
             .check_count({"torch.ops.aten.clone.default": 1})
             .to_edge()
@@ -91,16 +99,10 @@ class TestSimpleClone(unittest.TestCase):
     def test_clone_tosa_MI(self, test_tensor: torch.Tensor):
         self._test_clone_tosa_MI_pipeline(self.Clone(), (test_tensor,))
 
-    # Expected to fail since ArmQuantizer cannot quantize a Clone layer
-    # TODO MLETROCH-125
     @parameterized.expand(Clone.test_parameters)
-    @unittest.expectedFailure
     def test_clone_tosa_BI(self, test_tensor: torch.Tensor):
         self._test_clone_tosa_BI_pipeline(self.Clone(), (test_tensor,))
 
-    # Expected to fail since ArmQuantizer cannot quantize a Clone layer
-    # TODO MLETROCH-125
     @parameterized.expand(Clone.test_parameters)
-    @unittest.expectedFailure
     def test_clone_u55_BI(self, test_tensor: torch.Tensor):
         self._test_clone_tosa_u55_pipeline(self.Clone(), (test_tensor,))

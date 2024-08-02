@@ -54,6 +54,15 @@ void ensure_min_niter(
   }
 }
 
+std::vector<int64_t> whd_to_nchw(std::vector<int64_t> sizes) {
+  const int64_t W = sizes[0];
+  const int64_t H = sizes[1];
+  const int64_t D = sizes[2];
+
+  // Channels-packed: {W, H, D} = {W, H, (C / 4) * N}
+  return {1, D * 4, H, W};
+}
+
 cl_platform_id get_cl_platform_id() {
   cl_uint nplatform_id;
   clGetPlatformIDs(0, nullptr, &nplatform_id);

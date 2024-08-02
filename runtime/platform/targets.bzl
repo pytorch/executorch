@@ -99,7 +99,6 @@ def define_common_targets():
             "platform.h",
             "system.h",
             "types.h",
-            "hooks.h",
         ],
         exported_deps = [
             ":compiler",

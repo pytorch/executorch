@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import copy
 import io
 import logging
@@ -43,6 +45,7 @@ from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from executorch.exir.passes.weights_to_outputs_pass import weights_to_outputs_pass
 from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.schema import Program
 from executorch.exir.tracer import _default_decomposition_table
@@ -225,7 +228,7 @@ def lift_constant_tensor_pass(ep):
         return ep
 
     graph_signature = ep.graph_signature
-    buffers = graph_signature.buffers
+    buffers = list(graph_signature.buffers)
 
     fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
     first_user_input = None
@@ -899,7 +902,7 @@ def _gen_edge_manager_for_partitioners(
             # check on which ops need to be preserved and which ops need to be decomposed
             # Those which are truly preserved will be replaced with transformed ops
             ops_set_to_not_decompose_by_program[name] = (
-                _replace_aten_ops_with_transformed_ops(name, program, partitioner)
+                _replace_aten_ops_with_transformed_ops(name, program, partitioner) or []
             )
         program = program.run_decompositions(_default_decomposition_table())
 
@@ -982,8 +985,8 @@ def _to_edge_transform_and_lower(
 
     if not isinstance(partitioner, dict) and partitioner is not None:
         partitioner = {"forward": partitioner}
-    else:
-        partitioner = {}
+    elif partitioner is None:
+        partitioner = {"forward": []}
 
     edge_manager = _gen_edge_manager_for_partitioners(
         partitioner, aten_programs, config, constant_methods
@@ -1227,6 +1230,7 @@ class EdgeProgramManager:
 
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
+            program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
@@ -1322,6 +1326,7 @@ class ExecutorchProgramManager:
         # Serialize emitter output, ready to be written to a file.
         self._pte_data: Cord = _serialize_pte_binary(
             program=self._emitter_output.program,
+            mutable_data=self._emitter_output.mutable_data,
             extract_delegate_segments=backend_config.extract_delegate_segments,
             extract_constant_segment=backend_config.extract_constant_segment,
             segment_alignment=backend_config.segment_alignment,

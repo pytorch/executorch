@@ -90,28 +90,14 @@ endif()
 
 # custom ops library
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../llama2/custom_ops custom_ops)
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/extension/llm/custom_ops
+    ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/custom_ops
+  )
 endif()
 
 # multimodal_runner library
 add_subdirectory(runner)
-if(EXECUTORCH_USE_TIKTOKEN)
-  # find RE2 for tokenizer
-  set(ABSL_ENABLE_INSTALL ON)
-  set(ABSL_PROPAGATE_CXX_STD ON)
-  set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/abseil-cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
-  )
-  add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/re2
-    ${CMAKE_CURRENT_BINARY_DIR}/re2
-  )
-  set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
-  target_link_libraries(multimodal_runner PUBLIC re2::re2)
-endif()
 
 set(link_libraries gflags torch)
 set(_srcs main.cpp)
