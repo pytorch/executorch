@@ -753,16 +753,26 @@ if(EXECUTORCH_BUILD_PYBIND)
                  # the torch libs are in `site-packages/torch/lib`.
                  BUILD_RPATH "@loader_path/../../../torch/lib"
                  INSTALL_RPATH "@loader_path/../../../torch/lib"
-                 BUILD_RPATH "@loader_path/../../"
-                 INSTALL_RPATH "@loader_path/../../"
+                 # Assume <executorch> is the root `site-packages/executorch`
+                 # Need to add <executorch>/extension/llm/custom_ops for
+                 # libcustom_ops_aot_lib.dylib
+                 BUILD_RPATH "@loader_path/../../extension/llm/custom_ops"
+                 INSTALL_RPATH "@loader_path/../../extension/llm/custom_ops"
+                 # Need to add <executorch>/data/lib for
+                 # libquantized_ops_aot_lib.dylib
+                 BUILD_RPATH "@loader_path/../../data/lib"
+                 INSTALL_RPATH "@loader_path/../../data/lib"
     )
   else()
     set_target_properties(
       portable_lib
-      PROPERTIES # Assume that this library will be installed in
-                 # `site-packages/executorch/extension/pybindings`, and that
-                 # the custom_ops_aot_lib should be found with relative path.
-		  BUILD_RPATH "$ORIGIN:$ORIGIN/../.."
+      PROPERTIES # Assume <executorch> is the root `site-packages/executorch`
+                 # Need to add <executorch>/extension/llm/custom_ops for
+                 # libcustom_ops_aot_lib
+                 # Need to add <executorch>/data/lib for
+                 # libquantized_ops_aot_lib
+
+		  BUILD_RPATH "$ORIGIN:$ORIGIN/../../extension/llm/custom_ops:$ORIGIN/../../data/lib"
     )
   endif()
 
