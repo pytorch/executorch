@@ -47,6 +47,11 @@ Tensor& t_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
     return out;
   }
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
   get_transpose_out_target_size(in, 1, 0, expected_out_size, &expected_out_dim);

@@ -45,6 +45,11 @@ Tensor& view_copy_out(
       "Failed to resize output tensor.");
 
   ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
       ctx, check_view_copy_args(self, size_int64_t, out), InvalidArgument, out);
 
   if (self.nbytes() > 0) {

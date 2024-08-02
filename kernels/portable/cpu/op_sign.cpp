@@ -31,6 +31,9 @@ Tensor& sign_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
       "Failed to resize output tensor.");
 
   ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
       ctx, tensors_have_same_shape_and_dtype(in, out), InvalidArgument, out);
 
   if (in.scalar_type() == exec_aten::ScalarType::Bool) {
