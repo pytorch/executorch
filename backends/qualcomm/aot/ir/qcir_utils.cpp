@@ -100,7 +100,7 @@ Qnn_DataType_t ToDataType(qcir::DataType type) {
 }
 
 flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
-    const Qnn_QuantizeParams_t& param,
+    const Qnn_Tensor_t& tensor,
     flatbuffers::FlatBufferBuilder* builder) {
   static const std::unordered_map<Qnn_Definition_t, qcir::QuantizeDef> def_map{
       {QNN_DEFINITION_IMPL_GENERATED, qcir::QuantizeDef::IMPL_GENERATED},
@@ -124,6 +124,7 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
 
   int32_t axis = 0;
   uint32_t bitwidth = 0;
+  auto param = QNN_VER_PTR(tensor)->quantizeParams;
   auto quant_type = type_map.at(param.quantizationEncoding);
   std::vector<qcir::ScaleOffset> data;
   std::vector<float> scales;
@@ -160,7 +161,9 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
       }
     } break;
     default:
-      QNN_EXECUTORCH_LOG_ERROR("QNN_QUANTIZATION_ENCODING_UNDEFINED detected");
+      QNN_EXECUTORCH_LOG_WARN(
+          "QNN_QUANTIZATION_ENCODING_UNDEFINED detected: %s",
+          QNN_VER_PTR(tensor)->name);
       break;
   }
   return CreateQuantizeParamDirect(
@@ -174,7 +177,7 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
       &data);
 }
 
-Qnn_QuantizeParams_t ToQuantizeParam(const qparam_type& param) {
+Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor) {
   static const std::unordered_map<qcir::QuantizeDef, Qnn_Definition_t> def_map{
       {qcir::QuantizeDef::IMPL_GENERATED, QNN_DEFINITION_IMPL_GENERATED},
       {qcir::QuantizeDef::DEFINED, QNN_DEFINITION_DEFINED},
@@ -196,6 +199,7 @@ Qnn_QuantizeParams_t ToQuantizeParam(const qparam_type& param) {
           };
 
   Qnn_QuantizeParams_t p = QNN_QUANTIZE_PARAMS_INIT;
+  auto param = tensor->qparam();
   p.encodingDefinition = def_map.at(param->def());
   p.quantizationEncoding = type_map.at(param->type());
   switch (p.quantizationEncoding) {
@@ -225,7 +229,9 @@ Qnn_QuantizeParams_t ToQuantizeParam(const qparam_type& param) {
           const_cast<int32_t*>(param->offsets()->data());
     } break;
     default:
-      QNN_EXECUTORCH_LOG_ERROR("qcir::QuantizeType::UNDEFINED detected");
+      QNN_EXECUTORCH_LOG_WARN(
+          "qcir::QuantizeType::UNDEFINED detected: %s",
+          tensor->name()->c_str());
       break;
   }
   return p;
@@ -248,7 +254,7 @@ flatbuffers::Offset<qcir::Tensor> ToTensor(
       &shape,
       ToTensorType(QNN_VER_PTR(tensor)->type),
       ToDataType(QNN_VER_PTR(tensor)->dataType),
-      ToQuantizeParam(QNN_VER_PTR(tensor)->quantizeParams, builder),
+      ToQuantizeParam(tensor, builder),
       &buffer);
 }
 
@@ -261,7 +267,7 @@ Qnn_Tensor_t ToTensor(const tensor_type& tensor) {
   QNN_VER_PTR(t)->name = tensor->name()->c_str();
   QNN_VER_PTR(t)->type = ToTensorType(tensor->type());
   QNN_VER_PTR(t)->dataType = ToDataType(tensor->dtype());
-  QNN_VER_PTR(t)->quantizeParams = ToQuantizeParam(tensor->qparam());
+  QNN_VER_PTR(t)->quantizeParams = ToQuantizeParam(tensor);
   QNN_VER_PTR(t)->rank = tensor->shape()->size();
   QNN_VER_PTR(t)->dimensions = const_cast<uint32_t*>(tensor->shape()->data());
   QNN_VER_PTR(t)->clientBuf.dataSize = tensor->data()->size();

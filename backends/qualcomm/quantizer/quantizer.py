@@ -12,7 +12,6 @@ from executorch.backends.qualcomm.passes.recompose_pixel_unshuffle import (
     RecomposePixelUnshuffle,
 )
 from executorch.backends.qualcomm.passes.reduce_dynamic_range import ReduceDynamicRange
-from executorch.backends.qualcomm.passes.remove_redundancy import RemoveRedundancy
 from executorch.backends.qualcomm.passes.replace_inf_buffer import ReplaceInfBuffer
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
@@ -182,7 +181,6 @@ class QnnQuantizer(Quantizer):
         self._update_per_channel_weight_quant_ops(linear_ops, enable)
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
-        model = RemoveRedundancy()(model).graph_module
         model = ReduceDynamicRange()(model).graph_module
         model = RecomposePixelUnshuffle(quantization_capture=True)(model).graph_module
         model = DecomposeScaledDotProductAttention()(model).graph_module

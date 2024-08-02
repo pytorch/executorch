@@ -154,6 +154,8 @@ class ComboConvRelu6(torch.nn.Module):
 
 
 class TestConvCombos(unittest.TestCase):
+    """Tests conv combined with other ops."""
+
     def _test_conv_combo_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):

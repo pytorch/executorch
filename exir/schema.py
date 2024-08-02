@@ -51,7 +51,7 @@ class Tensor:
     dim_order: List[bytes]
     requires_grad: bool
     layout: int
-    constant_buffer_idx: int
+    data_buffer_idx: int
     allocation_info: Optional[AllocationDetails]
 
     # check schema.fbs for explanations
@@ -265,3 +265,4 @@ class Program:
     backend_delegate_data: List[BackendDelegateInlineData]
     segments: List[DataSegment]
     constant_segment: SubsegmentOffsets
+    mutable_data_segments: Optional[List[SubsegmentOffsets]] = None

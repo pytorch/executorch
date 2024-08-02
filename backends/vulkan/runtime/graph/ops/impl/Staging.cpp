@@ -21,8 +21,8 @@ void add_staging_to_tensor_node(
     const ValueRef out_tensor) {
   VK_CHECK_COND(graph.val_is_staging(in_staging));
 
-  vkapi::ShaderInfo shader =
-      get_nchw_to_tensor_shader(*graph.get_tensor(out_tensor));
+  vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
+      *graph.get_tensor(out_tensor), graph.int8_buffers_enabled());
 
   vkapi::ParamsBindList ubos({graph.sizes_ubo(out_tensor)});
   if (graph.is_buffer_storage(out_tensor)) {
@@ -55,10 +55,26 @@ void add_tensor_to_staging_node(
     const ValueRef out_staging) {
   VK_CHECK_COND(graph.val_is_staging(out_staging));
 
-  vkapi::ShaderInfo shader =
-      get_tensor_to_nchw_shader(*graph.get_tensor(in_tensor));
+  vkapi::ShaderInfo shader = get_tensor_to_nchw_shader(
+      *graph.get_tensor(in_tensor), graph.int8_buffers_enabled());
 
+  utils::uvec3 global_wg_size = graph.create_global_wg_size(in_tensor);
   vkapi::ParamsBindList ubos({graph.sizes_ubo(in_tensor)});
+
+  // Normally, the tensor_to_nchw shader is structured so that each thread reads
+  // one texel from the input texture and writes each component of the texel
+  // into the corresponding location in the output buffer. However, this shader
+  // is structured slightly differently in that each thread writes out a
+  // complete 32 bit integer (containing 4 packed 8-bit integers) into the
+  // output buffer. Therefore, the global work group size for this shader will
+  // be the number of elements in the output buffer divided by 4, as opposed to
+  // the extents of the input texture.
+  if (shader.kernel_name == "int8_tensor_to_nchw_noint8") {
+    uint32_t buffer_len = graph.get_staging(out_staging)->numel() / 4;
+    global_wg_size = {buffer_len, 1, 1};
+    ubos.append({graph.ntexels_ubo(in_tensor)});
+  }
+
   if (graph.is_buffer_storage(in_tensor)) {
     ubos.append({
         graph.texel_strides_ubo(in_tensor),
@@ -69,8 +85,8 @@ void add_tensor_to_staging_node(
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       shader,
-      graph.create_global_wg_size(in_tensor),
-      graph.create_local_wg_size(in_tensor),
+      global_wg_size,
+      graph.create_local_wg_size(global_wg_size),
       // Input and Outputs
       {{in_tensor, vkapi::MemoryAccessType::READ},
        {out_staging, vkapi::MemoryAccessType::WRITE}},
@@ -86,7 +102,8 @@ ValueRef prepack(
     const utils::GPUMemoryLayout layout) {
   ValueRef v = graph.add_tensor_like(vref, layout);
 
-  vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(*graph.get_tensor(v));
+  vkapi::ShaderInfo shader = get_nchw_to_tensor_shader(
+      *graph.get_tensor(v), graph.int8_buffers_enabled());
 
   vkapi::ParamsBindList ubos({graph.sizes_ubo(v)});
   if (graph.is_buffer_storage(v)) {

@@ -23,6 +23,7 @@ buck_filegroup(
 
 vulkan_spv_shader_lib(
     name = "gpuinfo_shader_lib",
+    is_fbcode = True,
     spv_filegroups = {
         ":gpuinfo_shaders": "glsl",
     },

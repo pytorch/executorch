@@ -40,6 +40,8 @@ test_data_suite = [
 
 
 class TestMeanDim(unittest.TestCase):
+    """Tests MeanDim, called AdaptiveAvgPool2d in Pytorch."""
+
     class MeanDim(torch.nn.Module):
         def __init__(self):
             super().__init__()

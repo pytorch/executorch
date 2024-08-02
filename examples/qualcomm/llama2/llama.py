@@ -586,4 +586,11 @@ if __name__ == "__main__":
     if args.compile_only:
         exit(f"Finish compile_only and save to {args.artifact}")
 
-    inference(args)
+    try:
+        inference(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)
