@@ -17,7 +17,8 @@ from executorch.exir.emit._emitter import (
     _TopLevelEmitter,
 )
 from executorch.exir.error import ExportError, ExportErrorType
-from executorch.exir.schema import Program, SubsegmentOffsets
+
+from executorch.exir.schema import Buffer, Program, SubsegmentOffsets
 from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION
 from torch.export.exported_program import ExportedProgram, OutputKind
 from torch.utils import _pytree as pytree
@@ -43,6 +44,8 @@ class EmitterOutput:
     method_to_delegate_debug_id_map: Dict[
         str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]
     ]
+
+    mutable_data: List[Buffer]
 
 
 def _remove_non_user_outputs(exported_program: ExportedProgram) -> torch.fx.GraphModule:
@@ -156,5 +159,7 @@ def emit_program(
             segments=[],
             # Subsegment offsets may be added at serialization time.
             constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
+            mutable_data_segments=None,  # Will be filled in during serialization
         ),
+        mutable_data=program_state.mutable_buffer,
     )

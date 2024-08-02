@@ -31,6 +31,7 @@
 
 #include <gflags/gflags.h>
 
+#include <chrono>
 #include <fstream>
 #include <memory>
 
@@ -202,10 +203,8 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
   torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
-  // TODO: So far we have issues with etdump_gen during load_method. Enable it
-  // after the issues are fixed.
   Result<Method> method =
-      program->load_method(method_name, &memory_manager, nullptr);
+      program->load_method(method_name, &memory_manager, &etdump_gen);
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
@@ -260,7 +259,7 @@ int main(int argc, char** argv) {
       // This can error if the outputs are already pre-allocated. Ignore
       // this error because it doesn't affect correctness, but log it.
       ET_LOG(
-          Error, "ignoring error from set_output_data_ptr(): 0x%" PRIx32, ret);
+          Info, "ignoring error from set_output_data_ptr(): 0x%" PRIx32, ret);
     }
   }
   ET_LOG(Info, "Inputs prepared.");

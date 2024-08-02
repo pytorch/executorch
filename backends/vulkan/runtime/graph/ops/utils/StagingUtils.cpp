@@ -95,9 +95,16 @@ void set_staging_zeros(api::StorageBuffer& staging, const size_t nbytes) {
   memset(data_ptr, 0, staging.nbytes());
 }
 
-vkapi::ShaderInfo get_nchw_to_tensor_shader(const api::vTensor& v_dst) {
+vkapi::ShaderInfo get_nchw_to_tensor_shader(
+    const api::vTensor& v_dst,
+    const bool int8_buffer_enabled) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
+
+  if (v_dst.dtype() == vkapi::kChar &&
+      v_dst.storage_type() == utils::kTexture3D && !int8_buffer_enabled) {
+    return VK_KERNEL(nchw_to_int8_tensor_noint8);
+  }
 
   kernel_name = "nchw_to_tensor";
   add_dtype_suffix(kernel_name, v_dst);
@@ -106,9 +113,16 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(const api::vTensor& v_dst) {
   return VK_KERNEL_FROM_STR(kernel_name);
 }
 
-vkapi::ShaderInfo get_tensor_to_nchw_shader(const api::vTensor& v_src) {
+vkapi::ShaderInfo get_tensor_to_nchw_shader(
+    const api::vTensor& v_src,
+    bool int8_buffer_enabled) {
   std::string kernel_name;
   kernel_name.reserve(kShaderNameReserve);
+
+  if (v_src.dtype() == vkapi::kChar &&
+      v_src.storage_type() == utils::kTexture3D && !int8_buffer_enabled) {
+    return VK_KERNEL(int8_tensor_to_nchw_noint8);
+  }
 
   kernel_name = "tensor_to_nchw";
   add_dtype_suffix(kernel_name, v_src);

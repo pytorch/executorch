@@ -8,6 +8,8 @@
 
 import operator
 
+from executorch.backends.vulkan.passes.custom_ops_defs import grid_priors_op  # noqa
+
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -129,6 +131,7 @@ CREATION_OPS = [
     exir_ops.edge.aten.upsample_nearest2d.vec,
     exir_ops.edge.aten.zeros.default,
     exir_ops.edge.aten.zeros_like.default,
+    exir_ops.edge.et_vk.grid_priors.default,
 ]
 
 

@@ -119,50 +119,7 @@ def SSD300VGG16(pretrained_weight_model):
     return model.eval()
 
 
-if __name__ == "__main__":
-    parser = setup_common_args_and_variables()
-
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. Default ./ssd300_vgg16",
-        default="./ssd300_vgg16",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-d",
-        "--download",
-        help="If specified, download VOCSegmentation dataset by torchvision API",
-        action="store_true",
-        default=False,
-    )
-
-    parser.add_argument(
-        "--oss_repo",
-        help=(
-            "Repository that contains model backbone and score calculation."
-            "e.g., --M ./a-PyTorch-Tutorial-to-Object-Detection"
-            "Please clone the repository from https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Object-Detection"
-        ),
-        type=str,
-        required=True,
-    )
-
-    parser.add_argument(
-        "-p",
-        "--pretrained_weight",
-        help=(
-            "Location of model pretrained weight."
-            "e.g., -p ./checkpoint_ssd300.pth.tar"
-            "Pretrained model can be found in the link https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Object-Detection, under the Training Section"
-        ),
-        type=str,
-        required=True,
-    )
-
-    args = parser.parse_args()
-
+def main(args):
     sys.path.insert(0, args.oss_repo)
 
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
@@ -279,3 +236,56 @@ if __name__ == "__main__":
             pp.pprint(APs)
 
     adb.pull(output_path=args.artifact, callback=post_process)
+
+
+if __name__ == "__main__":
+    parser = setup_common_args_and_variables()
+
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. Default ./ssd300_vgg16",
+        default="./ssd300_vgg16",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-d",
+        "--download",
+        help="If specified, download VOCSegmentation dataset by torchvision API",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--oss_repo",
+        help=(
+            "Repository that contains model backbone and score calculation."
+            "e.g., --M ./a-PyTorch-Tutorial-to-Object-Detection"
+            "Please clone the repository from https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Object-Detection"
+        ),
+        type=str,
+        required=True,
+    )
+
+    parser.add_argument(
+        "-p",
+        "--pretrained_weight",
+        help=(
+            "Location of model pretrained weight."
+            "e.g., -p ./checkpoint_ssd300.pth.tar"
+            "Pretrained model can be found in the link https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Object-Detection, under the Training Section"
+        ),
+        type=str,
+        required=True,
+    )
+
+    args = parser.parse_args()
+    try:
+        main(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)

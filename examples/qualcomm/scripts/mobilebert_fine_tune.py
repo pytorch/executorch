@@ -220,42 +220,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
     return model.eval(), dataloader_val, labels
 
 
-if __name__ == "__main__":
-    parser = setup_common_args_and_variables()
-
-    parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. Default ./mobilebert_fine_tune",
-        default="./mobilebert_fine_tune",
-        type=str,
-    )
-
-    parser.add_argument(
-        "-p",
-        "--pretrained_weight",
-        help="Location of pretrained weight",
-        default=None,
-        type=str,
-    )
-
-    parser.add_argument(
-        "-F",
-        "--use_fp16",
-        help="If specified, will run in fp16 precision and discard ptq setting",
-        action="store_true",
-        default=False,
-    )
-
-    parser.add_argument(
-        "-P",
-        "--ptq",
-        help="If specified, will do PTQ quantization. default is 8bits activation and 8bits weight. Support 8a8w, 16a16w and 16a4w.",
-        default="8a8w",
-    )
-
-    args = parser.parse_args()
-
+def main(args):
     skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     # ensure the working directory exist.
@@ -353,3 +318,48 @@ if __name__ == "__main__":
             print(f"\n[{target[0]}]")
             for k, v in target[1].items():
                 print(f"{k}: {v[0]}/{v[1]}")
+
+
+if __name__ == "__main__":
+    parser = setup_common_args_and_variables()
+
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. Default ./mobilebert_fine_tune",
+        default="./mobilebert_fine_tune",
+        type=str,
+    )
+
+    parser.add_argument(
+        "-p",
+        "--pretrained_weight",
+        help="Location of pretrained weight",
+        default=None,
+        type=str,
+    )
+
+    parser.add_argument(
+        "-F",
+        "--use_fp16",
+        help="If specified, will run in fp16 precision and discard ptq setting",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "-P",
+        "--ptq",
+        help="If specified, will do PTQ quantization. default is 8bits activation and 8bits weight. Support 8a8w, 16a16w and 16a4w.",
+        default="8a8w",
+    )
+
+    args = parser.parse_args()
+    try:
+        main(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)

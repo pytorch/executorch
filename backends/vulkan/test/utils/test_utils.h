@@ -82,6 +82,11 @@ void record_image_to_nchw_op(
     api::vTensor& v_src,
     vkapi::VulkanBuffer& dst_buffer);
 
+void record_int8_image_to_nchw_noint8_op(
+    api::Context* const context,
+    api::vTensor& v_src,
+    api::StorageBuffer& dst_buffer);
+
 void record_conv2d_prepack_weights_op(
     api::Context* const context,
     vkapi::VulkanBuffer& src_buffer,

@@ -20,7 +20,7 @@ from executorch.extension.llm.export import LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import (
     Tokenizer as SentencePieceTokenizer,
 )
-
+from executorch.extension.llm.tokenizer.utils import get_tokenizer
 from lm_eval.api.model import LM
 
 from .export_llama_lib import (
@@ -103,11 +103,7 @@ def gen_eval_wrapper(
     Returns:
         eval_wrapper (LM): A wrapper interface for the lm-evaluation-harness library.
     """
-    try:
-        tokenizer = SentencePieceTokenizer(model_path=str(args.tokenizer_path))
-    except Exception:
-        print("Using Tiktokenizer")
-        tokenizer = Tiktoken(model_path=str(args.tokenizer_path))
+    tokenizer = get_tokenizer(args.tokenizer_path)
 
     # ExecuTorch Binary Evaluation
     if (model := args.pte) is not None:

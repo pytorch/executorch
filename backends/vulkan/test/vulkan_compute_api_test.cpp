@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <random>
 #include <utility>
 #include <vector>
 
@@ -1692,25 +1693,21 @@ void run_from_gpu_test(
   if (dtype == vkapi::kHalf && !context()->adapter_ptr()->has_16bit_storage()) {
     return;
   }
-  if ((dtype == vkapi::kChar || dtype == vkapi::kQInt8) &&
-      !context()->adapter_ptr()->has_full_int8_buffers_support()) {
-    return;
-  }
   vTensor vten = vTensor(context(), sizes, dtype, storage_type, memory_layout);
 
   std::string kernel_name("idx_fill_texture");
-  add_memory_layout_suffix(kernel_name, vten);
   add_dtype_suffix(kernel_name, vten);
+
+  int32_t offset = -50;
 
   {
     vkapi::PipelineBarrier pipeline_barrier{};
-    vkapi::SpecVarList specialization_constants = {vten.packed_dim_whcn_idx()};
     context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
         vten.image_extents(),
         {4, 4, 4},
-        specialization_constants,
+        {vten.packed_dim_whcn_idx(), offset},
         VK_NULL_HANDLE,
         0,
         vten.image(
@@ -1722,7 +1719,12 @@ void run_from_gpu_test(
 
   StorageBuffer staging_buffer(context(), dtype, vten.gpu_numel());
 
-  record_image_to_nchw_op(context(), vten, staging_buffer.buffer());
+  if (dtype == vkapi::kChar &&
+      !context()->adapter_ptr()->has_full_int8_buffers_support()) {
+    record_int8_image_to_nchw_noint8_op(context(), vten, staging_buffer);
+  } else {
+    record_image_to_nchw_op(context(), vten, staging_buffer.buffer());
+  }
 
   submit_to_gpu();
 
@@ -1730,22 +1732,18 @@ void run_from_gpu_test(
   copy_staging_to_ptr(staging_buffer, data_out.data(), staging_buffer.nbytes());
 
   for (int i = 0; i < vten.numel(); i++) {
-    CHECK_VALUE(data_out, i, i);
+    CHECK_VALUE(data_out, i, i + offset);
   }
 }
 
 template <typename T>
-void run_to_gpu_test(
+void round_trip_test(
     std::vector<int64_t>& sizes,
     utils::GPUMemoryLayout memory_layout =
         utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     vkapi::ScalarType dtype = vkapi::kFloat,
     utils::StorageType storage_type = utils::StorageType::TEXTURE_3D) {
   if (dtype == vkapi::kHalf && !context()->adapter_ptr()->has_16bit_storage()) {
-    return;
-  }
-  if ((dtype == vkapi::kChar || dtype == vkapi::kQInt8) &&
-      !context()->adapter_ptr()->has_full_int8_buffers_support()) {
     return;
   }
 
@@ -1756,16 +1754,22 @@ void run_to_gpu_test(
 
   std::vector<T> data_in(staging_buffer_in.numel());
   for (int i = 0; i < staging_buffer_in.numel(); i++) {
-    data_in[i] = i;
+    data_in[i] = T(i * -1);
   }
   copy_ptr_to_staging(data_in.data(), staging_buffer_in, vten.gpu_nbytes());
 
   // Output staging buffer
   StorageBuffer staging_buffer_out(context(), dtype, vten.gpu_numel());
 
-  // Copy data in and out of the tensor
   record_nchw_to_image_op(context(), staging_buffer_in.buffer(), vten);
-  record_image_to_nchw_op(context(), vten, staging_buffer_out.buffer());
+
+  // Copy data in and out of the tensor
+  if (dtype == vkapi::kChar &&
+      !context()->adapter_ptr()->has_full_int8_buffers_support()) {
+    record_int8_image_to_nchw_noint8_op(context(), vten, staging_buffer_out);
+  } else {
+    record_image_to_nchw_op(context(), vten, staging_buffer_out.buffer());
+  }
 
   // Execute command buffer
   submit_to_gpu();
@@ -1777,11 +1781,51 @@ void run_to_gpu_test(
 
   // All indices should be equal to the input data
   for (int i = 0; i < vten.numel(); i++) {
-    CHECK_VALUE(data_out, i, i);
+    CHECK_VALUE(data_out, i, data_in[i]);
   }
 }
 
-TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
+template <typename T>
+void compute_graph_round_trip_test(
+    std::vector<int64_t>& sizes,
+    utils::GPUMemoryLayout memory_layout =
+        utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
+    vkapi::ScalarType dtype = vkapi::kFloat,
+    utils::StorageType storage_type = utils::StorageType::TEXTURE_3D) {
+  if (dtype == vkapi::kHalf && !context()->adapter_ptr()->has_16bit_storage()) {
+    return;
+  }
+
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  ValueRef r_tensor =
+      graph.add_tensor(sizes, dtype, storage_type, memory_layout);
+  ValueRef r_staging_in = graph.set_input_tensor(r_tensor);
+  ValueRef r_staging_out = graph.set_output_tensor(r_tensor);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  vTensorPtr tensor = graph.get_tensor(r_tensor);
+
+  std::vector<T> data_in(tensor->numel());
+  for (int i = 0; i < data_in.size(); i++) {
+    data_in[i] = T(i * -1);
+  }
+  graph.copy_into_staging(r_staging_in, data_in.data(), data_in.size());
+
+  graph.execute();
+
+  std::vector<T> data_out(tensor->gpu_numel());
+  graph.copy_from_staging(r_staging_out, data_out.data(), data_out.size());
+
+  for (int i = 0; i < data_in.size(); i++) {
+    CHECK_VALUE(data_out, i, data_in[i]);
+  }
+}
+
+TEST(VulkanToFromGPUShaderTest, round_trip_tests) {
   // The below tests will fill each texel element with the value of the linear
   // buffer index that corresponds to it. The texel at position (0, 0, 0) will
   // be filled with the values [0, 1, 2, 3], the texel at position (1, 0, 0)
@@ -1824,11 +1868,17 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
   };
 
 #define RUN_TESTS(ctype, dtype)                                      \
-  run_to_gpu_test<ctype>(                                            \
+  round_trip_test<ctype>(                                            \
       sizes, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, dtype); \
-  run_to_gpu_test<ctype>(                                            \
+  round_trip_test<ctype>(                                            \
       sizes, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, dtype);    \
-  run_to_gpu_test<ctype>(                                            \
+  round_trip_test<ctype>(                                            \
+      sizes, utils::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, dtype);   \
+  compute_graph_round_trip_test<ctype>(                              \
+      sizes, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, dtype); \
+  compute_graph_round_trip_test<ctype>(                              \
+      sizes, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, dtype);    \
+  compute_graph_round_trip_test<ctype>(                              \
       sizes, utils::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, dtype);
 
   for (auto& sizes : to_test) {
@@ -2202,4 +2252,76 @@ TEST(VulkanComputeGraphOpsTest, conv2d_prepack_test) {
       /*data_out_expected = */ {2, 8, 0, 0, 1, 7, 0,  0, 4, 10, 0,
                                 0, 3, 9, 0, 0, 6, 12, 0, 0, 5,  11,
                                 0, 0, 0, 0, 0, 0, 0,  0, 0, 0});
+}
+
+void test_grid_priors(
+    std::vector<int64_t> input_sizes,
+    std::vector<int64_t> output_sizes,
+    int stride,
+    double offset,
+    const std::vector<float>& data_out_expected) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  // Build graph
+  IOValueRef in = graph.add_input_tensor(
+      input_sizes,
+      vkapi::kFloat,
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+  IOValueRef out;
+  out.value = graph.add_tensor(
+      output_sizes,
+      vkapi::kFloat,
+      utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+
+  VK_GET_OP_FN("et_vk.grid_priors.default")
+  (graph,
+   {in.value,
+    graph.add_scalar<int64_t>(stride),
+    graph.add_scalar<double>(offset),
+    out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  vTensorPtr t_in = graph.get_tensor(in.value);
+  vTensorPtr t_out = graph.get_tensor(out.value);
+  // Resize input
+  graph.propagate_resize();
+
+  // run graph
+  graph.execute();
+
+  std::vector<float> output_data(t_out->gpu_numel());
+  graph.copy_from_staging(out.staging, output_data.data(), output_data.size());
+
+  // check results
+  int h_out = utils::val_at(-2, t_out->sizes());
+  int w_out = utils::val_at(-1, t_out->sizes());
+  for (size_t i = 0; i < h_out; ++i) {
+    for (size_t j = 0; j < w_out; ++j) {
+      size_t idx_out = i * w_out + j;
+      CHECK_VALUE(output_data, idx_out, data_out_expected[idx_out]);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, grid_priors_test) {
+  test_grid_priors(
+      /*input size = */ {1, 5, 2, 3},
+      /*output size = */ {6, 2},
+      /*stride = */ 1,
+      /*offset = */ 0.0,
+      /*data_out_expected = */ {0, 0, 1, 0, 2, 0, 0, 1, 1, 1, 2, 1});
+
+  test_grid_priors(
+      /*input size = */ {1, 5, 2, 3},
+      /*output size = */ {6, 2},
+      /*stride = */ 8,
+      /*offset = */ 0.5,
+      /*data_out_expected = */ {4, 4, 12, 4, 20, 4, 4, 12, 12, 12, 20, 12});
 }

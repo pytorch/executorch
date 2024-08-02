@@ -32,12 +32,15 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/matmul_ops_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/reduce_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/pattern/unary_ufunc_realhb_to_floath.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_bmm.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_cat.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_clone.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_div.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mean.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_mul.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_permute_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_rsqrt.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_sigmoid.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_slice_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_softmax.cpp"
@@ -60,7 +63,8 @@ target_include_directories(aten_ops_cadence PUBLIC ${ROOT_DIR}/..
 add_library(
   custom_ops "quantized_linear_out.cpp" "quantized_conv_out.cpp"
   "quantized_relu_out.cpp" "quantized_layer_norm.cpp"
-  "quantize_per_tensor.cpp" "dequantize_per_tensor.cpp")
+  "quantize_per_tensor.cpp" "dequantize_per_tensor.cpp"
+  "quantized_matmul_out.cpp")
 target_include_directories(custom_ops PUBLIC ${ROOT_DIR}/..
                                              ${CMAKE_BINARY_DIR}
                                              ${_common_include_directories})
