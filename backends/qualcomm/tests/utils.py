@@ -27,7 +27,11 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
 from executorch.backends.qualcomm.utils.utils import capture_program
-from executorch.examples.qualcomm.scripts.utils import SimpleADB
+from executorch.examples.qualcomm.scripts.utils import (
+    generate_inputs,
+    make_output_dir,
+    SimpleADB,
+)
 
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -133,6 +137,7 @@ class TestQNN(unittest.TestCase):
     use_16a16w: str = "16a16w"
     use_16a4w: str = "16a4w"
     shared_buffer: bool = False
+    enable_x86_64: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -201,16 +206,16 @@ class TestQNN(unittest.TestCase):
                 tmp_dir,
             )
 
-            device_output_dir = f"{tmp_dir}/outputs"
-            device_outputs = []
+            output_dir = f"{tmp_dir}/outputs"
+            outputs = []
             etdump_path = f"{tmp_dir}/etdump.etdp"
 
             def post_process():
-                for i, f in enumerate(sorted(os.listdir(device_output_dir))):
-                    filename = os.path.join(device_output_dir, f)
+                for i, f in enumerate(sorted(os.listdir(output_dir))):
+                    filename = os.path.join(output_dir, f)
                     output = np.fromfile(filename, dtype=ref_outputs[i].numpy().dtype)
                     output = torch.from_numpy(output).reshape(ref_outputs[i].shape)
-                    device_outputs.append(output)
+                    outputs.append(output)
 
             def validate_profile():
                 inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
@@ -218,23 +223,58 @@ class TestQNN(unittest.TestCase):
                     len(inspector.to_dataframe().index) == expected_profile_events
                 )
 
-            adb = SimpleADB(
-                qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-                build_path=self.build_folder,
-                pte_path=pte_fname,
-                workspace="/data/local/tmp/qnn_executorch_test",
-                device_id=self.device,
-                host_id=self.host,
-                soc_model=self.model,
-                error_only=self.error_only,
-            )
-            adb.push(inputs=[sample_inputs], input_list=input_list)
-            adb.execute()
-            adb.pull(output_path=tmp_dir, callback=post_process)
-            self._assert_outputs_equal(device_outputs, ref_outputs)
+            if self.enable_x86_64:
+                generate_inputs(tmp_dir, "input_list.txt", [sample_inputs], input_list)
+                make_output_dir(output_dir)
 
-            if expected_profile_events != -1:
-                adb.pull_etdump(etdump_path, callback=validate_profile)
+                target = "x86_64-linux-clang"
+                qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
+                assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
+
+                build_path = "build_x86_64"
+                cmds = [
+                    # export LD_LIBRARY_PATH to QNN_SDK_ROOT
+                    f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{self.executorch_root}/{build_path}/lib && "
+                    # qnn_executor_runner
+                    f"{self.executorch_root}/{build_path}/examples/qualcomm/qnn_executor_runner",
+                    f"--model_path {pte_fname}",
+                    f"--input_list_path {tmp_dir}/input_list.txt",
+                    f"--output_folder_path {output_dir}",
+                ]
+
+                subprocess.run(
+                    " ".join(cmds),
+                    shell=True,
+                    executable="/bin/bash",
+                    capture_output=True,
+                    cwd=tmp_dir,
+                )
+
+                # Verify the outputs
+                post_process()
+                self._assert_outputs_equal(outputs, ref_outputs)
+
+                # Verify the etdump
+                if expected_profile_events != -1:
+                    validate_profile()
+            else:
+                adb = SimpleADB(
+                    qnn_sdk=os.getenv("QNN_SDK_ROOT"),
+                    build_path=self.build_folder,
+                    pte_path=pte_fname,
+                    workspace="/data/local/tmp/qnn_executorch_test",
+                    device_id=self.device,
+                    host_id=self.host,
+                    soc_model=self.model,
+                    error_only=self.error_only,
+                )
+                adb.push(inputs=[sample_inputs], input_list=input_list)
+                adb.execute()
+                adb.pull(output_path=tmp_dir, callback=post_process)
+                self._assert_outputs_equal(outputs, ref_outputs)
+
+                if expected_profile_events != -1:
+                    adb.pull_etdump(etdump_path, callback=validate_profile)
 
     def lower_module_and_test_output(
         self,
@@ -362,6 +402,8 @@ class TestQNN(unittest.TestCase):
                             (node,),
                         )
                         inserted_node.meta["val"] = node.meta["val"]
+                        if "quant_attrs" in node.meta:
+                            inserted_node.meta["quant_attrs"] = node.meta["quant_attrs"]
                         for user in users:
                             user.replace_input_with(node, inserted_node)
 

@@ -23,7 +23,9 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
 
+#if defined(__aarch64__)
 #include "arm_neon.h"
+#endif
 
 namespace torch {
 namespace executor {
@@ -108,9 +110,11 @@ Error Runner::load() {
 
 int32_t Runner::logitsToToken(const Tensor& logits_tensor) {
   static std::vector<float> logits_f(vocab_size_);
+  const uint16_t* logits = logits_tensor.data_ptr<uint16_t>();
+
+#if defined(__aarch64__)
   static int32x4_t offset = vmovq_n_s32(logits_offset_);
   static float32x4_t scale = vmovq_n_f32(logits_scale_);
-  const uint16_t* logits = logits_tensor.data_ptr<uint16_t>();
   // dequantize
   for (int i = 0; i < vocab_size_; i += 4) {
     const uint16_t* in = logits + i;
@@ -121,6 +125,13 @@ int32_t Runner::logitsToToken(const Tensor& logits_tensor) {
     float32x4_t shifted_f = vcvtq_f32_s32(shifted);
     vst1q_f32(out, vmulq_f32(shifted_f, scale));
   }
+#else
+  // dequantize
+  for (int i = 0; i < vocab_size_; i++) {
+    logits_f[i] = (logits[i] - logits_offset_) * logits_scale_;
+  }
+#endif
+
   return sampler_->sample(logits_f.data());
 }
 
