@@ -753,8 +753,12 @@ if(EXECUTORCH_BUILD_PYBIND)
       PROPERTIES # Assume that this library will be installed in
                  # `site-packages/executorch/extension/pybindings`, and that
                  # the torch libs are in `site-packages/torch/lib`.
-                 BUILD_RPATH "@rpath/../../../torch/lib:@rpath/../../:@rpath/../../examples/models/llama2/custom_ops"
-                 INSTALL_RPATH "@rpath/../../../torch/lib:@rpath/../../:@rpath/../../examples/models/llama2/custom_ops"
+                 BUILD_RPATH "@loader_path/../../../torch/lib" "@loader_path/../../" "@loader_path/../../examples/models/llama2/custom_ops"
+                 INSTALL_RPATH "@loader_path/../../../torch/lib" "@loader_path/../../" "@loader_path/../../examples/models/llama2/custom_ops"
+                 BUILD_RPATH "@loader_path/../../" "@loader_path/../../examples/models/llama2/custom_ops"
+                 INSTALL_RPATH "@loader_path/../../" "@loader_path/../../examples/models/llama2/custom_ops"
+                 BUILD_RPATH "@loader_path/../../examples/models/llama2/custom_ops"
+                 INSTALL_RPATH "@loader_path/../../examples/models/llama2/custom_ops"
     )
   else()
     set_target_properties(

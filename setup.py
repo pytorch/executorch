@@ -584,6 +584,13 @@ def get_ext_modules() -> List[Extension]:
                 "executorch/examples/models/llama2/custom_ops",
             )
         )
+        ext_modules.append(
+            # Install the prebuilt library required by quantized ops
+            BuiltFile(
+                "libexecutorch_no_prim_ops_shared.*",
+                "executorch",
+            )
+        )
 
     # Note that setuptools uses the presence of ext_modules as the main signal
     # that a wheel is platform-specific. If we install any platform-specific
