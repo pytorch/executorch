@@ -45,7 +45,7 @@ class EmitterOutput:
         str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]
     ]
 
-    mutable_data: List[Buffer]
+    mutable_data: Optional[List[Buffer]]
 
 
 def _remove_non_user_outputs(exported_program: ExportedProgram) -> torch.fx.GraphModule:
@@ -161,5 +161,9 @@ def emit_program(
             constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
             mutable_data_segments=None,  # Will be filled in during serialization
         ),
-        mutable_data=program_state.mutable_buffer,
+        mutable_data=(
+            program_state.mutable_buffer
+            if len(program_state.mutable_buffer) > 1
+            else None
+        ),
     )
