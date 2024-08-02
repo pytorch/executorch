@@ -94,7 +94,8 @@ void et_copy_index(RuntimeContext& context, EValue** stack) {
     expected_output_size[i + 1] = copy_from.sizes()[i];
   }
 
-  if (copy_to.sizes()[0] != expected_output_size[0]) {
+  if (copy_to.sizes()[0] < expected_output_size[0]) {
+    // Resize `copy_to` to the expected output size.
     const void* data_ptr = copy_to.const_data_ptr();
     Error err =
         resize_tensor(copy_to, {expected_output_size, copy_to.sizes().size()});
