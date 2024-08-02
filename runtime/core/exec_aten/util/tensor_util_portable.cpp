@@ -73,40 +73,66 @@ bool tensor_is_default_or_channels_last_dim_order(torch::executor::Tensor t) {
   return ret_val;
 }
 
+bool tensor_is_default_dim_order(torch::executor::Tensor t) {
+  bool ret_val =
+      is_contiguous_dim_order(t.dim_order().data(), t.dim_order().size());
+
+  if (!ret_val) {
+    ET_LOG(Error, "Expected tensor to have default dim order, but got");
+    for (size_t d = 0; d < t.dim(); ++d) {
+      ET_LOG(
+          Error,
+          "    dim_order(%zu): %zu",
+          static_cast<size_t>(d),
+          static_cast<size_t>(t.dim_order()[d]));
+    }
+  }
+  return ret_val;
+}
+
+bool tensor_is_channels_last_dim_order(torch::executor::Tensor t) {
+  bool ret_val =
+      is_channels_last_dim_order(t.dim_order().data(), t.dim_order().size());
+
+  if (!ret_val) {
+    ET_LOG(Error, "Expected tensor to have channels last dim order, but got");
+    for (size_t d = 0; d < t.dim(); ++d) {
+      ET_LOG(
+          Error,
+          "    dim_order(%zu): %zu",
+          static_cast<size_t>(d),
+          static_cast<size_t>(t.dim_order()[d]));
+    }
+  }
+  return ret_val;
+}
+
 bool tensors_have_same_dim_order(
-    const exec_aten::Tensor& a,
-    const exec_aten::Tensor& b) {
-  bool all_contiguous =
-      is_contiguous_dim_order(a.dim_order().data(), a.dim_order().size()) &&
-      is_contiguous_dim_order(b.dim_order().data(), b.dim_order().size());
-  bool all_channels_last =
-      is_channels_last_dim_order(a.dim_order().data(), a.dim_order().size()) &&
-      is_channels_last_dim_order(b.dim_order().data(), b.dim_order().size());
+    const exec_aten::ArrayRef<exec_aten::Tensor> tensor_list) {
+  if (tensor_list.size() < 2) {
+    return true;
+  }
+  bool all_contiguous = true;
+  bool all_channels_last = true;
+  for (size_t i = 0; i < tensor_list.size(); ++i) {
+    all_contiguous = all_contiguous &&
+        is_contiguous_dim_order(
+                         tensor_list[i].dim_order().data(),
+                         tensor_list[i].dim_order().size());
+    all_channels_last = all_channels_last &&
+        is_channels_last_dim_order(
+                            tensor_list[i].dim_order().data(),
+                            tensor_list[i].dim_order().size());
+  }
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       all_contiguous || all_channels_last,
-      "Two input tensors have different dim orders");
+      "%zd input tensors have different dim orders",
+      tensor_list.size());
 
   return true;
 }
 
-bool tensors_have_same_dim_order(
-    const exec_aten::Tensor& a,
-    const exec_aten::Tensor& b,
-    const exec_aten::Tensor& c) {
-  bool all_contiguous =
-      is_contiguous_dim_order(a.dim_order().data(), a.dim_order().size()) &&
-      is_contiguous_dim_order(b.dim_order().data(), b.dim_order().size()) &&
-      is_contiguous_dim_order(c.dim_order().data(), c.dim_order().size());
-  bool all_channels_last =
-      is_channels_last_dim_order(a.dim_order().data(), a.dim_order().size()) &&
-      is_channels_last_dim_order(b.dim_order().data(), b.dim_order().size()) &&
-      is_channels_last_dim_order(c.dim_order().data(), c.dim_order().size());
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      all_contiguous || all_channels_last,
-      "Three input tensors have different dim orders");
-  return true;
-}
 namespace internal {
 
 Error share_tensor_data(
