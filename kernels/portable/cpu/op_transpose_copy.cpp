@@ -57,6 +57,9 @@ Tensor& transpose_copy_int_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ET_SWITCH_ALL_TYPES(in.scalar_type(), ctx, __func__, CTYPE, [&] {
     transpose_tensors<CTYPE>(in, dim0, dim1, out);
   });
