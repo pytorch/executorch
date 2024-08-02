@@ -180,7 +180,9 @@ class ComputeGraph final {
     return values_.at(idx).type();
   }
 
-  // Get Tensor Property
+  //
+  // Tensor Properties Accessors
+  //
 
   std::vector<int64_t> sizes_of(const ValueRef idx) const;
 
@@ -226,7 +228,9 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().ntexels_ubo();
   }
 
+  //
   // Scalar Value Extraction
+  //
 
   template <typename T>
   T extract_scalar(const ValueRef idx) {
@@ -459,15 +463,20 @@ class ComputeGraph final {
   utils::uvec3 create_global_wg_size(const ValueRef idx);
 
   /*
-   * Suggest a local workgroup size for a given `api::vTensor` value, assuming
-   * that every shader invocation calculates one texel element of the output
-   * tensor.
+   * Suggest a local workgroup size for a given global workgroup size.
    *
    * The local workgroup size will be formed to try and minimize the number of
    * inactive invocations.
    *
    * Currently, the local workgroup size is hard-coded to contain a total of 64
    * shader invocations. In the future, this value can be configured.
+   */
+  utils::uvec3 create_local_wg_size(const utils::uvec3 global_wg_size);
+
+  /*
+   * Convenience function to suggest a local workgroup size for a given
+   * `api::vTensor` value, assuming that every shader invocation calculates one
+   * texel element of the output tensor.
    */
   utils::uvec3 create_local_wg_size(const ValueRef idx);
 
@@ -499,6 +508,17 @@ class ComputeGraph final {
 
   void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
   void propagate_resize();
+
+  //
+  // Miscellaneous Utilities
+  //
+
+  /*
+   * Check whether the GPU supports 8 bit buffers.
+   */
+  inline bool int8_buffers_enabled() const {
+    return context_->adapter_ptr()->has_full_int8_buffers_support();
+  }
 
   //
   // Debug support (implemented in Logging.cpp)
