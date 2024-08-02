@@ -190,7 +190,7 @@ BPETokenizer::encode(const std::string& text, int8_t bos, int8_t eos) const {
   std::vector<uint64_t> tokens;
 
   // add optional BOS token, if desired
-  if (bos > 0) {
+  if (bos >= 0) {
     while (bos--) {
       tokens.push_back(bos_tok_);
     }
