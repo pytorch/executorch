@@ -10,6 +10,7 @@
 #pragma once
 #include <cinttypes>
 #include <sstream>
+// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <string>
 
 #include <executorch/runtime/platform/log.h>
