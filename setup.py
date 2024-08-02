@@ -489,8 +489,6 @@ class CustomBuild(build):
             cmake_args += [
                 "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON",  # add llama sdpa ops to pybindings.
                 "-DEXECUTORCH_BUILD_KERNELS_CUSTOM_AOT=ON",
-                "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
-                "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
             build_args += ["--target", "custom_ops_aot_lib"]
             build_args += ["--target", "quantized_ops_aot_lib"]
@@ -580,9 +578,7 @@ def get_ext_modules() -> List[Extension]:
             # Install the prebuilt library for quantized ops required by custom ops.
             BuiltFile(
                 "kernels/quantized/libquantized_ops_aot_lib.*",
-                # Pushing the quantized ops to the same directory as the custom ops
-                # so that we don't need additional rpath for custom_ops.
-                "executorch/examples/models/llama2/custom_ops",
+                "executorch/kernels/quantized",
             )
         )
 

@@ -753,8 +753,8 @@ if(EXECUTORCH_BUILD_PYBIND)
       PROPERTIES # Assume that this library will be installed in
                  # `site-packages/executorch/extension/pybindings`, and that
                  # the torch libs are in `site-packages/torch/lib`.
-                 BUILD_RPATH "@loader_path/../../../torch/lib" "@loader_path/../../examples/models/llama2/custom_ops"
-                 INSTALL_RPATH "@loader_path/../../../torch/lib" "@loader_path/../../examples/models/llama2/custom_ops"
+                 BUILD_RPATH @loader_path/../../../torch/lib;@loader_path/../../;@loader_path/../../examples/models/llama2/custom_ops;@loader_path/../../kernels/quantized
+                 INSTALL_RPATH @loader_path/../../../torch/lib;@loader_path/../../;@loader_path/../../examples/models/llama2/custom_ops;@loader_path/../../kernels/quantized
     )
   else()
     set_target_properties(
@@ -762,7 +762,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       PROPERTIES # Assume that this library will be installed in
                  # `site-packages/executorch/extension/pybindings`, and that
                  # the custom_ops_aot_lib should be found with relative path.
-		  BUILD_RPATH "$ORIGIN:$ORIGIN/../../examples/models/llama2/custom_ops"
+		  BUILD_RPATH $ORIGIN;$ORIGIN/../../examples/models/llama2/custom_ops;$ORIGIN/../../kernels/quantized
     )
   endif()
 
