@@ -76,7 +76,8 @@ void record_nchw_to_image_op(
       SV(v_dst.packed_dim_whcn_idx())};
 
   context->submit_compute_job(
-      get_nchw_to_tensor_shader(v_dst),
+      get_nchw_to_tensor_shader(
+          v_dst, context->adapter_ptr()->has_full_int8_buffers_support()),
       pipeline_barrier,
       v_dst.image_extents(),
       adaptive_work_group_size(v_dst.image_extents()),
@@ -110,6 +111,27 @@ void record_image_to_nchw_op(
       v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
       dst_buffer,
       v_src.sizes_ubo());
+}
+
+void record_int8_image_to_nchw_noint8_op(
+    api::Context* const context,
+    api::vTensor& v_src,
+    api::StorageBuffer& dst_buffer) {
+  vkapi::PipelineBarrier pipeline_barrier{};
+  uint32_t buffer_len = utils::safe_downcast<uint32_t>(dst_buffer.numel() / 4);
+  utils::uvec3 global_wg_size = {buffer_len, 1, 1};
+  context->submit_compute_job(
+      VK_KERNEL(int8_tensor_to_nchw_noint8),
+      pipeline_barrier,
+      global_wg_size,
+      adaptive_work_group_size(global_wg_size),
+      {v_src.packed_dim_whcn_idx()},
+      VK_NULL_HANDLE,
+      0,
+      v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      dst_buffer.buffer(),
+      v_src.sizes_ubo(),
+      v_src.ntexels_ubo());
 }
 
 void record_conv2d_prepack_weights_op(
