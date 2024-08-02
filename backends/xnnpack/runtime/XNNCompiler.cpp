@@ -1418,6 +1418,35 @@ Error defineScaledDotProductAttentionNode(
 
   return Error::Ok;
 }
+
+/*
+Defines batch matrix multiply node into the subgraph,
+using the remapped ids to map the serialized ids,
+to the new ids generated when defining the tensor value
+*/
+Error defineBatchMatrixMultiplyNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node) noexcept {
+  auto graph_node = node->xnode_union_as_XNNBatchMatrixMultiply();
+
+  xnn_status status = xnn_define_batch_matrix_multiply(
+      subgraph_ptr,
+      remapped_ids.at(graph_node->input1_id()),
+      remapped_ids.at(graph_node->input2_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create BMM node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
 /*
 Returns not Implemented Error code. This function is meant to be
 called when the compiler encountes a XNodeType from the flatbuffer
@@ -1480,6 +1509,7 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(Concatenate4)
     _DEFINE(StaticSlice)
     _DEFINE(ScaledDotProductAttention)
+    _DEFINE(BatchMatrixMultiply)
     case fb_xnnpack::XNodeUnion::NONE:
     default: // Adding here as a catch all, just in case
       return &defineNotImplementedNode;
