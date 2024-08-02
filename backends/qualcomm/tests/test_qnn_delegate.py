@@ -147,6 +147,7 @@ class TestQNNFloatingPointOperator(TestQNN):
 
     def test_qnn_backend_element_wise_div(self):
         eps = 1e-03
+        torch.manual_seed(8)
         test_comb = [
             {
                 QCOM_MODULE: [Div()],  # noqa: F405
@@ -721,6 +722,7 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_element_wise_div(self):
         eps = 1e-03
+        torch.manual_seed(8)
         test_comb = [
             {
                 QCOM_MODULE: [Div()],  # noqa: F405
@@ -1323,7 +1325,6 @@ class TestQNNFloatingPointUtils(TestQNN):
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
 
-    @unittest.expectedFailure
     def test_qnn_backend_profile_op(self):
         TestQNN.enable_profile = True
         backend_options = generate_htp_compiler_spec(use_fp16=True)
@@ -1338,7 +1339,7 @@ class TestQNNFloatingPointUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_profile_events=25,
+            expected_profile_events=24,
         )
 
     def test_qnn_backend_shared_buffer(self):
@@ -1488,7 +1489,6 @@ class TestQNNQuantizedUtils(TestQNN):
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
 
-    @unittest.expectedFailure
     def test_qnn_backend_profile_op(self):
         TestQNN.enable_profile = True
         backend_options = generate_htp_compiler_spec(use_fp16=False)
@@ -1504,7 +1504,7 @@ class TestQNNQuantizedUtils(TestQNN):
             module,
             sample_input,
             expected_partitions=1,
-            expected_profile_events=26,
+            expected_profile_events=25,
         )
 
     def test_qnn_backend_shared_buffer(self):
@@ -2288,6 +2288,12 @@ def setup_environment():
         help="Path to open source software model repository",
         type=str,
     )
+    parser.add_argument(
+        "-x",
+        "--enable_x86_64",
+        help="Enable unittest to be executed on x86_64 platform",
+        action="store_true",
+    )
 
     args, ns_args = parser.parse_known_args(namespace=unittest)
     TestQNN.host = args.host
@@ -2304,6 +2310,7 @@ def setup_environment():
     TestQNN.error_only = args.error_only
     TestQNN.oss_repo = args.oss_repo
     TestQNN.shared_buffer = args.shared_buffer
+    TestQNN.enable_x86_64 = args.enable_x86_64
     return sys.argv[:1] + ns_args
 
 

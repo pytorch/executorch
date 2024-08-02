@@ -106,24 +106,18 @@ class SimpleADB:
             f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
         ]
 
-        # prepare input list
-        if input_list is not None:
-            input_list_file = f"{self.working_dir}/{self.input_list_filename}"
-            with open(input_list_file, "w") as f:
-                f.write(input_list)
-                f.flush()
-            artifacts.append(input_list_file)
+        input_list_file, input_files = generate_inputs(
+            self.working_dir, self.input_list_filename, inputs, input_list
+        )
 
+        # prepare input list
+        artifacts.append(input_list_file)
         for artifact in artifacts:
             self._adb(["push", artifact, self.workspace])
 
         # input data
-        if inputs is not None:
-            for idx, data in enumerate(inputs):
-                for i, d in enumerate(data):
-                    file_name = f"{self.working_dir}/input_{idx}_{i}.raw"
-                    d.detach().numpy().tofile(file_name)
-                    self._adb(["push", file_name, self.workspace])
+        for file_name in input_files:
+            self._adb(["push", file_name, self.workspace])
 
         # custom files
         if files is not None:
@@ -437,3 +431,25 @@ def parse_skip_delegation_node(args):
         print("Skipping following node ops: ", skip_node_op_set)
 
     return skip_node_id_set, skip_node_op_set
+
+
+def generate_inputs(dest_path: str, file_name: str, inputs=None, input_list=None):
+    input_list_file = ""
+    input_files = []
+
+    # Prepare input list
+    if input_list is not None:
+        input_list_file = f"{dest_path}/{file_name}"
+        with open(input_list_file, "w") as f:
+            f.write(input_list)
+            f.flush()
+
+    # Prepare input data
+    if inputs is not None:
+        for idx, data in enumerate(inputs):
+            for i, d in enumerate(data):
+                file_name = f"{dest_path}/input_{idx}_{i}.raw"
+                d.detach().numpy().tofile(file_name)
+                input_files.append(file_name)
+
+    return input_list_file, input_files
