@@ -580,7 +580,8 @@ def get_ext_modules() -> List[Extension]:
             # Install the prebuilt library for quantized ops required by custom ops.
             BuiltFile(
                 "kernels/quantized/libquantized_ops_aot_lib.*",
-                "executorch/kernels/quantized",
+                # With "executorch/kernels/quantized" it produces a file instead of putting to that dir
+                "executorch/examples/models/llama2/custom_ops",
             )
         )
 
