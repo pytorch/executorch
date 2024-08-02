@@ -62,7 +62,7 @@ void main() {
     return;
   }
 
-  ivec4 tensor_idx = to_texel_pos(t_id, gpu_strides, packed_dim);
+  ivec4 tensor_idx = to_tensor_idx(t_id, gpu_strides, packed_dim);
   tensor_idx[packed_dim] *= 4;
   t_out[t_id] = read_texel(tensor_idx);
 }

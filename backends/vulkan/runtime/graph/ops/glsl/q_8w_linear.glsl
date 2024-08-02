@@ -53,7 +53,7 @@ void main() {
     return;
   }
 
-  const ivec4 out_pos = to_texel_pos(t_id, out_strides, 0);
+  const ivec4 out_pos = to_tensor_idx(t_id, out_strides, 0);
 
   VEC4_T outtex = q_8w_linear(out_pos, mat1_sizes.x);
   write_texel(t_out, t_id, outtex);
