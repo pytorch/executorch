@@ -489,6 +489,8 @@ class CustomBuild(build):
             cmake_args += [
                 "-DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON",  # add llama sdpa ops to pybindings.
                 "-DEXECUTORCH_BUILD_KERNELS_CUSTOM_AOT=ON",
+                "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON",  # add quantized ops to pybindings.
+                "-DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON",
             ]
             build_args += ["--target", "custom_ops_aot_lib"]
             build_args += ["--target", "quantized_ops_aot_lib"]
