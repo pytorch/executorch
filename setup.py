@@ -573,21 +573,13 @@ def get_ext_modules() -> List[Extension]:
             # Install the prebuilt library for custom ops used in llama.
             BuiltFile(
                 "examples/models/llama2/custom_ops/libcustom_ops_aot_lib.*",
-                "executorch/examples/models/llama2/custom_ops",
+                "executorch",
             )
         )
         ext_modules.append(
             # Install the prebuilt library for quantized ops required by custom ops.
             BuiltFile(
                 "kernels/quantized/libquantized_ops_aot_lib.*",
-                # With "executorch/kernels/quantized" it produces a file instead of putting to that dir
-                "executorch/examples/models/llama2/custom_ops",
-            )
-        )
-        ext_modules.append(
-            # Install the prebuilt library required by quantized ops
-            BuiltFile(
-                "libexecutorch_no_prim_ops_shared.*",
                 "executorch",
             )
         )

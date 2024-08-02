@@ -680,7 +680,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       executorch
       extension_data_loader
       portable_ops_lib
-      quantized_ops_aot_lib
       util
       torch
   )
@@ -701,7 +700,6 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     target_link_options_shared_lib(quantized_ops_lib)
-    list(APPEND _dep_libs quantized_kernels quantized_ops_lib)
   endif()
 
   # compile options for pybind
@@ -757,8 +755,6 @@ if(EXECUTORCH_BUILD_PYBIND)
                  INSTALL_RPATH "@loader_path/../../../torch/lib"
                  BUILD_RPATH "@loader_path/../../"
                  INSTALL_RPATH "@loader_path/../../"
-                 BUILD_RPATH "@loader_path/../../examples/models/llama2/custom_ops"
-                 INSTALL_RPATH "@loader_path/../../examples/models/llama2/custom_ops"
     )
   else()
     set_target_properties(
@@ -766,7 +762,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       PROPERTIES # Assume that this library will be installed in
                  # `site-packages/executorch/extension/pybindings`, and that
                  # the custom_ops_aot_lib should be found with relative path.
-		  BUILD_RPATH "$ORIGIN:$ORIGIN/../../examples/models/llama2/custom_ops"
+		  BUILD_RPATH "$ORIGIN:$ORIGIN/../.."
     )
   endif()
 
