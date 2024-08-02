@@ -33,6 +33,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
+                "//executorch/extension/llm/runner:stats",
                 "//executorch/extension/llm/sampler:sampler" + aten_suffix,
                 "//executorch/extension/evalue_util:print_evalue" + aten_suffix,
                 "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
