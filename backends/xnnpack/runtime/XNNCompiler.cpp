@@ -1612,7 +1612,8 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
     const void* buffer_pointer,
     size_t num_bytes,
     XNNExecutor* executor,
-    MemoryAllocator* runtime_allocator) {
+    MemoryAllocator* runtime_allocator,
+    xnn_workspace_t workspace) {
   Result<XNNHeader> header = XNNHeader::Parse(buffer_pointer, num_bytes);
   const uint8_t* flatbuffer_data = nullptr;
   const uint8_t* constant_data = nullptr;
@@ -1707,9 +1708,12 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
   runtime_flags |= XNN_FLAG_BASIC_PROFILING;
 #endif
 
+  ET_CHECK_OR_RETURN_ERROR(workspace != nullptr, Internal, "Uninitialized workspace");
   xnn_runtime_t runtime_ptr = nullptr;
-  status = xnn_create_runtime_v2(
+  status = xnn_create_runtime_v4(
       subgraph.get(),
+      /*weight_cache=*/nullptr, // TODO - support weight cache
+      workspace,
       torch::executorch::threadpool::get_pthreadpool(),
       runtime_flags,
       &runtime_ptr);

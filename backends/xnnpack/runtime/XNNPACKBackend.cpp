@@ -22,6 +22,25 @@ class XnnpackBackend final : public PyTorchBackendInterface {
  public:
   ~XnnpackBackend() = default;
 
+  XnnpackBackend() {
+      // Initialize XNNPACK
+      xnn_status status = xnn_initialize(/*allocator=*/nullptr);
+      if (status != xnn_status_success) {
+        ET_LOG(Error, "Failed to initialize, XNNPACK status: 0x%x", (unsigned int)status);
+        return;
+      }
+
+      // Create a workspace for the XNNExecutor to use. This workspace will be
+      // shared across all delegate instances.
+      status = xnn_create_workspace(&workspace_);
+      if (status != xnn_status_success) {
+        ET_LOG(Error, "Failed to create XNN workspace, XNNPACK status: 0x%x", (unsigned int)status);
+        workspace_ = nullptr;
+        return;
+      }
+      ET_LOG(Debug, "Created XNN workspace: %p", workspace_); 
+  }
+
   bool is_available() const override {
     return xnn_status_success == xnn_initialize(/*allocator=*/nullptr);
   }
@@ -38,12 +57,14 @@ class XnnpackBackend final : public PyTorchBackendInterface {
     // new and since this type is not trivially destructible, we must call the
     // destructor manually in destroy().
     new (executor) xnnpack::delegate::XNNExecutor;
-
+  
+    ET_CHECK_OR_RETURN_ERROR(workspace_ != nullptr, Internal, "Failed to create XNN workspace");
     Error err = xnnpack::delegate::XNNCompiler::compileModel(
         processed->data(),
         processed->size(),
         executor,
-        context.get_runtime_allocator());
+        context.get_runtime_allocator(),
+        workspace_);
     // This backend does not need its processed data after compiling the model.
     processed->Free();
 
@@ -94,6 +115,11 @@ class XnnpackBackend final : public PyTorchBackendInterface {
       executor->~XNNExecutor();
     }
   }
+
+  private:
+    // Global state for the backend.
+    xnn_workspace_t workspace_;
+    // TODO - Add support for weight cache
 };
 
 namespace {
