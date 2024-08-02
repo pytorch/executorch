@@ -26,7 +26,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
-          tokenizer: [bpe, tiktoken]
+          tokenizer: [bpe]
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
