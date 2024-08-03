@@ -145,7 +145,7 @@
     - arg_meta: null
       kernel_name: impl::reference::quantized_linear_out
 
-- func: cadence::quantized_relu.out(Tensor X, Tensor X_zero_point, *, Tensor(a!) out) -> Tensor(a!)
+- func: cadence::quantized_relu.out(Tensor X, Tensor X_zero_point, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
       kernel_name: impl::reference::quantized_relu_out
