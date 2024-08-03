@@ -35,7 +35,8 @@ void dequantize_per_tensor_out(
         out_data, input_data, scale, zero_point, numel);
   } else if (input.scalar_type() == ScalarType::Char) {
     const int8_t* input_data = input.const_data_ptr<int8_t>();
-    xa_nn_elm_dequantize_asym8s_f32(out_data, input_data, zero_point, scale, numel);
+    xa_nn_elm_dequantize_asym8s_f32(
+        out_data, input_data, zero_point, scale, numel);
   } else if (input.scalar_type() == ScalarType::Int) {
     const int32_t* input_data = input.const_data_ptr<int32_t>();
     impl::HiFi::kernels::dequantize<int32_t>(

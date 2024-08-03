@@ -125,4 +125,3 @@
   kernels:
     - arg_meta: null
       kernel_name: impl::HiFi::quantized_linear_out
-
