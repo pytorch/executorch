@@ -758,10 +758,10 @@ if(EXECUTORCH_BUILD_PYBIND)
                  # libcustom_ops_aot_lib.dylib
                  BUILD_RPATH "@loader_path/../../extension/llm/custom_ops"
                  INSTALL_RPATH "@loader_path/../../extension/llm/custom_ops"
-                 # Need to add <executorch>/data/lib for
+                 # Need to add <executorch>/kernels/quantized for
                  # libquantized_ops_aot_lib.dylib
-                 BUILD_RPATH "@loader_path/../../data/lib"
-                 INSTALL_RPATH "@loader_path/../../data/lib"
+                 BUILD_RPATH "@loader_path/../../kernels/quantized"
+                 INSTALL_RPATH "@loader_path/../../kernels/quantized"
     )
   else()
     set_target_properties(
@@ -769,10 +769,10 @@ if(EXECUTORCH_BUILD_PYBIND)
       PROPERTIES # Assume <executorch> is the root `site-packages/executorch`
                  # Need to add <executorch>/extension/llm/custom_ops for
                  # libcustom_ops_aot_lib
-                 # Need to add <executorch>/data/lib for
+                 # Need to add <executorch>/kernels/quantized for
                  # libquantized_ops_aot_lib
 
-		  BUILD_RPATH "$ORIGIN:$ORIGIN/../../extension/llm/custom_ops:$ORIGIN/../../data/lib"
+		  BUILD_RPATH "$ORIGIN:$ORIGIN/../../extension/llm/custom_ops:$ORIGIN/../../kernels/quantized"
     )
   endif()
 
