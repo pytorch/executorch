@@ -21,6 +21,25 @@ namespace executor {
 namespace xnnpack {
 namespace delegate {
 
+/*
+ * Provide compile-time allocation.
+ */
+class CompileAllocator {
+ public:
+  /*
+   * Allocate memory which will be automatically freed at the end
+   * of the compilation process.
+   */
+  void* allocateTemporary(size_t size) {
+    auto mem = new uint8_t[size];
+    temporaries_.emplace_back(mem);
+    return mem;
+  }
+
+ private:
+  std::vector<std::unique_ptr<uint8_t[]>> temporaries_;
+};
+
 // Flatbuffer types
 using ValuePtr = const fb_xnnpack::XValue*;
 using NodePtr = const fb_xnnpack::XNode*;
@@ -34,6 +53,23 @@ using DefineNodeFunc = Error (*)(
     xnn_subgraph_t,
     const std::unordered_map<uint32_t, uint32_t>&,
     NodePtr) noexcept;
+
+/*
+Convert a tensor from fp32 to bf16.
+*/
+void convertF32TensorToBF16(
+    const float* f32_data,
+    uint16_t* bf16_data_out,
+    size_t numel) {
+  for (auto i = 0u; i < numel; i++) {
+    // Adjust the f32 value such that it rounds properly after truncation.
+    // Constant factor scales 1+2^-8 to 1+2e-7.
+    float f32_adjusted = f32_data[i] * 1.00389105f;
+    uint32_t f32_bits;
+    memcpy(&f32_bits, &f32_adjusted, sizeof(float));
+    bf16_data_out[i] = static_cast<uint16_t>(f32_bits >> 16);
+  }
+}
 
 /*
 Gets the output min and output max for a given node operator
@@ -152,7 +188,8 @@ Error defineTensor(
     GraphPtr flatbuffer_graph,
     const uint8_t* constant_data_ptr,
     std::vector<uint32_t>& input_ids,
-    std::vector<uint32_t>& output_ids) {
+    std::vector<uint32_t>& output_ids,
+    CompileAllocator& allocator) {
   const fb_xnnpack::XNNTensorValue* tensor_value = nullptr;
   const fb_xnnpack::XNNQuantizedTensorValue* qtensor_value = nullptr;
 
@@ -362,43 +399,27 @@ Error defineTensor(
         const uint16_t* scale_data = nullptr;
         uint32_t scale_numel = 0;
 
-        // Block scales are preferably serialized as bf16 but can also be serialized as fp32 for
-        // backwards compatability.
-        /* if (qparams->scale_bf16() != nullptr) {
-          scale_data = static_cast<const uint16_t*>(qparams->scale_bf16()->data());
+        // Block scales are preferably serialized as bf16 but can also be
+        // serialized as fp32 for backwards compatability.
+        if (qparams->scale_bf16() != nullptr) {
+          scale_data =
+              static_cast<const uint16_t*>(qparams->scale_bf16()->data());
           scale_numel = qparams->scale_bf16()->size();
-        } else { */ 
+        } else {
           // Read fp32 scales, convert to bf16.
-          // scale_conv_buffer = std::make_unique<uint16_t[]>(qparams->scale()->size());
-          scale_conv_buffer = (uint16_t*) malloc(qparams->scale()->size() * sizeof(uint16_t));
-
-          for (auto i = 0u; i < qparams->scale()->size(); i++) {
-            float scale_fp32 = ((float*) qparams->scale()->data())[i];
-
-            if (scale_fp32 <= 0) {
-              ET_LOG(Error, "Bad scale");
-            }
-
-            uint32_t scale_u32;
-            memcpy(&scale_u32, &scale_fp32, sizeof(float));
-
-            uint16_t scale_bf16 = scale_u32 >> 16;
-            if (scale_bf16 == 0) {
-              ET_LOG(Error, "Small scale");
-            }
-
-            scale_conv_buffer[i] = static_cast<uint16_t>(scale_u32 >> 16);
-          }
-
-          scale_data = scale_conv_buffer; // scale_conv_buffer.get();
+          auto conv_buffer = static_cast<uint16_t*>(allocator.allocateTemporary(
+              qparams->scale()->size() * sizeof(uint16_t)));
           scale_numel = qparams->scale()->size();
-        // }
+          convertF32TensorToBF16(
+              qparams->scale()->data(), conv_buffer, scale_numel);
+          scale_data = conv_buffer;
+        }
 
         ET_CHECK_OR_RETURN_ERROR(
             scale_numel == output_channels * input_channels / group_size,
             Internal,
             "scale size %zu != output channels %zu * group size %zu",
-            (size_t) scale_numel,
+            static_cast<size_t>(scale_numel),
             output_channels,
             group_size);
         int32_t zero_point =
@@ -1655,6 +1676,7 @@ ET_NODISCARD Error XNNCompiler::compileModel(
   Result<XNNHeader> header = XNNHeader::Parse(buffer_pointer, num_bytes);
   const uint8_t* flatbuffer_data = nullptr;
   const uint8_t* constant_data = nullptr;
+  CompileAllocator compile_allocator;
 
   // Header status can only either be Error::Ok or Error::NotFound
   if (header.ok()) {
@@ -1726,7 +1748,8 @@ ET_NODISCARD Error XNNCompiler::compileModel(
         flatbuffer_graph,
         constant_data,
         input_ids,
-        output_ids);
+        output_ids,
+        compile_allocator);
 
     if (err != Error::Ok) {
       return err;
