@@ -44,9 +44,6 @@ class Runner {
   void stop();
 
  private:
-  // metadata
-  template <typename T>
-  T getMetadataHelper(const std::string& method_name, T default_val);
   int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
   Result<torch::executor::Tensor> prefill(
       const std::vector<uint64_t>& tokens,
