@@ -54,6 +54,8 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
     nodes = graph.nodes
     memory_timeline = [None] * len(nodes)
     for i, node in enumerate(nodes):
+        if node.op == "output":
+            continue
         if node.target == memory.alloc:
             continue
         tensor_specs = get_node_tensor_specs(node)
