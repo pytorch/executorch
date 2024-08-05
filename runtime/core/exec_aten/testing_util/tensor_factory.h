@@ -361,11 +361,12 @@ class TensorFactory {
   at::Tensor channels_last_like(
       const Tensor& input,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
-    ET_CHECK_MSG(input.sizes().size() == 4, "Only 4D tensors can be channels last");
+    ET_CHECK_MSG(
+        input.sizes().size() == 4, "Only 4D tensors can be channels last");
 
     const std::vector<int32_t> sizes(
         input.sizes().begin(), input.sizes().end());
-    
+
     std::vector<uint8_t> contiguous_dim_order(sizes.size());
     for (uint8_t i = 0; i < sizes.size(); i++) {
       contiguous_dim_order[i] = i;
