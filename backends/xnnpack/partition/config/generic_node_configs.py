@@ -146,3 +146,34 @@ class AvgPoolingConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class CatConfig(GenericNodePartitionerConfig):
+    target_name = "cat.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Only support concatenation of 2 - 4 tensors
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        num_tensors = len(node.all_input_nodes)
+        return num_tensors >= 2 and num_tensors <= 4
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class CeilConfig(GenericNodePartitionerConfig):
+    target_name = "ceil.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class ClampConfig(GenericNodePartitionerConfig):
+    target_name = "clamp.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
