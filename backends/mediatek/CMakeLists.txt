@@ -25,7 +25,7 @@ include_directories(
 )
 
 # targets
-add_library(neuron_backend STATIC)
+add_library(neuron_backend SHARED)
 target_link_libraries(neuron_backend
     PRIVATE
     executorch
@@ -46,3 +46,5 @@ target_sources(neuron_backend
     ${CMAKE_CURRENT_LIST_DIR}/runtime/NeuronExecutor.cpp
 )
 target_link_options_shared_lib(neuron_backend)
+
+install(TARGETS neuron_backend DESTINATION lib)

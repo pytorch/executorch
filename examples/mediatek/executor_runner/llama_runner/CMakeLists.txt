@@ -43,6 +43,7 @@ add_library(mtk_llama_executor_lib STATIC)
 target_link_libraries(mtk_llama_executor_lib
     PRIVATE
     ${_executor_runner_libs}
+    ${NEURON_BUFFER_ALLOCATOR_LIB}
     neuron_backend
     log
     llm_helper

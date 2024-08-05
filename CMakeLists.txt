@@ -621,7 +621,6 @@ endif()
 
 if(EXECUTORCH_BUILD_NEURON)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/mediatek)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
