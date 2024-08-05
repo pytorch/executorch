@@ -7,8 +7,24 @@
 
 from typing import List, Type
 
+from executorch.backends.xnnpack.partition.config.gemm_configs import (
+    AddmmConfig,
+    LinearConfig,
+)
+
+from executorch.backends.xnnpack.partition.config.single_node_configs import (
+    DeQuantizedPerTensorConfig,
+    QuantizedPerTensorConfig,
+)
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
 )
 
-ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = []
+ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
+    # Linear/Addmm Configs
+    AddmmConfig,
+    LinearConfig,
+    # Quantization Op Configs
+    QuantizedPerTensorConfig,
+    DeQuantizedPerTensorConfig,
+]
