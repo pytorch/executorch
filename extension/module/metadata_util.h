@@ -16,7 +16,10 @@
 
 namespace torch::executor {
 template <typename T>
-T get_module_metadata(const Module* module, const std::string& method_name, T default_val) {
+T get_module_metadata(
+    const Module* module,
+    const std::string& method_name,
+    T default_val) {
   const auto method_names = module->method_names();
   ET_CHECK_MSG(method_names.ok(), "Failed to read method names from model");
   model_methods = method_names.get();

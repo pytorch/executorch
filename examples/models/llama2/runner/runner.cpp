@@ -16,8 +16,8 @@
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #endif /* ET_USE_TIKTOKEN*/
 #include <executorch/extension/evalue_util/print_evalue.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/extension/module/metadata_util.h>
+#include <executorch/extension/runner_util/managed_tensor.h>
 
 #include <ctime>
 #include <memory>
@@ -69,11 +69,15 @@ Error Runner::load() {
   model_methods_ = method_names.get();
   n_bos_ = get_module_metadata<int64_t>(module_.get(), "get_n_bos", 1);
   n_eos_ = get_module_metadata<int64_t>(module_.get(), "get_n_eos", 1);
-  max_seq_len_ = get_module_metadata<int64_t>(module_.get(), "get_max_seq_len", 128);
+  max_seq_len_ =
+      get_module_metadata<int64_t>(module_.get(), "get_max_seq_len", 128);
   use_kv_cache_ = get_module_metadata(module_.get(), "use_kv_cache", true);
-  use_sdpa_with_kv_cache_ = get_module_metadata(module_.get(), "use_sdpa_with_kv_cache", false);
-  append_eos_ = get_module_metadata(module_.get(), "append_eos_to_prompt", false);
-  enable_parallel_prefill_ = get_module_metadata(module_.get(), "enable_dynamic_shape", false);
+  use_sdpa_with_kv_cache_ =
+      get_module_metadata(module_.get(), "use_sdpa_with_kv_cache", false);
+  append_eos_ =
+      get_module_metadata(module_.get(), "append_eos_to_prompt", false);
+  enable_parallel_prefill_ =
+      get_module_metadata(module_.get(), "enable_dynamic_shape", false);
 
   // Load tokenizer
 #if ET_USE_TIKTOKEN
@@ -83,10 +87,12 @@ Error Runner::load() {
 #endif
   tokenizer_->load(tokenizer_path_);
 
-  vocab_size_ =
-      get_module_metadata<int64_t>(module_.get(), "get_vocab_size", tokenizer_->vocab_size());
-  bos_id_ = get_module_metadata<int64_t>(module_.get(), "get_bos_id", tokenizer_->bos_tok());
-  eos_id_ = get_module_metadata<int64_t>(module_.get(), "get_eos_id", tokenizer_->eos_tok());
+  vocab_size_ = get_module_metadata<int64_t>(
+      module_.get(), "get_vocab_size", tokenizer_->vocab_size());
+  bos_id_ = get_module_metadata<int64_t>(
+      module_.get(), "get_bos_id", tokenizer_->bos_tok());
+  eos_id_ = get_module_metadata<int64_t>(
+      module_.get(), "get_eos_id", tokenizer_->eos_tok());
 
   // Create sampler
   sampler_ = std::make_unique<Sampler>(
