@@ -4,23 +4,53 @@ This example demonstrates how to run a [Phi-3-mini](https://huggingface.co/micro
 # Instructions
 ## Step 1: Setup
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_requirements.sh --pybind xnnpack`
-
-## Step 2: Prepare and run the model
-1. Download the `tokenizer.model` from HuggingFace.
+2. To export Phi-3-mini, we need this [PR](https://github.com/huggingface/transformers/pull/32339). Install transformers from master with the following command:
 ```
-cd examples/models/phi-3-mini
-wget -O tokenizer.model https://huggingface.co/microsoft/Phi-3-mini-128k-instruct/resolve/main/tokenizer.model?download=true
+pip uninstall -y transformers && pip install git+https://github.com/huggingface/transformers
+```
+## Step 2: Prepare and run the model
+1. Download the `tokenizer.model` from HuggingFace and create `tokenizer.bin`.
+```
+cd executorch
+wget -O tokenizer.model "https://huggingface.co/microsoft/Phi-3-mini-128k-instruct/resolve/main/tokenizer.model?download=true"
+python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 ```
 2. Export the model. This step will take a few minutes to finish.
 ```
-python3 export_phi-3-mini.py
+python -m examples.models.phi-3-mini.export_phi-3-mini -c "4k" -s 128 -o phi-3-mini.pte
 ```
-3. Build and run the runner.
+3. Build and run the model.
+- Build executorch with optimized CPU performance as follows. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
+ ```
+ cmake -DPYTHON_EXECUTABLE=python \
+     -DCMAKE_INSTALL_PREFIX=cmake-out \
+     -DEXECUTORCH_ENABLE_LOGGING=1 \
+     -DCMAKE_BUILD_TYPE=Release \
+     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+     -DEXECUTORCH_BUILD_XNNPACK=ON \
+     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+     -Bcmake-out .
+
+ cmake --build cmake-out -j16 --target install --config Release
+ ```
+- Build Phi-3-mini runner.
 ```
-mkdir cmake-out
-cd cmake-out
-cmake ..
-cd ..
-cmake --build cmake-out -j10
-./cmake-out/phi_3_mini_runner
+cmake -DPYTHON_EXECUTABLE=python \
+    -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
+    -Bcmake-out/examples/models/phi-3-mini \
+    examples/models/phi-3-mini
+
+cmake --build cmake-out/examples/models/phi-3-mini -j16 --config Release
+```
+- Run model. Options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/phi-3-mini/main.cpp#L13-L30)
+```
+cmake-out/examples/models/phi-3-mini/phi_3_mini_runner --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --seq_len=128 --prompt=<prompt>
 ```
