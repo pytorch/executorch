@@ -21,7 +21,10 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     CeilConfig,
     ClampConfig,
     DeQuantizedPerTensorConfig,
+    DivConfig,
+    # EluConfig,
     HardtanhConfig,
+    MulConfig,
     QuantizedPerTensorConfig,
     ReLUConfig,
 )
@@ -45,6 +48,9 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     CatConfig,
     CeilConfig,
     ClampConfig,
+    DivConfig,
+    MulConfig,
+    # EluConfig, # Waiting for PyTorch Pin Update
     ReLUConfig,
     # Quantization Op Configs
     QuantizedPerTensorConfig,
