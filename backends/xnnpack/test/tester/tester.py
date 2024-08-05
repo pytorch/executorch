@@ -11,7 +11,7 @@ import random
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import torch
 import torch.export._trace as export_trace
@@ -40,6 +40,7 @@ except ImportError as e:
     logger.warning(f"{e=}")
     pass
 
+from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.quantizer import Quantizer
@@ -234,31 +235,50 @@ class RunPasses(Stage):
     ):
         self.pass_list = pass_list
         self.pass_functions = pass_functions
-        self.edge_dialect_program = None
+        self.edge_or_aten_program = None
 
-    def run(self, artifact: EdgeProgramManager, inputs=None) -> None:
-        self.edge_dialect_program = artifact
-        if self.pass_list:
-            pass_manager = XNNPACKPassManager(
-                artifact.exported_program(), self.pass_list
-            )
-            self.edge_dialect_program._edge_programs["forward"] = (
-                pass_manager.transform()
-            )
-        if self.pass_functions:
-            assert isinstance(self.pass_functions, list)
-            for pass_function in self.pass_functions:
-                self.edge_dialect_program._edge_programs["forward"] = pass_function(
-                    self.edge_dialect_program.exported_program()
+    def run(
+        self, artifact: Union[EdgeProgramManager, ExportedProgram], inputs=None
+    ) -> None:
+        if isinstance(artifact, EdgeProgramManager):
+            self.edge_or_aten_program = artifact
+            if self.pass_list:
+                pass_manager = XNNPACKPassManager(
+                    artifact.exported_program(), self.pass_list
                 )
+                self.edge_or_aten_program._edge_programs["forward"] = (
+                    pass_manager.transform()
+                )
+            if self.pass_functions:
+                assert isinstance(self.pass_functions, list)
+                for pass_function in self.pass_functions:
+                    self.edge_or_aten_program._edge_programs["forward"] = pass_function(
+                        self.edge_or_aten_program.exported_program()
+                    )
+        else:
+            transformed_ep = artifact
+            if self.pass_list:
+                assert isinstance(self.pass_list, list)
+                for pass_ in self.pass_list:
+                    transformed_ep = _transform(transformed_ep, pass_())
+
+            if self.pass_functions:
+                assert isinstance(self.pass_functions, list)
+                for pass_function in self.pass_functions:
+                    transformed_ep = pass_function(transformed_ep)
+
+            self.edge_or_aten_program = transformed_ep
 
     @property
-    def artifact(self) -> EdgeProgramManager:
-        return self.edge_dialect_program
+    def artifact(self) -> Union[EdgeProgramManager, ExportedProgram]:
+        return self.edge_or_aten_program
 
     @property
     def graph_module(self) -> str:
-        return self.edge_dialect_program.exported_program().graph_module
+        if isinstance(self.edge_or_aten_program, EdgeProgramManager):
+            return self.edge_or_aten_program.exported_program().graph_module
+        else:
+            return self.edge_or_aten_program.graph_module
 
 
 @register_stage
@@ -410,6 +430,7 @@ class Tester:
         self.pipeline = {
             self.stage_name(Quantize): [self.stage_name(Export)],
             self.stage_name(Export): [
+                self.stage_name(RunPasses),
                 self.stage_name(ToEdge),
                 self.stage_name(ToEdgeTransformAndLower),
             ],
@@ -421,7 +442,10 @@ class Tester:
                 self.stage_name(Partition),
                 self.stage_name(RunPasses),
             ],
-            self.stage_name(RunPasses): [self.stage_name(Partition)],
+            self.stage_name(RunPasses): [
+                self.stage_name(Partition),
+                self.stage_name(ToEdgeTransformAndLower),
+            ],
             # TODO Make this Stage optional
             self.stage_name(Partition): [self.stage_name(ToExecutorch)],
             self.stage_name(ToExecutorch): [self.stage_name(Serialize)],
