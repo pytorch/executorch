@@ -262,3 +262,21 @@ class AddmmConfig(GEMMConfig):
             ConfigPrecisionType.FP32,
             ConfigPrecisionType.STATIC_QUANT,
         ]
+
+
+class ConvolutionConfig(GEMMConfig):
+    target_name = "convolution.default"
+
+    def __init__(self):
+        super().__init__(
+            weight_idx=1,
+            bias_idx=2,
+            act_idx=0,
+            fused_acts=["relu.default", "hardtanh.default"],
+        )
+
+    def supported_precision_types(self):
+        return [
+            ConfigPrecisionType.FP32,
+            ConfigPrecisionType.STATIC_QUANT,
+        ]
