@@ -10,6 +10,7 @@ def define_common_targets():
                 srcs = [
                     "main.cpp",
                 ],
+                compiler_flags = ["-Wno-global-constructors"],
                 preprocessor_flags = [
                     "-DUSE_ATEN_LIB",
                 ] if aten else [],
