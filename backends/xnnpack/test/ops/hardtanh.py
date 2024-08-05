@@ -29,11 +29,7 @@ class TestHardTanh(unittest.TestCase):
                 Tester(self.HardTanh(), (input,))
                 .export()
                 .check_count({"torch.ops.aten.hardtanh.default": 1})
-                .to_edge()
-                .check_count(
-                    {"executorch_exir_dialects_edge__ops_aten_hardtanh_default": 1}
-                )
-                .partition()
+                .to_edge_transform_and_lower()
                 .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
                 .check_not(["executorch_exir_dialects_edge__ops_aten_hardtanh_default"])
                 .to_executorch()
@@ -48,11 +44,7 @@ class TestHardTanh(unittest.TestCase):
                 Tester(self.HardTanh(-2.0, 2.0), (input,))
                 .export()
                 .check_count({"torch.ops.aten.hardtanh.default": 1})
-                .to_edge()
-                .check_count(
-                    {"executorch_exir_dialects_edge__ops_aten_hardtanh_default": 1}
-                )
-                .partition()
+                .to_edge_transform_and_lower()
                 .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
                 .check_not(["executorch_exir_dialects_edge__ops_aten_hardtanh_default"])
                 .to_executorch()
@@ -74,11 +66,7 @@ class TestHardTanh(unittest.TestCase):
                         torch.ops.aten.hardtanh.default: 1,
                     }
                 )
-                .to_edge()
-                .check_count(
-                    {"executorch_exir_dialects_edge__ops_aten_hardtanh_default": 1}
-                )
-                .partition()
+                .to_edge_transform_and_lower()
                 .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
                 .check_not(
                     [

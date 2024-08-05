@@ -58,6 +58,10 @@ class XNNPartitionerConfig(PartitionerConfig):
 
         return partitioned_nodes
 
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        # By default if not specified, we do not halt decomposition for those configs
+        return None
+
     @abstractmethod
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         """
