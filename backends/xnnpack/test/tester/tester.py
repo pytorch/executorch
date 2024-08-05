@@ -15,7 +15,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import torch
 import torch.export._trace as export_trace
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import (
@@ -29,6 +28,7 @@ from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program
+from executorch.exir.program._program import _to_edge_transform_and_lower
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -262,8 +262,46 @@ class RunPasses(Stage):
 
 
 @register_stage
+class ToEdgeTransformAndLower(Stage):
+    def __init__(
+        self,
+        partitioners: Optional[List[Partitioner]] = None,
+        edge_compile_config: Optional[EdgeCompileConfig] = None,
+    ):
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
+            XnnpackPartitioner,
+        )
+
+        self.partitioners = partitioners or [XnnpackPartitioner()]
+        self.edge_compile_conf = (
+            edge_compile_config or get_xnnpack_edge_compile_config()
+        )
+        self.edge_dialect_program = None
+
+    def run(self, artifact: ExportedProgram, inputs=None) -> None:
+        artifact_to_run = copy.deepcopy(artifact)
+        self.edge_dialect_program = _to_edge_transform_and_lower(
+            artifact_to_run,
+            compile_config=self.edge_compile_conf,
+            partitioner=self.partitioners,
+        )
+
+    @property
+    def artifact(self) -> EdgeProgramManager:
+        return self.edge_dialect_program
+
+    @property
+    def graph_module(self) -> str:
+        return self.edge_dialect_program.exported_program().graph_module
+
+
+@register_stage
 class Partition(Stage):
     def __init__(self, partitioner: Optional[Partitioner] = None):
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+
         self.partitioner = partitioner or XnnpackPartitioner()
         self.delegate_module = None
 
@@ -373,6 +411,11 @@ class Tester:
             self.stage_name(Quantize): [self.stage_name(Export)],
             self.stage_name(Export): [
                 self.stage_name(ToEdge),
+                self.stage_name(ToEdgeTransformAndLower),
+            ],
+            self.stage_name(ToEdgeTransformAndLower): [
+                self.stage_name(RunPasses),
+                self.stage_name(ToExecutorch),
             ],
             self.stage_name(ToEdge): [
                 self.stage_name(Partition),
@@ -501,6 +544,11 @@ class Tester:
             to_edge_stage = ToEdge()
         to_edge_stage.edge_compile_conf._skip_dim_order = True
         return self._run_stage(to_edge_stage)
+
+    def to_edge_transform_and_lower(
+        self, to_edge_and_transform_stage: Optional[ToEdgeTransformAndLower] = None
+    ):
+        return self._run_stage(to_edge_and_transform_stage or ToEdgeTransformAndLower())
 
     def run_passes(self, run_passes_stage: Optional[RunPasses] = None):
         return self._run_stage(run_passes_stage or RunPasses())
