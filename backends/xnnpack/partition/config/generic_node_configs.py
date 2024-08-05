@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import List, Optional
+from typing import cast, List, Optional
 
 import torch
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
@@ -104,3 +104,45 @@ class ReLUConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class AbsConfig(GenericNodePartitionerConfig):
+    target_name = "abs.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class AvgPoolingConfig(GenericNodePartitionerConfig):
+    target_name = "avg_pool2d.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK does not support ceil_mode = True and count_include_pad = True
+        Additionally, we only support divisor_override if divisor_override = pooling region
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        args = node.args
+
+        ceil_mode = False  # default is False
+        if len(args) >= 5:
+            ceil_mode = cast(bool, args[4])
+
+        count_include_pad = True  # default is True
+        if len(args) >= 6:
+            count_include_pad = cast(bool, args[5])
+
+        kernel_size = cast(List[int], args[1])
+        pooling_region = kernel_size[0] * kernel_size[1]
+        divisor_override = pooling_region  # Default divisor is pooling_region
+        if len(args) >= 7:
+            divisor_override = cast(int, args[6])
+
+        return (
+            not (ceil_mode or count_include_pad) and divisor_override == pooling_region
+        )
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
