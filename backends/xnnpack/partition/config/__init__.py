@@ -25,8 +25,11 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     # EluConfig,
     HardtanhConfig,
     MulConfig,
+    PermuteConfig,
     QuantizedPerTensorConfig,
     ReLUConfig,
+    SigmoidConfig,
+    SoftmaxConfig,
 )
 from executorch.backends.xnnpack.partition.config.node_configs import BatchNormConfig
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
@@ -50,6 +53,9 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     ClampConfig,
     DivConfig,
     MulConfig,
+    SoftmaxConfig,
+    SigmoidConfig,
+    PermuteConfig,
     # EluConfig, # Waiting for PyTorch Pin Update
     ReLUConfig,
     # Quantization Op Configs

@@ -196,6 +196,39 @@ class EluConfig(GenericNodePartitionerConfig):
         return torch.ops.aten.elu.default
 
 
+class SoftmaxConfig(GenericNodePartitionerConfig):
+    target_name = "_softmax.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Check that dim is always the last dim
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        dim = cast(int, node.args[1])
+        node_input = node.all_input_nodes[0]
+        tensor_dims = node_input.meta["val"].dim()
+        return dim == -1 or dim == tensor_dims - 1
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class PermuteConfig(GenericNodePartitionerConfig):
+    target_name = "permute_copy.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class SigmoidConfig(GenericNodePartitionerConfig):
+    target_name = "sigmoid.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
 class MulConfig(GenericNodePartitionerConfig):
     target_name = "mul.Tensor"
 
