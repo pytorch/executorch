@@ -722,6 +722,23 @@ class TestEmit(unittest.TestCase):
             "executorch_prim::sub",
         )
 
+    def test_load_emit_map(self) -> None:
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                    return x + y
+
+                return control_flow.map(map_fn, x, y)
+
+        f = Foo()
+
+        inputs = (torch.ones(4, 4), torch.ones(4))
+        module = to_edge(
+            export(f, inputs),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        _load_for_executorch_from_buffer(module.to_executorch().buffer)
+
     def test_dim_order(self) -> None:
         class SimpleLinear(torch.nn.Module):
             def __init__(self) -> None:
