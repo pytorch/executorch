@@ -232,7 +232,9 @@ def capture_program(
     return edge_ep
 
 
-def from_context_binary(ctx_path: str, op_name: str):
+def from_context_binary(
+    ctx_path: str, op_name: str, soc_model: QcomChipset = QcomChipset.SM8650
+):
     def implement_op(custom_op, op_name, outputs):
         @torch.library.impl(
             custom_op, str(op_name), dispatch_key="CompositeExplicitAutograd"
@@ -283,7 +285,7 @@ def from_context_binary(ctx_path: str, op_name: str):
     # dummy compiler spec would be fine, since we're not compiling
     backend_options = generate_htp_compiler_spec(use_fp16=False)
     compiler_specs = generate_qnn_executorch_compiler_spec(
-        soc_model=QcomChipset.SM8650,
+        soc_model=soc_model,
         backend_options=backend_options,
         is_from_context_binary=True,
     )
