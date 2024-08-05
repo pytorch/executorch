@@ -171,7 +171,7 @@ class PyQnnTensorWrapper {
         return {enc_data, data.axis};
       }
       default:
-        QNN_EXECUTORCH_LOG_ERROR(
+        QNN_EXECUTORCH_LOG_WARN(
             "%s QNN_QUANTIZATION_ENCODING_UNDEFINED detected",
             GetName().c_str());
         break;

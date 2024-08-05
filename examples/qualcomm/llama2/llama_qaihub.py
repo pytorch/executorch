@@ -90,12 +90,12 @@ def main():
     args = parser.parse_args()
     target_names = (
         [
-            f"llama_v2_7b_chat_quantized_Llama2_PromptProcessor_{i}_Quantized.bin"
+            f"llama_v2_7b_chat_quantized_PromptProcessor_{i}_Quantized.bin"
             for i in range(1, 5)
         ]
         if args.use_prompt_processor
         else [
-            f"llama_v2_7b_chat_quantized_Llama2_TokenGenerator_{i}_Quantized.bin"
+            f"llama_v2_7b_chat_quantized_TokenGenerator_{i}_Quantized.bin"
             for i in range(1, 5)
         ]
     )
@@ -163,7 +163,7 @@ def main():
 
     # setup required paths accordingly
     # qnn_sdk       : QNN SDK path setup in environment variable
-    # artifact_path : path where artifacts were built
+    # build_path    : path where artifacts were built
     # pte_path      : path where executorch binary was stored
     # device_id     : serial number of android device
     # workspace     : folder for storing artifacts on android device
