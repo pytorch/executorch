@@ -12,9 +12,12 @@ from executorch.backends.xnnpack.partition.config.gemm_configs import (
     LinearConfig,
 )
 
-from executorch.backends.xnnpack.partition.config.single_node_configs import (
+from executorch.backends.xnnpack.partition.config.generic_node_configs import (
+    AddConfig,
     DeQuantizedPerTensorConfig,
+    HardtanhConfig,
     QuantizedPerTensorConfig,
+    ReLUConfig,
 )
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
@@ -24,6 +27,10 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     # Linear/Addmm Configs
     AddmmConfig,
     LinearConfig,
+    # Single Node Configs
+    HardtanhConfig,
+    AddConfig,
+    ReLUConfig,
     # Quantization Op Configs
     QuantizedPerTensorConfig,
     DeQuantizedPerTensorConfig,
