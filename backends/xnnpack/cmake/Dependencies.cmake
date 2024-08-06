@@ -36,6 +36,10 @@ set(XNNPACK_ENABLE_AVXVNNI
     OFF
     CACHE BOOL ""
 )
+set(XNNPACK_ENABLE_KLEIDIAI
+    OFF
+    CACHE BOOL ""
+)
 add_subdirectory("${XNNPACK_SOURCE_DIR}")
 include_directories(SYSTEM ${XNNPACK_INCLUDE_DIR})
 list(APPEND xnnpack_third_party XNNPACK)
