@@ -77,8 +77,7 @@ include(ExternalProject)
 set(_program_schema__include_dir "${CMAKE_BINARY_DIR}/sdk/include")
 set(_bundled_schema__include_dir "${CMAKE_BINARY_DIR}/sdk/bundled_program")
 
-# TODO(dbort): Only enable this when cross-compiling. It can cause build race
-# conditions (libflatcc.a errors) when enabled.
+# This is only necessary when cross-compiling. But seems little hurt to default enable.
 option(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT
        "Whether to build the flatcc commandline tool as a separate project" ON
 )
@@ -88,11 +87,21 @@ if(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT)
   # headers on the host during the build, even if we're cross-compiling the
   # flatcc runtime to a different architecture.
 
+  # flatcc installs its files directly in its source directory. To avoid
+  # race conditions between the above "add_subdirectory(${_flatcc_source_dir} ..)
+  # and the below ExternalProject_Add, we duplicate flatcc source tree
+  # in cmake bianry directory.
+
+  # Whenever we want to use the host command `flatcc`, we need to access the
+  # executable from ${_flatcc_host_tool_source_dir} instead of ${_flatcc_source_dir}.
+  set(_flatcc_host_tool_source_dir ${CMAKE_CURRENT_BINARY_DIR}/flatcc_host_tool_source)
   # lint_cmake: -readability/wonkycase
   ExternalProject_Add(
     flatcc_project
     PREFIX ${CMAKE_BINARY_DIR}/_host_build
-    SOURCE_DIR ${_flatcc_source_dir}
+    # TODO: We can add rm -f ${_etdump_schema_cleanup_paths} after copying directories.
+    DOWNLOAD_COMMAND ${CMAKE_COMMAND} -E copy_directory ${_flatcc_source_dir} ${_flatcc_host_tool_source_dir}
+    SOURCE_DIR ${_flatcc_host_tool_source_dir}
     BINARY_DIR ${CMAKE_BINARY_DIR}/_host_build
     CMAKE_CACHE_ARGS
       -DFLATCC_TEST:BOOL=OFF -DFLATCC_REFLECTION:BOOL=OFF
@@ -103,6 +112,7 @@ if(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT)
   set(_etdump_schema_gen_dep flatcc_project)
 else()
   # If we're not cross-compiling, we can just use the plain commandline target.
+  set(_flatcc_host_tool_source_dir ${_flatcc_source_dir})
   set(_etdump_schema_gen_dep flatcc_cli)
 endif()
 
@@ -134,41 +144,10 @@ add_library(
   bundled_program_schema INTERFACE ${_bundled_program_schema__outputs}
 )
 
-# Ensure the host tool is built before the main project
-add_dependencies(etdump_schema flatcc_cli)
-
 file(MAKE_DIRECTORY ${_program_schema__include_dir}/executorch/sdk/etdump)
 file(MAKE_DIRECTORY
      ${_program_schema__include_dir}/executorch/sdk/bundled_program
 )
-
-if(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT)
-  # If we cross-compiling, we need to use the version of the commandline tool
-  # built for the host.
-  set(_etdump_schema_gen_dep flatcc_project)
-
-  # TODO(dbort): flatcc installs its files directly in its source directory
-  # instead of under CMAKE_BINARY_DIR, and it has no options to avoid doing
-  # this. We build flatcc twice in the executorch build: once to get the
-  # `flatcc` host commandline tool, and once to get the (potentially
-  # cross-compiled) target runtime library. The host build will put its outputs
-  # in the source tree, making the cross-compiling target build think that the
-  # outputs have already been built. It will then try to link against the
-  # host-architecture libraries, failing when cross-compiling. To work around
-  # this, delete the host outputs after running this command (which only runs
-  # when setting up the cmake files, not when actually building). This leaves
-  # room for the target build to put its own files in the source tree. We should
-  # try to remove this hack, ideally by submitting an upstream PR that adds an
-  # option to change the installation location.
-  set(_etdump_schema_cleanup_paths ${_flatcc_source_dir}/bin/*
-                                   ${_flatcc_source_dir}/lib/*
-  )
-else()
-  # If we're not cross-compiling we can use the plain commandline target, and we
-  # don't need to delete any files.
-  set(_etdump_schema_gen_dep flatcc_cli)
-  set(_etdump_schema_cleanup_paths "")
-endif()
 
 add_custom_command(
   OUTPUT ${_etdump_schema__outputs}
@@ -176,10 +155,9 @@ add_custom_command(
     # Note that the flatcc project actually writes its outputs into the source
     # tree instead of under the binary directory, and there's no way to change
     # that behavior.
-    ${_flatcc_source_dir}/bin/flatcc -cwr -o
+    ${_flatcc_host_tool_source_dir}/bin/flatcc -cwr -o
     ${_program_schema__include_dir}/executorch/sdk/etdump
     ${_etdump_schema__srcs}
-  COMMAND rm -f ${_etdump_schema_cleanup_paths}
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/sdk
   DEPENDS ${_etdump_schema_gen_dep}
   COMMENT "Generating etdump headers"
