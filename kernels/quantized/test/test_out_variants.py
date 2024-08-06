@@ -14,6 +14,7 @@ from executorch.exir.passes._quant_patterns_and_replacements import (  # noqa
     quantized_decomposed_lib,  # noqa
 )
 
+import executorch.kernels.quantized
 
 class TestOutVariants(unittest.TestCase):
     def setUp(self) -> None:
