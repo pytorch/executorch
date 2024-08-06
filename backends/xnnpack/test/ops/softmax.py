@@ -29,11 +29,7 @@ class TestSoftmax(unittest.TestCase):
                 Tester(self.Softmax(dim), inputs)
                 .export()
                 .check_count({"torch.ops.aten.softmax": 1})
-                .to_edge()
-                .check_count(
-                    {"executorch_exir_dialects_edge__ops_aten__softmax_default": 1}
-                )
-                .partition()
+                .to_edge_transform_and_lower()
                 .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
                 .check_not(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
                 .to_executorch()
@@ -63,11 +59,7 @@ class TestSoftmax(unittest.TestCase):
                 Tester(self.Softmax(dim), inputs)
                 .export()
                 .check_count({"torch.ops.aten.softmax": 1})
-                .to_edge()
-                .check_count(
-                    {"executorch_exir_dialects_edge__ops_aten__softmax_default": 1}
-                )
-                .partition()
+                .to_edge_transform_and_lower()
                 # Should not be delegated
                 .check(["executorch_exir_dialects_edge__ops_aten__softmax_default"])
             )

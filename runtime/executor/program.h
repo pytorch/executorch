@@ -209,7 +209,7 @@ class Program final {
   /**
    * Loads a segment by index.
    *
-   * @param[in] SegmentInfo Struct containing an index to load from the
+   * @param[in] segment_info Struct containing an index to load from the
    * Program.segments list. The other fields of the struct, such as
    * `segment_type` and `descriptor`, need to also be correct.
    *
