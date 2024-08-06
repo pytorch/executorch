@@ -31,6 +31,16 @@ Tensor& stack_out(
   ET_KERNEL_CHECK(
       ctx, check_stack_args(tensors, dim, out), InvalidArgument, out);
 
+  for (size_t i = 0; i < tensors.size(); ++i) {
+    ET_KERNEL_CHECK(
+        ctx,
+        tensors_have_same_dim_order(tensors[i], out),
+        InvalidArgument,
+        out);
+  }
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(out), InvalidArgument, out);
+
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
   get_stack_out_target_size(tensors, dim, expected_out_size, &expected_out_dim);
