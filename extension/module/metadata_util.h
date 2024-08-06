@@ -17,7 +17,7 @@
 namespace torch::executor {
 template <typename T>
 T get_module_metadata(
-    const Module* module,
+    Module* module,
     const std::string& method_name,
     T default_val) {
   const auto method_names = module->method_names();
