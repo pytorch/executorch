@@ -24,6 +24,9 @@ Tensor& sigmoid_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
       ctx, in.scalar_type() != ScalarType::Bool, InvalidArgument, out);
   ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
       ctx,

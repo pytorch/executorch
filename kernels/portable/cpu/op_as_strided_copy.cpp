@@ -37,6 +37,11 @@ Tensor& as_strided_copy_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   if (in.numel() == 0) {
     return out;
   }

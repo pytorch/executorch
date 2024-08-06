@@ -39,6 +39,9 @@ Tensor& masked_fill_scalar_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, mask, out), InvalidArgument, out);
+
   ET_SWITCH_REAL_TYPES_AND(
       Bool, in_type, ctx, "masked_fill.Scalar_out", CTYPE, [&]() {
         ET_SWITCH_REAL_TYPES_AND(

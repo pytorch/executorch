@@ -35,6 +35,9 @@ Tensor& leaky_relu_out(
       out,
       "Failed to resize output tensor.");
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ScalarType in_type = in.scalar_type();
   ScalarType sc_type = utils::get_scalar_dtype(negative_slope);
   ScalarType out_type = out.scalar_type();
