@@ -1,0 +1,20 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "xnnpack_partitioner_configs",
+    srcs = glob([
+        "*.py",
+    ]),
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir/backend/canonical_partitioners:config_partitioner_lib",
+    ],
+)
