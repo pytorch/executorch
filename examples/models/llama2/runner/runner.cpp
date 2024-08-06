@@ -32,6 +32,21 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
 
+/**
+ * Use tokenizer to decode token, print it, then execute callback.
+ */
+#define _DECODE_PRINT_CALLBACK(prev, cur, callback) \
+  ({                                                \
+    auto piece_res = tokenizer_->decode(prev, cur); \
+    ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error()); \
+    const char* piece = piece_res.get().c_str();    \
+    util::safe_printf(piece);                       \
+    fflush(stdout);                                 \
+    if (token_callback) {                           \
+      token_callback(piece);                        \
+    }                                               \
+  })
+
 namespace torch::executor {
 
 Runner::Runner(
@@ -172,14 +187,8 @@ Result<int64_t> Runner::prefill(
     uint64_t cur;
     for (int i = 1; i < prompt_tokens.size(); i++) {
       cur = prompt_tokens[i];
-      auto piece_res = tokenizer_->decode(prev, cur);
-      ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error());
-      util::safe_printf(piece_res.get().c_str());
-      fflush(stdout);
+      _DECODE_PRINT_CALLBACK(prev, cur, token_callback);
       prev = cur;
-      if (token_callback) {
-        token_callback(piece_res.get().c_str());
-      }
     }
     cur_token = logitsToToken(outputs_res.get());
   } else { // sequential prefill
@@ -218,14 +227,7 @@ Result<int64_t> Runner::prefill(
       token_vec[0] = cur_token;
 
       // print the token as string, decode it with the Tokenizer object
-      auto piece_res = tokenizer_->decode(prev_token, cur_token);
-      ET_CHECK(piece_res.ok());
-      const char* piece = piece_res.get().c_str();
-      util::safe_printf(piece);
-      fflush(stdout);
-      if (token_callback) {
-        token_callback(piece_res.get().c_str());
-      }
+      _DECODE_PRINT_CALLBACK(prev_token, cur_token, token_callback);
     }
   }
   // Return the next token
@@ -324,17 +326,7 @@ Error Runner::generate(
   int64_t cur_token = prefill_res.get();
 
   // print the first token from prefill. No prev_token so use cur_token for it.
-  auto piece_res = tokenizer_->decode(cur_token, cur_token);
-  ET_CHECK(piece_res.ok());
-  const char* piece = piece_res.get().c_str();
-
-  // same as printf("%s", piece), but skips "unsafe" bytes
-  util::safe_printf(piece);
-  fflush(stdout);
-
-  if (token_callback) {
-    token_callback(piece);
-  }
+  _DECODE_PRINT_CALLBACK(cur_token, cur_token, token_callback);
 
   // start the main loop
   int64_t pos = num_prompt_tokens; // position in the sequence
@@ -382,7 +374,8 @@ Error Runner::generate(
     pos++;
 
     if (use_kv_cache_) {
-      // update the token tensor
+      // update the token tensor. token_data will not be empty.
+      // NOLINTNEXTLINE(facebook-hte-LocalUncheckedArrayBounds)
       token_data[0] = cur_token;
     } else {
       // push it to the back
@@ -391,17 +384,7 @@ Error Runner::generate(
     }
 
     // print the token as string, decode it with the Tokenizer object
-    auto piece_res = tokenizer_->decode(prev_token, cur_token);
-    ET_CHECK(piece_res.ok());
-    const char* piece = piece_res.get().c_str();
-
-    // same as printf("%s", piece), but skips "unsafe" bytes
-    util::safe_printf(piece);
-    fflush(stdout);
-
-    if (token_callback) {
-      token_callback(piece);
-    }
+    _DECODE_PRINT_CALLBACK(prev_token, cur_token, token_callback);
 
     if (shouldStop_) {
       break;
