@@ -46,13 +46,16 @@ Result<DelegateHandle*> NeuronBackend::init(BackendInitContext& context,
     LogInfo("NeuronBackend", "version %u, input %u, output %u, length %u, payload size: %zu",
                  Payload.Header.Version, Payload.Header.InputCount, Payload.Header.OutputCount, Payload.Header.DataLen, processed->size());
 
-    auto delegate = std::unique_ptr<NeuronExecuTorchDelegate>(
-        new (std::nothrow) NeuronExecuTorchDelegate());
+    MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
+    NeuronExecuTorchDelegate* delegate =
+        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, NeuronExecuTorchDelegate);
+    new (delegate) NeuronExecuTorchDelegate();
+
     if (delegate == nullptr) {
         return nullptr;
     }
     auto res = delegate->LoadCompiledNetwork(Payload, setting);
-    return res == NEURON_NO_ERROR ? delegate.release() : nullptr;
+    return res == NEURON_NO_ERROR ? delegate : nullptr;
 }
 
 Error NeuronBackend::execute(__ET_UNUSED BackendExecutionContext& context,
@@ -63,8 +66,10 @@ Error NeuronBackend::execute(__ET_UNUSED BackendExecutionContext& context,
 }
 
 void NeuronBackend::destroy(DelegateHandle* handle) const {
-    NeuronExecuTorchDelegate* delegate = reinterpret_cast<NeuronExecuTorchDelegate*>(handle);
-    delete delegate;
+    if (handle != nullptr) {
+        NeuronExecuTorchDelegate* delegate = reinterpret_cast<NeuronExecuTorchDelegate*>(handle);
+        delegate->~NeuronExecuTorchDelegate();
+    }
 }
 
 bool NeuronBackend::is_available() const {
@@ -72,13 +77,13 @@ bool NeuronBackend::is_available() const {
 }
 
 Error NeuronExecuTorchDelegate::execute(
-      BackendExecutionContext& context,
+      __ET_UNUSED BackendExecutionContext& context,
       EValue** args) const {
     if (HintNeuronBackend(args) != NEURON_NO_ERROR) {
         return Error::InvalidState;
     };
 
-    neuron::BufferAllocator* allocator = dynamic_cast<neuron::BufferAllocator*>(context.get_temp_allocator());
+    auto& allocator = GET_NEURON_ALLOCATOR;
     size_t inputCount = mInputSizes.size(), outputCount = mOutputSizes.size();
 
     for (int i = 0; i < inputCount; i++) {
@@ -87,7 +92,7 @@ Error NeuronExecuTorchDelegate::execute(
         if (IsCached</*isInput=*/true>(i, data_ptr)) {
             continue;
         };
-        auto unit = allocator->Find(data_ptr);
+        auto unit = allocator.Find(data_ptr);
         if (unit) {
             UpdateCache<true>(i, data_ptr);
             size_t offset = (char*)data_ptr - (char*)unit->GetAddress();
@@ -104,7 +109,7 @@ Error NeuronExecuTorchDelegate::execute(
         if (IsCached</*isInput=*/false>(output_index, data_ptr)) {
             continue;
         };
-        auto unit = allocator->Find(data_ptr);
+        auto unit = allocator.Find(data_ptr);
         if (unit) {
             UpdateCache</*isInput=*/false>(output_index, data_ptr);
             size_t offset = (char*)data_ptr - (char*)unit->GetAddress();
