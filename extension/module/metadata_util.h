@@ -22,7 +22,7 @@ T get_module_metadata(
     T default_val) {
   const auto method_names = module->method_names();
   ET_CHECK_MSG(method_names.ok(), "Failed to read method names from model");
-  model_methods = method_names.get();
+  auto model_methods = method_names.get();
 
   T res = default_val;
   if (model_methods.count(method_name)) {
