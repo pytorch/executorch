@@ -139,10 +139,8 @@ class TagImplicitQDqPass(XNNPACKPass):
             ):
                 return [next_node]
         elif self.is_output_node(next_node):
-            # Check if second_node (which is between dq and output nodes)
-            # is aten.linear.default
-            if self.is_dynamically_quantized(start_node):
-                return []
+            # if node following dq is output node
+            return None
         else:
             # Check if nodes between the dq node and the next q match
             # a supported quant chain
@@ -193,6 +191,9 @@ class TagImplicitQDqPass(XNNPACKPass):
 
             ending_implicit_q_nodes = []
             for user in first_node.users:
+                if self.is_dynamically_quantized(user):
+                    # if the dq is a dynamic dq, then it is implicit
+                    break
                 user_end_nodes = self.get_ending_implicit_q_nodes(user)
                 if user_end_nodes is None:
                     # This user isn't part of a "supported" group

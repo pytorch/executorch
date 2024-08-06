@@ -6,7 +6,7 @@ This example demonstrates how to run a [Phi-3-mini](https://huggingface.co/micro
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch. For installation run `./install_requirements.sh --pybind xnnpack`
 2. To export Phi-3-mini, we need this [PR](https://github.com/huggingface/transformers/pull/32339). Install transformers from master with the following command:
 ```
-pip uninstall -y transformers && pip install git+https://github.com/huggingface/transformers
+pip uninstall -y transformers ; pip install git+https://github.com/huggingface/transformers
 ```
 ## Step 2: Prepare and run the model
 1. Download the `tokenizer.model` from HuggingFace and create `tokenizer.bin`.
