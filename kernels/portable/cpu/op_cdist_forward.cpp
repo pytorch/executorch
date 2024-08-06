@@ -125,6 +125,11 @@ Tensor& _cdist_forward_out(
   (void)ctx;
 
   ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(x1, x2, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(x1), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
       ctx,
       check_cdist_args(x1, x2, p, compute_mode, out),
       InvalidArgument,

@@ -25,6 +25,9 @@ lift_fresh_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   if (in.nbytes() > 0) {
     // Note that this check is important. It's valid for a tensor with numel 0
     // to have a null data pointer, but in some environments it's invalid to
