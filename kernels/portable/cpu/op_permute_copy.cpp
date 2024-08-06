@@ -46,6 +46,9 @@ Tensor& permute_copy_out(
   ET_KERNEL_CHECK(
       ctx, check_permute_copy_args(in, dims, out), InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
   get_permute_copy_out_target_size(

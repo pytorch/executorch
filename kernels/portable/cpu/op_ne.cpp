@@ -30,6 +30,9 @@ Tensor& ne_tensor_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
@@ -74,6 +77,9 @@ Tensor& ne_scalar_out(
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);

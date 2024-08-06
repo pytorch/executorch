@@ -49,6 +49,24 @@ std::tuple<Tensor&, Tensor&> max_out(
       InvalidArgument,
       (std::tuple<Tensor&, Tensor&>({max, max_indices})));
 
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(in, max),
+      InvalidArgument,
+      (std::tuple<Tensor&, Tensor&>({max, max_indices})));
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensor_is_default_dim_order(max_indices),
+      InvalidArgument,
+      (std::tuple<Tensor&, Tensor&>({max, max_indices})));
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensor_is_default_dim_order(in),
+      InvalidArgument,
+      (std::tuple<Tensor&, Tensor&>({max, max_indices})));
+
   dim = dim < 0 ? dim + in.dim() : dim;
 
   ET_SWITCH_REAL_TYPES_AND(
