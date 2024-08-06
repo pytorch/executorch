@@ -22,8 +22,20 @@ examples/mediatek
 ```
 # AoT
 ## Environment Setup
-In addition to the Executorch environment setup, refer to the `requirements.txt` file.
+1. Setup ET Environment
+- Follow the instructions found in: https://pytorch.org/executorch/stable/getting-started-setup.html
+2. Setup MTK AoT Environment
+```bash
+// Ensure that you are inside executorch/examples/mediatek directory
+pip3 install -r requirements.txt
+
+// Download the two whl files from NeuroPilot Portal
+pip3 install mtk_neuron-8.2.2-py3-none-linux_x86_64.whl
+pip3 install mtk_converter-8.8.0.dev20240723+public.d1467db9-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+```
+
 ## AoT Flow
+##### Note: Verify that localhost connection is available before running AoT Flow
 1. Exporting Models to `.pte`
 - In the `examples/mediatek directory`, run:
 ```bash
@@ -45,6 +57,11 @@ source shell_scripts/export_llama.sh <model_name> <num_chunks> <prompt_num_token
     <sub>**Note: Export script example only tested on `.txt` file.**</sub>
 
 2. `.pte` files will be generated in `examples/mediatek/pte`
+    - Users should expect `num_chunks*2` number of pte files (half of them for prompt and half of them for generation).
+    - Generation `.pte` files have "`1t`" in their names.
+    - Additionally, an embedding bin file will be generated in the weights folder where the `config.json` can be found in. [`examples/mediatek/models/llm_models/weights/<model_name>/embedding_<model_config_folder>_fp32.bin`]
+    - eg. For `llama3-8B-instruct`, embedding bin generated in `examples/mediatek/models/llm_models/weights/llama3-8B-instruct/`
+    - AoT flow will take roughly 2.5 hours (114GB RAM for `num_chunks=4`) to complete (Results will vary by device/hardware configurations)
 
 # Runtime
 ## Supported Chips
@@ -83,3 +100,5 @@ adb shell "/data/local/tmp/mtk_executor_runner --model_path /data/local/tmp/<MOD
 ```
 
 In the command above, replace `<MODEL_NAME>` with the name of your model file and `<ITER_TIMES>` with the desired number of iterations to run the model.
+
+##### Note: For llama models, please use `mtk_llama_executor_runner`. Refer to `examples/mediatek/executor_runner/run_llama3_sample.sh` for reference.
