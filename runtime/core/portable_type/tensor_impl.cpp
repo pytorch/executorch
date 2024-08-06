@@ -47,7 +47,7 @@ TensorImpl::TensorImpl(
       data_(data),
       dim_(dim),
       numel_(compute_numel(sizes, dim)),
-      capacity_(numel_ * elementSize(type)),
+      numel_bound_(numel_),
       type_(type),
       shape_dynamism_(dynamism) {}
 
@@ -96,22 +96,19 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
     return Error::Ok;
   }
 
-  auto new_numel = compute_numel(new_sizes.data(), dim_);
+  const auto new_numel = compute_numel(new_sizes.data(), dim_);
 
-  // Upper bounded tensors can be reshaped but not beyond upper bound
+  // Bounded tensors can be reshaped, but not beyond the upper bound.
   if (shape_dynamism_ == TensorShapeDynamism::DYNAMIC_BOUND ||
-      // TODO(T175194371): Unbounded tensor resizing is not yet supported: treat
-      // them as upper-bounded.
+      // TODO(T175194371): Unbounded dynamic tensor resizing is not yet
+      // supported: treat them as upper-bounded.
       shape_dynamism_ == TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    auto new_nbytes = new_numel * elementSize(type_);
     ET_CHECK_OR_RETURN_ERROR(
-        new_nbytes <= capacity_,
+        new_numel <= numel_bound_,
         NotSupported,
-        "Attempted to resize a tensor with dynamism %d "
-        "to %zu which is beyond its capacity %zu",
-        (int)shape_dynamism_,
-        new_nbytes,
-        capacity_);
+        "Attempted to resize a bounded tensor with capacity of %zu elements to %zu elements.",
+        new_numel,
+        numel_bound_);
   }
 
   // Copy sizes over
