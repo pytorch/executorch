@@ -39,6 +39,9 @@ Tensor& copy_out(
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ScalarType in_type = in.scalar_type();
   ScalarType src_type = src.scalar_type();
 
@@ -65,6 +68,9 @@ copy_(RuntimeContext& ctx, Tensor& in, const Tensor& src, bool non_blocking) {
 
   ET_KERNEL_CHECK(
       ctx, tensor_is_broadcastable_to(src, in), InvalidArgument, in);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, src), InvalidArgument, in);
 
   ScalarType in_type = in.scalar_type();
   ScalarType src_type = src.scalar_type();
