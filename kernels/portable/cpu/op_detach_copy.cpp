@@ -34,6 +34,9 @@ Tensor& detach_copy_out(RuntimeContext& ctx, const Tensor& self, Tensor& out) {
       "Failed to resize output tensor.");
 
   ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
       ctx, tensors_have_same_shape_and_dtype(self, out), InvalidArgument, out);
 
   if (self.nbytes() > 0) {

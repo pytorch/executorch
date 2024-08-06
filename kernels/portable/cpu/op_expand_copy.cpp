@@ -85,6 +85,10 @@ Tensor& expand_copy_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(self), InvalidArgument, out);
+
   // Holds the result of expand_sizes converted to repeat sizes
   int64_t repeats[kTensorDimensionLimit];
   const auto repeats_size{map_expand_to_repeats(

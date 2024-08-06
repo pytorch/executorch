@@ -22,6 +22,9 @@ Tensor& any_all_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, {}) == Error::Ok, InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
   constexpr auto name = "any.all_out";
@@ -67,6 +70,9 @@ Tensor& any_dims_out(
         InvalidArgument,
         out);
   }
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
@@ -121,6 +127,9 @@ Tensor& any_out(
       resize_reduction_out(in, dim, keepdim, out) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();

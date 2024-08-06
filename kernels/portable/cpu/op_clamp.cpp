@@ -83,6 +83,9 @@ Tensor& clamp_out(
       out,
       "Failed to resize output tensor.");
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ScalarType in_type = in.scalar_type();
   ScalarType min_type = in_type;
   ScalarType max_type = in_type;
@@ -181,6 +184,12 @@ Tensor& clamp_tensor_out(
 
   const Tensor& min = has_min ? min_opt.value() : in;
   const Tensor& max = has_max ? max_opt.value() : in;
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(in, min, max, out),
+      InvalidArgument,
+      out);
 
   ET_KERNEL_CHECK(
       ctx,
