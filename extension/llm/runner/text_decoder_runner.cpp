@@ -11,6 +11,7 @@
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/module/metadata_util.h>
+#include <ctime>
 
 namespace torch::executor {
 
