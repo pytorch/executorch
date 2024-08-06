@@ -167,17 +167,17 @@ Result<int64_t> Runner::prefill(
         "Expected number of output tokens %d does not match returned value %zu.",
         num_prompt_tokens,
         outputs_res.get().size(1));
-    if (token_callback) {
-      // insert new token into prompt_tokens
-      uint64_t prev = prompt_tokens[0];
-      uint64_t cur;
-      for (int i = 1; i < prompt_tokens.size(); i++) {
-        cur = prompt_tokens[i];
-        auto piece_res = tokenizer_->decode(prev, cur);
-        ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error());
-        util::safe_printf(piece_res.get().c_str());
-        fflush(stdout);
-        prev = cur;
+    // insert new token into prompt_tokens
+    uint64_t prev = prompt_tokens[0];
+    uint64_t cur;
+    for (int i = 1; i < prompt_tokens.size(); i++) {
+      cur = prompt_tokens[i];
+      auto piece_res = tokenizer_->decode(prev, cur);
+      ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error());
+      util::safe_printf(piece_res.get().c_str());
+      fflush(stdout);
+      prev = cur;
+      if (token_callback) {
         token_callback(piece_res.get().c_str());
       }
     }
@@ -217,13 +217,13 @@ Result<int64_t> Runner::prefill(
 
       token_vec[0] = cur_token;
 
+      // print the token as string, decode it with the Tokenizer object
+      auto piece_res = tokenizer_->decode(prev_token, cur_token);
+      ET_CHECK(piece_res.ok());
+      const char* piece = piece_res.get().c_str();
+      util::safe_printf(piece);
+      fflush(stdout);
       if (token_callback) {
-        // print the token as string, decode it with the Tokenizer object
-        auto piece_res = tokenizer_->decode(prev_token, cur_token);
-        ET_CHECK(piece_res.ok());
-        const char* piece = piece_res.get().c_str();
-        util::safe_printf(piece);
-        fflush(stdout);
         token_callback(piece_res.get().c_str());
       }
     }
@@ -322,6 +322,19 @@ Error Runner::generate(
   auto prefill_res = prefill(prompt_tokens, 0, token_callback);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   int64_t cur_token = prefill_res.get();
+
+  // print the first token from prefill. No prev_token so use cur_token for it.
+  auto piece_res = tokenizer_->decode(cur_token, cur_token);
+  ET_CHECK(piece_res.ok());
+  const char* piece = piece_res.get().c_str();
+
+  // same as printf("%s", piece), but skips "unsafe" bytes
+  util::safe_printf(piece);
+  fflush(stdout);
+
+  if (token_callback) {
+    token_callback(piece);
+  }
 
   // start the main loop
   int64_t pos = num_prompt_tokens; // position in the sequence
