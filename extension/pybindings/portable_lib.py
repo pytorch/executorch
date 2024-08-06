@@ -29,6 +29,15 @@ from executorch.extension.pybindings._portable_lib import (  # noqa: F401
     ExecuTorchModule,  # noqa: F401
 )
 
+ try:
+     from pathlib import Path
+     libs = list(Path(__file__).parent.parent.parent.resolve().glob("**/libquantized_ops_aot_lib.*"))
+     del Path
+     assert len(libs) == 1, f"Expected 1 library but got {len(libs)}"
+     _torch.ops.load_library(libs[0])
+ except:
+     pass
+
 # Clean up so that `dir(portable_lib)` is the same as `dir(_portable_lib)`
 # (apart from some __dunder__ names).
 del _torch
