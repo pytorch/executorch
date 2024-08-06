@@ -14,8 +14,9 @@ class ReplaceInfBuffer(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule):
         for buf_name, tensor in graph_module.named_buffers():
             if tensor.is_floating_point():
-                tensor[tensor == float("inf")] = torch.finfo(torch.float32).max
-                tensor[tensor == float("-inf")] = torch.finfo(torch.float32).min
+                # An arbitrary number
+                tensor[tensor == float("inf")] = 1000
+                tensor[tensor == float("-inf")] = -1000
                 setattr(graph_module, buf_name, tensor)
 
         graph_module.recompile()

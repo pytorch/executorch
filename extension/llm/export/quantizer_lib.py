@@ -8,7 +8,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 import torch
 
@@ -191,7 +191,10 @@ def get_qnn_quantizer(
                 output_qspec=quantization_config.output_activation,
                 _annotated=True,
             )
-        def annotate_index_put(node: Node, quantization_config: QuantizationConfig) -> None:
+
+        def annotate_index_put(
+            node: Node, quantization_config: QuantizationConfig
+        ) -> None:
             input = node.args[0]
             value = node.args[2]
 
@@ -219,21 +222,65 @@ def get_qnn_quantizer(
                 _annotated=True,
             )
 
-        def annotate_matmul_input1(node: Node):
-            quantization_config_8a8w = get_default_8bit_qnn_ptq_config(act_symmetric=True)
-            while isinstance(node, Node) and node.op == "call_function":
-                if node.target == torch.ops.aten.index_put_.default:
-                    annotate_index_put(node, quantization_config_8a8w)
-                    break
-                annotate_single_in_single_out(node, quantization_config_8a8w)
-                node = node.args[0]
+        def annotate_cat(node: Node, quantization_config: QuantizationConfig):
+            input_nodes = node.args[0]
 
+            assert isinstance(input_nodes, Sequence)
+
+            first_input_node = input_nodes[0]
+            input_qspec_map = {}
+            assert isinstance(first_input_node, Node)
+            assert isinstance(node, Node)
+            input_qspec_map[first_input_node] = quantization_config.input_activation
+            share_qparams_with_input_act0_qspec = SharedQuantizationSpec(
+                (first_input_node, node)
+            )
+
+            for input_node in input_nodes[1:]:
+                if input_node not in input_qspec_map:
+                    assert isinstance(input_node, Node)
+                    input_qspec_map[input_node] = share_qparams_with_input_act0_qspec
+
+            node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=share_qparams_with_input_act0_qspec,
+                _annotated=True,
+            )
+
+        def is_edge_condition(node: Node):
+            if not isinstance(node, Node) or node.op != "call_function":
+                return True
+            return False
+
+        def annotate_matmul_input1(node: Node, quantization_config: QuantizationConfig):
+            if is_edge_condition(node):
+                return
+
+            if node.target == torch.ops.aten.index_put_.default:
+                annotate_index_put(node, quantization_config)
+                annotate_matmul_input1(node.args[0], quantization_config)
+            elif node.target == torch.ops.aten.cat.default:
+                annotate_cat(node, quantization_config)
+                # Expect that the inputs of the cat op are select ops
+                for arg in node.args[0][1:]:
+                    annotate_single_in_single_out(arg, quantization_config)
+                annotate_matmul_input1(node.args[0][0], quantization_config)
+            else:
+                annotate_single_in_single_out(node, quantization_config)
+                annotate_matmul_input1(node.args[0], quantization_config)
+
+        # Annotate 16a8w for matmul op to get better performance
         quantization_config_16a8w = get_16a8w_qnn_ptq_config()
+        # Annotate 8a8w for second input of matmul until past_kv_cache
+        quantization_config_8a8w = get_default_8bit_qnn_ptq_config(act_symmetric=True)
 
         for node in gm.graph.nodes:
-            if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
+            if (
+                node.op == "call_function"
+                and node.target == torch.ops.aten.matmul.default
+            ):
                 annotate_matmul(node, quantization_config_16a8w)
-                annotate_matmul_input1(node.args[1])
+                annotate_matmul_input1(node.args[1], quantization_config_8a8w)
     
     backend, quant_config = pt2e_quantize.split("_")
     assert (

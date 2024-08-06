@@ -120,7 +120,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--embedding-quantize",
         default=None,
         type=str,
-        help="type of embedding quantization, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
+        help="type of embedding quantization, '<bitwidth>,<groupsize>,<qge_dtype>', e.g., '8,1024,32'.",
     )
     parser.add_argument(
         "--pt2e_quantize",

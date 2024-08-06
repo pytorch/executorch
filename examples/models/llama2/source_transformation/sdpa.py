@@ -9,11 +9,25 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import math
-from typing import Tuple
+from typing import Tuple, List
 
 import torch
 
 from executorch.examples.models.llama2.llama_transformer import KVCache, SDPA
+
+
+def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
+    """
+    This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
+    num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
+    """
+
+    new_kv = []
+    batch, n_heads, seqlen, head_dim = hidden_states.shape
+    n_heads *= n_rep
+    for h in hidden_states[0]:
+        new_kv += [h] * n_rep
+    return torch.cat(new_kv, 0).reshape(batch, n_heads, seqlen, head_dim)
 
 
 class SDPACustom(torch.nn.Module):
@@ -135,10 +149,13 @@ class SDPAFlex(torch.nn.Module):
         mask,
     ):
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        k = k
-        v = v
 
         k, v = self.kv_cache.update(input_pos, k, v)
+
+        k_repeat_num = q.shape[1] // k.shape[1]
+        v_repeat_num = q.shape[1] // v.shape[1]
+        k = repeat_kv(k, k_repeat_num)
+        v = repeat_kv(v, v_repeat_num)
         attn_mask = mask[input_pos]
 
         scale_factor = 1 / math.sqrt(q.size(-1))

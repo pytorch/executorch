@@ -11,8 +11,11 @@
 import logging
 from enum import Enum
 from typing import Any, Callable, List, Optional
+from functools import partial
 
 import torch
+from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
+from sentencepiece import SentencePieceProcessor
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
@@ -167,28 +170,23 @@ class LLMEdgeManager:
         return self
 
     def calibrate(self, module: torch.fx.GraphModule):
-        from sentencepiece import SentencePieceProcessor
-
-        sp_model = SentencePieceProcessor(model_file="tokenizer.model")
+        tokenizer = SimpleTokenizer("tokenizer.model")
 
         # TODO: change criteria & support batch inputs if necessary
         pos = torch.tensor(0, dtype=torch.int32)
-        token_list = [sp_model.bos_id()]
-        user_prompts = ["Once", "upon", "a", "time"]
-        for prompt in user_prompts:
-            token_list += sp_model.encode(prompt)
+        token_list = [tokenizer.bos_id] + tokenizer.encode("Once upon a time")
 
         with torch.no_grad():
-            while token_list[-1] != sp_model.eos_id() and pos < 128:
+            while token_list[-1] != tokenizer.eos_id and pos < 128:
                 logits = module(
                     torch.full((1, 1), token_list[pos]),
-                    torch.full((1, 1), pos),
+                    torch.tensor((pos, )),
                 )
                 pos += 1
                 if pos >= len(token_list):
                     token_list.append(torch.argmax(logits[:, -1], dim=-1).item())
 
-        print(f"calibration data:\n{sp_model.decode(token_list)}")
+        print(f"calibration data:\n{tokenizer.decode(token_list)}")
 
     def pt2e_quantize(
         self, quantizers: Optional[List[Quantizer]]
@@ -321,3 +319,19 @@ class LLMEdgeManager:
         Return the filename of the most recenet saved .pte file. Return None if the model is not saved.
         """
         return self._saved_pte_filename
+
+class SimpleTokenizer:
+    def __init__(self, model_path):
+        try:
+            module = SentencePieceProcessor(model_file=model_path)
+            self.bos_id = module.bos_id()
+            self.eos_id = module.eos_id()
+            self.encode = module.encode
+            self.decode = module.decode
+        except Exception:
+            print("Using Tiktokenizer")
+            module = Tiktoken(model_path=model_path)
+            self.bos_id = module.bos_id
+            self.eos_id = module.eos_id
+            self.encode = partial(module.encode, bos=False, eos=False)
+            self.decode = module.decode

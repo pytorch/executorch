@@ -60,7 +60,7 @@ class QnnOperatorSupport(OperatorSupportBase):
             print(f"[QNN Partitioner Op Support]: {node.target.__name__} | Skipped")
             return False
 
-        if node.target.__name__ in self.skip_node_op_set:
+        if self.skip_node_op_set is not None and node.target.__name__ in self.skip_node_op_set:
             print(f"[QNN Partitioner Op Support]: {node.target.__name__} | Skipped")
             return False
 

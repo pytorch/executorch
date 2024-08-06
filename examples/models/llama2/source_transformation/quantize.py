@@ -384,7 +384,7 @@ class WeightOnlyInt8Linear(torch.nn.Module):
 
 
 def replace_embedding_weight_only_grouped_int8_per_channel(
-    module, device, bitwidth: int = 8, group_size: Optional[int] = None, packed=False
+    module, device, bitwidth: int = 8, group_size: Optional[int] = None, packed=False, qge_dtype=torch.half
 ):
     for name, child in module.named_children():
         # print(f"name: {name}")
@@ -400,11 +400,12 @@ def replace_embedding_weight_only_grouped_int8_per_channel(
                     embedding_dim=child.weight.shape[1],
                     group_size=group_size,
                     packed=packed,
+                    dtype=qge_dtype,
                 ),
             )
         else:
             replace_embedding_weight_only_grouped_int8_per_channel(
-                child, device, bitwidth, group_size, packed
+                child, device, bitwidth, group_size, packed, qge_dtype
             )
 
 
@@ -417,6 +418,7 @@ class EmbeddingQuantHandler(QuantHandler):
         bitwidth: int = 8,
         group_size: Optional[int] = None,
         packed=False,
+        qge_dtype=torch.half,
     ):
         if isinstance(packed, str):
             packed = packed == "True"
@@ -425,6 +427,7 @@ class EmbeddingQuantHandler(QuantHandler):
         self.group_size = group_size
         self.bitwidth = bitwidth
         self.packed = packed
+        self.qge_dtype = qge_dtype
         if (bitwidth != 4) and packed:
             raise RuntimeError("pack only works with bitsize 4")
 
@@ -484,7 +487,7 @@ class EmbeddingQuantHandler(QuantHandler):
 
     def convert_for_runtime(self) -> nn.Module:
         replace_embedding_weight_only_grouped_int8_per_channel(
-            self.mod, self.device, self.bitwidth, self.group_size, self.packed
+            self.mod, self.device, self.bitwidth, self.group_size, self.packed, self.qge_dtype
         )
         return self.mod
 
@@ -554,17 +557,28 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 
 
 def get_quant_embedding_transform(args):
-    bitwidth, group_size = args.embedding_quantize.split(",")
+    quant_args = [a.strip() for a in args.embedding_quantize.split(",")]
+    bitwidth, group_size = quant_args[:2]
     if group_size == "none" or group_size == "None" or group_size == "0":
         group_size = None
     else:
         group_size = int(group_size)
     bitwidth = int(bitwidth)
+
+    if len(quant_args) == 3:
+        qge_dtype = quant_args[2]
+        if qge_dtype in ("32", "torch.float32"):
+            qge_dtype = torch.float32
+        else:
+            print(f"Use default qge_dtype, {torch.half}")
+            qge_dtype = torch.half
+
     return lambda model: EmbeddingQuantHandler(
         model,
         bitwidth=bitwidth,
         group_size=group_size,
         packed=(bitwidth == 4),
+        qge_dtype=qge_dtype,
     ).quantized_model()
 
 
