@@ -198,7 +198,7 @@ class LLMEdgeManager:
             logging.info("No quantizer provided, passing...")
             return self
 
-    def export_to_edge(self) -> "LLMEdgeManager":
+    def export_to_edge(self, strict: bool = True) -> "LLMEdgeManager":
         """
         Export the model to Edge dialect and retrieve a LLMEdgeManager.
         """
@@ -219,6 +219,7 @@ class LLMEdgeManager:
                 edge_constant_methods=self.metadata,
                 edge_compile_config=edge_config,
                 verbose=self.verbose,
+                strict=strict,
             )
         return self
 
