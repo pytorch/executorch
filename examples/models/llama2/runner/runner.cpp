@@ -254,9 +254,6 @@ Result<torch::executor::Tensor> Runner::run_model_step(
         outputs_res.get()[0].isTensor(),
         "Non Tensor Output returned from executing LLM");
 
-    // Bump start_pos by 1
-    start_pos.mutable_data_ptr<int64_t>()[0]++;
-
     // Return the logits tensor
     return outputs_res.get()[0].toTensor();
   } else { // no kv cache
