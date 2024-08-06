@@ -10,6 +10,8 @@
 
 #include <cstdint>
 #include <cstring> // std::memcpy
+#include <functional> // std::multiplies
+#include <numeric> // std::accumulate
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -24,12 +26,13 @@ namespace {
 /**
  * Compute the number of elements based on the sizes of a tensor.
  */
-ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
-  ssize_t n = 1;
-  for (ssize_t i = 0; i < dim; i++) {
-    n *= sizes[i];
-  }
-  return n;
+constexpr ssize_t compute_numel(
+    const TensorImpl::SizesType* sizes,
+    ssize_t dim) {
+  return dim == 0
+      ? 0
+      : std::accumulate(
+            sizes, sizes + dim, static_cast<ssize_t>(1), std::multiplies<>());
 }
 } // namespace
 
