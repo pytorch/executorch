@@ -48,6 +48,20 @@ def get_model_and_inputs_from_name(model_name: str):
         model, example_inputs, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL[model_name]
         )
+    # Case 3: Model is in an external python file loaded as a module.
+    #         ModelUnderTest should be a torch.nn.module instance
+    #         ModelInputs should be a tuple of inputs to the forward function
+    elif model_name.endswith(".py"):
+        import importlib.util
+        import sys
+
+        # load model's module and add it
+        spec = importlib.util.spec_from_file_location('tmp_model', model_name)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        model = module.ModelUnderTest
+        example_inputs = module.ModelInputs
+
     else:
         raise RuntimeError(
             f"Model '{model_name}' is not a valid name. Use --help for a list of available models."
@@ -133,6 +147,11 @@ models = {
     "softmax": SoftmaxModule,
 }
 
+targets = [
+    "ethos-u55-128",
+    "TOSA",
+]
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -148,6 +167,14 @@ if __name__ == "__main__":
         required=False,
         default=False,
         help="Flag for producing ArmBackend delegated model",
+    )
+    parser.add_argument(
+        "-t",
+        "--target",
+        action="store",
+        required=False,
+        default="ethos-u55-128",
+        help=f"For ArmBackend delegated models, pick the target, and therefore the instruction set generated. valid targets are {targets}"
     )
     parser.add_argument(
         "-q",
@@ -166,6 +193,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--debug", action="store_true", help="Set the logging level to debug."
+    )
+    parser.add_argument(
+        "-i",
+        "--intermediates",
+        action="store",
+        required=False,
+        help=f"Store intermediate output (like TOSA artefacts) somewhere."
     )
 
     args = parser.parse_args()
@@ -191,7 +225,7 @@ if __name__ == "__main__":
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
 
-    # 1. pick model from one of the supported lists
+    # Pick model from one of the supported lists
     model, example_inputs = get_model_and_inputs_from_name(args.model_name)
     model = model.eval()
 
@@ -209,10 +243,19 @@ if __name__ == "__main__":
             _check_ir_validity=False,
         ),
     )
-    logging.debug(f"Exported graph:\n{edge.exported_program().graph}")
+
+    # As we can target multiple output encodings from ArmBackend, one must
+    # be specified.
+    compile_spec = None
     if args.delegate is True:
-        edge = edge.to_backend(
-            ArmPartitioner(
+        if args.target == "TOSA":
+            compile_spec = (
+                ArmCompileSpecBuilder().
+                tosa_compile_spec().
+                set_permute_memory_format(True)
+            )
+        elif args.target.startswith("ethos-u"):
+            compile_spec = (
                 ArmCompileSpecBuilder()
                 .ethosu_compile_spec(
                     "ethos-u55-128",
@@ -223,8 +266,17 @@ if __name__ == "__main__":
                     args.model_name in MODEL_NAME_TO_MODEL.keys()
                 )
                 .set_quantize_io(True)
-                .build()
             )
+        else:
+            raise RuntimeError(f"Expected a target in {targets}, found {args.target}");
+        if args.intermediates != None:
+            compile_spec.dump_intermediate_artifacts_to(args.intermediates)
+        compile_spec = compile_spec.build()
+
+    logging.debug(f"Exported graph:\n{edge.exported_program().graph}")
+    if args.delegate is True:
+        edge = edge.to_backend(
+            ArmPartitioner( compile_spec )
         )
         logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
 
