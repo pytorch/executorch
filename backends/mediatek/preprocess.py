@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import struct
 import tempfile
+import torch
 import uuid
 
 from pathlib import Path
@@ -39,8 +40,17 @@ class NeuropilotBackend(BackendDetails):
     ) -> PreprocessResult:
 
         header_version = 1
-        num_inputs = len(edge_program.graph_signature.user_inputs)
-        num_outputs = len(edge_program.graph_signature.user_outputs)
+        name_to_node_mappings = {node.name: node for node in edge_program.graph.nodes}
+        input_names = edge_program.graph_signature.user_inputs
+        output_names = edge_program.graph_signature.user_outputs
+        fp_input_indices = [
+            idx for idx, name in enumerate(input_names)
+            if name_to_node_mappings[name].meta['val'].dtype == torch.float32
+        ]
+        fp_output_indices = [
+            idx for idx, name in enumerate(output_names)
+            if name_to_node_mappings[name].meta['val'].dtype == torch.float32
+        ]
 
         # This default compile options are only for mt6989 SOC
         compile_options = ['--arch=mdla5.1,edpa1.0', '--relax-fp32', '--opt=3']
@@ -53,15 +63,20 @@ class NeuropilotBackend(BackendDetails):
                 value = spec.value.decode('utf-8')
                 compile_options.append(f'--{spec.key}={value}')
 
+
         converter = mtk_converter.PyTorchV2Converter.from_exported_program(edge_program)
         converter.quantize = True
         converter.input_quantization_bitwidths = None
         converter.allow_missing_quantization_ranges = True
         converter.prepend_input_quantize_ops = True
+        converter.prepend_input_quantize_ops_indices = fp_input_indices
         converter.append_output_dequantize_ops = True
+        converter.append_output_dequantize_ops_indices = fp_output_indices
         with contextlib.redirect_stdout(None):
             mlir_str = converter.convert_to_mlir()
             model_bytes = mtk_neuron.compile(mlir_str, ' '.join(compile_options))
 
+        num_inputs = len(input_names)
+        num_outputs = len(output_names)
         header = struct.pack('<BIII', 1, num_inputs, num_outputs, len(model_bytes))
         return PreprocessResult(processed_bytes=bytes(header + model_bytes))
