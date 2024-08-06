@@ -53,7 +53,7 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
     """
     nodes = graph.nodes
     memory_timeline = [None] * len(nodes)
-    for i, node in enumerate(nodes):
+    for _, node in enumerate(nodes):
         if node.op == "output":
             continue
         if node.target == memory.alloc:
@@ -80,7 +80,7 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
                     Allocation(
                         node.name,
                         node.target,
-                        i,
+                        tensor_spec.mem_id,
                         tensor_spec.mem_offset,
                         size,
                         fqn,
@@ -148,10 +148,13 @@ def generate_memory_trace(
             )
             allocation_size_kb = allocation.size_bytes
             e["dur"] = int(allocation_size_kb)
-            e["pid"] = 0
+            e["pid"] = int(allocation.memory_id)
             e["tid"] = tid
             e["args"] = {}
             e["args"]["op_name"] = f"{allocation.op_name}"
+            # ID refers to memory space, typically from 1 to N.
+            # For CPU, everything is allocated on one "space", other backends may have multiple.
+            e["args"]["Memory ID"] = allocation.memory_id
             e["args"]["fqn"] = f"{allocation.fqn}"
             e["args"]["source"] = f"{allocation.file_and_line_num}"
             e["args"]["bytes"] = allocation.size_bytes
