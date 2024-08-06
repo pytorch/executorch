@@ -158,6 +158,31 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_group_norm_out(
       InvalidArgument,
       ret_val);
 
+  ET_KERNEL_CHECK(
+      ctx, tensor_is_default_dim_order(input), InvalidArgument, ret_val);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(input, out, mean_out, rstd_out),
+      InvalidArgument,
+      ret_val);
+
+  if (weight.has_value()) {
+    ET_KERNEL_CHECK(
+        ctx,
+        tensors_have_same_dim_order(input, weight.value()),
+        InvalidArgument,
+        ret_val);
+  }
+
+  if (bias.has_value()) {
+    ET_KERNEL_CHECK(
+        ctx,
+        tensors_have_same_dim_order(input, bias.value()),
+        InvalidArgument,
+        ret_val);
+  }
+
   constexpr auto name = "native_group_norm.out";
 
   ET_SWITCH_FLOAT_TYPES(input.scalar_type(), ctx, name, CTYPE, [&]() {

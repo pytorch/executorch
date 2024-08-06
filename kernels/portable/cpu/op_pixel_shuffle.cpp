@@ -29,6 +29,11 @@ Tensor& pixel_shuffle_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   const Tensor::SizesType leading_dims = getLeadingDims(in, in.dim() - 3);
   const Tensor::SizesType channels = in.size(in.dim() - 3);
   const Tensor::SizesType height = in.size(in.dim() - 2);
