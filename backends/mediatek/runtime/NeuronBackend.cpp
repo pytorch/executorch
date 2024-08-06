@@ -72,13 +72,13 @@ bool NeuronBackend::is_available() const {
 }
 
 Error NeuronExecuTorchDelegate::execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      BackendExecutionContext& context,
       EValue** args) const {
     if (HintNeuronBackend(args) != NEURON_NO_ERROR) {
         return Error::InvalidState;
     };
 
-    auto& allocator = GET_NEURON_ALLOCATOR;
+    neuron::BufferAllocator* allocator = dynamic_cast<neuron::BufferAllocator*>(context.get_temp_allocator());
     size_t inputCount = mInputSizes.size(), outputCount = mOutputSizes.size();
 
     for (int i = 0; i < inputCount; i++) {
@@ -87,7 +87,7 @@ Error NeuronExecuTorchDelegate::execute(
         if (IsCached</*isInput=*/true>(i, data_ptr)) {
             continue;
         };
-        auto unit = allocator.Find(data_ptr);
+        auto unit = allocator->Find(data_ptr);
         if (unit) {
             UpdateCache<true>(i, data_ptr);
             size_t offset = (char*)data_ptr - (char*)unit->GetAddress();
@@ -104,7 +104,7 @@ Error NeuronExecuTorchDelegate::execute(
         if (IsCached</*isInput=*/false>(output_index, data_ptr)) {
             continue;
         };
-        auto unit = allocator.Find(data_ptr);
+        auto unit = allocator->Find(data_ptr);
         if (unit) {
             UpdateCache</*isInput=*/false>(output_index, data_ptr);
             size_t offset = (char*)data_ptr - (char*)unit->GetAddress();

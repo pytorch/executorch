@@ -546,8 +546,10 @@ void* ModelChunk::CreateModelInstance(const std::string& modelPath) {
 
   // Assemble all of the allocators into the MemoryManager that the Executor
   // will use.
+  auto& neuron_allocator = GET_NEURON_ALLOCATOR;
   modelInstance->memory_manager = std::make_unique<MemoryManager>(
-      method_allocator.get(), planned_memory.get());
+      method_allocator.get(), planned_memory.get(),
+      dynamic_cast<MemoryAllocator*>(&neuron_allocator));
   auto& memory_manager = modelInstance->memory_manager;
 
   ET_LOG(Debug, "Begin loading method %s", method_name);

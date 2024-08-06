@@ -15,6 +15,8 @@
 
 #include <android/hardware_buffer.h>
 
+#include <executorch/runtime/core/memory_allocator.h>
+
 #include <map>
 #include <memory>
 #include <mutex>
@@ -93,11 +95,15 @@ private:
     size_t mSize = 0;
 };
 
-class BufferAllocator {
+class BufferAllocator : public MemoryAllocator {
 public:
     static BufferAllocator& GetInstance();
 
     void* Allocate(size_t size);
+
+    void* allocate(size_t size, size_t alignment = kDefaultAlignment) override {
+        return Allocate(size);
+    }
 
     bool RemoveBuffer(void* address);
 
@@ -106,11 +112,15 @@ public:
     void Clear();
 
 private:
-    BufferAllocator() {}
+    BufferAllocator() : MemoryAllocator(0, nullptr) {}
 
     BufferAllocator(const BufferAllocator&) = delete;
 
     BufferAllocator& operator=(const BufferAllocator&) = delete;
+
+    ~BufferAllocator() override {
+        Clear();
+    }
 
 private:
     std::map<void*, std::unique_ptr<MemoryUnit>> mPool;
