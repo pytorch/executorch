@@ -5,7 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#include <executorch/examples/models/llama2/custom_ops/op_fallback.h>
+#include <executorch/extension/llm/custom_ops/op_fallback.h>
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 #include <cstring>
 

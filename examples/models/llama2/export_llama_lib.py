@@ -499,7 +499,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
-        from executorch.examples.models.llama2.custom_ops import model_sharding
+        from executorch.extension.llm.custom_ops import model_sharding
 
         partitioners.append(
             get_qnn_partitioner(
