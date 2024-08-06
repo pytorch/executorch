@@ -7,6 +7,8 @@
 
 import unittest
 
+import executorch.kernels.quantized
+
 import torch
 import torch.ao.quantization.fx._decomposed  # noqa[F401] 'torch.ao.quantization.fx._decomposed' imported but unused
 from executorch.exir.dialects._ops import ops
@@ -14,7 +16,6 @@ from executorch.exir.passes._quant_patterns_and_replacements import (  # noqa
     quantized_decomposed_lib,  # noqa
 )
 
-import executorch.kernels.quantized
 
 class TestOutVariants(unittest.TestCase):
     def setUp(self) -> None:

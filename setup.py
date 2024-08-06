@@ -604,6 +604,7 @@ setup(
         "executorch/examples/models": "examples/models",
         "executorch/exir": "exir",
         "executorch/extension": "extension",
+        "executorch/kernels/quantized": "kernels/quantized",
         "executorch/schema": "schema",
         "executorch/sdk": "sdk",
         "executorch/sdk/bundled_program": "sdk/bundled_program",
