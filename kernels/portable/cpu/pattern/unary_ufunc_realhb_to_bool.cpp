@@ -38,6 +38,9 @@ Tensor& unary_ufunc_realhb_to_bool(
       "Expected out tensor to have dtype Bool, but got %" PRId8 " instead.",
       static_cast<int8_t>(out.scalar_type()));
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   const auto in_type = in.scalar_type();
 
   ET_SWITCH_REALHB_TYPES(in_type, ctx, __func__, CTYPE_IN, [&] {
