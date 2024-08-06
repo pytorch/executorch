@@ -287,7 +287,15 @@ def get_args_and_kwargs_relu(
     graph_module: GraphModule,
     inputs_inputs: List[fx.Node],
     dequants_inputs: List[fx.Node],
+    quant_node: fx.Node,
 ) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
+    input_scale = dequants_inputs[0].args[1]
+    # pyre-fixme[58]: Unsupported operand types
+    requantize_scale = input_scale / quant_node.args[1]
+    requantize_scale_t = torch.tensor([requantize_scale])
+
+    (out_multiplier, out_shift) = quantize_tensor_multiplier(requantize_scale_t)
+
     # Make the args and kwargs for the replacement op
     args = tuple(inputs_inputs)
 
@@ -296,9 +304,22 @@ def get_args_and_kwargs_relu(
         ([1], dequants_inputs[0].args[2]),
         {"dtype": torch.int32},
     )
+    out_multiplier_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], out_multiplier[0].item()),
+        {"dtype": torch.int32},
+    )
+    out_shift_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], out_shift[0].item()),
+        {"dtype": torch.int32},
+    )
 
     kwargs = {
         "X_zero_point": X_zero_point,
+        "out_zero_point": quant_node.args[2],
+        "out_multiplier": out_multiplier_,
+        "out_shift": out_shift_,
     }
     return args, kwargs
 
@@ -420,6 +441,7 @@ class QuantFusion(ExportPass):
                             graph_module,
                             inputs_inputs,
                             dequants_inputs,
+                            quant_node,
                         )
                     fused = graph_module.graph.call_function(
                         pattern.replacement_op(),

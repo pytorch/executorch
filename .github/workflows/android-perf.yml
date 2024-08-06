@@ -38,26 +38,52 @@ concurrency:
 permissions: read-all
 
 jobs:
-  set-models:
+  set-parameters:
     runs-on: linux.2xlarge
     outputs:
-      models: ${{ steps.set-models.outputs.models }}
+      models: ${{ steps.set-parameters.outputs.models }}
+      devices: ${{ steps.set-parameters.outputs.devices }}
+      delegates: ${{ steps.set-parameters.outputs.delegates }}
     steps:
-      - name: Set models
-        id: set-models
+      - name: Set parameters
+        id: set-parameters
         shell: bash
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
+          DEVICES="${{ inputs.devices }}"
+          DELEGATES="${{ inputs.delegates }}"
+
+          # Mapping devices to their corresponding device-pool-arn
+          declare -A DEVICE_POOL_ARNS
+          DEVICE_POOL_ARNS[samsung_galaxy_s2x]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa"
+
+          # Resolve device names with their corresponding ARNs
+          if [[ ! $(echo "$DEVICES" | jq empty 2>/dev/null) ]]; then
+            DEVICES=$(echo "$DEVICES" | jq -Rc 'split(",")')
+          fi
+          declare -a MAPPED_ARNS=()
+          for DEVICE in $(echo "$DEVICES" | jq -r '.[]'); do
+            if [[ -z "${DEVICE_POOL_ARNS[$DEVICE]}" ]]; then
+              echo "Error: No ARN found for device '$DEVICE'. Abort." >&2
+              exit 1
+            fi
+            MAPPED_ARNS+=("${DEVICE_POOL_ARNS[$DEVICE]}")
+          done
+
           echo "models=$(echo $MODELS | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
+          MAPPED_ARNS_JSON=$(printf '%s\n' "${MAPPED_ARNS[@]}" | jq -R . | jq -s .)
+          echo "devices=$(echo "$MAPPED_ARNS_JSON" | jq -c .)" >> $GITHUB_OUTPUT
+          echo "delegates=$(echo $DELEGATES | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
 
   export-models:
     name: export-models
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-    needs: set-models
+    needs: set-parameters
     strategy:
       matrix:
-          model: ${{ fromJson(needs.set-models.outputs.models) }}
+          model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -72,32 +98,33 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
         echo "Exporting model: ${{ matrix.model }}"
-        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}
+        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}_${{ matrix.delegate }}
 
+        # TODO(T197546696): Note that the following scripts/steps only work for llama. It's expected to fail for other models+delegates.
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}.pt" "cmake" "fp32" "xnnpack+custom+qe" "${ARTIFACTS_DIR_NAME}"\
 
-  # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
+  # Upload models to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-models:
     needs: export-models
     runs-on: linux.2xlarge
     steps:
-      - name: Download the artifacts from GitHub
+      - name: Download the models from GitHub
         uses: actions/download-artifact@v3
         with:
           # The name here needs to match the name of the upload-artifact parameter
           name: android-models
           path: ${{ runner.temp }}/artifacts/
 
-      - name: Verify the artifacts
+      - name: Verify the models
         shell: bash
         working-directory: ${{ runner.temp }}/artifacts/
         run: |
           ls -lah ./
 
-      - name: Upload the artifacts to S3
+      - name: Upload the models to S3
         uses: seemethere/upload-artifact-s3@v5
         with:
           s3-bucket: gha-artifacts
@@ -110,7 +137,7 @@ jobs:
   build-llm-demo:
     name: build-llm-demo
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-    needs: set-models
+    needs: set-parameters
     strategy:
       matrix:
           tokenizer: [bpe]
@@ -139,20 +166,20 @@ jobs:
     needs: build-llm-demo
     runs-on: linux.2xlarge
     steps:
-      - name: Download the artifacts from GitHub
+      - name: Download the apps from GitHub
         uses: actions/download-artifact@v3
         with:
           # The name here needs to match the name of the upload-artifact parameter
           name: android-apps
           path: ${{ runner.temp }}/artifacts/
 
-      - name: Verify the artifacts
+      - name: Verify the apps
         shell: bash
         working-directory: ${{ runner.temp }}/artifacts/
         run: |
           ls -lah ./
 
-      - name: Upload the artifacts to S3
+      - name: Upload the apps to S3
         uses: seemethere/upload-artifact-s3@v5
         with:
           s3-bucket: gha-artifacts
@@ -169,20 +196,21 @@ jobs:
       contents: read
     uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
     needs:
-      - set-models
+      - set-parameters
       - upload-models
       - upload-android-apps
     strategy:
       matrix:
-        model: ${{ fromJson(needs.set-models.outputs.models) }}
+        model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+        delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+        device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
     with:
       device-type: android
       runner: linux.2xlarge
       test-infra-ref: ''
       # This is the ARN of ExecuTorch project on AWS
       project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
-      # This is the custom Android device pool that only includes Samsung Galaxy S2x
-      device-pool-arn: arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa
+      device-pool-arn: ${{ matrix.device }}
       # Uploaded to S3 from the previous job, the name of the app comes from the project itself.
       # Unlike models there are limited numbers of build flavor for apps, and the model controls whether it should build with bpe/tiktoken tokenizer.
       # It's okay to build all possible apps with all possible flavors in job "build-llm-demo". However, in this job, once a model is given, there is only
@@ -193,4 +221,4 @@ jobs:
       # The test spec can be downloaded from https://ossci-assets.s3.amazonaws.com/android-llama2-device-farm-test-spec.yml
       test-spec: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/abd86868-fa63-467e-a5c7-218194665a77
       # Uploaded to S3 from the previous job
-      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}/model.zip
+      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip

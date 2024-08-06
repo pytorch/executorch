@@ -6,6 +6,7 @@ runtime.python_library(
     name = "xnnpack_partitioner",
     srcs = [
         "xnnpack_partitioner.py",
+        "xnnpack_partitioner2.py",
     ],
     visibility = [
         "//executorch/...",
@@ -15,6 +16,7 @@ runtime.python_library(
         ":configs",
         ":partitioner_graphs",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
+        "//executorch/backends/xnnpack/partition/config:xnnpack_partitioner_configs",
         "//executorch/exir:delegate",
         "//executorch/exir:lib",
         "//executorch/exir/backend:partitioner",

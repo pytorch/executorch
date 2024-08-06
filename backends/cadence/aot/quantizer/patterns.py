@@ -303,9 +303,7 @@ class ReluBasePattern(QuantizationPattern):
             inputs=[(relu_node, 0)],
             weights=[],
             biases=[],
-            output=[
-                (relu_node, SharedQuantizationSpec((relu_node.args[0], relu_node)))
-            ],
+            output=[(relu_node,)],
         )
 
     def replacement_op(self) -> OpOverload:

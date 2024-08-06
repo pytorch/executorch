@@ -55,14 +55,7 @@ class TestMaxPool2d(unittest.TestCase):
             Tester(self.MaxPool2d(3, 1, 0, 1), inputs)
             .export()
             .check_count({"torch.ops.aten.max_pool2d.default": 1})
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1,
-                }
-            )
-            .check(["getitem"])
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -91,13 +84,7 @@ class TestMaxPool2d(unittest.TestCase):
             Tester(self.MaxPool2dUnsupported(), inputs)
             .export()
             .check_count({"torch.ops.aten.max_pool2d_with_indices.default": 1})
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1
-                }
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             # We expect it not be be delegated.
             .check_count(
                 {
@@ -115,13 +102,7 @@ class TestMaxPool2d(unittest.TestCase):
             Tester(self.MaxPool2dUnsupportedCeilMode(), inputs)
             .export()
             .check_count({"torch.ops.aten.max_pool2d.default": 1})
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1
-                }
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             # We expect it not be be delegated.
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 0})
             .check_count(
@@ -153,13 +134,7 @@ class TestMaxPool2d(unittest.TestCase):
                 .export()
                 .check_count({"torch.ops.aten.max_pool2d.default": 1})
                 .check(["torch.ops.quantized_decomposed"])
-                .to_edge()
-                .check_count(
-                    {
-                        "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1
-                    }
-                )
-                .partition()
+                .to_edge_transform_and_lower()
                 .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
                 .check_not(
                     [

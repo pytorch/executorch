@@ -80,7 +80,7 @@ ivec4 from_nchw_buffer_i(int buf_i, ivec4 sizes) {
  * Returns: The (x, y, z, n) texel position corresponding to the first element
  *          of the texel at the specified buffer index
  */
-ivec4 to_texel_pos(int buf_i, ivec4 strides, int packed_dim) {
+ivec4 to_tensor_idx(int buf_i, ivec4 strides, int packed_dim) {
   ivec4 idx;
   for (int i = 3; i >= 0; i--) {
     if (i != packed_dim) {

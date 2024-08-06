@@ -43,9 +43,11 @@ lib.define(
     "quantized_linear.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) ->  Tensor(a!)"
 )
 
-lib.define("quantized_relu(Tensor X, Tensor X_zero_point) -> (Tensor Y)")
 lib.define(
-    "quantized_relu.out(Tensor X, Tensor X_zero_point, *, Tensor(a!) out) -> Tensor (a!)"
+    "quantized_relu(Tensor X, Tensor X_zero_point, int out_zero_point, Tensor out_multiplier, Tensor out_shift) -> (Tensor Y)"
+)
+lib.define(
+    "quantized_relu.out(Tensor X, Tensor X_zero_point, int out_zero_point, Tensor out_multiplier, Tensor out_shift, *, Tensor(a!) out) -> Tensor (a!)"
 )
 
 lib.define(
@@ -168,6 +170,9 @@ def quantized_layer_norm_meta(
 def quantized_relu_meta(
     X: torch.Tensor,
     X_zero_point: torch.Tensor,
+    out_zero_point: int,
+    out_multiplier: torch.Tensor,
+    out_shift: torch.Tensor,
 ):
     return X.new_empty(X.size(), dtype=torch.uint8)
 
