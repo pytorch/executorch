@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import json
 import typing
 from dataclasses import dataclass, field
@@ -22,6 +24,7 @@ class Allocation:
     name: str
     op_name: str
     memory_id: int
+    memory_offset: int
     size_bytes: int
     fqn: str
     file_and_line_num: str
@@ -72,7 +75,15 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
                     memory_timeline[j] = MemoryTimeline()
                 # pyre-ignore
                 memory_timeline[j].allocations.append(
-                    Allocation(node.name, node.target, i, size, fqn, stack_trace)
+                    Allocation(
+                        node.name,
+                        node.target,
+                        i,
+                        tensor_spec.mem_offset,
+                        size,
+                        fqn,
+                        stack_trace,
+                    )
                 )
     # pyre-ignore
     return memory_timeline
@@ -90,7 +101,9 @@ def _validate_memory_planning_is_done(exported_program: ExportedProgram):
 
 
 def generate_memory_trace(
-    executorch_program_manager: ExecutorchProgramManager, chrome_trace_filename: str
+    executorch_program_manager: ExecutorchProgramManager,
+    chrome_trace_filename: str,
+    enable_memory_offsets: bool = False,
 ):
     """
     Generate the memory timeline from the given ExecuTorch program.
@@ -126,7 +139,11 @@ def generate_memory_trace(
             e["name"] = allocation.name
             e["cat"] = "memory_allocation"
             e["ph"] = "X"
-            e["ts"] = int(start_time)
+            e["ts"] = (
+                int(allocation.memory_offset)
+                if enable_memory_offsets
+                else int(start_time)
+            )
             allocation_size_kb = allocation.size_bytes
             e["dur"] = int(allocation_size_kb)
             e["pid"] = 0
