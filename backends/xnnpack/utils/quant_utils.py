@@ -5,28 +5,74 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.backend.canonical_partitioners.config_partitioner import (
+    format_target_name,
+)
 
-DQ_TARGETS = {
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
-    exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
+_Q_OPS = {
+    "quantize_per_tensor.tensor",
+    "quantize_per_tensor.default",
+    "quantize_per_channel.default",
+    "quantize_per_channel_group.default",
+    "quantize_per_token.default",
 }
 
-Q_TARGETS = {
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
-    exir_ops.edge.quantized_decomposed.quantize_per_token.default,
+_DQ_OPS = {
+    "dequantize_per_tensor.tensor",
+    "dequantize_per_tensor.default",
+    "dequantize_per_channel.default",
+    "dequantize_per_channel_group.default",
+    "dequantize_per_token.default",
 }
 
 
-def is_quant(tensor: torch.fx.Node) -> bool:
-    return tensor.target in Q_TARGETS
+_QPARAM_OPS = {
+    "choose_qparams.tensor",
+    "choose_qparams_per_token_asymmetric.default",
+}
+
+_DYNAMIC_OPS = {
+    "quantize_per_tensor.tensor",
+    "quantize_per_token.default",
+    "dequantize_per_tensor.tensor",
+    "dequantize_per_token.default",
+}
 
 
-def is_dequant(tensor: torch.fx.Node) -> bool:
-    return tensor.target in DQ_TARGETS
+def is_dynamic_qdq(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+
+    return node_name in _DYNAMIC_OPS
+
+
+def is_qparam(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+
+    return node_name in _QPARAM_OPS
+
+
+def is_quant(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+
+    return node_name in _Q_OPS
+
+
+def is_dequant(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+    node_name = format_target_name(node.target.__name__)  # pyre-ignore
+
+    return node_name in _DQ_OPS
+
+
+def is_per_channel(node: torch.fx.Node) -> bool:
+    if not (is_quant(node) or is_dequant(node)):
+        return False
+
+    return "per_channel" in node.target.__name__  # pyre-ignore

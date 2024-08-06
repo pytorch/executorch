@@ -164,14 +164,13 @@ class TestConv2d(unittest.TestCase):
         (
             tester.export()
             .check_count({"torch.ops.aten.conv2d": conv_count})
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_aten_convolution_default": conv_count
-                }
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops__native_batch_norm_legit_no_training_default"
+                ]
+            )
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
