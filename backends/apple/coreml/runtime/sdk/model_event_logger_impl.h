@@ -7,8 +7,8 @@
 
 #pragma once
 
+#import "model_event_logger.h"
 #import <CoreML/CoreML.h>
-#import <model_event_logger.h>
 
 namespace torch::executor {
 class EventTracer;

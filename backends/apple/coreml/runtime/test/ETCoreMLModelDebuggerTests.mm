@@ -21,9 +21,9 @@ namespace  {
     using NotifyFn = std::function<void(NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *op_path_to_value_map,
                                         NSDictionary<ETCoreMLModelStructurePath *, NSString *> *op_path_to_debug_symbol_name_map)>;
     
-    class ModelProfilingEventLoggerImpl: public executorchcoreml::ModelEventLogger {
+    class ModelEventLoggerImpl: public executorchcoreml::ModelEventLogger {
     public:
-        explicit ModelProfilingEventLoggerImpl(NotifyFn fn)
+        explicit ModelEventLoggerImpl(NotifyFn fn)
         :fn_(fn)
         {}
         
@@ -87,8 +87,8 @@ namespace  {
         MLPredictionOptions *predictionOptions = [[MLPredictionOptions alloc] init];
         executorchcoreml::ModelLoggingOptions loggingOptions;
         loggingOptions.log_intermediate_tensors = true;
-        ModelProfilingEventLoggerImpl eventLogger(notify);
-        
+        ModelEventLoggerImpl eventLogger(notify);
+
         NSArray<MLMultiArray *> *outputs = [analyzer executeModelWithInputs:inputs
                                                           predictionOptions:predictionOptions
                                                              loggingOptions:loggingOptions
@@ -125,21 +125,23 @@ namespace  {
 }
 
 - (void)testMV3ProgramDebugging {
-    XCTSkip(@"There is a device specialization issue when getting on of the outputs, will fix after investigation.");
-    NotifyFn notify = [](NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *debuggingResult,
-                         NSDictionary<ETCoreMLModelStructurePath *, NSString *> *pathToSymbolNameMap) {
-        // There are more than 200 ops, we verify the outputs for specific ops.
-        XCTAssertNotNil(debuggingResult[make_path_with_output_name("aten__native_batch_norm_legit_no_training_default_13_cast_fp16")]);
-        XCTAssertNotNil(debuggingResult[make_path_with_output_name("_inversed_aten_div_tensor_24_cast_fp16")]);
-        XCTAssertNotNil(debuggingResult[make_path_with_output_name("aten_mean_dim_7_cast_fp16")]);
-        XCTAssertNotNil(debuggingResult[make_path_with_output_name("aten_clamp_default_54_cast_fp16")]);
-        XCTAssertNotNil(debuggingResult[make_path_with_output_name("aten__native_batch_norm_legit_no_training_default_22_cast_fp16")]);
-        XCTAssertNotNil(debuggingResult[make_path_with_output_name("aten_mul_tensor_27_cast_fp16")]);
+    NSMutableDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *debuggingResults = [NSMutableDictionary new];
+    NotifyFn notify = [debuggingResults](NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *debuggingResult,
+                                         NSDictionary<ETCoreMLModelStructurePath *, NSString *> *pathToSymbolNameMap) mutable {
+        [debuggingResults addEntriesFromDictionary:debuggingResult];
     };
     
     [self debugModelWithName:@"mv3_coreml_all"
          repeatedInputValues:@[@(1), @(2)]
                       notify:notify];
+
+    // There are more than 200 ops, we verify the outputs for specific ops.
+    XCTAssertNotNil(debuggingResults[make_path_with_output_name("aten__native_batch_norm_legit_no_training_default_13_cast_fp16")]);
+    XCTAssertNotNil(debuggingResults[make_path_with_output_name("_inversed_aten_div_tensor_24_cast_fp16")]);
+    XCTAssertNotNil(debuggingResults[make_path_with_output_name("aten_mean_dim_7_cast_fp16")]);
+    XCTAssertNotNil(debuggingResults[make_path_with_output_name("aten_clamp_default_54_cast_fp16")]);
+    XCTAssertNotNil(debuggingResults[make_path_with_output_name("aten__native_batch_norm_legit_no_training_default_22_cast_fp16")]);
+    XCTAssertNotNil(debuggingResults[make_path_with_output_name("aten_mul_tensor_27_cast_fp16")]);
 }
 
 @end

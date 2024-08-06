@@ -7,7 +7,7 @@
 
 #import <CoreML/CoreML.h>
 
-#import <ETCoreMLModelExecutor.h>
+#import "ETCoreMLModelExecutor.h"
 
 namespace executorchcoreml {
 struct ModelMetadata;
