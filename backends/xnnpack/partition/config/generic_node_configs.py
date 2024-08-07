@@ -271,3 +271,24 @@ class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.upsample_bilinear2d.vec
+
+
+class FloorConfig(GenericNodePartitionerConfig):
+    target_name = "floor.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class HardswishConfig(GenericNodePartitionerConfig):
+    target_name = "hardswish.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class LeakyReLUConfig(GenericNodePartitionerConfig):
+    target_name = "leaky_relu.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
