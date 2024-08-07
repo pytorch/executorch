@@ -31,7 +31,14 @@ from .phi_3_mini import Phi3Mini
 def main(args) -> None:
     torch.manual_seed(0)
 
-    model_name = "microsoft/Phi-3-mini-4k-instruct"
+    if args.context_length == "4k":
+        model_name = "microsoft/Phi-3-mini-4k-instruct"
+    elif args.context_length == "128k":
+        model_name = "microsoft/Phi-3-mini-128k-instruct"
+    else:
+        raise Exception(
+            f"Invalid context length {args.context_length}. Should be either 4k or 128k"
+        )
 
     with torch.no_grad():
         model = Phi3Mini(
@@ -85,6 +92,14 @@ def main(args) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c",
+        "--context_length",
+        type=str,
+        default="4k",
+        choices=["4k", "128k"],
+        help="Phi-3-mini provides two context length variants: 4k and 128k",
+    )
     parser.add_argument(
         "-s",
         "--seq_len",
