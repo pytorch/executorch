@@ -177,21 +177,21 @@ different than the ones we used while tracing, we will run into an error:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 111, in <module>
         print(aten_dialect.module()(torch.ones(3, 2), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 738, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 739, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 316, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 317, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 303, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 304, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1716, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1767, in _call_impl
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 602, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 631, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 33, in _check_input_constraints_pre_hook
         return _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 155, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 154, in _check_input_constraints_for_graph
         raise RuntimeError(
     RuntimeError: Expected input at *args[0].shape[1] to be equal to 3, but got 2
 
@@ -299,41 +299,41 @@ Now let's try running the model with different shapes:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 154, in <module>
         print(aten_dialect.module()(torch.ones(3, 15), torch.ones(3, 15)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 738, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 739, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 316, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 317, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 303, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 304, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1716, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1767, in _call_impl
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 602, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 631, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 33, in _check_input_constraints_pre_hook
         return _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 145, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 144, in _check_input_constraints_for_graph
         raise RuntimeError(
     RuntimeError: Expected input at *args[0].shape[1] to be <= 10, but got 15
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 160, in <module>
         print(aten_dialect.module()(torch.ones(3, 3), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 738, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 739, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 316, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 317, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 303, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 304, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1716, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1767, in _call_impl
         args_kwargs_result = hook(self, args, kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 602, in _fn
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 631, in _fn
         return fn(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/_unlift.py", line 33, in _check_input_constraints_pre_hook
         return _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 107, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 106, in _check_input_constraints_for_graph
         raise RuntimeError(
     RuntimeError: Expected input at *args[1].shape[1] to be equal to 3, but got 2
 
@@ -425,9 +425,9 @@ model properly for a specific backend.
         return pytree.tree_unflatten([relu], self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/observer.py:1289: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/observer.py:1315: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
       warnings.warn(
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/utils.py:376: UserWarning: must run observer before calling calculate_qparams. Returning default values.
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/utils.py:409: UserWarning: must run observer before calling calculate_qparams. Returning default values.
       warnings.warn(
     Quantized Graph
     GraphModule()
@@ -453,7 +453,7 @@ model properly for a specific backend.
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, p_conv_bias: "f32[16]", b__frozen_param0: "i8[16, 3, 3, 3]", x: "f32[1, 3, 256, 256]"):
-                 # File: <eval_with_key>.175:7 in forward, code: quantize_per_tensor_default = torch.ops.quantized_decomposed.quantize_per_tensor.default(arg0_1, 1.0, 0, -128, 127, torch.int8);  arg0_1 = None
+                 # File: <eval_with_key>.180:7 in forward, code: quantize_per_tensor_default = torch.ops.quantized_decomposed.quantize_per_tensor.default(arg0_1, 1.0, 0, -128, 127, torch.int8);  arg0_1 = None
                 quantize_per_tensor: "i8[1, 3, 256, 256]" = torch.ops.quantized_decomposed.quantize_per_tensor.default(x, 1.0, 0, -128, 127, torch.int8);  x = None
             
                  # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:64 in forward, code: a = self.conv(x)
@@ -465,7 +465,7 @@ model properly for a specific backend.
                 relu: "f32[1, 16, 256, 256]" = torch.ops.aten.relu.default(conv2d);  conv2d = None
                 quantize_per_tensor_1: "i8[1, 16, 256, 256]" = torch.ops.quantized_decomposed.quantize_per_tensor.default(relu, 1.0, 0, -128, 127, torch.int8);  relu = None
             
-                 # File: <eval_with_key>.175:15 in forward, code: dequantize_per_tensor_default_2 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_2, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_2 = None
+                 # File: <eval_with_key>.180:15 in forward, code: dequantize_per_tensor_default_2 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_2, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_2 = None
                 dequantize_per_tensor_2: "f32[1, 16, 256, 256]" = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_1, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_1 = None
                 return (dequantize_per_tensor_2,)
             
@@ -1278,7 +1278,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.465 seconds)
+   **Total running time of the script:** (0 minutes 1.472 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
