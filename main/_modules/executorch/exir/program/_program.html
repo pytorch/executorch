@@ -1670,7 +1670,7 @@
                 <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">partitioner</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
                     <span class="n">new_edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">[</span><span class="n">name</span><span class="p">])</span>
                 <span class="k">else</span><span class="p">:</span>
-                    <span class="n">new_edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
+                    <span class="n">new_edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">program</span>
 
         <span class="k">else</span><span class="p">:</span>  <span class="c1"># apply partitioner to every method</span>
             <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
