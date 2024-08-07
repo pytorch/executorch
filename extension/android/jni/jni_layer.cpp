@@ -254,17 +254,14 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
           facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
           extraFiles,
       jint loadMode) {
-    enum class Module::LoadMode load_mode =
-        Module::LoadMode::Mmap if (loadMode == 0) {
+    Module::LoadMode load_mode = Module::LoadMode::Mmap;
+    if (loadMode == 0) {
       load_mode = Module::LoadMode::File;
-    }
-    else if (loadMode == 1) {
+    } else if (loadMode == 1) {
       load_mode = Module::LoadMode::Mmap;
-    }
-    else if (loadMode == 2) {
+    } else if (loadMode == 2) {
       load_mode = Module::LoadMode::MmapUseMlock;
-    }
-    else if (loadMode == 3) {
+    } else if (loadMode == 3) {
       load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors;
     }
 
