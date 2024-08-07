@@ -400,10 +400,6 @@
 namespace torch {
 namespace executor {
 
-using Tensor = exec_aten::Tensor;
-using Scalar = exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
-
 //
 // Utility functions for checking tensor attributes
 //
@@ -432,7 +428,7 @@ inline bool dim_is_valid(int64_t dim, int64_t upper_bound) {
  * the zero dimensional tensors in some kernels, that treat them as 1D tensors
  * with a single element.
  */
-inline ssize_t nonzero_dim(const Tensor& tensor) {
+inline ssize_t nonzero_dim(const exec_aten::Tensor& tensor) {
   return tensor.dim() == 0 ? 1 : tensor.dim();
 }
 
@@ -442,7 +438,7 @@ inline ssize_t nonzero_dim(const Tensor& tensor) {
  * the zero dimensional tensors in some kernels, that treat them as 1D tensors
  * with a single element.
  */
-inline ssize_t nonempty_size(const Tensor& tensor, ssize_t dim) {
+inline ssize_t nonempty_size(const exec_aten::Tensor& tensor, ssize_t dim) {
   return tensor.dim() == 0 ? 1 : tensor.size(dim);
 }
 
@@ -861,7 +857,7 @@ inline bool tensor_is_scalar(exec_aten::Tensor t) {
 constexpr size_t kTensorDimensionLimit = 16;
 
 /// Returns the product of dim[0:dim), not including dim.
-inline size_t getLeadingDims(const Tensor& tensor, int64_t dim) {
+inline size_t getLeadingDims(const exec_aten::Tensor& tensor, int64_t dim) {
   ET_CHECK_MSG(
       dim >= 0 && dim <= tensor.dim(),
       "Ending dimension %" PRId64
@@ -876,7 +872,7 @@ inline size_t getLeadingDims(const Tensor& tensor, int64_t dim) {
 }
 
 /// Returns the product of dim[dim+1:].
-inline size_t getTrailingDims(const Tensor& tensor, int64_t dim) {
+inline size_t getTrailingDims(const exec_aten::Tensor& tensor, int64_t dim) {
   ET_CHECK_MSG(
       dim >= -1 && dim < tensor.dim(),
       "Starting dimension %" PRId64
@@ -901,7 +897,7 @@ inline size_t getTrailingDims(const Tensor& tensor, int64_t dim) {
  * the tensor.
  */
 inline size_t coordinateToIndex(
-    const Tensor& tensor,
+    const exec_aten::Tensor& tensor,
     const size_t* const coordinate) {
   size_t index = 0;
   for (int d = 0; d < tensor.dim(); ++d) {
@@ -921,8 +917,10 @@ inline size_t coordinateToIndex(
  * index. It is assumed that the array has kTensorDimensionLimit elements.
  * @returns void
  */
-inline void
-indexToCoordinate(const Tensor& tensor, size_t index, size_t* coordinate) {
+inline void indexToCoordinate(
+    const exec_aten::Tensor& tensor,
+    size_t index,
+    size_t* coordinate) {
   ET_CHECK(index < tensor.numel());
   for (auto i = 0; i < tensor.dim(); ++i) {
     auto dim = tensor.dim() - 1 - i;
@@ -947,12 +945,12 @@ template <
     typename std::enable_if<
         std::is_integral<INT_T>::value && !std::is_same<INT_T, bool>::value,
         bool>::type = true>
-bool extract_scalar_tensor(Tensor tensor, INT_T* out_val) {
+bool extract_scalar_tensor(exec_aten::Tensor tensor, INT_T* out_val) {
   if (tensor.numel() != 1) {
     return false;
   }
 #define CASE_INT_DTYPE(TENSOR_CTYPE, TENSOR_DTYPE)                     \
-  case ScalarType::TENSOR_DTYPE: {                                     \
+  case exec_aten::ScalarType::TENSOR_DTYPE: {                          \
     const TENSOR_CTYPE val = tensor.const_data_ptr<TENSOR_CTYPE>()[0]; \
     if (val < std::numeric_limits<INT_T>::lowest() ||                  \
         val > std::numeric_limits<INT_T>::max()) {                     \
@@ -984,12 +982,12 @@ template <
     typename FLOAT_T,
     typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
         type = true>
-bool extract_scalar_tensor(Tensor tensor, FLOAT_T* out_val) {
+bool extract_scalar_tensor(exec_aten::Tensor tensor, FLOAT_T* out_val) {
   if (tensor.numel() != 1) {
     return false;
   }
 #define CASE_REAL_DTYPE(TENSOR_CTYPE, TENSOR_DTYPE)                    \
-  case ScalarType::TENSOR_DTYPE: {                                     \
+  case exec_aten::ScalarType::TENSOR_DTYPE: {                          \
     /* ET_FORALL_REAL_TYPES guarantees TENSOR_CTYPE is a real type. */ \
     double val =                                                       \
         static_cast<double>(tensor.const_data_ptr<TENSOR_CTYPE>()[0]); \
@@ -1022,7 +1020,7 @@ template <
     typename BOOL_T,
     typename std::enable_if<std::is_same<BOOL_T, bool>::value, bool>::type =
         true>
-bool extract_scalar_tensor(Tensor tensor, BOOL_T* out_val) {
+bool extract_scalar_tensor(exec_aten::Tensor tensor, BOOL_T* out_val) {
   if (tensor.scalar_type() != exec_aten::ScalarType::Bool) {
     return false;
   }

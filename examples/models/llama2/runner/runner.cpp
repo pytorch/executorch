@@ -279,7 +279,7 @@ Error Runner::generate(
   // Generate our tokens
   while (pos < seq_len - 1) {
     // Run the model
-    Result<torch::executor::Tensor> logits_res =
+    Result<exec_aten::Tensor> logits_res =
         text_decoder_runner_->step(tokens_managed, start_pos_managed);
 
     ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());

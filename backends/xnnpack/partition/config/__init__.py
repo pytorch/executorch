@@ -24,6 +24,8 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     DivConfig,
     # EluConfig,
     HardtanhConfig,
+    MaximumConfig,
+    MaxPool2dConfig,
     MulConfig,
     PermuteConfig,
     QuantizedPerTensorConfig,
@@ -31,7 +33,10 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     SigmoidConfig,
     SoftmaxConfig,
 )
-from executorch.backends.xnnpack.partition.config.node_configs import BatchNormConfig
+from executorch.backends.xnnpack.partition.config.node_configs import (
+    BatchNormConfig,
+    MaxDimConfig,
+)
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
 )
@@ -52,6 +57,9 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     CeilConfig,
     ClampConfig,
     DivConfig,
+    MaxDimConfig,
+    MaxPool2dConfig,
+    MaximumConfig,
     MulConfig,
     SoftmaxConfig,
     SigmoidConfig,

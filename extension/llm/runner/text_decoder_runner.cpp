@@ -33,7 +33,7 @@ TextDecoderRunner::TextDecoderRunner(
 // This function is functional, meaning it shouldn't modify any state of the
 // input. It should be safe to call multiple times with the same inputs. The
 // outer loop (call site) is responsible for managing state.
-Result<Tensor> TextDecoderRunner::step(
+Result<exec_aten::Tensor> TextDecoderRunner::step(
     ManagedTensor& managed_tokens,
     ManagedTensor& managed_start_pos) {
   auto tokens = managed_tokens.get_aliasing_tensor();
