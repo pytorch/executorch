@@ -342,9 +342,19 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
             )
         else:
             example_inputs = b""
+
+        # TODO (shangdi): change to use `torch._export.utils.remove_proxy_from_state_dict`
+        # after pytorch repo is updated.
+        # Proxy cannot be dumped, so we remove them.
+        new_state_dict = {}
+        for k, v in exported_program.state_dict.items():
+            if "proxy" in v.__dict__:
+                new_state_dict[k] = v.clone().detach()
+            else:
+                new_state_dict[k] = v
         return export_serialize._SerializedProgram(
             serialized_ep,
-            export_serialize.serialize_torch_artifact(exported_program.state_dict),
+            export_serialize.serialize_torch_artifact(new_state_dict),
             export_serialize.serialize_torch_artifact(constants),
             example_inputs,
         )

@@ -215,7 +215,7 @@ Result<uint64_t> Runner::prefill(
 
 // Given an input token. Set up the inputs for the model and execute a single
 // step. Returning the logits tensor.
-Result<torch::executor::Tensor> Runner::run_model_step(
+Result<exec_aten::Tensor> Runner::run_model_step(
     ManagedTensor& managed_tokens,
     ManagedTensor& managed_start_pos) {
   // ET_LOG(Info, "Input token %" PRIu64, input_token);
@@ -344,7 +344,7 @@ Error Runner::generate(
   // Generate our tokens
   while (pos < seq_len - 1) {
     // Run the model
-    Result<torch::executor::Tensor> logits_res =
+    Result<exec_aten::Tensor> logits_res =
         run_model_step(tokens_managed, start_pos_managed);
 
     ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
