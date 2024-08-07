@@ -88,3 +88,11 @@ def define_common_targets():
             ],
             define_static_targets = True,
         )
+
+    runtime.python_library(
+        name = "quantized_ops_lib",
+        srcs = ["__init__.py"],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
