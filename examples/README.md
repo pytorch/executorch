@@ -63,9 +63,9 @@ The [`arm/`](./arm) directory contains scripts to help you run a PyTorch model o
 
 You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`](./qualcomm) directory.
 
-## Demo of ExecuTorch on Xtensa HiFi4 DSP
+## Demo of ExecuTorch on Cadence HiFi4 DSP
 
-The [`xtensa/`](./xtensa) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
+The [`Cadence/`](./cadence) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
 
 ## Dependencies
 

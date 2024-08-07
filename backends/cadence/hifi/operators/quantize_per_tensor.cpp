@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include "kernels.h"
 
 namespace impl {
 namespace HiFi {
