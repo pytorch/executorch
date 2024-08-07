@@ -10,6 +10,7 @@ import copy
 from typing import Any
 
 import torch
+from executorch.devtools import generate_etrecord
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -18,7 +19,6 @@ from executorch.exir import (
     to_edge,
 )
 from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.sdk import generate_etrecord
 from torch.export import export
 
 from ...models import MODEL_NAME_TO_MODEL
