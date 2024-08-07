@@ -50,7 +50,8 @@ public class Module {
    * @param loadMode load mode for the module. See constants in {@link Module}.
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
-  public static Module load(final String modelPath, final Map<String, String> extraFiles, int loadMode) {
+  public static Module load(
+      final String modelPath, final Map<String, String> extraFiles, int loadMode) {
     if (!NativeLoader.isInitialized()) {
       NativeLoader.init(new SystemDelegate());
     }
