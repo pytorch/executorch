@@ -95,4 +95,8 @@ def define_common_targets():
         deps = [
             "//caffe2:torch",
         ],
+        visibility = [
+            "//executorch/kernels/quantized/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
