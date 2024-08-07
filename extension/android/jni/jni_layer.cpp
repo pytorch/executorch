@@ -243,17 +243,29 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       facebook::jni::alias_ref<jstring> modelPath,
       facebook::jni::alias_ref<
           facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
-          extraFiles) {
-    return makeCxxInstance(modelPath, extraFiles);
+          extraFiles, jint loadMode) {
+    return makeCxxInstance(modelPath, extraFiles, loadMode);
   }
 
   ExecuTorchJni(
       facebook::jni::alias_ref<jstring> modelPath,
       facebook::jni::alias_ref<
           facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
-          extraFiles) {
+          extraFiles, jint loadMode) {
+    
+    enum class Module::LoadMode load_mode = Module::LoadMode::Mmap
+    if (loadMode == 0) {
+      load_mode = Module::LoadMode::File;
+    } else if (loadMode == 1) {
+      load_mode = Module::LoadMode::Mmap;
+    } else if (loadMode == 2) {
+      load_mode = Module::LoadMode::MmapUseMlock;
+    } else if (loadMode == 3) {
+      load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors;
+    }
+      
     module_ = std::make_unique<Module>(
-        modelPath->toStdString(), Module::LoadMode::Mmap);
+        modelPath->toStdString(), load_mode);
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> forward(

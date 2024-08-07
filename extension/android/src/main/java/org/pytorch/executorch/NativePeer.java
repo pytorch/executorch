@@ -23,10 +23,10 @@ class NativePeer implements INativePeer {
 
   @DoNotStrip
   private static native HybridData initHybrid(
-      String moduleAbsolutePath, Map<String, String> extraFiles);
+      String moduleAbsolutePath, Map<String, String> extraFiles, int loadMode);
 
   NativePeer(String moduleAbsolutePath, Map<String, String> extraFiles) {
-    mHybridData = initHybrid(moduleAbsolutePath, extraFiles);
+    mHybridData = initHybrid(moduleAbsolutePath, extraFiles, loadMode);
   }
 
   public void resetNative() {
