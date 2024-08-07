@@ -130,7 +130,7 @@ int32_t Runner::logitsToToken(const exec_aten::Tensor& logits_tensor) {
   }
 }
 
-Result<torch::executor::Tensor> Runner::prefill(
+Result<exec_aten::Tensor> Runner::prefill(
     const std::vector<uint64_t>& tokens,
     ManagedTensor& managed_tokens,
     ManagedTensor& managed_start_pos,
@@ -202,7 +202,7 @@ Result<torch::executor::Tensor> Runner::prefill(
     auto logits_tensor = managed_tokens.get_aliasing_tensor();
     while (pos < num_tokens) {
       // Run the model
-      Result<torch::executor::Tensor> logits_res = run_model_step(
+      Result<exec_aten::Tensor> logits_res = run_model_step(
           cur_token, managed_tokens, managed_start_pos, num_tokens);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
@@ -243,7 +243,7 @@ Result<torch::executor::Tensor> Runner::prefill(
 
 // Given an input token. Set up the inputs for the model and execute a single
 // step. Returning the logits tensor.
-Result<torch::executor::Tensor> Runner::run_model_step(
+Result<exec_aten::Tensor> Runner::run_model_step(
     int64_t input_token,
     ManagedTensor& managed_tokens,
     ManagedTensor& managed_start_pos,
@@ -411,7 +411,7 @@ Error Runner::generate(
   // Generate our tokens
   while (pos < seq_len - 1) {
     // Run the model
-    Result<torch::executor::Tensor> logits_res =
+    Result<exec_aten::Tensor> logits_res =
         run_model_step(cur_token, tokens_managed, start_pos_managed, seq_len);
 
     ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
