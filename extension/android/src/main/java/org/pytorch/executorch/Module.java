@@ -32,14 +32,14 @@ public class Module {
 
   /**
    * Loads a serialized ExecuTorch module from the specified path on the disk. Uses default load
-   * MMAP.
+   * FILE.
    *
    * @param modelPath path to file that contains the serialized ExecuTorch module.
    * @param extraFiles map with extra files names as keys, content of them will be loaded to values.
    * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
   public static Module load(final String modelPath, final Map<String, String> extraFiles) {
-    return load(modelPath, extraFiles, LOAD_MODE_MMAP);
+    return load(modelPath, extraFiles, LOAD_MODE_FILE);
   }
 
   /**
