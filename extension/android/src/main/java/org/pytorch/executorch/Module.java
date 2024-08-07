@@ -17,10 +17,13 @@ public class Module {
 
   /** Load mode for the module. Load the whole file as a buffer. */
   public static final int LOAD_MODE_FILE = 0;
+
   /** Load mode for the module. Use mmap to load pages into memory. */
   public static final int LOAD_MODE_MMAP = 1;
+
   /** Load mode for the module. Use memory locking and handle errors. */
   public static final int LOAD_MODE_MMAP_USE_MLOCK = 2;
+
   /** Load mode for the module. Use memory locking and ignore errors. */
   public static final int LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS = 3;
 
@@ -28,7 +31,8 @@ public class Module {
   private INativePeer mNativePeer;
 
   /**
-   * Loads a serialized ExecuTorch module from the specified path on the disk. Uses default load MMAP.
+   * Loads a serialized ExecuTorch module from the specified path on the disk. Uses default load
+   * MMAP.
    *
    * @param modelPath path to file that contains the serialized ExecuTorch module.
    * @param extraFiles map with extra files names as keys, content of them will be loaded to values.
