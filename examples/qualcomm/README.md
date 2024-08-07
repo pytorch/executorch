@@ -10,13 +10,13 @@ Here are some general information and limitations.
 
 Please finish tutorial [Setting up executorch](https://pytorch.org/executorch/stable/getting-started-setup).
 
-Please finish [setup QNN backend](../../backends/qualcomm/setup.md).
+Please finish [setup QNN backend](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md).
 
 ## Environment
 
 Please set up `QNN_SDK_ROOT` environment variable.
 Note that this version should be exactly same as building QNN backend.
-Please check [setup](../../backends/qualcomm/setup.md).
+Please check [setup](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md).
 
 Please set up `LD_LIBRARY_PATH` to `$QNN_SDK_ROOT/lib/x86_64-linux-clang`.
 Or, you could put QNN libraries to default search path of the dynamic linker.
