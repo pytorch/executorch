@@ -234,3 +234,30 @@ class MulConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class MaximumConfig(GenericNodePartitionerConfig):
+    target_name = "maximum.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class MaxPool2dConfig(GenericNodePartitionerConfig):
+    target_name = "max_pool2d.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        XNNPACK's maxpool2d does not support ceil mode
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        is_ceil_mode = len(node.args) >= 6 and cast(bool, node.args[5])
+        return not is_ceil_mode
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.max_pool2d.default

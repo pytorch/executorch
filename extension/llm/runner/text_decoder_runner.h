@@ -32,7 +32,7 @@ class TextDecoderRunner {
    * Module.
    * @return The output of the LLM Module. This will be a tensor of logits.
    */
-  Result<Tensor> step(ManagedTensor& input, ManagedTensor& start_pos);
+  Result<exec_aten::Tensor> step(ManagedTensor& input, ManagedTensor& start_pos);
 
   /**
    * Load the Module for a given method name.
@@ -56,7 +56,7 @@ class TextDecoderRunner {
    * @param logits_tensor The logits tensor.
    * @return The next token.
    */
-  inline int32_t logits_to_token(const Tensor& logits_tensor) {
+  inline int32_t logits_to_token(const exec_aten::Tensor& logits_tensor) {
     ET_CHECK_MSG(logits_tensor.dim() == 3, "Logits tensor must be 3D");
     auto num_tokens = logits_tensor.size(1);
     auto vocab_size = logits_tensor.size(2);
