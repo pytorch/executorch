@@ -49,7 +49,7 @@ class Runner {
       std::vector<uint64_t>& prompt_tokens,
       int64_t start_pos,
       std::function<void(const std::string&)> token_callback);
-  Result<torch::executor::Tensor> run_model_step(
+  Result<exec_aten::Tensor> run_model_step(
       ManagedTensor& managed_tokens,
       ManagedTensor& managed_start_pos);
   // metadata
