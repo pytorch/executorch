@@ -9,7 +9,7 @@ try:
 
     libs = list(
         Path(__file__)
-        .parent.parent.parent.resolve()
+        .parent.resolve()
         .glob("**/libquantized_ops_aot_lib.*")
     )
     del Path
