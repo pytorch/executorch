@@ -20,6 +20,7 @@
 
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
+#include <executorch/extension/llm/runner/text_prefiller.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
@@ -45,10 +46,6 @@ class Runner {
   void stop();
 
  private:
-  Result<int64_t> prefill(
-      const std::vector<uint64_t>& prompt_tokens,
-      int64_t start_pos,
-      std::function<void(const std::string&)> token_callback);
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
@@ -68,6 +65,7 @@ class Runner {
   std::string model_path_;
   std::unique_ptr<Module> module_;
   std::unique_ptr<TextDecoderRunner> text_decoder_runner_;
+  std::unique_ptr<TextPrefiller> text_prefiller_;
   std::string tokenizer_path_;
   std::unique_ptr<Tokenizer> tokenizer_;
 
