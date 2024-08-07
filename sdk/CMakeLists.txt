@@ -92,8 +92,6 @@ if(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT)
     -DFLATCC_TEST=OFF -DFLATCC_REFLECTION=OFF
     # See above comment about POSITION_INDEPENDENT_CODE.
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-    # Force using release mode for host side
-    -DCMAKE_BUILD_TYPE=Release
     -B${CMAKE_BINARY_DIR}/_host_build
   )
   execute_process(
