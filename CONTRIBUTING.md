@@ -23,6 +23,8 @@ We actively welcome your pull requests (PRs).
    See the [testing section](#testing) for more information.
 1. If you've changed APIs or added a new tool or feature, [update the
    documentation](#updating-documentation).
+1. If you added an experimental API or deprecated an existing API, follow the
+   [API Life Cycle and Deprecation Policy](/docs/source/api-life-cycle.md).
 1. Make sure your code follows the [style guides](#coding-style) and passes the
    [lint checks](#lintrunner).
 1. If you haven't already, complete the [Contributor License Agreement ("CLA")](#contributor-license-agreement-cla).
