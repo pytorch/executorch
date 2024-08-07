@@ -33,6 +33,14 @@ class TensorImplTest : public ::testing::Test {
   }
 };
 
+TEST_F(TensorImplTest, TestEmptyTensor) {
+  TensorImpl t(ScalarType::Float, 0, {});
+
+  EXPECT_EQ(t.dim(), 0);
+  EXPECT_EQ(t.numel(), 0);
+  EXPECT_EQ(t.nbytes(), 0);
+}
+
 TEST_F(TensorImplTest, TestCtorAndGetters) {
   SizesType sizes[2] = {3, 2};
   DimOrderType dim_order[2] = {0, 1};
