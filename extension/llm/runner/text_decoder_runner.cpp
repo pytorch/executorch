@@ -10,7 +10,6 @@
 
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
-#include <executorch/extension/module/metadata_util.h>
 #include <ctime>
 
 namespace torch::executor {
@@ -24,12 +23,12 @@ TextDecoderRunner::TextDecoderRunner(
     int32_t vocab_size,
     float temperature)
     : module_(module),
-      use_kv_cache_(use_kv_cache),
       sampler_(std::make_unique<Sampler>(
           vocab_size,
           temperature,
           ::executorch::llm::kTopp,
-          static_cast<unsigned long long>(std::time(nullptr)))) {}
+          static_cast<unsigned long long>(std::time(nullptr)))),
+      use_kv_cache_(use_kv_cache) {}
 
 // This function is functional, meaning it shouldn't modify any state of the
 // input. It should be safe to call multiple times with the same inputs. The

@@ -13,6 +13,7 @@
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
+// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <functional>
 
 namespace torch::executor {
@@ -83,6 +84,7 @@ class TextDecoderRunner {
   }
 
  protected:
+  // TODO: use shared_ptr for module
   Module* module_;
   std::unique_ptr<Sampler> sampler_;
   bool use_kv_cache_;
