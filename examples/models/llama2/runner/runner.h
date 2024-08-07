@@ -45,8 +45,8 @@ class Runner {
 
  private:
   int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
-  Result<int64_t> prefill(
-      const std::vector<uint64_t>& prompt_tokens,
+  Result<uint64_t> prefill(
+      std::vector<uint64_t>& prompt_tokens,
       int64_t start_pos,
       std::function<void(const std::string&)> token_callback);
   Result<torch::executor::Tensor> run_model_step(

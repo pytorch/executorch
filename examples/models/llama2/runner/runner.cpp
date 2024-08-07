@@ -130,16 +130,12 @@ int32_t Runner::logitsToToken(const exec_aten::Tensor& logits_tensor) {
   }
 }
 
-Result<int64_t> Runner::prefill(
-    const std::vector<uint64_t>& prompt_tokens,
+Result<uint64_t> Runner::prefill(
+    std::vector<uint64_t>& prompt_tokens,
     int64_t start_pos,
     std::function<void(const std::string&)> token_callback) {
   // enable_parallel_prefill_ maybe set even when not using kv cache
   // When kv cache is not used, start pos is ignored
-  std::vector<int64_t> tokens;
-  for (uint64_t tok : prompt_tokens) {
-    tokens.push_back(tok);
-  }
   int32_t num_prompt_tokens = prompt_tokens.size();
 
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
@@ -148,11 +144,11 @@ Result<int64_t> Runner::prefill(
       "Max seq length exceeded - please increase max seq len value");
 
   // store the token
-  int64_t cur_token;
+  uint64_t cur_token;
   if (enable_parallel_prefill_ || !use_kv_cache_) {
     // initialize tensor wrappers
     ManagedTensor managed_tokens(
-        tokens.data(), {1, num_prompt_tokens}, ScalarType::Long);
+        prompt_tokens.data(), {1, num_prompt_tokens}, ScalarType::Long);
 
     ManagedTensor managed_start_pos(&start_pos, {1}, ScalarType::Long);
 
@@ -172,21 +168,19 @@ Result<int64_t> Runner::prefill(
     uint64_t cur;
     for (int i = 1; i < prompt_tokens.size(); i++) {
       cur = prompt_tokens[i];
-      _DECODE_PRINT_CALLBACK(prev, cur, token_callback);
+      token_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
       prev = cur;
     }
     cur_token = logitsToToken(outputs_res.get());
   } else { // sequential prefill
     int64_t pos = 0; // position in the sequence
-    int64_t prev_token;
+    uint64_t prev_token;
     // token & pos
     int64_t pos_data = 0;
     cur_token = prompt_tokens[0];
-    std::vector<int64_t> token_vec = {
-        cur_token}; // allocate space for the tokens
 
     // initialize tensor wrappers
-    ManagedTensor managed_tokens(token_vec.data(), {1, 1}, ScalarType::Long);
+    ManagedTensor managed_tokens(&cur_token, {1, 1}, ScalarType::Long);
 
     ManagedTensor managed_start_pos(&pos_data, {1}, ScalarType::Long);
 
@@ -209,10 +203,8 @@ Result<int64_t> Runner::prefill(
       stats_.aggregate_sampling_time_ms +=
           util::time_in_ms() - sample_start_time_ms;
 
-      token_vec[0] = cur_token;
-
       // print the token as string, decode it with the Tokenizer object
-      _DECODE_PRINT_CALLBACK(prev_token, cur_token, token_callback);
+      token_callback(ET_UNWRAP(tokenizer_->decode(prev_token, cur_token)));
     }
   }
   // Return the next token
@@ -315,12 +307,12 @@ Error Runner::generate(
   // Prefill first
   // Here feed all tokens to the model and get the next predicted token
   // after the prompt. After that we will enter generate loop.
-  auto prefill_res = prefill(prompt_tokens, 0, token_callback);
+  auto prefill_res = prefill(prompt_tokens, 0, wrapped_callback);
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
   int64_t cur_token = prefill_res.get();
 
   // print the first token from prefill. No prev_token so use cur_token for it.
-  wrapped_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
+  wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
 
   // start the main loop
   int64_t pos = num_prompt_tokens; // position in the sequence
