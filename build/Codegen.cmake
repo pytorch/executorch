@@ -151,7 +151,7 @@ function(gen_custom_ops_aot_lib)
 
   target_link_options_shared_lib(${GEN_LIB_NAME})
   if(EXECUTORCH_BUILD_PYBIND AND APPLE)
-    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_no_prim_ops_shared)
+    target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_no_prim_ops)
     target_link_options(${GEN_LIB_NAME} PRIVATE -undefined dynamic_lookup)
   else()
     target_link_libraries(${GEN_LIB_NAME} PRIVATE executorch_no_prim_ops)
