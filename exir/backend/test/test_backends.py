@@ -1270,21 +1270,3 @@ class TestBackends(unittest.TestCase):
 
         gm = exir.capture(ComposedM(), inputs, exir.CaptureConfig()).to_edge()
         gm(*inputs)
-
-    def test_get_new_signature(self):
-        class MyModule(torch.nn.Module):
-            def forward(self, x, y, z):
-                return x + y, y - z, z * x
-
-        ep = torch.export.export(
-            MyModule(), (torch.randn(3, 2), torch.randn(3, 2), torch.randn(3, 2))
-        )
-        sig, *_ = _get_new_signature(ep, ep.graph_module)
-        output_names = set()
-        self.assertEqual(len(sig.output_specs), 3)
-        for s in sig.output_specs:
-            self.assertEqual(s.kind, OutputKind.USER_OUTPUT)
-            self.assertIsInstance(s.arg, TensorArgument)
-            name = s.arg.name
-            self.assertNotIn(name, output_names)
-            output_names.add(name)
