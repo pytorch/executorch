@@ -45,14 +45,10 @@ class Runner {
   void stop();
 
  private:
-  int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
   Result<int64_t> prefill(
       const std::vector<uint64_t>& prompt_tokens,
       int64_t start_pos,
       std::function<void(const std::string&)> token_callback);
-  Result<torch::executor::Tensor> run_model_step(
-      ManagedTensor& managed_tokens,
-      ManagedTensor& managed_start_pos);
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;

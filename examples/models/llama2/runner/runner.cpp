@@ -32,21 +32,6 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
 
-/**
- * Use tokenizer to decode token, print it, then execute callback.
- */
-#define _DECODE_PRINT_CALLBACK(prev, cur, callback) \
-  ({                                                \
-    auto piece_res = tokenizer_->decode(prev, cur); \
-    ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error()); \
-    const char* piece = piece_res.get().c_str();    \
-    util::safe_printf(piece);                       \
-    fflush(stdout);                                 \
-    if (token_callback) {                           \
-      token_callback(piece);                        \
-    }                                               \
-  })
-
 namespace torch::executor {
 
 Runner::Runner(
@@ -186,15 +171,16 @@ Result<int64_t> Runner::prefill(
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
       prev_token = cur_token;
 
-      long sample_start_time_ms = util::time_in_ms();
-      stats_.aggregate_sampling_time_ms +=
-          util::time_in_ms() - sample_start_time_ms;
-
       pos++;
+
+      long sample_start_time_ms = util::time_in_ms();
 
       cur_token = pos == num_prompt_tokens
           ? text_decoder_runner_->logits_to_token(logits_res.get())
           : prompt_tokens[pos];
+
+      stats_.aggregate_sampling_time_ms +=
+          util::time_in_ms() - sample_start_time_ms;
 
       token_vec[0] = cur_token;
 
@@ -222,6 +208,15 @@ Error Runner::generate(
     stats_.model_load_end_ms = util::time_in_ms();
   }
 
+  // Wrap the token_callback with print function
+  std::function<void(const std::string&)> wrapped_callback =
+      [token_callback](const std::string& piece) {
+        util::safe_printf(piece.c_str());
+        fflush(stdout);
+        if (token_callback) {
+          token_callback(piece);
+        }
+      };
   // First token time only measures the time it takes to encode the prompt and
   // return a response token.
 
@@ -258,7 +253,7 @@ Error Runner::generate(
   int64_t cur_token = prefill_res.get();
 
   // print the first token from prefill. No prev_token so use cur_token for it.
-  _DECODE_PRINT_CALLBACK(cur_token, cur_token, token_callback);
+  wrapped_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
 
   // start the main loop
   int64_t pos = num_prompt_tokens; // position in the sequence
@@ -316,7 +311,7 @@ Error Runner::generate(
     }
 
     // print the token as string, decode it with the Tokenizer object
-    _DECODE_PRINT_CALLBACK(prev_token, cur_token, token_callback);
+    wrapped_callback(ET_UNWRAP(tokenizer_->decode(prev_token, cur_token)));
 
     if (shouldStop_) {
       break;

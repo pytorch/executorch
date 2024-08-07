@@ -20,6 +20,7 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
+                ":stats",
                 "//executorch/extension/llm/sampler:sampler" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
