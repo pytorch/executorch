@@ -42,8 +42,8 @@ Runner::Runner(
     // and a ~5% improvement on Galaxy S22 by switching to
     // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
     : module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
-      tokenizer_path_(tokenizer_path),
-      temperature_(temperature) {
+      temperature_(temperature),
+      tokenizer_path_(tokenizer_path) {
   ET_LOG(
       Info,
       "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
