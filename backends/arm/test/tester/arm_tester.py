@@ -260,7 +260,7 @@ class ArmTester(Tester):
             print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
             reference_output = reference_stage.run_artifact(reference_input)
-            test_output = (test_stage.run_artifact(test_input),)
+            test_output = tuple(test_stage.run_artifact(test_input))
             if is_nhwc:
                 test_output = self.transpose_data_format(test_output, "NCHW")
 

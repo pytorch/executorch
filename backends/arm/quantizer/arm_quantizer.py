@@ -385,7 +385,7 @@ class ArmQuantizer(Quantizer):
         for node in model.graph.nodes:
             if arm_quantizer_utils.is_annotated(node):
                 continue
-            if node.op == "placeholder":
+            if node.op == "placeholder" and len(node.users) > 0:
                 _annotate_output_qspec(
                     node,
                     quantization_config.get_output_act_qspec(),
