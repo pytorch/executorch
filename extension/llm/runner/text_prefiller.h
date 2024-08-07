@@ -35,7 +35,7 @@ class TextPrefiller {
    * @return The next token of the LLM Module after prefill.
    */
   Result<uint64_t> prefill(
-      const std::vector<uint64_t>& prompt_tokens,
+      std::vector<uint64_t>& prompt_tokens,
       int64_t start_pos = 0,
       std::function<void(const std::string&)> token_callback = {});
 

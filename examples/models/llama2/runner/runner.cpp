@@ -169,7 +169,7 @@ Error Runner::generate(
   uint64_t cur_token = prefill_res.get();
 
   // print the first token from prefill. No prev_token so use cur_token for it.
-  wrapped_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
+  wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
 
   // start the main loop
   int64_t pos = num_prompt_tokens; // position in the sequence

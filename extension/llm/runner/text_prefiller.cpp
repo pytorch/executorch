@@ -24,7 +24,7 @@ TextPrefiller::TextPrefiller(
       enable_parallel_prefill_(enable_parallel_prefill) {}
 
 Result<uint64_t> TextPrefiller::prefill(
-    const std::vector<uint64_t>& prompt_tokens,
+    std::vector<uint64_t>& prompt_tokens,
     int64_t start_pos,
     std::function<void(const std::string&)> token_callback) {
   ET_CHECK_MSG(!prompt_tokens.empty(), "Prompt cannot be null");
@@ -33,10 +33,6 @@ Result<uint64_t> TextPrefiller::prefill(
   }
   // enable_parallel_prefill_ maybe set even when not using kv cache
   // When kv cache is not used, start pos is ignored
-  std::vector<int64_t> tokens;
-  for (uint64_t tok : prompt_tokens) {
-    tokens.push_back(tok);
-  }
   int32_t num_prompt_tokens = prompt_tokens.size();
 
   // store the token
@@ -44,7 +40,7 @@ Result<uint64_t> TextPrefiller::prefill(
   if (enable_parallel_prefill_ || !use_kv_cache_) {
     // initialize tensor wrappers
     ManagedTensor managed_tokens(
-        tokens.data(), {1, num_prompt_tokens}, ScalarType::Long);
+        prompt_tokens.data(), {1, num_prompt_tokens}, ScalarType::Long);
 
     ManagedTensor managed_start_pos(&start_pos, {1}, ScalarType::Long);
 
@@ -74,11 +70,9 @@ Result<uint64_t> TextPrefiller::prefill(
     // token & pos
     int64_t pos_data = 0;
     cur_token = prompt_tokens[0];
-    std::vector<int64_t> token_vec = {
-        static_cast<int64_t>(cur_token)}; // allocate space for the tokens
 
     // initialize tensor wrappers
-    ManagedTensor managed_tokens(token_vec.data(), {1, 1}, ScalarType::Long);
+    ManagedTensor managed_tokens(&cur_token, {1, 1}, ScalarType::Long);
 
     ManagedTensor managed_start_pos(&pos_data, {1}, ScalarType::Long);
 
@@ -97,8 +91,6 @@ Result<uint64_t> TextPrefiller::prefill(
       cur_token = pos == num_prompt_tokens
           ? text_decoder_runner_->logits_to_token(logits_res.get())
           : prompt_tokens[pos];
-
-      token_vec[0] = cur_token;
 
       // print the token as string, decode it with the Tokenizer object
       token_callback(ET_UNWRAP(tokenizer_->decode(prev_token, cur_token)));
