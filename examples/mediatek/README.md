@@ -18,8 +18,17 @@ examples/mediatek
 ├── shell_scripts                     # Shell scripts to quickrun model specific exports
 ├── CMakeLists.txt                    # CMake build configuration file for compiling examples
 ├── requirements.txt                  # MTK and other required packages
+├── mtk_build_examples.sh             # Script for building MediaTek backend and the examples
 └── README.md                         # Documentation for the examples (this file)
 ```
+# Examples
+## Build MediaTek examples
+1. Set up the environment by folllowing the instructions in `backends/mediatek/scripts`
+2. Build the backend and the examples by exedcuting the script:
+```bash
+./mtk_build_examples.sh
+```
+
 # AoT
 ## Environment Setup
 1. Setup ET Environment
