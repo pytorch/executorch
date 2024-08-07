@@ -32,6 +32,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     ReLUConfig,
     SigmoidConfig,
     SoftmaxConfig,
+    UpsampleBilinear2dConfig,
 )
 from executorch.backends.xnnpack.partition.config.node_configs import (
     BatchNormConfig,
@@ -66,6 +67,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     PermuteConfig,
     # EluConfig, # Waiting for PyTorch Pin Update
     ReLUConfig,
+    UpsampleBilinear2dConfig,
     # Quantization Op Configs
     QuantizedPerTensorConfig,
     DeQuantizedPerTensorConfig,
