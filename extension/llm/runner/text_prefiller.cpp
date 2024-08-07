@@ -56,6 +56,7 @@ Result<uint64_t> TextPrefiller::prefill(
         num_prompt_tokens,
         outputs_res.get().size(1));
     // insert new token into prompt_tokens
+    // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
     uint64_t prev = prompt_tokens[0];
     uint64_t cur;
     for (int i = 1; i < prompt_tokens.size(); i++) {
@@ -69,6 +70,7 @@ Result<uint64_t> TextPrefiller::prefill(
     int64_t prev_token;
     // token & pos
     int64_t pos_data = 0;
+    // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
     cur_token = prompt_tokens[0];
 
     // initialize tensor wrappers
