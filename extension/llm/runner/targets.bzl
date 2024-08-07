@@ -24,5 +24,5 @@ def define_common_targets():
                 "//executorch/extension/llm/sampler:sampler" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
-            ]
+            ],
         )
