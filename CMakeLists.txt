@@ -771,8 +771,7 @@ if(EXECUTORCH_BUILD_PYBIND)
                  # libcustom_ops_aot_lib
                  # Need to add <executorch>/kernels/quantized for
                  # libquantized_ops_aot_lib
-
-		  BUILD_RPATH "$ORIGIN:$ORIGIN/../../extension/llm/custom_ops:$ORIGIN/../../kernels/quantized"
+                 BUILD_RPATH "$ORIGIN:$ORIGIN/../../extension/llm/custom_ops:$ORIGIN/../../kernels/quantized"
     )
   endif()
 
