@@ -34,15 +34,18 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     MulConfig,
     NegConfig,
     PermuteConfig,
+    PowConfig,
     QuantizedPerTensorConfig,
     ReLUConfig,
     SigmoidConfig,
+    SliceCopyConfig,
     SoftmaxConfig,
     UpsampleBilinear2dConfig,
 )
 from executorch.backends.xnnpack.partition.config.node_configs import (
     BatchNormConfig,
     MaxDimConfig,
+    PreluConfig,
 )
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
@@ -74,8 +77,11 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     MinimumConfig,
     MulConfig,
     NegConfig,
+    PowConfig,
+    PreluConfig,
     SoftmaxConfig,
     SigmoidConfig,
+    SliceCopyConfig,
     PermuteConfig,
     # EluConfig, # Waiting for PyTorch Pin Update
     ReLUConfig,

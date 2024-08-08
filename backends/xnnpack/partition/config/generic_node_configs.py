@@ -12,6 +12,7 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
 )
 from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
+from executorch.backends.xnnpack.utils.utils import get_input_node
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
@@ -326,3 +327,58 @@ class NegConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class PowConfig(GenericNodePartitionerConfig):
+    target_name = "pow.Tensor_Scalar"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Only support powers of two
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        power = node.args[1]
+        return isinstance(power, int) and power == 2
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class SliceCopyConfig(GenericNodePartitionerConfig):
+    target_name = "slice_copy.Tensor"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Support slicing with stride = 1, no zero-dim tensors, Slice isn't supported
+        if the input or output is dynamic
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        stride = 1
+        if len(node.args) > 4:
+            stride = cast(int, node.args[4])
+
+        if stride != 1:
+            return False
+
+        input_node = get_input_node(node, 0)
+        output_node = node
+
+        input_shape = list(input_node.meta["val"].shape)
+        output_shape = list(output_node.meta["val"].shape)
+
+        for dim in input_shape:
+            if not isinstance(dim, int) or dim == 0:
+                return False
+
+        for dim in output_shape:
+            if not isinstance(dim, int) or dim == 0:
+                return False
+
+        return True
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
