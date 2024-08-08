@@ -9,17 +9,6 @@
 package com.example.executorchllamademo;
 
 public class SettingsFields {
-  private static final String SYSTEM_PLACEHOLDER = "{{ system_prompt }}";
-  private static final String USER_PLACEHOLDER = "{{ user_prompt }}";
-  private static String SYSTEM_PROMPT_TEMPLATE =
-      "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n"
-          + SYSTEM_PLACEHOLDER
-          + "<|eot_id|>";
-  private static String USER_PROMPT_TEMPLATE =
-      "<|start_header_id|>user<|end_header_id|>\n"
-          + USER_PLACEHOLDER
-          + "<|eot_id|>\n"
-          + "<|start_header_id|>assistant<|end_header_id|>";
 
   public String getModelFilePath() {
     return modelFilePath;
@@ -37,20 +26,25 @@ public class SettingsFields {
     return systemPrompt;
   }
 
+  public ModelType getModelType() {
+    return modelType;
+  }
+
   public String getUserPrompt() {
     return userPrompt;
   }
 
-  public String getEntirePrompt() {
-    return systemPrompt + userPrompt;
+  public String getFormattedSystemAndUserPrompt(String prompt) {
+    return getFormattedSystemPrompt() + getFormattedUserPrompt(prompt);
   }
 
-  public String getSystemPromptTemplate() {
-    return SYSTEM_PROMPT_TEMPLATE;
+  private String getFormattedSystemPrompt() {
+    return PromptFormat.getSystemPromptTemplate(modelType)
+        .replace(PromptFormat.SYSTEM_PLACEHOLDER, systemPrompt);
   }
 
-  public String getUserPromptTemplate() {
-    return USER_PROMPT_TEMPLATE;
+  private String getFormattedUserPrompt(String prompt) {
+    return userPrompt.replace(PromptFormat.USER_PLACEHOLDER, prompt);
   }
 
   public boolean getIsClearChatHistory() {
@@ -68,15 +62,19 @@ public class SettingsFields {
   private String userPrompt;
   private boolean isClearChatHistory;
   private boolean isLoadModel;
+  private ModelType modelType;
 
   public SettingsFields() {
+    ModelType DEFAULT_MODEL = ModelType.LLAMA_3;
+
     modelFilePath = "";
     tokenizerFilePath = "";
     temperature = SettingsActivity.TEMPERATURE_MIN_VALUE;
-    systemPrompt = SYSTEM_PROMPT_TEMPLATE;
-    userPrompt = USER_PROMPT_TEMPLATE;
+    systemPrompt = "";
+    userPrompt = PromptFormat.getUserPromptTemplate(DEFAULT_MODEL);
     isClearChatHistory = false;
     isLoadModel = false;
+    modelType = DEFAULT_MODEL;
   }
 
   public SettingsFields(SettingsFields settingsFields) {
@@ -87,6 +85,7 @@ public class SettingsFields {
     this.userPrompt = settingsFields.getUserPrompt();
     this.isClearChatHistory = settingsFields.getIsClearChatHistory();
     this.isLoadModel = settingsFields.getIsLoadModel();
+    this.modelType = settingsFields.modelType;
   }
 
   public void saveModelPath(String modelFilePath) {
@@ -95,6 +94,10 @@ public class SettingsFields {
 
   public void saveTokenizerPath(String tokenizerFilePath) {
     this.tokenizerFilePath = tokenizerFilePath;
+  }
+
+  public void saveModelType(ModelType modelType) {
+    this.modelType = modelType;
   }
 
   public void saveParameters(Double temperature) {
@@ -122,14 +125,7 @@ public class SettingsFields {
         && systemPrompt.equals(anotherSettingsFields.systemPrompt)
         && userPrompt.equals(anotherSettingsFields.userPrompt)
         && isClearChatHistory == anotherSettingsFields.isClearChatHistory
-        && isLoadModel == anotherSettingsFields.isLoadModel;
-  }
-
-  public boolean isSystemPromptChanged() {
-    return !systemPrompt.contains(SYSTEM_PLACEHOLDER);
-  }
-
-  public boolean isUserPromptChanged() {
-    return !userPrompt.contains(USER_PLACEHOLDER);
+        && isLoadModel == anotherSettingsFields.isLoadModel
+        && modelType == anotherSettingsFields.modelType;
   }
 }
