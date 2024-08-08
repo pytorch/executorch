@@ -11,6 +11,7 @@
 #define PRECISION ${PRECISION}
 
 #define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
+#define T ${buffer_scalar_type(DTYPE)}
 
 #define op(X, A, B) ${OPERATOR}
 
@@ -18,16 +19,14 @@ ${define_active_storage_type(STORAGE)}
 
 #include "indexing_utils.h"
 
-$if DTYPE == "half" and STORAGE == "buffer":
-  #extension GL_EXT_shader_16bit_storage : require
-  #extension GL_EXT_shader_explicit_arithmetic_types_float16: require
+${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
 ${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
 $if STORAGE == "buffer":
-  ${layout_declare_ubo(2, "int", "ntexels")}
+  ${layout_declare_ubo(2, "int", "numel")}
 $else:
   ${layout_declare_ubo(2, "ivec3", "out_limits")}
 ${layout_declare_ubo(3, "float", "minimum")}
@@ -48,16 +47,31 @@ float hardswish(float x){
     }
 }
 
+vec4 hardswish(vec4 tex){
+  return vec4(
+      hardswish(tex.x), hardswish(tex.y), hardswish(tex.z), hardswish(tex.z));
+}
+
+float hardshrink(float x, float lambda, float neg_lambda) {
+  return x * (float(x > lambda) + float(x < neg_lambda));
+}
+
+vec4 hardshrink(vec4 tex, float lambda, float neg_lambda) {
+  return tex *
+      (vec4(greaterThan(tex, vec4(lambda)))
+      + vec4(lessThan(tex, vec4(neg_lambda))));
+}
+
 #ifdef USING_BUFFER
 
 void main() {
   const int i = int(gl_GlobalInvocationID.x);
-  if (i >= ntexels) {
+  if (i >= numel) {
     return;
   }
 
-  vec4 in_texel = vec4(t_in[i]);
-  t_out[i] = VEC4_T(op(in_texel, minimum, maximum));
+  float in_val = float(t_in[i]);
+  t_out[i] = T(op(in_val, minimum, maximum));
 }
 
 #else

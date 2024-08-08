@@ -248,8 +248,12 @@ ValueRef ComputeGraph::set_input_tensor(
     const bool use_staging) {
   if (use_staging) {
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
-    size_t gpu_numel = get_tensor(idx)->gpu_numel();
-    ValueRef staging_idx = add_staging(dtype, gpu_numel);
+    // For texture storage, the buffer size needs to account for the zero
+    // padding applied by unused texel elements.
+    size_t buf_numel = get_tensor(idx)->storage_type() == utils::kBuffer
+        ? get_tensor(idx)->numel()
+        : get_tensor(idx)->padded_numel();
+    ValueRef staging_idx = add_staging(dtype, buf_numel);
     add_staging_to_tensor_node(*this, staging_idx, idx);
     inputs_.push_back({idx, staging_idx});
     return staging_idx;
@@ -263,12 +267,16 @@ ValueRef ComputeGraph::set_output_tensor(
     const bool use_staging) {
   if (use_staging) {
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
-    size_t gpu_numel = get_tensor(idx)->gpu_numel();
-    ValueRef staging_idx = add_staging(dtype, gpu_numel);
+    // For texture storage, the buffer size needs to account for the zero
+    // padding applied by unused texel elements.
+    size_t buf_numel = get_tensor(idx)->storage_type() == utils::kBuffer
+        ? get_tensor(idx)->numel()
+        : get_tensor(idx)->padded_numel();
+    ValueRef staging_idx = add_staging(dtype, buf_numel);
     // We only run this when the tensor is non-empty.  When the underlying
-    // tensor is empty (e.g. gpu_numel == 0), we do not allocate a VkImage to
+    // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to
     // tensor, we will not be able to bind the node for execution.
-    if (gpu_numel > 0) {
+    if (buf_numel > 0) {
       add_tensor_to_staging_node(*this, idx, staging_idx);
     }
     outputs_.push_back({idx, staging_idx});
@@ -314,7 +322,7 @@ void ComputeGraph::update_descriptor_counts(
 
 utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
   if (is_buffer_storage(idx)) {
-    return {uint32_t(texel_numel_of(idx)), 1u, 1u};
+    return {uint32_t(numel_of(idx)), 1u, 1u};
   }
   return image_extents_of(idx);
 }

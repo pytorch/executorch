@@ -17,6 +17,5 @@ nchw_to_tensor:
     STORAGE:
       - VALUE: texture3d
       - VALUE: texture2d
-      - VALUE: buffer
   shader_variants:
     - NAME: nchw_to_tensor

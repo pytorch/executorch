@@ -4,18 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-tensor_to_nchw:
+buffer_to_buffer:
   parameter_names_with_default_values:
     DTYPE: float
-    STORAGE: texture3d
+    STORAGE: buffer
   generate_variant_forall:
     DTYPE:
       - VALUE: half
       - VALUE: float
       - VALUE: int
       - VALUE: int8
-    STORAGE:
-      - VALUE: texture3d
-      - VALUE: texture2d
   shader_variants:
-    - NAME: tensor_to_nchw
+    - NAME: buffer_to_buffer
