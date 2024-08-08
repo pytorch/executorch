@@ -327,11 +327,10 @@ class vTensor final {
     return padded_numel_;
   }
 
-  /*
-   * Return nbytes but based on padded_sizes_ instead of sizes_
-   */
-  inline VkDeviceSize padded_nbytes() const {
-    return element_size(dtype()) * padded_numel();
+  size_t staging_buffer_numel() const;
+
+  inline size_t staging_buffer_nbytes() const {
+    return element_size(dtype()) * staging_buffer_numel();
   }
 
   /*

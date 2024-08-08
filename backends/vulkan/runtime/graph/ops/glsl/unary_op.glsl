@@ -32,35 +32,9 @@ $else:
 ${layout_declare_ubo(3, "float", "minimum")}
 ${layout_declare_ubo(4, "float", "maximum")}
 
-
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-float hardswish(float x){
-    if(x <= -3) {
-      return 0;
-    }
-    else if(x >= 3) {
-      return x;
-    }
-    else {
-      return x * (x + 3)/6;
-    }
-}
-
-vec4 hardswish(vec4 tex){
-  return vec4(
-      hardswish(tex.x), hardswish(tex.y), hardswish(tex.z), hardswish(tex.z));
-}
-
-float hardshrink(float x, float lambda, float neg_lambda) {
-  return x * (float(x > lambda) + float(x < neg_lambda));
-}
-
-vec4 hardshrink(vec4 tex, float lambda, float neg_lambda) {
-  return tex *
-      (vec4(greaterThan(tex, vec4(lambda)))
-      + vec4(lessThan(tex, vec4(neg_lambda))));
-}
+#include "activations.h"
 
 #ifdef USING_BUFFER
 

@@ -250,9 +250,7 @@ ValueRef ComputeGraph::set_input_tensor(
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
     // For texture storage, the buffer size needs to account for the zero
     // padding applied by unused texel elements.
-    size_t buf_numel = get_tensor(idx)->storage_type() == utils::kBuffer
-        ? get_tensor(idx)->numel()
-        : get_tensor(idx)->padded_numel();
+    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
     ValueRef staging_idx = add_staging(dtype, buf_numel);
     add_staging_to_tensor_node(*this, staging_idx, idx);
     inputs_.push_back({idx, staging_idx});
@@ -269,9 +267,7 @@ ValueRef ComputeGraph::set_output_tensor(
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
     // For texture storage, the buffer size needs to account for the zero
     // padding applied by unused texel elements.
-    size_t buf_numel = get_tensor(idx)->storage_type() == utils::kBuffer
-        ? get_tensor(idx)->numel()
-        : get_tensor(idx)->padded_numel();
+    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
     ValueRef staging_idx = add_staging(dtype, buf_numel);
     // We only run this when the tensor is non-empty.  When the underlying
     // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to

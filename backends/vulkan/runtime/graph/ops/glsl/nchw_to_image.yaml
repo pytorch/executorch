@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-nchw_to_tensor:
+nchw_to_image:
   parameter_names_with_default_values:
     STORAGE: texture3d
     DTYPE: float
@@ -18,4 +18,4 @@ nchw_to_tensor:
       - VALUE: texture3d
       - VALUE: texture2d
   shader_variants:
-    - NAME: nchw_to_tensor
+    - NAME: nchw_to_image

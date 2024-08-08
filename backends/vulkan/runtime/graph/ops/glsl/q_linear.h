@@ -14,9 +14,6 @@
 // The functions in this file assume that some variables have been defined as
 // descriptors, such as t_mat1, t_qmat2, t_scales, etc.
 
-// TODO: remove
-// #define USING_BUFFER
-
 #ifdef USING_BUFFER
 
 #ifndef FLOAT_T

@@ -66,7 +66,7 @@ void add_tensor_to_staging_node(
     ubos.append(graph.sizes_ubo(in_tensor));
   }
 
-  // Normally, the tensor_to_nchw shader is structured so that each thread reads
+  // Normally, the image_to_nchw shader is structured so that each thread reads
   // one texel from the input texture and writes each component of the texel
   // into the corresponding location in the output buffer. However, this shader
   // is structured slightly differently in that each thread writes out a
@@ -74,7 +74,7 @@ void add_tensor_to_staging_node(
   // output buffer. Therefore, the global work group size for this shader will
   // be the number of elements in the output buffer divided by 4, as opposed to
   // the extents of the input texture.
-  if (shader.kernel_name == "int8_tensor_to_nchw_noint8") {
+  if (shader.kernel_name == "int8_image_to_nchw_noint8") {
     uint32_t buffer_len = graph.get_staging(out_staging)->numel() / 4;
     global_wg_size = {buffer_len, 1, 1};
     ubos.append({graph.numel_ubo(in_tensor)});

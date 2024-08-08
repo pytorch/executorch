@@ -117,7 +117,7 @@ void record_int8_image_to_nchw_noint8_op(
   uint32_t buffer_len = utils::safe_downcast<uint32_t>(dst_buffer.numel() / 4);
   utils::uvec3 global_wg_size = {buffer_len, 1, 1};
   context->submit_compute_job(
-      VK_KERNEL(int8_tensor_to_nchw_noint8),
+      VK_KERNEL(int8_image_to_nchw_noint8),
       pipeline_barrier,
       global_wg_size,
       adaptive_work_group_size(global_wg_size),
@@ -126,6 +126,7 @@ void record_int8_image_to_nchw_noint8_op(
       0,
       dst_buffer.buffer(),
       v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      v_src.sizes_ubo(),
       v_src.numel_ubo());
 }
 
@@ -297,15 +298,15 @@ void record_scalar_add_buffer(
 void fill_vtensor(api::vTensor& vten, std::vector<float>& data) {
   api::StorageBuffer staging_buffer(api::context(), vten.dtype(), data.size());
 
-#define CASE(ctype, name)                                             \
-  case vkapi::ScalarType::name: {                                     \
-    std::vector<ctype> data_converted;                                \
-    data_converted.resize(data.size());                               \
-    for (int i = 0; i < data.size(); ++i) {                           \
-      data_converted[i] = ctype(data[i]);                             \
-    }                                                                 \
-    copy_ptr_to_staging(                                              \
-        data_converted.data(), staging_buffer, vten.padded_nbytes()); \
+#define CASE(ctype, name)                                                     \
+  case vkapi::ScalarType::name: {                                             \
+    std::vector<ctype> data_converted;                                        \
+    data_converted.resize(data.size());                                       \
+    for (int i = 0; i < data.size(); ++i) {                                   \
+      data_converted[i] = ctype(data[i]);                                     \
+    }                                                                         \
+    copy_ptr_to_staging(                                                      \
+        data_converted.data(), staging_buffer, vten.staging_buffer_nbytes()); \
   } break;
 
   switch (vten.dtype()) {
@@ -324,7 +325,7 @@ void fill_vtensor(api::vTensor& vten, std::vector<float>& data) {
 }
 
 void fill_vtensor(api::vTensor& vten, float val, bool iota) {
-  std::vector<float> vten_data(vten.padded_numel());
+  std::vector<float> vten_data(vten.staging_buffer_numel());
   if (iota) {
     std::iota(vten_data.begin(), vten_data.end(), val);
   } else {
@@ -342,7 +343,7 @@ void fill_vtensor(
   vTensorPtr t = graph.get_tensor(idx.value);
   std::vector<float> data(t->numel());
   if (t->storage_type() != utils::kBuffer) {
-    data.resize(t->padded_numel());
+    data.resize(t->staging_buffer_numel());
   }
   if (iota) {
     std::iota(data.begin(), data.end(), val);
@@ -355,7 +356,7 @@ void fill_vtensor(
 
 void extract_vtensor(api::vTensor& vten, std::vector<float>& data) {
   api::StorageBuffer staging_buffer(
-      api::context(), vten.dtype(), vten.padded_numel());
+      api::context(), vten.dtype(), vten.staging_buffer_numel());
 
   if (vten.storage_type() == utils::StorageType::BUFFER) {
     record_buffer_to_nchw_op(api::context(), vten, staging_buffer.buffer());
@@ -367,14 +368,14 @@ void extract_vtensor(api::vTensor& vten, std::vector<float>& data) {
   api::context()->submit_cmd_to_gpu(fence.get_submit_handle());
   fence.wait();
 
-#define CASE(ctype, name)                                             \
-  case vkapi::ScalarType::name: {                                     \
-    std::vector<ctype> data_converted(data.size());                   \
-    copy_staging_to_ptr(                                              \
-        staging_buffer, data_converted.data(), vten.padded_nbytes()); \
-    for (int i = 0; i < data.size(); ++i) {                           \
-      data[i] = float(data_converted[i]);                             \
-    }                                                                 \
+#define CASE(ctype, name)                                                     \
+  case vkapi::ScalarType::name: {                                             \
+    std::vector<ctype> data_converted(data.size());                           \
+    copy_staging_to_ptr(                                                      \
+        staging_buffer, data_converted.data(), vten.staging_buffer_nbytes()); \
+    for (int i = 0; i < data.size(); ++i) {                                   \
+      data[i] = float(data_converted[i]);                                     \
+    }                                                                         \
   } break;
 
   switch (vten.dtype()) {
@@ -430,7 +431,7 @@ void execute_graph_and_check_output(
     IOValueRef out_ioval = graph.outputs().at(i);
     vTensorPtr t_out = graph.get_tensor(out_ioval.value);
 
-    std::vector<float> output_data(t_out->padded_numel());
+    std::vector<float> output_data(t_out->staging_buffer_numel());
     graph.copy_from_staging(
         out_ioval.staging, output_data.data(), output_data.size());
 

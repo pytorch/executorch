@@ -103,7 +103,7 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
 
   if (v_dst.dtype() == vkapi::kChar &&
       v_dst.storage_type() == utils::kTexture3D && !int8_buffer_enabled) {
-    return VK_KERNEL(nchw_to_int8_tensor_noint8);
+    return VK_KERNEL(nchw_to_int8_image_noint8);
   }
 
   if (v_dst.storage_type() == utils::kBuffer) {
@@ -112,7 +112,7 @@ vkapi::ShaderInfo get_nchw_to_tensor_shader(
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
-  kernel_name = "nchw_to_tensor";
+  kernel_name = "nchw_to_image";
   add_dtype_suffix(kernel_name, v_dst);
   add_storage_type_suffix(kernel_name, v_dst);
 
@@ -127,7 +127,7 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
 
   if (v_src.dtype() == vkapi::kChar &&
       v_src.storage_type() == utils::kTexture3D && !int8_buffer_enabled) {
-    return VK_KERNEL(int8_tensor_to_nchw_noint8);
+    return VK_KERNEL(int8_image_to_nchw_noint8);
   }
 
   if (v_src.storage_type() == utils::kBuffer) {
@@ -136,7 +136,7 @@ vkapi::ShaderInfo get_tensor_to_nchw_shader(
     return VK_KERNEL_FROM_STR(kernel_name);
   }
 
-  kernel_name = "tensor_to_nchw";
+  kernel_name = "image_to_nchw";
   add_dtype_suffix(kernel_name, v_src);
   add_storage_type_suffix(kernel_name, v_src);
 

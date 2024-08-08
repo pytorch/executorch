@@ -226,6 +226,19 @@ const vkapi::BufferBindInfo vTensor::numel_ubo() {
   return vkapi::BufferBindInfo(numel_uniform_.buffer());
 }
 
+size_t vTensor::staging_buffer_numel() const {
+  const bool is_int8 = dtype_ == vkapi::kChar;
+  const bool int8_supported =
+      storage_.context_->adapter_ptr()->has_full_int8_buffers_support();
+  if (is_int8 && !int8_supported) {
+    return utils::align_up_4(numel_);
+  }
+  if (storage_type() == utils::kBuffer) {
+    return numel_;
+  }
+  return padded_numel_;
+}
+
 VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
   switch (storage_type()) {
     case utils::kBuffer:

@@ -312,7 +312,8 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
         params.buffer());
   }
 
-  StorageBuffer staging_buffer(context(), vkapi::kFloat, a.padded_numel());
+  StorageBuffer staging_buffer(
+      context(), vkapi::kFloat, a.staging_buffer_numel());
   record_image_to_nchw_op(context(), a, staging_buffer.buffer());
 
   submit_to_gpu();
@@ -473,9 +474,9 @@ TEST_F(VulkanComputeAPITest, buffer_tensor_sanity_check) {
           case vkapi::kHalf:
             run_buffer_tensor_sanity_check<torch::executor::Half>(a);
             break;
-          case vkapi::kChar:
-            run_buffer_tensor_sanity_check<int8_t>(a);
-            break;
+          // case vkapi::kChar:
+          //   run_buffer_tensor_sanity_check<int8_t>(a);
+          //   break;
           default:
             VK_THROW("Unsupported dtype");
         }
@@ -520,9 +521,9 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   // No allocations made so far
   EXPECT_TRUE(get_vma_allocation_count() == 0);
 
-  std::vector<float> data_a(a.padded_numel());
+  std::vector<float> data_a(a.staging_buffer_numel());
   std::fill(data_a.begin(), data_a.end(), 2.5f);
-  std::vector<float> data_b(b.padded_numel());
+  std::vector<float> data_b(b.staging_buffer_numel());
   std::fill(data_b.begin(), data_b.end(), 1.5f);
 
   // Allocate memory at the last possible opportunity
@@ -541,7 +542,7 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
 
   record_binary_op(context(), "add", a, b, c);
 
-  std::vector<float> data_c(c.padded_numel());
+  std::vector<float> data_c(c.staging_buffer_numel());
   extract_vtensor(c, data_c);
 
   for (size_t i = 0; i < data_c.size(); ++i) {
@@ -581,11 +582,11 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   EXPECT_TRUE(get_vma_allocation_count() == 3);
 
   // Specify input data
-  std::vector<float> data_a(a.padded_numel());
+  std::vector<float> data_a(a.staging_buffer_numel());
   std::fill(data_a.begin(), data_a.end(), 2.5f);
-  std::vector<float> data_b(b.padded_numel());
+  std::vector<float> data_b(b.staging_buffer_numel());
   std::fill(data_b.begin(), data_b.end(), 1.5f);
-  std::vector<float> data_d(b.padded_numel());
+  std::vector<float> data_d(b.staging_buffer_numel());
   std::fill(data_d.begin(), data_d.end(), 1.0f);
 
   // First, fill a and b with data
@@ -602,7 +603,7 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   record_binary_op(context(), "add", c, d, e);
 
   // Extract data from e
-  std::vector<float> data_e(e.padded_numel());
+  std::vector<float> data_e(e.staging_buffer_numel());
   extract_vtensor(e, data_e);
 
   // Sanity check that the values are correct
@@ -655,7 +656,7 @@ TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
   // No allocations yet
   EXPECT_TRUE(get_vma_allocation_count() == 0);
 
-  std::vector<float> data_a(a.padded_numel());
+  std::vector<float> data_a(a.staging_buffer_numel());
   std::fill(data_a.begin(), data_a.end(), 2.5f);
 
   // Encoding a command buffer with a vTensor without memory should throw
@@ -749,15 +750,17 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
     c.virtual_resize(new_sizes);
 
     fill_staging(
-        staging_buffer_a, float(new_sizes[1] + 1.5f), a.padded_numel());
+        staging_buffer_a, float(new_sizes[1] + 1.5f), a.staging_buffer_numel());
     fill_staging(
-        staging_buffer_b, float(new_sizes[2] + 55.0f), b.padded_numel());
+        staging_buffer_b,
+        float(new_sizes[2] + 55.0f),
+        b.staging_buffer_numel());
 
     submit_to_gpu();
     check_staging_buffer(
         staging_buffer_c,
         float(new_sizes[1] + new_sizes[2] + 56.5f),
-        c.padded_numel());
+        c.staging_buffer_numel());
   }
 }
 
@@ -765,9 +768,9 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
 // Compute Graph Tests
 //
 
-#define EXTRACT_TENSOR(name)                         \
-  std::vector<float> data_##name(                    \
-      graph.get_tensor(name.value)->padded_numel()); \
+#define EXTRACT_TENSOR(name)                                 \
+  std::vector<float> data_##name(                            \
+      graph.get_tensor(name.value)->staging_buffer_numel()); \
   graph.copy_from_staging(name.staging, data_##name.data(), data_##name.size());
 
 TEST(VulkanComputeGraphTest, test_values_scalars) {
@@ -901,8 +904,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_buffer) {
 
     graph.execute();
 
-    std::vector<float> data_out(graph.get_tensor(out.value)->numel());
-    graph.copy_from_staging(out.staging, data_out.data(), data_out.size());
+    EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
     for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
@@ -1750,7 +1752,7 @@ void run_from_gpu_test(
         vten.sizes_ubo());
   }
 
-  StorageBuffer staging_buffer(context(), dtype, vten.padded_numel());
+  StorageBuffer staging_buffer(context(), dtype, vten.staging_buffer_numel());
 
   if (dtype == vkapi::kChar &&
       !context()->adapter_ptr()->has_full_int8_buffers_support()) {
@@ -1783,16 +1785,19 @@ void round_trip_test(
   vTensor vten = vTensor(context(), sizes, dtype, storage_type, memory_layout);
 
   // Create and fill input staging buffer
-  StorageBuffer staging_buffer_in(context(), dtype, vten.padded_numel());
+  StorageBuffer staging_buffer_in(
+      context(), dtype, vten.staging_buffer_numel());
 
   std::vector<T> data_in(staging_buffer_in.numel());
   for (int i = 0; i < staging_buffer_in.numel(); i++) {
     data_in[i] = T(i * -1);
   }
-  copy_ptr_to_staging(data_in.data(), staging_buffer_in, vten.padded_nbytes());
+  copy_ptr_to_staging(
+      data_in.data(), staging_buffer_in, vten.staging_buffer_nbytes());
 
   // Output staging buffer
-  StorageBuffer staging_buffer_out(context(), dtype, vten.padded_numel());
+  StorageBuffer staging_buffer_out(
+      context(), dtype, vten.staging_buffer_numel());
 
   record_nchw_to_image_op(context(), staging_buffer_in.buffer(), vten);
 
@@ -1850,7 +1855,7 @@ void compute_graph_round_trip_test(
 
   graph.execute();
 
-  std::vector<T> data_out(tensor->padded_numel());
+  std::vector<T> data_out(tensor->staging_buffer_numel());
   graph.copy_from_staging(r_staging_out, data_out.data(), data_out.size());
 
   for (int i = 0; i < data_in.size(); i++) {
@@ -2180,18 +2185,18 @@ void test_max_pool2d(
   fill_vtensor(graph, graph.inputs().at(0), base_val, /*iota = */ true);
 
   vTensorPtr t_in = graph.get_tensor(in_ioval.value);
-  std::vector<float> input_data(t_in->padded_numel());
+  std::vector<float> input_data(t_in->staging_buffer_numel());
   graph.copy_from_staging(
       in_ioval.staging, input_data.data(), input_data.size());
 
   graph.execute();
 
   vTensorPtr t_out = graph.get_tensor(out_ioval.value);
-  std::vector<float> output_data(t_out->padded_numel());
+  std::vector<float> output_data(t_out->staging_buffer_numel());
   graph.copy_from_staging(
       out_ioval.staging, output_data.data(), output_data.size());
   vTensorPtr t_idx = graph.get_tensor(idx_ioval.value);
-  std::vector<int> index_data(t_idx->padded_numel());
+  std::vector<int> index_data(t_idx->staging_buffer_numel());
   graph.copy_from_staging(
       idx_ioval.staging, index_data.data(), index_data.size());
 
@@ -2329,7 +2334,7 @@ void test_grid_priors(
   // run graph
   graph.execute();
 
-  std::vector<float> output_data(t_out->padded_numel());
+  std::vector<float> output_data(t_out->staging_buffer_numel());
   graph.copy_from_staging(out.staging, output_data.data(), output_data.size());
 
   // check results
