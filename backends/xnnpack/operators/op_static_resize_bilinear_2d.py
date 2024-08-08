@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast, Dict, List
+from typing import cast, Dict
 
 import torch
 from executorch.backends.xnnpack.operators.node_visitor import (
@@ -23,7 +23,7 @@ from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_FLAG_ALIGN_C
 
 @register_node_visitor
 class StaticResizeBilinear2DVisitor(NodeVisitor):
-    target = "aten.upsample_bilinear2d.default"
+    target = "aten.upsample_bilinear2d.vec"
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -44,7 +44,7 @@ class StaticResizeBilinear2DVisitor(NodeVisitor):
         # output
         output_id = vals_to_ids[node]
 
-        new_size = cast(List[int], node.args[1])
+        new_size = node.meta["val"].shape[-2:]
 
         flags = XNN_FLAG_ALIGN_CORNERS if cast(bool, node.args[2]) else 0
 

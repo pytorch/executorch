@@ -680,7 +680,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       executorch
       extension_data_loader
       portable_ops_lib
-      quantized_ops_aot_lib
       util
       torch
   )
@@ -701,7 +700,6 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     target_link_options_shared_lib(quantized_ops_lib)
-    list(APPEND _dep_libs quantized_kernels quantized_ops_lib)
   endif()
 
   # compile options for pybind
@@ -755,6 +753,25 @@ if(EXECUTORCH_BUILD_PYBIND)
                  # the torch libs are in `site-packages/torch/lib`.
                  BUILD_RPATH "@loader_path/../../../torch/lib"
                  INSTALL_RPATH "@loader_path/../../../torch/lib"
+                 # Assume <executorch> is the root `site-packages/executorch`
+                 # Need to add <executorch>/extension/llm/custom_ops for
+                 # libcustom_ops_aot_lib.dylib
+                 BUILD_RPATH "@loader_path/../../extension/llm/custom_ops"
+                 INSTALL_RPATH "@loader_path/../../extension/llm/custom_ops"
+                 # Need to add <executorch>/kernels/quantized for
+                 # libquantized_ops_aot_lib.dylib
+                 BUILD_RPATH "@loader_path/../../kernels/quantized"
+                 INSTALL_RPATH "@loader_path/../../kernels/quantized"
+    )
+  else()
+    set_target_properties(
+      portable_lib
+      PROPERTIES # Assume <executorch> is the root `site-packages/executorch`
+                 # Need to add <executorch>/extension/llm/custom_ops for
+                 # libcustom_ops_aot_lib
+                 # Need to add <executorch>/kernels/quantized for
+                 # libquantized_ops_aot_lib
+                 BUILD_RPATH "$ORIGIN:$ORIGIN/../../extension/llm/custom_ops:$ORIGIN/../../kernels/quantized"
     )
   endif()
 
