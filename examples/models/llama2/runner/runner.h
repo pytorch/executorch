@@ -19,6 +19,7 @@
 #include <unordered_map>
 
 #include <executorch/extension/llm/runner/stats.h>
+#include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
@@ -44,14 +45,10 @@ class Runner {
   void stop();
 
  private:
-  int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
   Result<uint64_t> prefill(
       std::vector<uint64_t>& prompt_tokens,
       int64_t start_pos,
       std::function<void(const std::string&)> token_callback);
-  Result<exec_aten::Tensor> run_model_step(
-      ManagedTensor& managed_tokens,
-      ManagedTensor& managed_start_pos);
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
@@ -62,16 +59,20 @@ class Runner {
   bool use_kv_cache_;
   bool use_sdpa_with_kv_cache_;
   bool append_eos_;
+  float temperature_;
+  bool enable_parallel_prefill_;
+  bool shouldStop_{false};
+
+  // model
   std::unordered_set<std::string> model_methods_;
   std::string model_path_;
   std::unique_ptr<Module> module_;
+  std::unique_ptr<TextDecoderRunner> text_decoder_runner_;
   std::string tokenizer_path_;
-  float temperature_;
   std::unique_ptr<Tokenizer> tokenizer_;
-  std::unique_ptr<Sampler> sampler_;
-  bool shouldStop_{false};
+
+  // stats
   Stats stats_;
-  bool enable_parallel_prefill_;
 };
 
 } // namespace torch::executor

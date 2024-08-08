@@ -41,9 +41,9 @@ Runner::Runner(
     // NOTE: we observed ~2x loading performance increase on iPhone 15
     // and a ~5% improvement on Galaxy S22 by switching to
     // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
-    : module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
-      tokenizer_path_(tokenizer_path),
-      temperature_(temperature) {
+    : temperature_(temperature),
+      module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
+      tokenizer_path_(tokenizer_path) {
   ET_LOG(
       Info,
       "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
@@ -52,7 +52,7 @@ Runner::Runner(
 }
 
 bool Runner::is_loaded() const {
-  return module_->is_loaded() && tokenizer_ && sampler_;
+  return module_->is_loaded() && tokenizer_ && text_decoder_runner_;
 }
 
 Error Runner::load() {
@@ -94,40 +94,11 @@ Error Runner::load() {
   eos_id_ = get_module_metadata<int64_t>(
       module_.get(), "get_eos_id", tokenizer_->eos_tok());
 
-  // Create sampler
-  sampler_ = std::make_unique<Sampler>(
-      vocab_size_,
-      temperature_,
-      ::executorch::llm::kTopp,
-      static_cast<unsigned long long>(std::time(nullptr)));
+  // Create text decoder runner
+  text_decoder_runner_ = std::make_unique<TextDecoderRunner>(
+      module_.get(), use_kv_cache_, vocab_size_, temperature_);
 
   return Error::Ok;
-}
-
-int32_t Runner::logitsToToken(const exec_aten::Tensor& logits_tensor) {
-  ET_CHECK_MSG(logits_tensor.dim() == 3, "Logits tensor must be 3D");
-  auto num_tokens = logits_tensor.size(1);
-
-  switch (logits_tensor.scalar_type()) {
-    case ScalarType::Float: {
-      float* logits = logits_tensor.mutable_data_ptr<float>();
-      float* logits_last = logits;
-      logits_last += (num_tokens - 1) * tokenizer_->vocab_size();
-      return sampler_->sample(logits_last);
-    }
-    case ScalarType::Half: {
-      exec_aten::Half* logits =
-          logits_tensor.mutable_data_ptr<exec_aten::Half>();
-      exec_aten::Half* logits_last = logits;
-      logits_last += (num_tokens - 1) * tokenizer_->vocab_size();
-      return sampler_->sample(logits_last);
-    }
-    default:
-      ET_CHECK_MSG(
-          false,
-          "Unsupported dtype output %hhd",
-          static_cast<int8_t>(logits_tensor.scalar_type()));
-  }
 }
 
 Result<uint64_t> Runner::prefill(
@@ -153,7 +124,7 @@ Result<uint64_t> Runner::prefill(
     ManagedTensor managed_start_pos(&start_pos, {1}, ScalarType::Long);
 
     Result<exec_aten::Tensor> outputs_res =
-        run_model_step(managed_tokens, managed_start_pos);
+        text_decoder_runner_->step(managed_tokens, managed_start_pos);
 
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_LOG(
@@ -172,7 +143,7 @@ Result<uint64_t> Runner::prefill(
       token_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
       prev = cur;
     }
-    cur_token = logitsToToken(outputs_res.get());
+    cur_token = text_decoder_runner_->logits_to_token(outputs_res.get());
   } else { // sequential prefill
     int64_t pos = 0; // position in the sequence
     uint64_t prev_token;
@@ -191,7 +162,7 @@ Result<uint64_t> Runner::prefill(
       pos_data = start_pos + pos;
 
       Result<exec_aten::Tensor> logits_res =
-          run_model_step(managed_tokens, managed_start_pos);
+          text_decoder_runner_->step(managed_tokens, managed_start_pos);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
       prev_token = cur_token;
@@ -199,8 +170,10 @@ Result<uint64_t> Runner::prefill(
       pos++;
 
       long sample_start_time_ms = util::time_in_ms();
-      cur_token = pos == num_prompt_tokens ? logitsToToken(logits_res.get())
-                                           : prompt_tokens[pos];
+
+      cur_token = pos == num_prompt_tokens
+          ? text_decoder_runner_->logits_to_token(logits_res.get())
+          : prompt_tokens[pos];
 
       stats_.aggregate_sampling_time_ms +=
           util::time_in_ms() - sample_start_time_ms;
@@ -213,45 +186,6 @@ Result<uint64_t> Runner::prefill(
   stats_.first_token_ms = util::time_in_ms();
   stats_.prompt_eval_end_ms = util::time_in_ms();
   return cur_token;
-}
-
-// Given an input token. Set up the inputs for the model and execute a single
-// step. Returning the logits tensor.
-Result<exec_aten::Tensor> Runner::run_model_step(
-    ManagedTensor& managed_tokens,
-    ManagedTensor& managed_start_pos) {
-  // ET_LOG(Info, "Input token %" PRIu64, input_token);
-  auto tokens = managed_tokens.get_aliasing_tensor();
-  if (use_kv_cache_) {
-    auto start_pos = managed_start_pos.get_aliasing_tensor();
-
-    Result<std::vector<EValue>> outputs_res =
-        module_->forward({tokens, start_pos});
-    ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
-    ET_CHECK_MSG(
-        outputs_res.get().size() == 1,
-        "More then one output returned from executing LLM.");
-    ET_CHECK_MSG(
-        outputs_res.get()[0].isTensor(),
-        "Non Tensor Output returned from executing LLM");
-
-    // Return the logits tensor
-    return outputs_res.get()[0].toTensor();
-  } else { // no kv cache
-    (void)managed_start_pos; // unused
-
-    Result<std::vector<EValue>> outputs_res = module_->forward({tokens});
-    ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
-    ET_CHECK_MSG(
-        outputs_res.get().size() == 1,
-        "More then one output returned from executing LLM.");
-    ET_CHECK_MSG(
-        outputs_res.get()[0].isTensor(),
-        "Non Tensor Output returned from executing LLM");
-
-    // Return the logits tensor
-    return outputs_res.get()[0].toTensor();
-  }
 }
 
 Error Runner::generate(
@@ -346,7 +280,7 @@ Error Runner::generate(
   while (pos < seq_len - 1) {
     // Run the model
     Result<exec_aten::Tensor> logits_res =
-        run_model_step(tokens_managed, start_pos_managed);
+        text_decoder_runner_->step(tokens_managed, start_pos_managed);
 
     ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
     exec_aten::Tensor& logits_tensor = logits_res.get();
@@ -354,7 +288,7 @@ Error Runner::generate(
     prev_token = cur_token;
 
     long sample_start_time_ms = util::time_in_ms();
-    cur_token = logitsToToken(logits_tensor);
+    cur_token = text_decoder_runner_->logits_to_token(logits_tensor);
     stats_.aggregate_sampling_time_ms +=
         util::time_in_ms() - sample_start_time_ms;
 
