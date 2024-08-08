@@ -28,7 +28,7 @@ include_directories(
 add_library(neuron_backend SHARED)
 target_link_libraries(neuron_backend
     PRIVATE
-    executorch
+    executorch_no_prim_ops
     android
     log
     ${NEURON_BUFFER_ALLOCATOR_LIB}
