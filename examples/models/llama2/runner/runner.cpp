@@ -41,8 +41,8 @@ Runner::Runner(
     // NOTE: we observed ~2x loading performance increase on iPhone 15
     // and a ~5% improvement on Galaxy S22 by switching to
     // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
-    : module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
-      temperature_(temperature),
+    : temperature_(temperature),
+      module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
       tokenizer_path_(tokenizer_path) {
   ET_LOG(
       Info,
@@ -123,7 +123,7 @@ Result<uint64_t> Runner::prefill(
 
     ManagedTensor managed_start_pos(&start_pos, {1}, ScalarType::Long);
 
-    Result<torch::executor::Tensor> outputs_res =
+    Result<exec_aten::Tensor> outputs_res =
         text_decoder_runner_->step(managed_tokens, managed_start_pos);
 
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
@@ -161,7 +161,7 @@ Result<uint64_t> Runner::prefill(
       // Run the model
       pos_data = start_pos + pos;
 
-      Result<torch::executor::Tensor> logits_res =
+      Result<exec_aten::Tensor> logits_res =
           text_decoder_runner_->step(managed_tokens, managed_start_pos);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
