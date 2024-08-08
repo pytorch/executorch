@@ -44,16 +44,13 @@ class Runner {
   void stop();
 
  private:
-  // metadata
-  template <typename T>
-  T getMetadataHelper(const std::string& method_name, T default_val);
   int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
-  Result<torch::executor::Tensor> prefill(
+  Result<exec_aten::Tensor> prefill(
       const std::vector<uint64_t>& tokens,
       ManagedTensor& managed_tokens,
       ManagedTensor& managed_start_pos,
       std::function<void(const std::string&)> token_callback);
-  Result<torch::executor::Tensor> run_model_step(
+  Result<exec_aten::Tensor> run_model_step(
       int64_t input_token,
       ManagedTensor& tokens,
       ManagedTensor& start_pos,

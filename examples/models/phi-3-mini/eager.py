@@ -43,11 +43,7 @@ def _generate_token_with_kv_cache(args, model, prompt_tokens):
     print("Generating tokens:", end="", flush=True)
 
     model = Phi3Mini(model, 1, args.seq_len + prompt_tokens.shape[-1])
-
-    for input_pos in range(prompt_tokens.shape[-1]):
-        result = model.forward(
-            input_ids=prompt_tokens[:, input_pos : input_pos + 1],
-        )
+    result = model.forward(input_ids=prompt_tokens)
 
     current_token = torch.argmax(result, dim=-1).item()
     print(f" {current_token}", end="", flush=True)

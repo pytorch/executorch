@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast, Optional, Tuple
+from typing import Any, cast, Optional, Tuple
 
 import executorch.exir as exir
 import torch
@@ -60,6 +60,20 @@ def check_or_raise(condition: bool, err: str) -> None:
     """
     if not condition:
         raise RuntimeError(err)
+
+
+def is_node(node: Any) -> bool:
+    """
+    returns true if node is a torch.fx.Node, otherwise false
+    """
+    return isinstance(node, torch.fx.Node)
+
+
+def is_getitem(node: torch.fx.Node) -> bool:
+    if node.op != "call_function":
+        return False
+
+    return node.target.__name__ == "getitem"  # pyre-ignore
 
 
 def get_input_node(node: torch.fx.Node, input_index: int) -> torch.fx.Node:

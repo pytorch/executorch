@@ -6,12 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// A simple Byte Pair Encoding (BPE) Tokenizer. Note that the vanila tokenizer
-// model won't work with this class, it needs to go through tokenizer.py first.
 #pragma once
 
 #include <cinttypes>
+// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <string>
+// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <vector>
 
 #include <executorch/runtime/core/error.h>
@@ -20,6 +20,7 @@
 namespace torch {
 namespace executor {
 
+// A tokenizer interface.
 class Tokenizer {
  public:
   explicit Tokenizer() {}

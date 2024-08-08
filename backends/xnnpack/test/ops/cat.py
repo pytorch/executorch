@@ -56,11 +56,7 @@ class TestCat(unittest.TestCase):
                 }
             )
 
-        (
-            tester.to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_cat": 1})
-            .partition()
-        )
+        tester.to_edge_transform_and_lower()
 
         if quant:
             tester.check_not(["torch.ops.quantized_decomposed"])
@@ -155,9 +151,7 @@ class TestCat(unittest.TestCase):
             Tester(self.Cat5(), inputs)
             .export()
             .check_count({"torch.ops.aten.cat": 1})
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_cat": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"executorch_exir_dialects_edge__ops_aten_cat": 1})
         )
 

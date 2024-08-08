@@ -16,6 +16,7 @@
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #endif /* ET_USE_TIKTOKEN*/
 #include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/extension/module/metadata_util.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
 #include <ctime>
@@ -66,13 +67,17 @@ Error Runner::load() {
   const auto method_names = module_->method_names();
   ET_CHECK_MSG(method_names.ok(), "Failed to read method names from model");
   model_methods_ = method_names.get();
-  n_bos_ = getMetadataHelper<int64_t>("get_n_bos", 1);
-  n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
-  max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
-  use_kv_cache_ = getMetadataHelper("use_kv_cache", true);
-  use_sdpa_with_kv_cache_ = getMetadataHelper("use_sdpa_with_kv_cache", false);
-  append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
-  enable_parallel_prefill_ = getMetadataHelper("enable_dynamic_shape", false);
+  n_bos_ = get_module_metadata<int64_t>(module_.get(), "get_n_bos", 1);
+  n_eos_ = get_module_metadata<int64_t>(module_.get(), "get_n_eos", 1);
+  max_seq_len_ =
+      get_module_metadata<int64_t>(module_.get(), "get_max_seq_len", 128);
+  use_kv_cache_ = get_module_metadata(module_.get(), "use_kv_cache", true);
+  use_sdpa_with_kv_cache_ =
+      get_module_metadata(module_.get(), "use_sdpa_with_kv_cache", false);
+  append_eos_ =
+      get_module_metadata(module_.get(), "append_eos_to_prompt", false);
+  enable_parallel_prefill_ =
+      get_module_metadata(module_.get(), "enable_dynamic_shape", false);
 
   // Load tokenizer
 #if ET_USE_TIKTOKEN
@@ -82,10 +87,12 @@ Error Runner::load() {
 #endif
   tokenizer_->load(tokenizer_path_);
 
-  vocab_size_ =
-      getMetadataHelper<int64_t>("get_vocab_size", tokenizer_->vocab_size());
-  bos_id_ = getMetadataHelper<int64_t>("get_bos_id", tokenizer_->bos_tok());
-  eos_id_ = getMetadataHelper<int64_t>("get_eos_id", tokenizer_->eos_tok());
+  vocab_size_ = get_module_metadata<int64_t>(
+      module_.get(), "get_vocab_size", tokenizer_->vocab_size());
+  bos_id_ = get_module_metadata<int64_t>(
+      module_.get(), "get_bos_id", tokenizer_->bos_tok());
+  eos_id_ = get_module_metadata<int64_t>(
+      module_.get(), "get_eos_id", tokenizer_->eos_tok());
 
   // Create sampler
   sampler_ = std::make_unique<Sampler>(
@@ -95,28 +102,6 @@ Error Runner::load() {
       static_cast<unsigned long long>(std::time(nullptr)));
 
   return Error::Ok;
-}
-
-template <typename T>
-T Runner::getMetadataHelper(const std::string& method_name, T default_val) {
-  T res = default_val;
-  if (model_methods_.count(method_name)) {
-    Result<std::vector<EValue>> outputs = module_->execute(method_name);
-    if (outputs.ok()) {
-      std::vector<EValue> outs = outputs.get();
-      if (outs.size() > 0) {
-        res = outs[0].to<T>();
-      }
-    }
-  } else {
-    ET_LOG(
-        Info,
-        "The model does not contain %s method, using default value %lld",
-        method_name.c_str(),
-        (long long)default_val);
-  }
-  ET_LOG(Info, "%s: %lld", method_name.c_str(), (long long)res);
-  return res;
 }
 
 int32_t Runner::logitsToToken(const exec_aten::Tensor& logits_tensor) {
@@ -145,7 +130,7 @@ int32_t Runner::logitsToToken(const exec_aten::Tensor& logits_tensor) {
   }
 }
 
-Result<torch::executor::Tensor> Runner::prefill(
+Result<exec_aten::Tensor> Runner::prefill(
     const std::vector<uint64_t>& tokens,
     ManagedTensor& managed_tokens,
     ManagedTensor& managed_start_pos,
@@ -217,7 +202,7 @@ Result<torch::executor::Tensor> Runner::prefill(
     auto logits_tensor = managed_tokens.get_aliasing_tensor();
     while (pos < num_tokens) {
       // Run the model
-      Result<torch::executor::Tensor> logits_res = run_model_step(
+      Result<exec_aten::Tensor> logits_res = run_model_step(
           cur_token, managed_tokens, managed_start_pos, num_tokens);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
@@ -258,7 +243,7 @@ Result<torch::executor::Tensor> Runner::prefill(
 
 // Given an input token. Set up the inputs for the model and execute a single
 // step. Returning the logits tensor.
-Result<torch::executor::Tensor> Runner::run_model_step(
+Result<exec_aten::Tensor> Runner::run_model_step(
     int64_t input_token,
     ManagedTensor& managed_tokens,
     ManagedTensor& managed_start_pos,
@@ -426,7 +411,7 @@ Error Runner::generate(
   // Generate our tokens
   while (pos < seq_len - 1) {
     // Run the model
-    Result<torch::executor::Tensor> logits_res =
+    Result<exec_aten::Tensor> logits_res =
         run_model_step(cur_token, tokens_managed, start_pos_managed, seq_len);
 
     ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
@@ -485,12 +470,4 @@ Error Runner::generate(
 void Runner::stop() {
   shouldStop_ = true;
 }
-
-// explicit instantiation of template methods
-template int64_t Runner::getMetadataHelper<int64_t>(
-    const std::string& method_name,
-    int64_t default_val);
-template bool Runner::getMetadataHelper<bool>(
-    const std::string& method_name,
-    bool default_val);
 } // namespace torch::executor
