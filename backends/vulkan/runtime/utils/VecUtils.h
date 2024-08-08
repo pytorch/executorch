@@ -238,13 +238,6 @@ struct vec final {
   // NOLINTNEXTLINE
   Type data[N];
 
-  vec<Type, N>& operator=(const vec<Type, N>& other) {
-    for (int i = 0; i < N; ++i) {
-      data[i] = other[i];
-    }
-    return *this;
-  }
-
   const Type& operator[](const uint32_t& i) const {
     VK_CHECK_COND(i >= 0 && i < N, "Index out of bounds!");
     return data[i];
