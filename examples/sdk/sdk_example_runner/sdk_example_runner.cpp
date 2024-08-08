@@ -22,13 +22,13 @@
 
 #include <gflags/gflags.h>
 
+#include <executorch/devtools/bundled_program/bundled_program.h>
+#include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/sdk/bundled_program/bundled_program.h>
-#include <executorch/sdk/etdump/etdump_flatcc.h>
 #include <executorch/util/util.h>
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4MB

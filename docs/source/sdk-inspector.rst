@@ -26,26 +26,26 @@ Inspector Methods
 Constructor
 ~~~~~~~~~~~
 
-.. autofunction:: executorch.sdk.Inspector.__init__
+.. autofunction:: executorch.devtools.Inspector.__init__
 
 **Example Usage:**
 
 .. code:: python
 
-    from executorch.sdk import Inspector
+    from executorch.devtools import Inspector
 
     inspector = Inspector(etdump_path="/path/to/etdump.etdp", etrecord="/path/to/etrecord.bin")
 
 to_dataframe
 ~~~~~~~~~~~~~~~~
 
-.. autofunction:: executorch.sdk.Inspector.to_dataframe
+.. autofunction:: executorch.devtools.Inspector.to_dataframe
 
 
 print_data_tabular
 ~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: executorch.sdk.Inspector.print_data_tabular
+.. autofunction:: executorch.devtools.Inspector.print_data_tabular
 
 .. _example-usage-1:
 
@@ -62,7 +62,7 @@ Note that the unit of delegate profiling events is "cycles". We're working on pr
 find_total_for_module
 ~~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: executorch.sdk.Inspector.find_total_for_module
+.. autofunction:: executorch.devtools.Inspector.find_total_for_module
 
 .. _example-usage-2:
 
@@ -80,7 +80,7 @@ find_total_for_module
 get_exported_program
 ~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: executorch.sdk.Inspector.get_exported_program
+.. autofunction:: executorch.devtools.Inspector.get_exported_program
 
 .. _example-usage-3:
 
@@ -119,7 +119,7 @@ of an ``Inspector`` instance, for example:
 
     inspector.event_blocks
 
-.. autoclass:: executorch.sdk.inspector.EventBlock
+.. autoclass:: executorch.devtools.inspector.EventBlock
 
 ``Event`` Class
 ~~~~~~~~~~~~~~~
@@ -127,7 +127,7 @@ of an ``Inspector`` instance, for example:
 Access ``Event`` instances through the ``events`` attribute of an
 ``EventBlock`` instance.
 
-.. autoclass:: executorch.sdk.inspector.Event
+.. autoclass:: executorch.devtools.inspector.Event
 
 **Example Usage:**
 
@@ -152,7 +152,7 @@ table. This command produces the identical table output as calling the
 
 .. code:: bash
 
-    python3 -m sdk.inspector.inspector_cli --etdump_path <path_to_etdump> --etrecord_path <path_to_etrecord>
+    python3 -m devtools.inspector.inspector_cli --etdump_path <path_to_etdump> --etrecord_path <path_to_etrecord>
 
 Note that the `etrecord_path` argument is optional.
 
