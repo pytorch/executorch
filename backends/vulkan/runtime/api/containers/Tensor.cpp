@@ -127,9 +127,9 @@ vTensor::vTensor(
           allocate_memory) {
   if (storage_type != utils::kBuffer) {
     texture_limits_.limits = utils::ivec3{
-        utils::safe_downcast<int32_t>(storage_.image_extents_.data[0]),
-        utils::safe_downcast<int32_t>(storage_.image_extents_.data[1]),
-        utils::safe_downcast<int32_t>(storage_.image_extents_.data[2])};
+        utils::safe_downcast<int32_t>(storage_.image_extents_[0]),
+        utils::safe_downcast<int32_t>(storage_.image_extents_[1]),
+        utils::safe_downcast<int32_t>(storage_.image_extents_[2])};
   }
 
   if (dtype == vkapi::kHalf) {
@@ -247,9 +247,9 @@ void vTensor::update_size_metadata(const std::vector<int64_t>& new_sizes) {
 
   // Update the texture limits to reflect the new virtual extents.
   texture_limits_.limits = utils::ivec3{
-      utils::safe_downcast<int32_t>(virtual_extents.data[0]),
-      utils::safe_downcast<int32_t>(virtual_extents.data[1]),
-      utils::safe_downcast<int32_t>(virtual_extents.data[2])};
+      utils::safe_downcast<int32_t>(virtual_extents[0]),
+      utils::safe_downcast<int32_t>(virtual_extents[1]),
+      utils::safe_downcast<int32_t>(virtual_extents[2])};
 
   if (sizes_uniform_.buffer()) {
     sizes_uniform_.update(utils::make_whcn_ivec4(sizes_));
@@ -281,11 +281,9 @@ void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
     utils::uvec3 virtual_extents =
         calculate_image_extents(padded_sizes_, memory_layout_);
 
-    bool valid_resize = virtual_extents.data[0] <= image_extents().data[0];
-    valid_resize =
-        valid_resize && virtual_extents.data[1] <= image_extents().data[1];
-    valid_resize =
-        valid_resize && virtual_extents.data[2] <= image_extents().data[2];
+    bool valid_resize = virtual_extents[0] <= image_extents()[0];
+    valid_resize = valid_resize && virtual_extents[1] <= image_extents()[1];
+    valid_resize = valid_resize && virtual_extents[2] <= image_extents()[2];
 
     VK_CHECK_COND(
         valid_resize,
