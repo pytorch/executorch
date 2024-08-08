@@ -161,6 +161,9 @@ class KVCache(nn.Module):
         else:
             cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
 
+        self.max_batch_size = max_batch_size
+        self.n_heads = n_heads
+        self.head_dim = head_dim
         self.transpose_cache = transpose_cache
         self.enable_dynamic_shape = enable_dynamic_shape
         self.register_buffer(
