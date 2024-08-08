@@ -238,10 +238,9 @@ Result<exec_aten::Tensor> Runner::run_model_step(
     // Return the logits tensor
     return outputs_res.get()[0].toTensor();
   } else { // no kv cache
-    std::vector<EValue> inputs;
     (void)managed_start_pos; // unused
 
-    Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
+    Result<std::vector<EValue>> outputs_res = module_->forward({tokens});
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_CHECK_MSG(
         outputs_res.get().size() == 1,
