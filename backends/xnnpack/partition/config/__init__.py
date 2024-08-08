@@ -55,25 +55,23 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
 )
 
 ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
-    # GEMM-like Configs
-    AddmmConfig,
-    LinearConfig,
-    ConstantPadConfig,
-    ConvolutionConfig,
-    # BatchNorm Config
-    BatchNormConfig,
-    # Single Node Configs
     AbsConfig,
-    AvgPoolingConfig,
     AddConfig,
+    AddmmConfig,
+    AvgPoolingConfig,
+    BatchNormConfig,
     CatConfig,
     CeilConfig,
+    ConstantPadConfig,
+    ConvolutionConfig,
     ClampConfig,
     DivConfig,
+    # EluConfig, # Waiting for PyTorch Pin Update
     FloorConfig,
     HardtanhConfig,
     HardswishConfig,
     LeakyReLUConfig,
+    LinearConfig,
     MaxDimConfig,
     MaximumConfig,
     MaxPool2dConfig,
@@ -81,18 +79,17 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     MinimumConfig,
     MulConfig,
     NegConfig,
+    PermuteConfig,
     PowConfig,
     PreluConfig,
-    SoftmaxConfig,
+    ReLUConfig,
     SigmoidConfig,
     SliceCopyConfig,
+    SoftmaxConfig,
     SquareRootConfig,
     SubConfig,
-    PermuteConfig,
-    # EluConfig, # Waiting for PyTorch Pin Update
-    ReLUConfig,
     UpsampleBilinear2dConfig,
-    # Quantization Op Configs
+    # Quant/Dequant Op Configs
     QuantizedPerTensorConfig,
     DeQuantizedPerTensorConfig,
 ]
