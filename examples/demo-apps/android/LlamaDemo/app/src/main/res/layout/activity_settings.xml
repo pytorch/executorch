@@ -88,6 +88,37 @@
 
         </LinearLayout>
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/modelTypeLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:textSize="16sp"
+                android:text="Model Type" />
+
+            <TextView
+                android:id="@+id/modelTypeTextView"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical|end"
+                android:text="no model type selected" />
+
+            <ImageButton
+                android:id="@+id/modelTypeImageButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
+                android:background="#FFFFFF"
+                android:src="@drawable/outline_arrow_drop_down_circle_24" />
+
+        </LinearLayout>
         <Button
             android:id="@+id/loadModelButton"
             android:layout_width="wrap_content"
@@ -132,7 +163,7 @@
                 android:textAlignment="textEnd"
                 android:inputType="numberDecimal" />
         </LinearLayout>
-        
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -169,8 +200,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@drawable/prompt_shape"
-                android:textSize="16dp"
-                android:text = "SYS_INFO tags" />
+                android:textSize="16sp"
+                android:height="60dp"
+                android:hint="Type custom system prompt" />
         </LinearLayout>
 
         <LinearLayout
@@ -209,7 +241,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@drawable/prompt_shape"
-                android:textSize="16dp"
+                android:textSize="16sp"
                 android:text = "USER_PROMPT tags" />
         </LinearLayout>
 

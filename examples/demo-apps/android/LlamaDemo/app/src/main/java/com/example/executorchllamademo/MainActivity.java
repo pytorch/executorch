@@ -22,7 +22,6 @@ import android.os.Looper;
 import android.provider.MediaStore;
 import android.system.ErrnoException;
 import android.system.Os;
-import android.text.InputType;
 import android.util.Log;
 import android.view.View;
 import android.widget.EditText;
@@ -71,9 +70,6 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
   private SettingsFields mCurrentSettingsFields;
   private Handler mMemoryUpdateHandler;
   private Runnable memoryUpdater;
-  // UI Specific to user using INSTRUCT_MODE
-  private boolean INSTRUCT_MODE = false;
-  private String INSTRUCT_INSTRUCTION = "In Instruct Mode. Press SEND";
 
   @Override
   public void onResult(String result) {
@@ -253,7 +249,6 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
         } else {
           askUserToSelectModel();
         }
-        checkForPromptChange(updatedSettingsFields);
         checkForClearChatHistory(updatedSettingsFields);
         // Update current to point to the latest
         mCurrentSettingsFields = new SettingsFields(updatedSettingsFields);
@@ -294,29 +289,6 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     } else {
       askUserToSelectModel();
     }
-  }
-
-  private void checkForPromptChange(SettingsFields updatedSettingsFields) {
-    if (updatedSettingsFields.isSystemPromptChanged()
-        || updatedSettingsFields.isUserPromptChanged()) {
-      enableInstructMode();
-    } else {
-      disableInstructMode();
-    }
-  }
-
-  private void enableInstructMode() {
-    INSTRUCT_MODE = true;
-    mEditTextMessage.setText(INSTRUCT_INSTRUCTION);
-    mEditTextMessage.setInputType(InputType.TYPE_NULL);
-    mEditTextMessage.clearFocus();
-  }
-
-  private void disableInstructMode() {
-    INSTRUCT_MODE = false;
-    mEditTextMessage.setText("");
-    mEditTextMessage.setInputType(InputType.TYPE_CLASS_TEXT);
-    mEditTextMessage.clearFocus();
   }
 
   private void askUserToSelectModel() {
@@ -600,15 +572,11 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                             + " bytes size = "
                             + image.getBytes().length);
               });
-          String prompt;
-          if (INSTRUCT_MODE) {
-            prompt = mCurrentSettingsFields.getEntirePrompt();
-            mEditTextMessage.setText(INSTRUCT_INSTRUCTION);
-          } else {
-            prompt = mEditTextMessage.getText().toString();
-            mEditTextMessage.setText("");
-          }
-          mMessageAdapter.add(new Message(prompt, true, MessageType.TEXT, 0));
+          String rawPrompt = mEditTextMessage.getText().toString();
+          String prompt = mCurrentSettingsFields.getFormattedSystemAndUserPrompt(rawPrompt);
+          // We store raw prompt into message adapter, because we don't want to show the extra
+          // tokens from system prompt
+          mMessageAdapter.add(new Message(rawPrompt, true, MessageType.TEXT, 0));
           mMessageAdapter.notifyDataSetChanged();
           mEditTextMessage.setText("");
           mResultMessage = new Message("", false, MessageType.TEXT, 0);
