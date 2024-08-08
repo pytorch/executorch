@@ -30,6 +30,7 @@ BUILD_AARCH64="true"
 CMAKE_AARCH64="build_android"
 CLEAN="true"
 BUILD_TYPE="Debug"
+BUILD_JOB_NUMBER="16"
 
 if [ -z PYTHON_EXECUTABLE ]; then
   PYTHON_EXECUTABLE="python3"
@@ -39,7 +40,7 @@ if [ -z BUCK2 ]; then
   BUCK2="buck2"
 fi
 
-long_options=skip_x86_64,skip_aarch64,no_clean,release
+long_options=skip_x86_64,skip_aarch64,no_clean,release,job_number:
 
 parsed_args=$(getopt -a --options '' --longoptions $long_options --name "$0" -- "$@")
 eval set -- "$parsed_args"
@@ -51,6 +52,7 @@ while true ; do
         --skip_aarch64) BUILD_AARCH64="false"; shift;;
         --no_clean) CLEAN="false"; shift;;
         --release) BUILD_TYPE="Release"; shift;;
+        --job_number) BUILD_JOB_NUMBER="$2"; shift 2;;
         --) shift; break;;
     esac
 done
@@ -82,7 +84,7 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -B$BUILD_ROOT
 
-    cmake --build $BUILD_ROOT -j16 --target install
+    cmake --build $BUILD_ROOT -j$BUILD_JOB_NUMBER --target install
 
     EXAMPLE_ROOT=examples/qualcomm
     CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"
@@ -97,7 +99,7 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -B$EXAMPLE_ROOT
 
-    cmake --build $EXAMPLE_ROOT -j16
+    cmake --build $EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
 fi
 
 if [ "$BUILD_X86_64" = true ]; then
@@ -120,7 +122,7 @@ if [ "$BUILD_X86_64" = true ]; then
         -S $PRJ_ROOT \
         -B $BUILD_ROOT \
 
-    cmake --build $BUILD_ROOT -j16 --target install
+    cmake --build $BUILD_ROOT -j$BUILD_JOB_NUMBER --target install
 
     rm -f $PRJ_ROOT/backends/qualcomm/python/*
     cp -fv $BUILD_ROOT/backends/qualcomm/Py* "$PRJ_ROOT/backends/qualcomm/python"
@@ -135,5 +137,5 @@ if [ "$BUILD_X86_64" = true ]; then
        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
        -B$EXAMPLE_ROOT
 
-   cmake --build $EXAMPLE_ROOT -j16
+   cmake --build $EXAMPLE_ROOT -j$BUILD_JOB_NUMBER
 fi
