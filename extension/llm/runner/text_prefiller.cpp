@@ -44,7 +44,7 @@ Result<uint64_t> TextPrefiller::prefill(
 
     ManagedTensor managed_start_pos(&start_pos, {1}, ScalarType::Long);
 
-    Result<torch::executor::Tensor> outputs_res =
+    Result<exec_aten::Tensor> outputs_res =
         text_decoder_runner_->step(managed_tokens, managed_start_pos);
 
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
@@ -82,7 +82,7 @@ Result<uint64_t> TextPrefiller::prefill(
       // Run the model
       pos_data = start_pos + pos;
 
-      Result<torch::executor::Tensor> logits_res =
+      Result<exec_aten::Tensor> logits_res =
           text_decoder_runner_->step(managed_tokens, managed_start_pos);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
