@@ -261,3 +261,13 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.max_pool2d.default
+
+
+class UpsampleBilinear2dConfig(GenericNodePartitionerConfig):
+    target_name = "upsample_bilinear2d.vec"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.upsample_bilinear2d.vec
