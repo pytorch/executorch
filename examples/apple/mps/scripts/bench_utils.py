@@ -5,47 +5,11 @@
 
 import logging
 import time
-import unittest
 from typing import Tuple
 
 import torch
+from executorch.backends.apple.mps.test.test_mps_utils import TestMPS
 from torch.export.exported_program import ExportedProgram
-
-
-class TestModule(unittest.TestCase):
-    def assert_outputs_equal(self, model_output, ref_output, use_fp16: bool = False):
-        """
-        Helper testing function that asserts that the model output and the reference output
-        are equal with some tolerance. Due to numerical differences between eager mode and
-        the MPS's backend, we relax the detal such that absolute tolerance is 1e-3. and
-        relative tolerance is 1e-3.
-        """
-        # Compare the result from executor and eager mode direclty
-        if isinstance(ref_output, tuple) or isinstance(ref_output, list):
-            # Multiple outputs executor always returns tuple, even if there is one output
-            assert len(ref_output) == len(
-                model_output
-            ), "Length of outputs is not matching!"
-            for i in range(len(ref_output)):
-                res_output = model_output[i].cpu()
-                ref_output = ref_output[i].cpu()
-                if use_fp16 and ref_output.dtype == torch.float16:
-                    # cast back from fp16 to fp32 (ExecuTorch results are in FP32 by default)
-                    ref_output = ref_output.to(torch.float32)
-
-                mean_err = ((res_output - ref_output).abs() / ref_output).mean()
-                logging.info(f"mean err = {mean_err}")
-                self.assertLess(mean_err, 0.05)
-        else:
-            # If one output, eager returns tensor while executor tuple of size 1
-            if use_fp16 and ref_output.dtype == torch.float16:
-                # cast back from fp16 to fp32 (ExecuTorch results are in FP32 by default)
-                ref_output = ref_output.to(torch.float32)
-            ref_output = ref_output.cpu()
-            res_output = model_output[0].cpu()
-            mean_err = ((res_output - ref_output).abs() / ref_output).mean()
-            logging.info(f"mean err = {mean_err}")
-            self.assertLess(mean_err, 0.05)
 
 
 def bench_forward(func, *args):
@@ -121,7 +85,7 @@ def compare_outputs(
     model_name: str,
     use_fp16: bool,
 ):
-    test_module = TestModule()
+    test_module = TestMPS()
     inputs_copy = []
     if use_fp16:
         model = model.to(torch.float16)
