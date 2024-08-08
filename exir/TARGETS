@@ -108,6 +108,7 @@ python_library(
     name = "delegate",
     srcs = [
         "delegate.py",
+        "delegate.pyi",
     ],
     deps = [
         "//caffe2:torch",
