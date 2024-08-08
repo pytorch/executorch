@@ -105,7 +105,9 @@ def get_coreml_partitioner(
 
 
 def get_qnn_partitioner(
-    quant_dtype, use_kv_cache: bool = False, pt2e_quantize: Optional[str] = None
+    use_kv_cache: bool = False,
+    pt2e_quantize: Optional[str] = None,
+    num_sharding: int = None,
 ):
     assert (
         use_kv_cache is True
@@ -115,9 +117,6 @@ def get_qnn_partitioner(
         from executorch.backends.qualcomm.partition.qnn_partitioner import (
             QnnPartitioner,
         )
-
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.quantizer.quantizer`
-        from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.serialization.qnn_compile_spec_schema`
         from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
@@ -135,27 +134,20 @@ def get_qnn_partitioner(
         )
 
     use_fp16 = True
-    skip_node_op_set = {}
+    skip_node_op_set = {"llama.fallback.default"}
     if pt2e_quantize is not None:
         use_fp16 = False
-        # TODO: fix the lowering error without skipping nodes
-
-        if quant_dtype == QuantDtype.use_8a8w:
-            raise NotImplementedError("8a8w for llama is still under development")
-
-        elif quant_dtype == QuantDtype.use_16a16w:
-            raise NotImplementedError("16a16w for llama is still under development")
-
-        elif quant_dtype == QuantDtype.use_16a4w:
-            raise NotImplementedError("16a4w for llama is still under development")
 
     return QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
             soc_model=QcomChipset.SM8650,  # default to SM8650
-            backend_options=generate_htp_compiler_spec(use_fp16=use_fp16),
+            backend_options=generate_htp_compiler_spec(
+                use_fp16=use_fp16,
+                use_multi_contexts=num_sharding is not None,
+            ),
             debug=False,
             saver=False,
         ),
-        skip_node_id_set={},
+        skip_node_id_set=None,
         skip_node_op_set=skip_node_op_set,
     )

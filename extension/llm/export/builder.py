@@ -11,8 +11,11 @@
 import logging
 from enum import Enum
 from typing import Any, Callable, List, Optional
+from functools import partial
 
 import torch
+from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
+from sentencepiece import SentencePieceProcessor
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
@@ -166,7 +169,28 @@ class LLMEdgeManager:
             )
         return self
 
-    def pt2e_quantize(self, quantizers: Optional[List[Quantizer]]) -> "LLMEdgeManager":
+    def calibrate(self, module: torch.fx.GraphModule):
+        tokenizer = SimpleTokenizer("tokenizer.model")
+
+        # TODO: change criteria & support batch inputs if necessary
+        pos = torch.tensor(0, dtype=torch.int32)
+        token_list = [tokenizer.bos_id] + tokenizer.encode("Once upon a time")
+
+        with torch.no_grad():
+            while token_list[-1] != tokenizer.eos_id and pos < 128:
+                logits = module(
+                    torch.full((1, 1), token_list[pos]),
+                    torch.tensor((pos, )),
+                )
+                pos += 1
+                if pos >= len(token_list):
+                    token_list.append(torch.argmax(logits[:, -1], dim=-1).item())
+
+        print(f"calibration data:\n{tokenizer.decode(token_list)}")
+
+    def pt2e_quantize(
+        self, quantizers: Optional[List[Quantizer]]
+    ) -> "LlamaEdgeManager":
         """
         Quantize the model via pt2e flow and retrieve LLMEdgeManager including the quantized model.
         Args:
@@ -189,7 +213,8 @@ class LLMEdgeManager:
                 ), "Please run capture_pre_autograd_graph first"
                 m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
                 # Calibrate
-                m(*self.example_inputs)
+                self.calibrate(m)
+                # m(*self.example_inputs)
                 m = convert_pt2e(m)
                 DuplicateDynamicQuantChainPass()(m)
                 self.pre_autograd_graph_module = m
@@ -294,3 +319,19 @@ class LLMEdgeManager:
         Return the filename of the most recenet saved .pte file. Return None if the model is not saved.
         """
         return self._saved_pte_filename
+
+class SimpleTokenizer:
+    def __init__(self, model_path):
+        try:
+            module = SentencePieceProcessor(model_file=model_path)
+            self.bos_id = module.bos_id()
+            self.eos_id = module.eos_id()
+            self.encode = module.encode
+            self.decode = module.decode
+        except Exception:
+            print("Using Tiktokenizer")
+            module = Tiktoken(model_path=model_path)
+            self.bos_id = module.bos_id
+            self.eos_id = module.eos_id
+            self.encode = partial(module.encode, bos=False, eos=False)
+            self.decode = module.decode
