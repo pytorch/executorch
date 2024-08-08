@@ -41,8 +41,8 @@ Runner::Runner(
     // NOTE: we observed ~2x loading performance increase on iPhone 15
     // and a ~5% improvement on Galaxy S22 by switching to
     // FileDataLoader instead of MmapDataLoader + UseMlockIgnoreErrors.
-    : module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
-      temperature_(temperature),
+    : temperature_(temperature),
+      module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
       tokenizer_path_(tokenizer_path) {
   ET_LOG(
       Info,
@@ -94,98 +94,17 @@ Error Runner::load() {
   eos_id_ = get_module_metadata<int64_t>(
       module_.get(), "get_eos_id", tokenizer_->eos_tok());
 
-  // Create text decoder runner
+  // Create text decoder runner and prefiller
   text_decoder_runner_ = std::make_unique<TextDecoderRunner>(
       module_.get(), use_kv_cache_, vocab_size_, temperature_);
 
+  text_prefiller_ = std::make_unique<TextPrefiller>(
+      tokenizer_.get(),
+      text_decoder_runner_.get(),
+      use_kv_cache_,
+      enable_parallel_prefill_);
+
   return Error::Ok;
-}
-
-Result<uint64_t> Runner::prefill(
-    std::vector<uint64_t>& prompt_tokens,
-    int64_t start_pos,
-    std::function<void(const std::string&)> token_callback) {
-  // enable_parallel_prefill_ maybe set even when not using kv cache
-  // When kv cache is not used, start pos is ignored
-  int32_t num_prompt_tokens = prompt_tokens.size();
-
-  ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
-  ET_CHECK_MSG(
-      num_prompt_tokens < max_seq_len_,
-      "Max seq length exceeded - please increase max seq len value");
-
-  // store the token
-  uint64_t cur_token;
-  if (enable_parallel_prefill_ || !use_kv_cache_) {
-    // initialize tensor wrappers
-    ManagedTensor managed_tokens(
-        prompt_tokens.data(), {1, num_prompt_tokens}, ScalarType::Long);
-
-    ManagedTensor managed_start_pos(&start_pos, {1}, ScalarType::Long);
-
-    Result<torch::executor::Tensor> outputs_res =
-        text_decoder_runner_->step(managed_tokens, managed_start_pos);
-
-    ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
-    ET_LOG(
-        Info, "Prefill token result numel(): %zu", outputs_res.get().numel());
-    ET_CHECK_MSG(
-        outputs_res.get().size(1) == num_prompt_tokens,
-        "Expected number of output tokens %d does not match returned value %zu.",
-        num_prompt_tokens,
-        outputs_res.get().size(1));
-    // insert new token into prompt_tokens
-    // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
-    uint64_t prev = prompt_tokens[0];
-    uint64_t cur;
-    for (int i = 1; i < prompt_tokens.size(); i++) {
-      cur = prompt_tokens[i];
-      token_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
-      prev = cur;
-    }
-    cur_token = text_decoder_runner_->logits_to_token(outputs_res.get());
-  } else { // sequential prefill
-    int64_t pos = 0; // position in the sequence
-    uint64_t prev_token;
-    // token & pos
-    int64_t pos_data = 0;
-    // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
-    cur_token = prompt_tokens[0];
-
-    // initialize tensor wrappers
-    ManagedTensor managed_tokens(&cur_token, {1, 1}, ScalarType::Long);
-
-    ManagedTensor managed_start_pos(&pos_data, {1}, ScalarType::Long);
-
-    while (pos < num_prompt_tokens) {
-      // Run the model
-      pos_data = start_pos + pos;
-
-      Result<torch::executor::Tensor> logits_res =
-          text_decoder_runner_->step(managed_tokens, managed_start_pos);
-
-      ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
-      prev_token = cur_token;
-
-      pos++;
-
-      long sample_start_time_ms = util::time_in_ms();
-
-      cur_token = pos == num_prompt_tokens
-          ? text_decoder_runner_->logits_to_token(logits_res.get())
-          : prompt_tokens[pos];
-
-      stats_.aggregate_sampling_time_ms +=
-          util::time_in_ms() - sample_start_time_ms;
-
-      // print the token as string, decode it with the Tokenizer object
-      token_callback(ET_UNWRAP(tokenizer_->decode(prev_token, cur_token)));
-    }
-  }
-  // Return the next token
-  stats_.first_token_ms = util::time_in_ms();
-  stats_.prompt_eval_end_ms = util::time_in_ms();
-  return cur_token;
 }
 
 Error Runner::generate(
@@ -242,9 +161,12 @@ Error Runner::generate(
   // Prefill first
   // Here feed all tokens to the model and get the next predicted token
   // after the prompt. After that we will enter generate loop.
-  auto prefill_res = prefill(prompt_tokens, 0, wrapped_callback);
+  auto prefill_res =
+      text_prefiller_->prefill(prompt_tokens, 0, wrapped_callback);
+  stats_.first_token_ms = util::time_in_ms();
+  stats_.prompt_eval_end_ms = util::time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
-  int64_t cur_token = prefill_res.get();
+  uint64_t cur_token = prefill_res.get();
 
   // print the first token from prefill. No prev_token so use cur_token for it.
   wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
@@ -253,7 +175,7 @@ Error Runner::generate(
   int64_t pos = num_prompt_tokens; // position in the sequence
 
   // Generate the rest of the sequence
-  std::vector<int64_t> token_data; // allocate space for the tokens
+  std::vector<uint64_t> token_data; // allocate space for the tokens
   std::vector<exec_aten::SizesType> token_shape;
 
   if (use_kv_cache_) {
@@ -261,9 +183,7 @@ Error Runner::generate(
     token_data = {cur_token};
     token_shape = {1, 1};
   } else {
-    for (auto tok : prompt_tokens) {
-      token_data.push_back(tok);
-    }
+    token_data = prompt_tokens;
     token_data.push_back(cur_token);
     token_shape = {1, num_prompt_tokens + 1};
   }
@@ -274,7 +194,7 @@ Error Runner::generate(
 
   ManagedTensor start_pos_managed(&pos, {1}, ScalarType::Long);
 
-  int64_t prev_token;
+  uint64_t prev_token;
 
   // Generate our tokens
   while (pos < seq_len - 1) {

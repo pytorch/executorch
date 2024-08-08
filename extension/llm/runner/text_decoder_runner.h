@@ -32,7 +32,9 @@ class TextDecoderRunner {
    * Module.
    * @return The output of the LLM Module. This will be a tensor of logits.
    */
-  Result<exec_aten::Tensor> step(ManagedTensor& input, ManagedTensor& start_pos);
+  Result<exec_aten::Tensor> step(
+      ManagedTensor& input,
+      ManagedTensor& start_pos);
 
   /**
    * Load the Module for a given method name.
