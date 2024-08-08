@@ -292,3 +292,37 @@ class LeakyReLUConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
+
+
+class MeanDimConfig(GenericNodePartitionerConfig):
+    target_name = "mean.dim"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Mean Dim currently only supports averaging 4D tensors across the innermost
+        dimensions
+        """
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        dims = node.args[1]
+        output_dims = node.meta["val"].dim()
+
+        return dims in ([-2, -1], [-1, -2]) and output_dims == 4
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class MinimumConfig(GenericNodePartitionerConfig):
+    target_name = "minimum.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class NegConfig(GenericNodePartitionerConfig):
+    target_name = "neg.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
