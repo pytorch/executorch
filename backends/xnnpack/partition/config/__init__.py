@@ -20,6 +20,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     CatConfig,
     CeilConfig,
     ClampConfig,
+    ConstantPadConfig,
     DeQuantizedPerTensorConfig,
     DivConfig,
     FloorConfig,
@@ -40,6 +41,8 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     SigmoidConfig,
     SliceCopyConfig,
     SoftmaxConfig,
+    SquareRootConfig,
+    SubConfig,
     UpsampleBilinear2dConfig,
 )
 from executorch.backends.xnnpack.partition.config.node_configs import (
@@ -55,6 +58,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     # GEMM-like Configs
     AddmmConfig,
     LinearConfig,
+    ConstantPadConfig,
     ConvolutionConfig,
     # BatchNorm Config
     BatchNormConfig,
@@ -82,6 +86,8 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     SoftmaxConfig,
     SigmoidConfig,
     SliceCopyConfig,
+    SquareRootConfig,
+    SubConfig,
     PermuteConfig,
     # EluConfig, # Waiting for PyTorch Pin Update
     ReLUConfig,

@@ -382,3 +382,24 @@ class SliceCopyConfig(GenericNodePartitionerConfig):
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
+
+
+class SquareRootConfig(GenericNodePartitionerConfig):
+    target_name = "sqrt.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class ConstantPadConfig(GenericNodePartitionerConfig):
+    target_name = "constant_pad_nd.default"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class SubConfig(GenericNodePartitionerConfig):
+    target_name = "sub.Tensor"
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
