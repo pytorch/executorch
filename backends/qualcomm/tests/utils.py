@@ -231,7 +231,7 @@ class TestQNN(unittest.TestCase):
                 qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
                 assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
 
-                build_path = "build_x86_64"
+                build_path = "cmake-out"
                 cmds = [
                     # export LD_LIBRARY_PATH to QNN_SDK_ROOT
                     f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{self.executorch_root}/{build_path}/lib && "

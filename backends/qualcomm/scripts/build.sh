@@ -25,9 +25,9 @@ usage() {
 [ "$1" = -h ] && usage
 
 BUILD_X86_64="true"
-CMAKE_X86_64="build_x86_64"
+CMAKE_X86_64="cmake-out"
 BUILD_AARCH64="true"
-CMAKE_AARCH64="build_android"
+CMAKE_AARCH64="cmake-out-android"
 CLEAN="true"
 BUILD_TYPE="Debug"
 

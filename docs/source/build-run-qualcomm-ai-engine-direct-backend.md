@@ -126,8 +126,8 @@ Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct b
 
 ```bash
 cd $EXECUTORCH_ROOT
-mkdir build_x86_64
-cd build_x86_64
+mkdir cmake-out
+cd cmake-out
 # Note that the below command might change.
 # Please refer to the above build.sh for latest workable commands.
 cmake .. \
@@ -140,7 +140,9 @@ cmake .. \
   -DPYTHON_EXECUTABLE=python3 \
   -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF
 
-cmake --build $PWD -t "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j8
+# nproc is used to detect the number of available CPU.
+# If it is not applicable, please feel free to use the number you want.
+cmake --build $PWD --target "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j$(nproc)
 
 # install Python APIs to correct import path
 # The filename might vary depending on your Python and host version.
@@ -156,8 +158,8 @@ Commands to build `qnn_executor_runner` for Android:
 
 ```bash
 cd $EXECUTORCH_ROOT
-mkdir build_android
-cd build_android
+mkdir cmake-out-android
+cd cmake-out-android
 # build executorch & qnn_executorch_backend
 cmake .. \
     -DCMAKE_INSTALL_PREFIX=$PWD \
@@ -171,7 +173,9 @@ cmake .. \
     -DANDROID_ABI='arm64-v8a' \
     -DANDROID_NATIVE_API_LEVEL=23
 
-cmake --build $PWD -j16 --target install
+# nproc is used to detect the number of available CPU.
+# If it is not applicable, please feel free to use the number you want.
+cmake --build $PWD --target install -j$(nproc)
 
 cmake ../examples/qualcomm \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
@@ -182,10 +186,10 @@ cmake ../examples/qualcomm \
     -DPYTHON_EXECUTABLE=python3 \
     -Bexamples/qualcomm
 
-cmake --build examples/qualcomm -j16
+cmake --build examples/qualcomm -j$(nproc)
 
 # qnn_executor_runner can be found under examples/qualcomm
-# The full path is $EXECUTORCH_ROOT/build_android/examples/qualcomm/qnn_executor_runner
+# The full path is $EXECUTORCH_ROOT/cmake-out-android/examples/qualcomm/qnn_executor_runner
 ls examples/qualcomm
 ```
 
@@ -227,6 +231,58 @@ output         output                    output                       ([getitem_
 
 The compiled model is `./deeplab_v3/dlv3_qnn.pte`.
 
+
+### Test model inference on QNN HTP emulator
+
+We can test model inferences before deploying it to a device by HTP emulator.
+
+Let's build `qnn_executor_runner` for a x64 host:
+```bash
+# assuming the AOT component is built.
+cd $EXECUTORCH_ROOT/cmake-out
+cmake ../examples/qualcomm \
+  -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
+  -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+  -DPYTHON_EXECUTABLE=python3 \
+  -Bexamples/qualcomm
+
+cmake --build examples/qualcomm -j$(nproc)
+
+# qnn_executor_runner can be found under examples/qualcomm
+# The full path is $EXECUTORCH_ROOT/cmake-out/examples/qualcomm/qnn_executor_runner
+ls examples/qualcomm/
+```
+
+To run the HTP emulator, the dynamic linker need to access QNN libraries and `libqnn_executorch_backend.so`.
+We set the below two paths to `LD_LIBRARY_PATH` environment variable:
+  1. `$QNN_SDK_ROOT/lib/x86_64-linux-clang/`
+  2. `$EXECUTORCH_ROOT/cmake-out/lib/`
+
+The first path is for QNN libraries including HTP emulator. It has been configured in the AOT compilation section.
+
+The second path is for `libqnn_executorch_backend.so`.
+
+So, we can run `./deeplab_v3/dlv3_qnn.pte` by:
+```bash
+cd $EXECUTORCH_ROOT/cmake-out
+export LD_LIBRARY_PATH=$EXECUTORCH_ROOT/cmake-out/lib/:$LD_LIBRARY_PATH
+examples/qualcomm/qnn_executor_runner --model_path ../deeplab_v3/dlv3_qnn.pte
+```
+
+We should see some outputs like the below. Note that the emulator can take some time to finish.
+```bash
+I 00:00:00.354662 executorch:qnn_executor_runner.cpp:213] Method loaded.
+I 00:00:00.356460 executorch:qnn_executor_runner.cpp:261] ignoring error from set_output_data_ptr(): 0x2
+I 00:00:00.357991 executorch:qnn_executor_runner.cpp:261] ignoring error from set_output_data_ptr(): 0x2
+I 00:00:00.357996 executorch:qnn_executor_runner.cpp:265] Inputs prepared.
+
+I 00:01:09.328144 executorch:qnn_executor_runner.cpp:414] Model executed successfully.
+I 00:01:09.328159 executorch:qnn_executor_runner.cpp:421] Write etdump to etdump.etdp, Size = 424
+[INFO] [Qnn ExecuTorch]: Destroy Qnn backend parameters
+[INFO] [Qnn ExecuTorch]: Destroy Qnn context
+[INFO] [Qnn ExecuTorch]: Destroy Qnn device
+[INFO] [Qnn ExecuTorch]: Destroy Qnn backend
+```
 
 ### Run model inference on an Android smartphone with Qualcomm SoCs
 
@@ -276,7 +332,7 @@ I 00:00:00.364875 executorch:qnn_executor_runner.cpp:425] Write etdump to etdump
 
 The model is merely executed. If we want to feed real inputs and get model outputs, we can use
 ```bash
-cd
+cd $EXECUTORCH_ROOT
 python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --download -s <device_serial>
 ```
 The `<device_serial>` can be found by `adb devices` command.
@@ -292,6 +348,9 @@ The model, inputs, and output location are passed to `qnn_executorch_runner` by 
 An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
 `examples`. Please refer to android demo app [tutorial](https://pytorch.org/executorch/stable/demo-apps-android.html).
 
+## Supported model list
+
+Please refer to `$EXECUTORCH_ROOT/examples/qualcomm/scripts/` and `EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/` to the list of supported models.
 
 ## What is coming?
 
