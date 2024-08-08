@@ -26,3 +26,18 @@ def define_common_targets():
                 "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
             ],
         )
+
+        runtime.cxx_library(
+            name = "text_prefiller" + aten_suffix,
+            exported_headers = ["text_prefiller.h"],
+            srcs = ["text_prefiller.cpp"],
+            visibility = [
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                ":text_decoder_runner" + aten_suffix,
+                "//executorch/extension/llm/tokenizer:tokenizer_header",
+                "//executorch/extension/module:module" + aten_suffix,
+                "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
+            ],
+        )

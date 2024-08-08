@@ -60,15 +60,28 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "tokenizer_header",
+        exported_headers = [
+            "tokenizer.h",
+        ],
+        exported_deps = [
+            "//executorch/runtime/core:core",
+        ],
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    runtime.cxx_library(
         name = "bpe_tokenizer",
         srcs = [
             "bpe_tokenizer.cpp",
         ],
         exported_headers = [
-            "tokenizer.h",
             "bpe_tokenizer.h",
         ],
         exported_deps = [
+            ":tokenizer_header",
             "//executorch/runtime/core:core",
         ],
         visibility = [
@@ -82,11 +95,11 @@ def define_common_targets():
             "tiktoken.cpp",
         ],
         exported_headers = [
-            "tokenizer.h",
             "tiktoken.h",
             "base64.h",
         ],
         exported_deps = [
+            ":tokenizer_header",
             "//executorch/runtime/core:core",
         ],
         visibility = [
