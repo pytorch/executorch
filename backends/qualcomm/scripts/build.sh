@@ -16,7 +16,7 @@ usage() {
   echo "Usage: Build the aarch64 version of executor runner or the python interface of Qnn Manager"
   echo "First, you need to set the environment variable for QNN_SDK_ROOT"
   echo ", and if you want to build the aarch64 version of executor runner"
-  echo ", you need to set ANDROID_NDK_ROOT"
+  echo ", you need to export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
   echo "e.g.: executorch$ ./backends/qualcomm/scripts/build.sh --skip_x86_64"
   exit 1
 }
@@ -25,9 +25,9 @@ usage() {
 [ "$1" = -h ] && usage
 
 BUILD_X86_64="true"
-CMAKE_X86_64="build_x86_64"
+CMAKE_X86_64="cmake-out"
 BUILD_AARCH64="true"
-CMAKE_AARCH64="build_android"
+CMAKE_AARCH64="cmake-out-android"
 CLEAN="true"
 BUILD_TYPE="Debug"
 BUILD_JOB_NUMBER="16"
@@ -61,7 +61,7 @@ PRJ_ROOT="$( cd "$(dirname "$0")/../../.." ; pwd -P)"
 
 if [ "$BUILD_AARCH64" = true ]; then
     if [[ -z ${ANDROID_NDK_ROOT} ]]; then
-        echo "Please export ANDROID_NDK_ROOT=/path/to/android_ndk"
+        echo "Please export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
         exit -1
     fi
     BUILD_ROOT=$PRJ_ROOT/$CMAKE_AARCH64
