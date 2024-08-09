@@ -22,9 +22,12 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
+
+namespace executorch {
+namespace extension {
 
 namespace {
 
@@ -254,6 +257,5 @@ Result<size_t> MmapDataLoader::size() const {
   return file_size_;
 }
 
-} // namespace util
-} // namespace executor
-} // namespace torch
+} // namespace extension
+} // namespace executorch
