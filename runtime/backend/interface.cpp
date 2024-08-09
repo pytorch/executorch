@@ -9,12 +9,12 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 PyTorchBackendInterface::~PyTorchBackendInterface() {}
 
-// Task t128866626: Remove global static variables.
+// TODO(T128866626): Remove global static variables.
 // We want to be able to run multiple Executor instances
 // and having a global registration isn't a viable solution
 // in the long term.
@@ -56,5 +56,5 @@ Error BackendRegistry::register_backend(const Backend& backend) {
   return Error::Ok;
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch
