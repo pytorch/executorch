@@ -13,8 +13,8 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <inttypes.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 namespace {
 static uint8_t prof_buf[prof_buf_size * MAX_PROFILE_BLOCKS];
@@ -191,5 +191,5 @@ ExecutorchProfiler::~ExecutorchProfiler() {
   end_profiling(prof_tok);
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch
