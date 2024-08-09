@@ -99,7 +99,6 @@ class Llava(torch.nn.Module):
             assign=True,
         )
         self.image_processor = image_processor
-        self.vision_tower = self.get_model().vision_tower
         self.mm_projector = self.get_model().mm_projector
 
     def _translate_state_dict_for_text_model(self) -> Dict[str, Any]:
@@ -143,8 +142,8 @@ class Llava(torch.nn.Module):
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
         images = images.to(dtype=self.get_model().dtype)
-        image_features = self.vision_tower(images)
-        image_features = self.mm_projector(image_features)
+        image_features = self.get_model().vision_tower(images)
+        image_features = self.get_model().mm_projector(image_features)
         return image_features
 
     def image_preprocess(self, img: torch.Tensor) -> torch.Tensor:
