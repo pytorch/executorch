@@ -27,9 +27,6 @@
 namespace torch {
 namespace executor {
 
-class KernelRuntimeContext; // Forward declaration
-using RuntimeContext = KernelRuntimeContext; // TODO(T147221312): Remove
-
 // Map types from ETen to ATen.
 // This is used to convert ETen arguments into ATen.
 template <typename T>
