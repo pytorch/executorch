@@ -74,7 +74,7 @@ TEST_F(OpPixelShuffleOutTest, AllRealDtypesSupported) {
 TEST_F(OpPixelShuffleOutTest, LargerInputRank) {
   TensorFactory<ScalarType::Int> tf;
 
-  // Pixel shuffle allows a 4D (or higher) input tensor, make sure the extra
+  // Pixel shuffle allows a 3D (or higher) input tensor, make sure the extra
   // dimensions don't cause issues.
   Tensor a = tf.ones(/*sizes=*/{1, 4, 1, 4, 2, 2});
 
@@ -102,11 +102,8 @@ TEST_F(OpPixelShuffleOutTest, InvalidInputChannelsDies) {
 TEST_F(OpPixelShuffleOutTest, WrongInputRankDies) {
   TensorFactory<ScalarType::Int> tf;
 
-  // Pixel shuffle requires a 4D input tensor.
+  // Pixel shuffle requires a 3D or higher input tensor.
   Tensor a = tf.ones(/*sizes=*/{1, 2});
-
-  // NOTE: The wrong output rank dies for the portable kernel, but not the aten
-  // kernel.
   Tensor out = tf.zeros(/*sizes=*/{1, 2});
 
   // Using the wrong input shape should exit with an error code.
