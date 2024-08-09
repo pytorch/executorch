@@ -50,7 +50,7 @@ xcode-select --install
 
 ```bash
 cd executorch
-./build/build_apple_frameworks.sh --Release --coreml
+./build/build_apple_frameworks.sh --coreml
 ```
 5. Open the project in Xcode, and drag `executorch.xcframework` and `coreml_backend.xcframework` frameworks generated from Step 2 to Frameworks.
 

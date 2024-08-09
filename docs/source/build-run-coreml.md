@@ -127,7 +127,7 @@ python examples/apple/coreml/scripts/inspector_cli.py --etdump_path etdump.etdp 
 1. Build frameworks, running the following will create a `executorch.xcframework` and `coreml_backend.xcframework` in the `cmake-out` directory.
 ```bash
 cd executorch
-./build/build_apple_frameworks.sh --Release --coreml
+./build/build_apple_frameworks.sh --coreml
 ```
 2. Create a new [Xcode project](https://developer.apple.com/documentation/xcode/creating-an-xcode-project-for-an-app#) or open an existing project.
 
