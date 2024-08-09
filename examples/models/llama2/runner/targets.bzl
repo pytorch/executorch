@@ -22,7 +22,6 @@ def define_common_targets():
             ],
             exported_headers = [
                 "runner.h",
-                "util.h",
             ],
             preprocessor_flags = [
                 "-DUSE_ATEN_LIB",
