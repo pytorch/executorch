@@ -11,9 +11,9 @@
 #include <cinttypes>
 #include <sstream>
 // patternlint-disable-next-line executorch-cpp-nostdinc
-#include <string>
-
+#include <executorch/extension/llm/runner/util.h>
 #include <executorch/runtime/platform/log.h>
+#include <string>
 namespace executorch::llm {
 
 struct Stats {
@@ -40,6 +40,18 @@ struct Stats {
   int64_t num_prompt_tokens;
   // Token count from generated (total - prompt)
   int64_t num_generated_tokens;
+  inline void on_sampling_begin() {
+    aggregate_sampling_timer_start_timestamp =
+        ::torch::executor::util::time_in_ms();
+  }
+  inline void on_sampling_end() {
+    aggregate_sampling_time_ms += ::torch::executor::util::time_in_ms() -
+        aggregate_sampling_timer_start_timestamp;
+    aggregate_sampling_timer_start_timestamp = 0;
+  }
+
+ private:
+  long aggregate_sampling_timer_start_timestamp = 0;
 };
 
 static constexpr auto kTopp = 0.9f;
