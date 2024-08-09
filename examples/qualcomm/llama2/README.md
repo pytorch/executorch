@@ -34,7 +34,7 @@ echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps":
 Default example generates the story based on the given prompt, "Once".
 ```bash
 # 16a4w quant:
-python examples/qualcomm/llama2/llama.py -a ${ARTIFACTS} -b build_android -s ${SERIAL_NUM} -m ${SOC_MODEL} --ptq 16a4w --checkpoint stories110M --params params.json --tokenizer_model tokenizer.model --tokenizer_bin tokenizer.bin --prompt "Once"
+python examples/qualcomm/llama2/llama.py -a ${ARTIFACTS} -b cmake-out-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --ptq 16a4w --checkpoint stories110M --params params.json --tokenizer_model tokenizer.model --tokenizer_bin tokenizer.bin --prompt "Once"
 ```
 
 #### (Note) Customized PTQ data set
@@ -63,5 +63,5 @@ python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o token
 #### Step3: Run default examples
 ```bash
 # AIHUB_CONTEXT_BINARIES: ${PATH_TO_AIHUB_WORKSPACE}/build/llama_v2_7b_chat_quantized
-python examples/qualcomm/llama2/llama_qaihub.py -a ${ARTIFACTS} -b build_android -s ${SERIAL_NUM} -m ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_bin tokenizer.bin --prompt "What is Python?"
+python examples/qualcomm/llama2/llama_qaihub.py -a ${ARTIFACTS} -b cmake-out-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_bin tokenizer.bin --prompt "What is Python?"
 ```

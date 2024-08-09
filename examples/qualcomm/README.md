@@ -10,13 +10,13 @@ Here are some general information and limitations.
 
 Please finish tutorial [Setting up executorch](https://pytorch.org/executorch/stable/getting-started-setup).
 
-Please finish [setup QNN backend](../../backends/qualcomm/setup.md).
+Please finish [setup QNN backend](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md).
 
 ## Environment
 
 Please set up `QNN_SDK_ROOT` environment variable.
 Note that this version should be exactly same as building QNN backend.
-Please check [setup](../../backends/qualcomm/setup.md).
+Please check [setup](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md).
 
 Please set up `LD_LIBRARY_PATH` to `$QNN_SDK_ROOT/lib/x86_64-linux-clang`.
 Or, you could put QNN libraries to default search path of the dynamic linker.
@@ -39,12 +39,12 @@ cd $EXECUTORCH_ROOT/examples/qualcomm/scripts
 
 #### For MobileNet_v2
 ```bash
-python mobilenet_v2.py -s <device_serial> -m "SM8550" -b path/to/build_android/ -d /path/to/imagenet-mini/val
+python mobilenet_v2.py -s <device_serial> -m "SM8550" -b path/to/cmake-out-android/ -d /path/to/imagenet-mini/val
 ```
 
 #### For DeepLab_v3
 ```bash
-python deeplab_v3.py -s <device_serial> -m "SM8550" -b path/to/build_android/ --download
+python deeplab_v3.py -s <device_serial> -m "SM8550" -b path/to/cmake-out-android/ --download
 ```
 
 ## Additional Dependency

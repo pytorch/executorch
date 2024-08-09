@@ -336,7 +336,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-b",
         "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/build_android",
+        help="path to cmake binary directory for android, e.g., /path/to/cmake-out-android",
         type=str,
         required=True,
     )

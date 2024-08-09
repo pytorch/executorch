@@ -231,23 +231,41 @@ class TestQNN(unittest.TestCase):
                 qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
                 assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
 
-                build_path = "build_x86_64"
-                cmds = [
-                    # export LD_LIBRARY_PATH to QNN_SDK_ROOT
-                    f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{self.executorch_root}/{build_path}/lib && "
+                build_folder = self.build_folder
+                if os.path.isabs(self.build_folder):
+                    # obey user's opinion
+                    pass
+                else:
+                    # ok, assuming the user give a relative path to cwd
+                    build_folder = os.path.join(os.getcwd(), self.build_folder)
+
+                cmd = [
                     # qnn_executor_runner
-                    f"{self.executorch_root}/{build_path}/examples/qualcomm/qnn_executor_runner",
-                    f"--model_path {pte_fname}",
-                    f"--input_list_path {tmp_dir}/input_list.txt",
-                    f"--output_folder_path {output_dir}",
+                    f"{build_folder}/examples/qualcomm/qnn_executor_runner",
+                    "--model_path",
+                    f"{pte_fname}",
+                    "--input_list_path",
+                    f"{tmp_dir}/input_list.txt",
+                    "--output_folder_path",
+                    f"{output_dir}",
                 ]
 
-                subprocess.run(
-                    " ".join(cmds),
-                    shell=True,
-                    executable="/bin/bash",
-                    capture_output=True,
+                env = dict(os.environ)
+                env["LD_LIBRARY_PATH"] = f"{qnn_sdk}/lib/{target}/:{build_folder}/lib"
+                proc = subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    env=env,
                     cwd=tmp_dir,
+                )
+
+                self.assertEqual(
+                    proc.returncode,
+                    0,
+                    f"The process running qnn_executorch_runner return {proc.returncode}, "
+                    "STDOUT=\n"
+                    f"{proc.stdout.decode('utf-8')}",
                 )
 
                 # Verify the outputs
