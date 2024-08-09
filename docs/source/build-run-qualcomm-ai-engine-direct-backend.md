@@ -167,7 +167,7 @@ cmake --build examples/qualcomm -j16
 
 **Note:** If you want to build for release, add `-DCMAKE_BUILD_TYPE=Release` to the `cmake` command options.
 
-You can find `qnn_executor_runner` under `build_android/examples/qualcomm/`.
+You can find `qnn_executor_runner` under `build_android/examples/qualcomm/executor_runner/`.
 
 The build script is also available [here](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh).
 
@@ -225,7 +225,7 @@ So, we can run `qnn_executor_runner` like
 
 ```bash
 adb push ./deeplab_v3/dlv3_qnn.pte ${DEVICE_DIR}
-adb push ${EXECUTORCH_ROOT}/build_android/examples/qualcomm/qnn_executor_runner ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/build_android/examples/qualcomm/executor_runner/qnn_executor_runner ${DEVICE_DIR}
 adb push ${EXECUTORCH_ROOT}/build_android/lib/libqnn_executorch_backend.so ${DEVICE_DIR}
 adb shell "cd ${DEVICE_DIR} \
            && export LD_LIBRARY_PATH=${DEVICE_DIR} \

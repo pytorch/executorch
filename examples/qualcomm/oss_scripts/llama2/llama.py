@@ -28,8 +28,11 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
 )
-from executorch.examples.qualcomm.llama2.model.static_llama import LlamaModel, ModelArgs
-from executorch.examples.qualcomm.scripts.utils import (
+from executorch.examples.qualcomm.oss_scripts.llama2.model.static_llama import (
+    LlamaModel,
+    ModelArgs,
+)
+from executorch.examples.qualcomm.utils import (
     make_output_dir,
     setup_common_args_and_variables,
     SimpleADB,
@@ -453,7 +456,7 @@ def inference(args, pre_gen_pte=""):
         host_id=args.host,
         soc_model=args.model,
         shared_buffer=args.shared_buffer,
-        runner="examples/qualcomm/qnn_llama_runner",
+        runner="examples/qualcomm/oss_scripts/llama2/qnn_llama_runner",
     )
     # No pregen inputs, input_list is not required
     adb.push(inputs=[], input_list="", files=[args.tokenizer_bin])

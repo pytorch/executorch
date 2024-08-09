@@ -27,7 +27,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
 from executorch.backends.qualcomm.utils.utils import capture_program
-from executorch.examples.qualcomm.scripts.utils import (
+from executorch.examples.qualcomm.utils import (
     generate_inputs,
     make_output_dir,
     SimpleADB,
@@ -236,7 +236,7 @@ class TestQNN(unittest.TestCase):
                     # export LD_LIBRARY_PATH to QNN_SDK_ROOT
                     f"export LD_LIBRARY_PATH={qnn_sdk}/lib/{target}/:{self.executorch_root}/{build_path}/lib && "
                     # qnn_executor_runner
-                    f"{self.executorch_root}/{build_path}/examples/qualcomm/qnn_executor_runner",
+                    f"{self.executorch_root}/{build_path}/examples/qualcomm/executor_runner/qnn_executor_runner",
                     f"--model_path {pte_fname}",
                     f"--input_list_path {tmp_dir}/input_list.txt",
                     f"--output_folder_path {output_dir}",

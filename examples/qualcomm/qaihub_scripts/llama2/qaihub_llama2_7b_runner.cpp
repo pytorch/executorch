@@ -17,7 +17,7 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
-#include <executorch/examples/qualcomm/llama2/qaihub_runner/runner.h>
+#include <executorch/examples/qualcomm/qaihub_scripts/llama2/runner/runner.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/platform/log.h>
 

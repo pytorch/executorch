@@ -404,7 +404,15 @@ int main(int argc, char** argv) {
         elapsed_time,
         elapsed_time / inference_index);
   } else {
-    // if no input is provided, run with default input as executor_runner.
+    // if no input is provided, fill the inputs with default values
+    auto inputs = util::prepare_input_tensors(*method);
+    ET_CHECK_MSG(
+        inputs.ok(),
+        "Could not prepare inputs: 0x%" PRIx32,
+        (uint32_t)inputs.error());
+    ET_LOG(
+        Info,
+        "Input list not provided. Inputs prepared with default values set.");
     Error status = method->execute();
     ET_CHECK_MSG(
         status == Error::Ok,

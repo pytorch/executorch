@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
-from executorch.examples.qualcomm.scripts.utils import (
+from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     make_output_dir,
     setup_common_args_and_variables,

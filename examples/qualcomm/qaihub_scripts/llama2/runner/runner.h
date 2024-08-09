@@ -17,7 +17,7 @@
 #include <string>
 #include <unordered_map>
 
-#include <executorch/examples/qualcomm/llama2/qaihub_runner/io_memory.h>
+#include <executorch/examples/qualcomm/qaihub_scripts/llama2/runner/io_memory.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
