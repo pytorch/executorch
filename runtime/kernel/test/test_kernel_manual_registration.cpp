@@ -6,32 +6,35 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// Include RegisterKernels.h and call register_all_kernels().
+#include <executorch/runtime/kernel/test/RegisterKernels.h>
+
 #include <gtest/gtest.h>
 
 #include <executorch/runtime/kernel/operator_registry.h>
-#include <executorch/runtime/kernel/test/RegisterKernels.h>
 #include <executorch/runtime/platform/runtime.h>
 
 using namespace ::testing;
-
-namespace torch {
-namespace executor {
+using executorch::runtime::Error;
+using executorch::runtime::hasOpsFn;
 
 class KernelManualRegistrationTest : public ::testing::Test {
  public:
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
 TEST_F(KernelManualRegistrationTest, ManualRegister) {
-  Error result = register_all_kernels();
-  // Check that we can find the kernel for foo.
-  EXPECT_EQ(result, Error::Ok);
-  EXPECT_FALSE(hasOpsFn("fpp"));
-  EXPECT_TRUE(hasOpsFn("aten::add.out"));
-}
+  // Before registering, we can't find the add operator.
+  EXPECT_FALSE(hasOpsFn("aten::add.out"));
 
-} // namespace executor
-} // namespace torch
+  // Call the generated registration function.
+  Error result = torch::executor::register_all_kernels();
+  EXPECT_EQ(result, Error::Ok);
+
+  // We can now find the registered add operator.
+  EXPECT_TRUE(hasOpsFn("aten::add.out"));
+
+  // We can't find a random other operator.
+  EXPECT_FALSE(hasOpsFn("fpp"));
+}
