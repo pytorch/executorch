@@ -13,8 +13,9 @@
 /// Example usage:
 /// ```
 /// Tensor&
-/// my_op(RuntimeContext& ctx, const Tensor& self, const Tensor& other, Tensor&
-/// out) {
+/// my_op(KernelRuntimeContext& ctx, const Tensor& self, const Tensor& other,
+///       Tensor& out)
+/// {
 ///   // ...
 ///   return out;
 /// }
@@ -47,11 +48,14 @@
 #include <type_traits>
 #include <typeinfo>
 
+namespace executorch {
+namespace runtime {
+class KernelRuntimeContext; // Forward declaration
+} // namespace runtime
+} // namespace executorch
+
 namespace torch {
 namespace executor {
-
-class KernelRuntimeContext; // Forward declaration
-using RuntimeContext = KernelRuntimeContext; // TODO(T147221312): Remove
 
 // evalue_to_arg
 template <class T>
@@ -106,7 +110,7 @@ struct evalue_to_arg<exec_aten::ArrayRef<exec_aten::optional<T>>> final {
 
 template <class Functor, size_t... evalue_arg_indices, typename... ArgTypes>
 void call_functor_with_args_from_stack_(
-    RuntimeContext& ctx,
+    ::executorch::runtime::KernelRuntimeContext& ctx,
     EValue** stack,
     std::index_sequence<evalue_arg_indices...>,
     typelist<ArgTypes...>*) {
@@ -129,16 +133,18 @@ struct WrapUnboxedIntoFunctor {
   using TrueType = typename FuncType::FuncType;
   using ReturnType = typename infer_function_traits_t<TrueType>::return_type;
   using ArgsType = typename infer_function_traits_t<TrueType>::parameter_types;
-  // check if the first argument is RuntimeContext, if so, remove it
+  // check if the first argument is KernelRuntimeContext, if so, remove it
   static constexpr bool first_arg_is_context = std::is_same<
-      RuntimeContext,
+      ::executorch::runtime::KernelRuntimeContext,
       std::remove_reference_t<head_with_default_t<void, ArgsType>>>::value;
   using ContextRemovedArgsType = std::conditional_t<
       first_arg_is_context,
       drop_if_nonempty_t<ArgsType, 1>,
       ArgsType>;
 
-  static void call(RuntimeContext& ctx, EValue** stack) {
+  static void call(
+      ::executorch::runtime::KernelRuntimeContext& ctx,
+      EValue** stack) {
     constexpr size_t num_inputs = size<ContextRemovedArgsType>::value;
     return call_functor_with_args_from_stack_<FuncType>(
         ctx,

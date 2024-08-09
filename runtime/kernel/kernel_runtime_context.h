@@ -14,8 +14,8 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Runtime state and functionality for kernel implementations.
@@ -107,16 +107,24 @@ class KernelRuntimeContext {
   Error failure_state_ = Error::Ok;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::KernelRuntimeContext;
 } // namespace executor
 } // namespace torch
 
 // TODO(T147221312): Remove these aliases once all code uses
 // KernelRuntimeContext.
 namespace exec_aten {
-using RuntimeContext = torch::executor::KernelRuntimeContext;
+using RuntimeContext = executorch::runtime::KernelRuntimeContext;
 } // namespace exec_aten
 namespace torch {
 namespace executor {
-using RuntimeContext = torch::executor::KernelRuntimeContext;
+using RuntimeContext = executorch::runtime::KernelRuntimeContext;
 } // namespace executor
 } // namespace torch

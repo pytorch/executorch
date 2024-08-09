@@ -24,6 +24,12 @@ struct ExecutionPlan;
 struct EValue;
 } // namespace executorch_flatbuffer
 
+namespace executorch {
+namespace runtime {
+class KernelRuntimeContext;
+} // namespace runtime
+} // namespace executorch
+
 namespace torch {
 namespace executor {
 
@@ -33,8 +39,8 @@ class Program;
 // Forward declare internal types.
 class BackendDelegate;
 struct Chain;
-class KernelRuntimeContext;
-using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
+using OpFunction =
+    void (*)(::executorch::runtime::KernelRuntimeContext&, EValue**);
 /// A list of pointers into the master values table that together compose the
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;
