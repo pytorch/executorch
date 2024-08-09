@@ -12,6 +12,7 @@ from typing import Optional
 
 import torch
 
+from torch.ao.quantization.fake_quantize import FakeQuantize
 from torch.ao.quantization.observer import (
     MinMaxObserver,
     MovingAverageMinMaxObserver,
