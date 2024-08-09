@@ -7,7 +7,7 @@ from typing import ClassVar, Dict, final, List, Tuple
 
 import torch
 
-from backends.apple.mps.serialization.mps_graph_schema import Buffer
+from executorch.backends.apple.mps.serialization.mps_graph_schema import Buffer
 
 from executorch.backends.apple.mps.operators.node_visitor import (
     get_node_visitors,
