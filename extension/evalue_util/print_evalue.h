@@ -75,7 +75,9 @@ class evalue_edge_items final {
 namespace torch {
 namespace executor {
 namespace util {
-using executorch::extension::evalue_edge_items;
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::evalue_edge_items;
 } // namespace util
 } // namespace executor
 } // namespace torch
