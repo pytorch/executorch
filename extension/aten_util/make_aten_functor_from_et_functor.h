@@ -243,7 +243,12 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
   using TupleArgsType = std::tuple<typename type_map<Args>::type...>;
   static constexpr size_t num_args = sizeof...(Args);
   static_assert(
-      (N < num_args && std::is_same_v<element_t<N, typelist<Args...>>, R>) ||
+      (N < num_args &&
+       std::is_same_v<
+           executorch::extension::kernel_util_internal::element_t<
+               N,
+               executorch::extension::kernel_util_internal::typelist<Args...>>,
+           R>) ||
           N == -1,
       "The index of the out tensor can't be greater or equal to num_args and "
       "the Nth argument type has to be the same as the return type.");

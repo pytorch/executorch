@@ -15,22 +15,31 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using RuntimeContext = torch::executor::KernelRuntimeContext;
-using namespace torch::executor;
+using exec_aten::ArrayRef;
+using exec_aten::optional;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using exec_aten::TensorImpl;
+using executorch::runtime::BoxedEvalueList;
+using executorch::runtime::EValue;
+using executorch::runtime::getOpsFn;
+using executorch::runtime::hasOpsFn;
+using executorch::runtime::KernelRuntimeContext;
 
-Tensor& my_op_out(RuntimeContext& ctx, const Tensor& a, Tensor& out) {
+Tensor& my_op_out(KernelRuntimeContext& ctx, const Tensor& a, Tensor& out) {
   (void)ctx;
   (void)a;
   return out;
 }
 
-Tensor& set_1_out(RuntimeContext& ctx, Tensor& out) {
+Tensor& set_1_out(KernelRuntimeContext& ctx, Tensor& out) {
   (void)ctx;
   out.mutable_data_ptr<int32_t>()[0] = 1;
   return out;
 }
 
-Tensor& add_tensor_out(RuntimeContext& ctx, ArrayRef<Tensor> a, Tensor& out) {
+Tensor&
+add_tensor_out(KernelRuntimeContext& ctx, ArrayRef<Tensor> a, Tensor& out) {
   (void)ctx;
   for (int i = 0; i < out.numel(); i++) {
     int sum = 0;
@@ -43,7 +52,7 @@ Tensor& add_tensor_out(RuntimeContext& ctx, ArrayRef<Tensor> a, Tensor& out) {
 }
 
 Tensor& add_optional_scalar_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     optional<int64_t> s1,
     optional<int64_t> s2,
     Tensor& out) {
@@ -58,7 +67,7 @@ Tensor& add_optional_scalar_out(
 }
 
 Tensor& add_optional_tensor_out(
-    RuntimeContext& ctx,
+    KernelRuntimeContext& ctx,
     ArrayRef<optional<Tensor>> a,
     Tensor& out) {
   (void)ctx;
@@ -100,7 +109,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxLogicWorks) {
   auto fn = getOpsFn("my_ns::set_1.out");
 
   // run it
-  RuntimeContext context;
+  KernelRuntimeContext context;
   EValue values[1];
   values[0] = a;
   EValue* stack[1];
@@ -129,7 +138,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxArrayRef) {
   auto fn = getOpsFn("my_ns::add_tensor.out");
 
   // run it.
-  RuntimeContext context;
+  KernelRuntimeContext context;
   EValue values[2] = {boxed_array_ref, out};
   EValue* stack[2] = {&values[0], &values[1]};
   fn(context, stack);
@@ -154,7 +163,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptional) {
   auto fn = getOpsFn("my_ns::add_optional_scalar.out");
 
   // run it.
-  RuntimeContext context;
+  KernelRuntimeContext context;
   EValue values[3] = {scalar, scalar_none, out};
   EValue* stack[3] = {&values[0], &values[1], &values[2]};
   fn(context, stack);
@@ -180,7 +189,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptionalArrayRef) {
   auto fn = getOpsFn("my_ns::add_optional_tensor.out");
 
   // run it.
-  RuntimeContext context;
+  KernelRuntimeContext context;
   EValue values[2] = {boxed_array_ref, out};
   EValue* stack[2] = {&values[0], &values[1]};
   fn(context, stack);

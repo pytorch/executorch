@@ -17,8 +17,11 @@
 #include <type_traits>
 #include <typeinfo>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
+// This extension has a lot of generic internal names like "size"; use a unique
+// internal namespace to avoid conflicts with other extensions.
+namespace kernel_util_internal {
 
 // Check if a given type is a function
 template <class T>
@@ -48,9 +51,9 @@ template <class FuncType, FuncType* func_ptr>
 struct is_compile_time_function_pointer<
     CompileTimeFunctionPointer<FuncType, func_ptr>> : std::true_type {};
 
-#define EXECUTORCH_FN_TYPE(func)                                      \
-  ::torch::executor::CompileTimeFunctionPointer<                      \
-      std::remove_pointer_t<std::remove_reference_t<decltype(func)>>, \
+#define EXECUTORCH_FN_TYPE(func)                                             \
+  ::executorch::extension::kernel_util_internal::CompileTimeFunctionPointer< \
+      std::remove_pointer_t<std::remove_reference_t<decltype(func)>>,        \
       func>
 #define EXECUTORCH_FN(func) EXECUTORCH_FN_TYPE(func)()
 
@@ -111,5 +114,6 @@ struct infer_function_traits<Result(Args...)> {
 template <typename T>
 using infer_function_traits_t = typename infer_function_traits<T>::type;
 
-} // namespace executor
-} // namespace torch
+} // namespace kernel_util_internal
+} // namespace extension
+} // namespace executorch
