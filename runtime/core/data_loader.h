@@ -44,6 +44,10 @@ class DataLoader {
        * Data used for initializing a backend.
        */
       Backend,
+      /**
+       * Data used for initializing mutable tensors.
+       */
+      Mutable,
     };
 
     /// Type of the segment.
@@ -85,6 +89,35 @@ class DataLoader {
    */
   __ET_NODISCARD virtual Result<FreeableBuffer>
   load(size_t offset, size_t size, const SegmentInfo& segment_info) = 0;
+
+  /**
+   * Loads data from the underlying data source into the provided buffer.
+   *
+   * NOTE: This must be thread-safe. If this call modifies common state, the
+   * implementation must do its own locking.
+   *
+   * @param offset The byte offset in the data source to start loading from.
+   * @param size The number of bytes to load.
+   * @param segment_info Information about the segment being loaded.
+   * @param buffer The buffer to load data into. Must point to at least `size`
+   * bytes of memory.
+   *
+   * @returns an Error indicating if the load was successful.
+   */
+  __ET_NODISCARD virtual Error load_into(
+      size_t offset,
+      size_t size,
+      const SegmentInfo& segment_info,
+      void* buffer) {
+    // Using a stub implementation here instead of pure virtual to expand the
+    // data_loader interface in a backwards compatible way.
+    (void)buffer;
+    (void)offset;
+    (void)size;
+    (void)segment_info;
+    ET_LOG(Error, "load_into() not implemented for this data loader.");
+    return Error::NotImplemented;
+  }
 
   /**
    * Returns the length of the underlying data source, typically the file size.
