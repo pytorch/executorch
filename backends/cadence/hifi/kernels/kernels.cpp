@@ -7,8 +7,6 @@
  */
 
 #include "kernels.h"
-#include "NatureDSP_Signal.h"
-#include "NatureDSP_Signal_vector.h"
 #include "xa_nnlib_common.h"
 #include "xa_nnlib_common_macros.h"
 
