@@ -9,9 +9,11 @@ import torch
 from torch.ao.quantization.quantizer import Quantizer
 from torch.fx import GraphModule, Node
 
-from ..passes.decompose_scaled_dot_product_attention import DecomposeScaledDotProductAttention
-from .qconfig import Precision, get_quant_config
+from ..passes.decompose_scaled_dot_product_attention import (
+    DecomposeScaledDotProductAttention,
+)
 from .annotator import annotate
+from .qconfig import get_quant_config, Precision
 
 
 class NeuropilotQuantizer(Quantizer):
@@ -39,5 +41,7 @@ class NeuropilotQuantizer(Quantizer):
         pass
 
     def _annotate(self, gm: GraphModule) -> None:
-        quant_config = get_quant_config(self._precision, self._is_per_channel, self._is_qat)
+        quant_config = get_quant_config(
+            self._precision, self._is_per_channel, self._is_qat
+        )
         annotate(gm.graph, quant_config)

@@ -4,9 +4,9 @@
 # except in compliance with the License. See the license file in the root
 # directory of this source tree for more details.
 
-import torch
+from typing import Callable, final, List, Optional, Tuple
 
-from typing import final, Callable, List, Optional, Tuple
+import torch
 from executorch.backends.mediatek.preprocess import NeuropilotBackend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -15,17 +15,19 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.utils import tag_constant_data
+
+from mtk_converter.python.converters.pytorch import importer_v2
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 from torch.fx.passes.operator_support import OperatorSupportBase
-
-from mtk_converter.python.converters.pytorch import importer_v2
 
 
 class NeuropilotOperatorsSupport(OperatorSupportBase):
 
     def __init__(
-        self, op_types_to_skip: Optional[set] = None, op_names_to_skip: Optional[set] = None
+        self,
+        op_types_to_skip: Optional[set] = None,
+        op_names_to_skip: Optional[set] = None,
     ) -> None:
         if op_types_to_skip is None:
             op_types_to_skip = set()
@@ -43,7 +45,9 @@ class NeuropilotOperatorsSupport(OperatorSupportBase):
 
         op_type = node.target.__name__
         if op_type in self._op_types_to_skip or node.name in self._op_names_to_skip:
-            print(f"[Neuropilot Backend] The {op_type} operator with name '{node.name}' is skipped.")
+            print(
+                f"[Neuropilot Backend] The {op_type} operator with name '{node.name}' is skipped."
+            )
             return False
 
         return importer_v2.is_fx_node_supported(node)
@@ -63,7 +67,8 @@ class NeuropilotPartitioner(Partitioner):
         self._op_names_to_skip = op_names_to_skip
 
     def ops_to_not_decompose(
-        self, ep: ExportedProgram,
+        self,
+        ep: ExportedProgram,
     ) -> Tuple[List[torch._ops.OpOverload], Optional[Callable[[torch.fx.Node], bool]]]:
         ops_not_decompose = [
             torch.ops.aten.pixel_shuffle.default,
@@ -85,8 +90,8 @@ class NeuropilotPartitioner(Partitioner):
         partition_tags = {}
         for partition in partition_list:
             for node in partition.nodes:
-                tag = f'tag{partition.id}'
-                node.meta['delegation_tag'] = tag
+                tag = f"tag{partition.id}"
+                node.meta["delegation_tag"] = tag
                 partition_tags[tag] = self.delegation_spec
 
         tag_constant_data(exported_program)

@@ -22,7 +22,6 @@ from torch.fx.passes.utils.matcher_with_name_node_map_utils import (
     SubgraphMatcherWithNameNodeMap,
 )
 
-
 from .qconfig import QuantizationConfig
 
 
@@ -36,9 +35,9 @@ def annotate(graph: Graph, quant_config: QuantizationConfig) -> None:
 
     # Per-op annotation
     for node in graph.nodes:
-        if node.op == 'placeholder':
+        if node.op == "placeholder":
             annotate_placeholder(node, quant_config)
-        elif node.op == 'call_function':
+        elif node.op == "call_function":
             annotate_func = OP_TO_ANNOTATOR.get(node.target, None)
             if annotate_func is not None:
                 annotate_func(node, quant_config)
@@ -59,12 +58,12 @@ def _is_annotated(node: Node):
     return True if any of the node
     is annotated, otherwise return False
     """
-    KEY = 'quantization_annotation'
+    KEY = "quantization_annotation"
     return KEY in node.meta and node.meta[KEY]._annotated
 
 
 def _mark_as_annotated(nodes: List[Node]):
-    KEY = 'quantization_annotation'
+    KEY = "quantization_annotation"
     for node in nodes:
         if KEY not in node.meta:
             node.meta[KEY] = QuantizationAnnotation()
@@ -74,17 +73,19 @@ def _mark_as_annotated(nodes: List[Node]):
 def _is_float_activation_tensor(node: Node):
     if not isinstance(node, Node):
         return False
-    if 'val' not in node.meta:
+    if "val" not in node.meta:
         return False
-    if not isinstance(node.meta['val'], FakeTensor):
+    if not isinstance(node.meta["val"], FakeTensor):
         return False
-    return node.meta['val'].dtype == torch.float32
+    return node.meta["val"].dtype == torch.float32
 
 
-def _annotate_fused_activation_pattern(graph: Graph, quant_config: QuantizationConfig) -> None:
+def _annotate_fused_activation_pattern(
+    graph: Graph, quant_config: QuantizationConfig
+) -> None:
     for relu_node in graph.nodes:
         # Check relu/relu6 node
-        if relu_node.op != 'call_function':
+        if relu_node.op != "call_function":
             continue
         if relu_node.target not in [
             torch.ops.aten.relu.default,
@@ -96,7 +97,7 @@ def _annotate_fused_activation_pattern(graph: Graph, quant_config: QuantizationC
         producer_node = relu_node.args[0]
         if not isinstance(producer_node, Node):
             continue
-        if producer_node.op != 'call_function':
+        if producer_node.op != "call_function":
             continue
         if len(producer_node.users) != 1:
             continue
@@ -159,14 +160,16 @@ def _annotate_rmsnorm_pattern(graph: Graph, quant_config: QuantizationConfig) ->
 
     for pattern_cls in (ExecuTorchPattern, MTKPattern):
         pattern_gm = capture_pre_autograd_graph(pattern_cls(), (torch.randn(3, 3),))
-        matcher = SubgraphMatcherWithNameNodeMap(pattern_gm, ignore_literals=True, remove_overlapping_matches=False)
+        matcher = SubgraphMatcherWithNameNodeMap(
+            pattern_gm, ignore_literals=True, remove_overlapping_matches=False
+        )
         matches = matcher.match(graph)
         for match in matches:
             target_nodes = []
             for node in match.nodes_map.values():
                 if node in match.placeholder_nodes:
                     continue
-                if node.op == 'call_function' and node.target in OP_TO_ANNOTATOR:
+                if node.op == "call_function" and node.target in OP_TO_ANNOTATOR:
                     target_nodes.append(node)
 
             if any(_is_annotated(node) for node in target_nodes):

@@ -20,6 +20,7 @@ from torch.ao.quantization.observer import (
 )
 from torch.ao.quantization.quantizer import QuantizationSpec
 
+
 @unique
 class Precision(IntEnum):
     A16W16 = 0
@@ -31,7 +32,9 @@ class Precision(IntEnum):
 
 class QuantizationConfig:
 
-    def __init__(self, activation_spec: QuantizationSpec, weight_spec: QuantizationSpec):
+    def __init__(
+        self, activation_spec: QuantizationSpec, weight_spec: QuantizationSpec
+    ):
         self._activation_spec = activation_spec
         self._weight_spec = weight_spec
 
@@ -58,14 +61,19 @@ def get_quant_config(
         Precision.A8W4: get_a8w4_quant_config,
     }
     if precision not in precision_mappings:
-        raise RuntimeError('Unrecognized precision setting.')
+        raise RuntimeError("Unrecognized precision setting.")
 
     qconfig_fn = precision_mappings[precision]
     return qconfig_fn(is_per_channel, is_qat)
 
 
 def _get_activation_qspec(
-    dtype, is_symmetric, is_qat, observer_cls=MinMaxObserver, quant_min=None, quant_max=None
+    dtype,
+    is_symmetric,
+    is_qat,
+    observer_cls=MinMaxObserver,
+    quant_min=None,
+    quant_max=None,
 ):
     if quant_max is None:
         quant_max = torch.iinfo(dtype).max
@@ -87,9 +95,14 @@ def _get_activation_qspec(
         observer_or_fake_quant_ctr=observer_or_fake_quant,
     )
 
-def _get_weight_qspec(dtype, is_symmetric, is_per_channel, is_qat, quant_min=None, quant_max=None):
+
+def _get_weight_qspec(
+    dtype, is_symmetric, is_per_channel, is_qat, quant_min=None, quant_max=None
+):
     if not is_per_channel:
-        return _get_activation_qspec(dtype, is_symmetric, is_qat, observer_cls=MinMaxObserver)
+        return _get_activation_qspec(
+            dtype, is_symmetric, is_qat, observer_cls=MinMaxObserver
+        )
 
     if quant_max is None:
         quant_max = torch.iinfo(dtype).max
@@ -118,14 +131,18 @@ def _get_weight_qspec(dtype, is_symmetric, is_per_channel, is_qat, quant_min=Non
 def get_a16w16_quant_config(is_per_channel, is_qat) -> QuantizationConfig:
     act_quantization_spec = _get_activation_qspec(torch.int16, True, is_qat)
     wgt_quantization_spec = _get_weight_qspec(torch.int16, True, is_per_channel, is_qat)
-    quantization_config = QuantizationConfig(act_quantization_spec, wgt_quantization_spec)
+    quantization_config = QuantizationConfig(
+        act_quantization_spec, wgt_quantization_spec
+    )
     return quantization_config
 
 
 def get_a16w8_quant_config(is_per_channel, is_qat) -> QuantizationConfig:
     act_quantization_spec = _get_activation_qspec(torch.int16, True, is_qat)
     wgt_quantization_spec = _get_weight_qspec(torch.int8, True, is_per_channel, is_qat)
-    quantization_config = QuantizationConfig(act_quantization_spec, wgt_quantization_spec)
+    quantization_config = QuantizationConfig(
+        act_quantization_spec, wgt_quantization_spec
+    )
     return quantization_config
 
 
@@ -134,14 +151,18 @@ def get_a16w4_quant_config(is_per_channel, is_qat) -> QuantizationConfig:
     wgt_quantization_spec = _get_weight_qspec(
         torch.int8, False, is_per_channel, is_qat, quant_min=-8, quant_max=7
     )
-    quantization_config = QuantizationConfig(act_quantization_spec, wgt_quantization_spec)
+    quantization_config = QuantizationConfig(
+        act_quantization_spec, wgt_quantization_spec
+    )
     return quantization_config
 
 
 def get_a8w8_quant_config(is_per_channel, is_qat) -> QuantizationConfig:
     act_quantization_spec = _get_activation_qspec(torch.int8, False, is_qat)
     wgt_quantization_spec = _get_weight_qspec(torch.int8, False, is_per_channel, is_qat)
-    quantization_config = QuantizationConfig(act_quantization_spec, wgt_quantization_spec)
+    quantization_config = QuantizationConfig(
+        act_quantization_spec, wgt_quantization_spec
+    )
     return quantization_config
 
 
@@ -150,5 +171,7 @@ def get_a8w4_quant_config(is_per_channel, is_qat) -> QuantizationConfig:
     wgt_quantization_spec = _get_weight_qspec(
         torch.int8, False, is_per_channel, is_qat, quant_min=-8, quant_max=7
     )
-    quantization_config = QuantizationConfig(act_quantization_spec, wgt_quantization_spec)
+    quantization_config = QuantizationConfig(
+        act_quantization_spec, wgt_quantization_spec
+    )
     return quantization_config

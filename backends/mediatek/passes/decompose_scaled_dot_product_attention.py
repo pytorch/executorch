@@ -8,14 +8,14 @@ import torch
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from torch._decomp import get_decompositions
-from torch.fx.experimental.proxy_tensor import make_fx
 from torch.fx import Graph
+from torch.fx.experimental.proxy_tensor import make_fx
 
 
 def _get_input_node_names(graph: Graph):
     input_names = []
     for node in graph.nodes:
-        if node.op == 'placeholder':
+        if node.op == "placeholder":
             input_names.append(node.name)
     return input_names
 
@@ -32,8 +32,10 @@ class DecomposeScaledDotProductAttention(ExportPass):
             decom_mappings = get_decompositions(
                 [torch.ops.aten._scaled_dot_product_flash_attention_for_cpu.default]
             )
-            input_tensors = (arg.meta['val'] for arg in node.args)
-            decomposed_module = make_fx(node.target, decom_mappings, 'fake', True)(*input_tensors)
+            input_tensors = (arg.meta["val"] for arg in node.args)
+            decomposed_module = make_fx(node.target, decom_mappings, "fake", True)(
+                *input_tensors
+            )
             decomposed_input_names = _get_input_node_names(decomposed_module.graph)
             with graph.inserting_before(node):
                 name_to_input_tensor_map = {}
@@ -42,18 +44,20 @@ class DecomposeScaledDotProductAttention(ExportPass):
 
                 decomposed_node_to_subgraph_node = {}
                 for decomposed_node in decomposed_module.graph.nodes:
-                    if decomposed_node.op == 'placeholder':
+                    if decomposed_node.op == "placeholder":
                         decomposed_node_to_subgraph_node[decomposed_node] = (
                             name_to_input_tensor_map[decomposed_node.name]
                         )
 
                 # Copy node from decompose graph module
                 for decomposed_node in decomposed_module.graph.nodes:
-                    if decomposed_node.op == 'placeholder':
+                    if decomposed_node.op == "placeholder":
                         continue
-                    if decomposed_node.op == 'output':
+                    if decomposed_node.op == "output":
                         for user in node.users.copy():
-                            new_node = decomposed_node_to_subgraph_node[decomposed_node.args[0]]
+                            new_node = decomposed_node_to_subgraph_node[
+                                decomposed_node.args[0]
+                            ]
                             user.replace_input_with(node, new_node)
                         continue
 
@@ -61,7 +65,7 @@ class DecomposeScaledDotProductAttention(ExportPass):
                         decomposed_node,
                         arg_transform=lambda x: decomposed_node_to_subgraph_node[x],
                     )
-                    subgraph_node.meta['source_fn_stack'] = [
+                    subgraph_node.meta["source_fn_stack"] = [
                         (subgraph_node, subgraph_node.target)
                     ]
                     decomposed_node_to_subgraph_node[decomposed_node] = subgraph_node
