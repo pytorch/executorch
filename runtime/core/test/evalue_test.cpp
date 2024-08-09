@@ -18,7 +18,7 @@ using exec_aten::ScalarType;
 using executorch::runtime::BoxedEvalueList;
 using executorch::runtime::EValue;
 using executorch::runtime::Tag;
-using torch::executor::testing::TensorFactory;
+using executorch::runtime::testing::TensorFactory;
 
 TEST(TestEValue, CopyTrivialType) {
   EValue a;

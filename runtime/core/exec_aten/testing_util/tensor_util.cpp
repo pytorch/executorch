@@ -19,8 +19,8 @@
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace testing {
 
 namespace {
@@ -175,9 +175,18 @@ bool tensor_lists_are_close(
 }
 
 } // namespace testing
+} // namespace runtime
+} // namespace executorch
 
 // ATen already defines operator<<() for Tensor and ScalarType.
 #ifndef USE_ATEN_LIB
+
+/*
+ * These functions must be declared in the original namespaces of their
+ * associated types so that C++ can find them.
+ */
+namespace torch {
+namespace executor {
 
 /**
  * Prints the ScalarType to the stream as a human-readable string.
@@ -266,7 +275,7 @@ std::ostream& operator<<(std::ostream& os, const Tensor& t) {
   return os;
 }
 
-#endif // !USE_ATEN_LIB
-
 } // namespace executor
 } // namespace torch
+
+#endif // !USE_ATEN_LIB
