@@ -99,7 +99,6 @@ class Llava(torch.nn.Module):
             assign=True,
         )
         self.image_processor = image_processor
-        self.mm_projector = self.get_model().mm_projector
 
     def _translate_state_dict_for_text_model(self) -> Dict[str, Any]:
         state_dict = self.model_.state_dict()
