@@ -13,8 +13,9 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/compiler.h>
-namespace torch {
-namespace executor {
+
+namespace executorch {
+namespace runtime {
 
 namespace {
 template <typename DimOrderType>
@@ -152,6 +153,8 @@ __ET_NODISCARD inline Error dim_order_to_stride(
   return Error::Ok;
 }
 
+namespace internal {
+
 template <typename StridesType, typename DimOrderType>
 struct StrideDimOrder {
   StridesType stride;
@@ -201,6 +204,8 @@ struct Sorter {
   }
 };
 
+} // namespace internal
+
 /*
  * This utility translated strides to dimension order
  * information. Dimension order specifies how the dimensions are laid out in the
@@ -236,13 +241,14 @@ __ET_NODISCARD inline Error stride_to_dim_order(
       "dims %zu exceeds maximum allowed %zu",
       dims,
       kMaxNumOfDimensions);
-  StrideDimOrder<StridesType, DimOrderType> array[kMaxNumOfDimensions];
+  internal::StrideDimOrder<StridesType, DimOrderType>
+      array[kMaxNumOfDimensions];
   for (DimOrderType i = 0; i < dims; i++) {
     array[i].dim_order = i;
     array[i].stride = strides[i];
   }
 
-  Sorter<StrideDimOrder<StridesType, DimOrderType>> sorter;
+  internal::Sorter<internal::StrideDimOrder<StridesType, DimOrderType>> sorter;
 
   sorter.quick_sort(array, 0, dims - 1);
 
@@ -251,5 +257,17 @@ __ET_NODISCARD inline Error stride_to_dim_order(
   }
   return Error::Ok;
 }
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::dim_order_to_stride;
+using ::executorch::runtime::dim_order_to_stride_nocheck;
+using ::executorch::runtime::is_channels_last_dim_order;
+using ::executorch::runtime::is_contiguous_dim_order;
+using ::executorch::runtime::stride_to_dim_order;
 } // namespace executor
 } // namespace torch

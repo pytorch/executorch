@@ -397,8 +397,8 @@
       extract_scalar_tensor(scalar_tensor, &out_val),    \
       #scalar_tensor " could not be extracted: wrong type or out of range");
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 //
 // Utility functions for checking tensor attributes
@@ -1165,5 +1165,58 @@ inline size_t calculate_linear_index(
   return index;
 }
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::calculate_linear_index;
+using ::executorch::runtime::coordinateToIndex;
+using ::executorch::runtime::dim_is_valid;
+using ::executorch::runtime::extract_scalar_tensor;
+using ::executorch::runtime::get_dim_order;
+using ::executorch::runtime::getLeadingDims;
+using ::executorch::runtime::getTrailingDims;
+using ::executorch::runtime::indexToCoordinate;
+using ::executorch::runtime::kTensorDimensionLimit;
+using ::executorch::runtime::nonempty_size;
+using ::executorch::runtime::nonzero_dim;
+using ::executorch::runtime::resize;
+using ::executorch::runtime::resize_tensor;
+using ::executorch::runtime::tensor_can_cast_to;
+using ::executorch::runtime::tensor_dim_has_index;
+using ::executorch::runtime::tensor_has_dim;
+using ::executorch::runtime::tensor_has_expected_size;
+using ::executorch::runtime::tensor_has_non_empty_dim;
+using ::executorch::runtime::tensor_has_rank_greater_or_equal_to;
+using ::executorch::runtime::tensor_has_rank_smaller_or_equal_to;
+using ::executorch::runtime::tensor_has_valid_dim_order;
+using ::executorch::runtime::tensor_is_bits_type;
+using ::executorch::runtime::tensor_is_bool_type;
+using ::executorch::runtime::tensor_is_complex_type;
+using ::executorch::runtime::tensor_is_contiguous;
+using ::executorch::runtime::tensor_is_default_or_channels_last_dim_order;
+using ::executorch::runtime::tensor_is_floating_type;
+using ::executorch::runtime::tensor_is_integral_type;
+using ::executorch::runtime::tensor_is_rank;
+using ::executorch::runtime::tensor_is_real_type;
+using ::executorch::runtime::tensor_is_realh_type;
+using ::executorch::runtime::tensor_is_realhb_type;
+using ::executorch::runtime::tensor_is_scalar;
+using ::executorch::runtime::tensors_have_same_dtype;
+using ::executorch::runtime::tensors_have_same_rank;
+using ::executorch::runtime::tensors_have_same_shape;
+using ::executorch::runtime::tensors_have_same_shape_and_dtype;
+using ::executorch::runtime::tensors_have_same_size_at_dims;
+using ::executorch::runtime::tensors_have_same_strides;
+namespace internal {
+using ::executorch::runtime::internal::copy_tensor_data;
+using ::executorch::runtime::internal::reset_data_ptr;
+using ::executorch::runtime::internal::resize_tensor_impl;
+using ::executorch::runtime::internal::set_tensor_data;
+using ::executorch::runtime::internal::share_tensor_data;
+} // namespace internal
 } // namespace executor
 } // namespace torch

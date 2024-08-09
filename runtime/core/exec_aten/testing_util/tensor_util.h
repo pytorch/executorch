@@ -11,8 +11,8 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <gmock/gmock.h> // For MATCHER_P
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace testing {
 
 namespace internal {
@@ -213,110 +213,125 @@ MATCHER_P(IsListEqualTo, other, "") {
  * `bool`-returning operator.
  */
 #define EXPECT_TENSOR_EQ(t1, t2) \
-  EXPECT_THAT((t1), ::torch::executor::testing::IsEqualTo(t2))
+  EXPECT_THAT((t1), ::executorch::runtime::testing::IsEqualTo(t2))
 #define EXPECT_TENSOR_NE(t1, t2) \
-  EXPECT_THAT((t1), ::testing::Not(torch::executor::testing::IsEqualTo(t2)))
+  EXPECT_THAT((t1), ::testing::Not(executorch::runtime::testing::IsEqualTo(t2)))
 #define ASSERT_TENSOR_EQ(t1, t2) \
-  ASSERT_THAT((t1), ::torch::executor::testing::IsEqualTo(t2))
+  ASSERT_THAT((t1), ::executorch::runtime::testing::IsEqualTo(t2))
 #define ASSERT_TENSOR_NE(t1, t2) \
-  ASSERT_THAT((t1), ::testing::Not(torch::executor::testing::IsEqualTo(t2)))
+  ASSERT_THAT((t1), ::testing::Not(executorch::runtime::testing::IsEqualTo(t2)))
 
 #define EXPECT_TENSOR_CLOSE(t1, t2) \
-  EXPECT_THAT((t1), ::torch::executor::testing::IsCloseTo(t2))
+  EXPECT_THAT((t1), ::executorch::runtime::testing::IsCloseTo(t2))
 #define EXPECT_TENSOR_NOT_CLOSE(t1, t2) \
-  EXPECT_THAT((t1), ::testing::Not(torch::executor::testing::IsCloseTo(t2)))
+  EXPECT_THAT((t1), ::testing::Not(executorch::runtime::testing::IsCloseTo(t2)))
 #define ASSERT_TENSOR_CLOSE(t1, t2) \
-  ASSERT_THAT((t1), ::torch::executor::testing::IsCloseTo(t2))
+  ASSERT_THAT((t1), ::executorch::runtime::testing::IsCloseTo(t2))
 #define ASSERT_TENSOR_NOT_CLOSE(t1, t2) \
-  ASSERT_THAT((t1), ::testing::Not(torch::executor::testing::IsCloseTo(t2)))
+  ASSERT_THAT((t1), ::testing::Not(executorch::runtime::testing::IsCloseTo(t2)))
 
 #define EXPECT_TENSOR_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
   EXPECT_THAT(                                           \
-      (t1), ::torch::executor::testing::IsCloseToWithTol(t2, rtol, atol))
+      (t1), ::executorch::runtime::testing::IsCloseToWithTol(t2, rtol, atol))
 #define EXPECT_TENSOR_NOT_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
   EXPECT_THAT(                                               \
       (t1),                                                  \
       ::testing::Not(                                        \
-          torch::executor::testing::IsCloseToWithTol(t2, rtol, atol)))
+          executorch::runtime::testing::IsCloseToWithTol(t2, rtol, atol)))
 #define ASSERT_TENSOR_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
   ASSERT_THAT(                                           \
-      (t1), ::torch::executor::testing::IsCloseToWithTol(t2, rtol, atol))
+      (t1), ::executorch::runtime::testing::IsCloseToWithTol(t2, rtol, atol))
 #define ASSERT_TENSOR_NOT_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
   ASSERT_THAT(                                               \
       (t1),                                                  \
       ::testing::Not(                                        \
-          torch::executor::testing::IsCloseToWithTol(t2, rtol, atol)))
+          executorch::runtime::testing::IsCloseToWithTol(t2, rtol, atol)))
 
 #define EXPECT_TENSOR_DATA_EQ(t1, t2) \
-  EXPECT_THAT((t1), ::torch::executor::testing::IsDataEqualTo(t2))
+  EXPECT_THAT((t1), ::executorch::runtime::testing::IsDataEqualTo(t2))
 #define EXPECT_TENSOR_DATA_NE(t1, t2) \
-  EXPECT_THAT((t1), ::testing::Not(torch::executor::testing::IsDataEqualTo(t2)))
+  EXPECT_THAT(                        \
+      (t1), ::testing::Not(executorch::runtime::testing::IsDataEqualTo(t2)))
 #define ASSERT_TENSOR_DATA_EQ(t1, t2) \
-  ASSERT_THAT((t1), ::torch::executor::testing::IsDataEqualTo(t2))
+  ASSERT_THAT((t1), ::executorch::runtime::testing::IsDataEqualTo(t2))
 #define ASSERT_TENSOR_DATA_NE(t1, t2) \
-  ASSERT_THAT((t1), ::testing::Not(torch::executor::testing::IsDataEqualTo(t2)))
+  ASSERT_THAT(                        \
+      (t1), ::testing::Not(executorch::runtime::testing::IsDataEqualTo(t2)))
 
 #define EXPECT_TENSOR_DATA_CLOSE(t1, t2) \
-  EXPECT_THAT((t1), ::torch::executor::testing::IsDataCloseTo(t2))
+  EXPECT_THAT((t1), ::executorch::runtime::testing::IsDataCloseTo(t2))
 #define EXPECT_TENSOR_DATA_NOT_CLOSE(t1, t2) \
-  EXPECT_THAT((t1), ::testing::Not(torch::executor::testing::IsDataCloseTo(t2)))
+  EXPECT_THAT(                               \
+      (t1), ::testing::Not(executorch::runtime::testing::IsDataCloseTo(t2)))
 #define ASSERT_TENSOR_DATA_CLOSE(t1, t2) \
-  ASSERT_THAT((t1), ::torch::executor::testing::IsDataCloseTo(t2))
+  ASSERT_THAT((t1), ::executorch::runtime::testing::IsDataCloseTo(t2))
 #define ASSERT_TENSOR_DATA_NOT_CLOSE(t1, t2) \
-  ASSERT_THAT((t1), ::testing::Not(torch::executor::testing::IsDataCloseTo(t2)))
+  ASSERT_THAT(                               \
+      (t1), ::testing::Not(executorch::runtime::testing::IsDataCloseTo(t2)))
 
 #define EXPECT_TENSOR_DATA_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
   EXPECT_THAT(                                                \
-      (t1), ::torch::executor::testing::IsDataCloseToWithTol(t2, rtol, atol))
+      (t1),                                                   \
+      ::executorch::runtime::testing::IsDataCloseToWithTol(t2, rtol, atol))
 #define EXPECT_TENSOR_DATA_NOT_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
   EXPECT_THAT(                                                    \
       (t1),                                                       \
       ::testing::Not(                                             \
-          torch::executor::testing::IsDataCloseToWithTol(t2, rtol, atol)))
+          executorch::runtime::testing::IsDataCloseToWithTol(t2, rtol, atol)))
 #define ASSERT_TENSOR_DATA_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
   ASSERT_THAT(                                                \
-      (t1), ::torch::executor::testing::IsDataCloseToWithTol(t2, rtol, atol))
+      (t1),                                                   \
+      ::executorch::runtime::testing::IsDataCloseToWithTol(t2, rtol, atol))
 #define ASSERT_TENSOR_DATA_NOT_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
   ASSERT_THAT(                                                    \
       (t1),                                                       \
       ::testing::Not(                                             \
-          torch::executor::testing::IsDataCloseToWithTol(t2, rtol, atol)))
+          executorch::runtime::testing::IsDataCloseToWithTol(t2, rtol, atol)))
 
 /*
  * Helpers for comparing lists of Tensors.
  */
 
 #define EXPECT_TENSOR_LISTS_EQ(t1, t2) \
-  EXPECT_THAT((t1), ::torch::executor::testing::IsListEqualTo(t2))
+  EXPECT_THAT((t1), ::executorch::runtime::testing::IsListEqualTo(t2))
 #define EXPECT_TENSOR_LISTS_NE(t1, t2) \
-  EXPECT_THAT((t1), ::testing::Not(torch::executor::testing::IsListEqualTo(t2)))
+  EXPECT_THAT(                         \
+      (t1), ::testing::Not(executorch::runtime::testing::IsListEqualTo(t2)))
 #define ASSERT_TENSOR_LISTS_EQ(t1, t2) \
-  ASSERT_THAT((t1), ::torch::executor::testing::IsListEqualTo(t2))
+  ASSERT_THAT((t1), ::executorch::runtime::testing::IsListEqualTo(t2))
 #define ASSERT_TENSOR_LISTS_NE(t1, t2) \
-  ASSERT_THAT((t1), ::testing::Not(torch::executor::testing::IsListEqualTo(t2)))
+  ASSERT_THAT(                         \
+      (t1), ::testing::Not(executorch::runtime::testing::IsListEqualTo(t2)))
 
 #define EXPECT_TENSOR_LISTS_CLOSE(t1, t2) \
-  EXPECT_THAT((t1), ::torch::executor::testing::IsListCloseTo(t2))
+  EXPECT_THAT((t1), ::executorch::runtime::testing::IsListCloseTo(t2))
 #define EXPECT_TENSOR_LISTS_NOT_CLOSE(t1, t2) \
-  EXPECT_THAT((t1), ::testing::Not(torch::executor::testing::IsListCloseTo(t2)))
+  EXPECT_THAT(                                \
+      (t1), ::testing::Not(executorch::runtime::testing::IsListCloseTo(t2)))
 #define ASSERT_TENSOR_LISTS_CLOSE(t1, t2) \
-  ASSERT_THAT((t1), ::torch::executor::testing::IsListCloseTo(t2))
+  ASSERT_THAT((t1), ::executorch::runtime::testing::IsListCloseTo(t2))
 #define ASSERT_TENSOR_LISTS_NOT_CLOSE(t1, t2) \
-  ASSERT_THAT((t1), ::testing::Not(torch::executor::testing::IsListCloseTo(t2)))
+  ASSERT_THAT(                                \
+      (t1), ::testing::Not(executorch::runtime::testing::IsListCloseTo(t2)))
 
 } // namespace testing
+} // namespace runtime
+} // namespace executorch
 
+// ATen already defines operator<<() for Tensor and ScalarType.
 #ifndef USE_ATEN_LIB
 
 /*
  * These functions must be declared in the original namespaces of their
  * associated types so that C++ can find them.
  */
+namespace torch {
+namespace executor {
 
 /**
  * Prints the ScalarType to the stream as a human-readable string.
  *
- * See also torch::executor::toString(ScalarType t) in ScalarTypeUtil.h.
+ * See also executorch::runtime::toString(ScalarType t) in ScalarTypeUtil.h.
  */
 std::ostream& operator<<(std::ostream& os, const exec_aten::ScalarType& t);
 
@@ -325,7 +340,27 @@ std::ostream& operator<<(std::ostream& os, const exec_aten::ScalarType& t);
  */
 std::ostream& operator<<(std::ostream& os, const exec_aten::Tensor& t);
 
+} // namespace executor
+} // namespace torch
+
 #endif // !USE_ATEN_LIB
 
+namespace torch {
+namespace executor {
+namespace testing {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::testing::IsCloseTo;
+using ::executorch::runtime::testing::IsCloseToWithTol;
+using ::executorch::runtime::testing::IsDataCloseTo;
+using ::executorch::runtime::testing::IsDataCloseToWithTol;
+using ::executorch::runtime::testing::IsDataEqualTo;
+using ::executorch::runtime::testing::IsEqualTo;
+using ::executorch::runtime::testing::IsListCloseTo;
+using ::executorch::runtime::testing::IsListEqualTo;
+using ::executorch::runtime::testing::tensor_data_is_close;
+using ::executorch::runtime::testing::tensor_lists_are_close;
+using ::executorch::runtime::testing::tensors_are_close;
+} // namespace testing
 } // namespace executor
 } // namespace torch
