@@ -16,6 +16,7 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 // MPS headers
+#include <executorch/backends/apple/mps/runtime/operations/MPSGraphSequoiaOps.h>
 #include <executorch/backends/apple/mps/runtime/operations/MPSGraphVenturaOps.h>
 #include <executorch/backends/apple/mps/runtime/operations/OperationUtils.h>
 #include <executorch/backends/apple/mps/schema_generated.h>
@@ -40,7 +41,8 @@ using NodePtr = const mpsgraph::MPSNode *;
  */
 class MPSGraphBuilder {
 public:
-  MPSGraphBuilder(const void *buffer_pointer, std::unordered_map<MPSGraphTensor *, int32_t> &mpsGraphTensorToId);
+  MPSGraphBuilder(const void *buffer_pointer, size_t num_bytes,
+                  std::unordered_map<MPSGraphTensor *, int32_t> &mpsGraphTensorToId);
   ~MPSGraphBuilder() = default;
 
   Error compileModel();
@@ -154,6 +156,8 @@ private:
   _DEFINE_MPS_OP(ConstantPadND);
   // Range ops
   _DEFINE_MPS_OP(Arange);
+  // Quant-Dequant ops
+  _DEFINE_MPS_OP(DequantizePerChannelGroup);
 
   // Helper functions
   Error addNodeToMPSGraph(NodePtr nodePtr);
@@ -178,12 +182,15 @@ private:
   const mpsgraph::MPSGraph *_flatBufferGraph;
   // FlatBuffer raw bytes of the serialized MPS model.
   const void *_buffer_pointer;
+  size_t _num_bytes;
 
   bool _metal_kernel;
   MPSGraph *_mpsGraph;
   MPSGraphExecutable *_mpsGraphExecutable;
   NSMutableDictionary<MPSGraphTensor *, MPSGraphShapedType *> *_feeds;
   NSMutableArray<MPSGraphTensor *> *_targetTensors;
+
+  const uint8_t *_constant_data_ptr;
 };
 
 #undef _DEFINE_MPS_OP
