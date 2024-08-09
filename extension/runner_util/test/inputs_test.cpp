@@ -20,20 +20,19 @@
 using namespace ::testing;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::MemoryAllocator;
-using torch::executor::MemoryManager;
-using torch::executor::Method;
-using torch::executor::Program;
-using torch::executor::Result;
-using torch::executor::Span;
-using torch::executor::Tag;
-using torch::executor::Tensor;
-using torch::executor::testing::ManagedMemoryManager;
-using torch::executor::util::BufferCleanup;
-using torch::executor::util::FileDataLoader;
-using torch::executor::util::prepare_input_tensors;
+using executorch::extension::BufferCleanup;
+using executorch::extension::FileDataLoader;
+using executorch::extension::prepare_input_tensors;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
+using executorch::runtime::Tag;
+using executorch::runtime::testing::ManagedMemoryManager;
 
 class InputsTest : public ::testing::Test {
  protected:
