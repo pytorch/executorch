@@ -56,7 +56,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     std::vector<std::shared_ptr<TensorWrapper>> tensors, graph_inputs,
         graph_outputs;
     for (const auto& tensor : *graph->tensors()) {
-      tensors.emplace_back(CreateTensorWrapper(ToTensor(tensor)));
+      tensors.emplace_back(CreateTensorWrapper(ToTensor(*tensor)));
       if (tensor->type() == qcir::TensorType::WRITE) {
         graph_inputs.push_back(tensors.back());
       } else if (tensor->type() == qcir::TensorType::READ) {

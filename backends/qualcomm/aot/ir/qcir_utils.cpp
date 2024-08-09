@@ -199,7 +199,7 @@ Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor) {
           };
 
   Qnn_QuantizeParams_t p = QNN_QUANTIZE_PARAMS_INIT;
-  auto param = tensor->qparam();
+  auto param = tensor.qparam();
   p.encodingDefinition = def_map.at(param->def());
   p.quantizationEncoding = type_map.at(param->type());
   switch (p.quantizationEncoding) {
@@ -231,7 +231,7 @@ Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor) {
     default:
       QNN_EXECUTORCH_LOG_WARN(
           "qcir::QuantizeType::UNDEFINED detected: %s",
-          tensor->name()->c_str());
+          tensor.name()->c_str());
       break;
   }
   return p;
@@ -264,16 +264,16 @@ Qnn_Tensor_t ToTensor(const tensor_type& tensor) {
   };
 
   Qnn_Tensor_t t = QNN_TENSOR_INIT;
-  QNN_VER_PTR(t)->name = tensor->name()->c_str();
-  QNN_VER_PTR(t)->type = ToTensorType(tensor->type());
-  QNN_VER_PTR(t)->dataType = ToDataType(tensor->dtype());
+  QNN_VER_PTR(t)->name = tensor.name()->c_str();
+  QNN_VER_PTR(t)->type = ToTensorType(tensor.type());
+  QNN_VER_PTR(t)->dataType = ToDataType(tensor.dtype());
   QNN_VER_PTR(t)->quantizeParams = ToQuantizeParam(tensor);
-  QNN_VER_PTR(t)->rank = tensor->shape()->size();
-  QNN_VER_PTR(t)->dimensions = const_cast<uint32_t*>(tensor->shape()->data());
-  QNN_VER_PTR(t)->clientBuf.dataSize = tensor->data()->size();
+  QNN_VER_PTR(t)->rank = tensor.shape()->size();
+  QNN_VER_PTR(t)->dimensions = const_cast<uint32_t*>(tensor.shape()->data());
+  QNN_VER_PTR(t)->clientBuf.dataSize = tensor.data()->size();
   QNN_VER_PTR(t)->clientBuf.data = is_io_tensor(QNN_VER_PTR(t)->type)
       ? nullptr
-      : static_cast<void*>(const_cast<uint8_t*>(tensor->data()->Data()));
+      : static_cast<void*>(const_cast<uint8_t*>(tensor.data()->Data()));
   return t;
 }
 
