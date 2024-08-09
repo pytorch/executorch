@@ -86,3 +86,36 @@ def define_common_targets():
             ":custom_ops",
         ],
     )
+
+    ## For preprocess
+    runtime.python_library(
+        name = "preprocess_custom_ops_py",
+        srcs = [
+            "preprocess_custom_ops.py",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "op_tile_crop",
+        srcs = ["op_tile_crop.cpp"],
+        exported_headers = ["op_tile_crop.h"],
+        exported_deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/extension/kernel_util:kernel_util",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        # @lint-ignore BUCKLINT link_whole
+        link_whole = True,
+        force_static = True,
+    )
