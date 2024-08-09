@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * Copyright 2024 Arm Limited and/or its affiliates.
  * All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
@@ -29,6 +30,9 @@
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
+#ifdef ET_EVENT_TRACER_ENABLED
+#include <executorch/sdk/etdump/etdump_flatcc.h>
+#endif // ET_EVENT_TRACER_ENABLED
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
@@ -36,6 +40,13 @@ DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
+#ifdef ET_EVENT_TRACER_ENABLED
+DEFINE_string(
+    etdump_path,
+    "model.etdump",
+    "If ETDump generation is enabled an ETDump will be written out to this path.");
+DEFINE_uint32(num_executions, 10, "Number of times to run the model.");
+#endif // ET_EVENT_TRACER_ENABLED
 
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
@@ -142,8 +153,22 @@ int main(int argc, char** argv) {
   // the method can mutate the memory-planned buffers, so the method should only
   // be used by a single thread at at time, but it can be reused.
   //
+  uint32_t num_executions = 1;
+  EventTracer* event_tracer_ptr = nullptr;
+#ifdef ET_EVENT_TRACER_ENABLED
+  std::unique_ptr<FILE, decltype(&fclose)> etdump_file(
+      fopen(FLAGS_etdump_path.c_str(), "w+"), fclose);
+  ET_CHECK_MSG(
+      etdump_file,
+      "Failed to open ETDump file at %s.",
+      FLAGS_etdump_path.c_str());
 
-  Result<Method> method = program->load_method(method_name, &memory_manager);
+  num_executions = FLAGS_num_executions;
+  torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
+  event_tracer_ptr = &etdump_gen;
+#endif // ET_EVENT_TRACER_ENABLED
+  Result<Method> method =
+      program->load_method(method_name, &memory_manager, event_tracer_ptr);
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
@@ -162,24 +187,39 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Inputs prepared.");
 
   // Run the model.
-  Error status = method->execute();
-  ET_CHECK_MSG(
-      status == Error::Ok,
-      "Execution of method %s failed with status 0x%" PRIx32,
-      method_name,
-      (uint32_t)status);
-  ET_LOG(Info, "Model executed successfully.");
+  for (uint32_t i = 0; i < num_executions; i++) {
+    Error status = method->execute();
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Execution of method %s failed with status 0x%" PRIx32,
+        method_name,
+        (uint32_t)status);
+  }
+  ET_LOG(Info, "Model executed successfully %i time(s).", num_executions);
 
   // Print the outputs.
   std::vector<EValue> outputs(method->outputs_size());
   ET_LOG(Info, "%zu outputs: ", outputs.size());
-  status = method->get_outputs(outputs.data(), outputs.size());
+  Error status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
   // Print the first and last 100 elements of long lists of scalars.
   std::cout << torch::executor::util::evalue_edge_items(100);
   for (int i = 0; i < outputs.size(); ++i) {
     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
   }
+
+#ifdef ET_EVENT_TRACER_ENABLED
+  // Dump the ETDump data containing profiling/debugging data to the specified
+  // file.
+  etdump_result result = etdump_gen.get_etdump_data();
+  if (result.buf != nullptr && result.size > 0) {
+    fwrite((uint8_t*)result.buf, 1, result.size, etdump_file.get());
+    free(result.buf);
+    ET_LOG(Info, "ETDump written to file '%s'.", FLAGS_etdump_path.c_str());
+  } else {
+    ET_LOG(Error, "No ETDump data available!");
+  }
+#endif // ET_EVENT_TRACER_ENABLED
 
   return 0;
 }
