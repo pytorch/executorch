@@ -9,8 +9,8 @@
 #pragma once
 #include <executorch/runtime/core/memory_allocator.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * BackendInitContext will be used to inject runtime info for to initialize
@@ -33,5 +33,13 @@ class BackendInitContext final {
   MemoryAllocator* runtime_allocator_ = nullptr;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::BackendInitContext;
 } // namespace executor
 } // namespace torch

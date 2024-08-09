@@ -20,8 +20,8 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 struct SizedBuffer {
   void* buffer;
@@ -170,5 +170,21 @@ PyTorchBackendInterface* get_backend_class(const char* name);
  */
 __ET_NODISCARD Error register_backend(const Backend& backend);
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::Backend;
+using ::executorch::runtime::BackendRegistry;
+using ::executorch::runtime::CompileSpec;
+using ::executorch::runtime::DelegateHandle;
+using ::executorch::runtime::get_backend_class;
+// using ::executorch::runtime::kRegistrationTableMaxSize;
+using ::executorch::runtime::PyTorchBackendInterface;
+using ::executorch::runtime::register_backend;
+using ::executorch::runtime::SizedBuffer;
 } // namespace executor
 } // namespace torch
