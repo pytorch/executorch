@@ -520,10 +520,10 @@ Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found <a class
 <h2>Prerequsites (Hardware and Software)<a class="headerlink" href="#prerequsites-hardware-and-software" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="host-os">
 <h3>Host OS<a class="headerlink" href="#host-os" title="Permalink to this heading">¶</a></h3>
-<p>The Linux host operating system that QNN Backend is verified with is Ubuntu 20.04 LTS x64.</p>
-<p>However, because Qualcomm Package Manager(QPM) used to download necessary SDK (see below)
-only support Ubuntu, we recommend users to exercise this tutorial exacly
-on Ubuntu 20.04.</p>
+<p>The Linux host operating system that QNN Backend is verified with is Ubuntu 22.04 LTS x64
+at the moment of updating this tutorial.
+Usually, we verified the backend on the same OS version which QNN is verified with.
+The version is documented in QNN SDK.</p>
 </div>
 <div class="section" id="hardware">
 <h3>Hardware:<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
@@ -540,34 +540,36 @@ on Ubuntu 20.04.</p>
 <h3>Software:<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>Follow ExecuTorch recommended Python version.</p></li>
-<li><p>A compiler to compile AOT parts. GCC 9.4 come with Ubuntu20.04 is verified.</p></li>
-<li><p><a class="reference external" href="https://developer.android.com/ndk">Android NDK</a>. This example is verified with NDK 25c.</p></li>
+<li><p>A compiler to compile AOT parts, e.g., the GCC compiler comes with Ubuntu LTS.</p></li>
+<li><p><a class="reference external" href="https://developer.android.com/ndk">Android NDK</a>. This example is verified with NDK 26c.</p></li>
 <li><p><a class="reference external" href="https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk">Qualcomm AI Engine Direct SDK</a></p>
 <ul>
-<li><p>Follow the download button. After logging in, search Qualcomm AI Stack at the <em>Tool</em> panel.</p></li>
-<li><p>You can find Qualcomm AI Engine Direct SDK under the AI Stack group.</p></li>
-<li><p>Please download the Linux version, and follow instructions on the page to extract the file.</p></li>
-<li><p>The SDK should be installed to somewhere <code class="docutils literal notranslate"><span class="pre">/opt/qcom/aistack/qnn</span></code> by default.</p></li>
-<li><p>It’s also OK to place it somewhere else. We don’t have assumption about the absolute path of the SDK.</p></li>
-<li><p>This example is verified with version 2.12.0.</p></li>
+<li><p>Click the “Get Software” button to download a version of QNN SDK.</p></li>
+<li><p>However, at the moment of updating this tutorial, the above website doesn’t provide QNN SDK newer than 2.22.6.</p></li>
+<li><p>The below is public links to download various QNN versions. Hope they can be publicly discoverable soon.</p></li>
+<li><p><a class="reference external" href="https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.25.0.240728.zip">QNN 2.25.0</a></p></li>
+<li><p><a class="reference external" href="https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.24.0.240626.zip">QNN 2.24.0</a></p></li>
+<li><p><a class="reference external" href="https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.23.0.24.06.24.zip">QNN 2.23.0</a></p></li>
 </ul>
 </li>
 </ul>
 <p>The directory with installed Qualcomm AI Engine Direct SDK looks like:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>$ tree -L 1 /opt/qcom/aistack/qnn/&lt;version&gt;/
-/opt/qcom/aistack/qnn/&lt;version&gt;/
-├── benchmarks
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>├── benchmarks
 ├── bin
 ├── docs
 ├── examples
 ├── include
 ├── lib
 ├── LICENSE.pdf
+├── NOTICE.txt
+├── NOTICE_WINDOWS.txt
 ├── QNN_NOTICE.txt
 ├── QNN_README.txt
 ├── QNN_ReleaseNotes.txt
-├── share
-└── Uninstall
+├── ReleaseNotes.txt
+├── ReleaseNotesWindows.txt
+├── sdk.yaml
+└── share
 </pre></div>
 </div>
 </div>
@@ -578,7 +580,7 @@ on Ubuntu 20.04.</p>
 <h3>Conventions<a class="headerlink" href="#conventions" title="Permalink to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">$QNN_SDK_ROOT</span></code> refers to the root of Qualcomm AI Engine Direct SDK,
 i.e., the directory containing <code class="docutils literal notranslate"><span class="pre">QNN_README.txt</span></code>.</p>
-<p><code class="docutils literal notranslate"><span class="pre">$ANDROID_NDK</span></code> refers to the root of Android NDK.</p>
+<p><code class="docutils literal notranslate"><span class="pre">$ANDROID_NDK_ROOT</span></code> refers to the root of Android NDK.</p>
 <p><code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT</span></code> refers to the root of executorch git repository.</p>
 </div>
 <div class="section" id="setup-environment-variables">
@@ -594,19 +596,37 @@ Python APIs.</p>
 </div>
 <div class="section" id="build">
 <h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
-<p>An example script for below building instructions is <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh">here</a>.</p>
+<p>An example script for the below building instructions is <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh">here</a>.
+We recommend to use the script because the ExecuTorch build-command can change from time to time.
+The above script is actively used. It is updated more frquently than this tutorial.
+An example usage is</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
+./backends/qualcomm/scripts/build.sh
+<span class="c1"># or</span>
+./backends/qualcomm/scripts/build.sh<span class="w"> </span>--release
+</pre></div>
+</div>
 <div class="section" id="aot-ahead-of-time-components">
 <h3>AOT (Ahead-of-time) components:<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this heading">¶</a></h3>
 <p>Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct binary.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
-<span class="c1"># Workaround for fbs files in exir/_serialize</span>
-cp<span class="w"> </span>schema/program.fbs<span class="w"> </span>exir/_serialize/program.fbs
-cp<span class="w"> </span>schema/scalar_type.fbs<span class="w"> </span>exir/_serialize/scalar_type.fbs
+mkdir<span class="w"> </span>cmake-out
+<span class="nb">cd</span><span class="w"> </span>cmake-out
+<span class="c1"># Note that the below command might change.</span>
+<span class="c1"># Please refer to the above build.sh for latest workable commands.</span>
+cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span><span class="nv">$PWD</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_SDK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_ENABLE_EVENT_TRACER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT<span class="o">=</span>OFF
 
-mkdir<span class="w"> </span>build_x86_64
-<span class="nb">cd</span><span class="w"> </span>build_x86_64
-cmake<span class="w"> </span>..<span class="w"> </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>
-cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>-t<span class="w"> </span><span class="s2">&quot;PyQnnManagerAdaptor&quot;</span><span class="w"> </span><span class="s2">&quot;PyQnnWrapperAdaptor&quot;</span><span class="w"> </span>-j8
+<span class="c1"># nproc is used to detect the number of available CPU.</span>
+<span class="c1"># If it is not applicable, please feel free to use the number you want.</span>
+cmake<span class="w"> </span>--build<span class="w"> </span><span class="nv">$PWD</span><span class="w"> </span>--target<span class="w"> </span><span class="s2">&quot;PyQnnManagerAdaptor&quot;</span><span class="w"> </span><span class="s2">&quot;PyQnnWrapperAdaptor&quot;</span><span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
 
 <span class="c1"># install Python APIs to correct import path</span>
 <span class="c1"># The filename might vary depending on your Python and host version.</span>
@@ -620,46 +640,56 @@ cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnWrapp
 <p>A example <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> executable would be used to run the compiled <code class="docutils literal notranslate"><span class="pre">pte</span></code> model.</p>
 <p>Commands to build <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> for Android:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
-mkdir<span class="w"> </span>build_android
-<span class="nb">cd</span><span class="w"> </span>build_android
+mkdir<span class="w"> </span>cmake-out-android
+<span class="nb">cd</span><span class="w"> </span>cmake-out-android
 <span class="c1"># build executorch &amp; qnn_executorch_backend</span>
 cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span><span class="nv">$PWD</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_SDK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="nv">$QNN_SDK_ROOT</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_SDK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_ENABLE_EVENT_TRACER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK_ROOT</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="s1">&#39;arm64-v8a&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DANDROID_NATIVE_API_LEVEL<span class="o">=</span><span class="m">23</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-B<span class="nv">$PWD</span>
+<span class="w">    </span>-DANDROID_NATIVE_API_LEVEL<span class="o">=</span><span class="m">23</span>
 
-cmake<span class="w"> </span>--build<span class="w"> </span><span class="nv">$PWD</span><span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install
+<span class="c1"># nproc is used to detect the number of available CPU.</span>
+<span class="c1"># If it is not applicable, please feel free to use the number you want.</span>
+cmake<span class="w"> </span>--build<span class="w"> </span><span class="nv">$PWD</span><span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
 
 cmake<span class="w"> </span>../examples/qualcomm<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK_ROOT</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="s1">&#39;arm64-v8a&#39;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DANDROID_NATIVE_API_LEVEL<span class="o">=</span><span class="m">23</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">/lib/cmake/ExecuTorch;</span><span class="nv">$PWD</span><span class="s2">/third-party/gflags;&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE<span class="o">=</span>BOTH<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-Bexamples/qualcomm
 
-cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<span class="w"> </span>-j16
+cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
+
+<span class="c1"># qnn_executor_runner can be found under examples/qualcomm</span>
+<span class="c1"># The full path is $EXECUTORCH_ROOT/cmake-out-android/examples/qualcomm/qnn_executor_runner</span>
+ls<span class="w"> </span>examples/qualcomm
 </pre></div>
 </div>
 <p><strong>Note:</strong> If you want to build for release, add <code class="docutils literal notranslate"><span class="pre">-DCMAKE_BUILD_TYPE=Release</span></code> to the <code class="docutils literal notranslate"><span class="pre">cmake</span></code> command options.</p>
-<p>You can find <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> under <code class="docutils literal notranslate"><span class="pre">build_android/examples/qualcomm/</span></code>.</p>
-<p>The build script is also available <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh">here</a>.</p>
 </div>
 </div>
 <div class="section" id="deploying-and-running-on-device">
 <h2>Deploying and running on device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="aot-compile-a-model">
 <h3>AOT compile a model<a class="headerlink" href="#aot-compile-a-model" title="Permalink to this heading">¶</a></h3>
-<p>You can refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/deeplab_v3.py">this script</a> for the exact flow.
+<p>Refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/deeplab_v3.py">this script</a> for the exact flow.
 We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands to compile:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>cd $EXECUTORCH_ROOT
-python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --compile_only --download
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
+<span class="c1"># Workaround for fbs files in exir/_serialize</span>
+cp<span class="w"> </span>schema/program.fbs<span class="w"> </span>exir/_serialize/program.fbs
+cp<span class="w"> </span>schema/scalar_type.fbs<span class="w"> </span>exir/_serialize/scalar_type.fbs
+
+python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build_android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--compile_only<span class="w"> </span>--download
 </pre></div>
 </div>
 <p>You might see something like below:</p>
@@ -679,6 +709,54 @@ python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --comp
 </div>
 <p>The compiled model is <code class="docutils literal notranslate"><span class="pre">./deeplab_v3/dlv3_qnn.pte</span></code>.</p>
 </div>
+<div class="section" id="test-model-inference-on-qnn-htp-emulator">
+<h3>Test model inference on QNN HTP emulator<a class="headerlink" href="#test-model-inference-on-qnn-htp-emulator" title="Permalink to this heading">¶</a></h3>
+<p>We can test model inferences before deploying it to a device by HTP emulator.</p>
+<p>Let’s build <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> for a x64 host:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># assuming the AOT component is built.</span>
+<span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/cmake-out
+cmake<span class="w"> </span>../examples/qualcomm<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">/lib/cmake/ExecuTorch;</span><span class="nv">$PWD</span><span class="s2">/third-party/gflags;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE<span class="o">=</span>BOTH<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-Bexamples/qualcomm
+
+cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
+
+<span class="c1"># qnn_executor_runner can be found under examples/qualcomm</span>
+<span class="c1"># The full path is $EXECUTORCH_ROOT/cmake-out/examples/qualcomm/qnn_executor_runner</span>
+ls<span class="w"> </span>examples/qualcomm/
+</pre></div>
+</div>
+<p>To run the HTP emulator, the dynamic linker need to access QNN libraries and <code class="docutils literal notranslate"><span class="pre">libqnn_executorch_backend.so</span></code>.
+We set the below two paths to <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code> environment variable:</p>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">$QNN_SDK_ROOT/lib/x86_64-linux-clang/</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/cmake-out/lib/</span></code></p></li>
+</ol>
+<p>The first path is for QNN libraries including HTP emulator. It has been configured in the AOT compilation section.</p>
+<p>The second path is for <code class="docutils literal notranslate"><span class="pre">libqnn_executorch_backend.so</span></code>.</p>
+<p>So, we can run <code class="docutils literal notranslate"><span class="pre">./deeplab_v3/dlv3_qnn.pte</span></code> by:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/cmake-out
+<span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="nv">$EXECUTORCH_ROOT</span>/cmake-out/lib/:<span class="nv">$LD_LIBRARY_PATH</span>
+examples/qualcomm/qnn_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>../deeplab_v3/dlv3_qnn.pte
+</pre></div>
+</div>
+<p>We should see some outputs like the below. Note that the emulator can take some time to finish.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>I<span class="w"> </span><span class="m">00</span>:00:00.354662<span class="w"> </span>executorch:qnn_executor_runner.cpp:213<span class="o">]</span><span class="w"> </span>Method<span class="w"> </span>loaded.
+I<span class="w"> </span><span class="m">00</span>:00:00.356460<span class="w"> </span>executorch:qnn_executor_runner.cpp:261<span class="o">]</span><span class="w"> </span>ignoring<span class="w"> </span>error<span class="w"> </span>from<span class="w"> </span>set_output_data_ptr<span class="o">()</span>:<span class="w"> </span>0x2
+I<span class="w"> </span><span class="m">00</span>:00:00.357991<span class="w"> </span>executorch:qnn_executor_runner.cpp:261<span class="o">]</span><span class="w"> </span>ignoring<span class="w"> </span>error<span class="w"> </span>from<span class="w"> </span>set_output_data_ptr<span class="o">()</span>:<span class="w"> </span>0x2
+I<span class="w"> </span><span class="m">00</span>:00:00.357996<span class="w"> </span>executorch:qnn_executor_runner.cpp:265<span class="o">]</span><span class="w"> </span>Inputs<span class="w"> </span>prepared.
+
+I<span class="w"> </span><span class="m">00</span>:01:09.328144<span class="w"> </span>executorch:qnn_executor_runner.cpp:414<span class="o">]</span><span class="w"> </span>Model<span class="w"> </span>executed<span class="w"> </span>successfully.
+I<span class="w"> </span><span class="m">00</span>:01:09.328159<span class="w"> </span>executorch:qnn_executor_runner.cpp:421<span class="o">]</span><span class="w"> </span>Write<span class="w"> </span>etdump<span class="w"> </span>to<span class="w"> </span>etdump.etdp,<span class="w"> </span><span class="nv">Size</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">424</span>
+<span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span><span class="o">[</span>Qnn<span class="w"> </span>ExecuTorch<span class="o">]</span>:<span class="w"> </span>Destroy<span class="w"> </span>Qnn<span class="w"> </span>backend<span class="w"> </span>parameters
+<span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span><span class="o">[</span>Qnn<span class="w"> </span>ExecuTorch<span class="o">]</span>:<span class="w"> </span>Destroy<span class="w"> </span>Qnn<span class="w"> </span>context
+<span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span><span class="o">[</span>Qnn<span class="w"> </span>ExecuTorch<span class="o">]</span>:<span class="w"> </span>Destroy<span class="w"> </span>Qnn<span class="w"> </span>device
+<span class="o">[</span>INFO<span class="o">]</span><span class="w"> </span><span class="o">[</span>Qnn<span class="w"> </span>ExecuTorch<span class="o">]</span>:<span class="w"> </span>Destroy<span class="w"> </span>Qnn<span class="w"> </span>backend
+</pre></div>
+</div>
+</div>
 <div class="section" id="run-model-inference-on-an-android-smartphone-with-qualcomm-socs">
 <h3>Run model inference on an Android smartphone with Qualcomm SoCs<a class="headerlink" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs" title="Permalink to this heading">¶</a></h3>
 <p><em><strong>Step 1</strong></em>. We need to push required QNN libraries to the device.</p>
@@ -686,11 +764,13 @@ python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --comp
 <span class="nv">DEVICE_DIR</span><span class="o">=</span>/data/local/tmp/executorch_qualcomm_tutorial/
 adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;mkdir -p </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2">&quot;</span>
 adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtp.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnSystem.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV69Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV73Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
-adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnSystem.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV75Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 </pre></div>
 </div>
 <p><em><strong>Step 2</strong></em>.  We also need to indicate dynamic linkers on Android and Hexagon
@@ -706,13 +786,26 @@ adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;c
 </pre></div>
 </div>
 <p>You should see something like below:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">01.835706</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">298</span><span class="p">]</span> <span class="mi">100</span> <span class="n">inference</span> <span class="n">took</span> <span class="mf">1096.626000</span> <span class="n">ms</span><span class="p">,</span> <span class="n">avg</span> <span class="mf">10.966260</span> <span class="n">ms</span>
-<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">backend</span> <span class="n">parameters</span>
-<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">context</span>
-<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">device</span>
-<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">backend</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.257354</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">213</span><span class="p">]</span> <span class="n">Method</span> <span class="n">loaded</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.323502</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">262</span><span class="p">]</span> <span class="n">ignoring</span> <span class="n">error</span> <span class="kn">from</span> <span class="nn">set_output_data_ptr</span><span class="p">():</span> <span class="mh">0x2</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.357496</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">262</span><span class="p">]</span> <span class="n">ignoring</span> <span class="n">error</span> <span class="kn">from</span> <span class="nn">set_output_data_ptr</span><span class="p">():</span> <span class="mh">0x2</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.357555</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">265</span><span class="p">]</span> <span class="n">Inputs</span> <span class="n">prepared</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.364824</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">414</span><span class="p">]</span> <span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.364875</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">425</span><span class="p">]</span> <span class="n">Write</span> <span class="n">etdump</span> <span class="n">to</span> <span class="n">etdump</span><span class="o">.</span><span class="n">etdp</span><span class="p">,</span> <span class="n">Size</span> <span class="o">=</span> <span class="mi">424</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">]</span> <span class="p">[</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]:</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">backend</span> <span class="n">parameters</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">]</span> <span class="p">[</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]:</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">context</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">]</span> <span class="p">[</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]:</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">backend</span>
 </pre></div>
 </div>
+<p>The model is merely executed. If we want to feed real inputs and get model outputs, we can use</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
+python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build_android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--download<span class="w"> </span>-s<span class="w"> </span>&lt;device_serial&gt;
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">&lt;device_serial&gt;</span></code> can be found by <code class="docutils literal notranslate"><span class="pre">adb</span> <span class="pre">devices</span></code> command.</p>
+<p>After the above command, pre-processed inputs and outputs are put in <code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/deeplab_v3</span></code> and <code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/deeplab_v3/outputs</span></code> folder.</p>
+<p>The command-line arguents are written in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/utils.py#L127">utils.py</a>.
+The model, inputs, and output location are passed to <code class="docutils literal notranslate"><span class="pre">qnn_executorch_runner</span></code> by <code class="docutils literal notranslate"><span class="pre">--model_path</span></code>, <code class="docutils literal notranslate"><span class="pre">--input_list_path</span></code>, and <code class="docutils literal notranslate"><span class="pre">--output_folder_path</span></code>.</p>
 </div>
 <div class="section" id="running-a-model-via-executorch-s-android-demo-app">
 <h3>Running a model via ExecuTorch’s android demo-app<a class="headerlink" href="#running-a-model-via-executorch-s-android-demo-app" title="Permalink to this heading">¶</a></h3>
@@ -720,11 +813,15 @@ adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;c
 <code class="docutils literal notranslate"><span class="pre">examples</span></code>. Please refer to android demo app <a class="reference external" href="https://pytorch.org/executorch/stable/demo-apps-android.html">tutorial</a>.</p>
 </div>
 </div>
+<div class="section" id="supported-model-list">
+<h2>Supported model list<a class="headerlink" href="#supported-model-list" title="Permalink to this heading">¶</a></h2>
+<p>Please refer to <code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/examples/qualcomm/scripts/</span></code> and <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_ROOT/examples/qualcomm/oss_scripts/</span></code> to the list of supported models.</p>
+</div>
 <div class="section" id="what-is-coming">
 <h2>What is coming?<a class="headerlink" href="#what-is-coming" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/1043">An example using quantized mobilebert</a> to solve multi-class text classification.</p></li>
-<li><p>More Qualcomm AI Engine Direct accelerators, e.g., GPU.</p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/4030">llama2 and llama3</a>. Note that at the moment of writing, we still suffer from the quantization issue in llama2-7B and llama3-8B cases. Only storiesllama works well.</p></li>
+<li><p>We will support pre-compiled binaries from <a class="reference external" href="https://aihub.qualcomm.com/">Qualcomm AI Hub</a>.</p></li>
 </ul>
 </div>
 <div class="section" id="faq">
@@ -799,10 +896,12 @@ issue on ExecuTorch repo and tag use <code class="docutils literal notranslate">
 </li>
 <li><a class="reference internal" href="#deploying-and-running-on-device">Deploying and running on device</a><ul>
 <li><a class="reference internal" href="#aot-compile-a-model">AOT compile a model</a></li>
+<li><a class="reference internal" href="#test-model-inference-on-qnn-htp-emulator">Test model inference on QNN HTP emulator</a></li>
 <li><a class="reference internal" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs">Run model inference on an Android smartphone with Qualcomm SoCs</a></li>
 <li><a class="reference internal" href="#running-a-model-via-executorch-s-android-demo-app">Running a model via ExecuTorch’s android demo-app</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#supported-model-list">Supported model list</a></li>
 <li><a class="reference internal" href="#what-is-coming">What is coming?</a></li>
 <li><a class="reference internal" href="#faq">FAQ</a></li>
 </ul>
