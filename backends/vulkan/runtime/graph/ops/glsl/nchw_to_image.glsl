@@ -24,9 +24,6 @@ layout(std430) buffer;
 ${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
 ${layout_declare_buffer(1, "r", "nchw_in", DTYPE)}
 ${layout_declare_ubo(2, "ivec4", "sizes")}
-$if STORAGE == "buffer":
-  ${layout_declare_ubo(3, "ivec4", "gpu_strides")}
-  ${layout_declare_ubo(4, "int", "ntexels")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -54,21 +51,6 @@ VEC4_T read_texel(ivec4 tensor_idx) {
   return texel;
 }
 
-#ifdef USING_BUFFER
-
-void main() {
-  const int t_id = int(gl_GlobalInvocationID.x);
-  if (t_id >= ntexels) {
-    return;
-  }
-
-  ivec4 tensor_idx = to_tensor_idx(t_id, gpu_strides, packed_dim);
-  tensor_idx[packed_dim] *= 4;
-  t_out[t_id] = read_texel(tensor_idx);
-}
-
-#else // USING_TEXTURE
-
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
   const ivec4 tensor_idx = to_tensor_idx(pos, sizes, packed_dim);
@@ -78,5 +60,3 @@ void main() {
 
   write_texel(t_out, pos, read_texel(tensor_idx));
 }
-
-#endif // USING_BUFFER
