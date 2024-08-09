@@ -327,19 +327,19 @@ utils::uvec3 ComputeGraph::create_local_wg_size(
 
   utils::uvec3 local_group_size = {4, 4, 4};
 
-  if (global_wg_size.data[2u] == 1) {
-    if (global_wg_size.data[1u] == 1) {
-      local_group_size.data[0u] = 64;
-      local_group_size.data[1u] = 1;
-      local_group_size.data[2u] = 1;
-    } else if (global_wg_size.data[1u] < 8) {
-      local_group_size.data[0u] = 16;
-      local_group_size.data[1u] = 4;
-      local_group_size.data[2u] = 1;
+  if (global_wg_size[2u] == 1) {
+    if (global_wg_size[1u] == 1) {
+      local_group_size[0u] = 64;
+      local_group_size[1u] = 1;
+      local_group_size[2u] = 1;
+    } else if (global_wg_size[1u] < 8) {
+      local_group_size[0u] = 16;
+      local_group_size[1u] = 4;
+      local_group_size[2u] = 1;
     } else {
-      local_group_size.data[0u] = 8;
-      local_group_size.data[1u] = 8;
-      local_group_size.data[2u] = 1;
+      local_group_size[0u] = 8;
+      local_group_size[1u] = 8;
+      local_group_size[2u] = 1;
     }
   }
   return local_group_size;
