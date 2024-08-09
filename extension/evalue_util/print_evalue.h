@@ -12,16 +12,18 @@
 
 #include <executorch/runtime/core/evalue.h>
 
-namespace torch {
-namespace executor {
-
+namespace executorch {
+namespace runtime {
 /**
  * Prints an Evalue to a stream.
  */
 std::ostream& operator<<(std::ostream& os, const EValue& value);
 // Note that this must be declared in the same namespace as EValue.
+} // namespace runtime
+} // namespace executorch
 
-namespace util {
+namespace executorch {
+namespace extension {
 
 /**
  * Sets the number of "edge items" when printing EValue lists to a stream.
@@ -67,6 +69,13 @@ class evalue_edge_items final {
   const long edge_items_;
 };
 
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace util {
+using executorch::extension::evalue_edge_items;
 } // namespace util
 } // namespace executor
 } // namespace torch
