@@ -145,7 +145,10 @@ class TestMPS(unittest.TestCase):
             for i in range(len(ref_output)):
                 res_output = model_output[i].cpu()
                 expected_output = ref_output[i].cpu()
-                if use_fp16 and (expected_output.dtype == torch.float16 or res_output.dtype == torch.float16):
+                if use_fp16 and (
+                    expected_output.dtype == torch.float16
+                    or res_output.dtype == torch.float16
+                ):
                     # cast back from fp16 to fp32 (ExecuTorch results are in FP32 by default)
                     expected_output = expected_output.to(torch.float32)
                     res_output = res_output.to(torch.float32)
@@ -153,19 +156,29 @@ class TestMPS(unittest.TestCase):
                     torch.allclose(res_output, expected_output, atol=atol, rtol=rtol)
                     is False
                 ):
-                    mean_err = ((res_output - expected_output).abs() / expected_output).mean()
+                    mean_err = (
+                        (res_output - expected_output).abs() / expected_output
+                    ).mean()
                     logging.debug(f"mean err = {mean_err}")
                     self.assertLess(mean_err, 0.05)
         else:
             # If one output, eager returns tensor while executor tuple of size 1
             expected_output = ref_output.cpu()
             res_output = model_output[0].cpu()
-            if use_fp16 and (expected_output.dtype == torch.float16 or res_output.dtype == torch.float16):
+            if use_fp16 and (
+                expected_output.dtype == torch.float16
+                or res_output.dtype == torch.float16
+            ):
                 # cast back from fp16 to fp32 (ExecuTorch results are in FP32 by default)
                 expected_output = expected_output.to(torch.float32)
                 res_output = res_output.to(torch.float32)
-            if torch.allclose(res_output, expected_output, atol=atol, rtol=rtol) is False:
-                mean_err = ((res_output - expected_output).abs() / expected_output).mean()
+            if (
+                torch.allclose(res_output, expected_output, atol=atol, rtol=rtol)
+                is False
+            ):
+                mean_err = (
+                    (res_output - expected_output).abs() / expected_output
+                ).mean()
                 logging.debug(f"mean err = {mean_err}")
                 self.assertLess(mean_err, 0.05)
 
