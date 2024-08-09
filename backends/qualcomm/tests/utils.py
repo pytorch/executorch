@@ -293,7 +293,8 @@ class TestQNN(unittest.TestCase):
 
         # this is needed for the ETRecord as lowering modifies the graph in-place
         edge_copy = copy.deepcopy(delegated_program)
-
+        from executorch.backends.qualcomm.utils.utils import draw_graph
+        draw_graph("before_lower",".", delegated_program.exported_program.graph_module)
         delegated_program.exported_program = to_backend(
             delegated_program.exported_program, qnn_partitioner
         )
@@ -342,7 +343,10 @@ class TestQNN(unittest.TestCase):
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
     ) -> torch.fx.GraphModule:
+        # New advice Api
         m = torch.export.export(module, inputs).module()
+        # Deprecated Api
+        # m = torch._export.capture_pre_autograd_graph(module, inputs)
 
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_quant_annotations)
@@ -363,7 +367,8 @@ class TestQNN(unittest.TestCase):
 
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)
-        quantized_module = convert_pt2e(prepared)
+        # Whether fold quantized or not
+        quantized_module = convert_pt2e(prepared, fold_quantize=True)
         nodes = {node.target for node in quantized_module.graph.nodes}
         q_and_dq = {
             torch.ops.quantized_decomposed.quantize_per_tensor.default,
