@@ -11,8 +11,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-
-using torch::executor::TensorShapeDynamism;
+using executorch::runtime::TensorShapeDynamism;
 
 TEST(TensorShapeDynamismTest, CanBuildInATenMode) {
   // Demonstrate that aten mode can include the header and see the enum. If this
