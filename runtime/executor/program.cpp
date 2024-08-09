@@ -29,6 +29,8 @@
 
 #pragma clang diagnostic ignored "-Wshadow"
 
+using executorch::runtime::ExtendedHeader;
+
 namespace torch {
 namespace executor {
 

@@ -10,8 +10,8 @@
 
 #include <executorch/runtime/core/result.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * An extended, ExecuTorch-specific header that may be embedded in the
@@ -72,5 +72,5 @@ struct ExtendedHeader {
   uint64_t segment_base_offset;
 };
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch
