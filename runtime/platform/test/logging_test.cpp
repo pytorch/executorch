@@ -11,8 +11,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
 
-namespace torch {
-namespace executor {
+using namespace executorch::runtime;
 
 class LoggingTest : public ::testing::Test {
  public:
@@ -32,6 +31,3 @@ TEST_F(LoggingTest, LogLevels) {
 TEST_F(LoggingTest, LogFormatting) {
   ET_LOG(Info, "Sample log with integer: %u", 100);
 }
-
-} // namespace executor
-} // namespace torch
