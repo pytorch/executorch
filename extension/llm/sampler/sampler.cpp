@@ -131,7 +131,7 @@ Sampler::Sampler(
     float topp,
     unsigned long long rng_seed)
     : vocab_size_(vocab_size),
-      temperature_(temperature),
+      inv_temperature_(temperature ? 1.0f / temperature : 0),
       topp_(topp),
       rng_state_(rng_seed) {}
 
@@ -172,13 +172,13 @@ template <typename T>
 int32_t Sampler::sample(T* logits) {
   // sample the token given the logits and some hyperparameters
   int next;
-  if (temperature_ == 0.0f) {
+  if (inv_temperature_ == 0.0f) {
     // greedy argmax sampling: take the token with the highest probability
     next = sample_argmax(logits);
   } else {
     // apply the temperature to the logits
     for (int q = 0; q < vocab_size_; q++) {
-      logits[q] /= temperature_;
+      logits[q] *= inv_temperature_;
     }
     // apply softmax to the logits to get the probabilities for next token
     softmax(logits, vocab_size_);
