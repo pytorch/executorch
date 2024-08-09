@@ -37,7 +37,7 @@
   ({                                                                    \
     if __ET_UNLIKELY (!(_cond)) {                                       \
       ET_ASSERT_MESSAGE_EMIT(" (%s): " _format, #_cond, ##__VA_ARGS__); \
-      torch::executor::runtime_abort();                                 \
+      ::executorch::runtime::runtime_abort();                           \
     }                                                                   \
   })
 
@@ -51,7 +51,7 @@
   ({                                          \
     if __ET_UNLIKELY (!(_cond)) {             \
       ET_ASSERT_MESSAGE_EMIT(": %s", #_cond); \
-      torch::executor::runtime_abort();       \
+      ::executorch::runtime::runtime_abort(); \
     }                                         \
   })
 

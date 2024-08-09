@@ -12,8 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 // Version string used to check for compatibility with post-processing
 // tool
@@ -180,38 +180,71 @@ class ExecutorchProfilerInstructionScope {
   prof_state_t old_state_;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::begin_profiling;
+using ::executorch::runtime::dump_profile_stats;
+using ::executorch::runtime::end_profiling;
+using ::executorch::runtime::ExecutorchProfiler;
+using ::executorch::runtime::ExecutorchProfilerInstructionScope;
+using ::executorch::runtime::get_profile_tls_state;
+using ::executorch::runtime::mem_prof_event_t;
+using ::executorch::runtime::prof_allocator_t;
+using ::executorch::runtime::prof_buf_size;
+using ::executorch::runtime::prof_event_t;
+using ::executorch::runtime::prof_events_offset;
+using ::executorch::runtime::prof_header_offset;
+using ::executorch::runtime::prof_header_t;
+using ::executorch::runtime::prof_mem_alloc_events_offset;
+using ::executorch::runtime::prof_mem_alloc_info_offset;
+using ::executorch::runtime::prof_result_t;
+using ::executorch::runtime::prof_state_t;
+using ::executorch::runtime::profiler_init;
+using ::executorch::runtime::profiling_create_block;
+using ::executorch::runtime::reset_profile_stats;
+using ::executorch::runtime::set_profile_tls_state;
+using ::executorch::runtime::track_allocation;
+using ::executorch::runtime::track_allocator;
 } // namespace executor
 } // namespace torch
 
 #ifdef PROFILING_ENABLED
 
 #define EXECUTORCH_PROFILE_CREATE_BLOCK(name) \
-  torch::executor::profiling_create_block(name);
+  ::executorch::runtime::profiling_create_block(name);
 
 // Convenience macros to begin and end profiling. These can be inserted
 // anywhere as it'll be ensured that for the prod builds these will
 // essentially be noops.
-#define EXECUTORCH_BEGIN_PROF(name) torch::executor::begin_profiling(name);
+#define EXECUTORCH_BEGIN_PROF(name) \
+  ::executorch::runtime::begin_profiling(name);
 
-#define EXECUTORCH_END_PROF(token_id) torch::executor::end_profiling(token_id);
+#define EXECUTORCH_END_PROF(token_id) \
+  ::executorch::runtime::end_profiling(token_id);
 
 #define EXECUTORCH_SCOPE_PROF(name) \
-  torch::executor::ExecutorchProfiler profiler(name);
+  ::executorch::runtime::ExecutorchProfiler profiler(name);
 
 #define EXECUTORCH_PROFILE_INSTRUCTION_SCOPE(chain_idx, instruction_idx) \
-  torch::executor::ExecutorchProfilerInstructionScope                    \
+  ::executorch::runtime::ExecutorchProfilerInstructionScope              \
       __profiler_instruction_scope({chain_idx, instruction_idx});
 
 #define EXECUTORCH_DUMP_PROFILE_RESULTS(prof_result) \
-  torch::executor::dump_profile_stats(prof_result);
+  ::executorch::runtime::dump_profile_stats(prof_result);
 
 #define EXECUTORCH_RESET_PROFILE_RESULTS() \
-  torch::executor::reset_profile_stats();
+  ::executorch::runtime::reset_profile_stats();
 
-#define EXECUTORCH_TRACK_ALLOCATOR(name) torch::executor::track_allocator(name);
+#define EXECUTORCH_TRACK_ALLOCATOR(name) \
+  ::executorch::runtime::track_allocator(name);
 
 #define EXECUTORCH_TRACK_ALLOCATION(id, size) \
-  torch::executor::track_allocation(id, size);
+  ::executorch::runtime::track_allocation(id, size);
 
 #else
 
@@ -231,7 +264,7 @@ class ExecutorchProfilerInstructionScope {
   })
 
 #define EXECUTORCH_DUMP_PROFILE_RESULTS(prof_result_test) \
-  memset(prof_result_test, 0, sizeof(torch::executor::prof_result_t));
+  memset(prof_result_test, 0, sizeof(::executorch::runtime::prof_result_t));
 
 #define EXECUTORCH_RESET_PROFILE_RESULTS() \
   {}
