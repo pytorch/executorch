@@ -24,13 +24,13 @@ using namespace ::testing;
 using exec_aten::ArrayRef;
 using exec_aten::Scalar;
 using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::MemoryAllocator;
-using torch::executor::MemoryManager;
-using torch::executor::Method;
-using torch::executor::Program;
-using torch::executor::Result;
-using torch::executor::testing::ManagedMemoryManager;
+using executorch::runtime::Error;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
+using executorch::runtime::Method;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
@@ -39,7 +39,7 @@ constexpr size_t kDefaultRuntimeMemBytes = 32 * 1024U;
 class AllocationFailureStressTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Create a loader for the serialized ModuleAdd program.
     const char* path = std::getenv("ET_MODULE_ADD_PATH");
