@@ -263,7 +263,7 @@ class TestQNN(unittest.TestCase):
                 self.assertEqual(
                     proc.returncode,
                     0,
-                    f"The process running qnn_executorch_runner reutrn {proc.returncode}, "
+                    f"The process running qnn_executorch_runner return {proc.returncode}, "
                     "STDOUT=\n"
                     f"{proc.stdout.decode('utf-8')}",
                 )
