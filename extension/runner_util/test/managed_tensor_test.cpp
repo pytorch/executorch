@@ -17,13 +17,13 @@ using exec_aten::DimOrderType;
 using exec_aten::ScalarType;
 using exec_aten::SizesType;
 using exec_aten::StridesType;
-using torch::executor::ArrayRef;
-using torch::executor::ManagedTensor;
+using executorch::extension::ManagedTensor;
+using executorch::runtime::ArrayRef;
 
 class ManagedTensorTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     data_ = {1, 2, 3, 4, 5, 6};
     sizes_ = {2, 3};

@@ -12,9 +12,15 @@
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+using executorch::runtime::Error;
+using executorch::runtime::Method;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Result;
+using executorch::runtime::Tag;
+using executorch::runtime::TensorInfo;
+
+namespace executorch {
+namespace extension {
 
 Result<BufferCleanup> prepare_input_tensors(Method& method) {
   MethodMeta method_meta = method.method_meta();
@@ -53,6 +59,5 @@ Result<BufferCleanup> prepare_input_tensors(Method& method) {
   return BufferCleanup({inputs, num_allocated});
 }
 
-} // namespace util
-} // namespace executor
-} // namespace torch
+} // namespace extension
+} // namespace executorch

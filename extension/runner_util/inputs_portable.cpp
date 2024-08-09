@@ -16,9 +16,14 @@
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+using exec_aten::Tensor;
+using exec_aten::TensorImpl;
+using executorch::runtime::Error;
+using executorch::runtime::Method;
+using executorch::runtime::TensorInfo;
+
+namespace executorch {
+namespace extension {
 namespace internal {
 
 namespace {
@@ -68,6 +73,5 @@ Error fill_and_set_input(
 }
 
 } // namespace internal
-} // namespace util
-} // namespace executor
-} // namespace torch
+} // namespace extension
+} // namespace executorch
