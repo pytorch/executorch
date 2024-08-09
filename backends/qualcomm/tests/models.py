@@ -459,11 +459,12 @@ class IndexPut(torch.nn.Module):
         self.register_buffer(
             "k_cache",
             torch.zeros((1, 1024, 12, 64), dtype=torch.float32),
+            persistent=False,
         )
 
     def forward(self, input_pos, k_val):
         k_out = torch.ops.aten.index_put_(self.k_cache, [None, input_pos], k_val)
-        return k_out
+        return k_out + k_out
 
 
 class LayerNorm(torch.nn.Module):
