@@ -241,8 +241,9 @@ class TensorImpl {
   /// Number of elements in the tensor.
   ssize_t numel_;
 
-  /// Underlying capacity of data_ in bytes. Used when resizing up and down.
-  size_t capacity_;
+  /// Maximum number of elements in the bounded tensor. Used when resizing up
+  /// and down.
+  size_t numel_bound_;
 
   /// Scalar type (int, float, bool, etc) of the tensor data.
   const ScalarType type_;
