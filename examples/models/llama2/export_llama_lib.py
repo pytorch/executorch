@@ -553,27 +553,33 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
 def _load_llama_model_metadata(
     weight_type: WeightType,
-    dtype: DType,
     use_kv_cache: bool,
     use_sdpa_with_kv_cache: bool,
     enable_dynamic_shape: bool,
-    modelArgs: ModelArgs,
+    model_args: ModelArgs,
     metadata_str: Optional[str] = None,
 ):
     is_fairseq2 = weight_type == WeightType.FAIRSEQ2
     metadata = {
         "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
-        "get_bos_id": 3 if is_fairseq2 else 1,
-        "get_dtype": 5 if dtype == DType.fp16 else 6,
-        "get_eos_id": 3 if is_fairseq2 else 2,
-        "get_head_dim": modelArgs.dim // modelArgs.n_heads,
-        "get_max_batch_size": modelArgs.max_batch_size,
-        "get_max_seq_len": modelArgs.max_seq_len,
-        "get_n_bos": 1,
-        "get_n_eos": 2 if is_fairseq2 else 1,
-        "get_n_kv_heads": modelArgs.n_kv_heads,
-        "get_n_layers": modelArgs.n_layers,
-        "get_vocab_size": modelArgs.vocab_size,
+        "get_bos_id": (
+            model_args.bos_idx
+            if model_args.bos_idx is not None
+            else (3 if is_fairseq2 else 1)
+        ),
+        "get_eos_id": (
+            model_args.eos_idx
+            if model_args.eos_idx is not None
+            else (3 if is_fairseq2 else 2)
+        ),
+        "get_max_seq_len": model_args.max_seq_len,
+        "get_n_bos": model_args.bos_count if model_args.bos_count is not None else 1,
+        "get_n_eos": (
+            model_args.eos_count
+            if model_args.eos_count is not None
+            else (2 if is_fairseq2 else 1)
+        ),
+        "get_vocab_size": model_args.vocab_size,
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
@@ -655,7 +661,6 @@ def _load_llama_model(
         verbose=verbose,
         metadata=_load_llama_model_metadata(
             weight_type,
-            dtype,
             use_kv_cache,
             use_sdpa_with_kv_cache,
             enable_dynamic_shape,
