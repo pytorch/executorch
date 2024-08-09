@@ -6,12 +6,19 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+
 #include <numeric>
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 
 #include <gtest/gtest.h>
+
+using executorch::runtime::dim_order_to_stride;
+using executorch::runtime::Error;
+using executorch::runtime::is_channels_last_dim_order;
+using executorch::runtime::is_contiguous_dim_order;
+using executorch::runtime::stride_to_dim_order;
 
 namespace {
 void check_strides_eq(
@@ -36,36 +43,32 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   exec_aten::SizesType dim_order_1[1] = {0};
   exec_aten::SizesType strides_1[1] = {0};
   exec_aten::SizesType expected_strides_1[1] = {1};
-  auto error =
-      torch::executor::dim_order_to_stride(sizes_1, dim_order_1, 1, strides_1);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  auto error = dim_order_to_stride(sizes_1, dim_order_1, 1, strides_1);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_1, 1}, {expected_strides_1, 1});
 
   exec_aten::SizesType sizes_2[2] = {2, 5};
   exec_aten::SizesType dim_order_2[2] = {0, 1};
   exec_aten::SizesType strides_2[2] = {0, 0};
   exec_aten::SizesType expected_strides_2[2] = {5, 1};
-  error =
-      torch::executor::dim_order_to_stride(sizes_2, dim_order_2, 2, strides_2);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error = dim_order_to_stride(sizes_2, dim_order_2, 2, strides_2);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_2, 2}, {expected_strides_2, 2});
 
   dim_order_2[0] = 1;
   dim_order_2[1] = 0;
   expected_strides_2[0] = 1;
   expected_strides_2[1] = 2;
-  error =
-      torch::executor::dim_order_to_stride(sizes_2, dim_order_2, 2, strides_2);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error = dim_order_to_stride(sizes_2, dim_order_2, 2, strides_2);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_2, 2}, {expected_strides_2, 2});
 
   exec_aten::SizesType sizes_3[3] = {2, 5, 7};
   exec_aten::SizesType dim_order_3[3] = {0, 1, 2};
   exec_aten::SizesType strides_3[3] = {0, 0, 0};
   exec_aten::SizesType expected_strides_3[3] = {35, 7, 1};
-  error =
-      torch::executor::dim_order_to_stride(sizes_3, dim_order_3, 3, strides_3);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error = dim_order_to_stride(sizes_3, dim_order_3, 3, strides_3);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_3, 3}, {expected_strides_3, 3});
 
   // {0, 2, 1}
@@ -73,9 +76,8 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   // Expected stride {35, 1, 5}
   expected_strides_3[0] = 35, expected_strides_3[1] = 1,
   expected_strides_3[2] = 5;
-  error =
-      torch::executor::dim_order_to_stride(sizes_3, dim_order_3, 3, strides_3);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error = dim_order_to_stride(sizes_3, dim_order_3, 3, strides_3);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_3, 3}, {expected_strides_3, 3});
 
   // {2, 5, 7}
@@ -84,18 +86,16 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   // Expected stride {35, 1, 5}
   expected_strides_3[0] = 1, expected_strides_3[1] = 14,
   expected_strides_3[2] = 2;
-  error =
-      torch::executor::dim_order_to_stride(sizes_3, dim_order_3, 3, strides_3);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error = dim_order_to_stride(sizes_3, dim_order_3, 3, strides_3);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_3, 3}, {expected_strides_3, 3});
 
   exec_aten::SizesType sizes_4[4] = {2, 5, 7, 8};
   exec_aten::SizesType dim_order_4[4] = {0, 1, 2, 3};
   exec_aten::SizesType strides_4[4] = {0, 0, 0, 0};
   exec_aten::SizesType expected_strides_4[4] = {280, 56, 8, 1};
-  error =
-      torch::executor::dim_order_to_stride(sizes_4, dim_order_4, 4, strides_4);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error = dim_order_to_stride(sizes_4, dim_order_4, 4, strides_4);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_4, 4}, {expected_strides_4, 4});
 
   // {2, 5, 7, 8}
@@ -109,9 +109,8 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   expected_strides_4[1] = 1;
   expected_strides_4[2] = 40;
   expected_strides_4[3] = 5;
-  error =
-      torch::executor::dim_order_to_stride(sizes_4, dim_order_4, 4, strides_4);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error = dim_order_to_stride(sizes_4, dim_order_4, 4, strides_4);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_4, 4}, {expected_strides_4, 4});
 
   // {2, 5, 7, 8}
@@ -125,18 +124,16 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   expected_strides_4[1] = 14;
   expected_strides_4[2] = 2;
   expected_strides_4[3] = 70;
-  error =
-      torch::executor::dim_order_to_stride(sizes_4, dim_order_4, 4, strides_4);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error = dim_order_to_stride(sizes_4, dim_order_4, 4, strides_4);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_4, 4}, {expected_strides_4, 4});
 
   exec_aten::SizesType sizes_5[5] = {2, 5, 7, 8, 9};
   exec_aten::SizesType dim_order_5[5] = {0, 1, 2, 3, 4};
   exec_aten::SizesType strides_5[5] = {0, 0, 0, 0, 0};
   exec_aten::SizesType expected_strides_5[5] = {2520, 504, 72, 9, 1};
-  error =
-      torch::executor::dim_order_to_stride(sizes_5, dim_order_5, 5, strides_5);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error = dim_order_to_stride(sizes_5, dim_order_5, 5, strides_5);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_5, 5}, {expected_strides_5, 5});
 
   // {2, 5, 7, 8, 9}
@@ -152,9 +149,8 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   expected_strides_5[2] = 360;
   expected_strides_5[3] = 45;
   expected_strides_5[4] = 5;
-  error =
-      torch::executor::dim_order_to_stride(sizes_5, dim_order_5, 5, strides_5);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error = dim_order_to_stride(sizes_5, dim_order_5, 5, strides_5);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_5, 5}, {expected_strides_5, 5});
 
   // {2, 5, 7, 8, 9}
@@ -170,9 +166,8 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   expected_strides_5[2] = 80;
   expected_strides_5[3] = 5;
   expected_strides_5[4] = 560;
-  error =
-      torch::executor::dim_order_to_stride(sizes_5, dim_order_5, 5, strides_5);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error = dim_order_to_stride(sizes_5, dim_order_5, 5, strides_5);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_5, 5}, {expected_strides_5, 5});
 
   // Check 0 sized dims
@@ -180,9 +175,9 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   exec_aten::SizesType dim_order_3_zero[3] = {0, 1, 2};
   exec_aten::SizesType strides_3_zero[3] = {0, 0, 0};
   exec_aten::SizesType expected_strides_3_zero[3] = {5, 1, 1};
-  error = torch::executor::dim_order_to_stride(
-      sizes_3_zero, dim_order_3_zero, 3, strides_3_zero);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error =
+      dim_order_to_stride(sizes_3_zero, dim_order_3_zero, 3, strides_3_zero);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_3_zero, 3}, {expected_strides_3_zero, 3});
 
   // {0, 2, 1}
@@ -191,9 +186,9 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   // Expected stride {5, 5, 1}
   expected_strides_3_zero[0] = 5, expected_strides_3_zero[1] = 1,
   expected_strides_3_zero[2] = 5;
-  error = torch::executor::dim_order_to_stride(
-      sizes_3_zero, dim_order_3_zero, 3, strides_3_zero);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error =
+      dim_order_to_stride(sizes_3_zero, dim_order_3_zero, 3, strides_3_zero);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_3_zero, 3}, {expected_strides_3_zero, 3});
 
   // {2, 0, 1}
@@ -202,9 +197,9 @@ TEST(DimOrderUtilTest, DimOrderToStride) {
   // Expected stride {10, 5, 1}
   expected_strides_3_zero[0] = 5, expected_strides_3_zero[1] = 1,
   expected_strides_3_zero[2] = 10;
-  error = torch::executor::dim_order_to_stride(
-      sizes_3_zero, dim_order_3_zero, 3, strides_3_zero);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  error =
+      dim_order_to_stride(sizes_3_zero, dim_order_3_zero, 3, strides_3_zero);
+  EXPECT_EQ(error, Error::Ok);
   check_strides_eq({strides_3_zero, 3}, {expected_strides_3_zero, 3});
 }
 
@@ -212,9 +207,9 @@ TEST(DimOrderUtilTest, StrideToDimOrder) {
   exec_aten::SizesType strides[3] = {5, 1, 15};
   exec_aten::DimOrderType dim_order[3] = {0, 0, 0};
 
-  auto error = torch::executor::stride_to_dim_order(strides, 3, dim_order);
+  auto error = stride_to_dim_order(strides, 3, dim_order);
 
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  EXPECT_EQ(error, Error::Ok);
 
   exec_aten::DimOrderType expected_dim_order[3] = {2, 0, 1};
   check_dim_order_eq(dim_order, expected_dim_order);
@@ -224,8 +219,8 @@ TEST(DimOrderUtilTest, StrideToDimOrderSameStrides) {
   exec_aten::SizesType strides[4] = {4, 3, 1, 1};
   exec_aten::DimOrderType dim_order[4] = {0, 0, 0, 0};
 
-  auto error = torch::executor::stride_to_dim_order(strides, 4, dim_order);
-  EXPECT_EQ(error, torch::executor::Error::Ok);
+  auto error = stride_to_dim_order(strides, 4, dim_order);
+  EXPECT_EQ(error, Error::Ok);
 
   exec_aten::DimOrderType expected_dim_order[4] = {0, 1, 2, 3};
   check_dim_order_eq(dim_order, expected_dim_order);
@@ -236,12 +231,11 @@ TEST(DimOrderUtilTest, IsDefaultDimOrderTest) {
     std::vector<exec_aten::DimOrderType> dim_order(i);
     std::iota(dim_order.begin(), dim_order.end(), 0);
 
-    EXPECT_TRUE(torch::executor::is_contiguous_dim_order(
-        dim_order.data(), dim_order.size()));
+    EXPECT_TRUE(is_contiguous_dim_order(dim_order.data(), dim_order.size()));
 
     // As a bonus, check that is_channels_last returns false
-    EXPECT_FALSE(torch::executor::is_channels_last_dim_order(
-        dim_order.data(), dim_order.size()));
+    EXPECT_FALSE(
+        is_channels_last_dim_order(dim_order.data(), dim_order.size()));
   }
 }
 
@@ -252,8 +246,7 @@ TEST(DimOrderUtilTest, IsDefaultDimOrderFailCasesTest) {
     std::iota(dim_order.begin(), dim_order.end(), 0);
     std::swap(dim_order[0], dim_order[1]);
 
-    EXPECT_FALSE(torch::executor::is_contiguous_dim_order(
-        dim_order.data(), dim_order.size()));
+    EXPECT_FALSE(is_contiguous_dim_order(dim_order.data(), dim_order.size()));
   }
 
   // Dims is default order but shifted by 1
@@ -263,8 +256,7 @@ TEST(DimOrderUtilTest, IsDefaultDimOrderFailCasesTest) {
       dim_order[d] = (d + 1) % i;
     }
 
-    EXPECT_FALSE(torch::executor::is_contiguous_dim_order(
-        dim_order.data(), dim_order.size()));
+    EXPECT_FALSE(is_contiguous_dim_order(dim_order.data(), dim_order.size()));
   }
 }
 
@@ -272,12 +264,12 @@ TEST(DimOrderUtilTest, IsChannelsLastDimOrderTest) {
   exec_aten::DimOrderType dim_order_4d[4] = {0, 2, 3, 1};
   exec_aten::DimOrderType dim_order_5d[5] = {0, 2, 3, 4, 1};
 
-  EXPECT_TRUE(torch::executor::is_channels_last_dim_order(dim_order_4d, 4));
-  EXPECT_TRUE(torch::executor::is_channels_last_dim_order(dim_order_5d, 5));
+  EXPECT_TRUE(is_channels_last_dim_order(dim_order_4d, 4));
+  EXPECT_TRUE(is_channels_last_dim_order(dim_order_5d, 5));
 
   // As a bonus, check that is_default returns false
-  EXPECT_FALSE(torch::executor::is_contiguous_dim_order(dim_order_4d, 4));
-  EXPECT_FALSE(torch::executor::is_contiguous_dim_order(dim_order_5d, 5));
+  EXPECT_FALSE(is_contiguous_dim_order(dim_order_4d, 4));
+  EXPECT_FALSE(is_contiguous_dim_order(dim_order_5d, 5));
 }
 
 TEST(DimOrderUtilTest, IsChannelsLastDimOrderFailCasesTest) {
@@ -285,12 +277,12 @@ TEST(DimOrderUtilTest, IsChannelsLastDimOrderFailCasesTest) {
   exec_aten::DimOrderType dim_order_3d[4] = {1, 2, 0};
   exec_aten::DimOrderType dim_order_6d[6] = {0, 2, 3, 4, 5, 1};
 
-  EXPECT_FALSE(torch::executor::is_channels_last_dim_order(dim_order_3d, 3));
-  EXPECT_FALSE(torch::executor::is_channels_last_dim_order(dim_order_6d, 6));
+  EXPECT_FALSE(is_channels_last_dim_order(dim_order_3d, 3));
+  EXPECT_FALSE(is_channels_last_dim_order(dim_order_6d, 6));
 
   exec_aten::DimOrderType dim_order_4d[4] = {0, 3, 2, 1};
   exec_aten::DimOrderType dim_order_5d[5] = {4, 3, 2, 0, 1};
 
-  EXPECT_FALSE(torch::executor::is_channels_last_dim_order(dim_order_4d, 4));
-  EXPECT_FALSE(torch::executor::is_channels_last_dim_order(dim_order_5d, 5));
+  EXPECT_FALSE(is_channels_last_dim_order(dim_order_4d, 4));
+  EXPECT_FALSE(is_channels_last_dim_order(dim_order_5d, 5));
 }

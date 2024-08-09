@@ -17,26 +17,24 @@
 using namespace ::testing;
 using exec_aten::complex;
 using exec_aten::ScalarType;
+using executorch::runtime::elementSize;
+using executorch::runtime::isValid;
+using executorch::runtime::toString;
 
 TEST(ScalarTypeUtilTest, ToString) {
   // Some known types.
-  EXPECT_STREQ(torch::executor::toString(ScalarType::Int), "Int");
-  EXPECT_STREQ(
-      torch::executor::toString(ScalarType::ComplexHalf), "ComplexHalf");
+  EXPECT_STREQ(toString(ScalarType::Int), "Int");
+  EXPECT_STREQ(toString(ScalarType::ComplexHalf), "ComplexHalf");
 
   // Undefined, which is sort of a special case since it's not part of the
   // iteration macros but is still a part of the enum.
-  EXPECT_STREQ(torch::executor::toString(ScalarType::Undefined), "Undefined");
+  EXPECT_STREQ(toString(ScalarType::Undefined), "Undefined");
 
   // Some out-of-range types, also demonstrating that NumOptions is not really a
   // scalar type.
-  EXPECT_STREQ(
-      torch::executor::toString(ScalarType::NumOptions), "UNKNOWN_SCALAR");
-  EXPECT_STREQ(
-      torch::executor::toString(static_cast<ScalarType>(127)),
-      "UNKNOWN_SCALAR");
-  EXPECT_STREQ(
-      torch::executor::toString(static_cast<ScalarType>(-1)), "UNKNOWN_SCALAR");
+  EXPECT_STREQ(toString(ScalarType::NumOptions), "UNKNOWN_SCALAR");
+  EXPECT_STREQ(toString(static_cast<ScalarType>(127)), "UNKNOWN_SCALAR");
+  EXPECT_STREQ(toString(static_cast<ScalarType>(-1)), "UNKNOWN_SCALAR");
 }
 
 TEST(ScalarTypeUtilTest, ElementSize) {
@@ -66,48 +64,45 @@ TEST(ScalarTypeUtilTest, ElementSize) {
       {ScalarType::QUInt2x4, sizeof(::exec_aten::quint2x4)},
   };
   for (const auto& test_case : test_cases) {
-    EXPECT_EQ(
-        torch::executor::elementSize(test_case.type), test_case.expected_size);
+    EXPECT_EQ(elementSize(test_case.type), test_case.expected_size);
   }
 }
 
 TEST(ScalarTypeUtilTest, IsValidTrue) {
   // Some valid types.
-  EXPECT_TRUE(torch::executor::isValid(ScalarType::Byte));
-  EXPECT_TRUE(torch::executor::isValid(ScalarType::Float));
-  EXPECT_TRUE(torch::executor::isValid(ScalarType::ComplexFloat));
-  EXPECT_TRUE(torch::executor::isValid(ScalarType::Bits16));
+  EXPECT_TRUE(isValid(ScalarType::Byte));
+  EXPECT_TRUE(isValid(ScalarType::Float));
+  EXPECT_TRUE(isValid(ScalarType::ComplexFloat));
+  EXPECT_TRUE(isValid(ScalarType::Bits16));
 }
 
 TEST(ScalarTypeUtilTest, IsValidFalse) {
   // Undefined, which is sort of a special case since it's not part of the
   // iteration macros but is still a part of the enum.
-  EXPECT_FALSE(torch::executor::isValid(ScalarType::Undefined));
+  EXPECT_FALSE(isValid(ScalarType::Undefined));
 
   // Some out-of-range types, also demonstrating that NumOptions is not really a
   // scalar type.
-  EXPECT_FALSE(torch::executor::isValid(ScalarType::NumOptions));
-  EXPECT_FALSE(torch::executor::isValid(static_cast<ScalarType>(127)));
-  EXPECT_FALSE(torch::executor::isValid(static_cast<ScalarType>(-1)));
+  EXPECT_FALSE(isValid(ScalarType::NumOptions));
+  EXPECT_FALSE(isValid(static_cast<ScalarType>(127)));
+  EXPECT_FALSE(isValid(static_cast<ScalarType>(-1)));
 }
 
 TEST(ScalarTypeUtilTest, UnknownTypeElementSizeDies) {
   // Undefined, which is sort of a special case since it's not part of the
   // iteration macros but is still a part of the enum.
-  ET_EXPECT_DEATH(torch::executor::elementSize(ScalarType::Undefined), "");
+  ET_EXPECT_DEATH(elementSize(ScalarType::Undefined), "");
 
   // Some out-of-range types, also demonstrating that NumOptions is not really a
   // scalar type.
-  ET_EXPECT_DEATH(torch::executor::elementSize(ScalarType::NumOptions), "");
-  ET_EXPECT_DEATH(
-      torch::executor::elementSize(static_cast<ScalarType>(127)), "");
-  ET_EXPECT_DEATH(
-      torch::executor::elementSize(static_cast<ScalarType>(-1)), "");
+  ET_EXPECT_DEATH(elementSize(ScalarType::NumOptions), "");
+  ET_EXPECT_DEATH(elementSize(static_cast<ScalarType>(127)), "");
+  ET_EXPECT_DEATH(elementSize(static_cast<ScalarType>(-1)), "");
 }
 
 TEST(ScalarTypeUtilTest, canCastTest) {
   using exec_aten::ScalarType;
-  using torch::executor::canCast;
+  using executorch::runtime::canCast;
 
   // Check some common cases
 
@@ -140,7 +135,7 @@ TEST(ScalarTypeUtilTest, canCastTest) {
 
 TEST(ScalarTypeUtilTest, promoteTypesTest) {
   using exec_aten::ScalarType;
-  using torch::executor::promoteTypes;
+  using executorch::runtime::promoteTypes;
 
   // Check some common cases
 
@@ -168,13 +163,13 @@ template <typename T1, typename T2>
 struct promote_types_is_valid
     : std::integral_constant<
           bool,
-          !std::is_same<T1, torch::executor::BFloat16>::value &&
-              !std::is_same<T2, torch::executor::BFloat16>::value &&
+          !std::is_same<T1, exec_aten::BFloat16>::value &&
+              !std::is_same<T2, exec_aten::BFloat16>::value &&
               (std::is_same<T1, T2>::value ||
-               (!torch::executor::is_qint_type<T1>::value &&
-                !torch::executor::is_qint_type<T2>::value &&
-                !torch::executor::is_bits_type<T1>::value &&
-                !torch::executor::is_bits_type<T2>::value))> {};
+               (!executorch::runtime::is_qint_type<T1>::value &&
+                !executorch::runtime::is_qint_type<T2>::value &&
+                !executorch::runtime::is_bits_type<T1>::value &&
+                !executorch::runtime::is_bits_type<T2>::value))> {};
 
 template <typename T1, bool half_to_float>
 struct CompileTimePromoteTypesTestCase {
@@ -190,12 +185,15 @@ struct CompileTimePromoteTypesTestCase {
       bool valid,
       typename std::enable_if<valid, bool>::type = true>
   static void testOne() {
-    auto actual = torch::executor::CppTypeToScalarType<
-        typename torch::executor::promote_types<T1, T2, half_to_float>::type>::
-        value;
-    const auto scalarType1 = torch::executor::CppTypeToScalarType<T1>::value;
-    const auto scalarType2 = torch::executor::CppTypeToScalarType<T2>::value;
-    auto expected = promoteTypes(scalarType1, scalarType2, half_to_float);
+    auto actual = executorch::runtime::CppTypeToScalarType<
+        typename executorch::runtime::promote_types<T1, T2, half_to_float>::
+            type>::value;
+    const auto scalarType1 =
+        executorch::runtime::CppTypeToScalarType<T1>::value;
+    const auto scalarType2 =
+        executorch::runtime::CppTypeToScalarType<T2>::value;
+    auto expected = executorch::runtime::promoteTypes(
+        scalarType1, scalarType2, half_to_float);
     EXPECT_EQ(actual, expected)
         << "promoting " << (int)scalarType1 << " to " << (int)scalarType2;
   }
