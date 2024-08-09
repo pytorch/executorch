@@ -332,10 +332,10 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
     return nil;
 }
 
-- (nullable ETCoreMLModelProfilingResult *)profilingInfoForAllOperationsWithOptions:(MLPredictionOptions *)options
-                                                                             inputs:(id<MLFeatureProvider>)inputs
-                                                                       modelOutputs:(NSArray<MLMultiArray *> *_Nullable __autoreleasing *_Nonnull)modelOutputs
-                                                                              error:(NSError* __autoreleasing *)error {
+- (nullable ETCoreMLModelProfilingResult *)profilingInfoForOperationsAtPaths:(MLPredictionOptions *)options
+                                                                      inputs:(id<MLFeatureProvider>)inputs
+                                                                modelOutputs:(NSArray<MLMultiArray *> *_Nullable __autoreleasing *_Nonnull)modelOutputs
+                                                                       error:(NSError* __autoreleasing *)error {
 #if MODEL_PROFILING_IS_AVAILABLE
     if (@available(macOS 14.4, iOS 17.4, tvOS 17.4, watchOS 10.4, *)) {
         __block NSMutableArray<ETCoreMLModelStructurePath *> *paths = [NSMutableArray array];
@@ -345,7 +345,7 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
             }
             return YES;
         });
-        
+
         return [self profilingInfoForOperationsAtPaths:paths
                                                options:options
                                                 inputs:inputs

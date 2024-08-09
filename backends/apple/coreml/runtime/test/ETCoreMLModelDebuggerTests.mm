@@ -16,39 +16,51 @@
 #import <model_logging_options.h>
 
 namespace  {
-    using namespace executorchcoreml::modelstructure;
-    
-    using NotifyFn = std::function<void(NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *op_path_to_value_map,
-                                        NSDictionary<ETCoreMLModelStructurePath *, NSString *> *op_path_to_debug_symbol_name_map)>;
-    
-    class ModelEventLoggerImpl: public executorchcoreml::ModelEventLogger {
-    public:
-        explicit ModelEventLoggerImpl(NotifyFn fn)
-        :fn_(fn)
-        {}
-        
-        void log_profiling_infos(NSDictionary<ETCoreMLModelStructurePath *, ETCoreMLOperationProfilingInfo *> *op_path_to_profiling_info_map,
-                                 NSDictionary<ETCoreMLModelStructurePath *, NSString *> *op_path_to_debug_symbol_name_map) const noexcept {}
-        
-        void log_intermediate_tensors(NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *op_path_to_value_map,
-                                      NSDictionary<ETCoreMLModelStructurePath *, NSString *> *op_path_to_debug_symbol_name_map) const noexcept {
-            fn_(op_path_to_value_map, op_path_to_debug_symbol_name_map);
-        }
-        
-    private:
-        NotifyFn fn_;
-    };
-    
-    ETCoreMLModelStructurePath *make_path_with_output_name(const std::string& output_name,
-                                                           const std::string& function_name = "main") {
-        Path path;
-        path.append_component(Path::Program());
-        path.append_component(Path::Program::Function(function_name));
-        path.append_component(Path::Program::Block(-1));
-        path.append_component(Path::Program::Operation(output_name));
-        
-        return [[ETCoreMLModelStructurePath alloc] initWithUnderlyingValue:std::move(path)];
+using namespace executorchcoreml::modelstructure;
+
+using NotifyFn = std::function<void(NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *op_path_to_value_map,
+                                    NSDictionary<ETCoreMLModelStructurePath *, NSString *> *op_path_to_debug_symbol_name_map)>;
+
+class ModelEventLoggerImpl: public executorchcoreml::ModelEventLogger {
+public:
+    explicit ModelEventLoggerImpl(NotifyFn fn)
+    :fn_(fn)
+    {}
+
+    void log_profiling_infos(NSDictionary<ETCoreMLModelStructurePath *, ETCoreMLOperationProfilingInfo *> *op_path_to_profiling_info_map,
+                             NSDictionary<ETCoreMLModelStructurePath *, NSString *> *op_path_to_debug_symbol_name_map) const noexcept {}
+
+    void log_intermediate_tensors(NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *op_path_to_value_map,
+                                  NSDictionary<ETCoreMLModelStructurePath *, NSString *> *op_path_to_debug_symbol_map) const noexcept {
+        fn_(op_path_to_value_map, op_path_to_debug_symbol_map);
     }
+
+private:
+    NotifyFn fn_;
+};
+
+ETCoreMLModelStructurePath *make_path_with_output_name(const std::string& output_name,
+                                                       const std::string& function_name = "main") {
+    Path path;
+    path.append_component(Path::Program());
+    path.append_component(Path::Program::Function(function_name));
+    path.append_component(Path::Program::Block(-1));
+    path.append_component(Path::Program::Operation(output_name));
+
+    return [[ETCoreMLModelStructurePath alloc] initWithUnderlyingValue:std::move(path)];
+}
+
+void add_debugging_result(NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *debugging_result,
+                          NSDictionary<ETCoreMLModelStructurePath *, NSString *> *path_to_symbol_name_map,
+                          NSMutableDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *debugging_results) {
+    for (ETCoreMLModelStructurePath *path in debugging_result) {
+        NSString *debug_symbol = path_to_symbol_name_map[path];
+        if (debug_symbol) {
+            debugging_results[path] = debugging_result[path];
+        }
+    }
+}
+
 }
 
 @interface ETCoreMLModelDebuggerTests : XCTestCase
@@ -128,7 +140,7 @@ namespace  {
     NSMutableDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *debuggingResults = [NSMutableDictionary new];
     NotifyFn notify = [debuggingResults](NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *debuggingResult,
                                          NSDictionary<ETCoreMLModelStructurePath *, NSString *> *pathToSymbolNameMap) mutable {
-        [debuggingResults addEntriesFromDictionary:debuggingResult];
+        add_debugging_result(debuggingResult, pathToSymbolNameMap, debuggingResults);
     };
     
     [self debugModelWithName:@"mv3_coreml_all"
@@ -142,6 +154,22 @@ namespace  {
     XCTAssertNotNil(debuggingResults[make_path_with_output_name("aten_clamp_default_54_cast_fp16")]);
     XCTAssertNotNil(debuggingResults[make_path_with_output_name("aten__native_batch_norm_legit_no_training_default_22_cast_fp16")]);
     XCTAssertNotNil(debuggingResults[make_path_with_output_name("aten_mul_tensor_27_cast_fp16")]);
+}
+
+- (void)testAddMulProgramDebugging {
+    NSMutableDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *debuggingResults = [NSMutableDictionary new];
+    NotifyFn notify = [debuggingResults](NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *debuggingResult,
+                                         NSDictionary<ETCoreMLModelStructurePath *, NSString *> *pathToSymbolNameMap) mutable {
+        add_debugging_result(debuggingResult, pathToSymbolNameMap, debuggingResults);
+    };
+
+    [self debugModelWithName:@"add_mul_coreml_all"
+         repeatedInputValues:@[@(1), @(2)]
+                      notify:notify];
+
+    // There are more than 200 ops, we verify the outputs for specific ops.
+    XCTAssertNotNil(debuggingResults[make_path_with_output_name("aten_add_tensor")]);
+    XCTAssertNotNil(debuggingResults[make_path_with_output_name("aten_mm_default_cast_fp16")]);
 }
 
 @end

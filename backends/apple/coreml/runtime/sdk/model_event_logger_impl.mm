@@ -105,15 +105,15 @@ void ModelEventLoggerImpl::log_profiling_infos(NSDictionary<ETCoreMLModelStructu
 }
 
 void ModelEventLoggerImpl::log_intermediate_tensors(NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *op_path_to_value_map,
-                                                    NSDictionary<ETCoreMLModelStructurePath *, NSString *> *op_path_to_debug_symbol_name_map) const noexcept {
+                                                    NSDictionary<ETCoreMLModelStructurePath*, NSString*> *op_path_to_debug_symbol_name_map) const noexcept {
     [op_path_to_value_map enumerateKeysAndObjectsUsingBlock:^(ETCoreMLModelStructurePath *path,
                                                               MLMultiArray *intermediate_value,
                                                               BOOL * _Nonnull __unused stop) {
         using namespace torch::executor;
 
         @autoreleasepool {
-            NSString *symbol_name = op_path_to_debug_symbol_name_map[path];
-            if (symbol_name == nil) {
+            NSString *debug_symbol = op_path_to_debug_symbol_name_map[path];
+            if (debug_symbol == nil) {
                 return;
             }
 
@@ -121,7 +121,7 @@ void ModelEventLoggerImpl::log_intermediate_tensors(NSDictionary<ETCoreMLModelSt
             if (value == nil || value.count == 0) {
                 return;
             }
-           
+
             MLMultiArray *supported_value = value;
             NSArray<NSNumber *> *shape = supported_value.shape; 
             NSError *local_error = nil;
@@ -139,6 +139,7 @@ void ModelEventLoggerImpl::log_intermediate_tensors(NSDictionary<ETCoreMLModelSt
                 [value copyInto:supported_value];
             }
 
+
             [supported_value getBytesWithHandler:^(const void * _Nonnull bytes, NSInteger size) {
                 auto sizes = to_vector<TensorImpl::SizesType>(shape);
                 auto strides = to_vector<TensorImpl::StridesType>(supported_value.strides);
@@ -155,7 +156,7 @@ void ModelEventLoggerImpl::log_intermediate_tensors(NSDictionary<ETCoreMLModelSt
                     dim_order.data(),
                     strides.data());
                 auto tensor = Tensor(&tensor_impl);
-                tracer_->log_intermediate_output_delegate(symbol_name.UTF8String, -1, tensor);
+                tracer_->log_intermediate_output_delegate(debug_symbol.UTF8String, -1, tensor);
             }];
         }
     }];

@@ -64,6 +64,7 @@ set(SDK_SOURCES
     runtime/sdk/ETCoreMLModelAnalyzer.mm
     runtime/sdk/ETCoreMLModelStructurePath.mm
     runtime/sdk/ETCoreMLOperationProfilingInfo.mm
+    runtime/sdk/ETCoreMLModelDebugInfo.mm
     runtime/sdk/ETCoreMLModelDebugger.mm
     runtime/sdk/ETCoreMLModelProfiler.mm
     runtime/sdk/ETCoreMLPair.mm

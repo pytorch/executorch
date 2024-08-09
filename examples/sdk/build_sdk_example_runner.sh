@@ -37,6 +37,8 @@ done
 main() {
   cd "${EXECUTORCH_ROOT}"
 
+  # rm -rf cmake-out
+
   if [[ "${BUILD_COREML}" == "ON" ]]; then
     cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
