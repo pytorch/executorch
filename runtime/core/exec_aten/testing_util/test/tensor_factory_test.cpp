@@ -26,10 +26,11 @@ using exec_aten::SizesType;
 using exec_aten::StridesType;
 using exec_aten::Tensor;
 using exec_aten::TensorList;
-using torch::executor::Error;
-using torch::executor::resize_tensor;
-using torch::executor::testing::TensorFactory;
-using torch::executor::testing::TensorListFactory;
+using executorch::runtime::Error;
+using executorch::runtime::resize_tensor;
+using executorch::runtime::TensorShapeDynamism;
+using executorch::runtime::testing::TensorFactory;
+using executorch::runtime::testing::TensorListFactory;
 
 // The tensor under test will be modified so pass an rvalue ref
 void resize_tensor_to_assert_static(Tensor&& t) {
@@ -107,7 +108,7 @@ class TensorFactoryTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -963,138 +964,110 @@ TEST(TensorListFactoryTest, ZerosLikeEmpty) {
 
 TEST_F(TensorFactoryTest, ZerosDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
-  resize_tensor_to_assert_static(
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::STATIC));
+  resize_tensor_to_assert_static(tf.zeros({2, 2}, TensorShapeDynamism::STATIC));
   resize_tensor_to_assert_dynamic_bound(
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.zeros({2, 2}, TensorShapeDynamism::DYNAMIC_BOUND));
   resize_tensor_to_assert_dynamic_unbound(
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.zeros({2, 2}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::STATIC),
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.zeros({2, 2}, TensorShapeDynamism::STATIC),
+      tf.zeros({2, 2}, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::STATIC),
-      tf.zeros({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.zeros({2, 2}, TensorShapeDynamism::STATIC),
+      tf.zeros({2, 2}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 TEST_F(TensorFactoryTest, ZerosLikeDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
   Tensor zeros = tf.zeros({2, 2});
   resize_tensor_to_assert_static(
-      tf.zeros_like(zeros, torch::executor::TensorShapeDynamism::STATIC));
-  resize_tensor_to_assert_dynamic_bound(tf.zeros_like(
-      zeros, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
-  resize_tensor_to_assert_dynamic_unbound(tf.zeros_like(
-      zeros, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.zeros_like(zeros, TensorShapeDynamism::STATIC));
+  resize_tensor_to_assert_dynamic_bound(
+      tf.zeros_like(zeros, TensorShapeDynamism::DYNAMIC_BOUND));
+  resize_tensor_to_assert_dynamic_unbound(
+      tf.zeros_like(zeros, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.zeros_like(zeros, torch::executor::TensorShapeDynamism::STATIC),
-      tf.zeros_like(
-          zeros, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.zeros_like(zeros, TensorShapeDynamism::STATIC),
+      tf.zeros_like(zeros, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.zeros_like(zeros, torch::executor::TensorShapeDynamism::STATIC),
-      tf.zeros_like(
-          zeros, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.zeros_like(zeros, TensorShapeDynamism::STATIC),
+      tf.zeros_like(zeros, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 TEST_F(TensorFactoryTest, OnesDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
-  resize_tensor_to_assert_static(
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::STATIC));
+  resize_tensor_to_assert_static(tf.ones({2, 2}, TensorShapeDynamism::STATIC));
   resize_tensor_to_assert_dynamic_bound(
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.ones({2, 2}, TensorShapeDynamism::DYNAMIC_BOUND));
   resize_tensor_to_assert_dynamic_unbound(
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.ones({2, 2}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::STATIC),
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.ones({2, 2}, TensorShapeDynamism::STATIC),
+      tf.ones({2, 2}, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::STATIC),
-      tf.ones({2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.ones({2, 2}, TensorShapeDynamism::STATIC),
+      tf.ones({2, 2}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 TEST_F(TensorFactoryTest, OnesLikeDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
   Tensor ones = tf.ones({2, 2});
   resize_tensor_to_assert_static(
-      tf.ones_like(ones, torch::executor::TensorShapeDynamism::STATIC));
+      tf.ones_like(ones, TensorShapeDynamism::STATIC));
   resize_tensor_to_assert_dynamic_bound(
-      tf.ones_like(ones, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
-  resize_tensor_to_assert_dynamic_unbound(tf.ones_like(
-      ones, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.ones_like(ones, TensorShapeDynamism::DYNAMIC_BOUND));
+  resize_tensor_to_assert_dynamic_unbound(
+      tf.ones_like(ones, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.ones_like(ones, torch::executor::TensorShapeDynamism::STATIC),
-      tf.ones_like(ones, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.ones_like(ones, TensorShapeDynamism::STATIC),
+      tf.ones_like(ones, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.ones_like(ones, torch::executor::TensorShapeDynamism::STATIC),
-      tf.ones_like(
-          ones, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.ones_like(ones, TensorShapeDynamism::STATIC),
+      tf.ones_like(ones, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 TEST_F(TensorFactoryTest, FullDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
   resize_tensor_to_assert_static(
-      tf.full({2, 2}, 1, torch::executor::TensorShapeDynamism::STATIC));
+      tf.full({2, 2}, 1, TensorShapeDynamism::STATIC));
   resize_tensor_to_assert_dynamic_bound(
-      tf.full({2, 2}, 1, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
-  resize_tensor_to_assert_dynamic_unbound(tf.full(
-      {2, 2}, 1, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.full({2, 2}, 1, TensorShapeDynamism::DYNAMIC_BOUND));
+  resize_tensor_to_assert_dynamic_unbound(
+      tf.full({2, 2}, 1, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.full({2, 2}, 1, torch::executor::TensorShapeDynamism::STATIC),
-      tf.full({2, 2}, 1, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.full({2, 2}, 1, TensorShapeDynamism::STATIC),
+      tf.full({2, 2}, 1, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.full({2, 2}, 1, torch::executor::TensorShapeDynamism::STATIC),
-      tf.full(
-          {2, 2}, 1, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.full({2, 2}, 1, TensorShapeDynamism::STATIC),
+      tf.full({2, 2}, 1, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 TEST_F(TensorFactoryTest, MakeDynamismParameter) {
   TensorFactory<ScalarType::Int> tf;
-  resize_tensor_to_assert_static(tf.make(
-      {2, 2}, {1, 2, 3, 4}, {}, torch::executor::TensorShapeDynamism::STATIC));
-  resize_tensor_to_assert_dynamic_bound(tf.make(
-      {2, 2},
-      {1, 2, 3, 4},
-      {},
-      torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
-  resize_tensor_to_assert_dynamic_unbound(tf.make(
-      {2, 2},
-      {1, 2, 3, 4},
-      {},
-      torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+  resize_tensor_to_assert_static(
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::STATIC));
+  resize_tensor_to_assert_dynamic_bound(
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::DYNAMIC_BOUND));
+  resize_tensor_to_assert_dynamic_unbound(
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 
   // The tensor itself should be equal
   EXPECT_TENSOR_EQ(
-      tf.make(
-          {2, 2},
-          {1, 2, 3, 4},
-          {},
-          torch::executor::TensorShapeDynamism::STATIC),
-      tf.make(
-          {2, 2},
-          {1, 2, 3, 4},
-          {},
-          torch::executor::TensorShapeDynamism::DYNAMIC_BOUND));
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::STATIC),
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::DYNAMIC_BOUND));
   EXPECT_TENSOR_EQ(
-      tf.make(
-          {2, 2},
-          {1, 2, 3, 4},
-          {},
-          torch::executor::TensorShapeDynamism::STATIC),
-      tf.make(
-          {2, 2},
-          {1, 2, 3, 4},
-          {},
-          torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND));
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::STATIC),
+      tf.make({2, 2}, {1, 2, 3, 4}, {}, TensorShapeDynamism::DYNAMIC_UNBOUND));
 }
 
 #if !defined(USE_ATEN_LIB)
@@ -1107,7 +1080,7 @@ TEST_F(TensorFactoryTest, FullDynamic) {
   ET_EXPECT_DEATH(torch::executor::resize(out, new_sizes), "");
 
   out = tf.full(
-      /*sizes=*/{2, 2}, 5, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+      /*sizes=*/{2, 2}, 5, TensorShapeDynamism::DYNAMIC_BOUND);
   new_sizes[1] = 2;
   EXPECT_EQ(
       torch::executor::resize_tensor(out, new_sizes),
@@ -1128,10 +1101,7 @@ TEST_F(TensorFactoryTest, MakeIntTensorDynamic) {
 
   std::vector<int32_t> data = {1, 2, 3, 4};
   out = tf.make(
-      /*sizes=*/{2, 2},
-      data,
-      {},
-      torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+      /*sizes=*/{2, 2}, data, {}, TensorShapeDynamism::DYNAMIC_BOUND);
   new_sizes[1] = 2;
   EXPECT_EQ(
       torch::executor::resize_tensor(out, new_sizes),
@@ -1151,7 +1121,7 @@ TEST_F(TensorFactoryTest, MakeZerosDynamic) {
   ET_EXPECT_DEATH(torch::executor::resize(out, new_sizes), "");
 
   out = tf.zeros(
-      /*sizes=*/{2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+      /*sizes=*/{2, 2}, TensorShapeDynamism::DYNAMIC_BOUND);
   new_sizes[1] = 2;
   EXPECT_EQ(
       torch::executor::resize_tensor(out, new_sizes),
@@ -1165,7 +1135,7 @@ TEST_F(TensorFactoryTest, MakeZerosDynamic) {
   new_sizes[1] = 1;
   ET_EXPECT_DEATH(torch::executor::resize(out_like, new_sizes), "");
 
-  out = tf.zeros_like(out, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+  out = tf.zeros_like(out, TensorShapeDynamism::DYNAMIC_BOUND);
   new_sizes[1] = 2;
   EXPECT_EQ(
       torch::executor::resize_tensor(out, new_sizes),
