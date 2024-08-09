@@ -14,9 +14,8 @@
 
 #include <executorch/runtime/core/memory_allocator.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+namespace executorch {
+namespace extension {
 
 /**
  * Dynamically allocates memory using malloc() and frees all pointers at
@@ -25,7 +24,7 @@ namespace util {
  * For systems with malloc(), this can be easier than using a fixed-sized
  * MemoryAllocator.
  */
-class MallocMemoryAllocator : public MemoryAllocator {
+class MallocMemoryAllocator : public executorch::runtime::MemoryAllocator {
  public:
   /**
    * Construct a new Malloc memory allocator via an optional alignment size
@@ -76,6 +75,16 @@ class MallocMemoryAllocator : public MemoryAllocator {
  private:
   std::vector<void*> mem_ptrs_;
 };
+
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace util {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::MallocMemoryAllocator;
 } // namespace util
 } // namespace executor
 } // namespace torch

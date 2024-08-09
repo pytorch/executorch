@@ -12,17 +12,16 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::util::MallocMemoryAllocator;
+using executorch::extension::MallocMemoryAllocator;
 
-constexpr auto kDefaultAlignment =
-    torch::executor::util::MallocMemoryAllocator::kDefaultAlignment;
+constexpr auto kDefaultAlignment = MallocMemoryAllocator::kDefaultAlignment;
 
 class MallocMemoryAllocatorTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
