@@ -18,19 +18,19 @@
 #include <executorch/test/utils/alignment.h>
 
 using namespace ::testing;
-using torch::executor::DataLoader;
-using torch::executor::Error;
-using torch::executor::FreeableBuffer;
-using torch::executor::Result;
-using torch::executor::testing::TempFile;
-using torch::executor::util::FileDataLoader;
+using executorch::extension::FileDataLoader;
+using executorch::extension::testing::TempFile;
+using executorch::runtime::DataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
 
 class FileDataLoaderTest : public ::testing::TestWithParam<size_t> {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 
   // The alignment in bytes that tests should use. The values are set by the

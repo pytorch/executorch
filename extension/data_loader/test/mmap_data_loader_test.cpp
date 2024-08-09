@@ -19,19 +19,19 @@
 #include <executorch/runtime/platform/runtime.h>
 
 using namespace ::testing;
-using torch::executor::DataLoader;
-using torch::executor::Error;
-using torch::executor::FreeableBuffer;
-using torch::executor::Result;
-using torch::executor::testing::TempFile;
-using torch::executor::util::MmapDataLoader;
+using executorch::extension::MmapDataLoader;
+using executorch::extension::testing::TempFile;
+using executorch::runtime::DataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
 
 class MmapDataLoaderTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Get the page size and ensure it's a power of 2.
     long page_size = sysconf(_SC_PAGESIZE);

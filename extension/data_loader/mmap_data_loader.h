@@ -12,9 +12,8 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+namespace executorch {
+namespace extension {
 
 /**
  * A DataLoader that loads segments from a file, allocating the memory
@@ -23,7 +22,7 @@ namespace util {
  * Note that this will keep the file open for the duration of its lifetime, to
  * avoid the overhead of opening it again for every load() call.
  */
-class MmapDataLoader : public DataLoader {
+class MmapDataLoader : public executorch::runtime::DataLoader {
  public:
   /**
    * Describes how and whether to lock loaded pages with `mlock()`.
@@ -51,12 +50,12 @@ class MmapDataLoader : public DataLoader {
    * @param[in] mlock_config How and whether to lock loaded pages with
    *     `mlock()`.
    */
-  static Result<MmapDataLoader> from(
+  static executorch::runtime::Result<MmapDataLoader> from(
       const char* file_name,
       MlockConfig mlock_config = MlockConfig::UseMlock);
 
   /// DEPRECATED: Use the lowercase `from()` instead.
-  __ET_DEPRECATED static Result<MmapDataLoader> From(
+  __ET_DEPRECATED static executorch::runtime::Result<MmapDataLoader> From(
       const char* file_name,
       MlockConfig mlock_config = MlockConfig::UseMlock) {
     return from(file_name, mlock_config);
@@ -64,7 +63,9 @@ class MmapDataLoader : public DataLoader {
 
   /// DEPRECATED: Use the version of `from()` that takes an MlockConfig.
   __ET_DEPRECATED
-  static Result<MmapDataLoader> From(const char* file_name, bool use_mlock) {
+  static executorch::runtime::Result<MmapDataLoader> From(
+      const char* file_name,
+      bool use_mlock) {
     MlockConfig mlock_config =
         use_mlock ? MlockConfig::UseMlock : MlockConfig::NoMlock;
     return from(file_name, mlock_config);
@@ -86,12 +87,13 @@ class MmapDataLoader : public DataLoader {
 
   ~MmapDataLoader() override;
 
-  __ET_NODISCARD Result<FreeableBuffer> load(
+  __ET_NODISCARD
+  executorch::runtime::Result<executorch::runtime::FreeableBuffer> load(
       size_t offset,
       size_t size,
       const DataLoader::SegmentInfo& segment_info) override;
 
-  __ET_NODISCARD Result<size_t> size() const override;
+  __ET_NODISCARD executorch::runtime::Result<size_t> size() const override;
 
  private:
   MmapDataLoader(
@@ -118,6 +120,15 @@ class MmapDataLoader : public DataLoader {
   MlockConfig mlock_config_;
 };
 
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace util {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::MmapDataLoader;
 } // namespace util
 } // namespace executor
 } // namespace torch
