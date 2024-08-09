@@ -269,6 +269,18 @@ python_library(
 )
 
 python_library(
+    name = "replace_custom_ops_with_aten_ops_pass",
+    srcs = [
+        "replace_custom_ops_with_aten_ops_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+        "//executorch/extension/llm/custom_ops:preprocess_custom_ops_py",
+    ],
+)
+
+python_library(
     name = "debug_handle_generator_pass",
     srcs = [
         "debug_handle_generator_pass.py",

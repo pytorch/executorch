@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import torch
 from executorch.exir.dialects._ops import ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -11,6 +13,7 @@ from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
 from torch.fx.node import Target
 
+CUSTOM_OP_DISALLOW_LIST = ["preprocess::pad"]
 
 DISALLOW_LIST = [
     torch.ops.aten._assert_scalar.default,
@@ -38,6 +41,7 @@ def should_lower_to_edge(op: Target) -> bool:
         isinstance(op, torch._ops.OpOverload)
         and op not in _EXECUTORCH_SYM_OPS
         and op not in DISALLOW_LIST
+        and op._schema.name not in CUSTOM_OP_DISALLOW_LIST
     )
 
 
