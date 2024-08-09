@@ -343,11 +343,15 @@ Error Runner::generate(
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
   ET_CHECK_MSG(
       num_prompt_tokens < max_seq_len_,
-      "Max seq length exceeded - please increase max seq len value in .../llama2/model.py");
+      "num_prompt_tokens %d >= max_seq_len_ %d, Max seq length exceeded - please increase max seq len value in .../llama2/model.py",
+      num_prompt_tokens,
+      max_seq_len_);
 
   ET_CHECK_MSG(
       num_prompt_tokens < seq_len,
-      "Sequence length exceeded - please increase the seq_len value passed to generate()");
+      "num_prompt_tokens %d >= seq_len %d, Sequence length exceeded - please increase the seq_len value passed to generate()",
+      num_prompt_tokens,
+      seq_len);
 
   // start the main loop
   int64_t pos = 0; // position in the sequence
