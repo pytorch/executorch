@@ -15,8 +15,8 @@
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/memory_manager.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace testing {
 
 /**
@@ -44,7 +44,7 @@ class ManagedMemoryManager {
  private:
   std::unique_ptr<uint8_t[]> planned_memory_buffer_;
   Span<uint8_t> planned_memory_span_;
-  torch::executor::HierarchicalAllocator planned_memory_;
+  HierarchicalAllocator planned_memory_;
 
   std::unique_ptr<uint8_t[]> method_allocator_pool_;
   MemoryAllocator method_allocator_;
@@ -52,6 +52,16 @@ class ManagedMemoryManager {
   MemoryManager memory_manager_;
 };
 
+} // namespace testing
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace testing {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::testing::ManagedMemoryManager;
 } // namespace testing
 } // namespace executor
 } // namespace torch

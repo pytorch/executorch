@@ -27,17 +27,17 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::ArrayRef;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::FreeableBuffer;
-using torch::executor::Kernel;
-using torch::executor::KernelKey;
-using torch::executor::KernelRuntimeContext;
-using torch::executor::Method;
-using torch::executor::Program;
-using torch::executor::Result;
-using torch::executor::testing::ManagedMemoryManager;
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Kernel;
+using executorch::runtime::KernelKey;
+using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::Method;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
@@ -90,10 +90,11 @@ struct KernelControl {
     //     TensorMeta(ScalarType::Float, contiguous), // other
     //     TensorMeta(ScalarType::Float, contiguous), // out
     //     TensorMeta(ScalarType::Float, contiguous)}; // out (repeated)
-    KernelKey key = torch::executor::KernelKey("v1/6;0,1|6;0,1|6;0,1|6;0,1");
-    Kernel kernel = torch::executor::Kernel(
+    KernelKey key =
+        executorch::runtime::KernelKey("v1/6;0,1|6;0,1|6;0,1|6;0,1");
+    Kernel kernel = executorch::runtime::Kernel(
         "aten::add.out", key, KernelControl::kernel_hook);
-    Error err = torch::executor::register_kernels({kernel});
+    Error err = executorch::runtime::register_kernels({kernel});
     EXPECT_EQ(err, Error::Ok);
 
     registered_ = true;
@@ -128,7 +129,7 @@ KernelControl KernelControl::singleton_;
 class KernelIntegrationTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Register the controllable kernel hook.
     KernelControl::register_singleton();

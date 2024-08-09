@@ -6,21 +6,22 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/executor/method_meta.h>
+
 #include <cstdlib>
 #include <filesystem>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/executor/program.h>
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::MethodMeta;
-using torch::executor::Program;
-using torch::executor::Result;
-using torch::executor::TensorInfo;
+using executorch::runtime::Error;
+using executorch::runtime::MethodMeta;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::TensorInfo;
 using torch::executor::util::FileDataLoader;
 
 class MethodMetaTest : public ::testing::Test {

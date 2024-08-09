@@ -25,19 +25,19 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::Kernel;
-using torch::executor::KernelKey;
-using torch::executor::KernelRuntimeContext;
-using torch::executor::Method;
-using torch::executor::Program;
-using torch::executor::register_kernels;
-using torch::executor::Result;
-using torch::executor::Scalar;
-using torch::executor::ScalarType;
-using torch::executor::TensorMeta;
-using torch::executor::testing::ManagedMemoryManager;
+using exec_aten::Scalar;
+using exec_aten::ScalarType;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::Kernel;
+using executorch::runtime::KernelKey;
+using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::Method;
+using executorch::runtime::Program;
+using executorch::runtime::register_kernels;
+using executorch::runtime::Result;
+using executorch::runtime::TensorMeta;
+using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
@@ -48,7 +48,7 @@ class KernelResolutionTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Create a loader for the serialized ModuleAdd program.
     const char* path = std::getenv("ET_MODULE_ADD_PATH");
@@ -78,7 +78,7 @@ TEST_F(KernelResolutionTest, InitExecutionPlanSuccess) {
         *(stack[0]) = Scalar(100);
       });
   auto s1 = register_kernels({kernel_1});
-  EXPECT_EQ(s1, torch::executor::Error::Ok);
+  EXPECT_EQ(s1, executorch::runtime::Error::Ok);
 
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   auto method = program_->load_method("forward", &mmm.get());
@@ -110,7 +110,7 @@ TEST_F(KernelResolutionTest, ResolveKernelKeySuccess) {
         *(stack[0]) = Scalar(100);
       });
   auto s1 = register_kernels({kernel_1});
-  EXPECT_EQ(s1, torch::executor::Error::Ok);
+  EXPECT_EQ(s1, executorch::runtime::Error::Ok);
 
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   auto method = program_->load_method("forward", &mmm.get());

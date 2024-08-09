@@ -14,8 +14,18 @@
 #include <cstdlib> /* strtol */
 #include <cstring>
 
-namespace torch {
-namespace executor {
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Backend;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::PyTorchBackendInterface;
+using executorch::runtime::Result;
 
 struct DemoOp {
   const char* name;
@@ -154,6 +164,3 @@ auto cls = BackendWithDelegateMapping();
 Backend backend{"BackendWithDelegateMappingDemo", &cls};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
-
-} // namespace executor
-} // namespace torch

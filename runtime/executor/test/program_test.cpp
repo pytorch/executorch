@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/executor/program.h>
+
 #include <cctype>
 #include <filesystem>
 
@@ -16,7 +18,6 @@
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
-#include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/program_generated.h>
 #include <executorch/test/utils/DeathTest.h>
@@ -24,11 +25,11 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::DataLoader;
-using torch::executor::Error;
-using torch::executor::FreeableBuffer;
-using torch::executor::Program;
-using torch::executor::Result;
+using executorch::runtime::DataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
 using torch::executor::util::BufferDataLoader;
 using torch::executor::util::FileDataLoader;
 
@@ -42,7 +43,7 @@ class ProgramTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Load the serialized ModuleAdd data.
     const char* path = std::getenv("ET_MODULE_ADD_PATH");
@@ -86,8 +87,8 @@ class ProgramTest : public ::testing::Test {
   std::unique_ptr<FileDataLoader> multi_loader_;
 };
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace testing {
 // Provides access to private Program methods.
 class ProgramTestFriend final {
@@ -104,10 +105,10 @@ class ProgramTestFriend final {
   }
 };
 } // namespace testing
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch
 
-using torch::executor::testing::ProgramTestFriend;
+using executorch::runtime::testing::ProgramTestFriend;
 
 TEST_F(ProgramTest, DataParsesWithMinimalVerification) {
   // Parse the Program from the data.

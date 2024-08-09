@@ -6,23 +6,25 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/executor/tensor_parser.h>
+
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/executor/tensor_parser.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
-#include <gtest/gtest.h>
-
 #include <executorch/schema/program_generated.h>
 
+#include <gtest/gtest.h>
+
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::FreeableBuffer;
-using torch::executor::Program;
-using torch::executor::Result;
-using torch::executor::Tensor;
-using torch::executor::deserialization::parseTensor;
-using torch::executor::testing::ManagedMemoryManager;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::deserialization::parseTensor;
+using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
@@ -50,8 +52,8 @@ class TensorParserTest : public ::testing::Test {
   std::unique_ptr<FileDataLoader> half_loader_;
 };
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace testing {
 // Provides access to private Program methods.
 class ProgramTestFriend final {
@@ -62,14 +64,14 @@ class ProgramTestFriend final {
   }
 };
 } // namespace testing
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch
 
-using torch::executor::testing::ProgramTestFriend;
+using executorch::runtime::testing::ProgramTestFriend;
 
 void test_module_add(
     std::unique_ptr<FileDataLoader>& loader,
-    torch::executor::ScalarType scalar_type,
+    ScalarType scalar_type,
     int type_size) {
   Result<Program> program =
       Program::load(loader.get(), Program::Verification::Minimal);
@@ -91,9 +93,9 @@ void test_module_add(
     if (serialization_value->val_type() ==
         executorch_flatbuffer::KernelTypes::Tensor) {
       tensor_count++;
-      Result<torch::executor::Tensor> tensor = parseTensor(
+      Result<Tensor> tensor = parseTensor(
           program_, &mmm.get(), serialization_value->val_as_Tensor());
-      torch::executor::Tensor t = tensor.get();
+      Tensor t = tensor.get();
       ASSERT_EQ(scalar_type, t.scalar_type());
       ASSERT_EQ(2, t.dim()); // [2, 2]
       ASSERT_EQ(4, t.numel());
@@ -110,13 +112,9 @@ void test_module_add(
 }
 
 TEST_F(TensorParserTest, TestModuleAddFloat) {
-  test_module_add(
-      float_loader_, torch::executor::ScalarType::Float, sizeof(float));
+  test_module_add(float_loader_, ScalarType::Float, sizeof(float));
 }
 
 TEST_F(TensorParserTest, TestModuleAddHalf) {
-  test_module_add(
-      half_loader_,
-      torch::executor::ScalarType::Half,
-      sizeof(torch::executor::Half));
+  test_module_add(half_loader_, ScalarType::Half, sizeof(exec_aten::Half));
 }

@@ -14,9 +14,9 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-
-namespace torch {
-namespace executor {
+using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::MemoryManager;
 
 TEST(MemoryManagerTest, MinimalCtor) {
   MemoryAllocator method_allocator(0, nullptr);
@@ -93,6 +93,3 @@ TEST(MemoryManagerTest, CtorWithSameAllocator) {
           /*temp_allocator=*/&method_allocator),
       "");
 }
-
-} // namespace executor
-} // namespace torch
