@@ -15,8 +15,8 @@
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/schema/program_generated.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 namespace {
 Result<Tag> get_tag(
@@ -59,7 +59,8 @@ size_t calculate_nbytes(
   for (ssize_t i = 0; i < sizes.size(); i++) {
     n *= sizes[i];
   }
-  return n * torch::executor::elementSize(scalar_type);
+  // Use the full namespace to disambiguate from c10::elementSize.
+  return n * executorch::runtime::elementSize(scalar_type);
 }
 
 } // namespace
@@ -196,5 +197,5 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
   return s_plan_->non_const_buffer_sizes()->Get(index + 1);
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

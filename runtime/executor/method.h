@@ -26,12 +26,6 @@ struct EValue;
 
 namespace executorch {
 namespace runtime {
-class KernelRuntimeContext;
-} // namespace runtime
-} // namespace executorch
-
-namespace torch {
-namespace executor {
 
 // Forward declare Program to avoid a circular reference.
 class Program;
@@ -39,8 +33,8 @@ class Program;
 // Forward declare internal types.
 class BackendDelegate;
 struct Chain;
-using OpFunction =
-    void (*)(::executorch::runtime::KernelRuntimeContext&, EValue**);
+class KernelRuntimeContext;
+using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
 /// A list of pointers into the master values table that together compose the
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;
@@ -356,5 +350,13 @@ class Method final {
   void log_outputs();
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::Method;
 } // namespace executor
 } // namespace torch

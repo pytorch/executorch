@@ -29,11 +29,15 @@ struct Program;
 
 namespace torch {
 namespace executor {
-
 namespace testing {
 // Provides test access to private Program methods.
 class ProgramTestFriend;
 } // namespace testing
+} // namespace executor
+} // namespace torch
+
+namespace executorch {
+namespace runtime {
 
 /**
  * A deserialized ExecuTorch program binary.
@@ -194,7 +198,7 @@ class Program final {
   friend class BackendDelegate;
   friend class Executor;
   friend class Method;
-  friend class testing::ProgramTestFriend;
+  friend class torch::executor::testing::ProgramTestFriend;
 
   const executorch_flatbuffer::Program* get_internal_program() const {
     return internal_program_;
@@ -260,5 +264,13 @@ class Program final {
   FreeableBuffer constant_segment_data_;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::Program;
 } // namespace executor
 } // namespace torch

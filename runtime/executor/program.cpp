@@ -29,10 +29,8 @@
 
 #pragma clang diagnostic ignored "-Wshadow"
 
-using executorch::runtime::ExtendedHeader;
-
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 namespace {
 
@@ -412,5 +410,5 @@ Result<FreeableBuffer> Program::LoadSegment(
       segment_base_offset_ + segment->offset(), segment->size(), segment_info);
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

@@ -14,8 +14,8 @@
 #include <executorch/runtime/executor/program.h>
 #include <executorch/schema/program_generated.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace deserialization {
 
 __ET_NODISCARD Result<exec_aten::Tensor> parseTensor(
@@ -98,6 +98,19 @@ __ET_NODISCARD Result<void*> getTensorDataPtr(
     size_t nbytes,
     HierarchicalAllocator* allocator);
 
+} // namespace deserialization
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace deserialization {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::deserialization::getTensorDataPtr;
+using ::executorch::runtime::deserialization::parseListOptionalType;
+using ::executorch::runtime::deserialization::parseTensor;
+using ::executorch::runtime::deserialization::parseTensorList;
 } // namespace deserialization
 } // namespace executor
 } // namespace torch
