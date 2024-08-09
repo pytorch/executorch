@@ -14,8 +14,8 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Loads from a data source.
@@ -125,5 +125,13 @@ class DataLoader {
   __ET_NODISCARD virtual Result<size_t> size() const = 0;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::DataLoader;
 } // namespace executor
 } // namespace torch

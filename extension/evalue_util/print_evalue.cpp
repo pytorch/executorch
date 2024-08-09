@@ -16,8 +16,10 @@
 #include <ostream>
 #include <sstream>
 
-namespace torch {
-namespace executor {
+using exec_aten::ScalarType;
+
+namespace executorch {
+namespace extension {
 
 namespace {
 
@@ -102,7 +104,7 @@ void print_scalar_list(
       // We've printed a full line, so wrap and begin a new one.
       os << "\n  ";
     }
-    os << EValue(exec_aten::Scalar(list[i]));
+    os << executorch::runtime::EValue(exec_aten::Scalar(list[i]));
     if (wrapping || i < list.size() - 1) {
       // No trailing comma when not wrapping. Always a trailing comma when
       // wrapping. This will leave a trailing space at the end of every wrapped
@@ -149,12 +151,13 @@ void print_tensor(std::ostream& os, exec_aten::Tensor tensor) {
   //
   // TODO(T159700776): Format multidimensional data like numpy/PyTorch does.
   // https://github.com/pytorch/pytorch/blob/main/torch/_tensor_str.py
-#define PRINT_TENSOR_DATA(ctype, dtype)                                  \
-  case ScalarType::dtype:                                                \
-    print_scalar_list(                                                   \
-        os,                                                              \
-        ArrayRef<ctype>(tensor.const_data_ptr<ctype>(), tensor.numel()), \
-        /*print_length=*/false);                                         \
+#define PRINT_TENSOR_DATA(ctype, dtype)                      \
+  case ScalarType::dtype:                                    \
+    print_scalar_list(                                       \
+        os,                                                  \
+        exec_aten::ArrayRef<ctype>(                          \
+            tensor.const_data_ptr<ctype>(), tensor.numel()), \
+        /*print_length=*/false);                             \
     break;
 
   switch (tensor.scalar_type()) {
@@ -211,7 +214,20 @@ void print_list_optional_tensor(
 
 } // namespace
 
+void evalue_edge_items::set_edge_items(std::ostream& os, long edge_items) {
+  os.iword(get_edge_items_xalloc()) = edge_items;
+}
+
+} // namespace extension
+} // namespace executorch
+
+namespace executorch {
+namespace runtime {
+
+// This needs to live in the same namespace as EValue.
 std::ostream& operator<<(std::ostream& os, const EValue& value) {
+  using namespace executorch::extension;
+
   switch (value.tag) {
     case Tag::None:
       os << "None";
@@ -258,13 +274,5 @@ std::ostream& operator<<(std::ostream& os, const EValue& value) {
   return os;
 }
 
-namespace util {
-
-void evalue_edge_items::set_edge_items(std::ostream& os, long edge_items) {
-  os.iword(get_edge_items_xalloc()) = edge_items;
-}
-
-} // namespace util
-
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

@@ -16,8 +16,8 @@
 #include <executorch/runtime/platform/log.h>
 #include <cstdint>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * A group of buffers that can be used to represent a device's memory hierarchy.
@@ -105,5 +105,13 @@ class HierarchicalAllocator final {
   Span<Span<uint8_t>> buffers_;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::HierarchicalAllocator;
 } // namespace executor
 } // namespace torch
