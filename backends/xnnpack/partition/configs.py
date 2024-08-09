@@ -101,6 +101,8 @@ SUPPORTED_QUANT_OPS = [
     exir_ops.edge.aten.addmm.default,  # TODO(T163877189) add constraint for addmm
 ]
 
+# This set is used to determine if an op is a supported Quantized Op. This is
+# used to determine whether a quantization op is implicit or explicit.
 SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET = {
     op.name()
     for op in (
@@ -108,6 +110,7 @@ SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET = {
         + [
             exir_ops.edge.aten._to_copy.default,
             exir_ops.edge.aten.linear.default,
+            exir_ops.edge.aten.convolution.default,
         ]
     )
 }

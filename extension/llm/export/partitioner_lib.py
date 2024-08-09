@@ -116,9 +116,6 @@ def get_qnn_partitioner(
             QnnPartitioner,
         )
 
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.quantizer.quantizer`
-        from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.serialization.qnn_compile_spec_schema`
         from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
             QcomChipset,
@@ -138,16 +135,6 @@ def get_qnn_partitioner(
     skip_node_op_set = {}
     if pt2e_quantize is not None:
         use_fp16 = False
-        # TODO: fix the lowering error without skipping nodes
-
-        if quant_dtype == QuantDtype.use_8a8w:
-            raise NotImplementedError("8a8w for llama is still under development")
-
-        elif quant_dtype == QuantDtype.use_16a16w:
-            raise NotImplementedError("16a16w for llama is still under development")
-
-        elif quant_dtype == QuantDtype.use_16a4w:
-            raise NotImplementedError("16a4w for llama is still under development")
 
     return QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
