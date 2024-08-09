@@ -116,7 +116,7 @@ done
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION=dev20240716
+NIGHTLY_VERSION=dev20240728
 
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL="https://download.pytorch.org/whl/nightly/cpu"
