@@ -12,10 +12,15 @@
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 
+namespace executorch {
+namespace runtime {
+// Defined in //executorch/runtime/kernel/operator_registry.cpp.
+void make_kernel_key_string(ArrayRef<TensorMeta> key, char* buf);
+} // namespace runtime
+} // namespace executorch
+
 namespace torch {
 namespace executor {
-void make_kernel_key_string(ArrayRef<TensorMeta> key, char* buf);
-
 inline void make_kernel_key(
     std::vector<std::pair<ScalarType, std::vector<exec_aten::DimOrderType>>>
         tensors,
