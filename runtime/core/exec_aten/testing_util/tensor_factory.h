@@ -909,12 +909,14 @@ class TensorListFactory final {
    * provided Tensors, but filled with zero elements. The dtypes of the template
    * entries are ignored.
    */
-  exec_aten::TensorList zeros_like(const std::vector<exec_aten::Tensor>& templates) {
+  exec_aten::TensorList zeros_like(
+      const std::vector<exec_aten::Tensor>& templates) {
     memory_.emplace_back(std::make_unique<std::vector<exec_aten::Tensor>>());
     auto& vec = memory_.back();
-    std::for_each(templates.begin(), templates.end(), [&](const exec_aten::Tensor& t) {
-      vec->push_back(tf_.zeros_like(t));
-    });
+    std::for_each(
+        templates.begin(), templates.end(), [&](const exec_aten::Tensor& t) {
+          vec->push_back(tf_.zeros_like(t));
+        });
     return exec_aten::TensorList(vec->data(), vec->size());
   }
 
