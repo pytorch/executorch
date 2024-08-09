@@ -67,7 +67,7 @@ def build_sdk_runner_including_coreml(
         "./examples/sdk/build_sdk_example_runner.sh --coreml"
     )
     build_command: str = (
-        f"{cd_root_command}; {conda_activate_env_command}; {build_sdk_runner_command}"
+        f"{cd_root_command} && {conda_activate_env_command} && {build_sdk_runner_command}"
     )
     subprocess.run(
         f'bash -c "{build_command}"', shell=True, check=True
@@ -189,9 +189,8 @@ def generate_etdump_with_intermediate_values(
     -etdump_path {et_dump_path.resolve()}\
     -debug_output_path {debug_buffer_path.resolve()}\
     -debug_buffer_size {debug_buffer_size}"""
-    run_command: str = f"{sdk_runner_command}"
     subprocess.run(
-        f'bash -c "{run_command}"', shell=True, check=True
+        f'bash -c "{sdk_runner_command}"', shell=True, check=True
     ).check_returncode()
 
 
