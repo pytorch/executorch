@@ -51,7 +51,8 @@ class Sampler {
 
  private:
   int32_t vocab_size_;
-  float temperature_;
+  // reciprocal of temperature, or 0 if temperature == 0.
+  float inv_temperature_;
   float topp_;
   unsigned long long rng_state_;
 };
