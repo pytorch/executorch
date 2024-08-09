@@ -105,7 +105,6 @@ void inline _typed_quantized_matmul(
           out_dim);
     }
   }
-  break;
 }
 
 void quantized_matmul_out(
@@ -120,7 +119,7 @@ void quantized_matmul_out(
     int64_t out_zero_point,
     bool transposed,
     Tensor& out) {
-  if (out.scalar_type() == at::ScalarType::Byte) {
+  if (out.scalar_type() == exec_aten::ScalarType::Byte) {
     _typed_quantized_matmul<uint8_t>(
         X,
         X_zero_point,
@@ -132,7 +131,7 @@ void quantized_matmul_out(
         out_zero_point,
         transposed,
         out);
-  } else if (out.scalar_type() == at::ScalarType::Char) {
+  } else if (out.scalar_type() == exec_aten::ScalarType::Char) {
     _typed_quantized_matmul<int8_t>(
         X,
         X_zero_point,
