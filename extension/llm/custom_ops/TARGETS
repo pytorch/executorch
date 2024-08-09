@@ -21,3 +21,16 @@ runtime.python_test(
         "//caffe2:torch",
     ],
 )
+
+runtime.python_test(
+    name = "test_preprocess_custom_ops",
+    srcs = [
+        "test_preprocess_custom_ops.py",
+    ],
+    preload_deps = [
+        ":preprocess_custom_ops_py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
