@@ -9,7 +9,7 @@
 #pragma once
 
 #include "QnnTypes.h"
-#include "qcir_generated.h"
+#include <executorch/backends/qualcomm/aot/ir/qcir_generated.h>
 
 namespace torch {
 namespace executor {

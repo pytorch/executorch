@@ -1,0 +1,127 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This yaml file contains operators that are also defined by the ATen library.
+# For lean mode:
+#   - Codegen'd target `executorch_generated_lib` will be reading all the information
+#     from this file, including operator schema and kernel metadata.
+#   - Selective build target `codegen:executorch_defined_ops` now is selecting all the
+#     operators in this file, by dumping all the op names into `selected_operators.yaml`.
+#
+# See the README.md file in executorch/kernels/portable for a description of the syntax used
+# by this file.
+
+
+# aten ops
+- op: _to_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::to_copy_out
+
+- op: _softmax.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::softmax_out
+
+- op: add.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::add_out
+
+- op: bmm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bmm_out
+
+- op: cat.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::cat_out
+
+- op: clone.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::clone_out
+
+- op: div.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::div_out
+
+- op: div.out_mode
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::div_out_mode
+
+- op: embedding.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::embedding_out
+
+- op: full.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::full_out
+
+- op: mul.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::mul_out
+
+- op: permute_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::permute_copy_out
+
+- op: sigmoid.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sigmoid_out
+
+- op: slice_copy.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::slice_copy_Tensor_out
+
+- op: split_with_sizes_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::split_with_sizes_copy_out
+
+- op: sub.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sub_out
+
+- op: view_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::view_copy_out
+
+- op: where.self_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::where_out
+
+# custom ops
+- func: cadence::quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantize_per_tensor_out
+
+- func: cadence::dequantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::dequantize_per_tensor_out
+
+
+- func: cadence::quantized_layer_norm.out(Tensor input, Tensor in_scale, Tensor in_zero_point, int[] normalized_shape, Tensor weight, Tensor bias, float eps, float output_scale, int output_zero_point, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantized_layer_norm_out
+
+- func: cadence::quantized_linear.out(Tensor src, Tensor weight, Tensor bias, int src_zero_point, Tensor weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, Tensor? offset, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantized_linear_out
