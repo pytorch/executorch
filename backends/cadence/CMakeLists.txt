@@ -23,7 +23,12 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+set(TARGET_DIR reference)
 
+if(EXECUTORCH_NNLIB_OPT)
+set(TARGET_DIR hifi)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)  
+endif()
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/reference/operators)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/reference/kernels)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/operators)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/kernels)
