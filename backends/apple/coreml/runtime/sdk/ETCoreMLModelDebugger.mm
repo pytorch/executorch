@@ -5,21 +5,22 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
+#import "ETCoreMLModelDebugger.h"
+
 #import <CoreML/CoreML.h>
-#import <ETCoreMLAsset.h>
-#import <ETCoreMLAssetManager.h>
-#import <ETCoreMLLogging.h>
-#import <ETCoreMLModelCompiler.h>
-#import <ETCoreMLModelStructurePath.h>
-#import <ETCoreMLPair.h>
-#import <ETCoreMLModelDebugger.h>
-#import <ETCoreMLStrings.h>
+#import "ETCoreMLAsset.h"
+#import "ETCoreMLAssetManager.h"
+#import "ETCoreMLLogging.h"
+#import "ETCoreMLModelCompiler.h"
+#import "ETCoreMLModelStructurePath.h"
+#import "ETCoreMLPair.h"
+#import "ETCoreMLStrings.h"
 #import <format/MIL.pb.h>
 #import <format/Model.pb.h>
 #import <fstream>
 #import <iostream>
-#import <model_package_info.h>
-#import <objc_json_serde.h>
+#import "model_package_info.h"
+#import "objc_json_serde.h"
 #import <string>
 #import <unordered_map>
 
@@ -68,10 +69,6 @@ BOOL is_const_operation(const MILSpec::Operation& operation) {
     return operation.type() == "const";
 }
 
-BOOL is_cast_operation(const MILSpec::Operation& operation) {
-    return operation.type() == "cast";
-}
-
 BOOL is_datatype_supported_as_model_output(MILSpec::DataType datatype) {
     switch (datatype) {
         case MILSpec::DataType::INT32:
@@ -95,11 +92,7 @@ BOOL is_operation_output_supported_as_model_output(const MILSpec::Operation& ope
     if (is_const_operation(operation)) {
         return NO;
     }
-    
-    if (is_cast_operation(operation)) {
-        return NO;
-    }
-    
+
     return YES;
 }
 
@@ -316,7 +309,6 @@ NSURL * _Nullable get_compiled_model_url_with_intermediate_outputs(NSURL *model_
         return nil;
     }
     
-    // Compile the model.
     return [ETCoreMLModelCompiler compileModelAtURL:model_url
                                maxWaitTimeInSeconds:(5 * 60)
                                               error:error];

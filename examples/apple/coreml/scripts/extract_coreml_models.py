@@ -57,7 +57,7 @@ def extract_coreml_models(pte_data: bytes):
         model_index += 1
 
     if len(coreml_delegates) == 0:
-        print("The model isn't delegated to CoreML.")
+        print("The model isn't delegated to Core ML.")
 
 
 if __name__ == "__main__":

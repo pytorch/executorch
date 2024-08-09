@@ -7,7 +7,7 @@
 
 #import "ETCoreMLModelStructurePath.h"
 
-#import <objc_safe_cast.h>
+#import "objc_safe_cast.h"
 
 namespace {
 using namespace executorchcoreml::modelstructure;
