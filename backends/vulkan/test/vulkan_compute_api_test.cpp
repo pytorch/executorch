@@ -474,9 +474,9 @@ TEST_F(VulkanComputeAPITest, buffer_tensor_sanity_check) {
           case vkapi::kHalf:
             run_buffer_tensor_sanity_check<torch::executor::Half>(a);
             break;
-          // case vkapi::kChar:
-          //   run_buffer_tensor_sanity_check<int8_t>(a);
-          //   break;
+          case vkapi::kChar:
+            run_buffer_tensor_sanity_check<int8_t>(a);
+            break;
           default:
             VK_THROW("Unsupported dtype");
         }
