@@ -131,7 +131,7 @@ Sampler::Sampler(
     float topp,
     unsigned long long rng_seed)
     : vocab_size_(vocab_size),
-      inv_temperature_(temperature ? 1.0f / temperature : 0),
+      inv_temperature_(static_cast<bool>(temperature) ? 1.0f / temperature : 0),
       topp_(topp),
       rng_state_(rng_seed) {}
 
