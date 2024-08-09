@@ -48,11 +48,27 @@ jobs:
       - name: Set parameters
         id: set-parameters
         shell: bash
+        env:
+          # Separate default values from the workflow dispatch. To ensure defaults are accessible
+          # during scheduled runs and to provide flexibility for different defaults between
+          # on-demand and periodic benchmarking.
+          CRON_DEFAULT_MODELS: "stories110M"
+          CRON_DEFAULT_DEVICES: "samsung_galaxy_s2x"
+          CRON_DEFAULT_DELEGATES: "xnnpack"
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
+          if [ -z "$MODELS" ]; then
+            MODELS="$CRON_DEFAULT_MODELS"
+          fi
           DEVICES="${{ inputs.devices }}"
+          if [ -z "$DEVICES" ]; then
+            DEVICES="$CRON_DEFAULT_DEVICES"
+          fi
           DELEGATES="${{ inputs.delegates }}"
+          if [ -z "$DELEGATES" ]; then
+            DELEGATES="$CRON_DEFAULT_DELEGATES"
+          fi
 
           # Mapping devices to their corresponding device-pool-arn
           declare -A DEVICE_POOL_ARNS
