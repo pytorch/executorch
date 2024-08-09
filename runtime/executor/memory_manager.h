@@ -11,8 +11,8 @@
 #include <executorch/runtime/core/hierarchical_allocator.h>
 #include <executorch/runtime/core/memory_allocator.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * A container class for allocators used during Method load and execution.
@@ -113,5 +113,13 @@ class MemoryManager final {
   MemoryAllocator* temp_allocator_;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::MemoryManager;
 } // namespace executor
 } // namespace torch

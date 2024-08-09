@@ -26,8 +26,8 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Runtime state for a backend delegate.
@@ -252,10 +252,10 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
     // currently. If that's not the case then something is wrong in the model
     // and we should exit.
     ET_CHECK_OR_RETURN_ERROR(
-        ScalarType::Bool == cond_val.scalar_type(),
+        exec_aten::ScalarType::Bool == cond_val.scalar_type(),
         InvalidProgram,
         "Expected dtype of %" PRId8 " got %" PRId8,
-        static_cast<int8_t>(ScalarType::Bool),
+        static_cast<int8_t>(exec_aten::ScalarType::Bool),
         static_cast<int8_t>(cond_val.scalar_type()));
 
     const bool* cond_data = cond_val.const_data_ptr<bool>();
@@ -944,7 +944,7 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   //     allowed.");
   // TODO(T188740925): for now, return error without logs.
   if (pre_allocated_output_) {
-    return ::torch::executor::Error::InvalidState;
+    return Error::InvalidState;
   }
 
   // Check the args
@@ -1370,5 +1370,5 @@ Method::~Method() {
   }
   // All other fields are trivially destructible.
 }
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch
