@@ -5,7 +5,7 @@
 
 import logging
 import os
-from typing import Dict
+from typing import Any, Dict
 
 import numpy as np
 import serializer.tosa_serializer as ts
@@ -316,3 +316,29 @@ def process_call_function(
         )
     else:
         raise RuntimeError(f"Unknown operator {node.target}")
+
+
+def expand_dims(
+    tosa_graph: ts.TosaSerializer, input_node: TosaArg, dtype: ts.DType, dim: int
+) -> Any:
+    """Inserts TOSA operators into the tosa_graph, that perform the equivalent
+    of the expand_dims (a.k.a unsqueeze) operation. A new axis is created at the
+    dim location.
+
+    Args:
+        tosa_graph (ts.TosaSerializer): The TOSA graph to manipulate.
+        input_node (TosaArg): The parent node of the expand dim operations.
+        dtype (ts.DType): The data type expand dims operations.
+        dim (int): The dimension to expand.
+
+    Returns:
+        Any: The output tensor of the inserted operation in the TOSA graph.
+    """
+    new_shape = list(input_node.shape)
+    new_shape.insert(dim, 1)
+
+    intermediate = tosa_graph.addIntermediate(new_shape, dtype)
+
+    build_reshape(tosa_graph, input_node.name, new_shape, intermediate.name)
+
+    return intermediate
