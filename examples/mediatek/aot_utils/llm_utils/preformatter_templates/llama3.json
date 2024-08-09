@@ -1,0 +1,6 @@
+{
+    "description": "Template used by LLaMa3.",
+    "prompt_input": "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{instruction}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+    "prompt_no_input": "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{instruction}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+    "response_split": "<|start_header_id|>assistant<|end_header_id|>\n\n"
+}
