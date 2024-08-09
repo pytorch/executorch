@@ -29,20 +29,20 @@
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
-using torch::executor::BackendExecutionContext;
-using torch::executor::BackendInitContext;
-using torch::executor::CompileSpec;
-using torch::executor::DataLoader;
-using torch::executor::DelegateHandle;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::FreeableBuffer;
-using torch::executor::MemoryAllocator;
-using torch::executor::Method;
-using torch::executor::Program;
-using torch::executor::PyTorchBackendInterface;
-using torch::executor::Result;
-using torch::executor::testing::ManagedMemoryManager;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DataLoader;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Method;
+using executorch::runtime::Program;
+using executorch::runtime::PyTorchBackendInterface;
+using executorch::runtime::Result;
+using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
 /**
@@ -135,7 +135,7 @@ class StubBackend final : public PyTorchBackendInterface {
   static Error register_singleton(const char* name = kName) {
     if (!registered_) {
       registered_ = true;
-      return torch::executor::register_backend({name, &singleton_});
+      return executorch::runtime::register_backend({name, &singleton_});
     }
     return Error::Ok;
   }
@@ -279,7 +279,7 @@ class BackendIntegrationTest : public ::testing::TestWithParam<bool> {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Make sure that the backend has been registered. Safe to call multiple
     // times. Doing this at runtime ensures that it's only registered if these
@@ -324,7 +324,7 @@ class BackendIntegrationTest : public ::testing::TestWithParam<bool> {
 
 TEST_P(BackendIntegrationTest, BackendIsPresent) {
   PyTorchBackendInterface* backend =
-      torch::executor::get_backend_class(StubBackend::kName);
+      executorch::runtime::get_backend_class(StubBackend::kName);
   ASSERT_EQ(backend, &StubBackend::singleton());
 }
 
@@ -546,7 +546,7 @@ class DelegateDataAlignmentTest : public ::testing::TestWithParam<bool> {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Make sure that the backend has been registered. Safe to call multiple
     // times. Doing this at runtime ensures that it's only registered if these

@@ -22,19 +22,19 @@ using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::SizesType;
 using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::getOpsFn;
-using torch::executor::hasOpsFn;
-using torch::executor::Kernel;
-using torch::executor::KernelRuntimeContext;
-using torch::executor::register_kernels;
-using torch::executor::testing::TensorFactory;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::getOpsFn;
+using executorch::runtime::hasOpsFn;
+using executorch::runtime::Kernel;
+using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::register_kernels;
+using executorch::runtime::testing::TensorFactory;
 
 class ExecutorTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
