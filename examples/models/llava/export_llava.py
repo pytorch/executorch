@@ -121,21 +121,22 @@ def export_image_encoder(llava, resized, dynamic_shapes):
     llava_image_encode = LlavaImageEncoder(llava)
 
     # quantizer
-    linear_quantizer = XNNPACKQuantizer()
-    operator_config_dynamic = get_symmetric_quantization_config(
-        is_per_channel=True, is_dynamic=True
-    )
-    linear_quantizer.set_global(operator_config_dynamic)
+    quantizer = XNNPACKQuantizer()
+    quantizer.set_global(get_symmetric_quantization_config())
 
-    manager = LlavaEdgeManager(
-        model=llava_image_encode,
-        modelname="llava_image_encoder",
-        max_seq_len=llava.text_model_args.max_seq_len,  # This may not be right
-        dtype=DType.fp32,
-        use_kv_cache=True,
-        example_inputs=(resized,),
-        dynamic_shapes=dynamic_shapes,
-    ).capture_pre_autograd_graph()
+    manager = (
+        LlavaEdgeManager(
+            model=llava_image_encode,
+            modelname="llava_image_encoder",
+            max_seq_len=llava.text_model_args.max_seq_len,  # This may not be right
+            dtype=DType.fp32,
+            use_kv_cache=True,
+            example_inputs=(resized,),
+            dynamic_shapes=dynamic_shapes,
+        )
+        .capture_pre_autograd_graph()
+        .pt2e_quantize([quantizer])
+    )
 
     # lower to executorch
     with torch.no_grad():
@@ -186,9 +187,11 @@ def main():
     llava_model = LlavaModel(use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache)
     llava = llava_model.get_eager_model()
 
-    prompt_before_image, resized, prompt_after_image = (
-        llava_model.get_inputs_for_prefill()
-    )
+    (
+        prompt_before_image,
+        resized,
+        prompt_after_image,
+    ) = llava_model.get_inputs_for_prefill()
 
     image_encoder_ep = export_image_encoder(
         llava, resized, llava_model._get_image_dynamic_shapes()
@@ -211,9 +214,7 @@ def main():
             "text_model": text_model_ep,
         },
         partitioner={
-            "image_encoder": [
-                XnnpackPartitioner(config_precisions=ConfigPrecisionType.FP32)
-            ],
+            "image_encoder": [XnnpackPartitioner()],
             "text_model": [
                 XnnpackPartitioner(
                     config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
