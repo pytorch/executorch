@@ -12,9 +12,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-
-namespace torch {
-namespace executor {
+using executorch::runtime::Span;
 
 TEST(SpanTest, Ctors) {
   int64_t x[2] = {1, 2};
@@ -64,6 +62,3 @@ TEST(SpanTest, TriviallyCopyable) {
   EXPECT_EQ(span.size(), span_copy.size());
   EXPECT_TRUE(std::is_trivially_copyable<Span<int64_t>>::value);
 }
-
-} // namespace executor
-} // namespace torch

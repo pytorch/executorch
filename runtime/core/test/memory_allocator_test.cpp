@@ -16,8 +16,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::MemoryAllocator;
+using executorch::runtime::Error;
+using executorch::runtime::MemoryAllocator;
 
 struct TestType8 {
   char data[8];
@@ -34,7 +34,7 @@ class MemoryAllocatorTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -201,7 +201,7 @@ class HelperMacrosTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
