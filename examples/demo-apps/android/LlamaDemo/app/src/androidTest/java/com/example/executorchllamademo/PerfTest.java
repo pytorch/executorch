@@ -57,7 +57,7 @@ public class PerfTest implements LlamaCallback {
             assertFalse(tokensPerSecond.isEmpty());
 
             final Float tps = tokensPerSecond.get(tokensPerSecond.size() - 1);
-            reportMetric("TPS", tps);
+            report("TPS", tps);
         });
   }
 
@@ -71,7 +71,7 @@ public class PerfTest implements LlamaCallback {
     tokensPerSecond.add(tps);
   }
 
-  private void reportMetric(final String metric, final Float value) {
+  private void report(final String metric, final Float value) {
     Bundle bundle = new Bundle();
     bundle.putFloat(metric, value);
     InstrumentationRegistry.getInstrumentation().sendStatus(0, bundle);
