@@ -218,7 +218,6 @@ jobs:
       # TODO: Hard code llm_demo_bpe for now in this job.
       android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_bpe/app-debug.apk
       android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_bpe/app-debug-androidTest.apk
-      # The test spec can be downloaded from https://ossci-assets.s3.amazonaws.com/android-llama2-device-farm-test-spec-v2.yml
       test-spec: https://ossci-assets.s3.amazonaws.com/android-llama2-device-farm-test-spec-v2.yml
       # Uploaded to S3 from the previous job
       extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
