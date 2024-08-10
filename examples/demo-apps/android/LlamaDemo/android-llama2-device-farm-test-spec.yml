@@ -48,7 +48,7 @@ phases:
         then
           echo "[PyTorch] Marking the test suite as failed because no tests started!";
           false;
-        elif [ $TESTS_FAILED -ne 0 ];
+        elif [ $TESTS_PASSED -ne 0 ];
         then
           OBSERVED_TPS=$(grep "The observed TPS " $INSTRUMENT_LOG | tail -n 1)
 
@@ -56,9 +56,12 @@ phases:
           then
             echo "[PyTorch] ${OBSERVED_TPS}";
           else
-            echo "[PyTorch] Marking the test suite as failed because it failed to load the model";
-            false;
+            echo "[PyTorch] Test passes but couldn't find the observed TPS from instrument log";
           fi
+        elif [ $TESTS_FAILED -ne 0 ];
+        then
+          echo "[PyTorch] Marking the test suite as failed because it failed to load the model";
+          false;
         elif [ $TESTS_ERRORED -ne 0 ];
         then
           echo "[PyTorch] Marking the test suite as failed because $TESTS_ERRORED tests errored!";

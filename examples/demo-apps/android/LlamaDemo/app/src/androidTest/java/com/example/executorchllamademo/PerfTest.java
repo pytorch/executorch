@@ -44,6 +44,10 @@ public class PerfTest implements LlamaCallback {
             .forEach(model -> {
               LlamaModule mModule = new LlamaModule(model.getPath(), tokenizerPath, 0.8f);
 
+              // Just a hack to print the observed TPS for the mode
+              System.out.println("DEBUG: " + model.getName() + " " + model.getPath());
+              System.out.flush();
+
               int loadResult = mModule.load();
               // Check that the model can be load successfully
               assertEquals(0, loadResult);
