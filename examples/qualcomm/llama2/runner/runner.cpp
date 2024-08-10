@@ -11,17 +11,16 @@
 
 #include <executorch/examples/qualcomm/llama2/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/platform/log.h>
 
 #include <ctime>
 #include <memory>
 #include <sstream>
-
-#include <executorch/examples/models/llama2/runner/util.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-#include <executorch/runtime/platform/log.h>
 
 namespace torch {
 namespace executor {
