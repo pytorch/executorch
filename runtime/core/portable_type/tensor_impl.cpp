@@ -100,17 +100,11 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
           "Attempted to resize a bounded tensor with capacity of %zu elements to %zu elements.",
           new_numel,
           numel_bound_);
-      ET_CHECK_OR_RETURN_ERROR(
-          strides_ != nullptr,
-          Internal,
-          "Strides cannot be nullptr for resize");
-      ET_CHECK_OR_RETURN_ERROR(
-          dim_order_ != nullptr,
-          Internal,
-          "Dim order cannot be nullptr for resize");
-      ET_CHECK_OK_OR_RETURN_ERROR(
-          dim_order_to_stride(new_sizes.data(), dim_order_, dim_, strides_));
 
+      if (strides_ && dim_order_) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            dim_order_to_stride(new_sizes.data(), dim_order_, dim_, strides_));
+      }
       numel_ = new_numel;
       std::copy(new_sizes.begin(), new_sizes.end(), sizes_);
     }
