@@ -8,7 +8,6 @@
 
 package com.example.executorchllamademo;
 
-import static junit.framework.TestCase.assertTrue;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -16,7 +15,6 @@ import static org.junit.Assert.assertFalse;
 import android.os.Bundle;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
-
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -43,22 +41,22 @@ public class PerfTest implements LlamaCallback {
     Arrays.stream(directory.listFiles())
         .filter(file -> file.getName().endsWith(".pte") || file.getName().endsWith(".pt"))
         .forEach(
-          model -> {
-            LlamaModule mModule = new LlamaModule(model.getPath(), tokenizerPath, 0.8f);
-            // Print the model name because there might be more than one of them
-            report("ModelName", model.getName());
+            model -> {
+              LlamaModule mModule = new LlamaModule(model.getPath(), tokenizerPath, 0.8f);
+              // Print the model name because there might be more than one of them
+              report("ModelName", model.getName());
 
-            int loadResult = mModule.load();
-            // Check that the model can be load successfully
-            assertEquals(0, loadResult);
+              int loadResult = mModule.load();
+              // Check that the model can be load successfully
+              assertEquals(0, loadResult);
 
-            // Run a testing prompt
-            mModule.generate("How do you do! I'm testing llama2 on mobile device", PerfTest.this);
-            assertFalse(tokensPerSecond.isEmpty());
+              // Run a testing prompt
+              mModule.generate("How do you do! I'm testing llama2 on mobile device", PerfTest.this);
+              assertFalse(tokensPerSecond.isEmpty());
 
-            final Float tps = tokensPerSecond.get(tokensPerSecond.size() - 1);
-            report("TPS", tps);
-        });
+              final Float tps = tokensPerSecond.get(tokensPerSecond.size() - 1);
+              report("TPS", tps);
+            });
   }
 
   @Override
