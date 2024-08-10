@@ -50,7 +50,7 @@ phases:
           false;
         elif [ $TESTS_PASSED -ne 0 ];
         then
-          OBSERVED_TPS=$(grep "TPS=" $INSTRUMENT_LOG | tail -n 1)
+          OBSERVED_TPS=$(grep "INSTRUMENTATION_STATUS: TPS=" $INSTRUMENT_LOG | tail -n 1)
 
           if [ -n "${OBSERVED_TPS}" ];
           then
