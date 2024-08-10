@@ -78,8 +78,10 @@ Result<uint64_t> TextPrefiller::prefill(
 
     ManagedTensor managed_start_pos(&pos_data, {1}, ScalarType::Long);
 
-    // run the first token and get back logits tensor. Assuming the first token is bos so don't callback.
-    exec_aten::Tensor logits_tensor = ET_UNWRAP(text_decoder_runner_->step(managed_tokens, managed_start_pos));
+    // run the first token and get back logits tensor. Assuming the first token
+    // is bos so don't callback.
+    exec_aten::Tensor logits_tensor = ET_UNWRAP(
+        text_decoder_runner_->step(managed_tokens, managed_start_pos));
     pos = 1; // start from index 1
 
     while (pos < num_prompt_tokens) {
@@ -91,8 +93,8 @@ Result<uint64_t> TextPrefiller::prefill(
       // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
       cur_token = prompt_tokens[pos];
 
-      logits_tensor =
-          ET_UNWRAP(text_decoder_runner_->step(managed_tokens, managed_start_pos));
+      logits_tensor = ET_UNWRAP(
+          text_decoder_runner_->step(managed_tokens, managed_start_pos));
 
       // print the token as string, decode it with the Tokenizer object
       token_callback(ET_UNWRAP(tokenizer_->decode(prev_token, cur_token)));
