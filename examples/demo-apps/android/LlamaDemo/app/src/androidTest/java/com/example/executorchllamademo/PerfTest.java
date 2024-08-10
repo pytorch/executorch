@@ -39,24 +39,19 @@ public class PerfTest implements LlamaCallback {
     Arrays.stream(directory.listFiles())
             .filter(file -> file.getName().endsWith(".pte"))
             .forEach(model -> {
-              LlamaModule mModule = new LlamaModule(model.getPath(), tokenizerPath, 0.8f);
+                LlamaModule mModule = new LlamaModule(model.getPath(), tokenizerPath, 0.8f);
 
-              // Just a hack to print the observed TPS for the mode
-              System.out.println("DEBUG: " + model.getName() + " " + model.getPath());
-              System.out.flush();
+                int loadResult = mModule.load();
+                // Check that the model can be load successfully
+                assertEquals(0, loadResult);
 
-              int loadResult = mModule.load();
-              // Check that the model can be load successfully
-              assertEquals(0, loadResult);
+                // Run a testing prompt
+                mModule.generate("How do you do! I'm testing llama2 on mobile device", PerfTest.this);
+                assertFalse(tokensPerSecond.isEmpty());
 
-              // Run a testing prompt
-              mModule.generate("How do you do! I'm testing llama2 on mobile device", PerfTest.this);
-              assertFalse(tokensPerSecond.isEmpty());
-
-              final Float tps = tokensPerSecond.get(tokensPerSecond.size() - 1);
-              // Just a hack to print the observed TPS for the model
-              System.out.println("The observed TPS for " + model.getName() + " is " + tps);
-              System.out.flush();
+                final Float tps = tokensPerSecond.get(tokensPerSecond.size() - 1);
+                // TODO: Figure out a way to print to instrument log output
+                assertTrue("The observed TPS for " + model.getName() + " is " + tps, false);
             });
   }
 
@@ -68,5 +63,10 @@ public class PerfTest implements LlamaCallback {
   @Override
   public void onStats(float tps) {
     tokensPerSecond.add(tps);
+  }
+
+  // https://stackoverflow.com/questions/36425497/how-to-print-logs-in-cmd-console-while-execute-android-instrument-test
+  private void print(String msg) {
+      
   }
 }
