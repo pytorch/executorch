@@ -39,9 +39,11 @@ public class PerfTest implements LlamaCallback {
     // Find out the model name
     File directory = new File(RESOURCE_PATH);
     Arrays.stream(directory.listFiles())
-            .filter(file -> file.getName().endsWith(".pte"))
+            .filter(file -> file.getName().endsWith(".pte") || file.getName().endsWith(".pt"))
             .forEach(model -> {
                 LlamaModule mModule = new LlamaModule(model.getPath(), tokenizerPath, 0.8f);
+                // Print the model name because there might be more than one of them
+                report("ModelName", model.getName());
 
                 int loadResult = mModule.load();
                 // Check that the model can be load successfully
@@ -69,6 +71,12 @@ public class PerfTest implements LlamaCallback {
   private void reportMetric(final String metric, final Float value) {
     Bundle bundle = new Bundle();
     bundle.putFloat(metric, value);
+    InstrumentationRegistry.getInstrumentation().sendStatus(0, bundle);
+  }
+
+  private void report(final String key, final String value) {
+    Bundle bundle = new Bundle();
+    bundle.putString(key, value);
     InstrumentationRegistry.getInstrumentation().sendStatus(0, bundle);
   }
 }
