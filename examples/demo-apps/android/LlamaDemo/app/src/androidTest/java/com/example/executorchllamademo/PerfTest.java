@@ -13,6 +13,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
+import android.os.Bundle;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -50,8 +52,7 @@ public class PerfTest implements LlamaCallback {
                 assertFalse(tokensPerSecond.isEmpty());
 
                 final Float tps = tokensPerSecond.get(tokensPerSecond.size() - 1);
-                // TODO: Figure out a way to print to instrument log output
-                assertTrue("The observed TPS for " + model.getName() + " is " + tps, false);
+                reportTPS(tps);
             });
   }
 
@@ -65,8 +66,9 @@ public class PerfTest implements LlamaCallback {
     tokensPerSecond.add(tps);
   }
 
-  // https://stackoverflow.com/questions/36425497/how-to-print-logs-in-cmd-console-while-execute-android-instrument-test
-  private void print(String msg) {
-      
+  private void reportTPS(final Float tps) {
+    Bundle bundle = new Bundle();
+    bundle.putFloat("TPS", tps);
+    InstrumentationRegistry.getInstrumentation().sendStatus(0, bundle);
   }
 }
