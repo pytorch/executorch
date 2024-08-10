@@ -28,9 +28,6 @@ public class PerfTest implements LlamaCallback {
   private static final String RESOURCE_PATH = "/data/local/tmp/llama/";
   private static final String TOKENIZER_BIN = "tokenizer.bin";
 
-  // From https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md
-  private static final Float EXPECTED_TPS = 10.0F;
-
   private final List<String> results = new ArrayList<>();
   private final List<Float> tokensPerSecond = new ArrayList<>();
 
@@ -39,7 +36,7 @@ public class PerfTest implements LlamaCallback {
     String tokenizerPath = RESOURCE_PATH + TOKENIZER_BIN;
     // Find out the model name
     File directory = new File(RESOURCE_PATH);
-    File[] files = Arrays.stream(directory.listFiles())
+    Arrays.stream(directory.listFiles())
             .filter(file -> file.getName().endsWith(".pte"))
             .forEach(model -> {
               LlamaModule mModule = new LlamaModule(model.getPath(), tokenizerPath, 0.8f);
