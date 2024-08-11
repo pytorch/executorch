@@ -13,7 +13,7 @@ install_qnn() {
   mkdir -p "${QNN_INSTALLATION_DIR}"
 
   pushd /tmp
-  wget -t 3 get "https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.23.0.24.06.24.zip"
+  curl -Lo v2.23.0.24.06.24.zip "https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.23.0.24.06.24.zip"
   echo "Finishing downloading qnn sdk."
   unzip -qo "v2.23.0.24.06.24.zip"
   echo "Finishing unzip qnn sdk."
