@@ -80,6 +80,10 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
   PYTHON_EXECUTABLE=python3
 fi
 
+echo "EXECUTORCH_ROOT: ${EXECUTORCH_ROOT}"
+echo "ANDROID_NDK: ${ANDROID_NDK}"
+echo "QNN_SDK_ROOT: ${QNN_SDK_ROOT}"
+
 which "${PYTHON_EXECUTABLE}"
 
 cmake_install_executorch_libraries() {
