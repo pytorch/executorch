@@ -13,7 +13,7 @@ build_qnn_backend() {
   export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-  bash ${EXECUTORCH_ROOT}/backends/qualcomm/scripts/build.sh
+  bash backends/qualcomm/scripts/build.sh
 }
 
-build_qnn_backend()
+build_qnn_backend
