@@ -23,6 +23,10 @@ install_qnn() {
   mv "/tmp/qairt"/* "${QNN_INSTALLATION_DIR}"
   echo "Finishing installing qnn '${QNN_INSTALLATION_DIR}' ."
 
+  export ANDROID_NDK=/opt/ndk
+  export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
+  export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
   ls -lah "${QNN_INSTALLATION_DIR}"
 }
 
