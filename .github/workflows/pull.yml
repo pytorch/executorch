@@ -56,6 +56,32 @@ jobs:
         # Build and test ExecuTorch with the add model on portable backend.
         PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "add" "${BUILD_TOOL}" "portable"
 
+  test-models-linux:
+    name: test-models-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    needs: gather-models
+    strategy:
+      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      fail-fast: false
+    with:
+      runner: ${{ matrix.runner }}
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: ${{ matrix.timeout }}
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL=${{ matrix.build-tool }}
+        BACKEND=${{ matrix.backend }}
+        DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Build and test ExecuTorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
 
   test-llama-runner-linux:
     name: test-llama-runner-linux
@@ -97,3 +123,273 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M.pt "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
+
+  test-llama-runner-linux-android:
+    name: test-llama-runner-linux-android
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: cmake
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12-android
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL=${{ matrix.build-tool }}
+        PYTHON_EXECUTABLE=python \
+        bash .ci/scripts/build_llama_android.sh  "${BUILD_TOOL}"
+
+  test-custom-ops-linux:
+    name: test-custom-ops-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: buck2
+          - build-tool: cmake
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL=${{ matrix.build-tool }}
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Test custom ops
+        PYTHON_EXECUTABLE=python bash examples/portable/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
+
+  test-selective-build-linux:
+    name: test-selective-build-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: buck2
+          - build-tool: cmake
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL=${{ matrix.build-tool }}
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Test selective build
+        PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
+
+  test-export-llava-linux:
+    name: test-export-llava-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.24xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
+
+        # install Llava requirements
+        bash examples/models/llama2/install_requirements.sh
+        bash examples/models/llava/install_requirements.sh
+
+        # run export_llava.sh
+        python examples/models/llava/export_llava.py --use-sdpa-with-kv-cache --pte-name llava_custom_sdpa.pte
+
+        # verify file exists
+        if [ ! -f "llava_custom_sdpa.pte" ]; then
+            echo "llava_custom_sdpa.pte not found!"
+            exit 1
+        fi
+
+        python examples/models/llava/export_llava.py --no-use-sdpa-with-kv-cache --pte-name llava.pte
+
+        # verify file exists
+        if [ ! -f "llava.pte" ]; then
+            echo "llava.pte not found!"
+            exit 1
+        fi
+
+        # run python unittest
+        python -m unittest examples.models.llava.test.test_llava
+
+  test-quantized-aot-lib-linux:
+    name: test-quantized-aot-lib-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: cmake
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL=${{ matrix.build-tool }}
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" mv2
+
+  test-pybind-build-linux:
+    name: test-pybind-build-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: cmake
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # build module for executorch.extension.pybindings.portable_lib
+        BUILD_TOOL=${{ matrix.build-tool }}
+        PYTHON_EXECUTABLE=python \
+        EXECUTORCH_BUILD_XNNPACK=ON \
+        EXECUTORCH_BUILD_PYBIND=ON \
+        bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+
+        # see if we can import the module successfully
+        python -c "from executorch.extension.pybindings import portable_lib; print('success!')"
+
+  test-binary-size-linux-gcc:
+    name: test-binary-size-linux-gcc
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-gcc9
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # build module for executorch.extension.pybindings.portable_lib
+        bash test/build_size_test.sh
+        strip cmake-out/test/size_test
+        output=$(ls -la cmake-out/test/size_test)
+        arr=($output)
+        size=${arr[4]}
+        # threshold=48120 on devserver with gcc11.4
+        # todo(lfq): update once binary size is below 50kb.
+        threshold="51504"
+        if [[ "$size" -le "$threshold" ]]; then
+          echo "Success $size <= $threshold"
+        else
+          echo "Fail $size > $threshold"
+          exit 1
+        fi
+
+  test-binary-size-linux:
+    name: test-binary-size-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        # build module for executorch.extension.pybindings.portable_lib
+        bash test/build_size_test.sh
+        strip cmake-out/test/size_test
+        output=$(ls -la cmake-out/test/size_test)
+        arr=($output)
+        size=${arr[4]}
+        # threshold=48120 on devserver with gcc11.4
+        # todo(lfq): update once binary size is below 50kb.
+        threshold="51784"
+        if [[ "$size" -le "$threshold" ]]; then
+          echo "Success $size <= $threshold"
+        else
+          echo "Fail $size > $threshold"
+          exit 1
+        fi
+
+  unittest:
+    uses: ./.github/workflows/_unittest.yml
+    with:
+      docker-image: executorch-ubuntu-22.04-clang12
+
+  unittest-arm:
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: buck2
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-arm-sdk
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        set -eux
+
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL=${{ matrix.build-tool }}
+
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python \
+        EXECUTORCH_BUILD_PYBIND=ON \
+        EXECUTORCH_BUILD_ARM_BAREMETAL=ON \
+        .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+
+        source .ci/scripts/utils.sh
+        # Install Arm dependencies
+        install_arm
+
+        # Run pytest with coverage
+        pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test

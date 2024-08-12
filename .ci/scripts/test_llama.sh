@@ -85,6 +85,7 @@ if [[ "${MODE}" =~ .*qnn.* ]]; then
 
 else
   QNN=OFF
+  QNN_SDK_ROOT=""
 fi
 
 echo "QNN option ${QNN}"
