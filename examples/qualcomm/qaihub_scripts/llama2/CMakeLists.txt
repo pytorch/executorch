@@ -9,7 +9,7 @@
 set(_qaihub_llama2_7b_runner__srcs ${_llama_runner__srcs})
 
 list(TRANSFORM _qaihub_llama2_7b_runner__srcs PREPEND "${EXECUTORCH_SOURCE_DIR}/")
-list(FILTER _qnn_qaihub_llama_runner__srcs EXCLUDE REGEX ".*(/runner/).*")
+list(FILTER _qaihub_llama2_7b_runner__srcs EXCLUDE REGEX ".*(/runner/).*")
 list(PREPEND _qaihub_llama2_7b_runner__srcs
   ${CMAKE_CURRENT_LIST_DIR}/qaihub_llama2_7b_runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.cpp

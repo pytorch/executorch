@@ -209,7 +209,7 @@ cd $EXECUTORCH_ROOT
 cp schema/program.fbs exir/_serialize/program.fbs
 cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
 
-python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --compile_only --download
+python -m examples.qualcomm.scripts.deeplab_v3 -b cmake-out-android -m SM8550 --compile_only --download
 ```
 
 You might see something like below:
@@ -308,8 +308,8 @@ So, we can run `qnn_executor_runner` like
 
 ```bash
 adb push ./deeplab_v3/dlv3_qnn.pte ${DEVICE_DIR}
-adb push ${EXECUTORCH_ROOT}/build_android/examples/qualcomm/executor_runner/qnn_executor_runner ${DEVICE_DIR}
-adb push ${EXECUTORCH_ROOT}/build_android/lib/libqnn_executorch_backend.so ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/cmake-out-android/examples/qualcomm/executor_runner/qnn_executor_runner ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/cmake-out-android/lib/libqnn_executorch_backend.so ${DEVICE_DIR}
 adb shell "cd ${DEVICE_DIR} \
            && export LD_LIBRARY_PATH=${DEVICE_DIR} \
            && export ADSP_LIBRARY_PATH=${DEVICE_DIR} \
@@ -333,7 +333,7 @@ I 00:00:00.364875 executorch:qnn_executor_runner.cpp:425] Write etdump to etdump
 The model is merely executed. If we want to feed real inputs and get model outputs, we can use
 ```bash
 cd $EXECUTORCH_ROOT
-python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --download -s <device_serial>
+python -m examples.qualcomm.scripts.deeplab_v3 -b cmake-out-android -m SM8550 --download -s <device_serial>
 ```
 The `<device_serial>` can be found by `adb devices` command.
 

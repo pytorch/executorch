@@ -126,7 +126,8 @@ void BertMemory::prepare_io(
             hidden_state->dim_order().data()));
     // reuse inputs for following tensors
     for (int shard_index = 1; shard_index < 4; ++shard_index) {
-      // inputs of shard1,2,3: hidden_state, atten_mask, pos_ids_cos, pos_ids_sin
+      // inputs of shard1,2,3: hidden_state, atten_mask, pos_ids_cos,
+      // pos_ids_sin
       input_tensors_[shard_index].push_back(hidden_state_.get());
       input_tensors_[shard_index].push_back(attention_mask_.get());
       input_tensors_[shard_index].push_back(position_ids_cos_.get());
