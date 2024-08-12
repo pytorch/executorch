@@ -9,7 +9,7 @@ set -ex
 
 build_qnn_backend() {
   echo "Start building qnn backend."
-  export ANDROID_NDK=/opt/ndk
+  export ANDROID_NDK_ROOT=/opt/ndk
   export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
