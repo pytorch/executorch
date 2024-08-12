@@ -19,6 +19,11 @@ from executorch.examples.models.llama2.tokenizer.tiktoken import (
     Message,
     Tokenizer,
 )
+
+from executorch.extension.pybindings import portable_lib  # noqa
+# Note: import this after portable_lib
+from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
+
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
 
 
