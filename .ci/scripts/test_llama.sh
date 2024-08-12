@@ -72,6 +72,16 @@ fi
 
 echo "COREML option ${COREML}"
 
+if [[ "${MODE}" =~ .*qnn.* ]]; then
+  QNN=ON
+  export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
+else
+  QNN=OFF
+fi
+
+echo "QNN option ${QNN}"
+echo "QNN_SDK_ROOT: ${QNN_SDK_ROOT}"
+
 if [[ -z "${BUCK:-}" ]]; then
   BUCK=buck2
 fi
@@ -79,14 +89,6 @@ fi
 if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
   PYTHON_EXECUTABLE=python3
 fi
-
-export ANDROID_NDK=/opt/ndk
-export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
-export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-
-echo "EXECUTORCH_ROOT: ${EXECUTORCH_ROOT}"
-echo "ANDROID_NDK: ${ANDROID_NDK}"
-echo "QNN_SDK_ROOT: ${QNN_SDK_ROOT}"
 
 which "${PYTHON_EXECUTABLE}"
 
@@ -104,6 +106,8 @@ cmake_install_executorch_libraries() {
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DEXECUTORCH_BUILD_MPS="$MPS" \
         -DEXECUTORCH_BUILD_COREML="$COREML" \
+        -DEXECUTORCH_BUILD_QNN="$QNN" \
+        -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Debug
@@ -183,6 +187,9 @@ if [[ "${MPS}" == "ON" ]]; then
 fi
 if [[ "${COREML}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -kv -v --coreml --disable_dynamic_shape"
+fi
+if [[ "${QNN}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} -kv -v --qnn --disable_dynamic_shape"
 fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
