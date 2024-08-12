@@ -573,12 +573,8 @@ def _load_llama_model_metadata(
             else (3 if is_fairseq2 else 2)
         ),
         "get_max_seq_len": model_args.max_seq_len,
-        "get_n_bos": model_args.bos_count if model_args.bos_count is not None else 1,
-        "get_n_eos": (
-            model_args.eos_count
-            if model_args.eos_count is not None
-            else (2 if is_fairseq2 else 1)
-        ),
+        "get_n_bos": 1,
+        "get_n_eos": 2 if is_fairseq2 else 1,
         "get_vocab_size": model_args.vocab_size,
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,

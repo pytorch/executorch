@@ -106,8 +106,8 @@ class ModelArgs:
     # Additional Model Metadata needed at runtime
     bos_idx: Optional[int] = None
     eos_idx: Optional[int] = None
-    bos_count: Optional[int] = None
-    eos_count: Optional[int] = None
+    bos_count: int = -1  # i.e., a single EOS is used as BOS
+    eos_count: int = 2
 
     def __post_init__(self):
         if self.n_kv_heads is None:
