@@ -787,5 +787,67 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   )
 endif()
 
+function(executorch_runtime target_name)
+  set(options OPTIMIZED QUANTIZED)
+  set(multi_value_args BACKEND EXTENSION)
+
+  cmake_parse_arguments(ETR "${options}" "" "${multi_value_args}" ${ARGN})
+
+  message(STATUS "executorch_runtime: ${target_name}")
+  message(STATUS "ETR_BACKEND: ${ETR_BACKEND}")
+
+  set(runtime_deps executorch)
+
+  # Link backends.
+  foreach(backend IN LISTS ETR_BACKEND)
+    message(STATUS "backend: ${backend}")
+    string(TOLOWER "${backend}" backend_l)
+    message(STATUS "backend_l: ${backend_l}")
+
+    if(backend_l STREQUAL "coreml")
+      list(APPEND runtime_deps coremldelegate)
+    elseif(backend_l STREQUAL "mps")
+      list(APPEND runtime_deps mpsdelegate)
+    elseif(backend_l STREQUAL "qualcomm")
+      list(APPEND runtime_deps qnn_executorch_backend)
+    elseif(backend_l STREQUAL "vulkan")
+      list(APPEND runtime_deps vulkan_backend)
+    elseif(backend_l STREQUAL "xnnpack")
+      list(APPEND runtime_deps xnnpack_backend)
+    else()
+      message(FATAL_ERROR "Unknown backend \"${backend}}\".")
+    endif()
+  endforeach()
+
+  # Link extensions.
+  foreach(extension IN LISTS ETR_EXTENSION)
+    string(TOLOWER "${extension}" extension_l)
+	message(STATUS "Extension ${extension_l}")
+
+    if(extension_l STREQUAL "apple")
+      list(APPEND runtime_deps extension_apple)
+    elseif(extension_l STREQUAL "dataloader")
+      list(APPEND runtime_deps extension_data_loader)
+    elseif(extension_l STREQUAL "module")
+      list(APPEND runtime_deps extension_module)
+    endif()
+  endforeach()
+
+  # Include optimized or portable operator library.
+  if(ETR_OPTIMIZED)
+    list(APPEND runtime_deps optimized_native_cpu_ops_lib)
+  else()
+    list(APPEND runtime_deps portable_ops_lib)
+  endif()
+
+  # Include quantized operator library.
+  if(ETR_QUANTIZED)
+    list(APPEND runtime_deps quantized_ops_lib)
+  endif()
+
+  add_library("${target_name}" INTERFACE)
+  target_link_libraries("${target_name}" INTERFACE "${runtime_deps}")
+endfunction()
+
 # Print all summary
 executorch_print_configuration_summary()
