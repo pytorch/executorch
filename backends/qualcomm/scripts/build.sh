@@ -64,9 +64,13 @@ if [ "$BUILD_AARCH64" = true ]; then
         echo "Please export ANDROID_NDK_ROOT=/path/to/android_ndkXX"
         exit -1
     fi
+
     BUILD_ROOT=$PRJ_ROOT/$CMAKE_AARCH64
     if [ "$CLEAN" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
+    else
+        # Force rebuild flatccrt for the correct platform
+        cd $BUILD_ROOT/sdk && make clean
     fi
 
     cd $BUILD_ROOT
@@ -103,15 +107,17 @@ if [ "$BUILD_AARCH64" = true ]; then
 fi
 
 if [ "$BUILD_X86_64" = true ]; then
-    # Build python interface
     BUILD_ROOT=$PRJ_ROOT/$CMAKE_X86_64
     if [ "$CLEAN" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
+    else
+        # Force rebuild flatccrt for the correct platform
+        cd $BUILD_ROOT/sdk && make clean
     fi
+
     cd $BUILD_ROOT
-    # TODO: Use CMAKE_BUILD_TYPE=RelWithDebInfo, and handle flatcc issues
     cmake \
-        -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
         -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
         -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
         -DEXECUTORCH_BUILD_QNN=ON \
@@ -131,7 +137,7 @@ if [ "$BUILD_X86_64" = true ]; then
    CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"
 
    cmake $PRJ_ROOT/$EXAMPLE_ROOT \
-       -DCMAKE_BUILD_TYPE=Debug \
+       -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
        -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
        -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
