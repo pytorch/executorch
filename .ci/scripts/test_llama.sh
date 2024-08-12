@@ -74,7 +74,13 @@ echo "COREML option ${COREML}"
 
 if [[ "${MODE}" =~ .*qnn.* ]]; then
   QNN=ON
+  export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
   export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
+  export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH
+  export PYTHONPATH=$EXECUTORCH_ROOT/..
+  cp -f backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
+  cp -f backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so $EXECUTORCH_ROOT/backends/qualcomm/python
+
 else
   QNN=OFF
 fi
