@@ -77,7 +77,7 @@ if [[ "${MODE}" =~ .*qnn.* ]]; then
   export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
   export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
   export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
-  export PYTHONPATH="${EXECUTORCH_ROOT}/.."
+  export PYTHONPATH=".."
   cp schema/program.fbs exir/_serialize/program.fbs
   cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
   cp -f cmake-out/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
