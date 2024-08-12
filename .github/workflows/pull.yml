@@ -85,7 +85,8 @@ jobs:
 
         if [[ "${MODE}" == "qnn" ]]; then
           PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
-          PYTHON_EXECUTABLE=python bash backends/qualcomm/scripts/build.sh
+          PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+          # PYTHON_EXECUTABLE=python bash backends/qualcomm/scripts/build.sh
           echo "Finishing installing qnn."
         else
           echo "Not qnn mode, skip installing qnn."
