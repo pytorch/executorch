@@ -80,8 +80,8 @@ if [[ "${MODE}" =~ .*qnn.* ]]; then
   export PYTHONPATH="${EXECUTORCH_ROOT}/.."
   cp schema/program.fbs exir/_serialize/program.fbs
   cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
-  cp -f backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so "${EXECUTORCH_ROOT}/backends/qualcomm/python"
-  cp -f backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so "${EXECUTORCH_ROOT}/backends/qualcomm/python"
+  cp -f cmake-out/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so "${EXECUTORCH_ROOT}/backends/qualcomm/python"
+  cp -f cmake-out/backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so "${EXECUTORCH_ROOT}/backends/qualcomm/python"
 
 else
   QNN=OFF
@@ -102,7 +102,6 @@ which "${PYTHON_EXECUTABLE}"
 
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
-    rm -rf cmake-out
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Debug \
