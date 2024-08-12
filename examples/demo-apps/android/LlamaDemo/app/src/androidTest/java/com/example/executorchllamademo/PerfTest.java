@@ -38,7 +38,7 @@ public class PerfTest implements LlamaCallback {
     // Find out the model name
     File directory = new File(RESOURCE_PATH);
     Arrays.stream(directory.listFiles())
-        .filter(file -> file.getName().endsWith(".pte") || file.getName().endsWith(".pt"))
+        .filter(file -> file.getName().endsWith(".pte"))
         .forEach(
             model -> {
               LlamaModule mModule = new LlamaModule(model.getPath(), tokenizerPath, 0.8f);

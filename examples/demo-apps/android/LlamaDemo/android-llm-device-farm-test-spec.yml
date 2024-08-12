@@ -13,10 +13,8 @@ phases:
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mkdir -p /data/local/tmp/llama/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.bin /data/local/tmp/llama/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.pte /data/local/tmp/llama/"
-      - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.pt /data/local/tmp/llama/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/llama/*.bin"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/llama/*.pte"
-      - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/llama/*.pt"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /data/local/tmp/llama/"
 
   test:
