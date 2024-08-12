@@ -1,4 +1,3 @@
-
 #version 450 core
 
 #define PRECISION ${PRECISION}
