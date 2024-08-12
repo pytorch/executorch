@@ -225,7 +225,7 @@ def dump_embedding_lut_for_cmdline(weight_dir, state_dict, config):
     output_path = os.path.join(weight_dir, f"embedding_{model_name}_fp32.bin")
     if not os.path.exists(output_path):
         embedding = (
-            _get_embedding_weight(config, weight_dir, state_dict)
+            _get_embedding_weight(weight_dir, state_dict)
             .to(torch.float32)
             .cpu()
             .numpy()
@@ -363,7 +363,7 @@ def get_exp_name(config_path):
 
 
 def get_embedding_layer(config, weight_dir, state_dict):
-    embedding_weight = _get_embedding_weight(config, weight_dir, state_dict)
+    embedding_weight = _get_embedding_weight(weight_dir, state_dict)
 
     model = torch.nn.Embedding(config.vocab_size, config.hidden_size, -1)
     embed_state_dict = {}
