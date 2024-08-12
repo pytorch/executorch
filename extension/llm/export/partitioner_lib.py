@@ -110,21 +110,26 @@ def get_qnn_partitioner(
     assert (
         use_kv_cache is True
     ), "Qualcomm backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
-    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.partition.qnn_partitioner`
-    from executorch.backends.qualcomm.partition.qnn_partitioner import (
-        QnnPartitioner,
-    )
+    try:
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.partition.qnn_partitioner`
+        from executorch.backends.qualcomm.partition.qnn_partitioner import (
+            QnnPartitioner,
+        )
 
-    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.serialization.qnn_compile_spec_schema`
-    from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-        QcomChipset,
-    )
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.serialization.qnn_compile_spec_schema`
+        from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
+            QcomChipset,
+        )
 
-    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
-    from executorch.backends.qualcomm.utils.utils import (
-        generate_htp_compiler_spec,
-        generate_qnn_executorch_compiler_spec,
-    )
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
+        from executorch.backends.qualcomm.utils.utils import (
+            generate_htp_compiler_spec,
+            generate_qnn_executorch_compiler_spec,
+        )
+    except ImportError:
+        raise ImportError(
+            "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
+        )
 
     use_fp16 = True
     skip_node_op_set = {}
