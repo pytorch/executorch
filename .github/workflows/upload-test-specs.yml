@@ -80,6 +80,9 @@ jobs:
   validate-android-test-spec:
     needs: upload-android-test-spec
     uses: ./.github/workflows/android-perf.yml
+    permissions:
+      id-token: write
+      contents: read
     with:
       models: stories110M
       test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/android-llm-device-farm-test-spec.yml
