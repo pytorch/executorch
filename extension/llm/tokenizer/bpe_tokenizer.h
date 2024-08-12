@@ -19,6 +19,8 @@ struct TokenIndex {
   int32_t id;
 };
 
+// A simple Byte Pair Encoding (BPE) Tokenizer. Note that the current C++ code
+// won't work with this class, it needs to go through tokenizer.py first.
 class BPETokenizer : public Tokenizer {
  public:
   explicit BPETokenizer();

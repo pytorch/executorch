@@ -342,6 +342,7 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
             )
         else:
             example_inputs = b""
+
         return export_serialize._SerializedProgram(
             serialized_ep,
             export_serialize.serialize_torch_artifact(exported_program.state_dict),

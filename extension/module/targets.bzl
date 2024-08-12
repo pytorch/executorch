@@ -17,6 +17,7 @@ def define_common_targets():
             ],
             exported_headers = [
                 "module.h",
+                "metadata_util.h",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",

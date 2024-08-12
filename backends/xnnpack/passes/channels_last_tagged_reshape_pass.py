@@ -44,13 +44,13 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
     # Set of ops that require memory format to be channels last (NHWC)
     memory_sensitive_ops_nhwc = {
         exir_ops.edge.aten.convolution.default,
-        exir_ops.edge.aten.upsample_bilinear2d.default,
+        exir_ops.edge.aten.upsample_bilinear2d.vec,
         exir_ops.edge.aten.mean.dim,
         exir_ops.edge.aten.max_pool2d.default,
         exir_ops.edge.aten.amax.default,
         exir_ops.edge.aten.max.dim,
         exir_ops.edge.aten.avg_pool2d.default,
-        exir_ops.edge.aten._prelu_kernel.default,
+        exir_ops.edge.aten.prelu.default,
     }
 
     # Set of ops that require memory format to be NCHW

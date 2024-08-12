@@ -32,7 +32,7 @@ echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps":
 Default example generates the story based on the given prompt, "Once".
 ```bash
 # 16a4w quant:
-python examples/qualcomm/oss_scripts/llama2/llama.py -a ${ARTIFACTS} -b build_android -s ${SERIAL_NUM} -m ${SOC_MODEL} --ptq 16a4w --checkpoint stories110M --params params.json --tokenizer_model tokenizer.model --tokenizer_bin tokenizer.bin --prompt "Once"
+python examples/qualcomm/oss_scripts/llama2/llama.py -a ${ARTIFACTS} -b cmake-out-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --ptq 16a4w --checkpoint stories110M --params params.json --tokenizer_model tokenizer.model --tokenizer_bin tokenizer.bin --prompt "Once"
 ```
 
 #### (Note) Customized PTQ data set

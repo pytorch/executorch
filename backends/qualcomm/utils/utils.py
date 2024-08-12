@@ -206,6 +206,13 @@ def _transform(edge_program: ExportedProgram) -> None:
     FoldQDQ()(graph_module)
     LayoutTransform(edge_program)(graph_module)
 
+    # Since QDQ nodes are stripped, update graph signature again to validate program
+    edge_program._graph_signature = _get_updated_graph_signature(
+        edge_program.graph_signature,
+        edge_program.graph_module,
+    )
+    edge_program._validate()
+
 
 def capture_program(
     module: torch.nn.Module,
@@ -222,12 +229,6 @@ def capture_program(
     core_ep.transform(ConvertBinaryOpsWithScalar())
     edge_ep = core_ep.to_edge(qnn_edge_config())
     _transform(edge_ep.exported_program)
-    # Since QDQ nodes are stripped, update graph signature again to validate program
-    edge_ep.exported_program._graph_signature = _get_updated_graph_signature(
-        edge_ep.exported_program.graph_signature,
-        edge_ep.exported_program.graph_module,
-    )
-    edge_ep.exported_program._validate()
     return edge_ep
 
 

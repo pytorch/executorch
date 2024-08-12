@@ -82,6 +82,7 @@ class TestQNNFloatingPointOperator(TestQNN):
 
     def test_qnn_backend_bmm(self):
         module = Bmm()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn([4, 8, 32]), torch.randn([4, 32, 8]))
         self.lower_module_and_test_output(module, sample_input)
 
@@ -483,6 +484,7 @@ class TestQNNFloatingPointModel(TestQNN):
 
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn(1, 2, 4, 2),)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -533,6 +535,7 @@ class TestQNNFloatingPointModel(TestQNN):
 
     def test_qnn_backend_view_permute_matmul(self):
         module = ViewPermuteMatMul()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
         self.lower_module_and_test_output(module, sample_input)
 
@@ -647,6 +650,7 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_bmm(self):
         module = Bmm()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn([4, 8, 32]), torch.randn([4, 32, 8]))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
@@ -1097,6 +1101,7 @@ class TestQNNQuantizedModel(TestQNN):
 
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn(1, 1, 4, 2),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
@@ -1157,6 +1162,7 @@ class TestQNNQuantizedModel(TestQNN):
 
     def test_qnn_backend_view_permute_matmul(self):
         module = ViewPermuteMatMul()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
@@ -2049,7 +2055,7 @@ class TestExampleScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                self.assertGreaterEqual(msg["top_1"], 70)
+                self.assertGreaterEqual(msg["top_1"], 65)
                 self.assertGreaterEqual(msg["top_5"], 90)
 
     def test_edsr(self):

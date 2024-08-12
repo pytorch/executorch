@@ -7,6 +7,8 @@
 
 import unittest
 
+import executorch.kernels.quantized  # noqa[F401] 'executorch.kernels.quantized' imported but unused
+
 import torch
 import torch.ao.quantization.fx._decomposed  # noqa[F401] 'torch.ao.quantization.fx._decomposed' imported but unused
 from executorch.exir.dialects._ops import ops

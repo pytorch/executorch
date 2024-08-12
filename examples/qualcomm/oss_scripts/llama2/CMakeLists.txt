@@ -8,7 +8,8 @@ set(_qnn_llama_runner__srcs ${_llama_runner__srcs})
 
 # preprocess qnn llama runner src files
 list(TRANSFORM _qnn_llama_runner__srcs PREPEND "${EXECUTORCH_SOURCE_DIR}/")
-list(FILTER _qnn_llama_runner__srcs EXCLUDE REGEX ".*runner.cpp$")
+list(FILTER _qnn_llama_runner__srcs EXCLUDE REGEX ".*(/runner/).*")
+message(ERROR ${_qnn_llama_runner__srcs})
 list(PREPEND _qnn_llama_runner__srcs
   ${CMAKE_CURRENT_LIST_DIR}/qnn_llama_runner.cpp
   ${CMAKE_CURRENT_LIST_DIR}/runner/runner.cpp

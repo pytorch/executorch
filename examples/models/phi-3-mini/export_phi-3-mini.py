@@ -23,7 +23,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from transformers import AutoTokenizer, Phi3ForCausalLM
+from transformers import Phi3ForCausalLM
 
 from .phi_3_mini import Phi3Mini
 
@@ -31,7 +31,14 @@ from .phi_3_mini import Phi3Mini
 def main(args) -> None:
     torch.manual_seed(0)
 
-    model_name = "microsoft/Phi-3-mini-4k-instruct"
+    if args.context_length == "4k":
+        model_name = "microsoft/Phi-3-mini-4k-instruct"
+    elif args.context_length == "128k":
+        model_name = "microsoft/Phi-3-mini-128k-instruct"
+    else:
+        raise Exception(
+            f"Invalid context length {args.context_length}. Should be either 4k or 128k"
+        )
 
     with torch.no_grad():
         model = Phi3Mini(
@@ -40,18 +47,16 @@ def main(args) -> None:
             max_batch_size=1,
             max_seq_len=args.seq_len,
         )
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-        tokens = tokenizer.encode("Tell me a story", return_tensors="pt")
-        for input_pos in range(tokens.shape[-1]):
-            result = model.forward(
-                input_ids=tokens[:, input_pos : input_pos + 1],
-            )
-        current_token = torch.argmax(result, dim=-1).item()
-
         example_inputs = (
-            torch.tensor([[current_token]], dtype=torch.long, requires_grad=False),
+            torch.tensor(
+                [[1048, 263, 931, 746]], dtype=torch.long, requires_grad=False
+            ),
         )
+        dynamic_shapes = {
+            "input_ids": {
+                1: torch.export.Dim("sequence_length", min=1, max=args.seq_len)
+            }
+        }
 
         xnnpack_quant_config = get_symmetric_quantization_config(
             is_per_channel=True, is_dynamic=True
@@ -59,7 +64,9 @@ def main(args) -> None:
         xnnpack_quantizer = XNNPACKQuantizer()
         xnnpack_quantizer.set_global(xnnpack_quant_config)
 
-        model = capture_pre_autograd_graph(model, example_inputs)
+        model = capture_pre_autograd_graph(
+            model, example_inputs, dynamic_shapes=dynamic_shapes
+        )
         model = prepare_pt2e(model, xnnpack_quantizer)
         model(*example_inputs)
         model = convert_pt2e(model, fold_quantize=False)
@@ -69,26 +76,41 @@ def main(args) -> None:
         model = torch.export._trace._export(
             model,
             example_inputs,
+            dynamic_shapes=dynamic_shapes,
             strict=False,
             pre_dispatch=False,
         )
 
     edge_config = get_xnnpack_edge_compile_config()
     edge_manager = to_edge(model, compile_config=edge_config)
-    edge_manager = edge_manager.to_backend(XnnpackPartitioner())
+    edge_manager = edge_manager.to_backend(XnnpackPartitioner(has_dynamic_shapes=True))
     et_program = edge_manager.to_executorch()
 
-    with open("phi-3-mini.pte", "wb") as file:
+    with open(args.output_name, "wb") as file:
         file.write(et_program.buffer)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "-c",
+        "--context_length",
+        type=str,
+        default="4k",
+        choices=["4k", "128k"],
+        help="Phi-3-mini provides two context length variants: 4k and 128k",
+    )
+    parser.add_argument(
         "-s",
         "--seq_len",
         type=int,
         default=128,
         help="Maximum number of tokens including prompt to generate",
+    )
+    parser.add_argument(
+        "-o",
+        "--output_name",
+        default="phi-3-mini.pte",
+        help="Override the output filename of the saved pte model file.",
     )
     main(parser.parse_args())

@@ -27,5 +27,5 @@ python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o token
 #### Step3: Run default examples
 ```bash
 # AIHUB_CONTEXT_BINARIES: ${PATH_TO_AIHUB_WORKSPACE}/build/llama_v2_7b_chat_quantized
-python examples/qualcomm/qaihub_scripts/llama2/qaihub_llama2_7b.py -a ${ARTIFACTS} -b build_android -s ${SERIAL_NUM} -m ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_bin tokenizer.bin --prompt "What is Python?"
+python examples/qualcomm/qaihub_scripts/llama2/qaihub_llama2_7b.py -a ${ARTIFACTS} -b cmake-out-android -s ${SERIAL_NUM} -m ${SOC_MODEL} --context_binaries ${AIHUB_CONTEXT_BINARIES} --tokenizer_bin tokenizer.bin --prompt "What is Python?"
 ```
