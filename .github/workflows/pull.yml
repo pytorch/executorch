@@ -90,7 +90,7 @@ jobs:
       matrix:
         dtype: [fp32]
         build-tool: [buck2, cmake]
-        mode: [portable, xnnpack+custom, xnnpack+custom+qe, qnn]
+        mode: [portable, xnnpack+custom, xnnpack+custom+qe]
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -106,22 +106,6 @@ jobs:
         DTYPE=${{ matrix.dtype }}
         BUILD_TOOL=${{ matrix.build-tool }}
         MODE=${{ matrix.mode }}
-        TARGET=${{ matrix.target }}
-
-        if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-          if [[ "${MODE}" == "qnn" ]]; then
-            echo "qnn doesn't support buck2."
-            exit 0
-          fi
-        fi
-
-        if [[ "${MODE}" == "qnn" ]]; then
-          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
-          PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
-          echo "Finishing installing qnn."
-        else
-          echo "Not qnn mode, skip installing qnn."
-        fi
 
         # Setup executorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
