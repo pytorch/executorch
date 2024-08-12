@@ -26,7 +26,10 @@ void add_staging_to_tensor_node(
 
   vkapi::ParamsBindList ubos;
   if (graph.is_buffer_storage(out_tensor)) {
-    ubos.append(graph.numel_ubo(out_tensor));
+    ubos.append(
+        {graph.sizes_ubo(out_tensor),
+         graph.strides_ubo(out_tensor),
+         graph.numel_ubo(out_tensor)});
   } else {
     ubos.append(graph.sizes_ubo(out_tensor));
   }
@@ -61,7 +64,10 @@ void add_tensor_to_staging_node(
 
   vkapi::ParamsBindList ubos;
   if (graph.is_buffer_storage(in_tensor)) {
-    ubos.append(graph.numel_ubo(in_tensor));
+    ubos.append(
+        {graph.sizes_ubo(in_tensor),
+         graph.strides_ubo(in_tensor),
+         graph.numel_ubo(in_tensor)});
   } else {
     ubos.append(graph.sizes_ubo(in_tensor));
   }
@@ -105,7 +111,7 @@ ValueRef prepack(
 
   vkapi::ParamsBindList ubos;
   if (graph.is_buffer_storage(v)) {
-    ubos.append(graph.numel_ubo(v));
+    ubos.append({graph.sizes_ubo(v), graph.strides_ubo(v), graph.numel_ubo(v)});
   } else {
     ubos.append(graph.sizes_ubo(v));
   }
