@@ -57,6 +57,8 @@ while true ; do
     esac
 done
 
+echo "BUILD_JOB_NUMBER: ${BUILD_JOB_NUMBER}"
+
 PRJ_ROOT="$( cd "$(dirname "$0")/../../.." ; pwd -P)"
 
 if [ "$BUILD_AARCH64" = true ]; then
