@@ -11,10 +11,10 @@ phases:
       # Prepare the model and the tokenizer
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /sdcard/"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "mkdir -p /data/local/tmp/llama/"
-      - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/tokenizer.bin /data/local/tmp/llama/tokenizer.bin"
-      - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/xnnpack_llama2.pte /data/local/tmp/llama/xnnpack_llama2.pte"
-      - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/llama/tokenizer.bin"
-      - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/llama/xnnpack_llama2.pte"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.bin /data/local/tmp/llama/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "mv /sdcard/*.pte /data/local/tmp/llama/"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/llama/*.bin"
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "chmod 664 /data/local/tmp/llama/*.pte"
       - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /data/local/tmp/llama/"
 
   test:
@@ -50,14 +50,8 @@ phases:
           false;
         elif [ $TESTS_FAILED -ne 0 ];
         then
-          OBSERVED_TPS=$(grep "The observed TPS " $INSTRUMENT_LOG | tail -n 1)
-
-          if [ -n "${OBSERVED_TPS}" ];
-          then
-            echo "[PyTorch] ${OBSERVED_TPS}";
-          else
-            echo "[PyTorch] Marking the test suite as failed because it failed to load the model";
-          fi
+          echo "[PyTorch] Marking the test suite as failed because it failed to load the model";
+          false;
         elif [ $TESTS_ERRORED -ne 0 ];
         then
           echo "[PyTorch] Marking the test suite as failed because $TESTS_ERRORED tests errored!";
@@ -66,6 +60,17 @@ phases:
         then
           echo "[PyTorch] Marking the test suite as failed because the app crashed due to OOM!";
           false;
+        # Check for this last to make sure that there is no failure
+        elif [ $TESTS_PASSED -ne 0 ];
+        then
+          OBSERVED_TPS=$(grep "INSTRUMENTATION_STATUS: TPS=" $INSTRUMENT_LOG | tail -n 1)
+
+          if [ -n "${OBSERVED_TPS}" ];
+          then
+            echo "[PyTorch] ${OBSERVED_TPS}";
+          else
+            echo "[PyTorch] Test passes but couldn't find the observed TPS from instrument log";
+          fi
         fi;
 
   post_test:
