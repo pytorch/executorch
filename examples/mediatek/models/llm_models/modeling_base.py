@@ -1,5 +1,7 @@
-import torch
 from abc import ABC, abstractmethod
+
+import torch
+
 
 class BaseModelChunk(ABC, torch.nn.Module):
     def __init__(
@@ -10,7 +12,7 @@ class BaseModelChunk(ABC, torch.nn.Module):
         dtype=torch.float32,
         include_tail=False,
         return_attn=False,
-        jit_trace=False
+        jit_trace=False,
     ):
         torch.nn.Module.__init__(self)
         torch.set_default_dtype(dtype)
@@ -28,19 +30,9 @@ class BaseModelChunk(ABC, torch.nn.Module):
         pass
 
     @abstractmethod
-    def load_weights(
-        self,
-        state_dict,
-        state_dict_start_idx,
-        verbose
-    ):
+    def load_weights(self, state_dict, state_dict_start_idx, verbose):
         pass
 
     @abstractmethod
-    def get_example_inputs(
-        self,
-        num_token,
-        cache_size,
-        get_dym_shape
-    ):
+    def get_example_inputs(self, num_token, cache_size, get_dym_shape):
         pass

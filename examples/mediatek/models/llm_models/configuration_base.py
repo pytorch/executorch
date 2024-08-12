@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class BaseConfig(ABC):
     def __init__(self):
         self.model_type = "base"
@@ -24,7 +25,7 @@ class BaseConfig(ABC):
         self.tie_word_embeddings = False
         self.combine_qkv = False
 
-        self.tokenizer = 'default'
+        self.tokenizer = "default"
 
     @abstractmethod
     def print_config(self, response_handler):

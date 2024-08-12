@@ -1,13 +1,14 @@
-import os
 import json
+import os
 from typing import Union
+
 
 class Preformatter(object):
     __slots__ = ("template", "name", "_verbose")
 
     def __init__(self, template_path: str = "", verbose: bool = False):
         self._verbose = verbose
-        self.name = os.path.basename(template_path).rsplit('.', 1)[0]
+        self.name = os.path.basename(template_path).rsplit(".", 1)[0]
         if not os.path.exists(template_path):
             raise ValueError(f"Can't read preformatter template json: {template_path}")
         with open(template_path) as fp:
@@ -30,9 +31,7 @@ class Preformatter(object):
                 instruction=instruction, input=input
             )
         else:
-            res = self.template["prompt_no_input"].format(
-                instruction=instruction
-            )
+            res = self.template["prompt_no_input"].format(instruction=instruction)
         if label:
             res = f"{res}{label}"
         if self._verbose:

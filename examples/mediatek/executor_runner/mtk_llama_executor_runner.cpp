@@ -14,7 +14,8 @@
  * is confidential and proprietary to MediaTek Inc. and/or its licensors.
  * Without the prior written permission of MediaTek inc. and/or its licensors,
  * any reproduction, modification, use or disclosure of MediaTek Software,
- * and information contained herein, in whole or in part, shall be strictly prohibited.
+ * and information contained herein, in whole or in part, shall be strictly
+ * prohibited.
  */
 /* MediaTek Inc. (C) 2024. All rights reserved.
  *
@@ -27,27 +28,28 @@
  * NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
  * SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
  * SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
- * THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
- * THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
- * CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
- * SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
- * STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
- * CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
- * AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
- * OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
- * MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+ * THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY
+ * ACKNOWLEDGES THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY
+ * THIRD PARTY ALL PROPER LICENSES CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK
+ * SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK SOFTWARE RELEASES MADE TO
+ * RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR STANDARD OR OPEN
+ * FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
+ * CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER
+ * WILL BE, AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT
+ * ISSUE, OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER
+ * TO MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
  *
- * The following software/firmware and/or related documentation ("MediaTek Software")
- * have been modified by MediaTek Inc. All revisions are subject to any receiver's
- * applicable license agreements with MediaTek Inc.
+ * The following software/firmware and/or related documentation ("MediaTek
+ * Software") have been modified by MediaTek Inc. All revisions are subject to
+ * any receiver's applicable license agreements with MediaTek Inc.
  */
 
 #include "executorch/backends/mediatek/runtime/include/NeuronBufferAllocator.h"
 
+#include <ctime>
 #include <iostream>
 #include <memory>
 #include <random>
-#include <ctime>
 
 #include <gflags/gflags.h>
 
@@ -60,39 +62,63 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/util.h>
 
-#include "llama_runner/llm_helper/include/llm_types.h"
 #include "llama_runner/LlamaConfig.h"
-#include "llama_runner/ModelChunk.h"
 #include "llama_runner/LlamaRuntime.h"
+#include "llama_runner/ModelChunk.h"
 #include "llama_runner/Utils.h"
+#include "llama_runner/llm_helper/include/llm_types.h"
 
-#include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
 #include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
+#include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
 
 // Llama model options
-DEFINE_uint64(prompt_token_batch_size, 128, "Token batch size for prompt model.");
+DEFINE_uint64(
+    prompt_token_batch_size,
+    128,
+    "Token batch size for prompt model.");
 DEFINE_uint64(cache_size, 1024, "Model cache size.");
 DEFINE_uint64(hidden_size, 4096, "Model hidden size.");
 DEFINE_uint64(num_head, 32, "Number of attention heads in each layer.");
 DEFINE_uint64(num_layer, 32, "Number of layers in the model.");
-DEFINE_uint64(max_token_length, 2048, "Maximum token length that the model supports.");
-DEFINE_double(rot_emb_base, 10000, "Rotary embedding base value, aka 'rope_theta'.");
+DEFINE_uint64(
+    max_token_length,
+    2048,
+    "Maximum token length that the model supports.");
+DEFINE_double(
+    rot_emb_base,
+    10000,
+    "Rotary embedding base value, aka 'rope_theta'.");
 
 // Model IO Types
 DEFINE_string(input_type, "int16", "Model input type. Default to 'int16'");
 DEFINE_string(output_type, "int16", "Model output type. Default to 'int16'");
 DEFINE_string(cache_type, "int16", "Model cache type. Default to 'int16'");
 DEFINE_string(mask_type, "int16", "Model mask type. Default to 'int16'");
-DEFINE_string(rot_emb_type, "int16", "Model rotary embedding type. Default to 'int16'");
+DEFINE_string(
+    rot_emb_type,
+    "int16",
+    "Model rotary embedding type. Default to 'int16'");
 
 // Model Paths
-DEFINE_string(token_embedding_path, "embedding.bin", "Input token embedding lookup table path.");
-DEFINE_string(prompt_model_paths, "model_128t.pte", "Comma-separated prompt model paths.");
-DEFINE_string(gen_model_paths, "model_1t.pte", "Comma-separated generative model paths.");
+DEFINE_string(
+    token_embedding_path,
+    "embedding.bin",
+    "Input token embedding lookup table path.");
+DEFINE_string(
+    prompt_model_paths,
+    "model_128t.pte",
+    "Comma-separated prompt model paths.");
+DEFINE_string(
+    gen_model_paths,
+    "model_1t.pte",
+    "Comma-separated generative model paths.");
 
 // Tokenizer
 DEFINE_string(tokenizer_path, "tokenizer.model", "tokenizer.model vocab path.");
-DEFINE_string(tokenizer_type, "tiktoken", "Tokenizer type. One of ['bpe', 'tiktoken'].");
+DEFINE_string(
+    tokenizer_type,
+    "tiktoken",
+    "Tokenizer type. One of ['bpe', 'tiktoken'].");
 DEFINE_uint64(vocab_size, 128000, "Tokenizer vocab size.");
 DEFINE_uint64(bos_token, 128000, "BOS token id.");
 DEFINE_uint64(eos_token, 128001, "EOS token id.");
@@ -111,32 +137,30 @@ using torch::executor::utils::Timer;
 
 LlamaModelOptions get_model_options() {
   LlamaModelOptions options = {
-    // Sizes
-    .prompt_token_batch_size  = FLAGS_prompt_token_batch_size,
-    .cache_size               = FLAGS_cache_size,
-    .hidden_size              = FLAGS_hidden_size,
-    .num_head                 = FLAGS_num_head,
-    .num_layer                = FLAGS_num_layer,
-    .max_token_length         = FLAGS_max_token_length,
-    .rot_emb_base             = FLAGS_rot_emb_base,
+      // Sizes
+      .prompt_token_batch_size = FLAGS_prompt_token_batch_size,
+      .cache_size = FLAGS_cache_size,
+      .hidden_size = FLAGS_hidden_size,
+      .num_head = FLAGS_num_head,
+      .num_layer = FLAGS_num_layer,
+      .max_token_length = FLAGS_max_token_length,
+      .rot_emb_base = FLAGS_rot_emb_base,
 
-    // Types
-    .model_input_type  = getLLMTypeFromName(FLAGS_input_type.c_str()),
-    .model_output_type = getLLMTypeFromName(FLAGS_output_type.c_str()),
-    .cache_type        = getLLMTypeFromName(FLAGS_cache_type.c_str()),
-    .mask_type         = getLLMTypeFromName(FLAGS_mask_type.c_str()),
-    .rot_emb_type      = getLLMTypeFromName(FLAGS_rot_emb_type.c_str())
-  };
+      // Types
+      .model_input_type = getLLMTypeFromName(FLAGS_input_type.c_str()),
+      .model_output_type = getLLMTypeFromName(FLAGS_output_type.c_str()),
+      .cache_type = getLLMTypeFromName(FLAGS_cache_type.c_str()),
+      .mask_type = getLLMTypeFromName(FLAGS_mask_type.c_str()),
+      .rot_emb_type = getLLMTypeFromName(FLAGS_rot_emb_type.c_str())};
   return options;
 }
 
 LlamaModelPaths get_model_paths() {
   LlamaModelPaths model_paths = {
-    .tokenizer_path = FLAGS_tokenizer_path,
-    .token_embedding_path = FLAGS_token_embedding_path,
-    .prompt_model_paths = utils::split(FLAGS_prompt_model_paths, ','),
-    .gen_model_paths = utils::split(FLAGS_gen_model_paths, ',')
-  };
+      .tokenizer_path = FLAGS_tokenizer_path,
+      .token_embedding_path = FLAGS_token_embedding_path,
+      .prompt_model_paths = utils::split(FLAGS_prompt_model_paths, ','),
+      .gen_model_paths = utils::split(FLAGS_gen_model_paths, ',')};
   return model_paths;
 }
 
@@ -151,7 +175,8 @@ Result<uint64_t> digest_prompt(
   Timer timer_digest_prompt([=](const auto elapsed_sec) {
     // Ideal prompt size is a multiple of prompt batch size
     const size_t ideal_prompt_size =
-        std::ceil(float(input_token_count) / prompt_token_batch_size) * prompt_token_batch_size;
+        std::ceil(float(input_token_count) / prompt_token_batch_size) *
+        prompt_token_batch_size;
     ET_LOG(
         Info,
         "Done analyzing prompt in %f sec (%f tok/s)",
@@ -162,10 +187,12 @@ Result<uint64_t> digest_prompt(
   auto getNextTokens = [&]() {
     const size_t num_tok_remain = input_token_count - cur_token_index;
     const size_t remainder = num_tok_remain % prompt_token_batch_size;
-    const size_t num_new_tokens = remainder ? remainder : prompt_token_batch_size;
+    const size_t num_new_tokens =
+        remainder ? remainder : prompt_token_batch_size;
     const auto start = cur_token_index;
     const auto end = start + num_new_tokens;
-    return std::vector(input_tokens.begin() + start, input_tokens.begin() + end);
+    return std::vector(
+        input_tokens.begin() + start, input_tokens.begin() + end);
   };
 
   void* logits;
@@ -184,7 +211,8 @@ Result<uint64_t> digest_prompt(
 
   const auto vocab_size = tokenizer->vocab_size();
   const auto logits_type = llama_runtime.GetModelOptions().model_output_type;
-  const auto first_output_token = utils::argmax(logits_type, logits, vocab_size);
+  const auto first_output_token =
+      utils::argmax(logits_type, logits, vocab_size);
   return first_output_token;
 }
 
@@ -217,14 +245,15 @@ Error gen_response(
   const auto logits_type = llama_runtime.GetModelOptions().model_output_type;
 
   double gen_total_time_sec = 0;
-  Timer timer_gen_token([&](const auto elapsed_sec) { gen_total_time_sec += elapsed_sec; });
+  Timer timer_gen_token(
+      [&](const auto elapsed_sec) { gen_total_time_sec += elapsed_sec; });
 
   // Print first output token
   std::cout << "\n[Real-time Response]" << std::endl;
   std::cout << full_response << std::flush;
 
-  while (gen_tok_count++ < FLAGS_max_response
-         && llama_runtime.GetTokenIndex() < FLAGS_max_token_length) {
+  while (gen_tok_count++ < FLAGS_max_response &&
+         llama_runtime.GetTokenIndex() < FLAGS_max_token_length) {
     timer_gen_token.Start();
     void* logits = llama_runtime.Run({output_token});
     timer_gen_token.End();
@@ -249,9 +278,13 @@ Error gen_response(
     std::cout << tok_str << std::flush;
   }
 
-  std::cout << "\n\n[Generated Tokens]\n" << utils::to_string(full_response_tokens) << std::endl;
+  std::cout << "\n\n[Generated Tokens]\n"
+            << utils::to_string(full_response_tokens) << std::endl;
 
-  ET_LOG(Info, "Token generation speed: %f tok/s", gen_tok_count / gen_total_time_sec);
+  ET_LOG(
+      Info,
+      "Token generation speed: %f tok/s",
+      gen_tok_count / gen_total_time_sec);
 
   return Error::Ok;
 }
@@ -263,9 +296,7 @@ Error inference(
   // Tokenize input prompt
   auto encode_res = tokenizer->encode(prompt, kAddBos, kAddEos);
   ET_CHECK_OR_RETURN_ERROR(
-      encode_res.ok(),
-      InvalidState,
-      "Tokenizer failed to encode prompt");
+      encode_res.ok(), InvalidState, "Tokenizer failed to encode prompt");
   const auto input_tokens = std::move(encode_res.get());
 
   std::cout << "\n[Input Prompt]\n" << prompt << std::endl;
@@ -273,9 +304,7 @@ Error inference(
   // Run prompt mode (pre-fill)
   auto prefill_res = digest_prompt(llama_runtime, tokenizer, input_tokens);
   ET_CHECK_OR_RETURN_ERROR(
-      prefill_res.ok(),
-      InvalidState,
-      "Failed to digest prompt");
+      prefill_res.ok(), InvalidState, "Failed to digest prompt");
   const auto first_output_token = prefill_res.get();
 
   // run generation mode (decoding)
@@ -290,9 +319,7 @@ std::unique_ptr<Tokenizer> load_tokenizer() {
     tokenizer = std::make_unique<torch::executor::Tiktoken>();
   }
   ET_CHECK_MSG(
-      tokenizer,
-      "Invalid tokenizer type: %s",
-      FLAGS_tokenizer_type.c_str());
+      tokenizer, "Invalid tokenizer type: %s", FLAGS_tokenizer_type.c_str());
   tokenizer->load(FLAGS_tokenizer_path);
   return tokenizer;
 }
@@ -315,7 +342,9 @@ int main(int argc, char** argv) {
 
   if (model_paths.prompt_model_paths.empty()) {
     model_options.prompt_token_batch_size = 1;
-    ET_LOG(Info, "No prompt model paths provided, overriding prompt_token_batch_size to 1");
+    ET_LOG(
+        Info,
+        "No prompt model paths provided, overriding prompt_token_batch_size to 1");
   }
 
   // Prepare timers

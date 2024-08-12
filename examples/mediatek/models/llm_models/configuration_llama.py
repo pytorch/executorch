@@ -17,8 +17,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from models.llm_models.configuration_base import BaseConfig
 from contextlib import nullcontext
+
+from models.llm_models.configuration_base import BaseConfig
+
+
+# flake8: noqa: C901
+
 
 class LlamaConfig(BaseConfig):
     def __init__(
@@ -29,8 +34,8 @@ class LlamaConfig(BaseConfig):
         num_hidden_layers=None,
         num_attention_heads=None,
         max_position_embeddings=None,
-        norm='RMSNorm',
-        position_embedding='rope',
+        norm="RMSNorm",
+        position_embedding="rope",
         norm_eps=1e-6,
         pad_token_id=0,
         bos_token_id=1,
@@ -59,39 +64,47 @@ class LlamaConfig(BaseConfig):
             raise KeyError("num_hidden_layers is required but missing from config.json")
         self.num_attention_heads = num_attention_heads
         if self.num_attention_heads is None:
-            raise KeyError("num_attention_heads is required but missing from config.json")
-        self.num_key_value_heads = kwargs.pop('num_key_value_heads', self.num_attention_heads)
+            raise KeyError(
+                "num_attention_heads is required but missing from config.json"
+            )
+        self.num_key_value_heads = kwargs.pop(
+            "num_key_value_heads", self.num_attention_heads
+        )
         if self.num_attention_heads % self.num_key_value_heads != 0:
-            raise RuntimeError(f"num_attention_heads ({self.num_attention_heads}) must be exactly "
-                f"divisible by num_key_value_heads ({self.num_key_value_heads})")
-        if norm not in ['RMSNorm', "LayerNorm"]:
+            raise RuntimeError(
+                f"num_attention_heads ({self.num_attention_heads}) must be exactly "
+                f"divisible by num_key_value_heads ({self.num_key_value_heads})"
+            )
+        if norm not in ["RMSNorm", "LayerNorm"]:
             raise ValueError("norm must be one of: RMSNorm (default) or LayerNorm")
         self.norm = norm
-        self.norm_eps = kwargs.pop('rms_norm_eps', norm_eps)
+        self.norm_eps = kwargs.pop("rms_norm_eps", norm_eps)
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
         self.unk_token_id = unk_token_id
 
-        if position_embedding not in ['rope', 'alibi']:
+        if position_embedding not in ["rope", "alibi"]:
             raise ValueError("Positional embedding must be one of: rope, alibi")
         self.position_embedding = position_embedding
-        self.ntk_scaling_factor = kwargs.pop('ntk_scaling_factor', 1.0)
-        if self.ntk_scaling_factor != 1.0 and self.position_embedding != 'rope':
+        self.ntk_scaling_factor = kwargs.pop("ntk_scaling_factor", 1.0)
+        if self.ntk_scaling_factor != 1.0 and self.position_embedding != "rope":
             raise KeyError("ntk_scaling_factor is strictly for position_embedding=rope")
         self.max_position_embeddings = max_position_embeddings
-        if self.max_position_embeddings is None and self.position_embedding == 'rope':
-            raise KeyError("max_position_embeddings is required for position_embedding=rope but missing from config.json")
+        if self.max_position_embeddings is None and self.position_embedding == "rope":
+            raise KeyError(
+                "max_position_embeddings is required for position_embedding=rope but missing from config.json"
+            )
 
         self.use_stable_embedding = use_stable_embedding
         self.tie_word_embeddings = tie_word_embeddings
         self.combine_qkv = combine_qkv
 
-        self.tokenizer = kwargs.pop('tokenizer', self.tokenizer)
+        self.tokenizer = kwargs.pop("tokenizer", self.tokenizer)
 
         if response_handler is None:
             response_handler = nullcontext()
-        if kwargs.pop('verbose', True):
+        if kwargs.pop("verbose", True):
             self.print_config(response_handler)
 
     def print_config(self, response_handler):
@@ -103,7 +116,7 @@ class LlamaConfig(BaseConfig):
             print(f"Num attention heads:  {self.num_attention_heads}")
             print(f"Num KV heads:         {self.num_key_value_heads}")
             print(f"Positional embedding: {self.position_embedding}")
-            if self.position_embedding == 'rope':
+            if self.position_embedding == "rope":
                 print(f"Max pos emb:          {self.max_position_embeddings}")
                 if self.ntk_scaling_factor != 1.0:
                     print(f"NTK scaling factor:   {self.ntk_scaling_factor}")

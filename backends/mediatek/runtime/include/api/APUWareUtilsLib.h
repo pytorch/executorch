@@ -25,30 +25,32 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include <cstdlib>
-#include <thread>
 #include <memory>
-#include <utility>
 #include <string>
+#include <thread>
+#include <utility>
 using namespace std;
 
 typedef enum {
-  LOW_POWER_MODE = 0,       // For model execution preference
-  FAST_SINGLE_ANSWER_MODE,  // For model execution preference
-  SUSTAINED_SPEED_MODE,     // For model execution preference
-  FAST_COMPILE_MODE,        // For model compile preference
+  LOW_POWER_MODE = 0, // For model execution preference
+  FAST_SINGLE_ANSWER_MODE, // For model execution preference
+  SUSTAINED_SPEED_MODE, // For model execution preference
+  FAST_COMPILE_MODE, // For model compile preference
   PERFORMANCE_MODE_MAX,
 } PERFORMANCE_MODE_E;
 
 //------------------------------------- -------------------------------------
-#define APUWARE_LOG_D(format, ...)                                  \
-  __android_log_print(ANDROID_LOG_DEBUG, "APUWARELIB", format "\n", \
-                      ##__VA_ARGS__);
+#define APUWARE_LOG_D(format, ...) \
+  __android_log_print(             \
+      ANDROID_LOG_DEBUG, "APUWARELIB", format "\n", ##__VA_ARGS__);
 
-#define APUWARE_LOG_E(format, ...)                                  \
-  __android_log_print(ANDROID_LOG_ERROR, "APUWARELIB", format "\n", \
-                      ##__VA_ARGS__);
+#define APUWARE_LOG_E(format, ...) \
+  __android_log_print(             \
+      ANDROID_LOG_ERROR, "APUWARELIB", format "\n", ##__VA_ARGS__);
 
-inline void* voidFunction() { return nullptr; }
+inline void* voidFunction() {
+  return nullptr;
+}
 
 // ApuWareUtils library construct
 struct ApuWareUtilsLib {
@@ -61,35 +63,32 @@ struct ApuWareUtilsLib {
     load();
   }
 
-  using AcquirePerformanceLockPtr = std::add_pointer<int32_t(
-      int32_t, PERFORMANCE_MODE_E, uint32_t)>::type;
-  using AcquirePerfParamsLockPtr = std::add_pointer<int32_t(
-      int32_t, uint32_t, int32_t[], uint32_t)>::type;
-  using ReleasePerformanceLockPtr = std::add_pointer<bool(
-      int32_t)>::type;
+  using AcquirePerformanceLockPtr =
+      std::add_pointer<int32_t(int32_t, PERFORMANCE_MODE_E, uint32_t)>::type;
+  using AcquirePerfParamsLockPtr =
+      std::add_pointer<int32_t(int32_t, uint32_t, int32_t[], uint32_t)>::type;
+  using ReleasePerformanceLockPtr = std::add_pointer<bool(int32_t)>::type;
 
   // Open a given library and load symbols
   bool load() {
     void* handle = nullptr;
     const std::string libraries[] = {
-          "libapuwareutils_v2.mtk.so", "libapuwareutils.mtk.so"};
+        "libapuwareutils_v2.mtk.so", "libapuwareutils.mtk.so"};
     for (const auto& lib : libraries) {
       handle = dlopen(lib.c_str(), RTLD_LAZY | RTLD_LOCAL);
       if (handle) {
         APUWARE_LOG_D("dlopen %s", lib.c_str());
         acquirePerformanceLock =
-          reinterpret_cast<decltype(acquirePerformanceLock)>(
-          dlsym(handle,
-            "acquirePerformanceLockInternal"));
+            reinterpret_cast<decltype(acquirePerformanceLock)>(
+                dlsym(handle, "acquirePerformanceLockInternal"));
         acquirePerfParamsLock =
-          reinterpret_cast<decltype(acquirePerfParamsLock)>(
-          dlsym(handle,
-            "acquirePerfParamsLockInternal"));
+            reinterpret_cast<decltype(acquirePerfParamsLock)>(
+                dlsym(handle, "acquirePerfParamsLockInternal"));
         releasePerformanceLock =
-          reinterpret_cast<decltype(releasePerformanceLock)>(
-          dlsym(handle,
-            "releasePerformanceLockInternal"));
-        return mEnable = acquirePerformanceLock && releasePerformanceLock && acquirePerfParamsLock;
+            reinterpret_cast<decltype(releasePerformanceLock)>(
+                dlsym(handle, "releasePerformanceLockInternal"));
+        return mEnable = acquirePerformanceLock && releasePerformanceLock &&
+            acquirePerfParamsLock;
       } else {
         APUWARE_LOG_E("unable to open library %s", lib.c_str());
       }
@@ -100,65 +99,69 @@ struct ApuWareUtilsLib {
   bool mEnable = false;
 
   AcquirePerformanceLockPtr acquirePerformanceLock =
-    reinterpret_cast<decltype(acquirePerformanceLock)>(voidFunction);
+      reinterpret_cast<decltype(acquirePerformanceLock)>(voidFunction);
   AcquirePerfParamsLockPtr acquirePerfParamsLock =
-    reinterpret_cast<decltype(acquirePerfParamsLock)>(voidFunction);
+      reinterpret_cast<decltype(acquirePerfParamsLock)>(voidFunction);
   ReleasePerformanceLockPtr releasePerformanceLock =
-    reinterpret_cast<decltype(releasePerformanceLock)>(voidFunction);
+      reinterpret_cast<decltype(releasePerformanceLock)>(voidFunction);
 };
 
 class ScopePerformancer {
-public:
-    ScopePerformancer(uint32_t ms = 2000) : mLib(ApuWareUtilsLib::GetInstance()), mMs(ms) {
-        mLock = mLib.mEnable;
-        if (mLock) {
-            APUWARE_LOG_D("Powerhal Up");
-            mRunning.store(true);
-            mThread = std::thread(&ScopePerformancer::acquireLockRepeatedly, this);
-        }
-    };
-
-    void Stop() {
-        if (mRunning.load()) {
-            mRunning.store(false);
-            mCond.notify_one();
-        }
+ public:
+  ScopePerformancer(uint32_t ms = 2000)
+      : mLib(ApuWareUtilsLib::GetInstance()), mMs(ms) {
+    mLock = mLib.mEnable;
+    if (mLock) {
+      APUWARE_LOG_D("Powerhal Up");
+      mRunning.store(true);
+      mThread = std::thread(&ScopePerformancer::acquireLockRepeatedly, this);
     }
+  };
 
-    ~ScopePerformancer() {
-        Stop();
-        if (mThread.joinable()) {
-            mThread.join();
-        }
-        if (mHalHandle != 0 && mLock) {
-            APUWARE_LOG_D("Powerhal Free");
-            mLib.releasePerformanceLock(mHalHandle);
-            mHalHandle = 0;
-        }
+  void Stop() {
+    if (mRunning.load()) {
+      mRunning.store(false);
+      mCond.notify_one();
     }
+  }
 
-private:
-    void acquireLockRepeatedly() {
-        std::unique_lock<std::mutex> lock(mMutex);
-        while (mRunning.load()) {
-            mHalHandle = mLib.acquirePerformanceLock(mHalHandle, FAST_SINGLE_ANSWER_MODE, mMs);
-            mCond.wait_for(lock, std::chrono::milliseconds(1000), [this] { return !mRunning.load(); });
-        }
+  ~ScopePerformancer() {
+    Stop();
+    if (mThread.joinable()) {
+      mThread.join();
     }
+    if (mHalHandle != 0 && mLock) {
+      APUWARE_LOG_D("Powerhal Free");
+      mLib.releasePerformanceLock(mHalHandle);
+      mHalHandle = 0;
+    }
+  }
 
-    struct ApuWareUtilsLib mLib;
+ private:
+  void acquireLockRepeatedly() {
+    std::unique_lock<std::mutex> lock(mMutex);
+    while (mRunning.load()) {
+      mHalHandle =
+          mLib.acquirePerformanceLock(mHalHandle, FAST_SINGLE_ANSWER_MODE, mMs);
+      mCond.wait_for(lock, std::chrono::milliseconds(1000), [this] {
+        return !mRunning.load();
+      });
+    }
+  }
 
-    bool mLock = false;
+  struct ApuWareUtilsLib mLib;
 
-    int mHalHandle = 0;
+  bool mLock = false;
 
-    uint32_t mMs;
+  int mHalHandle = 0;
 
-    std::atomic<bool> mRunning{false};
+  uint32_t mMs;
 
-    std::thread mThread;
+  std::atomic<bool> mRunning{false};
 
-    std::mutex mMutex;
+  std::thread mThread;
 
-    std::condition_variable mCond;
+  std::mutex mMutex;
+
+  std::condition_variable mCond;
 };

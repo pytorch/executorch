@@ -63,7 +63,9 @@ class DecomposeScaledDotProductAttention(ExportPass):
 
                     subgraph_node = graph.node_copy(
                         decomposed_node,
-                        arg_transform=lambda x: decomposed_node_to_subgraph_node[x],
+                        arg_transform=lambda x, d=decomposed_node_to_subgraph_node: d[
+                            x
+                        ],
                     )
                     subgraph_node.meta["source_fn_stack"] = [
                         (subgraph_node, subgraph_node.target)

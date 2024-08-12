@@ -1,10 +1,10 @@
 /*
-* Copyright (c) 2024 MediaTek Inc.
-*
-* Licensed under the BSD License (the "License"); you may not use this file
-* except in compliance with the License. See the license file in the root
-* directory of this source tree for more details.
-*/
+ * Copyright (c) 2024 MediaTek Inc.
+ *
+ * Licensed under the BSD License (the "License"); you may not use this file
+ * except in compliance with the License. See the license file in the root
+ * directory of this source tree for more details.
+ */
 
 #pragma once
 
@@ -68,16 +68,16 @@ namespace neuron {
     }                                                                   \
   } while (0)
 
-inline int ReadSystemProperty(std::string &property) {
+inline int ReadSystemProperty(std::string& property) {
   char property_value[PROP_VALUE_MAX];
   if (__system_property_get(property.c_str(), property_value)) {
-      LogInfo("Get System Property  %s : %s", property.c_str(), property_value);
-      try {
-        int value = std::stoi(property_value);
-        return value;
-      } catch (...) {
-        return -1;
-      }
+    LogInfo("Get System Property  %s : %s", property.c_str(), property_value);
+    try {
+      int value = std::stoi(property_value);
+      return value;
+    } catch (...) {
+      return -1;
+    }
   }
   return -1;
 }

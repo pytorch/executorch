@@ -19,13 +19,14 @@
 # limitations under the License.
 """ PyTorch LLaMA model."""
 
-import torch
 import numpy as np
-
-from models.llm_models.modeling_common import ModelChunk, DecoderLayer, Attention, MLP
+import torch
 from models.llm_models.configuration_llama import LlamaConfig
 
+from models.llm_models.modeling_common import Attention, DecoderLayer, MLP, ModelChunk
+
 np.random.seed(42)
+
 
 class LlamaMLP(MLP):
     def __init__(self, config: LlamaConfig):
@@ -49,7 +50,7 @@ class LlamaDecoderLayer(DecoderLayer):
             return_attn,
             jit_trace,
             attn_class=LlamaAttention,
-            mlp_class=LlamaMLP
+            mlp_class=LlamaMLP,
         )
 
 
@@ -72,5 +73,5 @@ class LlamaModelChunk(ModelChunk):
             include_tail,
             return_attn,
             jit_trace,
-            decoder_class=LlamaDecoderLayer
+            decoder_class=LlamaDecoderLayer,
         )

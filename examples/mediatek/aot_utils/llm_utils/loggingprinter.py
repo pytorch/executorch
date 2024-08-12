@@ -1,5 +1,6 @@
 import sys
 
+
 class LoggingPrinter:
     def __init__(self, filename=None):
         self.passthrough = True

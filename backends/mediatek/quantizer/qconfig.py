@@ -6,18 +6,12 @@
 
 import copy
 
-from dataclasses import dataclass
 from enum import IntEnum, unique
-from typing import Optional
 
 import torch
 
 from torch.ao.quantization.fake_quantize import FakeQuantize
-from torch.ao.quantization.observer import (
-    MinMaxObserver,
-    MovingAverageMinMaxObserver,
-    PerChannelMinMaxObserver,
-)
+from torch.ao.quantization.observer import MinMaxObserver, PerChannelMinMaxObserver
 from torch.ao.quantization.quantizer import QuantizationSpec
 
 

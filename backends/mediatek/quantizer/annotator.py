@@ -25,7 +25,7 @@ from torch.fx.passes.utils.matcher_with_name_node_map_utils import (
 from .qconfig import QuantizationConfig
 
 
-OP_TO_ANNOTATOR = dict()
+OP_TO_ANNOTATOR = {}
 
 
 def annotate(graph: Graph, quant_config: QuantizationConfig) -> None:
@@ -151,12 +151,12 @@ def _annotate_rmsnorm_pattern(graph: Graph, quant_config: QuantizationConfig) ->
     class ExecuTorchPattern(torch.nn.Module):
         def forward(self, x):
             norm = x * torch.rsqrt((x * x).mean(-1, keepdim=True) + 1e-6)
-            return norm, dict()
+            return norm, {}
 
     class MTKPattern(torch.nn.Module):
         def forward(self, x):
             norm = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + 1e-6)
-            return norm, dict()
+            return norm, {}
 
     for pattern_cls in (ExecuTorchPattern, MTKPattern):
         pattern_gm = capture_pre_autograd_graph(pattern_cls(), (torch.randn(3, 3),))

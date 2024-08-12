@@ -18,10 +18,10 @@
  * all fp32 tensors.
  */
 
+#include <chrono>
 #include <ctime>
 #include <iostream>
 #include <memory>
-#include <chrono>
 
 #include <gflags/gflags.h>
 
@@ -172,9 +172,10 @@ int main(int argc, char** argv) {
     status = method->execute();
   }
   auto after_exec = std::chrono::high_resolution_clock::now();
-  double elapsed_time =
-      std::chrono::duration_cast<std::chrono::microseconds>(
-          after_exec - before_exec).count() / 1000.0;
+  double elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(
+                            after_exec - before_exec)
+                            .count() /
+      1000.0;
 
   ET_LOG(
       Info,
@@ -188,7 +189,6 @@ int main(int argc, char** argv) {
       method_name,
       (uint32_t)status);
   ET_LOG(Info, "Model executed successfully.");
-
 
   // Print the outputs.
   std::vector<EValue> outputs(method->outputs_size());

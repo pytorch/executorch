@@ -5,22 +5,23 @@ if os.getcwd() not in sys.path:
     sys.path.append(os.getcwd())
 import argparse
 import struct
-
-import torch
-from datasets import load_dataset
-from executorch import exir
-from executorch.backends.mediatek import (
-    NeuropilotPartitioner,
-    NeuropilotQuantizer,
-    Precision,
-)
-from executorch.exir.backend.backend_details import CompileSpec
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from tqdm import tqdm
-from aot_utils.llm_utils.sanity_checks import *
 import warnings
 
+import torch
+
 from aot_utils.llm_utils.preformatter import Preformatter
+from aot_utils.llm_utils.sanity_checks import (
+    check_all_chunks_same_num_layer,
+    check_between_inclusive,
+    check_exist,
+    check_ext,
+    check_old_arg,
+    check_shapes,
+    check_supported_model,
+    check_supported_tokenizer,
+    check_tokenizer_exist,
+    check_weights_exist,
+)
 from aot_utils.llm_utils.utils import (
     dump_embedding_lut_for_cmdline,
     generate_mask,
@@ -34,6 +35,16 @@ from aot_utils.llm_utils.utils import (
     load_checkpoints,
     resolve_model_classes,
 )
+from datasets import load_dataset
+from executorch import exir
+from executorch.backends.mediatek import (
+    NeuropilotPartitioner,
+    NeuropilotQuantizer,
+    Precision,
+)
+from executorch.exir.backend.backend_details import CompileSpec
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from tqdm import tqdm
 
 warnings.filterwarnings("ignore")
 
@@ -93,6 +104,7 @@ def get_argument_parser():
     return parser
 
 
+# flake8: noqa: F405
 def args_sanity_checks(args):
     check_old_arg(args.config)
     check_exist(args.config, "Config file")
@@ -281,7 +293,7 @@ def calibrate_model(model, cal_dataset, chunk_idx: str):
     with torch.no_grad():
         for inp in tqdm(cal_dataset, desc="Calibrating Model: "):
             # pass prompt and response
-            for batch in tqdm(inp[chunk_idx].keys(), desc=f"Batch: "):
+            for batch in tqdm(inp[chunk_idx].keys(), desc="Batch: "):
                 if inp[chunk_idx][batch] is not None:
                     inputs_embeds = torch.tensor(inp[chunk_idx][batch]["hidden_state"])
                     mask = torch.tensor(inp[chunk_idx][batch]["mask"])
@@ -336,7 +348,7 @@ def export_to_et_ir(
         )
         del aten_dialect
 
-        print(f"Delegating Edge Program to Neuropilot Backend")
+        print("Delegating Edge Program to Neuropilot Backend")
         compile_spec = [
             CompileSpec("gno", struct.pack("3s", b"LTS")),
             CompileSpec("gno-exp", struct.pack("0s", b"")),
@@ -345,7 +357,7 @@ def export_to_et_ir(
         ]
         partitioner = NeuropilotPartitioner(compile_spec)
         delegated_program = edge_program.to_backend(partitioner)
-        print(f"Exported Delegated Program:")
+        print("Exported Delegated Program:")
         print(delegated_program.exported_program())
         del edge_program
 
@@ -395,7 +407,7 @@ def main():
         + (i < (config.num_hidden_layers % args.num_chunks))
         for i in range(args.num_chunks)
     ]
-    check_all_chunks_same_num_layer(num_blocks_per_chunk)
+    check_all_chunks_same_num_layer(num_blocks_per_chunk)  # noqa: F405
 
     output_folder = os.path.join("pte", exp_name)
 
@@ -436,7 +448,7 @@ def main():
         cal_dataset = cal_dataset.map(
             tokenize_dataset, fn_kwargs={"tokenizer": tokenizer}
         )
-        print(f"Preparing Model Calibration Inputs...")
+        print("Preparing Model Calibration Inputs...")
         cal_dataset = cal_dataset.map(
             prepare_model_inputs,
             fn_kwargs={
