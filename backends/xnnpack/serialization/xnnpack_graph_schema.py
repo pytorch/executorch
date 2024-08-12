@@ -178,6 +178,11 @@ class XNNConcatenate4(XNNCat):
 
 
 @dataclass
+class XNNBatchMatrixMultiply(XNNNode2x1):
+    pass
+
+
+@dataclass
 class XNNStaticTranspose:
     num_dims: int
     perm: List[int]
@@ -354,6 +359,7 @@ XNodeUnion = Union[
     XNNConcatenate4,
     XNNStaticSlice,
     XNNScaledDotProductAttention,
+    XNNBatchMatrixMultiply,
 ]
 
 
