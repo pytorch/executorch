@@ -12,13 +12,20 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import numpy as np
 import torch
 from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS,
     QCOM_AXIS_ORDER,
     QCOM_BITWIDTH,
+    QCOM_DTYPE,
     QCOM_ENCODING,
+    QCOM_OFFSET,
     QCOM_QUANT_ATTRS,
+    QCOM_QUANT_MAX,
+    QCOM_QUANT_MIN,
     QCOM_REQUANTIZE,
+    QCOM_SCALE,
     QCOM_SCALE_OFFSET,
     QCOM_SCALES,
+    QCOM_ZERO_POINT,
     QCOM_ZERO_POINTS,
 )
 
@@ -125,16 +132,16 @@ class NodeVisitor:
             "convolution" in user_0.target.__name__
             and list(node.users)[0].args[1] == node
         ):
-            quant_config["axis"] = 3
+            quant_config[QCOM_AXIS] = 3
 
         else:
-            quant_config["axis"] = quant_attrs["axis"]
+            quant_config[QCOM_AXIS] = quant_attrs[QCOM_AXIS]
 
         quant_config[QCOM_SCALE_OFFSET] = scale_offset
         # special case for 4 bits
         if (
-            quant_config["dtype"] == torch.int8
-            and quant_config["quant_max"] - quant_config["quant_min"] <= 15
+            quant_config[QCOM_DTYPE] == torch.int8
+            and quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN] <= 15
         ):
             quant_config[QCOM_BITWIDTH] = 4
             return (
@@ -149,11 +156,11 @@ class NodeVisitor:
     def make_qnn_per_tensor_config(self, quant_attrs: Dict):
         quant_config = copy.deepcopy(quant_attrs)
         # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
-        quant_config["offset"] = -quant_attrs["zero_point"]
+        quant_config[QCOM_OFFSET] = -quant_attrs[QCOM_ZERO_POINT]
         # special case for 4 bits
         if (
-            quant_config["dtype"] == torch.int8
-            and quant_config["quant_max"] - quant_config["quant_min"] <= 15
+            quant_config[QCOM_DTYPE] == torch.int8
+            and quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN] <= 15
         ):
             quant_config[QCOM_BITWIDTH] = 4
             return (
@@ -187,15 +194,15 @@ class NodeVisitor:
         self, tensor: torch.Tensor, quant_attrs: Dict, quant_configs: Dict
     ) -> torch.Tensor:
         if quant_attrs[QCOM_ENCODING] in PER_TENSOR_ENCODING:
-            scale = quant_attrs["scale"]
-            zero_point = quant_attrs["zero_point"]
+            scale = quant_attrs[QCOM_SCALE]
+            zero_point = quant_attrs[QCOM_ZERO_POINT]
         else:  # per channel case
             scale = quant_attrs[QCOM_SCALES]
             zero_point = quant_attrs[QCOM_ZERO_POINTS]
 
-        dtype = quant_configs["dtype"]
+        dtype = quant_configs[QCOM_DTYPE]
 
-        tensor = tensor.div(scale).add(zero_point).round().to(dtype)
+        tensor = tensor.div(scale + 1e-6).add(zero_point).round().to(dtype)
         # Make the backends access data correctly
         if quant_configs.get(QCOM_BITWIDTH) == 4:
             mask = torch.full(tensor.size(), 0x0F, dtype=torch.int8)
@@ -233,8 +240,8 @@ class NodeVisitor:
         quant_config: Dict,
     ) -> PyQnnWrapper.Qnn_TensorType_t:
         if quant_config:
-            quant_config["dtype"] = deduce_dtype(tensor, quant_config)
-            return QNN_QUANT_TYPE_MAP[quant_config["dtype"]]
+            quant_config[QCOM_DTYPE] = deduce_dtype(tensor, quant_config)
+            return QNN_QUANT_TYPE_MAP[quant_config[QCOM_DTYPE]]
 
         return QNN_TENSOR_TYPE_MAP[tensor.dtype]
 
