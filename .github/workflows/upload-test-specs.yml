@@ -20,6 +20,10 @@ concurrency:
 jobs:
   upload-android-test-specs:
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v3
 
