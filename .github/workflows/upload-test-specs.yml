@@ -1,6 +1,10 @@
 name: Upload AWS Device Farm test specs
 
 on:
+  pull_requests:
+    paths:
+      - .github/workflows/upload-test-specs.yml
+      - examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
   push:
     branches:
       - main
