@@ -80,6 +80,10 @@ if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
   PYTHON_EXECUTABLE=python3
 fi
 
+export ANDROID_NDK=/opt/ndk
+export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
+export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
 echo "EXECUTORCH_ROOT: ${EXECUTORCH_ROOT}"
 echo "ANDROID_NDK: ${ANDROID_NDK}"
 echo "QNN_SDK_ROOT: ${QNN_SDK_ROOT}"
