@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  upload-android-test-specs:
+  upload-android-test-spec:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
@@ -44,7 +44,7 @@ jobs:
           set -eux
           echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
 
-      - name: Upload the spec to S3
+      - name: Upload the spec to S3 ossci-android bucket
         shell: bash
         working-directory: examples/demo-apps/android/LlamaDemo/
         env:
@@ -59,10 +59,27 @@ jobs:
             AWS_CMD="aws s3 cp"
           fi
 
-          if [[ -e "${SPEC_FILE}" ]; then
+          if [[ -e "${SPEC_FILE}" ]]; then
             shasum -a 256 "${SPEC_FILE}"
             ${AWS_CMD} "${SPEC_FILE}" s3://ossci-android/executorch/ --acl public-read
           else
             echo "${SPEC_FILE} doesn't exist"
             exit 1
           fi
+
+      - name: Upload the spec as artifact
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifact
+          retention-days: 1
+          if-no-files-found: error
+          path: examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
+
+  validate-android-test-spec:
+    needs: upload-android-test-spec
+    uses: ./.github/workflows/android-perf.yml
+    with:
+      models: stories110M
+      test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/android-llm-device-farm-test-spec.yml
