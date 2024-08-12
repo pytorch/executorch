@@ -277,6 +277,14 @@ class vTensor final {
     return sizes_.size();
   }
 
+  inline const std::vector<int64_t>& strides() const {
+    return strides_;
+  }
+
+  inline const std::vector<int64_t>& unsqueezed_strides() const {
+    return unsqueezed_strides_;
+  }
+
   /*
    * Returns a GPU buffer containing the sizes of the tensor in WHCN order.
    * Note that dimensions that are not present in the tensor's sizes are set to
