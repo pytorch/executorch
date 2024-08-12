@@ -1,0 +1,55 @@
+name: Upload AWS Device Farm test specs
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/upload-test-specs.yml
+      - examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/upload-test-specs.yml
+      - examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  upload-android-test-specs:
+    runs-on: linux.2xlarge
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Only push to S3 when running the workflow manually from main branch
+        # if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          set -eux
+          echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
+
+      - name: Upload the spec to S3
+        shell: bash
+        working-directory: examples/demo-apps/android/LlamaDemo/
+        run: |
+          set -eux
+
+          pip install awscli==1.32.18
+
+          AWS_CMD="aws s3 cp --dryrun"
+          if [[ "${UPLOAD_ON_MAIN:-0}" == "1" ]]; then
+            AWS_CMD="aws s3 cp"
+          fi
+
+          for FILENAME in android-llm-device-farm-test-spec.yml; do
+            [ -e "${FILENAME}" ] || continue
+            shasum -a 256 "${FILENAME}"
+            ${AWS_CMD} "${FILENAME}" s3://ossci-android/executorch/ --acl public-read
+          done
