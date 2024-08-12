@@ -9,10 +9,11 @@ set -ex
 
 install_qnn() {
   echo "Start installing qnn."
-  local qnn_sdk_path="/tmp/qairt/v2.23.0.24.06.24"
+  QNN_INSTALLATION_DIR=/tmp/qnn
+  mkdir -p "${QNN_INSTALLATION_DIR}"
 
   pushd /tmp
-  curl -Lo v2.23.0.24.06.24.zip "https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.23.0.24.06.24.zip"
+  curl -Lo  "https://softwarecenter.qualcomm.com/api/download/software/qualcomm_neural_processing_sdk/v2.23.0.24.06.24.zip"
   echo "Finishing downloading qnn sdk."
   unzip -qo "v2.23.0.24.06.24.zip"
   echo "Finishing unzip qnn sdk."
@@ -20,13 +21,10 @@ install_qnn() {
 
   # Print the content for manual verification
   ls -lah "qairt"
-  # mv "qairt"/* "${QNN_INSTALLATION_DIR}"
-  echo "Finishing installing qnn /tmp/${QNN_INSTALLATION_DIR} ."
+  mv "qairt"/* "${QNN_INSTALLATION_DIR}"
+  echo "Finishing installing qnn '${QNN_INSTALLATION_DIR}' ."
 
-  ls -lah $qnn_sdk_path
-
-  export QNN_SDK_ROOT="${qnn_sdk_path}"
-  ls -lah "${qnn_sdk_path}"
+  ls -lah "${QNN_INSTALLATION_DIR}"
   popd
 }
 
