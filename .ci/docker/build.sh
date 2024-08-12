@@ -63,6 +63,9 @@ cp ../../requirements-lintrunner.txt ./
 # with a new image hash when the content here is updated
 cp -r ../../examples/arm/ ./arm
 
+# Copy qnn setup script from root to here
+cp -r ../../backends/qualcomm/ ./qualcomm
+
 docker build \
   --no-cache \
   --progress=plain \
