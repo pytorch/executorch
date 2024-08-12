@@ -228,17 +228,17 @@ Error Runner::generate(
       tokens_managed.resize({1, static_cast<int>(token_data.size())});
     }
 
-    // print the token as string, decode it with the Tokenizer object
-    wrapped_callback(ET_UNWRAP(tokenizer_->decode(prev_token, cur_token)));
-
-    if (shouldStop_) {
-      break;
-    }
-
     // data-dependent terminating condition: we have n_eos_ number of EOS
     if (pos >= num_prompt_tokens && cur_token == eos_id_) {
       printf("\n");
       ET_LOG(Info, "\nReached to the end of generation");
+      break;
+    }
+
+    // print the token as string, decode it with the Tokenizer object
+    wrapped_callback(ET_UNWRAP(tokenizer_->decode(prev_token, cur_token)));
+
+    if (shouldStop_) {
       break;
     }
   }
