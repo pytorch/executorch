@@ -17,6 +17,11 @@ from executorch.examples.models.llama2.llama_transformer import ModelArgs
 from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
 
+from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+
+# Note: import this after portable_lib
+from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
+
 
 class CompletionPrediction(TypedDict, total=False):
     generation: str
