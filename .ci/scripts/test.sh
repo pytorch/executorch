@@ -37,7 +37,7 @@ build_cmake_executor_runner() {
   (rm -rf ${CMAKE_OUTPUT_DIR} \
     && mkdir ${CMAKE_OUTPUT_DIR} \
     && cd ${CMAKE_OUTPUT_DIR} \
-    && retry cmake -DBUCK2=buck2 -DCMAKE_BUILD_TYPE=Release \
+    && retry cmake -DCMAKE_BUILD_TYPE=Release \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
   cmake --build ${CMAKE_OUTPUT_DIR} -j4
@@ -67,8 +67,14 @@ test_model() {
     run_portable_executor_runner
     rm "./${MODEL_NAME}.pte"
   fi
+  STRICT="--strict"
+  if [[ "${MODEL_NAME}" == "llava" ]]; then
+    # Install requirements for llava
+    bash examples/models/llava/install_requirements.sh
+    STRICT="--no-strict"
+  fi
   # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
-  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
+  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}" "${STRICT}"
   run_portable_executor_runner
 }
 
@@ -80,8 +86,7 @@ build_cmake_xnn_executor_runner() {
   (rm -rf ${CMAKE_OUTPUT_DIR} \
     && mkdir ${CMAKE_OUTPUT_DIR} \
     && cd ${CMAKE_OUTPUT_DIR} \
-    && retry cmake -DBUCK2=buck2 \
-      -DCMAKE_BUILD_TYPE=Release \
+    && retry cmake -DCMAKE_BUILD_TYPE=Release \
       -DEXECUTORCH_BUILD_XNNPACK=ON \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)

@@ -8,24 +8,43 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
-
-#include <ATen/native/vulkan/api/api.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
-struct KernelParams final {
-  api::utils::ivec2 kernel_size;
-  api::utils::ivec2 stride;
-  api::utils::ivec2 padding;
-  api::utils::ivec2 dilation;
+struct Kernel1dParams final {
+  int kernel_size;
+  int stride;
+  int padding;
+  int dilation;
+  int in_group_size;
+  int out_group_size;
 };
+
+struct Kernel2dParams final {
+  utils::ivec2 kernel_size;
+  utils::ivec2 stride;
+  utils::ivec2 padding;
+  utils::ivec2 dilation;
+};
+
+Kernel2dParams create_kernel2d_params(
+    ComputeGraph& graph,
+    const ValueRef weight,
+    const bool kernel_size_only,
+    const ValueRef stride,
+    const ValueRef padding,
+    const ValueRef dilation);
+
+Kernel2dParams create_kernel2d_params(
+    ComputeGraph& graph,
+    const ValueRef kernel_size,
+    const ValueRef stride,
+    const ValueRef padding);
 
 int64_t calc_out_size(
     const int64_t in_size,
@@ -35,10 +54,12 @@ int64_t calc_out_size(
     const int64_t dilation,
     const bool ceil_mode);
 
-api::utils::ivec2 reverse(ComputeGraph& graph, ValueRef vref);
+std::vector<int64_t> calc_out_sizes_hw(
+    ComputeGraph& graph,
+    const std::vector<int64_t>& in_sizes,
+    const ValueRef weight,
+    const bool kernel_size_only,
+    const std::vector<ValueRef>& args,
+    const bool transposed = false);
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

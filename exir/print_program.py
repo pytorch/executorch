@@ -11,7 +11,7 @@ import re
 import reprlib
 from dataclasses import fields
 from enum import IntEnum
-from typing import Any, List
+from typing import Any, List, Optional, TextIO
 
 import torch
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
@@ -79,7 +79,7 @@ def _format_evalue(  # noqa: C901
     evstr = "\033[34m"
     if isinstance(evalue.val, Tensor):
         tensor = evalue.val
-        if tensor.constant_buffer_idx > 0:
+        if tensor.data_buffer_idx > 0:
             assert not _is_dynamic_shape_tensor(
                 tensor
             ), "A constant tensor can not be dynamic shape"
@@ -144,7 +144,10 @@ def _format_evalue(  # noqa: C901
 
 
 def print_program(  # noqa: C901
-    program: Program, show_meminfo: bool = True, mark_dynamic_shape_tensor: bool = False
+    program: Program,
+    show_meminfo: bool = True,
+    mark_dynamic_shape_tensor: bool = False,
+    out: Optional[TextIO] = None,
 ) -> None:
     """
     Dump the instruction list of a program in a more human readable fashion.
@@ -202,9 +205,11 @@ def print_program(  # noqa: C901
         evalue = values[evalue_idx]
         return argstr + _format_evalue(evalue, show_meminfo, mark_dynamic_shape_tensor)
 
-    print(f"The program contains the following {len(instructions)} instructions")
+    print(
+        f"The program contains the following {len(instructions)} instructions", file=out
+    )
     for idx, instr in enumerate(instructions):
-        print(f"{idx:3}: ", end="")
+        print(f"{idx:3}: ", end="", file=out)
         if isinstance(instr.instr_args, KernelCall):
             kernel = instr.instr_args
             op = operators[kernel.op_index]
@@ -212,32 +217,34 @@ def print_program(  # noqa: C901
 
             opname = f"{op.name}.{op.overload}" if op.overload else op.name
             argstr = ",".join(map(_format_arg, args))
-            print(f"{opname} {argstr}")
+            print(f"{opname} {argstr}", file=out)
         elif isinstance(instr.instr_args, DelegateCall):
             delegate = instr.instr_args
             backend = delegates[delegate.delegate_index]
             args = delegate.args
             backend_id = f"{backend.id}"
             argstr = ",".join(map(_format_arg, args))
-            print(f"{backend_id} {argstr}")
+            print(f"{backend_id} {argstr}", file=out)
         elif isinstance(instr.instr_args, JumpFalseCall):
             jfcall = instr.instr_args
             print(
-                f"JF ({_format_arg(jfcall.cond_value_index)}) -> {jfcall.destination_instruction}"
+                f"JF ({_format_arg(jfcall.cond_value_index)}) -> {jfcall.destination_instruction}",
+                file=out,
             )
         elif isinstance(instr.instr_args, MoveCall):
             move_call = instr.instr_args
             print(
-                f"MOVE {_format_arg(move_call.move_from)} -> {_format_arg(move_call.move_to)}"
+                f"MOVE {_format_arg(move_call.move_from)} -> {_format_arg(move_call.move_to)}",
+                file=out,
             )
         elif isinstance(instr.instr_args, FreeCall):
-            print(f"FREE {_format_arg(instr.instr_args.value_index)}")
+            print(f"FREE {_format_arg(instr.instr_args.value_index)}", file=out)
         else:
             raise InternalError(f"Unsupport instruction type {instr}")
 
 
 # pyre-ignore
-def pretty_print(obj: Any, indent: int = 0) -> None:
+def pretty_print(obj: Any, indent: int = 0, out: Optional[TextIO] = None) -> None:
     """
     Pretty prints the given object which is of the Program type and any of its
     attribute’s types.
@@ -250,48 +257,48 @@ def pretty_print(obj: Any, indent: int = 0) -> None:
 
     # Instruction types are IntEnum object
     if isinstance(obj, IntEnum):
-        print(int(obj), end="")
+        print(int(obj), end="", file=out)
         return
 
     primitives = (int, str, bool, float, type(None))
     if isinstance(obj, primitives):
-        print(obj, end="")
+        print(obj, end="", file=out)
         return
 
     if isinstance(obj, bytes):
         r = reprlib.Repr()
         r.maxother = 1024
-        print(r.repr(obj), end="")
+        print(r.repr(obj), end="", file=out)
         return
 
     if isinstance(obj, list):
         if len(obj) < 10 and all(isinstance(elem, int) for elem in obj):
-            print(obj, end="")
+            print(obj, end="", file=out)
             return
-        print("[")
+        print("[", file=out)
         for index, elem in enumerate(obj):
-            print("  " * (indent + 1), end="")
-            pretty_print(elem, indent + 1)
-            print(f"(index={index}),")
-        print("  " * indent + "]", end="")
+            print("  " * (indent + 1), end="", file=out)
+            pretty_print(elem, indent + 1, out=out)
+            print(f"(index={index}),", file=out)
+        print("  " * indent + "]", end="", file=out)
         return
 
     inline = all(
         isinstance(getattr(obj, field.name), primitives) for field in fields(obj)
     )
     end = "" if inline else "\n"
-    print(f"{type(obj).__name__}(", end=end)
+    print(f"{type(obj).__name__}(", end=end, file=out)
     for i, _field in enumerate(fields(obj)):
         if not inline:
-            print("  " * (indent + 1), end="")
-        print(_field.name + "=", end="")
-        pretty_print(getattr(obj, _field.name), indent + 1)
+            print("  " * (indent + 1), end="", file=out)
+        print(_field.name + "=", end="", file=out)
+        pretty_print(getattr(obj, _field.name), indent + 1, out=out)
         if i < len(fields(obj)) - 1:
-            print(", ", end="")
-        print("", end=end)
+            print(", ", end="", file=out)
+        print("", end=end, file=out)
     if not inline:
-        print("  " * indent, end="")
-    print(")", end="" if indent else "\n")
+        print("  " * indent, end="", file=out)
+    print(")", end="" if indent else "\n", file=out)
 
 
 def pretty_print_stacktraces(obj: FrameList) -> str:

@@ -54,6 +54,7 @@ PassType = Callable[[torch.fx.GraphModule], Optional[PassResult]]
 
 _TORCH_SYM_OPS: Set[Any] = {  # pyre-ignore
     torch.sym_int,
+    torch.sym_float,
     torch.sym_ite,
     torch.sym_max,
     torch.sym_min,

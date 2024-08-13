@@ -44,13 +44,18 @@ class XnnpackBackend final : public PyTorchBackendInterface {
         processed->size(),
         executor,
         context.get_runtime_allocator());
-    if (err != Error::Ok) {
-      ET_LOG(Error, "XNNCompiler::compleModel failed: 0x%x", (unsigned int)err);
-    }
-
-    // Free the flatbuffer
+    // This backend does not need its processed data after compiling the model.
     processed->Free();
 
+    if (err != Error::Ok) {
+      // destroy() won't be called on this handle, so we need to clean it up
+      // now.
+      executor->~XNNExecutor();
+
+      ET_LOG(
+          Error, "XNNCompiler::compileModel failed: 0x%x", (unsigned int)err);
+      return err;
+    }
     return executor;
   }
 

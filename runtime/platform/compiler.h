@@ -39,7 +39,6 @@
  *   https://gcc.gnu.org/onlinedocs/gcc/Common-Function-Attributes.html
  */
 
-#define __ET_DEPRECATED [[deprecated]]
 #define __ET_NORETURN [[noreturn]]
 #define __ET_NOINLINE __attribute__((noinline))
 #define __ET_INLINE __attribute__((always_inline)) inline
@@ -47,6 +46,10 @@
 #if defined(__GNUC__)
 
 #define __ET_UNREACHABLE() __builtin_unreachable()
+
+#elif defined(_MSC_VER)
+
+#define __ET_UNREACHABLE() __assume(0)
 
 #else // defined(__GNUC__)
 
@@ -58,12 +61,14 @@
 
 #if (__cplusplus) >= 201703L
 
+#define __ET_DEPRECATED [[deprecated]]
 #define __ET_FALLTHROUGH [[fallthrough]]
 #define __ET_NODISCARD [[nodiscard]]
 #define __ET_UNUSED [[maybe_unused]]
 
 #else
 
+#define __ET_DEPRECATED __attribute__((deprecated))
 #define __ET_FALLTHROUGH __attribute__((fallthrough))
 #define __ET_NODISCARD __attribute__((warn_unused_result))
 #define __ET_UNUSED __attribute__((unused))
@@ -117,3 +122,13 @@
 #else
 #define __ET_FUNCTION __FUNCTION__
 #endif // __has_builtin(__builtin_FUNCTION)
+
+// Whether the compiler supports GNU statement expressions.
+// https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html
+#ifndef __ET_HAVE_GNU_STATEMENT_EXPRESSIONS
+#if (defined(__GNUC__) && __GNUC__ >= 3) || defined(__clang__)
+#define __ET_HAVE_GNU_STATEMENT_EXPRESSIONS 1
+#else
+#define __ET_HAVE_GNU_STATEMENT_EXPRESSIONS 0
+#endif
+#endif // ifndef

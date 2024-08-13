@@ -4,12 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import copy
+from collections import defaultdict
 from typing import Any, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import torch
 from executorch.backends.qualcomm.builders import node_visitor
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
+from executorch.backends.qualcomm.utils.constants import QCOM_AXIS_ORDER
 from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
 
 from executorch.exir.backend.backend_details import CompileSpec
@@ -49,7 +51,7 @@ class QnnOperatorSupport(OperatorSupportBase):
             )
 
         self.skip_node_id_set = skip_node_id_set
-        self.nodes_to_wrappers = {}
+        self.nodes_to_wrappers = defaultdict(dict)
         self.qnn_manager = PyQnnManager.QnnManager(
             generate_qnn_executorch_option(compiler_specs)
         )
@@ -94,6 +96,9 @@ class QnnOperatorSupport(OperatorSupportBase):
         self.nodes_to_wrappers.clear()
         print(f"[QNN Partitioner Op Support]: {node.target.__name__} | {supported}")
         return supported
+
+    def __del__(self):
+        self.qnn_manager.Destroy()
 
 
 class QnnPartitioner(Partitioner):
@@ -143,7 +148,8 @@ class QnnPartitioner(Partitioner):
             if hasattr(node, "meta"):
                 # pop certain keys in meta for not affecting the passes in compilation
                 # TODO: need to put property name in common definitions
-                node.meta.pop("axis_order", "")
+                node.meta.pop(QCOM_AXIS_ORDER, "")
+        del self.op_support_checker
         return PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )

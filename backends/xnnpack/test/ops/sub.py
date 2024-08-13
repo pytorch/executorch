@@ -32,15 +32,12 @@ class TestSub(unittest.TestCase):
             Tester(self.Sub(), inputs)
             .export()
             .check_count({"torch.ops.aten.sub.Tensor": 1})
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_sub_Tensor"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_sub(self):
@@ -55,7 +52,7 @@ class TestSub(unittest.TestCase):
         self._test_sub(inputs)
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
-    def test_qs8_sub(self):
+    def _test_qs8_sub(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
         (
             Tester(self.Sub(), inputs)
@@ -63,9 +60,7 @@ class TestSub(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.sub.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -75,12 +70,11 @@ class TestSub(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
-    def test_qs8_sub2(self):
+    def _test_qs8_sub2(self):
         inputs = (torch.randn(1, 1, 4, 4),)
         (
             Tester(self.Sub2(), inputs)
@@ -88,9 +82,7 @@ class TestSub(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.sub.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -100,12 +92,11 @@ class TestSub(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
-    def test_qs8_sub3(self):
+    def _test_qs8_sub3(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1))
         (
             Tester(self.Sub(), inputs)
@@ -113,9 +104,7 @@ class TestSub(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.sub.Tensor": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -125,12 +114,11 @@ class TestSub(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
-    def test_qs8_sub_relu(self):
+    def _test_qs8_sub_relu(self):
         class Sub(torch.nn.Module):
             def forward(self, x, y):
                 z = x - y
@@ -148,14 +136,7 @@ class TestSub(unittest.TestCase):
                 }
             )
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_aten_sub_Tensor": 1,
-                    "executorch_exir_dialects_edge__ops_aten_relu_default": 1,
-                }
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -166,6 +147,5 @@ class TestSub(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

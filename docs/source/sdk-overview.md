@@ -14,7 +14,7 @@ The ExecuTorch SDK supports the following features:
     - Model loading and execution time
 - **Delegate Integration** - Surfacing performance details from delegate backends
     - Link back delegate operator execution to the nodes they represent in the edge dialect graph (and subsequently linking back to source code and module hierarchy)
-- **Debugging** (Intermediate outputs and output quality analysis) - Coming soon
+- **Debugging** - Intermediate outputs and output quality analysis
 - **Visualization** - Coming soon
 
 ## Fundamental components of the SDK

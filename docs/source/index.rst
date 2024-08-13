@@ -4,12 +4,16 @@ Welcome to the ExecuTorch Documentation
 =======================================
 
 .. important::
-   This is a preview version of ExecuTorch and should be used for testing
-   and evaluation purposes only. It is not recommended for use in production
-   settings. We welcome any feedback, suggestions, and bug reports from the
-   community to help us improve the technology. Please use the `PyTorch
-   Forums <https://discuss.pytorch.org/c/executorch>`__ for discussion and
-   feedback about ExecuTorch using the **ExecuTorch** category, and our `GitHub
+   This is an alpha release; the ExecuTorch APIs and the ``.pte`` binary format
+   may change in incompatible ways before stabilizing in a future beta release.
+   When deploying models, we currently recommend using a version of the runtime
+   built from the same git revision that was used to generate the ``.pte`` file.
+   Once the format has stabilized, this will no longer be necessary.
+
+   We welcome any feedback, suggestions, and bug reports from the community
+   to help us improve the technology. Please use the `PyTorch Forums
+   <https://discuss.pytorch.org/c/executorch>`__ for discussion and feedback
+   about ExecuTorch using the **ExecuTorch** category, and our `GitHub
    repository <https://github.com/pytorch/executorch/issues>`__ for bug
    reporting.
 
@@ -66,8 +70,9 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    intro-overview
-   concepts
    intro-how-it-works
+   getting-started-architecture
+   concepts
 
 .. toctree::
    :glob:
@@ -75,20 +80,10 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Getting Started
    :hidden:
 
-   getting-started-architecture
    getting-started-setup
+   export-overview
    runtime-build-and-cross-compilation
 
-.. toctree::
-   :glob:
-   :maxdepth: 2
-   :caption: Working with LLMs
-   :hidden:
-
-   llm/introduction
-   llm/mobile/index
-   llm/desktop/index
-   llm/advanced-flow/index
 
 .. toctree::
    :glob:
@@ -98,11 +93,14 @@ Topics in this section will help you get started with ExecuTorch.
 
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
+   extension-module
    tutorials/sdk-integration-tutorial
+   apple-runtime
    demo-apps-ios
    demo-apps-android
    examples-end-to-end-to-lower-model-to-delegate
    tutorial-xnnpack-delegate-lowering
+   build-run-vulkan
    ..
       Alphabetical by backend name. Be sure to keep the same order in the
       customcarditem entries below.
@@ -114,11 +112,11 @@ Topics in this section will help you get started with ExecuTorch.
 
 .. toctree::
    :glob:
-   :maxdepth: 1
-   :caption: Exporting to ExecuTorch
+   :maxdepth: 2
+   :caption: Working with LLMs
    :hidden:
 
-   export-overview
+   llm/getting-started
 
 .. toctree::
    :glob:
@@ -186,8 +184,10 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    native-delegates-executorch-xnnpack-delegate
+   native-delegates-executorch-vulkan-delegate
    backend-delegates-integration
    backend-delegates-dependencies
+   debug-backend-delegate
 
 .. toctree::
    :glob:
@@ -204,6 +204,14 @@ Topics in this section will help you get started with ExecuTorch.
    sdk-inspector
    sdk-delegate-integration
    sdk-tutorial
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
+   :caption: Contributing
+   :hidden:
+
+   contributing
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -228,11 +236,25 @@ ExecuTorch tutorials.
    :tags:
 
 .. customcarditem::
+   :header: Simplified Runtime APIs Tutorial
+   :card_description: A simplified tutorial for executing the model on device.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: extension-module.html
+   :tags:
+
+.. customcarditem::
    :header: Using the ExecuTorch SDK to Profile a Model
    :card_description: A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.
    :image: _static/img/generic-pytorch-logo.png
    :link: tutorials/sdk-integration-tutorial.html
    :tags: SDK
+
+.. customcarditem::
+   :header: Integrating and Running ExecuTorch on Apple Platforms
+   :card_description: A tutorial on integrating, using, and troubleshooting the ExecuTorch runtime on iOS.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: apple-runtime.html
+   :tags: iOS, macOS
 
 .. customcarditem::
    :header: Building an ExecuTorch iOS Demo App
@@ -264,6 +286,13 @@ ExecuTorch tutorials.
    :image: _static/img/generic-pytorch-logo.png
    :link: tutorial-xnnpack-delegate-lowering.html
    :tags: Export,Backend,Delegation,Quantization,XNNPACK
+
+.. customcarditem::
+   :header: Building and Running ExecuTorch with Vulkan Backend
+   :card_description: A tutorial that walks you through the process of building ExecuTorch with Vulkan Backend
+   :image: _static/img/generic-pytorch-logo.png
+   :link: build-run-vulkan.html
+   :tags: Export,Backend,Delegation,Vulkan
 
 ..
    Alphabetical by backend name. Be sure to keep the same order in the Tutorials

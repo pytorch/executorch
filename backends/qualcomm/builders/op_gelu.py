@@ -16,7 +16,7 @@ from .qnn_constants import OpGelu, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class GeluVisitor(NodeVisitor):
-    target = "aten.gelu.default"
+    target = ["aten.gelu.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -33,6 +33,7 @@ class GeluVisitor(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         output_tensor = self.get_tensor(node, node)
@@ -41,6 +42,7 @@ class GeluVisitor(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         gelu_op = PyQnnWrapper.PyQnnOpWrapper(

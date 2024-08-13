@@ -42,8 +42,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                         self.to_copy_name: num_reshape,
                     }
                 )
-                .run_method()
-                .compare_outputs()
+                .run_method_and_compare_outputs()
             )
 
     def test_qs8_channels_last_tagged_reshape_pass(self):
@@ -64,8 +63,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                     ]
                     * num_reshape
                 )
-                .run_method()
-                .compare_outputs()
+                .run_method_and_compare_outputs()
             )
 
     class ConvRelu(torch.nn.Module):
@@ -86,8 +84,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
             .check(
                 [self.to_copy_name, self.conv_name, self.relu_name, self.to_copy_name]
             )
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_qs8_channels_last_tagged_reshape_pass_conv_relu(self):
@@ -109,8 +106,7 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                     self.to_copy_name,
                 ]
             )
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     class Conv2dBnHardtanhMeanSequenceModule(torch.nn.Module):
@@ -175,6 +171,5 @@ class TestChannelsLastTaggedReshapePass(unittest.TestCase):
                     self.to_copy_name: 4,
                 }
             )
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import argparse
 import inspect
 import os
@@ -13,9 +15,10 @@ from typing import Any, Dict, List, Type
 import torch
 from executorch.exir import CaptureConfig
 from executorch.exir.passes import MemoryPlanningPass
-from executorch.test.end2end.exported_module import ExportedModule
 from torch import nn
 from torch.export import Dim
+
+from ..end2end.exported_module import ExportedModule
 
 """Traces and exports nn.Modules to ExecuTorch .pte program files.
 
@@ -163,6 +166,23 @@ class ModuleMultipleEntry(torch.nn.Module):
         return ["forward", "forward2"]
 
 
+class ModuleSimpleTrain(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(3, 3)
+        self.loss = torch.nn.CrossEntropyLoss()
+
+    def forward(self, x, y):
+        return self.loss(self.linear(x).softmax(dim=0), y)
+
+    def get_random_inputs(self):
+        return (torch.randn(3), torch.tensor([1.0, 0.0, 0.0]))
+
+    @staticmethod
+    def export_joint():
+        return True
+
+
 #
 # Main logic.
 #
@@ -174,11 +194,15 @@ def export_module_to_program(
     skip_type_promotion: bool,
 ):
     """Exports the module and returns the serialized program data."""
+    torch.manual_seed(0)
     # Look for an optional @staticmethod that defines custom trace params.
     export_kwargs: Dict[str, Any] = {}
     if hasattr(module_class, "get_export_kwargs"):
         # pyre-ignore[16]: pyre doesn't know about get_export_kwargs.
         export_kwargs = module_class.get_export_kwargs()
+    export_joint = False
+    if hasattr(module_class, "export_joint"):
+        export_joint = module_class.export_joint()  # pyre-ignore
     if hasattr(module_class, "get_method_names_to_export"):
         # pyre-ignore[16]: pyre doesn't know about get_export_kwargs.
         methods = module_class.get_method_names_to_export()
@@ -189,6 +213,7 @@ def export_module_to_program(
         methods,
         extract_constant_segment=extract_constant_segment,
         skip_type_promotion=skip_type_promotion,
+        export_joint_graph=export_joint,
         **export_kwargs,
     )
     return module.executorch_program.buffer
@@ -198,6 +223,7 @@ def main() -> None:
     # These args are optimized for genrule usage. There's a lot of startup
     # overhead for this tool, so it's faster to export multiple models at once
     # when possible.
+    torch.manual_seed(0)
     parser = argparse.ArgumentParser(
         prog="export_program",
         description="Exports nn.Module models to ExecuTorch .pte files",

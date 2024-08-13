@@ -1,0 +1,16 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+warp_size:
+  parameter_names_with_default_values:
+    DTYPE: int
+    STORAGE: buffer
+  generate_variant_forall:
+    METHOD:
+      - VALUE: scheduler
+      - VALUE: physical
+  shader_variants:
+    - NAME: warp_size

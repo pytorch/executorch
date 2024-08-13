@@ -9,6 +9,15 @@ def get_event_tracer_flags():
         event_tracer_flags += ["-DET_EVENT_TRACER_ENABLED"]
     return event_tracer_flags
 
+def build_sdk():
+    return native.read_config("executorch", "build_sdk", "false") == "true"
+
+def get_sdk_flags():
+    sdk_flags = []
+    if build_sdk():
+        sdk_flags += ["-DEXECUTORCH_BUILD_SDK"]
+    return sdk_flags
+
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
 
@@ -23,7 +32,6 @@ def define_common_targets():
             "data_loader.h",
             "error.h",
             "freeable_buffer.h",
-            "function_ref.h",
             "result.h",
             "span.h",
         ],
@@ -92,7 +100,7 @@ def define_common_targets():
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
             ],
-            exported_preprocessor_flags = get_event_tracer_flags(),
+            exported_preprocessor_flags = get_event_tracer_flags() + get_sdk_flags(),
             exported_deps = [
                 "//executorch/runtime/platform:platform",
                 "//executorch/runtime/core:evalue" + aten_suffix,

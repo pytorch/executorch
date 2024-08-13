@@ -27,6 +27,11 @@ class MPSDataType(IntEnum):
     mps_data_type_complex_float32 = 11
 
 
+class OpType(IntEnum):
+    mps_graph = 0
+    metal_kernel = 1
+
+
 @dataclass
 class MPSNode1x1:
     input1_id: int
@@ -360,6 +365,11 @@ class MPSRound(MPSNode1x1):
 
 
 @dataclass
+class MPSLogicalNot(MPSNode1x1):
+    pass
+
+
+@dataclass
 class MPSBitwise(MPSNode1x1):
     pass
 
@@ -391,7 +401,7 @@ class MPSFull:
 
 @dataclass
 class MPSFullLike(MPSNode1x1):
-    fill_value: float = 0.0
+    fill_value: Union[float, str] = 0.0
     dtype: MPSDataType = MPSDataType.mps_data_type_float32
 
 
@@ -432,6 +442,25 @@ class MPSEmbedding(MPSNode2x1):
     padding_idx: int = -1
     scale_grad_by_freq: bool = False
     sparse: bool = False
+
+
+@dataclass
+class MPSIndexTensor(MPSNode1x1):
+    indices_id: List[int] = field(default_factory=list)
+
+
+@dataclass
+class MPSIndexPut(MPSNode1x1):
+    indices_id: List[int] = field(default_factory=list)
+    values_shape: List[int] = field(default_factory=list)
+    values_id: int = -1
+
+
+@dataclass
+class MPSScatter(MPSNode1x1):
+    dim: int = 0
+    idx_id: int = -1
+    src_id: int = -1
 
 
 ##
@@ -664,6 +693,7 @@ MPSNodeUnion = Union[
     MPSIsnan,
     MPSIsinf,
     MPSRound,
+    MPSLogicalNot,
     # Linear algebra ops
     MPSMatMul,
     MPSAddmm,
@@ -678,6 +708,9 @@ MPSNodeUnion = Union[
     # Indexing ops
     MPSIndexSelect,
     MPSEmbedding,
+    MPSIndexTensor,
+    MPSIndexPut,
+    MPSScatter,
     # Shape ops
     MPSPermute,
     MPSView,
@@ -730,7 +763,14 @@ class MPSTensor:
     num_dims: int
     dims: List[int]
     constant_buffer_size: int
-    constant_buffer: Buffer
+    constant_buffer: Buffer  # deprecated
+    segment_offset: int = 0
+
+
+@dataclass
+class DataSegment:
+    offset: int
+    size: int
 
 
 @dataclass
@@ -741,3 +781,5 @@ class MPSGraph:
     input_ids: List[int]
     output_ids: List[int]
     constant_ids: List[int]
+    graph_type: OpType
+    constant_segment: DataSegment

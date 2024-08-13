@@ -8,6 +8,13 @@
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/platform/assert.h>
+#include <memory>
+// NOTE: required by torchchat install_et.sh script.
+// @nolint PATTERNLINT Ok to use stdlib for this optional library
+#include <vector>
+
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
 #else
@@ -30,34 +37,33 @@ class ManagedTensor {
   using DimOrderType = exec_aten::DimOrderType;
   /// The type used for elements of `strides()`.
   using StridesType = exec_aten::StridesType;
+
   ManagedTensor() = delete;
 
   explicit ManagedTensor(
       void* data,
-      ssize_t numel,
       const std::vector<SizesType>& sizes,
       ScalarType dtype)
-      : dtype_(dtype), sizes_(sizes), data_ptr_(data) {
+      : sizes_(sizes) {
 #ifdef USE_ATEN_LIB
-    tensor_ = torch::from_blob(data, sizes, dtype_);
+    tensor_ = torch::from_blob(data, sizes, dtype);
 #else
-    ssize_t dim = sizes.size();
-    dim_order_.resize(dim);
-    strides_.resize(dim);
-    for (size_t i = 0; i < dim; ++i) {
-      dim_order_[i] = i;
-    }
-    dim_order_to_stride_nocheck(
-        sizes.data(), dim_order_.data(), dim, strides_.data());
     tensor_impl_ = std::make_unique<TensorImpl>(
-        dtype_,
-        dim,
+        dtype,
+        sizes_.size(),
         sizes_.data(),
-        data_ptr_,
-        dim_order_.data(),
-        strides_.data(),
-        TensorShapeDynamism::STATIC);
+        data,
+        nullptr,
+        nullptr,
+        TensorShapeDynamism::DYNAMIC_BOUND);
 #endif
+  }
+
+  void resize(const std::vector<SizesType>& new_sizes) {
+    auto err = resize_tensor(
+        this->get_aliasing_tensor(),
+        exec_aten::ArrayRef<SizesType>(new_sizes.data(), new_sizes.size()));
+    ET_CHECK(err == Error::Ok);
   }
 
   /**
@@ -72,15 +78,12 @@ class ManagedTensor {
   }
 
  private:
-  ScalarType dtype_;
   std::unique_ptr<TensorImpl> tensor_impl_;
   std::vector<SizesType> sizes_;
-  std::vector<StridesType> strides_;
-  std::vector<DimOrderType> dim_order_;
-  void* data_ptr_ = nullptr;
 #ifdef USE_ATEN_LIB
   Tensor tensor_;
 #endif
 };
+
 } // namespace executor
 } // namespace torch

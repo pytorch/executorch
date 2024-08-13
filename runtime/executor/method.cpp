@@ -182,7 +182,11 @@ class BackendDelegate final {
             /*free_fn=*/nullptr);
       }
       case executorch_flatbuffer::DataLocation::SEGMENT: {
-        return program->LoadSegment(processed->index());
+        const char* backend_id = delegate.id()->c_str();
+        return program->LoadSegment(DataLoader::SegmentInfo(
+            DataLoader::SegmentInfo::Type::Backend,
+            processed->index(),
+            backend_id));
       }
       default:
         ET_LOG(
@@ -786,7 +790,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
       input_idx,
       inputs_size());
 
-  const auto& e = get_input(input_idx);
+  const auto& e = get_value(get_input_index(input_idx));
   ET_CHECK_OR_RETURN_ERROR(
       e.isTensor() || e.isScalar(),
       InvalidArgument,
@@ -933,10 +937,15 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       InvalidState,
       "Outputs can not be retrieved until method has been initialized.");
 
-  ET_CHECK_OR_RETURN_ERROR(
-      !pre_allocated_output_,
-      InvalidState,
-      "Overriding output data pointer allocated by memory plan is not allowed.");
+  // ET_CHECK_OR_RETURN_ERROR(
+  //     !pre_allocated_output_,
+  //     InvalidState,
+  //     "Overriding output data pointer allocated by memory plan is not
+  //     allowed.");
+  // TODO(T188740925): for now, return error without logs.
+  if (pre_allocated_output_) {
+    return ::torch::executor::Error::InvalidState;
+  }
 
   // Check the args
   ET_CHECK_OR_RETURN_ERROR(
@@ -946,7 +955,7 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
       output_idx,
       outputs_size());
 
-  auto& output = mutable_output(output_idx);
+  auto& output = mutable_value(get_output_index(output_idx));
   ET_CHECK_OR_RETURN_ERROR(
       output.isTensor(),
       InvalidArgument,
@@ -993,6 +1002,28 @@ Method::get_outputs(EValue* output_evalues, size_t length) {
   return Error::Ok;
 }
 
+__ET_NODISCARD Error Method::get_inputs(EValue* input_evalues, size_t length) {
+  ET_CHECK_OR_RETURN_ERROR(
+      initialized(),
+      InvalidState,
+      "Inputs can not be retrieved until method has been initialized.");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      length >= inputs_size(),
+      InvalidArgument,
+      "The given array is not large enough to hold all inputs.");
+
+  for (size_t i = 0; i < inputs_size(); i++) {
+    input_evalues[i] = values_[get_input_index(i)];
+  }
+
+  for (size_t i = inputs_size(); i < length; i++) {
+    input_evalues[i] = EValue();
+  }
+
+  return Error::Ok;
+}
+
 Error Method::execute_instruction() {
   auto& chain = chains_[step_state_.chain_idx];
   auto instructions = chain.s_chain_->instructions();
@@ -1013,11 +1044,14 @@ Error Method::execute_instruction() {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
       internal::EventTracerProfileScope event_tracer_scope =
           internal::EventTracerProfileScope(event_tracer_, "OPERATOR_CALL");
-      // TODO(T147221312): Also expose the temp allocator and tensor resizer
-      // via the context.
-      KernelRuntimeContext context(event_tracer_);
+      // TODO(T147221312): Also expose tensor resizer via the context.
+      // The temp_allocator passed can be null, but calling allocate_temp will
+      // fail
+      KernelRuntimeContext context(
+          event_tracer_, memory_manager_->temp_allocator());
       auto args = chain.argument_lists_[step_state_.instr_idx];
       chain.kernels_[step_state_.instr_idx](context, args.data());
+      // We reset the temp_allocator after the switch statement
       err = context.failure_state();
       if (err != Error::Ok) {
         // We know that instr_args_as_KernelCall is non-null because it was
@@ -1060,7 +1094,9 @@ Error Method::execute_instruction() {
           delegate_idx,
           n_delegate_,
           step_state_.instr_idx);
-      BackendExecutionContext backend_execution_context(event_tracer_);
+      BackendExecutionContext backend_execution_context(
+          /*event_tracer*/ event_tracer_,
+          /*temp_allocator*/ memory_manager_->temp_allocator());
       err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());

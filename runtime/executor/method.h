@@ -32,12 +32,10 @@ class Program;
 // Forward declare internal types.
 class BackendDelegate;
 struct Chain;
-template <typename Fn>
-class FunctionRef;
 template <typename T>
 class Span;
 class KernelRuntimeContext;
-using OpFunction = FunctionRef<void(KernelRuntimeContext&, EValue**)>;
+using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
 /// A list of pointers into the master values table that together compose the
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;
@@ -163,6 +161,22 @@ class Method final {
    * @returns Error::Ok on success, non-Ok on failure.
    */
   __ET_NODISCARD Error get_outputs(EValue* output_evalues, size_t length);
+
+  /**
+   * Copies the method's inputs into the provided array.
+   *
+   * WARNING: The input contains shallow copies of internal tensor inputs.
+   * Please do not mutate returned Tensor elements.
+   *
+   * @param[in] input_evalues The array to copy the inputs into. The first
+   *     `inputs_size()` elements will be set to the corresponding input
+   *     values. The rest of the array will be set to the EValue value None.
+   * @param[in] length The size of the `input_evalues` array in elements. Must
+   *     be greater than or equal to `inputs_size()`.
+   *
+   * @returns Error::Ok on success, non-Ok on failure.
+   */
+  __ET_NODISCARD Error get_inputs(EValue* input_evalues, size_t length);
 
   /**
    * Execute the method.

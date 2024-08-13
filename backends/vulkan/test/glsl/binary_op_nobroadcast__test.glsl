@@ -7,11 +7,10 @@
  */
 
 #version 450 core
-// clang-format off
+
 #define PRECISION ${PRECISION}
 
-#define OP(X, Y) ${OPERATOR}
-// clang-format on
+#define op(X, Y) ${OPERATOR}
 
 layout(std430) buffer;
 
@@ -38,5 +37,5 @@ void main() {
   vec4 in_texel = texelFetch(image_in, pos, 0);
   vec4 other_texel = texelFetch(image_other, pos, 0);
 
-  imageStore(image_out, pos, OP(in_texel, other_texel));
+  imageStore(image_out, pos, op(in_texel, other_texel));
 }

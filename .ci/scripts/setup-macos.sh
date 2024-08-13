@@ -28,15 +28,18 @@ install_buck() {
   fi
 
   pushd .ci/docker
-
-  # TODO(huydo): This is a one-off copy of buck2 2024-02-15 to unblock Jon and
+  # TODO(huydo): This is a one-off copy of buck2 2024-05-15 to unblock Jon and
   # re-enable ShipIt. It’s not ideal that upgrading buck2 will require a manual
   # update the cached binary on S3 bucket too. Let me figure out if there is a
   # way to correctly implement the previous setup of installing a new version of
   # buck2 only when it’s needed. AFAIK, the complicated part was that buck2
-  # --version doesn't say anything w.r.t its release version, i.e. 2024-02-15.
+  # --version doesn't say anything w.r.t its release version, i.e. 2024-05-15.
   # See D53878006 for more details.
-  BUCK2=buck2-aarch64-apple-darwin.zst
+  #
+  # If you need to upgrade buck2 version on S3, please reach out to Dev Infra
+  # team for help.
+  BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
+  BUCK2=buck2-aarch64-apple-darwin-${BUCK2_VERSION}.zst
   curl -s "https://ossci-macos.s3.amazonaws.com/${BUCK2}" -o "${BUCK2}"
 
   zstd -d "${BUCK2}" -o buck2
@@ -74,16 +77,18 @@ install_sccache() {
 
   export PATH="${SCCACHE_PATH}:${PATH}"
 
-  # Create temp directory for sccache shims
-  TMP_DIR=$(mktemp -d)
-  trap 'rm -rfv ${TMP_DIR}' EXIT
+  # Create temp directory for sccache shims if TMP_DIR doesn't exist
+  if [ -z "${TMP_DIR:-}" ]; then
+    TMP_DIR=$(mktemp -d)
+    trap 'rm -rfv ${TMP_DIR}' EXIT
+    export PATH="${TMP_DIR}:$PATH"
+  fi
 
   write_sccache_stub "${TMP_DIR}/c++"
   write_sccache_stub "${TMP_DIR}/cc"
   write_sccache_stub "${TMP_DIR}/clang++"
   write_sccache_stub "${TMP_DIR}/clang"
 
-  export PATH="${TMP_DIR}:$PATH"
   sccache --zero-stats || true
 }
 
@@ -104,6 +109,12 @@ print_cmake_info() {
   codesign -f -s - "${CMAKE_EXEC}" || true
 }
 
+setup_macos_env_variables() {
+  CMAKE_PREFIX_PATH=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
+  export CMAKE_PREFIX_PATH
+}
+
+setup_macos_env_variables
 # NB: we need buck2 in all cases because cmake build also depends on calling
 # buck2 atm
 install_buck

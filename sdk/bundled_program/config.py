@@ -62,7 +62,7 @@ class MethodTestCase:
             input: All inputs required by eager_model with specific inference method for one-time execution.
 
                     It is worth mentioning that, although both bundled program and ET runtime apis support setting input
-                    other than torch.tensor type, only the input in torch.tensor type will be actually updated in
+                    other than `torch.tensor` type, only the input in `torch.tensor` type will be actually updated in
                     the method, and the rest of the inputs will just do a sanity check if they match the default value in method.
 
             expected_output: Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.

@@ -42,13 +42,9 @@ MPSGraphBuilder::mpsViewOp(NodePtr nodePtr) {
     __FUNCTION__, graphNode->input1_id(), graphNode->output_id()
   );
 
-  NSMutableArray<NSNumber*>* shape = [NSMutableArray array];
-  for (int32_t i = 0; i < graphNode->num_dims(); i++) {
-    [shape addObject:[NSNumber numberWithInteger:graphNode->shape()->Get(i)]];
-  }
   _idToMPSGraphTensor[graphNode->output_id()] =
     [_mpsGraph reshapeTensor:getMPSGraphTensor(graphNode->input1_id())
-                  withShape:shape
+                  withShape:getMPSShape(graphNode->shape())
                        name:@"view_copy"];
 
   return Error::Ok;
@@ -91,7 +87,7 @@ MPSGraphBuilder::mpsCatOp(NodePtr nodePtr) {
     __FUNCTION__, graphNode->output_id()
   );
 
-  NSMutableArray<MPSGraphTensor*>* inputTensors = [NSMutableArray array];
+  NSMutableArray<MPSGraphTensor*>* inputTensors = [NSMutableArray arrayWithCapacity:graphNode->input_ids()->size()];;
   for (auto id : *graphNode->input_ids()) {
     MPSGraphTensor* catTensor = getMPSGraphTensor(id);
     if (catTensor != nil)

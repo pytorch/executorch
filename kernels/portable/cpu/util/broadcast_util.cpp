@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -208,7 +207,7 @@ Tensor broadcast_tensor(
   return out;
 }
 
-[[nodiscard]] Error get_broadcast_target_size(
+__ET_NODISCARD Error get_broadcast_target_size(
     const exec_aten::ArrayRef<Tensor::SizesType> a_size,
     const exec_aten::ArrayRef<Tensor::SizesType> b_size,
     Tensor::SizesType* out_sizes,
@@ -249,7 +248,7 @@ Tensor broadcast_tensor(
   return Error::Ok;
 }
 
-[[nodiscard]] Error get_broadcast_target_size(
+__ET_NODISCARD Error get_broadcast_target_size(
     const Tensor& a,
     const Tensor& b,
     Tensor::SizesType* out_sizes,

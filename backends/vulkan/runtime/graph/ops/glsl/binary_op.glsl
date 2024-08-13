@@ -8,65 +8,57 @@
 
 #version 450 core
 
+#define PRECISION ${PRECISION}
+
+#define VEC4_T ${texel_type(DTYPE)}
+
+#define op(X, Y, A) ${OPERATOR}
+
 #include "broadcasting_utils.h"
 #include "indexing_utils.h"
 
-#define PRECISION ${PRECISION}
-
-#define OP(X, Y, A) ${OPERATOR}
-
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
-layout(set = 0, binding = 2) uniform PRECISION sampler3D image_other;
-
-layout(set = 0, binding = 3) uniform PRECISION restrict OutSizes {
-  ivec4 data;
-}
-out_sizes;
-
-layout(set = 0, binding = 4) uniform PRECISION restrict InSizes {
-  ivec4 data;
-}
-in_sizes;
-
-layout(set = 0, binding = 5) uniform PRECISION restrict OtherSizes {
-  ivec4 data;
-}
-other_sizes;
-
-layout(set = 0, binding = 6) uniform PRECISION restrict Alpha {
-  float data;
-}
-alpha;
+${layout_declare_tensor(0, "w", "t_out", DTYPE, STORAGE)}
+${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
+${layout_declare_tensor(2, "r", "t_other", DTYPE, STORAGE)}
+${layout_declare_ubo(3, "ivec4", "out_sizes")}
+${layout_declare_ubo(4, "ivec4", "in_sizes")}
+${layout_declare_ubo(5, "ivec4", "other_sizes")}
+${layout_declare_ubo(6, "ivec2", "broadcast_params")}
+${layout_declare_ubo(7, "float", "alpha")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+layout(constant_id = 3) const int packed_dim = C_DIM;
+
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 coord = POS_TO_COORD_${PACKING}(pos, out_sizes.data);
+  const ivec4 idx = to_tensor_idx(pos, out_sizes, packed_dim);
 
-  if (any(greaterThanEqual(coord, out_sizes.data))) {
+  if (any(greaterThanEqual(idx, out_sizes))) {
     return;
   }
 
-  ivec4 in_coord = out_coord_to_in_coord(coord, in_sizes.data);
-  ${VEC4_T[DTYPE]} in_texel = ${VEC4_T[DTYPE]}(texelFetch(
-    image_in,
-    COORD_TO_POS_${PACKING}(in_coord, in_sizes.data),
+  ivec4 in_idx = broadcast_indices(idx, in_sizes);
+  VEC4_T in_texel = VEC4_T(texelFetch(
+    t_in,
+    to_texture_pos(in_idx, in_sizes, packed_dim),
     0));
 
-  ivec4 other_coord = out_coord_to_in_coord(coord, other_sizes.data);
-  ${VEC4_T[DTYPE]} other_texel = ${VEC4_T[DTYPE]}(texelFetch(
-    image_other,
-    COORD_TO_POS_${PACKING}(other_coord, other_sizes.data),
+  ivec4 other_idx = broadcast_indices(idx, other_sizes);
+  VEC4_T other_texel = VEC4_T(texelFetch(
+    t_other,
+    to_texture_pos(other_idx, other_sizes, packed_dim),
     0));
 
-  // Detect broadcasting
-  if (PACKED_DIM_${PACKING}(other_sizes.data) < PACKED_DIM_${PACKING}(in_sizes.data)) {
+  // Check boolean broadcast flags; we use ivec2 instead of bvec2 for alignment.
+  if (broadcast_params.x > 0) {
+    in_texel = in_texel.xxxx;
+  }
+  if (broadcast_params.y > 0) {
     other_texel = other_texel.xxxx;
   }
 
-  imageStore(image_out, pos, ${VEC4_T[DTYPE]}(OP(in_texel, other_texel, alpha.data)));
+  imageStore(t_out, pos, VEC4_T(op(in_texel, other_texel, alpha)));
 }

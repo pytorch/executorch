@@ -9,6 +9,11 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_QUANT_ATTRS,
+    QCOM_SCALES,
+    QCOM_ZERO_POINTS,
+)
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpFullyConnected, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -17,7 +22,7 @@ from .utils import get_parameter
 
 @register_node_visitor
 class LinearVisitor(NodeVisitor):
-    target = "aten.linear.default"
+    target = ["aten.linear.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -35,27 +40,46 @@ class LinearVisitor(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
         linear_input_tensors.append(input_tensor_wrapper)
 
         weight_node = node.args[1]
+        if (
+            quant_attrs := weight_node.meta.get(QCOM_QUANT_ATTRS)
+        ) and QCOM_SCALES in quant_attrs:
+            # Dimension of weight is [m, n], per channel quant params is [m]
+            # Change to [m, 1] to fit the tensor.div(s).add(z)
+            quant_attrs[QCOM_SCALES] = quant_attrs[QCOM_SCALES].reshape([-1, 1])
+            quant_attrs[QCOM_ZERO_POINTS] = quant_attrs[QCOM_ZERO_POINTS].reshape(
+                [-1, 1]
+            )
+
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
             weight_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         linear_input_tensors.append(weight_tensor_wrapper)
 
         if len(node.args) >= 3:
             bias_node = node.args[2]
+
+            # TODO remove this when qnn sdk support
+            if QCOM_SCALES in bias_node.meta.get(QCOM_QUANT_ATTRS, {}):
+                print(
+                    f"[WARNING] Fallback linear bias, {bias_node}. per channel bias quantization is not support yet."
+                )
             bias_tensor = get_parameter(bias_node, self.edge_program)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,
                 bias_tensor,
                 PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
                 nodes_to_wrappers,
+                is_input_tensor=False,
             )
             linear_input_tensors.append(bias_tensor_wrapper)
 
@@ -65,6 +89,7 @@ class LinearVisitor(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         linear_op = PyQnnWrapper.PyQnnOpWrapper(

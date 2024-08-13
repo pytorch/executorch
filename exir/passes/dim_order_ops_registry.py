@@ -22,8 +22,8 @@ lib.define(
 
 
 def _op_impl(target, *args, **kwargs):
-    kwargs["memory_format"] = get_memory_format(kwargs["dim_order"])
-    _ = kwargs.pop("dim_order")
+    kwargs["memory_format"] = get_memory_format(kwargs.get("dim_order", None))
+    _ = kwargs.pop("dim_order", None)
     res = target(*args, **kwargs)
     # assert list(res.dim_order()) == dim_order
     return res
@@ -45,3 +45,15 @@ Defines a map of aten or edge ops to the corresponding dim_order ops for quick l
 DimOrderOpsMap = {
     "aten._to_copy.default": exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
 }
+
+"""
+Defines a map of aten or edge ops to the corresponding memory format ops for quick lookup
+"""
+MemoryFormatOpsMap = {
+    "dim_order_ops._to_dim_order_copy.default": exir_ops.edge.aten._to_copy.default,
+}
+
+# If we are replacing an aten op with a dim_order op, we must have a 1:1 mapping through these dicts.
+assert len(DimOrderOpsMap) == len(MemoryFormatOpsMap)
+
+# TODO stricter check for 1:1 mapping

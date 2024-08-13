@@ -10,19 +10,15 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#ifdef USE_VULKAN_API
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
-#include <ATen/native/vulkan/api/Context.h>
-#include <ATen/native/vulkan/api/Tensor.h>
-#include <ATen/native/vulkan/api/Types.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Types.h>
 
 #include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 class ComputeGraph;
 
@@ -34,15 +30,11 @@ struct SharedObject {
   VkMemoryRequirements aggregate_memory_requirements;
   VmaAllocationCreateInfo aggregate_create_info;
   std::vector<ValueRef> users;
-  api::MemoryAllocation allocation;
+  vkapi::Allocation allocation;
 
   void add_user(ComputeGraph* const graph, const ValueRef idx);
   void allocate(ComputeGraph* const graph);
   void bind_users(ComputeGraph* const graph);
 };
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

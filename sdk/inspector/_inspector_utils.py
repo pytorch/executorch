@@ -70,6 +70,20 @@ InferenceOutput: TypeAlias = Union[
 ProgramOutput: TypeAlias = List[InferenceOutput]
 
 
+# Compare whether two InferenceOutputs are equal
+def is_inference_output_equal(
+    output1: InferenceOutput, output2: InferenceOutput
+) -> bool:
+    if isinstance(output1, torch.Tensor) and isinstance(output2, torch.Tensor):
+        return torch.equal(output1, output2)
+    elif isinstance(output1, List) and isinstance(output2, List):
+        return all(torch.equal(t1, t2) for t1, t2 in zip(output1, output2))
+    elif output1 == output2:
+        return True
+    else:
+        return False
+
+
 # Given a ETDump Tensor object and offset, extract into a torch.Tensor
 def _parse_tensor_value(
     tensor: Optional[Tensor], output_buffer: Optional[bytes]
@@ -78,16 +92,19 @@ def _parse_tensor_value(
         """
         Return the size of the scalar type in bytes
         """
-        if scalar_type == ScalarType.INT:
-            return (torch.int, 4)
-        elif scalar_type == ScalarType.BOOL:
-            return (torch.bool, 1)
-        elif scalar_type == ScalarType.FLOAT:
-            return (torch.float, 4)
-        elif scalar_type == ScalarType.DOUBLE:
-            return (torch.double, 8)
-        elif scalar_type == ScalarType.LONG:
-            return (torch.long, 8)
+        get_scalar_type_size_map = {
+            ScalarType.BYTE: (torch.uint8, 1),
+            ScalarType.CHAR: (torch.int8, 1),
+            ScalarType.BOOL: (torch.bool, 1),
+            ScalarType.SHORT: (torch.int16, 2),
+            ScalarType.HALF: (torch.float16, 2),
+            ScalarType.INT: (torch.int, 4),
+            ScalarType.FLOAT: (torch.float, 4),
+            ScalarType.DOUBLE: (torch.double, 8),
+            ScalarType.LONG: (torch.long, 8),
+        }
+        if scalar_type in get_scalar_type_size_map:
+            return get_scalar_type_size_map[scalar_type]
         else:
             raise RuntimeError(
                 f"Unsupported scalar type in get_scalar_type_size : {scalar_type}"
@@ -103,6 +120,9 @@ def _parse_tensor_value(
         return torch.zeros(tensor.sizes, dtype=torch_dtype)
 
     tensor_bytes_size = math.prod(tensor.sizes) * dtype_size
+    if tensor_bytes_size == 0:
+        # Empty tensor. Return empty tensor.
+        return torch.zeros(tensor.sizes, dtype=torch_dtype)
 
     if tensor.offset is None:
         raise ValueError("Tensor offset cannot be None")

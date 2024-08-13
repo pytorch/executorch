@@ -54,6 +54,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/exir:error",
         "//executorch/exir:lowered_backend_module",
+        "//executorch/exir/capture:config",
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/emit:emit",
     ],
@@ -65,6 +66,7 @@ python_unittest(
     deps = [
         ":verifier",
         "//caffe2:torch",
+        "//executorch/exir:lib",
         "//executorch/exir/dialects:lib",
     ],
 )

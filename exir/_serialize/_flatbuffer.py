@@ -11,11 +11,11 @@ import os
 import re
 import shutil
 import subprocess
+
 import tempfile
 
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence
-
 
 # If this environment variable is set to true, save the flatc input files when
 # serialization fails.
@@ -27,6 +27,14 @@ def _is_valid_alignment(alignment: int) -> bool:
     if alignment is None:
         return True
     return alignment > 0 and (alignment & (alignment - 1)) == 0
+
+
+# TODO(T182299196): Replace this hack with a proper flatc binary.
+def _replace_infinity_in_json_file(content: str) -> str:
+    content = re.sub(
+        r'"double_val"\s*:\s*(-)?Infinity', r'"double_val": "\g<1>inf"', content
+    )
+    return content
 
 
 def _patch_schema_alignment(
@@ -193,7 +201,9 @@ def _run_flatc(args: Sequence[str]) -> None:
             subprocess.run([flatc_path] + list(args), check=True)
     else:
         # Expect the `flatc` tool to be on the system path or set as an env var.
-        flatc_path = os.getenv("FLATC_EXECUTABLE", "flatc")
+        flatc_path = os.getenv("FLATC_EXECUTABLE")
+        if not flatc_path:
+            flatc_path = "flatc"
         subprocess.run([flatc_path] + list(args), check=True)
 
 
@@ -281,8 +291,11 @@ def _program_json_to_flatbuffer(
         json_path = os.path.join(temp_dir, file_stem + ".json")
         output_path = os.path.join(temp_dir, file_stem + ".pte")
 
+        # TODO(T182299196): Replace this hack with a proper flatc binary.
+        replaced_program_json = _replace_infinity_in_json_file(program_json)
+
         with open(json_path, "wb") as json_file:
-            json_file.write(program_json.encode("ascii"))
+            json_file.write(replaced_program_json.encode("ascii"))
 
         try:
             _flatc_compile(temp_dir, schema_info.root_path, json_path)

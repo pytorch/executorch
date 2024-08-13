@@ -1,5 +1,17 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def _operator_registry_preprocessor_flags():
+    max_kernel_num = native.read_config("executorch", "max_kernel_num", None)
+    if max_kernel_num != None:
+        return ["-DMAX_KERNEL_NUM=" + max_kernel_num]
+    elif not runtime.is_oss:
+        return select({
+            "DEFAULT": [],
+            "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-64": ["-DMAX_KERNEL_NUM=64"],
+        })
+    else:
+        return []
+
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
 
@@ -7,7 +19,6 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    max_kernel_num = native.read_config("executorch", "max_kernel_num", None)
     runtime.cxx_library(
         name = "operator_registry",
         srcs = ["operator_registry.cpp"],
@@ -20,7 +31,7 @@ def define_common_targets():
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",
         ],
-        preprocessor_flags = ["-DMAX_KERNEL_NUM=" + max_kernel_num] if max_kernel_num != None else [],
+        preprocessor_flags = _operator_registry_preprocessor_flags(),
     )
 
     runtime.cxx_library(
@@ -55,6 +66,7 @@ def define_common_targets():
             exported_deps = [
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/platform:platform",
+                "//executorch/runtime/core:memory_allocator",
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
                 # TODO(T147221312): This will eventually depend on exec_aten
                 # once KernelRuntimeContext support tensor resizing, which is

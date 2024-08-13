@@ -8,9 +8,11 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -47,7 +49,6 @@ static uint8_t* align_pointer(void* ptr, size_t alignment) {
   addr = (addr | (alignment - 1)) + 1;
   return reinterpret_cast<uint8_t*>(addr);
 }
-
 } // namespace
 
 FileDataLoader::~FileDataLoader() {
@@ -118,7 +119,10 @@ void FreeSegment(void* context, void* data, __ET_UNUSED size_t size) {
 }
 } // namespace
 
-Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
+Result<FreeableBuffer> FileDataLoader::load(
+    size_t offset,
+    size_t size,
+    __ET_UNUSED const DataLoader::SegmentInfo& segment_info) {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
@@ -136,19 +140,6 @@ Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
   // Don't bother allocating/freeing for empty segments.
   if (size == 0) {
     return FreeableBuffer(nullptr, 0, /*free_fn=*/nullptr);
-  }
-
-  // Seek to the right place in the file.
-  off_t seek_offset = ::lseek(fd_, offset, SEEK_SET);
-  if (seek_offset != offset) {
-    ET_LOG(
-        Error,
-        "Seeking %s to offset %zu returned %zd: %s",
-        file_name_,
-        offset,
-        (ssize_t)seek_offset,
-        strerror(errno));
-    return Error::AccessFailed;
   }
 
   // Allocate memory for the FreeableBuffer.
@@ -182,31 +173,11 @@ Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
       buffer,
       alloc_size);
 
-  // Read the data into the aligned address.
-  size_t needed = size;
-  uint8_t* buf = reinterpret_cast<uint8_t*>(aligned_buffer);
-  while (needed > 0) {
-    ssize_t nread = ::read(fd_, buf, needed);
-    if (nread < 0 && errno == EINTR) {
-      // Interrupted by a signal; zero bytes read.
-      continue;
-    }
-    if (nread <= 0) {
-      // nread == 0 means EOF, which we shouldn't see if we were able to read
-      // the full amount. nread < 0 means an error occurred.
-      ET_LOG(
-          Error,
-          "Reading from %s: failed to read %zu bytes at offset %zu: %s",
-          file_name_,
-          size,
-          offset,
-          nread == 0 ? "EOF" : strerror(errno));
-      // Free `buffer`, which is what malloc() gave us, not `aligned_buffer`.
-      std::free(buffer);
-      return Error::AccessFailed;
-    }
-    needed -= nread;
-    buf += nread;
+  auto err = load_into(offset, size, segment_info, aligned_buffer);
+  if (err != Error::Ok) {
+    // Free `buffer`, which is what malloc() gave us, not `aligned_buffer`.
+    std::free(buffer);
+    return err;
   }
 
   // We can't naively free this pointer, since it may not be what malloc() gave
@@ -232,6 +203,72 @@ Result<size_t> FileDataLoader::size() const {
       InvalidState,
       "Uninitialized");
   return file_size_;
+}
+
+__ET_NODISCARD Error FileDataLoader::load_into(
+    size_t offset,
+    size_t size,
+    __ET_UNUSED const SegmentInfo& segment_info,
+    void* buffer) {
+  ET_CHECK_OR_RETURN_ERROR(
+      // Probably had its value moved to another instance.
+      fd_ >= 0,
+      InvalidState,
+      "Uninitialized");
+  ET_CHECK_OR_RETURN_ERROR(
+      offset + size <= file_size_,
+      InvalidArgument,
+      "File %s: offset %zu + size %zu > file_size_ %zu",
+      file_name_,
+      offset,
+      size,
+      file_size_);
+  ET_CHECK_OR_RETURN_ERROR(
+      buffer != nullptr, InvalidArgument, "Provided buffer cannot be null");
+
+  // Seek to the right place in the file.
+  off_t seek_offset = ::lseek(fd_, offset, SEEK_SET);
+  if (seek_offset != offset) {
+    ET_LOG(
+        Error,
+        "Seeking %s to offset %zu returned %zd: %s",
+        file_name_,
+        offset,
+        (ssize_t)seek_offset,
+        strerror(errno));
+    return Error::AccessFailed;
+  }
+
+  // Read the data into the aligned address.
+  size_t needed = size;
+  uint8_t* buf = reinterpret_cast<uint8_t*>(buffer);
+  while (needed > 0) {
+    // Reads on macos will fail with EINVAL if size > INT32_MAX.
+    ssize_t nread = ::read(
+        fd_,
+        buf,
+        std::min<size_t>(
+            needed, static_cast<size_t>(std::numeric_limits<int32_t>::max())));
+    if (nread < 0 && errno == EINTR) {
+      // Interrupted by a signal; zero bytes read.
+      continue;
+    }
+    if (nread <= 0) {
+      // nread == 0 means EOF, which we shouldn't see if we were able to read
+      // the full amount. nread < 0 means an error occurred.
+      ET_LOG(
+          Error,
+          "Reading from %s: failed to read %zu bytes at offset %zu: %s",
+          file_name_,
+          size,
+          offset,
+          nread == 0 ? "EOF" : strerror(errno));
+      return Error::AccessFailed;
+    }
+    needed -= nread;
+    buf += nread;
+  }
+  return Error::Ok;
 }
 
 } // namespace util

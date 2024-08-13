@@ -8,9 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 bool OperatorRegistry::has_op(const std::string& name) {
   return table_.count(name) > 0;
@@ -18,7 +16,9 @@ bool OperatorRegistry::has_op(const std::string& name) {
 
 OperatorRegistry::OpFunction& OperatorRegistry::get_op_fn(
     const std::string& name) {
-  return table_.find(name)->second;
+  const auto it = table_.find(name);
+  VK_CHECK_COND(it != table_.end(), "Could not find operator with name ", name);
+  return it->second;
 }
 
 void OperatorRegistry::register_op(const std::string& name, OpFunction& fn) {
@@ -30,6 +30,4 @@ OperatorRegistry& operator_registry() {
   return registry;
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

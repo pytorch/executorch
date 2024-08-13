@@ -25,9 +25,8 @@ import sys
 
 import pytorch_sphinx_theme
 
+# To let us import ./custom_directives.py
 sys.path.insert(0, os.path.abspath("."))
-sys.path.insert(0, os.path.abspath("../../.."))
-sys.path.insert(0, os.path.abspath("../.."))
 # -- Project information -----------------------------------------------------
 
 project = "ExecuTorch"
@@ -43,8 +42,6 @@ author = "ExecuTorch Contributors"
 
 import os
 import sys
-
-sys.path.insert(0, os.path.abspath("../../"))
 
 extensions = [
     "breathe",
@@ -76,38 +73,23 @@ html_favicon = "_static/img/ExecuTorch-Logo-cropped.svg"
 
 # Get ET_VERSION_DOCS during the build.
 et_version_docs = os.environ.get("ET_VERSION_DOCS", None)
-
+print(f"et_version_docs: {et_version_docs}")
 
 # The code below will cut version displayed in the dropdown like this:
-# tags like v0.1.0 = > 0.1
-# branch like release/0.1 => 0.1
-# main will remain main
-# if not set will fail back to main
+# By default, set to "main".
+# If it's a tag like refs/tags/v1.2.3-rc4 or refs/tags/v1.2.3, then
+# cut to 1.2
 # the version varible is used in layout.html: https://github.com/pytorch/executorch/blob/main/docs/source/_templates/layout.html#L29
+version = release = "main"
 if et_version_docs:
-    # Check if starts with release/ and set the version to the number after slash
-    if et_version_docs.startswith("release/"):
+    if et_version_docs.startswith("refs/tags/v"):
+        version = ".".join(
+            et_version_docs.split("/")[-1].split("-")[0].lstrip("v").split(".")[:2]
+        )
+    elif et_version_docs.startswith("refs/heads/release/"):
         version = et_version_docs.split("/")[-1]
-    else:
-        # Remove "v" prefix if present
-        if et_version_docs.startswith("v"):
-            et_version_docs = et_version_docs[1:]
-        # Split to major, minor, and patch
-        version_components = et_version_docs.split(".")
-
-        # Combine the major and minor version components:
-        if len(version_components) >= 2:
-            version = release = ".".join(version_components[:2])
-        else:
-            # If there are not enough components, use the full version
-            version = release = et_version_docs
-
-    html_title = " ".join((project, version, "documentation"))
-# IF ET_VERSION_DOCS not set, set version to main.
-# This can be updated to nightly and so on.
-else:
-    version = "main"
-    release = "main"
+print(f"Version: {version}")
+html_title = " ".join((project, version, "documentation"))
 
 breathe_projects = {"ExecuTorch": "../build/xml/"}
 breathe_default_project = "ExecuTorch"

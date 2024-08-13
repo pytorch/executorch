@@ -42,8 +42,7 @@ class TestRemoveGetItemPass(unittest.TestCase):
             .to_edge()
             .run_passes(self.PassStage)
             .check_count({self.max_pool2d_name: 1})
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_q8_max_pool2d_remove_getitem(self):
@@ -54,8 +53,7 @@ class TestRemoveGetItemPass(unittest.TestCase):
             .to_edge()
             .run_passes(self.PassStage)
             .check_count({self.max_pool2d_name: 1})
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     class MaxModule(torch.nn.Module):
@@ -79,8 +77,7 @@ class TestRemoveGetItemPass(unittest.TestCase):
                     self.amax_name: 1,
                 }
             )
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_q8_max_remove_getitem(self):
@@ -95,6 +92,5 @@ class TestRemoveGetItemPass(unittest.TestCase):
                     self.amax_name: 1,
                 }
             )
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

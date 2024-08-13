@@ -87,6 +87,7 @@ from executorch.exir.tensor import (
     TensorSpec,
 )
 from executorch.exir.types import LeafValueSpec, ValueSpec
+from torch._subclasses.fake_tensor import FakeTensor
 
 from torch.export.exported_program import ExportedProgram
 from torch.utils import _pytree as pytree
@@ -109,8 +110,11 @@ class _ProgramState:
     # emitted graph modules, not any weights emitted from itself. This should speed up the lookup,
     # from O(N) to O(1)
     cached_spec_hash_values: Dict[str, int] = field(default_factory=dict)
+    cached_spec_mutable_hash_values: Dict[str, int] = field(default_factory=dict)
     # The 0 index is reserved to be pointed to by non-constant tensors, so add an empty placeholder.
     constant_buffer: List[Buffer] = field(default_factory=lambda: [Buffer(storage=b"")])
+    # The 0 index is reserved to be pointed to by non-constant tensors, so add an empty placeholder.
+    mutable_buffer: List[Buffer] = field(default_factory=lambda: [Buffer(storage=b"")])
     # Delegate data stored directly in the flatbuffer. Pointed to by BackendDelegateDataReference,
     # and should be copied to Program.backend_delegate_data.
     backend_delegate_data: List[BackendDelegateInlineData] = field(default_factory=list)
@@ -284,18 +288,17 @@ class _Emitter(torch.fx.Interpreter):
 
         NOTE: When symbool and symfloat are supported bool and float lists will be stored boxed.
         """
-        elem_type = type(val_type)
 
-        if elem_type == torch.BoolType:
+        if isinstance(val_type, torch.BoolType):
             return EValue(BoolList(typing.cast(List[bool], val)))
 
-        if elem_type == torch.IntType:
+        if isinstance(val_type, torch.IntType):
             return self._emit_int_list(val)
 
-        if elem_type == torch.FloatType:
+        if isinstance(val_type, torch.FloatType):
             return EValue(DoubleList(typing.cast(List[float], val)))
 
-        if elem_type == torch.TensorType:
+        if isinstance(val_type, torch.TensorType):
             values = []
             for v in val:
                 assert isinstance(v, _AbstractValue)
@@ -307,10 +310,10 @@ class _Emitter(torch.fx.Interpreter):
                 values.append(v.id)
             return EValue(TensorList(values))
 
-        if elem_type == torch.OptionalType:
+        if isinstance(val_type, torch.OptionalType):
             # refine further
-            actual_type = typing.cast(torch.OptionalType, val_type).getElementType()
-            if type(actual_type) == torch.TensorType:
+            actual_type = val_type.getElementType()
+            if isinstance(actual_type, torch.TensorType):
                 vals = []
                 for v in val:
                     if v is None:
@@ -326,68 +329,83 @@ class _Emitter(torch.fx.Interpreter):
 
     def _tensor_spec_to_evalue(self, spec: TensorSpec) -> EValue:
         """Constructs an EValue from the given TensorSpec."""
-        if not spec.const:
-            if spec.mem_id is not None:
-                # Tensor is an activation.
-                self._internal_assert_emitter(
-                    isinstance(spec.mem_id, int) and spec.mem_id >= 0,
-                    self.node,
-                    "Non-const tensor should be an activation tensor",
-                )
 
-                self._internal_assert_emitter(
-                    isinstance(spec.mem_offset, int) and spec.mem_offset >= 0,
-                    self.node,
-                    "Non-const tensor should be an activation tensor",
+        allocation_info = None
+        buffer_idx = 0
+
+        # Need to memory plan
+        # Some users set mem_id on all tensors and then rely on the
+        # default algos to set offsets, so need to check both.
+        if spec.mem_id is not None and spec.mem_offset is not None:
+            # Tensor is an activation.
+            self._internal_assert_emitter(
+                isinstance(spec.mem_id, int) and spec.mem_id >= 0,
+                self.node,
+                f"Non-const tensor should be an activation tensor: mem_id {spec.mem_id}",
+            )
+
+            self._internal_assert_emitter(
+                isinstance(spec.mem_offset, int) and spec.mem_offset >= 0,
+                self.node,
+                f"Non-const tensor should be an activation tensor: mem_offset {spec.mem_offset}",
+            )
+            allocation_info = make_allocation_info(spec.mem_id, spec.mem_offset)
+
+        if spec.const:
+            # Tensor with a blob we need to serialize. May not actually be constant at runtime
+            # if it's a weight with an associated gradient
+            spec_array_type = (
+                ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
+            )
+
+            buffer_data = (
+                bytes(
+                    ctypes.cast(
+                        typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
+                        ctypes.POINTER(spec_array_type),
+                    ).contents
                 )
-                allocation_info = make_allocation_info(spec.mem_id, spec.mem_offset)
+                if spec.allocated_memory != 0
+                else b""
+            )
+
+            hashed = hashlib.sha256(buffer_data).hexdigest()
+
+            if allocation_info:
+                buffer_idx = self.program_state.cached_spec_mutable_hash_values.get(
+                    hashed, -1
+                )
             else:
-                # Tensor is an input/placeholder.
-                allocation_info = None
+                buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
 
-            # For non-constant tensors, constant_buffer = 0.
-            return EValue(make_tensor_value(0, allocation_info, spec))
+            # Haven't seen this constant before
+            if buffer_idx == -1:
+                # Update buffer_idx to point to the end of the list where we are adding the new buffer.
+                buffer = Buffer(storage=buffer_data)
+                self.program_state.allocated_specs.append(spec)
+                # +1 because the first buffer location is reserved
 
-        # Constant tensor. Reserve a buffer for the constant tensor.
-        spec_array_type = (
-            ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
-        )
+                if allocation_info:
+                    buffer_idx = len(self.program_state.mutable_buffer)
+                    self.program_state.cached_spec_mutable_hash_values[hashed] = (
+                        buffer_idx
+                    )
+                    self.program_state.mutable_buffer.append(buffer)
+                else:
+                    buffer_idx = len(self.program_state.constant_buffer)
+                    self.program_state.cached_spec_hash_values[hashed] = buffer_idx
+                    self.program_state.constant_buffer.append(buffer)
 
-        buffer_data = (
-            bytes(
-                ctypes.cast(
-                    typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
-                    ctypes.POINTER(spec_array_type),
-                ).contents
-            )
-            if spec.allocated_memory != 0
-            else b""
-        )
-
-        hashed = hashlib.sha256(buffer_data).hexdigest()
-
-        buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
-
-        # Haven't seen this constant before
-        if buffer_idx == -1:
-            # Update buffer_idx to point to the end of the list where we are adding the new buffer.
-            buffer = Buffer(storage=buffer_data)
-            buffer_idx = len(self.program_state.constant_buffer)
-            self.program_state.allocated_specs.append(spec)
-            # +1 because the first buffer location is reserved
-            self.program_state.cached_spec_hash_values[hashed] = buffer_idx
-            self.program_state.constant_buffer.append(buffer)
-
-        if spec.const and spec.nbytes() != len(buffer_data):
-            raise InternalError(
-                self._emit_node_specific_error(
-                    self.node,
-                    f"Tensor spec has buffer of size {len(buffer_data)}, but expected nbytes of {spec.nbytes()}",
+            if spec.const and spec.nbytes() != len(buffer_data):
+                raise InternalError(
+                    self._emit_node_specific_error(
+                        self.node,
+                        f"Tensor spec has buffer of size {len(buffer_data)}, but expected nbytes of {spec.nbytes()}",
+                    )
                 )
-            )
 
         # For constant tensors, allocation_info = None.
-        return EValue(make_tensor_value(buffer_idx, None, spec))
+        return EValue(make_tensor_value(buffer_idx, allocation_info, spec))
 
     def _get_list_tuple_jit_type(
         self, val: Union[Tuple[_Argument], List[_Argument]]
@@ -436,9 +454,9 @@ class _Emitter(torch.fx.Interpreter):
                 val_type = torch.ListType(
                     self._get_list_tuple_jit_type(val)  # pyre-ignore
                 )
-            if type(val_type) == torch.OptionalType:
+            if isinstance(val_type, torch.OptionalType):
                 val_type = val_type.getElementType()
-            assert type(val_type) == torch.ListType
+            assert isinstance(val_type, torch.ListType)
             return self._emit_list(
                 typing.cast(List[_Argument], val),
                 typing.cast(_SchemaType, val_type.getElementType()),
@@ -770,7 +788,7 @@ class _Emitter(torch.fx.Interpreter):
         # Increment iter_idx to mark that we have completed an iteration.
         op_index, op = self._get_operator(
             name="executorch_prim::add",
-            overload="int",
+            overload="Scalar",
         )
         kernel = Instruction(
             KernelCall(
@@ -787,7 +805,7 @@ class _Emitter(torch.fx.Interpreter):
         # section.
         op_index, op = self._get_operator(
             name="executorch_prim::eq",
-            overload="int",
+            overload="Scalar",
         )
         kernel = Instruction(
             KernelCall(
@@ -809,7 +827,7 @@ class _Emitter(torch.fx.Interpreter):
         # Reset iter_idx in case we plan to run the model again.
         op_index, op = self._get_operator(
             name="executorch_prim::sub",
-            overload="int",
+            overload="Scalar",
         )
         kernel = Instruction(
             KernelCall(
@@ -844,7 +862,39 @@ class _Emitter(torch.fx.Interpreter):
                 )
             )
 
-    def _add_debug_handle(self, emitter_id: int, target: _Target) -> None:
+    def _emit_view(self, args: Tuple[_Argument, ...]) -> _EmitterValue:
+        assert len(args) == 2
+
+        self_arg = self._emit_argument(args[0], torch.TensorType)  # pyre-ignore[6]
+        size_arg = self._emit_argument(args[1], torch.ListType.ofInts())
+        out_arg = self._emit_argument(
+            self._emit_spec(self.node.meta["spec"]), torch.TensorType  # pyre-ignore[6]
+        )
+
+        op_idx, op = self._get_operator(
+            name="executorch_prim::et_view",
+            overload="default",
+        )
+        kernel = Instruction(
+            KernelCall(
+                op_idx,
+                args=[
+                    self_arg.id,
+                    size_arg.id,
+                    out_arg.id,
+                ],
+            )
+        )
+        self.chain.instructions.append(kernel)
+        return out_arg
+
+    def _add_debug_handle(
+        self,
+        emitter_id: int,
+        target: _Target,
+        # pyre-ignore[11]: Annotation `LoweredBackendModule` is not defined as a type.
+        lowered_module: "Optional[LoweredBackendModule]" = None,  # noqa: F821
+    ) -> None:
         """Updates the debug handle information for the current node.
 
         If the current node is a delegate we agregate the debug handles of the subgraph and store
@@ -856,12 +906,14 @@ class _Emitter(torch.fx.Interpreter):
         # delegate call and store it in the debug handle map.
         if target == executorch_call_delegate:
             debug_handle_list = []
-            for node in self.node.graph.nodes:
+            # Use the lowered_module to fetch the original graph and its debug
+            # handles.
+            for node in lowered_module.original_module.graph.nodes:
                 if (
                     node.op == "call_function"
                     and node.meta.get("debug_handle") is not None
                 ):
-                    debug_handle_list += [node.meta.get("debug_handle")]
+                    debug_handle_list.append(node.meta.get("debug_handle"))
             self.debug_handle_map[emitter_id] = debug_handle_list
             # Debug handle for this node is the emitter_id which is essentially the index of the
             # instruction in the chain.
@@ -880,7 +932,6 @@ class _Emitter(torch.fx.Interpreter):
 
     def _add_delegate_map(
         self,
-        # pyre-ignore: Undefined or invalid type [11]: Annotation `LoweredBackendModule` is not defined as a type.
         lowered_module: "LoweredBackendModule",  # noqa
         delegate_instruction_id: int,
     ) -> None:
@@ -907,6 +958,35 @@ class _Emitter(torch.fx.Interpreter):
             return arg
         return self._emit_evalue(self._constant_to_evalue(arg, arg_type))
 
+    def _get_sym_ret(
+        self,
+        val: Tuple[Union[torch.SymInt, torch.BoolType, torch.FloatType, FakeTensor]],
+    ) -> Optional[_AbstractValue]:
+        """
+        Returns the emit ret for sym value.
+        """
+        ret = None
+        if isinstance(val, torch.SymInt):
+            ret = self._emit_evalue(EValue(Int(0)))
+        elif isinstance(val, torch.BoolType):
+            ret = self._emit_evalue(EValue(Bool(False)))
+        elif isinstance(val, torch.FloatType):
+            ret = self._emit_evalue(EValue(Double(0)))
+        return ret
+
+    def _get_sym_and_fake_tensor_ret(
+        self,
+        val: Tuple[Union[torch.SymInt, torch.BoolType, torch.FloatType, FakeTensor]],
+        spec: TensorSpec,
+    ) -> Union[List[_AbstractValue], _AbstractValue, Tuple[_AbstractValue, ...]]:
+        # Try to get the ret if it's a sym value.
+        ret = self._get_sym_ret(val)
+        # If the ret is None, it means that the val is not a sym value, but a regular tensor
+        if ret is None:
+            ret = self._emit_spec(spec)
+        assert ret is not None, "Can't have a None ret"
+        return ret
+
     def _emit_delegate(
         self,
         lowered_module: "LoweredBackendModule",  # noqa
@@ -918,7 +998,40 @@ class _Emitter(torch.fx.Interpreter):
         processed_bytes = lowered_module.processed_bytes
 
         delegate_index = self.emitter_state.delegate_cache.get(processed_bytes)
-        delegate_ret = self._emit_spec(self.node.meta["spec"])
+        delegate_ret = None
+
+        if isinstance(self.node.meta["spec"], list):
+            delegate_ret = []
+            for index, _ in enumerate(self.node.meta["val"]):
+                ret = self._get_sym_and_fake_tensor_ret(
+                    self.node.meta["val"][index], self.node.meta["spec"][index]
+                )
+                delegate_ret.append(ret)
+        elif isinstance(self.node.meta["spec"], tuple):
+            if isinstance(self.node.meta["val"], FakeTensor):
+                # There is a case when node.meta["spec"] is (TensorSpec, ) while node.meta["val"] is FakeTensor
+                ret = self._get_sym_and_fake_tensor_ret(
+                    self.node.meta["val"], self.node.meta["spec"][0]
+                )
+                delegate_ret = (ret,)
+            else:
+                delegate_ret = []
+                for index, _ in enumerate(self.node.meta["val"]):
+                    ret = self._get_sym_and_fake_tensor_ret(
+                        self.node.meta["val"][index], self.node.meta["spec"][index]
+                    )
+                    delegate_ret.append(ret)
+                delegate_ret = tuple(delegate_ret)
+        elif isinstance(self.node.meta["spec"], TensorSpec):
+            ret = self._get_sym_and_fake_tensor_ret(
+                self.node.meta["val"], self.node.meta["spec"]
+            )
+            delegate_ret = ret
+        else:
+            raise NotImplementedError(
+                f"self.node.meta['spec'] {type(self.node.meta['spec'])} is not supported"
+            )
+        assert delegate_ret is not None, "Can't have a None delegate_ret"
         if delegate_index is None:
             # Allocate an entry for the data. TODO(T150113674): Reuse any duplicate entries if
             # present.
@@ -995,7 +1108,7 @@ class _Emitter(torch.fx.Interpreter):
                     dim_order=[],
                     requires_grad=False,
                     layout=0,
-                    constant_buffer_idx=0,
+                    data_buffer_idx=0,
                     allocation_info=None,
                     shape_dynamism=TensorShapeDynamism.STATIC,
                 )
@@ -1036,13 +1149,8 @@ class _Emitter(torch.fx.Interpreter):
                 torch.BoolType,
                 torch.NumberType,
             ), f"Only symbolic ops that return a Int Bool Float are supported currently got {type(target._schema.returns[0].type)}."
-            if type(target._schema.returns[0].type) == torch.IntType:
-                ret = self._emit_evalue(EValue(Int(0)))
-            elif type(target._schema.returns[0].type) == torch.BoolType:
-                ret = self._emit_evalue(EValue(Bool(False)))
-            elif type(target._schema.returns[0].type) == torch.FloatType:
-                ret = self._emit_evalue(EValue(Double(0)))
-            else:  # type(target._schema.returns[0].type) == torch.NumberType:
+            ret = self._get_sym_ret(target._schema.returns[0])
+            if ret is None:  # type(target._schema.returns[0].type) == torch.NumberType:
                 # Cant definitively say what type this is, the runtime operator just overrides the EValue completely
                 # though so we can just serialize whatever as a placeholder.
                 ret = self._emit_evalue(EValue(Int(0)))
@@ -1088,6 +1196,77 @@ class _Emitter(torch.fx.Interpreter):
         )
         # The value is not used but the caller expects an AbstractValue returned.
         return _AbstractValue(None, None)  # pyre-ignore
+
+    def _emit_prim_getters(self, prim_getters: Dict[str, Any]) -> List[ExecutionPlan]:
+        """
+        Given a mapping of function names to return values, emit simple execution
+        plans that just return these constant values.
+
+        Precondition: All the values are primitives (bool, float, int, str, enum)
+        or structures (list, dict) of them.
+        """
+        plans = []
+        # flatten any structures
+        for method, vals in prim_getters.items():
+            # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
+            flattened_output, spec = ex_pytree.tree_flatten(vals)
+            spec = spec.to_str()
+            chain = Chain(
+                inputs=[],
+                outputs=[],
+                instructions=[],
+                stacktrace=None,
+            )
+
+            # switch on type of prim
+            values = []
+            for val in flattened_output:
+                if isinstance(val, float):
+                    values.append(EValue(Double(val)))
+
+                elif isinstance(val, bool):
+                    values.append(EValue(Bool(val)))
+
+                elif isinstance(val, int):
+                    values.append(EValue(Int(val)))
+
+                elif isinstance(val, str):
+                    values.append(EValue(String(val)))
+
+                elif isinstance(val, torch.dtype):
+                    values.append(EValue(Int(scalar_type_enum(val))))
+
+                elif isinstance(val, torch.layout):
+                    values.append(EValue(Int(layout_enum(val))))
+
+                elif isinstance(val, torch.Tensor):
+                    values.append(
+                        self._tensor_spec_to_evalue(
+                            TensorSpec.from_tensor(val, const=True)
+                        )
+                    )
+
+                else:
+                    raise ExportError(
+                        ExportErrorType.NOT_SUPPORTED,
+                        f"Error emitting {method} which returns a value of type {type(val)}. which is not a supported primitive",
+                    )
+
+            # add to plans
+            plans.append(
+                ExecutionPlan(
+                    name=method,
+                    values=values,
+                    inputs=[],
+                    outputs=list(range(0, len(values))),
+                    chains=[chain],
+                    operators=[],
+                    delegates=[],
+                    non_const_buffer_sizes=[0],
+                    container_meta_type=ContainerMetadata("", spec),
+                )
+            )
+        return plans
 
     def fetch_attr(self, target: _Target) -> _AbstractValue:
         """Fetch weights and other module parameters. If the attribute is a tensor, emit it."""
@@ -1198,6 +1377,9 @@ class _Emitter(torch.fx.Interpreter):
             assert len(args) == 1
             return self._emit_spec(self.node.meta["spec"])
 
+        elif target == memory.view:
+            return self._emit_view(args)
+
         elif target == memory.free:
             assert len(args) == 1
             # pyre-ignore
@@ -1214,7 +1396,7 @@ class _Emitter(torch.fx.Interpreter):
             assert is_lowered_module(lowered_module)
             v = self._emit_delegate(lowered_module, args[1:], kwargs)
             delegate_instruction_id = len(self.chain.instructions) - 1
-            self._add_debug_handle(delegate_instruction_id, target)
+            self._add_debug_handle(delegate_instruction_id, target, lowered_module)
             self._add_delegate_map(lowered_module, delegate_instruction_id)
             return v
 

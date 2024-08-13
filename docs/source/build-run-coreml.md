@@ -1,6 +1,6 @@
 # Building and Running ExecuTorch with Core ML Backend
 
-Core ML delegate uses Core ML apis to enable running neural networks via Apple's hardware acceleration. For more about coreml you can read [here](https://developer.apple.com/documentation/coreml). In this tutorial we will walk through steps of lowering a PyTorch model to Core ML delegate
+Core ML delegate uses Core ML APIs to enable running neural networks via Apple's hardware acceleration. For more about Core ML you can read [here](https://developer.apple.com/documentation/coreml). In this tutorial, we will walk through the steps of lowering a PyTorch model to Core ML delegate
 
 
 ::::{grid} 2
@@ -24,8 +24,8 @@ Core ML delegate uses Core ML apis to enable running neural networks via Apple's
 In order to be able to successfully build and run the ExecuTorch's Core ML backend you'll need the following hardware and software components.
 
 ### Hardware:
-- A [mac](https://www.apple.com/mac/]) system for building.
-- A [mac](https://www.apple.com/mac/]) or [iPhone](https://www.apple.com/iphone/) or [iPad](https://www.apple.com/ipad/) or [Apple TV](https://www.apple.com/tv-home/) device for running the model.
+- A [mac](https://www.apple.com/mac/) system for building.
+- A [mac](https://www.apple.com/mac/) or [iPhone](https://www.apple.com/iphone/) or [iPad](https://www.apple.com/ipad/) or [Apple TV](https://www.apple.com/tv-home/) device for running the model.
 
 ### Software:
 
@@ -67,21 +67,52 @@ python3 -m examples.apple.coreml.scripts.export --model_name mv3
 
 ### Runtime:
 
-**Running the Core ML delegated Program**:
+**Running a Core ML delegated Program**:
 1. Build the runner.
 ```bash
 cd executorch
 
-# Generates ./coreml_executor_runner.
+# Builds `coreml_executor_runner`.
 ./examples/apple/coreml/scripts/build_executor_runner.sh
 ```
-2. Run the exported program.
+2. Run the CoreML delegated program.
 ```bash
 cd executorch
 
-# Runs the exported mv3 model on the Core ML backend.
+# Runs the exported mv3 model using the Core ML backend.
 ./coreml_executor_runner --model_path mv3_coreml_all.pte
 ```
+
+**Profiling a Core ML delegated Program**:
+
+Note that profiling is supported on [macOS](https://developer.apple.com/macos) >= 14.4.
+
+1. [Optional] Generate an [ETRecord](./sdk-etrecord.rst) when exporting your model.
+```bash
+cd executorch
+
+# Generates `mv3_coreml_all.pte` and `mv3_coreml_etrecord.bin` files.
+python3 -m examples.apple.coreml.scripts.export --model_name mv3 --generate_etrecord
+```
+
+2. Build the runner.
+```bash
+# Builds `coreml_executor_runner`.
+./examples/apple/coreml/scripts/build_executor_runner.sh
+```
+3. Run and generate an [ETDump](./sdk-etdump.md).
+```bash
+cd executorch
+
+# Generate the ETDump file.
+./coreml_executor_runner --model_path mv3_coreml_all.pte --profile_model --etdump_path etdump.etdp
+```
+
+4. Create an instance of the [Inspector API](./sdk-inspector.rst) by passing in the [ETDump](./sdk-etdump.md) you have sourced from the runtime along with the optionally generated [ETRecord](./sdk-etrecord.rst) from step 1 or execute the following command in your terminal to display the profiling data table.
+```bash
+python examples/apple/coreml/scripts/inspector_cli.py --etdump_path etdump.etdp --etrecord_path mv3_coreml.bin
+```
+
 
 ## Deploying and running on a device
 
@@ -92,27 +123,27 @@ cd executorch
 
 3. Complete the [Final Steps](demo-apps-ios.md#final-steps) section of the tutorial to build and run the demo app.
 
-<br>**Running the Core ML delegated Program in your own App**
-1. Build **Core ML** delegate. The following will create a `executorch.xcframework` in the `cmake-out` directory.
+<br>**Running the Core ML delegated Program in your App**
+1. Build frameworks, running the following will create a `executorch.xcframework` and `coreml_backend.xcframework` in the `cmake-out` directory.
 ```bash
 cd executorch
-./build/build_apple_frameworks.sh --Release --coreml
+./build/build_apple_frameworks.sh --coreml
 ```
 2. Create a new [Xcode project](https://developer.apple.com/documentation/xcode/creating-an-xcode-project-for-an-app#) or open an existing project.
 
-3. Drag the `executorch.xcframework` generated from Step 2 to Frameworks.
+3. Drag the `executorch.xcframework` and `coreml_backend.xcframework` generated from Step 2 to Frameworks.
 
 4. Go to the project's [Build Phases](https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target) -  Link Binaries With Libraries, click the + sign, and add the following frameworks:
 ```
-- executorch.xcframework
-- coreml_backend.xcframework
-- Accelerate.framework
-- CoreML.framework
-- libsqlite3.tbd
+executorch.xcframework
+coreml_backend.xcframework
+Accelerate.framework
+CoreML.framework
+libsqlite3.tbd
 ```
 5. Add the exported program to the [Copy Bundle Phase](https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target#Copy-files-to-the-finished-product) of your Xcode target.
 
-6. Please follow the [running a model](running-a-model-cpp-tutorial.md) tutorial to integrate the code for loading a ExecuTorch program.
+6. Please follow the [Runtime APIs Tutorial](extension-module.md) to integrate the code for loading an ExecuTorch program.
 
 7. Update the code to load the program from the Application's bundle.
 ``` objective-c
@@ -120,9 +151,7 @@ using namespace torch::executor;
 
 NSURL *model_url = [NBundle.mainBundle URLForResource:@"mv3_coreml_all" extension:@"pte"];
 
-Result<util::FileDataLoader> loader =
-        util::FileDataLoader::from(model_url.path.UTF8String);
-
+Result<util::FileDataLoader> loader = util::FileDataLoader::from(model_url.path.UTF8String);
 ```
 
 8. Use [Xcode](https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app) to deploy the application on the device.

@@ -8,30 +8,26 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 //
 // For objects in the graph
 //
 
 void bind_tensor_to_descriptor_set(
-    vTensor& tensor,
-    api::PipelineBarrier& pipeline_barrier,
-    const api::MemoryAccessType accessType,
-    api::DescriptorSet& descriptor_set,
+    api::vTensor& tensor,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    const vkapi::MemoryAccessType accessType,
+    vkapi::DescriptorSet& descriptor_set,
     const uint32_t idx);
 
 uint32_t bind_values_to_descriptor_set(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
-    api::PipelineBarrier& pipeline_barrier,
-    api::DescriptorSet& descriptor_set,
+    vkapi::PipelineBarrier& pipeline_barrier,
+    vkapi::DescriptorSet& descriptor_set,
     const uint32_t base_idx);
 
 //
@@ -39,17 +35,13 @@ uint32_t bind_values_to_descriptor_set(
 //
 
 uint32_t bind_params_to_descriptor_set(
-    std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params,
-    api::DescriptorSet& descriptor_set,
+    const vkapi::ParamsBindList& params,
+    vkapi::DescriptorSet& descriptor_set,
     const uint32_t base_idx);
 
 void bind_staging_to_descriptor_set(
     api::StorageBuffer& staging,
-    api::DescriptorSet& descriptor_set,
+    vkapi::DescriptorSet& descriptor_set,
     const uint32_t idx);
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

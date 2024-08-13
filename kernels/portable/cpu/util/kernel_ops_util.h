@@ -20,7 +20,15 @@ namespace executor {
  * the first element will be returned regardless of what i is requested to
  * simulate broadcasting.
  */
-int64_t val_at(IntArrayRef array, size_t i, int64_t default_value = 1);
+inline int64_t val_at(IntArrayRef array, size_t i, int64_t default_value = 1) {
+  if (array.size() == 1) {
+    return array[0];
+  } else if (array.size() > 1) {
+    return array[i];
+  } else {
+    return default_value;
+  }
+}
 
 /**
  * Checks that all elements of an IntArray are greater than or equal to `val`.
@@ -64,7 +72,9 @@ void calculate_kernel_output_sizes(
     IntArrayRef padding,
     IntArrayRef dilation,
     exec_aten::SizesType* out_sizes,
-    bool ceil_mode = false);
+    bool ceil_mode = false,
+    bool transposed = false,
+    IntArrayRef output_padding = {});
 
 //
 // Utility functions to apply reduction over a N-dimensional kernel window
@@ -409,6 +419,9 @@ void get_convolution_out_target_size(
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
+    bool transposed,
+    IntArrayRef output_padding,
+    int64_t groups,
     exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 

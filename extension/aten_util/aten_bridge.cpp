@@ -68,6 +68,8 @@ torch::executor::ScalarType torchToExecuTorchScalarType(caffe2::TypeMeta type) {
       return torch::executor::ScalarType::Byte;
     case c10::ScalarType::Char:
       return torch::executor::ScalarType::Char;
+    case c10::ScalarType::Short:
+      return torch::executor::ScalarType::Short;
     case c10::ScalarType::Half:
       return torch::executor::ScalarType::Half;
     case c10::ScalarType::Int:
@@ -95,6 +97,8 @@ c10::ScalarType execuTorchtoTorchScalarType(torch::executor::ScalarType type) {
       return c10::ScalarType::Byte;
     case torch::executor::ScalarType::Char:
       return c10::ScalarType::Char;
+    case torch::executor::ScalarType::Short:
+      return c10::ScalarType::Short;
     case torch::executor::ScalarType::Half:
       return c10::ScalarType::Half;
     case torch::executor::ScalarType::Int:
@@ -146,8 +150,15 @@ at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
   c10::ScalarType dtype = execuTorchtoTorchScalarType(etensor.scalar_type());
   std::vector<int64_t> at_tensor_sizes(
       etensor.sizes().begin(), etensor.sizes().end());
+  std::vector<int64_t> at_tensor_strides(
+      etensor.strides().begin(), etensor.strides().end());
+
   at::Tensor t = at::from_blob(
-      etensor.mutable_data_ptr(), at_tensor_sizes, at::TensorOptions(dtype));
+      etensor.mutable_data_ptr(),
+      at_tensor_sizes,
+      at_tensor_strides,
+      at::TensorOptions(dtype));
+
   check_tensor_meta(t, etensor);
   return t;
 }

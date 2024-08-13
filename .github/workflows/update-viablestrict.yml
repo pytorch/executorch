@@ -20,6 +20,6 @@ jobs:
         with:
           repository: pytorch/executorch
           stable-branch: viable/strict
-          requires: '[\"pull\", \"lint\", \"trunk\", \"Build documentation\"]'
+          requires: '[\"pull\", \"lint\", \"trunk\", \"Build documentation\", \"Android\", \"Apple\"]'
           secret-bot-token: ${{ secrets.UPDATEBOT_TOKEN }}
           rockset-api-key: ${{ secrets.ROCKSET_API_KEY }}

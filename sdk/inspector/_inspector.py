@@ -46,6 +46,7 @@ from executorch.sdk.inspector._inspector_utils import (
     gen_graphs_from_etrecord,
     inflate_runtime_output,
     is_debug_output,
+    is_inference_output_equal,
     ProgramOutput,
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TIME_SCALE_DICT,
@@ -64,6 +65,8 @@ log: logging.Logger = logging.getLogger(__name__)
 class InstructionEventSignature:
     instruction_id: int
     chain_index: int
+    delegate_id: Optional[int] = None
+    delegate_id_str: Optional[str] = None
 
 
 # Aggregated Runtime Events for a single instruction
@@ -91,8 +94,12 @@ class InstructionEvent:
 
             # Get existing InstructionEvent or insert a new one
             signature = InstructionEventSignature(
-                populated_event.instruction_id, populated_event.chain_index
+                instruction_id=populated_event.instruction_id,
+                chain_index=populated_event.chain_index,
+                delegate_id=populated_event.delegate_debug_id_int,
+                delegate_id_str=populated_event.delegate_debug_id_str,
             )
+
             instruction_event = instruction_events.setdefault(
                 signature, InstructionEvent(signature=signature)
             )
@@ -103,6 +110,7 @@ class InstructionEvent:
                     instruction_event.profile_events = []
                 instruction_event.profile_events.append(populated_event)
             elif isinstance(populated_event, DebugEvent):
+                # Ignore run_output events
                 if not is_debug_output(populated_event.debug_entry):
                     if instruction_event.debug_events is None:
                         instruction_event.debug_events = []
@@ -138,7 +146,9 @@ class ProfileEventSignature:
 # Signature of a DebugEvent
 @dataclass(frozen=True, order=True)
 class DebugEventSignature:
-    instruction_id: Optional[int]
+    instruction_id: Optional[int] = -1
+    delegate_id: Optional[int] = None
+    delegate_id_str: Optional[str] = None
 
     @staticmethod
     def _gen_from_event(event: DebugEvent) -> "DebugEventSignature":
@@ -149,7 +159,9 @@ class DebugEventSignature:
         The Signature will convert these back to the intended None value
         """
         return DebugEventSignature(
-            event.instruction_id if event.instruction_id != -1 else None
+            event.instruction_id if event.instruction_id != -1 else None,
+            event.delegate_debug_id_int if event.delegate_debug_id_int != -1 else None,
+            event.delegate_debug_id_str if event.delegate_debug_id_str != "" else None,
         )
 
 
@@ -312,6 +324,9 @@ class Event:
     _instruction_id: Optional[int] = None
 
     _delegate_metadata_parser: Optional[Callable[[List[str]], Dict[str, Any]]] = None
+    _delegate_time_scale_converter: Optional[
+        Callable[[Union[int, str], Union[int, float]], Union[int, float]]
+    ] = None
 
     @cached_property
     def delegate_debug_metadatas(self) -> Union[List[str], Dict[str, Any]]:
@@ -391,6 +406,9 @@ class Event:
         delegate_metadata_parser: Optional[
             Callable[[List[str]], Dict[str, Any]]
         ] = None,
+        delegate_time_scale_converter: Optional[
+            Callable[[Union[int, str], Union[int, float]], Union[int, float]]
+        ] = None,
     ) -> "Event":
         """
         Given an EventSignature and a list of Events with that signature,
@@ -411,6 +429,7 @@ class Event:
             name="",
             _instruction_id=signature.instruction_id,
             _delegate_metadata_parser=delegate_metadata_parser,
+            _delegate_time_scale_converter=delegate_time_scale_converter,
         )
 
         # Populate fields from profile events
@@ -424,6 +443,25 @@ class Event:
         )
 
         return ret_event
+
+    @staticmethod
+    def _calculate_elapsed_time(start_time, end_time):
+        # We're assuming if there's a wraparound in the time values, then
+        # the time representation of that platform only contains 32 bits.
+        # This should be fine for now, but ideally we should source the max
+        # time value from the platform using etdump.
+        max_uint32 = 2**32 - 1
+        if start_time > end_time:
+            if (start_time > max_uint32) or (end_time > max_uint32):
+                raise ValueError(
+                    f"Expected start_time ({start_time}) and end_time ({end_time}) to be less than {max_uint32} for cases where there is wrap-around of time values."
+                )
+            # Handle wraparound
+            elapsed_time = (max_uint32 - start_time) + end_time
+        else:
+            # Normal case
+            elapsed_time = end_time - start_time
+        return elapsed_time
 
     @staticmethod
     def _populate_profiling_related_fields(
@@ -476,14 +514,39 @@ class Event:
                         f"Expected exactly one profile event per InstructionEvent when generating Inspector Event, but got {len(profile_events)}"
                     )
 
-                # Scale factor should only be applied to non-delegated ops
-                scale_factor_updated = 1 if ret_event.is_delegated_op else scale_factor
-
                 profile_event = profile_events[0]
-                data.append(
-                    float(profile_event.end_time - profile_event.start_time)
-                    / scale_factor_updated
-                )
+
+                # Scale factor should only be applied to non-delegated ops
+                if (
+                    ret_event.is_delegated_op
+                    and (convert_time_scale := ret_event._delegate_time_scale_converter)
+                    is not None
+                ):
+                    scaled_time = Event._calculate_elapsed_time(
+                        convert_time_scale(ret_event.name, profile_event.start_time),
+                        convert_time_scale(ret_event.name, profile_event.end_time),
+                    )
+                # If it's not a delegated op then we can just use the raw time values
+                # and then scale them according to the scale factor that was passed in.
+                elif not ret_event.is_delegated_op:
+                    scaled_time = (
+                        float(
+                            Event._calculate_elapsed_time(
+                                profile_event.start_time, profile_event.end_time
+                            )
+                        )
+                        / scale_factor
+                    )
+                # If there was no scale factor passed in just take a difference of the
+                # end and start times.
+                else:
+                    scaled_time = float(
+                        Event._calculate_elapsed_time(
+                            profile_event.start_time, profile_event.end_time
+                        )
+                    )
+
+                data.append(scaled_time)
                 delegate_debug_metadatas.append(
                     profile_event.delegate_debug_metadata
                     if profile_event.delegate_debug_metadata
@@ -510,6 +573,7 @@ class Event:
         Fields Updated:
             debug_data
         """
+
         debug_data: List[flatcc.Value] = []
         for event in events:
             if (debug_events := event.debug_events) is None:
@@ -520,8 +584,10 @@ class Event:
                 debug_data = [debug_event.debug_entry for debug_event in debug_events]
             else:
                 for debug_event, value in zip(debug_events, debug_data):
-                    assert (
-                        debug_event.debug_entry == value
+                    v1 = inflate_runtime_output(debug_event.debug_entry, output_buffer)
+                    v2 = inflate_runtime_output(value, output_buffer)
+                    assert is_inference_output_equal(
+                        v1, v2
                     ), """Corresponding debug events in multiple iterations of the model
                     must have the same debug entry values. This is not the case for the
                     intermediate data present in this ETDump and indicates potential issues
@@ -646,6 +712,9 @@ class EventBlock:
         delegate_metadata_parser: Optional[
             Callable[[List[str]], Dict[str, Any]]
         ] = None,
+        delegate_time_scale_converter: Optional[
+            Callable[[Union[int, str], Union[int, float]], Union[int, float]]
+        ] = None,
     ) -> List["EventBlock"]:
         """
         Given an etdump, generate a list of EventBlocks corresponding to the
@@ -743,6 +812,7 @@ class EventBlock:
                     scale_factor,
                     output_buffer,
                     delegate_metadata_parser,
+                    delegate_time_scale_converter,
                 )
                 for signature, instruction_events in run_group.items()
             ]
@@ -837,7 +907,7 @@ class EventBlock:
 
             # For delegated events, handles are found via delegateMetadata
             event.delegate_backend_name = delegate_metadata.get("name", "")
-            delegate_metadata_delegate_map = delegate_metadata.get("delegate_map", {})
+            delegate_metadata_delegate_map = delegate_metadata.get("delegate_map") or {}
 
             # delegate_debug_id can be either int based or string based, therefore we need to check both
             debug_handles = delegate_metadata_delegate_map.get(
@@ -874,6 +944,9 @@ class Inspector:
         debug_buffer_path: Optional[str] = None,
         delegate_metadata_parser: Optional[
             Callable[[List[str]], Dict[str, Any]]
+        ] = None,
+        delegate_time_scale_converter: Optional[
+            Callable[[Union[int, str], Union[int, float]], Union[int, float]]
         ] = None,
         enable_module_hierarchy: bool = False,
     ) -> None:
@@ -930,6 +1003,7 @@ class Inspector:
             self._target_time_scale,
             output_buffer,
             delegate_metadata_parser=delegate_metadata_parser,
+            delegate_time_scale_converter=delegate_time_scale_converter,
         )
 
         # Connect ETRecord to EventBlocks

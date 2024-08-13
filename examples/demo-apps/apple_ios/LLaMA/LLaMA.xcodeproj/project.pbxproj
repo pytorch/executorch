@@ -1,0 +1,956 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0324D68B2BAACB6900DEF36F /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6802BAACB6900DEF36F /* App.swift */; };
+		0324D68C2BAACB6900DEF36F /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6812BAACB6900DEF36F /* ContentView.swift */; };
+		0324D68D2BAACB6900DEF36F /* LogManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6822BAACB6900DEF36F /* LogManager.swift */; };
+		0324D68E2BAACB6900DEF36F /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6832BAACB6900DEF36F /* LogView.swift */; };
+		0324D68F2BAACB6900DEF36F /* Message.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6842BAACB6900DEF36F /* Message.swift */; };
+		0324D6902BAACB6900DEF36F /* MessageListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6852BAACB6900DEF36F /* MessageListView.swift */; };
+		0324D6912BAACB6900DEF36F /* MessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6862BAACB6900DEF36F /* MessageView.swift */; };
+		0324D6922BAACB6900DEF36F /* ResourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6872BAACB6900DEF36F /* ResourceManager.swift */; };
+		0324D6932BAACB6900DEF36F /* ResourceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6882BAACB6900DEF36F /* ResourceMonitor.swift */; };
+		0324D6962BAACB7000DEF36F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0324D6942BAACB7000DEF36F /* Assets.xcassets */; };
+		03312C192BBFC940002106EF /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C182BBFC940002106EF /* backend_coreml */; };
+		03312C1B2BBFC940002106EF /* backend_coreml_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C1A2BBFC940002106EF /* backend_coreml_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C1D2BBFC940002106EF /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C1C2BBFC940002106EF /* kernels_custom */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C1F2BBFC940002106EF /* kernels_custom_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C1E2BBFC940002106EF /* kernels_custom_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C252BBFC940002106EF /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C242BBFC940002106EF /* backend_mps */; };
+		03312C272BBFC940002106EF /* backend_mps_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C262BBFC940002106EF /* backend_mps_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C292BBFC940002106EF /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C282BBFC940002106EF /* kernels_optimized */; };
+		03312C2B2BBFC940002106EF /* kernels_optimized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C2A2BBFC940002106EF /* kernels_optimized_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C2D2BBFC940002106EF /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C2C2BBFC940002106EF /* kernels_portable */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C2F2BBFC940002106EF /* kernels_portable_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C2E2BBFC940002106EF /* kernels_portable_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C312BBFC940002106EF /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C302BBFC940002106EF /* kernels_quantized */; };
+		03312C332BBFC940002106EF /* kernels_quantized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C322BBFC940002106EF /* kernels_quantized_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C352BBFC940002106EF /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C342BBFC940002106EF /* backend_xnnpack */; };
+		03312C372BBFC940002106EF /* backend_xnnpack_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C362BBFC940002106EF /* backend_xnnpack_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C3E2BBFD076002106EF /* executorch_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C3D2BBFD076002106EF /* executorch_debug */; };
+		03729EDB2BB1F8DE00152F2E /* LLaMARunner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */; };
+		03729EDC2BB1F8DE00152F2E /* LLaMARunner.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */; };
+		03729EE22BB1F93E00152F2E /* LLaMARunner.h in Headers */ = {isa = PBXBuildFile; fileRef = 0324D6992BAACB7C00DEF36F /* LLaMARunner.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		03729F0A2BB203B300152F2E /* runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F072BB203B300152F2E /* runner.cpp */; };
+		03729F0B2BB203B300152F2E /* runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F082BB203B300152F2E /* runner.h */; };
+		03729F0C2BB203B300152F2E /* util.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F092BB203B300152F2E /* util.h */; };
+		03729F122BB2042B00152F2E /* sampler.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F102BB2042B00152F2E /* sampler.h */; };
+		03729F132BB2042B00152F2E /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F112BB2042B00152F2E /* sampler.cpp */; };
+		03729F162BB2043600152F2E /* bpe_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F142BB2043600152F2E /* bpe_tokenizer.cpp */; };
+		03729F172BB2043600152F2E /* tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F152BB2043600152F2E /* tokenizer.h */; };
+		038D678C2C482C1E00B88CF2 /* llama_tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 038D678A2C482C1D00B88CF2 /* llama_tiktoken.cpp */; };
+		038D678D2C482C1E00B88CF2 /* llama_tiktoken.h in Headers */ = {isa = PBXBuildFile; fileRef = 038D678B2C482C1E00B88CF2 /* llama_tiktoken.h */; };
+		03BADE202BD2E88600DDFDC2 /* bpe_tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */; };
+		03BADE232BD2EB6700DDFDC2 /* tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03BADE212BD2EB6600DDFDC2 /* tiktoken.cpp */; };
+		03BADE242BD2EB6700DDFDC2 /* tiktoken.h in Headers */ = {isa = PBXBuildFile; fileRef = 03BADE222BD2EB6700DDFDC2 /* tiktoken.h */; };
+		03DDA0FB2BD6368100D234B3 /* base64.h in Headers */ = {isa = PBXBuildFile; fileRef = 03DDA0FA2BD6368100D234B3 /* base64.h */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		03729ED92BB1F8DE00152F2E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 032C01672AC228E5002955E1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 03729ED42BB1F8DE00152F2E;
+			remoteInfo = LLaMARunner;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		03729EE02BB1F8DE00152F2E /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				03729EDC2BB1F8DE00152F2E /* LLaMARunner.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0320439D2BB4AC6600050211 /* LLaMA-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "LLaMA-Info.plist"; sourceTree = "<group>"; };
+		0324D6802BAACB6900DEF36F /* App.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		0324D6812BAACB6900DEF36F /* ContentView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		0324D6822BAACB6900DEF36F /* LogManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LogManager.swift; sourceTree = "<group>"; };
+		0324D6832BAACB6900DEF36F /* LogView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
+		0324D6842BAACB6900DEF36F /* Message.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Message.swift; sourceTree = "<group>"; };
+		0324D6852BAACB6900DEF36F /* MessageListView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MessageListView.swift; sourceTree = "<group>"; };
+		0324D6862BAACB6900DEF36F /* MessageView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MessageView.swift; sourceTree = "<group>"; };
+		0324D6872BAACB6900DEF36F /* ResourceManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ResourceManager.swift; sourceTree = "<group>"; };
+		0324D6882BAACB6900DEF36F /* ResourceMonitor.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ResourceMonitor.swift; sourceTree = "<group>"; };
+		0324D6942BAACB7000DEF36F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		0324D6992BAACB7C00DEF36F /* LLaMARunner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LLaMARunner.h; sourceTree = "<group>"; };
+		0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = LLaMARunner.mm; sourceTree = "<group>"; };
+		035A5E942BB4B523001E0553 /* LLaMA.entitlements */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; path = LLaMA.entitlements; sourceTree = "<group>"; };
+		036CAF9D2BB1444500D6C2D5 /* LLaMA.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LLaMA.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LLaMARunner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		03729F072BB203B300152F2E /* runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = runner.cpp; sourceTree = "<group>"; };
+		03729F082BB203B300152F2E /* runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = runner.h; sourceTree = "<group>"; };
+		03729F092BB203B300152F2E /* util.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
+		03729F102BB2042B00152F2E /* sampler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = sampler.h; sourceTree = "<group>"; };
+		03729F112BB2042B00152F2E /* sampler.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = sampler.cpp; sourceTree = "<group>"; };
+		03729F142BB2043600152F2E /* bpe_tokenizer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = bpe_tokenizer.cpp; path = ../../../../extension/llm/tokenizer/bpe_tokenizer.cpp; sourceTree = "<group>"; };
+		03729F152BB2043600152F2E /* tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = tokenizer.h; path = ../../../../extension/llm/tokenizer/tokenizer.h; sourceTree = "<group>"; };
+		038D678A2C482C1D00B88CF2 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = llama_tiktoken.cpp; sourceTree = "<group>"; };
+		038D678B2C482C1E00B88CF2 /* llama_tiktoken.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = llama_tiktoken.h; sourceTree = "<group>"; };
+		03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = bpe_tokenizer.h; path = ../../../../extension/llm/tokenizer/bpe_tokenizer.h; sourceTree = "<group>"; };
+		03BADE212BD2EB6600DDFDC2 /* tiktoken.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = tiktoken.cpp; path = ../../../../extension/llm/tokenizer/tiktoken.cpp; sourceTree = "<group>"; };
+		03BADE222BD2EB6700DDFDC2 /* tiktoken.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = tiktoken.h; path = ../../../../extension/llm/tokenizer/tiktoken.h; sourceTree = "<group>"; };
+		03DDA0FA2BD6368100D234B3 /* base64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = base64.h; path = ../../../../extension/llm/tokenizer/base64.h; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		032C016C2AC228E6002955E1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				03312C272BBFC940002106EF /* backend_mps_debug in Frameworks */,
+				03312C312BBFC940002106EF /* kernels_quantized in Frameworks */,
+				03312C252BBFC940002106EF /* backend_mps in Frameworks */,
+				03312C2D2BBFC940002106EF /* kernels_portable in Frameworks */,
+				03312C1D2BBFC940002106EF /* kernels_custom in Frameworks */,
+				03312C352BBFC940002106EF /* backend_xnnpack in Frameworks */,
+				03312C372BBFC940002106EF /* backend_xnnpack_debug in Frameworks */,
+				03312C1B2BBFC940002106EF /* backend_coreml_debug in Frameworks */,
+				03729EDB2BB1F8DE00152F2E /* LLaMARunner.framework in Frameworks */,
+				03312C2B2BBFC940002106EF /* kernels_optimized_debug in Frameworks */,
+				03312C2F2BBFC940002106EF /* kernels_portable_debug in Frameworks */,
+				03312C292BBFC940002106EF /* kernels_optimized in Frameworks */,
+				03312C192BBFC940002106EF /* backend_coreml in Frameworks */,
+				03312C332BBFC940002106EF /* kernels_quantized_debug in Frameworks */,
+				03312C1F2BBFC940002106EF /* kernels_custom_debug in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		03729ED22BB1F8DE00152F2E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				03312C3E2BBFD076002106EF /* executorch_debug in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0320439E2BB4AC6600050211 /* SupportingFiles */ = {
+			isa = PBXGroup;
+			children = (
+				0320439D2BB4AC6600050211 /* LLaMA-Info.plist */,
+			);
+			path = SupportingFiles;
+			sourceTree = "<group>";
+		};
+		0324D6892BAACB6900DEF36F /* Application */ = {
+			isa = PBXGroup;
+			children = (
+				0324D6802BAACB6900DEF36F /* App.swift */,
+				0324D6812BAACB6900DEF36F /* ContentView.swift */,
+				0324D6822BAACB6900DEF36F /* LogManager.swift */,
+				0324D6832BAACB6900DEF36F /* LogView.swift */,
+				0324D6842BAACB6900DEF36F /* Message.swift */,
+				0324D6852BAACB6900DEF36F /* MessageListView.swift */,
+				0324D6862BAACB6900DEF36F /* MessageView.swift */,
+				0324D6872BAACB6900DEF36F /* ResourceManager.swift */,
+				0324D6882BAACB6900DEF36F /* ResourceMonitor.swift */,
+			);
+			path = Application;
+			sourceTree = "<group>";
+		};
+		0324D68A2BAACB6900DEF36F /* LLaMA */ = {
+			isa = PBXGroup;
+			children = (
+				0324D6892BAACB6900DEF36F /* Application */,
+				0320439E2BB4AC6600050211 /* SupportingFiles */,
+			);
+			path = LLaMA;
+			sourceTree = "<group>";
+		};
+		0324D6952BAACB7000DEF36F /* LLaMAAssets */ = {
+			isa = PBXGroup;
+			children = (
+				0324D6942BAACB7000DEF36F /* Assets.xcassets */,
+			);
+			path = LLaMAAssets;
+			sourceTree = "<group>";
+		};
+		0324D69B2BAACB7C00DEF36F /* Exported */ = {
+			isa = PBXGroup;
+			children = (
+				0324D6992BAACB7C00DEF36F /* LLaMARunner.h */,
+				0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */,
+			);
+			path = Exported;
+			sourceTree = "<group>";
+		};
+		0324D69C2BAACB7C00DEF36F /* LLaMARunner */ = {
+			isa = PBXGroup;
+			children = (
+				0324D69B2BAACB7C00DEF36F /* Exported */,
+				03729F062BB2035900152F2E /* runner */,
+				03729F0F2BB203E100152F2E /* sampler */,
+				03729F0E2BB203D700152F2E /* tokenizer */,
+			);
+			path = LLaMARunner;
+			sourceTree = "<group>";
+		};
+		0324D69F2BAACB7C00DEF36F /* LLaMARunner */ = {
+			isa = PBXGroup;
+			children = (
+				0324D69C2BAACB7C00DEF36F /* LLaMARunner */,
+			);
+			path = LLaMARunner;
+			sourceTree = "<group>";
+		};
+		032C01662AC228E5002955E1 = {
+			isa = PBXGroup;
+			children = (
+				0324D68A2BAACB6900DEF36F /* LLaMA */,
+				0324D6952BAACB7000DEF36F /* LLaMAAssets */,
+				035A5E952BB4B523001E0553 /* LLaMAEntitlements */,
+				0324D69F2BAACB7C00DEF36F /* LLaMARunner */,
+				036CAF9D2BB1444500D6C2D5 /* LLaMA.app */,
+				03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */,
+			);
+			sourceTree = "<group>";
+		};
+		035A5E952BB4B523001E0553 /* LLaMAEntitlements */ = {
+			isa = PBXGroup;
+			children = (
+				035A5E942BB4B523001E0553 /* LLaMA.entitlements */,
+			);
+			path = LLaMAEntitlements;
+			sourceTree = "<group>";
+		};
+		03729F062BB2035900152F2E /* runner */ = {
+			isa = PBXGroup;
+			children = (
+				03729F072BB203B300152F2E /* runner.cpp */,
+				03729F082BB203B300152F2E /* runner.h */,
+				03729F092BB203B300152F2E /* util.h */,
+			);
+			name = runner;
+			path = ../../../../../models/llama2/runner;
+			sourceTree = "<group>";
+		};
+		03729F0E2BB203D700152F2E /* tokenizer */ = {
+			isa = PBXGroup;
+			children = (
+				03DDA0FA2BD6368100D234B3 /* base64.h */,
+				03729F142BB2043600152F2E /* bpe_tokenizer.cpp */,
+				03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */,
+				038D678A2C482C1D00B88CF2 /* llama_tiktoken.cpp */,
+				038D678B2C482C1E00B88CF2 /* llama_tiktoken.h */,
+				03BADE212BD2EB6600DDFDC2 /* tiktoken.cpp */,
+				03BADE222BD2EB6700DDFDC2 /* tiktoken.h */,
+				03729F152BB2043600152F2E /* tokenizer.h */,
+			);
+			name = tokenizer;
+			path = ../../../../../models/llama2/tokenizer;
+			sourceTree = "<group>";
+		};
+		03729F0F2BB203E100152F2E /* sampler */ = {
+			isa = PBXGroup;
+			children = (
+				03729F112BB2042B00152F2E /* sampler.cpp */,
+				03729F102BB2042B00152F2E /* sampler.h */,
+			);
+			name = sampler;
+			path = ../../../../../models/llama2/sampler;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		03729ED02BB1F8DE00152F2E /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				03BADE202BD2E88600DDFDC2 /* bpe_tokenizer.h in Headers */,
+				03729F172BB2043600152F2E /* tokenizer.h in Headers */,
+				03729EE22BB1F93E00152F2E /* LLaMARunner.h in Headers */,
+				03DDA0FB2BD6368100D234B3 /* base64.h in Headers */,
+				03BADE242BD2EB6700DDFDC2 /* tiktoken.h in Headers */,
+				03729F122BB2042B00152F2E /* sampler.h in Headers */,
+				038D678D2C482C1E00B88CF2 /* llama_tiktoken.h in Headers */,
+				03729F0C2BB203B300152F2E /* util.h in Headers */,
+				03729F0B2BB203B300152F2E /* runner.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		032C016E2AC228E6002955E1 /* LLaMA */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 032C017D2AC228E7002955E1 /* Build configuration list for PBXNativeTarget "LLaMA" */;
+			buildPhases = (
+				032C016B2AC228E6002955E1 /* Sources */,
+				032C016C2AC228E6002955E1 /* Frameworks */,
+				032C016D2AC228E6002955E1 /* Resources */,
+				03729EE02BB1F8DE00152F2E /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				03729EDA2BB1F8DE00152F2E /* PBXTargetDependency */,
+			);
+			name = LLaMA;
+			packageProductDependencies = (
+				03312C182BBFC940002106EF /* backend_coreml */,
+				03312C1A2BBFC940002106EF /* backend_coreml_debug */,
+				03312C1C2BBFC940002106EF /* kernels_custom */,
+				03312C1E2BBFC940002106EF /* kernels_custom_debug */,
+				03312C242BBFC940002106EF /* backend_mps */,
+				03312C262BBFC940002106EF /* backend_mps_debug */,
+				03312C282BBFC940002106EF /* kernels_optimized */,
+				03312C2A2BBFC940002106EF /* kernels_optimized_debug */,
+				03312C2C2BBFC940002106EF /* kernels_portable */,
+				03312C2E2BBFC940002106EF /* kernels_portable_debug */,
+				03312C302BBFC940002106EF /* kernels_quantized */,
+				03312C322BBFC940002106EF /* kernels_quantized_debug */,
+				03312C342BBFC940002106EF /* backend_xnnpack */,
+				03312C362BBFC940002106EF /* backend_xnnpack_debug */,
+			);
+			productName = LLaMA;
+			productReference = 036CAF9D2BB1444500D6C2D5 /* LLaMA.app */;
+			productType = "com.apple.product-type.application";
+		};
+		03729ED42BB1F8DE00152F2E /* LLaMARunner */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 03729EDD2BB1F8DE00152F2E /* Build configuration list for PBXNativeTarget "LLaMARunner" */;
+			buildPhases = (
+				03641D7C2C409960004AF8DE /* Build Cmake Dependencies */,
+				03729ED02BB1F8DE00152F2E /* Headers */,
+				03729ED12BB1F8DE00152F2E /* Sources */,
+				03729ED22BB1F8DE00152F2E /* Frameworks */,
+				03729ED32BB1F8DE00152F2E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LLaMARunner;
+			packageProductDependencies = (
+				03312C3D2BBFD076002106EF /* executorch_debug */,
+			);
+			productName = LLaMARunner;
+			productReference = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		032C01672AC228E5002955E1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1530;
+				TargetAttributes = {
+					032C016E2AC228E6002955E1 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					03729ED42BB1F8DE00152F2E = {
+						CreatedOnToolsVersion = 15.3;
+					};
+				};
+			};
+			buildConfigurationList = 032C016A2AC228E5002955E1 /* Build configuration list for PBXProject "LLaMA" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 032C01662AC228E5002955E1;
+			packageReferences = (
+				03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */,
+			);
+			productRefGroup = 032C01662AC228E5002955E1;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				032C016E2AC228E6002955E1 /* LLaMA */,
+				03729ED42BB1F8DE00152F2E /* LLaMARunner */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		032C016D2AC228E6002955E1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0324D6962BAACB7000DEF36F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		03729ED32BB1F8DE00152F2E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		03641D7C2C409960004AF8DE /* Build Cmake Dependencies */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Cmake Dependencies";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/newOutputFile",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\nif ! command -v cmake &> /dev/null\nthen\n    echo \"cmake not found, please install cmake.\"\n    exit 1\nfi\n\nCMAKE_DIR=\"$TEMP_DIR/cmake\"\nrm -rf \"$CMAKE_DIR\"\n\nPLATFORM=\"SIMULATORARM64\"\nDEPLOYMENT_TARGET=\"17.0\"\n\nif [[ \"$PLATFORM_NAME\" == *\"iphoneos\"* ]]; then\n  PLATFORM=\"OS64\"\nelif [[ \"$PLATFORM_NAME\" == *\"macos\"* ]]; then\n  PLATFORM=\"MAC_ARM64\"\n  DEPLOYMENT_TARGET=\"10.15\"\nfi\n\ncmake_build() {\n    local src_dir=$1\n    shift\n    local extra_args=(\"$@\")\n    local build_dir=\"$CMAKE_DIR/build/$(basename \"$src_dir\")\"\n\n    mkdir -p \"$build_dir\" && cd \"$build_dir\"\n    cmake -G Xcode \\\n          -DCMAKE_BUILD_TYPE=\"Release\" \\\n          -DCMAKE_CXX_STANDARD=17 \\\n          -DCMAKE_TOOLCHAIN_FILE=\"$SRCROOT/../../../../third-party/ios-cmake/ios.toolchain.cmake\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD=\"c++17\" \\\n          -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY=\"libc++\" \\\n          -DPLATFORM=\"$PLATFORM\" \\\n          -DDEPLOYMENT_TARGET=\"$DEPLOYMENT_TARGET\" \\\n          \"${extra_args[@]}\" \\\n          \"$src_dir\"\n    cmake --build . --config \"Release\"\n    cmake --install . --prefix \"$CMAKE_DIR\"\n}\n\ncmake_build \"$SRCROOT/../../../../extension/llm/third-party/abseil-cpp\" \\\n    -DABSL_PROPAGATE_CXX_STD=ON\n\ncmake_build \"$SRCROOT/../../../../extension/llm/third-party/re2\" \\\n    -DCMAKE_PREFIX_PATH=\"$CMAKE_DIR/lib/cmake/absl\"\n    \ncmake_build \"$SRCROOT/../../../../extension/llm/third-party/sentencepiece\" \\\n    -DSPM_ENABLE_SHARED=OFF\n\necho \"$(find $CMAKE_DIR/lib -name \"*.a\" | sed -E 's|^.*/lib([^/]+)\\.a|-l\\1|g' | tr '\\n' ' ')\" > \"$CMAKE_DIR/linker_flags\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		032C016B2AC228E6002955E1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0324D6932BAACB6900DEF36F /* ResourceMonitor.swift in Sources */,
+				0324D68D2BAACB6900DEF36F /* LogManager.swift in Sources */,
+				0324D68E2BAACB6900DEF36F /* LogView.swift in Sources */,
+				0324D68F2BAACB6900DEF36F /* Message.swift in Sources */,
+				0324D6922BAACB6900DEF36F /* ResourceManager.swift in Sources */,
+				0324D68C2BAACB6900DEF36F /* ContentView.swift in Sources */,
+				0324D6902BAACB6900DEF36F /* MessageListView.swift in Sources */,
+				0324D6912BAACB6900DEF36F /* MessageView.swift in Sources */,
+				0324D68B2BAACB6900DEF36F /* App.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		03729ED12BB1F8DE00152F2E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */,
+				03BADE232BD2EB6700DDFDC2 /* tiktoken.cpp in Sources */,
+				038D678C2C482C1E00B88CF2 /* llama_tiktoken.cpp in Sources */,
+				03729F162BB2043600152F2E /* bpe_tokenizer.cpp in Sources */,
+				03729F0A2BB203B300152F2E /* runner.cpp in Sources */,
+				03729F132BB2042B00152F2E /* sampler.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		03729EDA2BB1F8DE00152F2E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 03729ED42BB1F8DE00152F2E /* LLaMARunner */;
+			targetProxy = 03729ED92BB1F8DE00152F2E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		032C017B2AC228E7002955E1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GCC_C_LANGUAGE_STANDARD = c17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		032C017C2AC228E7002955E1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GCC_C_LANGUAGE_STANDARD = c17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		032C017E2AC228E7002955E1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LLaMAEntitlements/LLaMA.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "LLaMA/SupportingFiles/LLaMA-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = iLLaMA;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_quantized-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_coreml-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-debug.a",
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_quantized-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_coreml-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-simulator-debug.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama;
+				PRODUCT_NAME = "$(PROJECT_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		032C017F2AC228E7002955E1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LLaMAEntitlements/LLaMA.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "LLaMA/SupportingFiles/LLaMA-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = iLLaMA;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-ios-release.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-release.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_quantized-ios-release.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-ios-release.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_coreml-ios-release.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-release.a",
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-simulator-release.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-simulator-release.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_quantized-simulator-release.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-simulator-release.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_coreml-simulator-release.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-simulator-release.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama;
+				PRODUCT_NAME = "$(PROJECT_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		03729EDE2BB1F8DE00152F2E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = "";
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"ET_USE_TIKTOKEN=1",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"\"$(SRCROOT)/../../../../..\"",
+					"\"$(TEMP_DIR)/cmake/include\"",
+				);
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LIBRARY_SEARCH_PATHS = "\"$(TEMP_DIR)/cmake/lib\"";
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"@$(TEMP_DIR)/cmake/linker_flags",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-ios-debug.a",
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"@$(TEMP_DIR)/cmake/linker_flags",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-simulator-debug.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama.LLaMARunner;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Debug;
+		};
+		03729EDF2BB1F8DE00152F2E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = "";
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				ENABLE_MODULE_VERIFIER = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_PREPROCESSOR_DEFINITIONS = "ET_USE_TIKTOKEN=1";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"\"$(SRCROOT)/../../../../..\"",
+					"\"$(TEMP_DIR)/cmake/include\"",
+				);
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LIBRARY_SEARCH_PATHS = "\"$(TEMP_DIR)/cmake/lib\"";
+				MARKETING_VERSION = 1.0;
+				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
+				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"@$(TEMP_DIR)/cmake/linker_flags",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-ios-debug.a",
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"@$(TEMP_DIR)/cmake/linker_flags",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-simulator-debug.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama.LLaMARunner;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		032C016A2AC228E5002955E1 /* Build configuration list for PBXProject "LLaMA" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				032C017B2AC228E7002955E1 /* Debug */,
+				032C017C2AC228E7002955E1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		032C017D2AC228E7002955E1 /* Build configuration list for PBXNativeTarget "LLaMA" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				032C017E2AC228E7002955E1 /* Debug */,
+				032C017F2AC228E7002955E1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		03729EDD2BB1F8DE00152F2E /* Build configuration list for PBXNativeTarget "LLaMARunner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				03729EDE2BB1F8DE00152F2E /* Debug */,
+				03729EDF2BB1F8DE00152F2E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pytorch/executorch";
+			requirement = {
+				branch = latest;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		03312C182BBFC940002106EF /* backend_coreml */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_coreml;
+		};
+		03312C1A2BBFC940002106EF /* backend_coreml_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_coreml_debug;
+		};
+		03312C1C2BBFC940002106EF /* kernels_custom */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_custom;
+		};
+		03312C1E2BBFC940002106EF /* kernels_custom_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_custom_debug;
+		};
+		03312C242BBFC940002106EF /* backend_mps */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_mps;
+		};
+		03312C262BBFC940002106EF /* backend_mps_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_mps_debug;
+		};
+		03312C282BBFC940002106EF /* kernels_optimized */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_optimized;
+		};
+		03312C2A2BBFC940002106EF /* kernels_optimized_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_optimized_debug;
+		};
+		03312C2C2BBFC940002106EF /* kernels_portable */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_portable;
+		};
+		03312C2E2BBFC940002106EF /* kernels_portable_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_portable_debug;
+		};
+		03312C302BBFC940002106EF /* kernels_quantized */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_quantized;
+		};
+		03312C322BBFC940002106EF /* kernels_quantized_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_quantized_debug;
+		};
+		03312C342BBFC940002106EF /* backend_xnnpack */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_xnnpack;
+		};
+		03312C362BBFC940002106EF /* backend_xnnpack_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_xnnpack_debug;
+		};
+		03312C3D2BBFD076002106EF /* executorch_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = executorch_debug;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 032C01672AC228E5002955E1 /* Project object */;
+}

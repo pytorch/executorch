@@ -7,16 +7,16 @@
 import unittest
 
 import torch
-import torchvision.models as models
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.backends.xnnpack.test.tester.tester import Quantize
+from torchvision import models
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
 
 class TestMobileNetV2(unittest.TestCase):
     mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights)
     mv2 = mv2.eval()
-    model_inputs = (torch.ones(1, 3, 224, 224),)
+    model_inputs = (torch.randn(1, 3, 224, 224),)
 
     all_operators = {
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
@@ -29,38 +29,72 @@ class TestMobileNetV2(unittest.TestCase):
     }
 
     def test_fp32_mv2(self):
+        dynamic_shapes = (
+            {
+                2: torch.export.Dim("height", min=224, max=455),
+                3: torch.export.Dim("width", min=224, max=455),
+            },
+        )
 
         (
-            Tester(self.mv2, self.model_inputs)
+            Tester(self.mv2, self.model_inputs, dynamic_shapes=dynamic_shapes)
             .export()
-            .to_edge()
-            .check(list(self.all_operators))
-            .partition()
+            .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .check_not(list(self.all_operators))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs(num_runs=10)
         )
 
-    def test_qs8_mv2(self):
+    @unittest.skip("T187799178: Debugging Numerical Issues with Calibration")
+    def _test_qs8_mv2(self):
         # Quantization fuses away batchnorm, so it is no longer in the graph
         ops_after_quantization = self.all_operators - {
             "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
         }
 
+        dynamic_shapes = (
+            {
+                2: torch.export.Dim("height", min=224, max=455),
+                3: torch.export.Dim("width", min=224, max=455),
+            },
+        )
+
         (
-            Tester(self.mv2, self.model_inputs)
-            .quantize(Quantize(calibrate=False))
+            Tester(self.mv2, self.model_inputs, dynamic_shapes=dynamic_shapes)
+            .quantize()
             .export()
-            .to_edge()
-            .check(list(ops_after_quantization))
-            .partition()
+            .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .check_not(list(ops_after_quantization))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs(num_runs=10)
+        )
+
+    # TODO: Delete and only used calibrated test after T187799178
+    def test_qs8_mv2_no_calibration(self):
+        # Quantization fuses away batchnorm, so it is no longer in the graph
+        ops_after_quantization = self.all_operators - {
+            "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
+        }
+
+        dynamic_shapes = (
+            {
+                2: torch.export.Dim("height", min=224, max=455),
+                3: torch.export.Dim("width", min=224, max=455),
+            },
+        )
+
+        (
+            Tester(self.mv2, self.model_inputs, dynamic_shapes=dynamic_shapes)
+            .quantize(Quantize(calibrate=False))
+            .export()
+            .to_edge_transform_and_lower()
+            .check(["torch.ops.higher_order.executorch_call_delegate"])
+            .check_not(list(ops_after_quantization))
+            .to_executorch()
+            .serialize()
+            .run_method_and_compare_outputs(num_runs=10)
         )

@@ -10,55 +10,53 @@
 
 #define PRECISION ${PRECISION}
 
+#define BUF_T ${buffer_scalar_type(DTYPE)}
+#define VEC4_T ${texel_load_type(DTYPE, STORAGE)}
+
+${define_active_storage_type(STORAGE)}
+
 #include "indexing_utils.h"
+
+${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} image_in;
-layout(set = 0, binding = 1) buffer PRECISION restrict writeonly Buffer {
-  ${T[DTYPE]} data[];
-}
-buffer_out;
-
-layout(set = 0, binding = 2) uniform PRECISION restrict GpuSizes {
-  ivec4 data;
-}
-gpu_sizes;
-
-layout(set = 0, binding = 3) uniform PRECISION restrict CpuSizes {
-  ivec4 data;
-}
-cpu_sizes;
+${layout_declare_buffer(0, "w", "nchw_out", DTYPE)}
+${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
+${layout_declare_ubo(2, "ivec4", "sizes")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+layout(constant_id = 3) const int packed_dim = C_DIM;
+
+void write_out_texel(VEC4_T texel, ivec4 tensor_idx) {
+  const ivec4 buf_indices = get_texel_nchw_buffer_ixs(
+      tensor_idx,
+      sizes,
+      packed_dim);
+
+  if (tensor_idx[packed_dim] < sizes[packed_dim]) {
+    nchw_out[buf_indices.x] = BUF_T(texel.x);
+  }
+  if (tensor_idx[packed_dim] + 1 < sizes[packed_dim]) {
+    nchw_out[buf_indices.y] = BUF_T(texel.y);
+  }
+  if (tensor_idx[packed_dim] + 2 < sizes[packed_dim]) {
+    nchw_out[buf_indices.z] = BUF_T(texel.z);
+  }
+  if (tensor_idx[packed_dim] + 3 < sizes[packed_dim]) {
+    nchw_out[buf_indices.w] = BUF_T(texel.w);
+  }
+}
+
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 coord = POS_TO_COORD_${PACKING}(pos, gpu_sizes.data);
+  const ivec4 tensor_idx = to_tensor_idx(pos, sizes, packed_dim);
 
-  if (any(greaterThanEqual(coord, gpu_sizes.data))) {
+  if (any(greaterThanEqual(tensor_idx, sizes))) {
     return;
   }
 
-  const ${VEC4_T[DTYPE]} intex = texelFetch(image_in, ${GET_POS[NDIM]("pos")}, 0);
-
-  const int base_index = COORD_TO_BUFFER_IDX(coord, cpu_sizes.data);
-  const ivec4 buf_indices =
-      base_index + ivec4(0, 1, 2, 3) * STRIDE_${PACKING}(cpu_sizes.data);
-
-  const int packed_dim_size = PACKED_DIM_${PACKING}(cpu_sizes.data);
-  int packed_coord = PACKED_DIM_${PACKING}(coord);
-
-  if (packed_coord < packed_dim_size) {
-    buffer_out.data[buf_indices.x] = intex.x;
-  }
-  if (packed_coord + 1 < packed_dim_size) {
-    buffer_out.data[buf_indices.y] = intex.y;
-  }
-  if (packed_coord + 2 < packed_dim_size) {
-    buffer_out.data[buf_indices.z] = intex.z;
-  }
-  if (packed_coord + 3 < packed_dim_size) {
-    buffer_out.data[buf_indices.w] = intex.w;
-  }
+  const VEC4_T intex = load_texel(t_in, pos);
+  write_out_texel(intex, tensor_idx);
 }

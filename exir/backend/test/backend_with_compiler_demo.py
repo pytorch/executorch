@@ -42,7 +42,7 @@ class BackendWithCompilerDemo(BackendDetails):
     sin_module = SinModule()
     model_inputs = torch.ones(1, 1)
 
-    edgeir_m = exir.capture(sin_module, model_inputs).to_edge()
+    edgeir_m = to_edge(export(sin_module, model_inputs))
     compile_specs = []
     lowered_sin_module = to_backend(
         "BackendWithCompilerDemo", edgeir_m, compile_specs
@@ -82,16 +82,22 @@ class BackendWithCompilerDemo(BackendDetails):
     ) -> PreprocessResult:
         processed_bytes = ""
         number_of_instruction = 0
+        version = "0"
         debug_handle_map = {}
+        match_ops = [
+            exir_ops.edge.aten.sin.default,
+            exir_ops.edge.aten.mm.default,
+            exir_ops.edge.aten.add.Tensor,
+            torch.ops.aten.sin.default,
+            exir_ops.edge.aten.linear.default,
+            exir_ops.edge.aten.scaled_dot_product_attention.default,
+            exir_ops.edge.aten.upsample_nearest2d.vec,
+        ]
+
         for node in edge_program.graph.nodes:
             if node.op == "call_function":
                 # TODO(gasoonjia): remove the support of torch.ops.aten.sin.default after migrate serde to edge dialect.
-                if (
-                    node.target == exir_ops.edge.aten.sin.default
-                    or node.target == exir_ops.edge.aten.mm.default
-                    or node.target == exir_ops.edge.aten.add.Tensor
-                    or node.target == torch.ops.aten.sin.default
-                ):
+                if node.target in match_ops:
                     simple_op = DemoOp(
                         node.target.__name__,
                         int(torch.prod(torch.tensor(node.meta["val"].shape), 0).item()),
@@ -124,7 +130,12 @@ class BackendWithCompilerDemo(BackendDetails):
             debug_handle_map[new_debug_id] = (original_debug_id,)
         return PreprocessResult(
             processed_bytes=bytes(
-                str(number_of_instruction) + "#" + processed_bytes, encoding="utf8"
+                str(number_of_instruction)
+                + "version:"
+                + version
+                + "#"
+                + processed_bytes,
+                encoding="utf8",
             ),
             debug_handle_map=debug_handle_map,
         )

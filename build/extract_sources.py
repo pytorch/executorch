@@ -9,10 +9,11 @@ import argparse
 import copy
 import os
 import re
-import subprocess
 
 from enum import Enum
 from typing import Any, Optional, Sequence
+
+from buck_util import Buck2Runner
 
 try:
     import tomllib  # Standard in 3.11 and later
@@ -64,24 +65,6 @@ Example config:
     ".cpp$",
     ]
 """
-
-# Run buck2 from the same directory (and thus repo) as this script.
-BUCK_CWD: str = os.path.dirname(os.path.realpath(__file__))
-
-
-class Buck2Runner:
-    def __init__(self, tool_path: str) -> None:
-        self._path = tool_path
-
-    def run(self, args: Sequence[str]) -> list[str]:
-        """Runs buck2 with the given args and returns its stdout as a sequence of lines."""
-        try:
-            cp: subprocess.CompletedProcess = subprocess.run(
-                [self._path] + args, capture_output=True, cwd=BUCK_CWD, check=True
-            )
-            return [line.strip().decode("utf-8") for line in cp.stdout.splitlines()]
-        except subprocess.CalledProcessError as ex:
-            raise RuntimeError(ex.stderr.decode("utf-8")) from ex
 
 
 class Target:

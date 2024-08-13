@@ -8,13 +8,11 @@
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 TensorRef::TensorRef(
     const std::vector<int64_t>& t_sizes,
-    api::ScalarType t_dtype,
+    vkapi::ScalarType t_dtype,
     const void* const t_data)
     : sizes{}, dtype{t_dtype}, data{t_data} {
   size_t ndim = t_sizes.size();
@@ -24,6 +22,4 @@ TensorRef::TensorRef(
   }
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

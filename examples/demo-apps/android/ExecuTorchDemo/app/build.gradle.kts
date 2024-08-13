@@ -57,6 +57,9 @@ dependencies {
   implementation("androidx.constraintlayout:constraintlayout:2.2.0-alpha12")
   implementation("com.facebook.soloader:soloader:0.10.5")
   implementation("com.facebook.fbjni:fbjni:0.5.1")
+  implementation("org.pytorch.executorch:executorch") {
+    exclude("com.facebook.fbjni", "fbjni-java-only")
+  }
   testImplementation("junit:junit:4.13.2")
   androidTestImplementation("androidx.test.ext:junit:1.1.5")
   androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
@@ -64,4 +67,13 @@ dependencies {
   androidTestImplementation("androidx.compose.ui:ui-test-junit4")
   debugImplementation("androidx.compose.ui:ui-tooling")
   debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+tasks.register("setup") {
+  doFirst {
+    exec {
+      commandLine("sh", "examples/demo-apps/android/LlamaDemo/setup.sh")
+      workingDir("../../../../../")
+    }
+  }
 }

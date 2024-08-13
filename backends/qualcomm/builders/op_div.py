@@ -15,7 +15,7 @@ from .qnn_constants import OpElementWiseDivide, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Div(NodeVisitor):
-    target = "aten.div.Tensor"
+    target = ["aten.div.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -31,6 +31,7 @@ class Div(NodeVisitor):
             out_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         div_output_tensors = [output_tensor_wrapper]
 
@@ -45,6 +46,7 @@ class Div(NodeVisitor):
                 input_tensor,
                 tensor_type,
                 nodes_to_wrappers,
+                is_input_tensor=True,
             )
             div_input_tensors.append(input_tensor_wrapper)
 

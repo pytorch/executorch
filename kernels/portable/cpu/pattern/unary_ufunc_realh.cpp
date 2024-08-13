@@ -8,7 +8,6 @@
 
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
-#include <executorch/runtime/core/function_ref.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -17,7 +16,7 @@ namespace native {
 namespace internal {
 
 Tensor& unary_ufunc_realh(
-    FunctionRef<double(double)> fn,
+    double (*fn)(double),
     RuntimeContext& ctx,
     const Tensor& in,
     Tensor& out) {

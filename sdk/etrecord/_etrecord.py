@@ -5,10 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import os
 import pickle
 from dataclasses import dataclass
-from enum import Enum
-from typing import Dict, List, Optional, Union
+from typing import BinaryIO, Dict, IO, List, Optional, Union
 from zipfile import BadZipFile, ZipFile
 
 from executorch import exir
@@ -29,8 +29,18 @@ from executorch.sdk.bundled_program.schema.bundled_program_schema import Value
 
 ProgramOutput = List[Value]
 
+try:
+    # breaking change introduced in python 3.11
+    # pyre-ignore
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
 
-class ETRecordReservedFileNames(str, Enum):
+    class StrEnum(str, Enum):
+        pass
+
+
+class ETRecordReservedFileNames(StrEnum):
     ETRECORD_IDENTIFIER = "ETRECORD_V0"
     EDGE_DIALECT_EXPORTED_PROGRAM = "edge_dialect_exported_program"
     ET_DIALECT_GRAPH_MODULE = "et_dialect_graph_module"
@@ -61,6 +71,13 @@ def _handle_exported_program(
     )
     etrecord_zip.writestr(
         f"{module_name}/{method_name}_state_dict", serialized_artifact.state_dict
+    )
+    etrecord_zip.writestr(
+        f"{module_name}/{method_name}_constants", serialized_artifact.constants
+    )
+    etrecord_zip.writestr(
+        f"{module_name}/{method_name}_example_inputs",
+        serialized_artifact.example_inputs,
     )
 
 
@@ -108,6 +125,14 @@ def _handle_edge_dialect_exported_program(
         f"{ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM}_state_dict",
         serialized_artifact.state_dict,
     )
+    etrecord_zip.writestr(
+        f"{ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM}_constants",
+        serialized_artifact.constants,
+    )
+    etrecord_zip.writestr(
+        f"{ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM}_example_inputs",
+        serialized_artifact.example_inputs,
+    )
 
 
 def _get_reference_outputs(
@@ -131,7 +156,7 @@ def _get_reference_outputs(
 
 
 def generate_etrecord(
-    etrecord_path: str,
+    et_record: Union[str, os.PathLike, BinaryIO, IO[bytes]],
     edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram],
     executorch_program: Union[
         ExecutorchProgram,
@@ -171,7 +196,10 @@ def generate_etrecord(
         None
     """
 
-    etrecord_zip = ZipFile(etrecord_path, "w")
+    if isinstance(et_record, (str, os.PathLike)):
+        et_record = os.fspath(et_record)  # pyre-ignore
+
+    etrecord_zip = ZipFile(et_record, "w")
     # Write the magic file identifier that will be used to verify that this file
     # is an etrecord when it's used later in the SDK tooling.
     etrecord_zip.writestr(ETRecordReservedFileNames.ETRECORD_IDENTIFIER, "")
@@ -227,7 +255,7 @@ def generate_etrecord(
     )
 
 
-def parse_etrecord(etrecord_path: str) -> ETRecord:
+def parse_etrecord(etrecord_path: str) -> ETRecord:  # noqa: C901
     """
     Parses an `ETRecord` file and returns an `ETRecord` object that contains the deserialized graph
     modules, program buffer, and a debug handle map.
@@ -263,6 +291,8 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
 
     serialized_exported_program_files = set()
     serialized_state_dict_files = set()
+    serialized_constants_files = set()
+    serialized_example_inputs_files = set()
     for entry in file_list:
         if entry == ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME:
             debug_handle_map = json.loads(
@@ -280,7 +310,8 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
                     ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM
                 ),
                 etrecord_zip.read(f"{entry}_state_dict"),
-                b"",
+                etrecord_zip.read(f"{entry}_constants"),
+                etrecord_zip.read(f"{entry}_example_inputs"),
             )
             edge_dialect_program = deserialize(serialized_artifact)
         elif entry == ETRecordReservedFileNames.REFERENCE_OUTPUTS:
@@ -291,18 +322,25 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
         else:
             if entry.endswith("state_dict"):
                 serialized_state_dict_files.add(entry)
+            elif entry.endswith("constants"):
+                serialized_constants_files.add(entry)
+            elif entry.endswith("example_inputs"):
+                serialized_example_inputs_files.add(entry)
             else:
                 serialized_exported_program_files.add(entry)
 
     for serialized_file in serialized_exported_program_files:
         serialized_state_dict_file = f"{serialized_file}_state_dict"
+        serialized_constants_file = f"{serialized_file}_constants"
+        serialized_example_inputs_file = f"{serialized_file}_example_inputs"
         assert (
             serialized_state_dict_file in serialized_state_dict_files
         ), f"Could not find corresponding state dict file for {serialized_file}."
         serialized_artifact = SerializedArtifact(
             etrecord_zip.read(serialized_file),
             etrecord_zip.read(serialized_state_dict_file),
-            b"",
+            etrecord_zip.read(serialized_constants_file),
+            etrecord_zip.read(serialized_example_inputs_file),
         )
         graph_map[serialized_file] = deserialize(serialized_artifact)
 

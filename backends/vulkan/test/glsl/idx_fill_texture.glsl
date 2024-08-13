@@ -10,37 +10,29 @@
 
 #define PRECISION ${PRECISION}
 
+#define VEC4_T ${texel_type(DTYPE)}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
-
-layout(set = 0, binding = 1) uniform PRECISION restrict GpuSizes {
-  ivec4 data;
-}
-gpu_sizes;
-
-layout(set = 0, binding = 2) uniform PRECISION restrict CpuSizes {
-  ivec4 data;
-}
-cpu_sizes;
+${layout_declare_tensor(0, "w", "image_out", DTYPE, "texture3d")}
+${layout_declare_ubo(1, "ivec4", "sizes")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
+layout(constant_id = 3) const int packed_dim = C_DIM;
+layout(constant_id = 4) const int offset = 10;
+
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 coord = POS_TO_COORD_${PACKING}(pos, gpu_sizes.data);
+  const ivec4 idx = to_tensor_idx(pos, sizes, packed_dim);
 
-  if (any(greaterThanEqual(coord, gpu_sizes.data))) {
+  if (any(greaterThanEqual(idx, sizes))) {
     return;
   }
 
-  const int base_index = COORD_TO_BUFFER_IDX(coord, cpu_sizes.data);
-  const ivec4 buf_indices =
-      base_index + ivec4(0, 1, 2, 3) * PLANE_SIZE_${PACKING}(gpu_sizes.data);
-
-  ${VEC4_T[DTYPE]} texel = ${VEC4_T[DTYPE]}(buf_indices);
-
-  imageStore(image_out, ${GET_POS[NDIM]("pos")}, texel);
+  const ivec4 buf_indices = get_texel_nchw_buffer_ixs(idx, sizes, packed_dim);
+  VEC4_T texel = VEC4_T(buf_indices) + offset;
+  imageStore(image_out, pos, texel);
 }

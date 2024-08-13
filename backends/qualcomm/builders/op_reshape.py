@@ -15,7 +15,7 @@ from .qnn_constants import OpReshape, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Reshape(NodeVisitor):
-    target = "aten.view_copy.default"
+    target = ["aten.view_copy.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -32,6 +32,7 @@ class Reshape(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         output_tensor_wrapper = self.define_tensor(
@@ -39,6 +40,7 @@ class Reshape(NodeVisitor):
             node.meta["val"],
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         reshape_op = PyQnnWrapper.PyQnnOpWrapper(

@@ -86,10 +86,90 @@ ATen operator with a dtype/dim order specialized kernel (works for `Double` dtyp
       kernel_name: torch::executor::add_out
 
 ```
+### Custom Ops C++ API
+
+For a custom kernel that implements a custom operator, we provides 2 ways to register it into ExecuTorch runtime:
+1. Using `EXECUTORCH_LIBRARY` and `WRAP_TO_ATEN` C++ macros, covered by this section.
+2. Using `functions.yaml` and codegen'd C++ libraries, covered by [next section](#custom-ops-yaml-entry).
+
+Please refer to [Custom Ops Best Practices](#custom-ops-api-best-practices) on which API to use.
+
+The first option requires C++17 and doesn't have selective build support yet, but it's faster than the second option where we have to go through yaml authoring and build system tweaking.
+
+The first option is particularly suitable for fast prototyping but can also be used in production.
+
+Similar to `TORCH_LIBRARY`, `EXECUTORCH_LIBRARY` takes the operator name and the C++ function name and register them into ExecuTorch runtime.
+
+#### Prepare custom kernel implementation
+
+Define your custom operator schema for both functional variant (used in AOT compilation) and out variant (used in ExecuTorch runtime). The schema needs to follow PyTorch ATen convention (see native_functions.yaml). For example:
+
+```yaml
+custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -> Tensor
+custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -> Tensor(a!)
+```
+
+Then write your custom kernel according to the schema using ExecuTorch types, along with APIs to register to ExecuTorch runtime:
+
+
+```c++
+// custom_linear.h/custom_linear.cpp
+#include <executorch/runtime/kernel/kernel_includes.h>
+Tensor& custom_linear_out(const Tensor& weight, const Tensor& input, optional<Tensor> bias, Tensor& out) {
+   // calculation
+   return out;
+}
+```
+#### Use a C++ macro to register it into PyTorch & ExecuTorch
+
+Append the following line in the example above:
+```c++
+// custom_linear.h/custom_linear.cpp
+// opset namespace myop
+EXECUTORCH_LIBRARY(myop, "custom_linear.out", custom_linear_out);
+```
+
+Now we need to write some wrapper for this op to show up in PyTorch, but don’t worry we don’t need to rewrite the kernel. Create a separate .cpp for this purpose:
+
+```c++
+// custom_linear_pytorch.cpp
+#include "custom_linear.h"
+#include <torch/library.h>
+
+at::Tensor custom_linear(const at::Tensor& weight, const at::Tensor& input, std::optional<at::Tensor> bias) {
+    // initialize out
+    at::Tensor out = at::empty({weight.size(1), input.size(1)});
+    // wrap kernel in custom_linear.cpp into ATen kernel
+    WRAP_TO_ATEN(custom_linear_out, 3)(weight, input, bias, out);
+    return out;
+}
+// standard API to register ops into PyTorch
+TORCH_LIBRARY(myop, m) {
+    m.def("custom_linear(Tensor weight, Tensor input, Tensor(?) bias) -> Tensor", custom_linear);
+    m.def("custom_linear.out(Tensor weight, Tensor input, Tensor(?) bias, *, Tensor(a!) out) -> Tensor(a!)", WRAP_TO_ATEN(custom_linear_out, 3));
+}
+```
+
+#### Compile and link the custom kernel
+
+Link it into ExecuTorch runtime: In our `CMakeLists.txt`` that builds the binary/application, we just need to add custom_linear.h/cpp into the binary target. We can build a dynamically loaded library (.so or .dylib) and link it as well.
+
+Link it into PyTorch runtime: We need to package custom_linear.h, custom_linear.cpp and custom_linear_pytorch.cpp into a dynamically loaded library (.so or .dylib) and load it into our python environment. One way of doing this is:
+
+```python
+import torch
+torch.ops.load_library("libcustom_linear.so/dylib")
+
+# Now we have access to the custom op, backed by kernel implemented in custom_linear.cpp.
+op = torch.ops.myop.custom_linear.default
+```
+
 
 ### Custom Ops Yaml Entry
 
-For custom ops (the ones that are not part of the out variants of core ATen opset) we need to specify the operator schema as well as a `kernel` section. So instead of `op` we use `func` with the operator schema. As an example, here’s a yaml entry for a custom op:
+As mentioned above, this option provides more support in terms of selective build and features such as merging operator libraries.
+
+First we need to specify the operator schema as well as a `kernel` section. So instead of `op` we use `func` with the operator schema. As an example, here’s a yaml entry for a custom op:
 ```yaml
 - func: allclose.out(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
@@ -138,7 +218,7 @@ ExecuTorch does not support all of the argument types that core PyTorch supports
 
 ### Build Tool Macros
 
-We provide build time macros to help users to build their kernel registration library. The macro takes the yaml file describing the kernel library as well as model operator metadata, and packages the generated C++ bindings into a C++ library. The macro is available on both CMake and Buck2.
+We provide build time macros to help users to build their kernel registration library. The macro takes the yaml file describing the kernel library as well as model operator metadata, and packages the generated C++ bindings into a C++ library. The macro is available on CMake.
 
 
 #### CMake
@@ -159,43 +239,51 @@ target_link_libraries(executorch_binary generated_lib)
 
 ```
 
-#### Buck2
+We also provide the ability to merge two yaml files, given a precedence. `merge_yaml(FUNCTIONS_YAML functions_yaml FALLBACK_YAML fallback_yaml OUTPUT_DIR out_dir)` merges functions_yaml and fallback_yaml into a single yaml, if there's duplicate entries in functions_yaml and fallback_yaml, this macro will always take the one in functions_yaml.
 
-`executorch_generated_lib` is the macro that takes the yaml files and depends on the selective build macro `et_operator_library`. For an example:
-```python
-# Yaml file for kernel library
-export_file(
-  name = "functions.yaml"
-)
+Example:
 
-# Kernel library
-cxx_library(
-  name = "add_kernel",
-  srcs = ["add.cpp"],
-)
-
-# Selective build artifact, it allows all operators to be registered
-et_operator_library(
-  name = "all_ops",
-  include_all_ops = True, # Select all ops in functions.yaml
-)
-
-# Prepare a generated_lib
-executorch_generated_lib(
-  name = "generated_lib",
-  functions_yaml_target = ":functions.yaml",
-  deps = [
-    ":all_ops",
-    ":add_kernel",
-  ],
-)
-
-# Link generated_lib to ExecuTorch binary
-cxx_binary(
- name = "executorch_bin",
- deps = [
-  ":generated_lib",
- ],
-)
-
+```yaml
+# functions.yaml
+- op: add.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_add_out
 ```
+
+And out fallback:
+
+```yaml
+# fallback.yaml
+- op: add.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::add_out
+```
+
+The merged yaml will have the entry in functions.yaml.
+
+
+### Custom Ops API Best Practices
+
+Given that we have 2 kernel registration APIs for custom ops, which API should we use? Here are some pros and cons for each API:
+
+* C++ API:
+  - Pros:
+    * Only C++ code changes are needed
+    * Resembles PyTorch custom ops C++ API
+    * Low maintenance cost
+  - Cons:
+    * No selective build support
+    * No centralized bookkeepping
+
+* Yaml entry API:
+  - Pros:
+    * Has selective build support
+    * Provides a centralized place for custom ops
+      - It shows what ops are being registered and what kernels are bound to these ops, for an application
+  - Cons:
+    * User needs to create and maintain yaml files
+    * Relatively inflexible to change the op definition
+
+Overall if we are building an application and it uses custom ops, during the development phase it's recommended to use the C++ API since it's low-cost to use and flexible to change. Once the application moves to production phase where the custom ops definitions and the build systems are quite stable and binary size is to be considered, it is recommended to use the Yaml entry API.

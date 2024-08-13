@@ -73,7 +73,7 @@ class AddmmVisitor(NodeVisitor):
                 quant_node = input_node.all_input_nodes[0]
             else:
                 quant_node = input_node
-            input_zp = get_quant_node_args(quant_node)[1]
+            input_zp = get_quant_node_args(quant_node).zp
         attr.ConvAttribute(
             pad=pad_attr,
             stride=stride_attr,
@@ -111,24 +111,21 @@ class AddmmVisitor(NodeVisitor):
             # rank > 2 linear layer
             if input_node.target == exir_ops.edge.aten.view_copy.default:
                 quant_node = input_node.all_input_nodes[0]
-                input_scale, _ = get_quant_node_args(quant_node)
+                input_scale = get_quant_node_args(quant_node).scale
                 consumer_node = list(node.users)[0]
                 consumer_consumer_node = list(consumer_node.users)[0]
-                (
-                    consumer_node_scale,
-                    consumer_node_node_zp,
-                ) = get_quant_node_args(consumer_consumer_node)
-
+                quant_args = get_quant_node_args(consumer_consumer_node)
+                consumer_node_scale = quant_args.scale
+                consumer_node_node_zp = quant_args.zp
             else:
-                input_scale, _ = get_quant_node_args(input_node)
+                input_scale = get_quant_node_args(input_node).scale
                 consumer_node = list(node.users)[0]
-                (
-                    consumer_node_scale,
-                    consumer_node_node_zp,
-                ) = get_quant_node_args(consumer_node)
+                quant_args = get_quant_node_args(consumer_node)
+                consumer_node_scale = quant_args.scale
+                consumer_node_node_zp = quant_args.zp
 
             weight_node_q_node = weight_node.all_input_nodes[0]
-            weight_scale, _ = get_quant_node_args(weight_node_q_node)
+            weight_scale = get_quant_node_args(weight_node_q_node).scale
 
             output_rescale_scale = (input_scale * weight_scale) / consumer_node_scale
             (

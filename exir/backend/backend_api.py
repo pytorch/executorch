@@ -269,8 +269,7 @@ def _partition_and_lower_one_graph_module(
 
             if node.name in toplevel_signature.inputs_to_buffers:
                 # Delete the consumed buffers
-                buffer_name = toplevel_signature.inputs_to_buffers.pop(node.name)
-                toplevel_signature.buffers.remove(buffer_name)
+                buffer_name = toplevel_signature.inputs_to_buffers.get(node.name)
                 if buffer_name in owning_program.state_dict:
                     owning_program.state_dict.pop(buffer_name)
                 else:
@@ -278,8 +277,7 @@ def _partition_and_lower_one_graph_module(
                 tagged_graph_module.graph.erase_node(node)
             elif node.name in toplevel_signature.inputs_to_parameters:
                 # Delete the consumed parameters
-                param_name = toplevel_signature.inputs_to_parameters.pop(node.name)
-                toplevel_signature.parameters.remove(param_name)
+                param_name = toplevel_signature.inputs_to_parameters.get(node.name)
                 owning_program.state_dict.pop(param_name)
                 tagged_graph_module.graph.erase_node(node)
 
@@ -399,6 +397,6 @@ def _(
         range_constraints=copy.deepcopy(edge_program.range_constraints),
         module_call_graph=copy.deepcopy(edge_program.module_call_graph),
         example_inputs=None,
-        verifier=edge_program.verifier,
         constants=new_constants,
+        verifiers=[edge_program.verifier],
     )

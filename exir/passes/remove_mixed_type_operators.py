@@ -23,6 +23,7 @@ class RemoveMixedTypeOperators(ExportPass):
         promotion_type_allow_list = {
             torch.ops.aten.add.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.mul.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
+            torch.ops.aten.div.Tensor: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
             torch.ops.aten.minimum.default: ELEMENTWISE_TYPE_PROMOTION_KIND.DEFAULT,
         }
 
@@ -61,7 +62,7 @@ class RemoveMixedTypeOperators(ExportPass):
         )[1]
 
         def try_coerce(value: PyTree, arg: torch.Argument) -> PyTree:
-            if type(arg.type) != torch.TensorType:
+            if not isinstance(arg.type, torch.TensorType):
                 return value
 
             if isinstance(value, ProxyValue):

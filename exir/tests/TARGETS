@@ -1,7 +1,8 @@
 load("@fbcode_macros//build_defs:cpp_library.bzl", "cpp_library")
-load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
 
 python_library(
     name = "lib",
@@ -10,7 +11,6 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/exir:lib",
         "//executorch/exir:schema",
     ],
 )
@@ -102,6 +102,17 @@ python_unittest(
 )
 
 python_unittest(
+    name = "joint_graph",
+    srcs = [
+        "test_joint_graph.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_unittest(
     name = "error",
     srcs = [
         "test_error.py",
@@ -162,32 +173,13 @@ python_unittest(
     supports_static_listing = False,
     deps = [
         "fbsource//third-party/pypi/parameterized:parameterized",
-        ":asr_joiner",
         "//caffe2:torch",
-        "//executorch/backends/fb/qnnpack/partition:qnnpack_partitioner",
         "//executorch/exir:lib",
         "//executorch/exir:memory_planning",
         "//executorch/exir:pass_base",
         "//executorch/exir:pass_manager",
-        "//executorch/exir:print_program",
-        "//executorch/exir:schema",
-        "//executorch/exir/backend:backend_api",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:sym_shape_eval_pass",
-    ],
-)
-
-python_unittest(
-    name = "experimental",
-    srcs = [
-        "test_experimental.py",
-    ],
-    deps = [
-        "//caffe2:torch",
-        "//executorch/exir:error",
-        "//executorch/exir:lib",
-        "//executorch/exir/experimental:export_pt2",
-        "//executorch/exir/experimental:lib",
     ],
 )
 
@@ -208,6 +200,7 @@ python_unittest(
         "//executorch/exir:memory",
         "//executorch/exir:memory_planning",
         "//executorch/exir:pass_base",
+        "//executorch/exir:schema",
         "//executorch/exir:tensor",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
@@ -216,9 +209,11 @@ python_unittest(
         "//executorch/exir/passes:debug_handle_generator_pass",
         "//executorch/exir/passes:insert_write_back_for_buffers_pass",
         "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:normalize_view_copy_base_pass",
         "//executorch/exir/passes:remove_graph_asserts_pass",
         "//executorch/exir/passes:remove_mixed_type_operators",
         "//executorch/exir/passes:replace_edge_with_backend_pass",
+        "//executorch/exir/passes:replace_view_copy_with_view_pass",
         "//executorch/exir/passes:scalar_to_tensor_pass",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/exir/passes:sym_to_tensor_pass",
@@ -238,26 +233,6 @@ python_unittest(
         "//executorch/exir:pass_manager",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:pass_registry",
-    ],
-)
-
-python_unittest(
-    name = "quant_lowering_custom_backend_pass",
-    srcs = [
-        "test_quant_lowering_custom_backend_pass.py",
-    ],
-    deps = [
-        "//caffe2:test-lib",  # @manual
-        "//caffe2:torch",
-        "//executorch/exir:lib",
-        "//executorch/exir:pass_base",
-        "//executorch/exir/backend:backend_api",
-        "//executorch/exir/backend:backend_details",
-        "//executorch/exir/backend:compile_spec_schema",
-        "//executorch/exir/backend:partitioner",
-        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
-        "//executorch/exir/dialects:lib",
-        "//executorch/exir/passes:replace_aten_with_edge_pass",
     ],
 )
 
@@ -339,39 +314,6 @@ python_unittest(
 )
 
 python_unittest(
-    name = "fixtures",
-    srcs = [
-        "test_fixtures.py",
-    ],
-    # Static listing does not support tests generated in runtime.
-    supports_static_listing = False,
-    deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
-        ":lib",
-        ":models",
-        "//caffe2:torch",
-        "//executorch/exir:lib",
-        "//executorch/exir/_serialize:lib",
-    ],
-)
-
-python_binary(
-    name = "generate_fixtures",
-    srcs = [
-        "test_fixtures.py",
-    ],
-    main_function = "executorch.exir.tests.test_fixtures.generate_json_fixtures",
-    deps = [
-        "fbsource//third-party/pypi/parameterized:parameterized",
-        ":lib",
-        ":models",
-        "//caffe2:torch",
-        "//executorch/exir:lib",
-        "//executorch/exir/_serialize:lib",
-    ],
-)
-
-python_unittest(
     name = "capture",
     srcs = [
         "test_capture.py",
@@ -393,6 +335,7 @@ python_unittest(
     ],
     deps = [
         ":models",
+        "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir/passes:lib",
     ],
@@ -424,13 +367,44 @@ python_unittest(
 )
 
 python_unittest(
-    name = "memory_format_ops_pass",
+    name = "test_memory_format_ops_pass_aten",
+    srcs = [
+        "test_memory_format_ops_pass_aten.py",
+    ],
+    deps = [
+        ":test_memory_format_ops_pass_utils",
+        "//caffe2:torch",
+        "//executorch/extension/pybindings:aten_lib",  # @manual
+    ],
+)
+
+python_unittest(
+    name = "test_memory_format_ops_pass",
     srcs = [
         "test_memory_format_ops_pass.py",
     ],
     deps = [
+        ":test_memory_format_ops_pass_utils",
         "//caffe2:torch",
+        "//executorch/exir:dim_order_utils",
         "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+    ],
+)
+
+python_library(
+    name = "test_memory_format_ops_pass_utils",
+    srcs = [
+        "test_memory_format_ops_pass_utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:dim_order_utils",
+        "//executorch/exir:lib",
+        "//executorch/exir/capture:config",
     ],
 )
 
@@ -443,5 +417,19 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:print_program",
+    ],
+)
+
+python_unittest(
+    name = "test_remove_view_copy",
+    srcs = [
+        "test_remove_view_copy.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/passes:lib",
     ],
 )

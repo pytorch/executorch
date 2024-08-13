@@ -12,8 +12,8 @@ from typing import Any, Callable, cast, Dict, List, Optional, Set, Union
 import torch
 
 from executorch.backends.xnnpack.partition.configs import (
-    _SUPPORTED_MODULES_WITH_DYNAMIC_SHAPE,
-    _SUPPORTED_OPS_WITH_DYNAMIC_SHAPE,
+    STATIC_MODULES,
+    STATIC_OPS,
     SUPPORTED_DYN_QUANT_LINEAR_MODULES,
     SUPPORTED_DYN_QUANT_MODULES,
     SUPPORTED_MODULES,
@@ -166,6 +166,8 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         return True
 
     def check_node_has_valid_dtype(self, node):
+        # max_pool2d_with_indicies returns indicies which is int64
+        # this is supportable within XNNPACK
         if node.target in {exir_ops.edge.aten.max_pool2d_with_indices.default}:
             return True
 
@@ -268,13 +270,16 @@ class XnnpackOperatorSupport(OperatorSupportBase):
     ) -> bool:
         """
         Only if the first output value is consumed in the graph
+        and it is not in ceil mode
         """
         users = list(node.users.keys())
+        is_ceil_mode = len(node.args) >= 6 and node.args[5]
         return (
             True
             if len(users) == 1
             and users[0].target == operator.getitem
             and users[0].args[1] == 0
+            and not is_ceil_mode
             else False
         )
 
@@ -555,6 +560,23 @@ class XnnpackFloatingPointPartitioner(Partitioner):
             log.info(f"Found {pl} subgraphs to be partitioned.")
         return pl != 0
 
+    def get_input_deps(  # noqa
+        self, input_nodes: List[torch.fx.Node], ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        """
+        For each input node, walk up and pull necessary param/attr nodes in the partition
+        """
+        nodes = set()
+
+        def is_param(ep: ExportedProgram, node) -> bool:
+            return isinstance(node, torch.fx.Node) and is_param_node(ep, node)
+
+        for inp in input_nodes:
+            if is_param(ep, inp):
+                nodes.add(inp)
+
+        return list(nodes)
+
     def get_nodes(
         self, src_partition: SourcePartition, ep: ExportedProgram
     ) -> List[torch.fx.Node]:
@@ -564,7 +586,7 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         This is a wrapper to allow derived classes to add their own custom
         logic to extend the src_partition nodes list.
         """
-        return src_partition.nodes
+        return src_partition.nodes + self.get_input_deps(src_partition.input_nodes, ep)
 
     def qualify_nodes(
         self, input_nodes: List[torch.fx.Node], ep: ExportedProgram
@@ -833,7 +855,7 @@ class XnnpackPartitioner(Partitioner):
         supported_quant_modules: List[Callable] = SUPPORTED_QUANT_MODULES,
         supported_quant_ops: Optional[List[Callable]] = SUPPORTED_QUANT_OPS,
         quant: Optional[bool] = None,
-        _only_ops_with_dynamic_shape_support: Optional[bool] = False,
+        has_dynamic_shapes: bool = False,
         _lower_recomposed_sdpa: Optional[bool] = True,
     ):
         super().__init__()
@@ -846,44 +868,22 @@ class XnnpackPartitioner(Partitioner):
 
         self.quant = quant
 
-        if _only_ops_with_dynamic_shape_support is True:
-            self._update_op_lists_for_dynamic_shapes()
-
         # TODO(T174256335) - remove this once we have a better way to handle >2d Mask
-        self._lower_recomposed_sdpa: bool = _lower_recomposed_sdpa or True
+        self._lower_recomposed_sdpa: bool = (
+            _lower_recomposed_sdpa if _lower_recomposed_sdpa is not None else True
+        )
 
         self.delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
         self.partition_tags: Dict[str, DelegationSpec] = {}
 
-    def _update_op_lists_for_dynamic_shapes(self):
-        # Not ready for quants yet
-        assert (
-            self.quant is not True
-        ), "Dynamic shape only supported for valid FP32 ops, no quants support yet."
-        self.supported_quant_ops = set()
-        self.supported_quant_modules = set()
-
-        # for supported ops
-        self.supported_ops_with_dynamic_shape = set(_SUPPORTED_OPS_WITH_DYNAMIC_SHAPE)
-        assert self.supported_ops_with_dynamic_shape.issubset(
-            self.supported_ops
-        ), "All ops with dynamic shape support must be in SUPPORTED_OPS"
-        self.supported_ops = self.supported_ops_with_dynamic_shape
-        log.info(
-            f"Xnnpack Partitioner updated supported op for dynamic shapes: {self.supported_ops}"
-        )
-
-        # for supported modules
-        self.supported_modules_with_dynamic_shape = set(
-            _SUPPORTED_MODULES_WITH_DYNAMIC_SHAPE
-        )
-        assert self.supported_modules_with_dynamic_shape.issubset(
-            self.supported_modules
-        ), "All modules with dynamic shape support must be in SUPPORTED_MODULES"
-        self.supported_modules = self.supported_modules_with_dynamic_shape
-        log.info(
-            f"Xnnpack Partitioner updated supported modules with dynamic shapes: {self.supported_modules}"
-        )
+        self.has_dynamic_shapes = has_dynamic_shapes
+        if has_dynamic_shapes:
+            self.supported_ops = self.supported_ops - set(STATIC_OPS)
+            self.supported_modules = self.supported_modules - set(STATIC_MODULES)
+            self.supported_quant_ops = self.supported_quant_ops - set(STATIC_OPS)
+            self.supported_quant_modules = self.supported_quant_modules - set(
+                STATIC_MODULES
+            )
 
     def get_supported_modules(self, quant: bool) -> Set[Callable]:
         """
@@ -1187,7 +1187,9 @@ class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
         partitions = [
             Partition(
                 id=next(partition_id),
-                nodes=set(match),
+                nodes=set(
+                    filter(lambda x: x.target != torch.ops.aten.sym_size.int, match)
+                ),
             )
             for match in self.get_module_partitions(exported_program)
         ]

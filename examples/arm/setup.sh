@@ -76,7 +76,7 @@ fi
 
 # ethos-u
 ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
-ethos_u_base_rev="0995223100e3da8011700f58e491f1bf59511e3c"
+ethos_u_base_rev="24.05"
 
 ########
 ### Mandatory user args
@@ -152,7 +152,7 @@ function setup_ethos_u() {
         git clone ${ethos_u_repo_url}
     cd ethos-u
     git reset --hard ${ethos_u_base_rev}
-    python3 ./fetch_externals.py fetch
+    python3 ./fetch_externals.py -c ${ethos_u_base_rev}.json fetch
     pip install pyelftools
     echo "[${FUNCNAME[0]}] Done @ $(git describe --all --long 3> /dev/null) in ${root_dir}/ethos-u dir."
 }
@@ -215,7 +215,7 @@ function setup_vela() {
     if [[ ! -e ethos-u-vela ]]; then
         git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
         repo_dir="${root_dir}/ethos-u-vela"
-        base_rev=b90666d9b43f4b5223bb4dcecdbee87b2ad757c2
+        base_rev=7706c1281166e7611f4300ed26338087152a33c9
         patch_repo
     fi
     cd "${root_dir}/ethos-u-vela"

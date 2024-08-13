@@ -7,8 +7,9 @@
 import unittest
 
 import torch
-from executorch import exir
+from executorch.exir import to_edge
 from executorch.exir.print_program import inspect_node
+from torch.export import export
 
 
 class TestPrintProgram(unittest.TestCase):
@@ -38,10 +39,12 @@ class TestPrintProgram(unittest.TestCase):
         warp_model = WrapModule()
         example_inputs = (torch.rand(1, 32, 16, 16),)
 
-        exir_exported_program = exir.capture(warp_model, example_inputs).to_edge()
+        exir_exported_program = to_edge(export(warp_model, example_inputs))
         number_of_stack_trace = 0
-        for node in exir_exported_program.exported_program.graph.nodes:
-            node_info = inspect_node(exir_exported_program.exported_program.graph, node)
+        for node in exir_exported_program.exported_program().graph.nodes:
+            node_info = inspect_node(
+                exir_exported_program.exported_program().graph, node
+            )
             self.assertRegex(node_info, r".*-->.*")
             if "stack_trace" in node.meta:
                 self.assertRegex(

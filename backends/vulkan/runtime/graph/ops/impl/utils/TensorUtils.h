@@ -8,56 +8,63 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
-#include <ATen/native/vulkan/api/api.h>
-
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 //
 // Tensor output size calculation functions
 //
 
 std::vector<int64_t> calculate_broadcasted_output_size(
-    const vTensor& t1,
-    const vTensor& t2);
+    const api::vTensor& t1,
+    const api::vTensor& t2);
 
 //
 // Tensor property checking functions
 //
 
-bool check_ndim_is(const vTensor& t, size_t ndim);
+bool check_ndim_is(const api::vTensor& t, size_t ndim);
 
-bool check_same_ndim(const vTensor& t1, const vTensor& t2);
+bool check_same_ndim(const api::vTensor& t1, const api::vTensor& t2);
 
 bool check_same_sizes_at(
-    const vTensor& t1,
+    const api::vTensor& t1,
     int64_t d1,
-    const vTensor& t2,
+    const api::vTensor& t2,
     int64_t d2);
 
-bool check_memory_layout_is(const vTensor& t, api::GPUMemoryLayout layout);
+bool check_memory_layout_is(
+    const api::vTensor& t,
+    utils::GPUMemoryLayout layout);
 
-bool check_same_memory_layout(const vTensor& t1, const vTensor& t2);
+bool check_same_memory_layout(const api::vTensor& t1, const api::vTensor& t2);
 
 bool check_same_memory_layout(
-    const vTensor& t1,
-    const vTensor& t2,
-    const vTensor& t3);
-
-bool check_broadcastable(const vTensor& t1, const vTensor& t2);
+    const api::vTensor& t1,
+    const api::vTensor& t2,
+    const api::vTensor& t3);
 
 //
-// Work Group Size Calculation Utilities
+// Broadcast flag functions
 //
 
-api::utils::uvec3 adaptive_work_group_size(
-    const api::utils::uvec3& global_work_group);
+utils::ivec2 create_broadcast_params(
+    const api::vTensor& t1,
+    const api::vTensor& t2);
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+//
+// Work group size calculation functions
+//
 
-#endif /* USE_VULKAN_API */
+utils::uvec3 adaptive_work_group_size(const utils::uvec3& global_work_group);
+
+//
+// Tensor dim utilities
+//
+
+inline int64_t normalize(const int64_t dimension, const int64_t n) {
+  return (dimension % n + n) % n;
+}
+
+} // namespace vkcompute

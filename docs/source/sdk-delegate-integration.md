@@ -20,7 +20,7 @@ Delegate authors propagate what transformations occur in a lowered backend by re
 
 For example:
 - **{ 0: (10, 11), 1: (11, 12) }:** Identifiers 0 and 1 in the runtime correspond to operators with the debug handles (10, 11) and (11, 12) respectively.
-- **{ “Fancy Fusion”: (11, 12, 15) }**: Identifier “Fancy Fusion” in the runtime corresponds to operators with debug handles (11, 12, 15).
+- **{ “fused_op_1_2_3”: (11, 12, 15) }**: Identifier “fused_op_1_2_3” in the runtime corresponds to operators with debug handles (11, 12, 15), and 11, 12, 15 corresponds to the op 1, op 2 and op 3.
 
 ```{Note}
 Identifiers are a means of connecting runtime results to the model graph; the interpretation of the identifiers is defined by the delegate author.

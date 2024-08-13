@@ -1,0 +1,20 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+conv1d:
+  parameter_names_with_default_values:
+    OPERATOR: X
+    NDIM: 3
+    DTYPE: float
+    PACKING: C_packed
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+  shader_variants:
+    - NAME: conv1d
+    - NAME: conv1d_clamp
+      OPERATOR: clamp(X, A, B)

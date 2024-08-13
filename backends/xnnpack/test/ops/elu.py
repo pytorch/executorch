@@ -28,9 +28,7 @@ class TestElu(unittest.TestCase):
             Tester(self.ELU(), inputs)
             .export()
             .check_count({"torch.ops.aten.elu.default": 1})
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_elu_default": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -39,22 +37,21 @@ class TestElu(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
-    @unittest.skip("T171810227 - Missing recomposition for ELU")
-    def test_fp16_elu(self):
+    @unittest.skip("PyTorch Pin Update Required")
+    def _test_fp16_elu(self):
         inputs = (torch.randn(1, 3, 3).to(torch.float16),)
         self._test_elu(inputs)
 
-    @unittest.skip("T171810227 - Missing recomposition for ELU")
-    def test_fp32_elu(self):
+    @unittest.skip("PyTorch Pin Update Required")
+    def _test_fp32_elu(self):
         inputs = (torch.randn(1, 3, 3),)
         self._test_elu(inputs)
 
-    @unittest.skip("T171810227 - Missing recomposition for ELU")
-    def test_qs8_elu(self):
+    @unittest.skip("Update Quantizer to quantize Elu")
+    def _test_qs8_elu(self):
         inputs = (torch.randn(1, 3, 4, 4),)
         (
             Tester(self.ELU(), inputs)
@@ -62,9 +59,7 @@ class TestElu(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.elu.default": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_elu_default": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -74,12 +69,11 @@ class TestElu(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
-    @unittest.skip("T171810227 - Missing recomposition for ELU")
-    def test_qs8_elu_functional(self):
+    @unittest.skip("Update Quantizer to quantize Elu")
+    def _test_qs8_elu_functional(self):
         inputs = (torch.randn(1, 3, 4, 4),)
         (
             Tester(self.ELU(), inputs)
@@ -87,9 +81,7 @@ class TestElu(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.elu.default": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_elu_default": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -99,6 +91,5 @@ class TestElu(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

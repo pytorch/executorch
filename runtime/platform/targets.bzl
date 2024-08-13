@@ -37,13 +37,13 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    # Base implementations of pal functions. These are weak symbols, so client
-    # defined implementations will overide them.
+    # Default implementations of pal functions. These are weak symbols, so
+    # client defined implementations will overide them.
     runtime.cxx_library(
         name = "platform_private",
         srcs = _select_pal({
-            "minimal": ["target/Minimal.cpp"],
-            "posix": ["target/Posix.cpp"],
+            "minimal": ["default/minimal.cpp"],
+            "posix": ["default/posix.cpp"],
         }),
         deps = [
             ":pal_interface",
@@ -52,8 +52,8 @@ def define_common_targets():
             "//executorch/core/...",
         ],
         # WARNING: using a deprecated API to avoid being built into a shared
-        # library. In the case of dynamically loading so library we don't want
-        # it to depend on other so libraries because that way we have to
+        # library. In the case of dynamically loading .so library we don't want
+        # it to depend on other .so libraries because that way we have to
         # specify library directory path.
         force_static = True,
     )
@@ -99,7 +99,6 @@ def define_common_targets():
             "platform.h",
             "system.h",
             "types.h",
-            "hooks.h",
         ],
         exported_deps = [
             ":compiler",

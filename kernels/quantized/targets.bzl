@@ -9,21 +9,52 @@ def define_common_targets():
         ],
     )
 
+    # Excluding embedding_byte ops because we choose to define them
+    # in python separately, mostly to be easy to share with oss.
     et_operator_library(
-        name = "all_quantized_ops",
-        ops_schema_yaml_target = ":quantized.yaml",
+        name = "quantized_ops_need_aot_registration",
+        ops = [
+            "quantized_decomposed::add.out",
+            "quantized_decomposed::choose_qparams.Tensor_out",
+            "quantized_decomposed::dequantize_per_channel.out",
+            "quantized_decomposed::dequantize_per_tensor.out",
+            "quantized_decomposed::dequantize_per_tensor.Tensor_out",
+            "quantized_decomposed::mixed_linear.out",
+            "quantized_decomposed::mixed_mm.out",
+            "quantized_decomposed::quantize_per_channel.out",
+            "quantized_decomposed::quantize_per_tensor.out",
+            "quantized_decomposed::quantize_per_tensor.Tensor_out",
+        ],
         define_static_targets = True,
     )
 
     # lib used to register quantized ops into EXIR
+    exir_custom_ops_aot_lib(
+        name = "custom_ops_generated_lib",
+        yaml_target = ":quantized.yaml",
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+        kernels = [":quantized_operators_aten"],
+        deps = [
+            ":quantized_ops_need_aot_registration",
+        ],
+    )
+
+    # lib used to register quantized ops into EXIR
+    # TODO: merge this with custom_ops_generated_lib
     exir_custom_ops_aot_lib(
         name = "aot_lib",
         yaml_target = ":quantized.yaml",
         visibility = ["//executorch/..."],
         kernels = [":quantized_operators_aten"],
         deps = [
-            ":all_quantized_ops",
+            ":quantized_ops_need_aot_registration",
         ],
+    )
+
+    et_operator_library(
+        name = "all_quantized_ops",
+        ops_schema_yaml_target = ":quantized.yaml",
+        define_static_targets = True,
     )
 
     for aten_mode in (True, False):
@@ -49,6 +80,7 @@ def define_common_targets():
             ],
             custom_ops_yaml_target = ":quantized.yaml",
             custom_ops_aten_kernel_deps = [":quantized_operators_aten"] if aten_mode else [],
+            custom_ops_requires_aot_registration = False,
             aten_mode = aten_mode,
             visibility = [
                 "//executorch/...",
@@ -56,3 +88,15 @@ def define_common_targets():
             ],
             define_static_targets = True,
         )
+
+    runtime.python_library(
+        name = "quantized_ops_lib",
+        srcs = ["__init__.py"],
+        deps = [
+            "//caffe2:torch",
+        ],
+        visibility = [
+            "//executorch/kernels/quantized/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )

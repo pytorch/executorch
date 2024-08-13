@@ -11,7 +11,7 @@ import torch
 from executorch import exir
 from executorch.backends.example.example_partitioner import ExamplePartitioner
 from executorch.backends.example.example_quantizer import ExampleQuantizer
-from executorch.exir.backend.backend_api import to_backend
+from executorch.exir import to_edge
 
 from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
     DuplicateDequantNodePass,
@@ -19,8 +19,8 @@ from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass 
 from executorch.exir.delegate import executorch_call_delegate
 
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.export import export
 
-# @manual=//pytorch/vision:torchvision
 from torchvision.models.quantization import mobilenet_v2
 
 
@@ -40,9 +40,9 @@ class TestExampleDelegate(unittest.TestCase):
 
         model = Conv2dModule()
         example_inputs = Conv2dModule.get_example_inputs()
-        CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
         EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
             _check_ir_validity=False,
+            _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
         )
 
         m = model.eval()
@@ -59,26 +59,26 @@ class TestExampleDelegate(unittest.TestCase):
         m = convert_pt2e(m)
 
         quantized_gm = m
-        exported_program = exir.capture(
-            quantized_gm, copy.deepcopy(example_inputs), CAPTURE_CONFIG
-        ).to_edge(EDGE_COMPILE_CONFIG)
+        exported_program = to_edge(
+            export(quantized_gm, copy.deepcopy(example_inputs)),
+            compile_config=EDGE_COMPILE_CONFIG,
+        )
 
-        lowered_export_program = to_backend(
-            exported_program.exported_program,
+        lowered_export_program = exported_program.to_backend(
             ExamplePartitioner(),
         )
 
         print("After lowering to qnn backend: ")
-        lowered_export_program.graph.print_tabular()
+        lowered_export_program.exported_program().graph.print_tabular()
 
     def test_delegate_mobilenet_v2(self):
         model = mobilenet_v2(num_classes=3)
         model.eval()
         example_inputs = (torch.rand(1, 3, 320, 240),)
 
-        CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
         EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
             _check_ir_validity=False,
+            _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
         )
 
         m = model.eval()
@@ -91,20 +91,22 @@ class TestExampleDelegate(unittest.TestCase):
         m = convert_pt2e(m)
 
         quantized_gm = m
-        exported_program = exir.capture(
-            quantized_gm, copy.deepcopy(example_inputs), CAPTURE_CONFIG
-        ).to_edge(EDGE_COMPILE_CONFIG)
+        exported_program = to_edge(
+            export(quantized_gm, copy.deepcopy(example_inputs)),
+            compile_config=EDGE_COMPILE_CONFIG,
+        )
 
-        lowered_export_program = to_backend(
-            exported_program.transform(DuplicateDequantNodePass()).exported_program,
+        lowered_export_program = exported_program.transform(
+            [DuplicateDequantNodePass()]
+        ).to_backend(
             ExamplePartitioner(),
         )
 
-        lowered_export_program.graph.print_tabular()
+        lowered_export_program.exported_program().graph.print_tabular()
 
         call_deleage_node = [
             node
-            for node in lowered_export_program.graph.nodes
+            for node in lowered_export_program.exported_program().graph.nodes
             if node.target == executorch_call_delegate
         ]
         self.assertEqual(len(call_deleage_node), 1)

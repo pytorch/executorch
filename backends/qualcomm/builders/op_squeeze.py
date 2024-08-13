@@ -15,7 +15,7 @@ from .qnn_constants import OpReshape, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Squeeze(NodeVisitor):
-    target = "aten.squeeze_copy.dims"
+    target = ["aten.squeeze_copy.dims", "aten.squeeze.dims"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -33,6 +33,7 @@ class Squeeze(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         output_tensor = self.get_tensor(node, node)
@@ -41,6 +42,7 @@ class Squeeze(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         squeeze_op = PyQnnWrapper.PyQnnOpWrapper(

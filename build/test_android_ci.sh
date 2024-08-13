@@ -8,7 +8,7 @@
 set -ex
 
 # https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/ExecuTorchDemo
-build_executorch() {
+export_model() {
   MODEL_NAME=dl3
   # Delegating DeepLab v3 to XNNPACK backend
   python -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate
@@ -16,17 +16,15 @@ build_executorch() {
   ASSETS_DIR=examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
   mkdir -p "${ASSETS_DIR}"
   cp "${MODEL_NAME}_xnnpack_fp32.pte" "${ASSETS_DIR}"
-
-  rm -rf cmake-out && mkdir cmake-out
-  ANDROID_NDK=/opt/ndk BUCK2=$(which buck2) FLATC=$(which flatc) ANDROID_ABI=arm64-v8a \
-    bash examples/demo-apps/android/ExecuTorchDemo/setup.sh
 }
 
 build_android_demo_app() {
+  mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/libs
+  cp executorch.aar examples/demo-apps/android/ExecuTorchDemo/app/libs
   pushd examples/demo-apps/android/ExecuTorchDemo
   ANDROID_HOME=/opt/android/sdk ./gradlew build
   popd
 }
 
-build_executorch
+export_model
 build_android_demo_app

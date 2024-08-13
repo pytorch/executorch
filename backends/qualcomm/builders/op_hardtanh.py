@@ -10,6 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpReluMinMax, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -17,7 +18,7 @@ from .qnn_constants import OpReluMinMax, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class HardTanhVisitor(NodeVisitor):
-    target = "aten.hardtanh.default"
+    target = ["aten.hardtanh.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -34,6 +35,7 @@ class HardTanhVisitor(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         # default value of output_min and output_max
@@ -52,6 +54,7 @@ class HardTanhVisitor(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         hardtanh_op = PyQnnWrapper.PyQnnOpWrapper(
@@ -64,12 +67,12 @@ class HardTanhVisitor(NodeVisitor):
         hardtanh_op.AddScalarParam(
             OpReluMinMax.param_max_value,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-            {"data": np.float32(output_max)},
+            {QCOM_DATA: np.float32(output_max)},
         )
         hardtanh_op.AddScalarParam(
             OpReluMinMax.param_min_value,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-            {"data": np.float32(output_min)},
+            {QCOM_DATA: np.float32(output_min)},
         )
 
         return hardtanh_op

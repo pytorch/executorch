@@ -36,17 +36,12 @@ class TestPermute(unittest.TestCase):
             Tester(self.Permute([0, 2, 3, 1]), inputs)
             .export()
             .check_count({"torch.ops.aten.permute.default": 1})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_permute_copy_default"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_permute(self):
@@ -63,17 +58,12 @@ class TestPermute(unittest.TestCase):
             Tester(self.PermuteCopy([0, 2, 3, 1]), inputs)
             .export()
             .check_count({"torch.ops.aten.permute_copy.default": 1})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_permute_copy_default"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_qs8_permute(self):
@@ -88,11 +78,7 @@ class TestPermute(unittest.TestCase):
                     torch.ops.quantized_decomposed.quantize_per_tensor.default: 3,
                 }
             )
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -102,8 +88,7 @@ class TestPermute(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_qs8_permute_copy(self):
@@ -118,11 +103,7 @@ class TestPermute(unittest.TestCase):
                     torch.ops.quantized_decomposed.quantize_per_tensor.default: 3,
                 }
             )
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -132,6 +113,5 @@ class TestPermute(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

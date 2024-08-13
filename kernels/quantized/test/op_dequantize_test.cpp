@@ -116,11 +116,11 @@ TEST(OpDequantizeOutTest, TensorArgOverload) {
 
 TEST(OpDequantizeOutTest, DequantizePerChannel) {
   TensorFactory<ScalarType::Byte> tf_byte;
-  TensorFactory<ScalarType::Double> tf_double;
+  TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Long> tf_long;
 
   Tensor input = tf_byte.full({3, 2}, 100);
-  Tensor scale = tf_double.make({2}, {0.5, 1});
+  Tensor scale = tf_float.make({2}, {0.5, 1});
   Tensor zero_point = tf_long.make({2}, {30, 60});
   int64_t quant_min = 0;
   int64_t quant_max = 255;
@@ -145,7 +145,7 @@ TEST(OpDequantizeOutTest, DequantizePerChannel) {
 
   // Test with a different axis
   out = tfo.zeros({3, 2});
-  scale = tf_double.make({3}, {0.5, 0.75, 1});
+  scale = tf_float.make({3}, {0.5, 0.75, 1});
   zero_point = tf_long.make({3}, {30, 50, 60});
   // (100 - 30) * 0.5
   // (100 - 50) * 0.75
@@ -162,5 +162,26 @@ TEST(OpDequantizeOutTest, DequantizePerChannel) {
       optional<ScalarType>(),
       out);
 
+  EXPECT_TENSOR_EQ(out, expected);
+
+  // Test with a different axis
+  out = tfo.zeros({3});
+  input = tf_byte.make({3}, {100, 100, 100});
+  scale = tf_float.make({3}, {0.5, 0.75, 1});
+  zero_point = tf_long.make({3}, {30, 50, 60});
+  // (100 - 30) * 0.5
+  // (100 - 50) * 0.75
+  // (100 - 60) * 1
+  expected = tfo.make({3}, {35, 37.5, 40});
+  dequantize_per_channel_out(
+      input,
+      scale,
+      zero_point,
+      /*axis=*/0,
+      quant_min,
+      quant_max,
+      ScalarType::Byte,
+      optional<ScalarType>(),
+      out);
   EXPECT_TENSOR_EQ(out, expected);
 }

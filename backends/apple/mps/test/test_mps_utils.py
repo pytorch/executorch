@@ -10,12 +10,11 @@ from typing import Any, Tuple, Union
 
 import executorch.exir as exir
 import torch
-from executorch.backends.apple.mps.mps_preprocess import MPSBackend
-from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
+from executorch.backends.apple.mps import MPSBackend
+from executorch.backends.apple.mps.partition import MPSPartitioner
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
-    ExecutorchProgram,
     ExirExportedProgram,
     to_edge,
 )
@@ -28,12 +27,14 @@ from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuit
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-from torch._export import capture_pre_autograd_graph
 from torch.export import export, ExportedProgram
 
 # Config for Capturing the weights, will be moved in the future
-_CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True, _unlift=True)
-_EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(_check_ir_validity=False)
+
+# TODO(T182928844): Delegate dim order op to backend.
+_EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
+    _check_ir_validity=False, _skip_dim_order=True
+)
 
 
 def _to_core_aten(
@@ -57,6 +58,7 @@ def _core_aten_to_edge(
     if not edge_compile_config:
         edge_compile_config = exir.EdgeCompileConfig(
             _check_ir_validity=False,  # quant ops currently break ir verification
+            _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
         )
     edge_manager: EdgeProgramManager = to_edge(
         core_aten_exir_ep, compile_config=edge_compile_config
@@ -141,7 +143,59 @@ def randomize_bn(num_features: int, dimensionality: int = 2) -> torch.nn.Module:
     return bn
 
 
+def dump_bundled_program(sample_inputs, expected_output, executorch_program, func_name):
+    method_test_suites = [
+        MethodTestSuite(
+            method_name="forward",
+            test_cases=[
+                MethodTestCase(inputs=sample_inputs, expected_outputs=expected_output)
+            ],
+        )
+    ]
+
+    logging.info(f"Expected output: {expected_output}")
+    logging.info("  -> Test suites generated successfully")
+
+    bundled_program = BundledProgram(executorch_program, method_test_suites)
+    bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
+        bundled_program
+    )
+
+    filename = f"{func_name}.pte"
+    logging.info(f"Step 4: Saving bundled program to {filename}")
+    with open(filename, "wb") as file:
+        file.write(bundled_program_buffer)
+
+
 class TestMPS(unittest.TestCase):
+    def assert_outputs_equal(self, model_output, ref_output):
+        """
+        Helper testing function that asserts that the model output and the reference output
+        are equal with some tolerance. Due to numerical differences between eager mode and
+        the MPS's backend, we relax the detal such that absolute tolerance is 1e-3. and
+        relative tolerance is 1e-3.
+        """
+
+        # Compare the result from executor and eager mode direclty
+        if isinstance(ref_output, tuple) or isinstance(ref_output, list):
+            # Multiple outputs executor always returns tuple, even if there is one output
+            self.assertTrue(
+                len(ref_output) == len(model_output),
+                msg="Length of outputs is not matching!",
+            )
+            for i in range(len(ref_output)):
+                self.assertTrue(
+                    torch.allclose(
+                        model_output[i], ref_output[i], atol=1e-03, rtol=1e-03
+                    )
+                )
+        else:
+            # If one output, eager returns tensor while executor tuple of size 1
+            self.assertTrue(
+                torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03),
+                msg="Outputs are not matching!",
+            )
+
     def lower_module_and_test_output(
         self,
         module: Any,
@@ -149,31 +203,32 @@ class TestMPS(unittest.TestCase):
         func_name: str,
         use_partitioner: bool = True,
         use_fp16: bool = False,
+        bundled_program=True,
     ) -> ExirExportedProgram:
         """
         Helper testing function that takes a torch.nn.Module and lowers it to MPS with
         the given sample inputs. It then runs the lowered module and compares its
         outputs with the outputs of the eager module.
         """
-
         logging.info("Step 1: EXIR capturing of original module")
 
-        class WrappedModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.one_module = module
+        model = module.eval()
+        original_inputs = []
+        for t in sample_inputs:
+            original_inputs.append(t.detach().clone())
+        original_inputs = tuple(original_inputs)
 
-            def forward(self, *args):
-                return self.one_module(*args)
+        expected_output = model(*sample_inputs)
 
-        model = WrappedModule()
-        model = model.eval()
-        model = capture_pre_autograd_graph(model, sample_inputs)
+        model = torch._export.capture_pre_autograd_graph(model, sample_inputs)
 
         edge_program = export_to_edge(
             model,
             sample_inputs,
-            edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            edge_compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+                _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+            ),
         )
 
         logging.info(
@@ -183,65 +238,68 @@ class TestMPS(unittest.TestCase):
 
         if use_partitioner:
             logging.info(f"Edge IR graph:\n{edge_program.exported_program().graph}")
-            edge = edge_program.to_backend(MPSPartitioner(compile_specs=compile_specs))
-            logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
+            delegated_program = edge_program
+            delegated_program = edge_program.to_backend(
+                MPSPartitioner(compile_specs=compile_specs)
+            )
+            logging.info(
+                f"Lowered graph:\n{delegated_program.exported_program().graph}"
+            )
 
-            executorch_program = edge.to_executorch(
-                config=ExecutorchBackendConfig(extract_constant_segment=False)
+            executorch_program = delegated_program.to_executorch(
+                config=ExecutorchBackendConfig(
+                    extract_delegate_segments=False, extract_constant_segment=False
+                )
             )
         else:
             delegated_program = to_backend(
                 MPSBackend.__name__, edge_program.exported_program(), compile_specs
             )
 
-            executorch_program = (
-                exir.capture(
+            executorch_program = to_edge(
+                export(
                     delegated_program,
                     sample_inputs,
-                    exir.CaptureConfig(enable_aot=True, _unlift=False),
-                )
-                .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-                .to_executorch(
-                    config=ExecutorchBackendConfig(extract_constant_segment=False)
+                ),
+                compile_config=exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                    _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+                ),
+            ).to_executorch(
+                config=ExecutorchBackendConfig(
+                    extract_delegate_segments=False, extract_constant_segment=False
                 )
             )
 
-        exported_program: ExirExportedProgram = exir.capture(
-            WrappedModule(), sample_inputs, _CAPTURE_CONFIG
-        ).to_edge(_EDGE_COMPILE_CONFIG)
-
-        executorch_program: ExecutorchProgram = exported_program.to_executorch()
-
-        logging.info("Step 3: Generating bundled program")
-        logging.info(
-            "  -> Number of execution plans: {len(executorch_program.program.execution_plan)}"
-        )
-
-        expected_output = module(*sample_inputs)
-
-        method_test_suites = [
-            MethodTestSuite(
-                method_name="forward",
-                test_cases=[
-                    MethodTestCase(
-                        inputs=sample_inputs, expected_outputs=module(*sample_inputs)
-                    )
-                ],
+        if bundled_program:
+            dump_bundled_program(
+                sample_inputs, expected_output, executorch_program, func_name
             )
-        ]
+        try:
+            from executorch.extension.pybindings.portable_lib import (  # @manual
+                _load_for_executorch_from_buffer,
+            )
 
-        logging.info(f"Expected output: {expected_output}")
-        logging.info("  -> Test suites generated successfully")
+            logging.info("Testing delegated program using pybind")
 
-        bundled_program = BundledProgram(executorch_program, method_test_suites)
-        bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
-            bundled_program
-        )
+            # Test the model with executor
+            logging.debug("Initializing MPSGraph")
+            executorch_module = _load_for_executorch_from_buffer(
+                executorch_program.buffer
+            )
 
-        filename = f"{func_name}.pte"
-        logging.info(f"Step 4: Saving bundled program to {filename}")
-        with open(filename, "wb") as file:
-            file.write(bundled_program_buffer)
+            model_output = executorch_module.forward(original_inputs)
+
+            logging.info(f"Expected output: {expected_output}")
+            logging.info(f"MPS delegate output: {model_output}")
+            self.assert_outputs_equal(model_output, expected_output)
+            logging.info("Delegated program matches PyTorch Eager mode result!")
+
+            return delegated_program
+        except ImportError:
+            logging.info(
+                "ExecuTorch MPS delegate was built without pybind support. Exiting..."
+            )
 
     def lower_and_test_with_partitioner(
         self,
@@ -251,7 +309,6 @@ class TestMPS(unittest.TestCase):
         use_fp16: bool = False,
     ):
         logging.info(func_name)
-        # MPS TODO: partitioner support
         self.lower_module_and_test_output(
             graph_module,
             example_inputs,

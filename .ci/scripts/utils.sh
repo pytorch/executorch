@@ -1,6 +1,7 @@
 #!/bin/bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
+# Copyright 2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,8 +19,11 @@ retry () {
 install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
-  # current directory
-  pip install . --no-build-isolation -v
+  # current directory. The --extra-index-url options tell pip to look on the
+  # pytorch servers for nightly and pre-release versions of torch packages.
+  pip install . --no-build-isolation -v \
+      --extra-index-url https://download.pytorch.org/whl/test/cpu \
+      --extra-index-url https://download.pytorch.org/whl/nightly/cpu
   # Just print out the list of packages for debugging
   pip list
 }
@@ -86,6 +90,17 @@ install_flatc_from_source() {
   popd || return
 }
 
+install_arm() {
+  # NB: This function could be used to install Arm dependencies
+  # Setup arm example environment (including TOSA tools)
+  git config --global user.email "github_executorch@arm.com"
+  git config --global user.name "Github Executorch"
+  bash examples/arm/setup.sh --i-agree-to-the-contained-eula
+
+  # Test tosa_reference flow
+  source examples/arm/ethos-u-scratch/setup_path.sh
+}
+
 build_executorch_runner_buck2() {
   # Build executorch runtime with retry as this step is flaky on macos CI
   retry buck2 build //examples/portable/executor_runner:executor_runner
@@ -99,7 +114,7 @@ build_executorch_runner_cmake() {
   pushd "${CMAKE_OUTPUT_DIR}" || return
   # This command uses buck2 to gather source files and buck2 could crash flakily
   # on MacOS
-  retry cmake -DBUCK2=buck2 -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE=Release ..
+  retry cmake -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE=Release ..
   popd || return
 
   if [ "$(uname)" == "Darwin" ]; then
@@ -134,8 +149,8 @@ cmake_install_executorch_lib() {
 
 download_stories_model_artifacts() {
     # Download stories110M.pt and tokenizer from Github
-  wget "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt"
-  wget "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model"
+  curl -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt" --output stories110M.pt
+  curl -Ls "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model" --output tokenizer.model
   # Create params.json file
   touch params.json
   echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json

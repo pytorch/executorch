@@ -11,9 +11,9 @@
 # Creates PR with release only changes.
 #
 # Usage (run from root of project):
-#  DRY_RUN=disabled ./scripts/release/apply-release-changes.sh
+#   TEST_INFRA_BRANCH=release/2.3 ./scripts/release/apply-release-changes.sh
 #
-# RELEASE_VERSION: Version of this current release
+# TEST_INFRA_BRANCH: The release branch of test-infra that houses all reusable
 '
 
 set -eou pipefail
@@ -26,7 +26,7 @@ RELEASE_BRANCH="release/${RELEASE_VERSION}"
 
 if git ls-remote --exit-code origin ${RELEASE_BRANCH} >/dev/null 2>&1; then
   echo "Check out to Release Branch '${RELEASE_BRANCH}'"
-  git checkout -b ${RELEASE_BRANCH}
+  git checkout ${RELEASE_BRANCH}
 else
   echo "Error: Remote branch '${RELEASE_BRANCH}' not found. Please run 'cut-release-branch.sh' first."
   exit 1
@@ -37,11 +37,11 @@ fi
 echo "Applying release-only changes to workflows"
 for i in .github/workflows/*.yml; do
   if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' -e s#@main#@"${RELEASE_BRANCH}"# $i;
-    sed -i '' -e s#test-infra-ref:[[:space:]]main#"test-infra-ref: ${RELEASE_BRANCH}"# $i;
+    sed -i '' -e s#@main#@"${TEST_INFRA_BRANCH}"# $i;
+    sed -i '' -e s#test-infra-ref:[[:space:]]main#"test-infra-ref: ${TEST_INFRA_BRANCH}"# $i;
   else
-    sed -i -e s#@main#@"${RELEASE_BRANCH}"# $i;
-    sed -i -e s#test-infra-ref:[[:space:]]main#"test-infra-ref: ${RELEASE_BRANCH}"# $i;
+    sed -i -e s#@main#@"${TEST_INFRA_BRANCH}"# $i;
+    sed -i -e s#test-infra-ref:[[:space:]]main#"test-infra-ref: ${TEST_INFRA_BRANCH}"# $i;
   fi
 done
 

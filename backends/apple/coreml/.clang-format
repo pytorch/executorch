@@ -1,5 +1,4 @@
 BasedOnStyle: WebKit
-BreakBeforeBraces: Attach
 AllowShortIfStatementsOnASingleLine: false
 BreakBeforeBinaryOperators: None
 BreakConstructorInitializers: BeforeColon
@@ -26,4 +25,3 @@ BraceWrapping:
 
 # Options for aligning backslashes in escaped newlines.
 AlignEscapedNewlines: Left
-

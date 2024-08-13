@@ -100,6 +100,8 @@
 		C9E7D7952AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D78D2AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm */; };
 		C9E7D7962AB3F9BF00CCAE5D /* KeyValueStoreTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D78E2AB3F9BF00CCAE5D /* KeyValueStoreTests.mm */; };
 		C9E7D7A22AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7A12AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm */; };
+		F24817E52BC655E100E80D98 /* libexecutorch_no_prim_ops.a in Frameworks */ = {isa = PBXBuildFile; fileRef = F24817E42BC655E100E80D98 /* libexecutorch_no_prim_ops.a */; };
+		C9EC7E1B2BC73B3200A6B166 /* MultiArrayTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9EC7E1A2BC73B3200A6B166 /* MultiArrayTests.mm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -253,6 +255,7 @@
 		C985519C2AD2542D009143F9 /* mul_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = mul_coreml_all.pte; path = ../test/models/mul_coreml_all.pte; sourceTree = "<group>"; };
 		C985519D2AD2542D009143F9 /* add_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = add_coreml_all.pte; path = ../test/models/add_coreml_all.pte; sourceTree = "<group>"; };
 		C988D69E2B998D8400979CF6 /* model_event_logger_impl.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = model_event_logger_impl.h; path = ../sdk/model_event_logger_impl.h; sourceTree = "<group>"; };
+		C988D6FB2B9BA94000979CF6 /* range.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; name = range.hpp; path = ../inmemoryfs/range.hpp; sourceTree = "<group>"; };
 		C99883202B92D220000953A3 /* ETCoreMLComputeUnits.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLComputeUnits.h; path = ../delegate/ETCoreMLComputeUnits.h; sourceTree = "<group>"; };
 		C99883852B95AD7D000953A3 /* libprotobuf-lite.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libprotobuf-lite.a"; path = "../libraries/libprotobuf-lite.a"; sourceTree = "<group>"; };
 		C99883872B964413000953A3 /* libexecutorch.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch.a; path = ../libraries/libexecutorch.a; sourceTree = "<group>"; };
@@ -260,7 +263,6 @@
 		C998838E2B96999F000953A3 /* ETCoreMLModelProfilerTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelProfilerTests.mm; path = ../test/ETCoreMLModelProfilerTests.mm; sourceTree = "<group>"; };
 		C99883902B96BEED000953A3 /* ETCoreMLModelCompiler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelCompiler.h; path = ../delegate/ETCoreMLModelCompiler.h; sourceTree = "<group>"; };
 		C99883912B96BEED000953A3 /* ETCoreMLModelCompiler.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelCompiler.mm; path = ../delegate/ETCoreMLModelCompiler.mm; sourceTree = "<group>"; };
-		C988D6FB2B9BA94000979CF6 /* range.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; name = range.hpp; path = ../inmemoryfs/range.hpp; sourceTree = "<group>"; };
 		C9D3DED52A9FCFC4001CC178 /* ETCoreMLAssetManager.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLAssetManager.mm; path = ../delegate/ETCoreMLAssetManager.mm; sourceTree = "<group>"; };
 		C9D3DED62A9FCFC4001CC178 /* ETCoreMLAssetManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLAssetManager.h; path = ../delegate/ETCoreMLAssetManager.h; sourceTree = "<group>"; };
 		C9D3DF002A9FD16E001CC178 /* statement.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = statement.hpp; path = ../kvstore/statement.hpp; sourceTree = "<group>"; };
@@ -297,6 +299,9 @@
 		C9EA3DB22B71A2B200B7D7BD /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = System/Library/Frameworks/CoreML.framework; sourceTree = SDKROOT; };
 		C9EA3FDE2B73EEA000B7D7BD /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		C9EA3FE52B73EF6300B7D7BD /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
+		F24817E42BC655E100E80D98 /* libexecutorch_no_prim_ops.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch_no_prim_ops.a; path = ../libraries/libexecutorch_no_prim_ops.a; sourceTree = "<group>"; };
+		C9EC7E092BC662A300A6B166 /* objc_array_util.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = objc_array_util.h; path = ../util/objc_array_util.h; sourceTree = "<group>"; };
+		C9EC7E1A2BC73B3200A6B166 /* MultiArrayTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = MultiArrayTests.mm; path = ../test/MultiArrayTests.mm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -305,6 +310,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C94D510F2ABDF87500AF47FD /* Accelerate.framework in Frameworks */,
+				F24817E52BC655E100E80D98 /* libexecutorch_no_prim_ops.a in Frameworks */,
 				C94D510E2ABDF86800AF47FD /* libsqlite3.tbd in Frameworks */,
 				C94D50D92ABD7B2400AF47FD /* CoreML.framework in Frameworks */,
 				C99883862B95AD7D000953A3 /* libprotobuf-lite.a in Frameworks */,
@@ -523,6 +529,7 @@
 				C96560942AABFDCE005F8126 /* libsqlite3.tbd */,
 				C96560922AABF992005F8126 /* CoreML.framework */,
 				C96560902AABF982005F8126 /* Accelerate.framework */,
+				F24817E42BC655E100E80D98 /* libexecutorch_no_prim_ops.a */,
 				C965608D2AABF72A005F8126 /* libexecutorch.a */,
 			);
 			name = "Recovered References";
@@ -536,6 +543,7 @@
 				C97716DB2AF44D9A00FC0DAC /* objc_json_serde.h */,
 				C97716DC2AF44E7B00FC0DAC /* objc_json_serde.mm */,
 				C97716DE2AF44FC400FC0DAC /* objc_safe_cast.h */,
+				C9EC7E092BC662A300A6B166 /* objc_array_util.h */,
 			);
 			name = util;
 			sourceTree = "<group>";
@@ -574,6 +582,7 @@
 				C998838C2B96841D000953A3 /* ETCoreMLModelStructurePathTests.mm */,
 				C998838E2B96999F000953A3 /* ETCoreMLModelProfilerTests.mm */,
 				C962271A2B984FB9002D13B7 /* ETCoreMLModelDebuggerTests.mm */,
+				C9EC7E1A2BC73B3200A6B166 /* MultiArrayTests.mm */,
 			);
 			name = test;
 			sourceTree = "<group>";
@@ -724,6 +733,7 @@
 				C945E9372B997EEE009C3FAC /* FeatureTypes.pb.cc in Sources */,
 				C945E9402B997EEE009C3FAC /* OneHotEncoder.pb.cc in Sources */,
 				C94D50E82ABDF81100AF47FD /* key_value_store.cpp in Sources */,
+				C9EC7E1B2BC73B3200A6B166 /* MultiArrayTests.mm in Sources */,
 				C945E9452B997EEE009C3FAC /* BayesianProbitRegressor.pb.cc in Sources */,
 				C945E8E52B997ECE009C3FAC /* ETCoreMLOperationProfilingInfo.mm in Sources */,
 				C945E9312B997EEE009C3FAC /* DataStructures.pb.cc in Sources */,
@@ -877,6 +887,11 @@
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"ET_EVENT_TRACER_ENABLED=1",
+					"$(inherited)",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../delegate",
@@ -885,7 +900,7 @@
 					"$(SRCROOT)/../include",
 					"$(SRCROOT)/../sdk",
 					"$(SRCROOT)/../util",
-					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
+					"$(SRCROOT)/../../third-party/nlohmann_json/single_include",
 					"$(SRCROOT)/../../third-party/coremltools/deps/protobuf/src",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -916,7 +931,7 @@
 					"$(SRCROOT)/../include",
 					"$(SRCROOT)/../sdk",
 					"$(SRCROOT)/../util",
-					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
+					"$(SRCROOT)/../../third-party/nlohmann_json/single_include",
 					"$(SRCROOT)/../../third-party/coremltools/deps/protobuf/src",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;

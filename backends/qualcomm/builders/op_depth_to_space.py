@@ -10,6 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpDepthToSpace, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -17,7 +18,7 @@ from .qnn_constants import OpDepthToSpace, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class DepthToSpaceVisitor(NodeVisitor):
-    target = "aten.pixel_shuffle.default"
+    target = ["aten.pixel_shuffle.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -34,6 +35,7 @@ class DepthToSpaceVisitor(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         output_tensor = self.get_tensor(node, node)
@@ -42,6 +44,7 @@ class DepthToSpaceVisitor(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         block_size = []
@@ -68,7 +71,7 @@ class DepthToSpaceVisitor(NodeVisitor):
         depth_to_space_op.AddScalarParam(
             OpDepthToSpace.param_mode,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(OpDepthToSpace.Mode.CRD)},
+            {QCOM_DATA: np.uint32(OpDepthToSpace.Mode.CRD)},
         )
 
         return depth_to_space_op

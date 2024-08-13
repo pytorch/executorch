@@ -39,3 +39,12 @@ def free(spec: TensorSpec) -> None:
     E.g., it can be the target of call_function node.
     """
     pass
+
+
+def view(base: torch.Tensor, size: List[int]) -> torch.Tensor:
+    """
+    This function mimics torch.ops.aten.view.default.
+
+    It is used to elide view_copy nodes.
+    """
+    return base.view(size)

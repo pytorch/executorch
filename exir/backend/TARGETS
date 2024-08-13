@@ -106,7 +106,9 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        "fbsource//third-party/pypi/pandas:pandas",
         "//caffe2:torch",
         "//executorch/exir:lowered_backend_module",
+        "//executorch/exir/backend/canonical_partitioners:duplicate_constant_node_pass",
     ],
 )

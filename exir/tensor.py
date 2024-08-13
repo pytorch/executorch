@@ -37,7 +37,11 @@ def contiguous_stride_from_shape(shape: torch.Size) -> Tuple[int]:
         strides.append(accum)
         # For sizes[i] == 0, treat it as 1 to be consistent with core Pytorch
         # This preserves the PT equivalent behavior for dims with 0 elements
-        if sz != 0:
+        if isinstance(sz, int):
+            if sz != 0:
+                accum *= sz
+        else:
+            # Unbacked symints may error on the != 0 check
             accum *= sz
     return tuple(reversed(strides))
 
@@ -254,6 +258,7 @@ scalar_type_table: Dict[torch.dtype, ScalarType] = {
     torch.qint32: ScalarType.QINT32,
     torch.bfloat16: ScalarType.BFLOAT16,
     torch.quint4x2: ScalarType.QUINT4x2,
+    torch.uint16: ScalarType.Bits16,
 }
 
 
@@ -303,7 +308,7 @@ def make_allocation_info(mem_id: int, mem_offset: int) -> schema.AllocationDetai
 
 
 def make_tensor_value(
-    constant_buffer_idx: int,
+    data_buffer_idx: int,
     allocation_info: Optional[schema.AllocationDetails],
     spec: TensorSpec,
 ) -> schema.Tensor:
@@ -321,11 +326,6 @@ def make_tensor_value(
         else:
             return x
 
-    internal_assert(
-        not spec.const or not allocation_info,
-        "We only create non-constant tensors as the constant tensors are directly written to buffer",
-    )
-
     tensor_size = to_list(spec.shape)
     tensor_dim_order = to_list(spec.dim_order)
 
@@ -336,7 +336,7 @@ def make_tensor_value(
         sizes=tensor_size,
         dim_order=tensor_dim_order,
         requires_grad=spec.requires_grad,
-        constant_buffer_idx=constant_buffer_idx,
+        data_buffer_idx=data_buffer_idx,
         allocation_info=allocation_info,
         layout=layout_enum(spec.layout),
         shape_dynamism=spec.shape_dynamism,

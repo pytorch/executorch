@@ -7,11 +7,14 @@
 
 #import <CoreML/CoreML.h>
 
+#import <vector>
+
 NS_ASSUME_NONNULL_BEGIN
 
 namespace executorchcoreml {
 struct ModelLoggingOptions;
 class ModelEventLogger;
+class MultiArray;
 };
 
 @class ETCoreMLModel;
@@ -20,7 +23,8 @@ class ModelEventLogger;
 typedef void ModelHandle;
 
 /// A class responsible for managing the models loaded by the delegate.
-__attribute__((objc_subclassing_restricted)) @interface ETCoreMLModelManager : NSObject
+__attribute__((objc_subclassing_restricted))
+@interface ETCoreMLModelManager : NSObject
 
 + (instancetype)new NS_UNAVAILABLE;
 
@@ -49,12 +53,25 @@ __attribute__((objc_subclassing_restricted)) @interface ETCoreMLModelManager : N
 /// Executes the loaded model.
 ///
 /// @param handle The handle to the loaded model.
-/// @param args The arguments to the model.
+/// @param args The arguments (inputs and outputs) of the model.
 /// @param loggingOptions The model logging options.
 /// @param error   On failure, error is filled with the failure information.
 /// @retval `YES` if the execution succeeded otherwise `NO`.
 - (BOOL)executeModelWithHandle:(ModelHandle*)handle
                           args:(NSArray<MLMultiArray*>*)args
+                loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
+                   eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
+                         error:(NSError* __autoreleasing*)error;
+
+/// Executes the loaded model.
+///
+/// @param handle The handle to the loaded model.
+/// @param argsVec The arguments (inputs and outputs) of the model.
+/// @param loggingOptions The model logging options.
+/// @param error   On failure, error is filled with the failure information.
+/// @retval `YES` if the execution succeeded otherwise `NO`.
+- (BOOL)executeModelWithHandle:(ModelHandle*)handle
+                       argsVec:(const std::vector<executorchcoreml::MultiArray>&)argsVec
                 loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
                    eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
                          error:(NSError* __autoreleasing*)error;
@@ -86,8 +103,11 @@ __attribute__((objc_subclassing_restricted)) @interface ETCoreMLModelManager : N
 /// @retval `YES` if the model was pre-warmed otherwise `NO`.
 - (BOOL)prewarmModelWithHandle:(ModelHandle*)handle error:(NSError* __autoreleasing*)error;
 
-/// The `ETCoreMLAssetManager` instance used to manage models cache.
-@property (strong, readonly, nonatomic) ETCoreMLAssetManager* assetManager;
+/// Purges model cache.
+///
+/// @param error   On failure, error is filled with the failure information.
+/// @retval `YES` if the cache is purged otherwise `NO`.
+- (BOOL)purgeModelsCacheAndReturnError:(NSError* __autoreleasing*)error;
 
 @end
 

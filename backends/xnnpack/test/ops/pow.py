@@ -25,17 +25,12 @@ class TestPow(unittest.TestCase):
             Tester(self.Pow(2), inputs)
             .export()
             .check_count({"torch.ops.aten.pow.Tensor_Scalar": 1})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_pow2(self):
@@ -54,15 +49,11 @@ class TestPow(unittest.TestCase):
         attempt to delegate other powers.
         """
 
-        inputs = (torch.ones(5),)
+        inputs = (torch.randn(5),)
         (
             Tester(self.Pow(3), inputs)
             .export()
             .check_count({"torch.ops.aten.pow.Tensor_Scalar": 1})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_pow_Tensor_Scalar": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )

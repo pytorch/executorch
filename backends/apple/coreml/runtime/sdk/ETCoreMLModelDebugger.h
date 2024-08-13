@@ -15,7 +15,8 @@ typedef NSDictionary<ETCoreMLModelStructurePath*, MLMultiArray*> ETCoreMLModelOu
 
 NS_ASSUME_NONNULL_BEGIN
 /// A class responsible for debugging a model.
-__attribute__((objc_subclassing_restricted)) @interface ETCoreMLModelDebugger : NSObject
+__attribute__((objc_subclassing_restricted))
+@interface ETCoreMLModelDebugger : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
 

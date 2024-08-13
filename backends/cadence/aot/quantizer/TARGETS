@@ -1,0 +1,51 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("odai_jarvis")
+
+python_library(
+    name = "utils",
+    srcs = [
+        "utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "patterns",
+    srcs = [
+        "patterns.py",
+    ],
+    typing = True,
+    deps = [
+        ":utils",
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "quantizer",
+    srcs = [
+        "quantizer.py",
+    ],
+    typing = True,
+    deps = [
+        ":patterns",
+        ":utils",
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "fusion_pass",
+    srcs = [
+        "fusion_pass.py",
+    ],
+    deps = [
+        ":patterns",
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/exir:pass_base",
+    ],
+)

@@ -29,9 +29,9 @@ the ExecuTorch program (returned by the call to ``to_executorch()``), and option
 they are interested in working with via our tooling.
 
 .. warning::
-    Users should do a deepcopy of the output of to_edge() and pass in the deepcopy to the generate_etrecord API. This is needed because the subsequent call, to_executorch(), does an in-place mutation and will lose debug data in the process.
+    Users should do a deepcopy of the output of ``to_edge()`` and pass in the deepcopy to the ``generate_etrecord`` API. This is needed because the subsequent call, ``to_executorch()``, does an in-place mutation and will lose debug data in the process.
 
-.. currentmodule:: sdk.etrecord._etrecord
+.. currentmodule:: executorch.sdk.etrecord._etrecord
 .. autofunction:: generate_etrecord
 
 Using an ``ETRecord``

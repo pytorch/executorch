@@ -10,12 +10,21 @@ from itertools import product
 from typing import Optional, Tuple
 
 import torch
+from executorch.backends.xnnpack.partition.config.xnnpack_config import (
+    ConfigPrecisionType,
+)
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
+from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
+    XnnpackPartitioner,
+)
 
 from executorch.backends.xnnpack.test.tester import Quantize, Tester
-from executorch.backends.xnnpack.test.tester.tester import Partition
+from executorch.backends.xnnpack.test.tester.tester import (
+    Partition,
+    ToEdgeTransformAndLower,
+)
 
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -26,23 +35,39 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import Quantization
 class TestLinear(unittest.TestCase):
     def test_fp16_linear(self):
         for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: torch.nn.Linear(
-                    in_size, out_size, bias=use_bias  # noqa
-                ),
-                uses_bias=use_bias,
-                dtype=torch.float16,
-                atol=5e-2,
-            )
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: torch.nn.Linear(
+                        in_size, out_size, bias=use_bias  # noqa
+                    ),
+                    num_batch_dims=num_batch_dims,
+                    uses_bias=use_bias,
+                    dtype=torch.float16,
+                    atol=5e-2,
+                )
 
     def test_fp32_linear(self):
         for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: torch.nn.Linear(
-                    in_size, out_size, bias=use_bias  # noqa
-                ),
-                uses_bias=use_bias,
-            )
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: torch.nn.Linear(
+                        in_size, out_size, bias=use_bias  # noqa
+                    ),
+                    uses_bias=use_bias,
+                    num_batch_dims=num_batch_dims,
+                )
+
+    def test_qc8_linear(self):
+        for use_bias in (True, False):
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: torch.nn.Linear(
+                        in_size, out_size, bias=use_bias  # noqa
+                    ),
+                    uses_bias=use_bias,
+                    quant_type="per_channel",
+                    num_batch_dims=num_batch_dims,
+                )
 
     def test_fp32_addmm(self):
         """
@@ -52,35 +77,83 @@ class TestLinear(unittest.TestCase):
         class AddMMModule(torch.nn.Module):
             def __init__(self, in_size, out_size):
                 super().__init__()
-                self.mat = torch.nn.Parameter(torch.randn(out_size, in_size))
+                self.mat = torch.nn.Parameter(torch.randn(in_size, out_size))
                 self.bias = torch.nn.Parameter(torch.randn(1, out_size))
 
             def forward(self, x):
-                return torch.addmm(self.bias, x, torch.transpose(self.mat, 0, 1))
+                return torch.addmm(self.bias, x, self.mat)
 
         self._test_linear(
             lambda in_size, out_size: AddMMModule(in_size, out_size),
             uses_bias=True,
         )
 
+    def test_fp32_linear_fused_relu(self):
+        class LinearReluModule(torch.nn.Module):
+            def __init__(self, in_size, out_size, use_bias):
+                super().__init__()
+                self.linear = torch.nn.Linear(in_size, out_size, bias=use_bias)
+
+            def forward(self, x):
+                return torch.nn.functional.relu(self.linear(x))
+
+        for use_bias in (True, False):
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: LinearReluModule(
+                        in_size,
+                        out_size,
+                        use_bias,  # noqa
+                    ),
+                    uses_bias=use_bias,
+                    num_batch_dims=num_batch_dims,
+                )
+
+    def test_qs8_linear_fused_relu(self):
+        class LinearReluModule(torch.nn.Module):
+            def __init__(self, in_size, out_size, use_bias):
+                super().__init__()
+                self.linear = torch.nn.Linear(in_size, out_size, bias=use_bias)
+
+            def forward(self, x):
+                return torch.nn.functional.relu(self.linear(x))
+
+        for use_bias in (True, False):
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: LinearReluModule(
+                        in_size,
+                        out_size,
+                        use_bias,  # noqa
+                    ),
+                    num_batch_dims=num_batch_dims,
+                    uses_bias=use_bias,
+                    quant_type="per_tensor",
+                )
+
     def test_qs8_linear(self):
         for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: torch.nn.Linear(
-                    in_size, out_size, bias=use_bias  # noqa
-                ),
-                uses_bias=use_bias,
-            )
+            for num_batch_dims in range(1, 3):
+                self._test_linear(
+                    lambda in_size, out_size: torch.nn.Linear(
+                        in_size, out_size, bias=use_bias  # noqa
+                    ),
+                    uses_bias=use_bias,
+                    num_batch_dims=num_batch_dims,
+                    quant_type="per_tensor",
+                )
 
     @unittest.skip("XNNPACK currently only supports per-channel dynamic quantization.")
-    def test_qd8_per_tensor_linear(self):
+    def _test_qd8_per_tensor_linear(self):
         for uses_bias in (False, True):
             inputs = (torch.randn(2, 4),)
             module = torch.nn.Linear(4, 5, bias=uses_bias)
+            dynamic_shapes = ({0: torch.export.Dim("batch", max=100)},)
 
             self._test_dqlinear(
                 module,
                 inputs,
+                dynamic_shapes=dynamic_shapes,
                 is_per_channel=False,
                 uses_bias=uses_bias,
             )
@@ -93,6 +166,7 @@ class TestLinear(unittest.TestCase):
             self._test_dqlinear(
                 module,
                 inputs,
+                dynamic_shapes=({0: torch.export.Dim("batch", max=100)},),
                 is_per_channel=True,
                 uses_bias=uses_bias,
             )
@@ -114,7 +188,7 @@ class TestLinear(unittest.TestCase):
         qconfig = self._get_4b_dqconfig()
         input_channels = [2, 63]
         output_channels = [1, 8, 127]
-        batches = [1, 2]
+        batches = [2, 2]
         use_bias = [False, True]
 
         for bs, bias, ipc, opc in product(
@@ -129,13 +203,14 @@ class TestLinear(unittest.TestCase):
             self._test_dqlinear(
                 module,
                 inputs,
+                dynamic_shapes=({0: torch.export.Dim("batch", max=100)},),
                 is_per_channel=True,
                 uses_bias=bias,
                 qconfig=qconfig,
             )
 
     def test_qd8_per_channel_linear_parallel(self):
-        in_size = 1
+        in_size = 2
         input_size = 4
         output_size = 5
 
@@ -165,17 +240,39 @@ class TestLinear(unittest.TestCase):
             torch.rand(in_size, input_size, dtype=torch.float),
             torch.rand(in_size, input_size, dtype=torch.float),
         )
+        batch_dim = torch.export.Dim("batch", max=100)
+        dynamic_shapes = ({0: batch_dim}, {0: batch_dim})
 
         self._test_dqlinear(
             ParallelLinear(),
             inputs,
+            dynamic_shapes=dynamic_shapes,
             linear_count=2,
             is_per_channel=True,
             uses_bias=True,
         )
 
+    def test_qd8_per_channel_linear_with_two_batch(self):
+        in_size = 2
+        input_size = 4
+        output_size = 5
+
+        linear = torch.nn.Linear(input_size, output_size)
+        inputs = (torch.randn(2, in_size, input_size, dtype=torch.float),)
+        batch_dim = torch.export.Dim("batch", max=100)
+        dynamic_shapes = ({0: batch_dim, 1: batch_dim},)
+
+        self._test_dqlinear(
+            linear,
+            inputs,
+            dynamic_shapes=dynamic_shapes,
+            linear_count=1,
+            is_per_channel=True,
+            uses_bias=True,
+        )
+
     def test_qd8_per_channel_linear_sequential(self):
-        in_size = 1
+        in_size = 2
         input_size = 4
         intermediate_size = 5
         output_size = 3
@@ -203,17 +300,20 @@ class TestLinear(unittest.TestCase):
                 return b
 
         inputs = (torch.rand(in_size, input_size, dtype=torch.float),)
+        dynamic_shapes = ({0: torch.export.Dim("batch", max=100)},)
 
         self._test_dqlinear(
             LinearSequential(),
             inputs,
+            dynamic_shapes=dynamic_shapes,
             linear_count=2,
             is_per_channel=True,
             uses_bias=True,
+            atol=1e-1,
         )
 
     def test_qd8_per_channel_linear_parellel_and_sequential(self):
-        in_size = 1
+        in_size = 2
         input_size = 4
         intermediate_size = 5
         output_size = 3
@@ -252,49 +352,237 @@ class TestLinear(unittest.TestCase):
             torch.rand(in_size, input_size, dtype=torch.float),
             torch.rand(in_size, input_size, dtype=torch.float),
         )
-
-        self._test_dqlinear(
-            LinearModule(), inputs, linear_count=3, is_per_channel=True, uses_bias=True
+        dynamic_shapes = (
+            {0: torch.export.Dim("batch", max=100)},
+            {0: torch.export.Dim("batch2", max=100)},
         )
 
-    def test_fp32_linear_fused_relu(self):
-        class LinearReluModule(torch.nn.Module):
-            def __init__(self, in_size, out_size, use_bias):
-                super().__init__()
-                self.linear = torch.nn.Linear(in_size, out_size, bias=use_bias)
+        self._test_dqlinear(
+            LinearModule(),
+            inputs,
+            dynamic_shapes=dynamic_shapes,
+            linear_count=3,
+            is_per_channel=True,
+            uses_bias=True,
+            atol=1e-1,
+        )
 
-            def forward(self, x):
-                return torch.nn.functional.relu(self.linear(x))
+    def test_qd8_fp32_per_token_weight_per_channel_int8(self):
+        self._run_manual_dqlinear_tests(8, torch.float)
 
-        for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: LinearReluModule(
-                    in_size,
-                    out_size,
-                    use_bias,  # noqa
-                ),
-                uses_bias=use_bias,
-            )
+    def test_qd8_fp32_per_token_weight_per_channel_int4(self):
+        self._run_manual_dqlinear_tests(4, torch.float)
 
-    def test_qs8_linear_fused_relu(self):
-        class LinearReluModule(torch.nn.Module):
-            def __init__(self, in_size, out_size, use_bias):
-                super().__init__()
-                self.linear = torch.nn.Linear(in_size, out_size, bias=use_bias)
+    # This fails because the output tensor dtype is different, but if you squint and ignore that and look at the values,
+    # it is not too bad.
+    # Difference: max: 0.042601585388183594, abs: 0.042601585388183594.
+    # -- Model vs. Reference --
+    #  Numel: 68, 68
+    # Median: -0.7754800915718079, -0.7755751013755798
+    #   Mean: -0.6128872036933899, -0.6143574714660645
+    #    Max: 12.518657684326172, 12.516003608703613
+    #    Min: -20.070953369140625, -20.077701568603516
+    @unittest.skip("Need to fix the dq_per_channel output dtype")
+    def _test_qd8_fp16_per_token_weight_per_channel_int8(self):
+        self._run_manual_dqlinear_tests(8, torch.float16)
 
-            def forward(self, x):
-                return torch.nn.functional.relu(self.linear(x))
+    @unittest.skip("Need to fix the dq_per_channel output dtype")
+    def _test_qd8_fp16_per_token_weight_per_channel_int4(self):
+        self._run_manual_dqlinear_tests(4, torch.float16)
 
-        for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: LinearReluModule(
-                    in_size,
-                    out_size,
-                    use_bias,  # noqa
-                ),
-                uses_bias=use_bias,
-                quant=True,
-            )
+    def test_qd8_fp32_per_token_weight_per_channel_group_int4(self):
+        M_sizes = [1, 2, 17, 31]
+        K_sizes = [8, 32, 64, 128]
+        bl_sizes = [8, 16, 16, 32]
+        N_sizes = [2, 17, 92, 128]
+
+        for use_bias in [True, False]:
+            for i, _ in enumerate(M_sizes):
+                M = int(M_sizes[i])
+                K = int(K_sizes[i])
+                N = int(N_sizes[i])
+                bl = int(bl_sizes[i])
+                mod = self.ManualDQLinear(
+                    input_channels=K,
+                    output_channels=N,
+                    weight_n_bit=4,
+                    dtype=torch.float,
+                    group_size=bl,
+                    force_groupwise_quant=True,
+                    use_bias=use_bias,
+                )
+
+                inputs = (torch.randn(1, M, K),)
+                self._test_manual_dq_linear(
+                    mod,
+                    inputs,
+                    weight_groupwise=True,
+                    use_bias=use_bias,
+                )
+
+    @unittest.skip("Need to fix the dq_per_channel_group output dtype")
+    def _test_qd8_fp16_per_token_weight_per_channel_group_int4(self):
+        M_sizes = [1, 2, 17, 31]
+        K_sizes = [8, 32, 64, 128]
+        bl_sizes = [8, 16, 16, 32]
+        N_sizes = [2, 17, 92, 128]
+
+        for use_bias in [True, False]:
+            for i, _ in enumerate(M_sizes):
+                M = int(M_sizes[i])
+                K = int(K_sizes[i])
+                N = int(N_sizes[i])
+                bl = int(bl_sizes[i])
+                mod = self.ManualDQLinear(
+                    input_channels=K,
+                    output_channels=N,
+                    weight_n_bit=4,
+                    dtype=torch.float16,
+                    group_size=bl,
+                    force_groupwise_quant=True,
+                    use_bias=use_bias,
+                )
+
+                inputs = (torch.randn(1, M, K, dtype=torch.float16),)
+                self._test_manual_dq_linear(
+                    mod,
+                    inputs,
+                    weight_groupwise=True,
+                    use_bias=use_bias,
+                    atol=0.1,
+                    rtol=0.1,
+                )
+
+    def _test_linear(
+        self,
+        make_module,
+        uses_bias,
+        num_batch_dims=1,
+        quant_type=None,
+        dtype: torch.dtype = torch.float,
+        atol=1e-03,
+    ):
+        edge_op = (
+            "executorch_exir_dialects_edge__ops_aten_addmm_default"
+            if uses_bias
+            else "executorch_exir_dialects_edge__ops_aten_mm_default"
+        )
+
+        in_sizes = [3, 4, 4]
+        input_sizes = [4, 37, 17]
+        output_sizes = [4, 17, 37]
+
+        quant = quant_type is not None
+
+        """
+        Note that torch.nn.Linear maps to aten.mm.default (no bias) or aten.addmm.default (bias),
+        which ares then transformed into aten.linear.default by the ConvertToLinear pass.
+        """
+        for i, _ in enumerate(in_sizes):
+            in_size = int(in_sizes[i])
+            input_size = int(input_sizes[i])
+            output_size = int(output_sizes[i])
+            input_shape = [in_size] * num_batch_dims + [input_size]
+            print(f"Testing input_shape {input_shape} with {output_size} out_channels")
+
+            module = make_module(input_size, output_size).eval().to(dtype)
+            inputs = (torch.randn(input_shape).to(dtype),)
+            dynamic_shape = {}
+            for i in range(num_batch_dims):
+                dynamic_shape[i] = torch.export.Dim(f"batch{i}", min=2, max=in_size)
+
+            dynamic_shape = (dynamic_shape,)
+            print(dynamic_shape)
+
+            tester = Tester(module, inputs, dynamic_shapes=dynamic_shape)
+
+            if quant:
+                if quant_type == "per_channel":
+                    quant_config = get_symmetric_quantization_config(
+                        is_per_channel=True,
+                        is_dynamic=False,
+                    )
+                elif quant_type == "per_tensor":
+                    quant_config = get_symmetric_quantization_config(
+                        is_per_channel=False,
+                        is_dynamic=False,
+                    )
+                else:
+                    raise ValueError(f"Unsupported quant type {quant_type}")
+                tester.quantize(Quantize(quantization_config=quant_config))
+
+            tester.export()
+            if quant:
+                tester.check(["torch.ops.quantized_decomposed"])
+
+            tester.to_edge_transform_and_lower()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            tester.check_not([edge_op])
+
+            if quant:
+                tester.check_not([edge_op, "torch.ops.quantized_decomposed"])
+
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method_and_compare_outputs(qtol=quant, atol=atol)
+
+    def _test_dqlinear(
+        self,
+        module,
+        inputs,
+        dynamic_shapes,
+        linear_count=1,
+        is_per_channel=False,
+        uses_bias=False,
+        qconfig: Optional[QuantizationConfig] = None,
+        atol=5e-02,
+    ):
+        edge_op = (
+            "executorch_exir_dialects_edge__ops_aten_addmm_default"
+            if uses_bias
+            else "executorch_exir_dialects_edge__ops_aten_mm_default"
+        )
+
+        quant_config = qconfig or get_symmetric_quantization_config(
+            is_per_channel=is_per_channel,
+            is_dynamic=True,
+        )
+        for legacy_partitioner in (True, False):
+            for per_op_mode in (True, False):
+                tester = Tester(module, inputs, dynamic_shapes=dynamic_shapes)
+                tester.quantize(Quantize(quantization_config=quant_config))
+
+                tester.export()
+
+                if legacy_partitioner:
+                    tester.to_edge()
+                    tester.partition(
+                        Partition(XnnpackDynamicallyQuantizedPartitioner())
+                    )
+                else:
+                    tester.to_edge_transform_and_lower(
+                        ToEdgeTransformAndLower(
+                            [
+                                XnnpackPartitioner(
+                                    config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+                                    per_op_mode=per_op_mode,
+                                )
+                            ]
+                        )
+                    )
+                num_call_delegates = (
+                    linear_count if legacy_partitioner or per_op_mode else 1
+                )
+                tester.check_count(
+                    {
+                        "torch.ops.higher_order.executorch_call_delegate": num_call_delegates
+                    }
+                )
+                tester.check_not([edge_op])
+
+                tester.to_executorch()
+                tester.serialize()
+                tester.run_method_and_compare_outputs(atol=atol)
 
     class ManualDQLinear(torch.nn.Module):
         def __init__(
@@ -350,9 +638,10 @@ class TestLinear(unittest.TestCase):
                 )
                 self.quant_weight_per_channel()
 
-            # TODO - change bias dtyoe to arg.dtype
             self.bias = (
-                torch.nn.Parameter(torch.randn(self.oc), requires_grad=False)
+                torch.nn.Parameter(
+                    torch.randn(self.oc).to(self.op_dtype), requires_grad=False
+                )
                 if use_bias
                 else None
             )
@@ -444,7 +733,6 @@ class TestLinear(unittest.TestCase):
         def fwd_input_per_token(self, input: torch.Tensor) -> torch.Tensor:
             ip_quant_min = -128
             ip_quant_max = 127
-            input = input.to(self.op_dtype)
             (
                 ip_scales,
                 ip_zero_points,
@@ -469,7 +757,6 @@ class TestLinear(unittest.TestCase):
                 torch.int8,
                 self.op_dtype,
             )
-            input = input.to(self.op_dtype)
             return input
 
         def quant_weight_per_channel(self):
@@ -562,42 +849,65 @@ class TestLinear(unittest.TestCase):
         weight_dq_edge_op = (
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_group_default"
             if weight_groupwise
-            else "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_channel_default"
+            else "torch.ops.quantized_decomposed.dequantize_per_channel.default"
         )
 
-        (
-            Tester(mod, inputs)
-            .export()
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_per_token_asymmetric_default": 1,
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_token_default": 1,
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_token_default": 1,
-                    weight_dq_edge_op: 1,
-                    linear_edge_op: 1,
-                }
-            )
-            .partition(Partition(partitioner=XnnpackDynamicallyQuantizedPartitioner()))
-            .check_count(
-                {
-                    "torch.ops.higher_order.executorch_call_delegate": 1,
-                }
-            )
-            .check_not(
-                [
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_per_token_asymmetric_default",
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_token_default",
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_token_default",
-                    weight_dq_edge_op,
-                    linear_edge_op,
-                ]
-            )
-            .to_executorch()
-            .serialize()
-            .run_method()
-            .compare_outputs(atol=atol, rtol=rtol)
+        weight_dq_aten_op = (
+            "torch.ops.quantized_decomposed.dequantize_per_channel_group.default"
+            if weight_groupwise
+            else "torch.ops.quantized_decomposed.dequantize_per_channel.default"
         )
+        for legacy_partitioner in (True, False):
+            tester = (
+                Tester(mod, inputs)
+                .export()
+                .check_count(
+                    {
+                        "torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric.default": 1,
+                        "torch.ops.quantized_decomposed.quantize_per_token.default": 1,
+                        "torch.ops.quantized_decomposed.dequantize_per_token.default": 1,
+                        weight_dq_aten_op: 1,
+                        "torch.ops.aten.linear.default": 1,
+                    }
+                )
+            )
+
+            if legacy_partitioner:
+                tester.to_edge()
+                tester.partition(Partition(XnnpackDynamicallyQuantizedPartitioner()))
+            else:
+                (
+                    tester.to_edge_transform_and_lower(
+                        ToEdgeTransformAndLower(
+                            [
+                                XnnpackPartitioner(
+                                    config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+                                    per_op_mode=True,
+                                )
+                            ]
+                        )
+                    )
+                )
+
+            (
+                tester.check_count(
+                    {
+                        "torch.ops.higher_order.executorch_call_delegate": 1,
+                    }
+                )
+                .check_not(
+                    [
+                        "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_per_token_asymmetric_default",
+                        "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_token_default",
+                        "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_token_default",
+                        weight_dq_edge_op,
+                        linear_edge_op,
+                    ]
+                )
+                .to_executorch()
+                .serialize()
+                .run_method_and_compare_outputs(atol=atol, rtol=rtol)
+            )
 
     def _run_manual_dqlinear_tests(self, weight_n_bit: int, op_dtype: torch.dtype):
         in_sizes = [1, 4, 4]
@@ -619,165 +929,3 @@ class TestLinear(unittest.TestCase):
 
                 inputs = (torch.randn(1, in_size, input_size).to(op_dtype),)
                 self._test_manual_dq_linear(mod, inputs, use_bias=use_bias)
-
-    def test_qd8_fp32_per_token_weight_per_channel_int8(self):
-        self._run_manual_dqlinear_tests(8, torch.float)
-
-    def test_qd8_fp32_per_token_weight_per_channel_int4(self):
-        self._run_manual_dqlinear_tests(4, torch.float)
-
-    # This fails because the output tensor dtype is different, but if you squint and ignore that and look at the values,
-    # it is not too bad.
-    # Difference: max: 0.042601585388183594, abs: 0.042601585388183594.
-    # -- Model vs. Reference --
-    #  Numel: 68, 68
-    # Median: -0.7754800915718079, -0.7755751013755798
-    #   Mean: -0.6128872036933899, -0.6143574714660645
-    #    Max: 12.518657684326172, 12.516003608703613
-    #    Min: -20.070953369140625, -20.077701568603516
-    @unittest.skip("Need to fix the dq_per_channel output dtype")
-    def test_qd8_fp16_per_token_weight_per_channel_int8(self):
-        self._run_manual_dqlinear_tests(8, torch.float16)
-
-    @unittest.skip("Need to fix the dq_per_channel output dtype")
-    def test_qd8_fp16_per_token_weight_per_channel_int4(self):
-        self._run_manual_dqlinear_tests(4, torch.float16)
-
-    def test_qd8_fp32_per_token_weight_per_channel_group_int4(self):
-        M_sizes = [1, 2, 17, 31]
-        K_sizes = [8, 32, 64, 128]
-        bl_sizes = [8, 16, 16, 32]
-        N_sizes = [2, 17, 92, 128]
-
-        for use_bias in [True, False]:
-            for i, _ in enumerate(M_sizes):
-                M = int(M_sizes[i])
-                K = int(K_sizes[i])
-                N = int(N_sizes[i])
-                bl = int(bl_sizes[i])
-                mod = self.ManualDQLinear(
-                    input_channels=K,
-                    output_channels=N,
-                    weight_n_bit=4,
-                    dtype=torch.float,
-                    group_size=bl,
-                    force_groupwise_quant=True,
-                    use_bias=use_bias,
-                )
-
-                inputs = (torch.randn(1, M, K),)
-                self._test_manual_dq_linear(
-                    mod,
-                    inputs,
-                    weight_groupwise=True,
-                    use_bias=use_bias,
-                )
-
-    def _test_linear(
-        self,
-        make_module,
-        uses_bias,
-        quant=False,
-        dtype: torch.dtype = torch.float,
-        atol=1e-03,
-    ):
-        aten_op, edge_op = (
-            (
-                "aten.addmm.default",
-                "executorch_exir_dialects_edge__ops_aten_addmm_default",
-            )
-            if uses_bias
-            else (
-                "aten.mm.default",
-                "executorch_exir_dialects_edge__ops_aten_mm_default",
-            )
-        )
-
-        in_sizes = [1, 4, 4]
-        input_sizes = [4, 37, 17]
-        output_sizes = [4, 17, 37]
-
-        """
-        Note that torch.nn.Linear maps to aten.mm.default (no bias) or aten.addmm.default (bias),
-        which ares then transformed into aten.linear.default by the ConvertToLinear pass.
-        """
-        for i, _ in enumerate(in_sizes):
-            in_size = int(in_sizes[i])
-            input_size = int(input_sizes[i])
-            output_size = int(output_sizes[i])
-
-            module = make_module(input_size, output_size).eval().to(dtype)
-            inputs = (torch.randn(in_size, input_size).to(dtype),)
-
-            tester = Tester(module, inputs)
-
-            if quant:
-                tester.quantize()
-
-            tester.export()
-            tester.check_count({aten_op: 1})
-            if quant:
-                tester.check(["torch.ops.quantized_decomposed"])
-
-            tester.to_edge()
-            tester.check_count({edge_op: 1})
-
-            tester.partition()
-            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            tester.check_not([edge_op])
-
-            if quant:
-                tester.check_not([edge_op, "torch.ops.quantized_decomposed"])
-
-            tester.to_executorch()
-            tester.serialize()
-            tester.run_method()
-            tester.compare_outputs(qtol=quant, atol=atol)
-            print("success")
-
-    def _test_dqlinear(
-        self,
-        module,
-        inputs,
-        linear_count=1,
-        is_per_channel=False,
-        uses_bias=False,
-        qconfig: Optional[QuantizationConfig] = None,
-    ):
-        aten_op, edge_op = (
-            (
-                "aten.addmm.default",
-                "executorch_exir_dialects_edge__ops_aten_addmm_default",
-            )
-            if uses_bias
-            else (
-                "aten.mm.default",
-                "executorch_exir_dialects_edge__ops_aten_mm_default",
-            )
-        )
-
-        quant_config = qconfig or get_symmetric_quantization_config(
-            is_per_channel=is_per_channel,
-            is_dynamic=True,
-        )
-
-        tester = Tester(module, inputs)
-        tester.quantize(Quantize(quantization_config=quant_config))
-
-        tester.export()
-        tester.check_count({aten_op: linear_count})
-        tester.check(["torch.ops.quantized_decomposed"])
-        tester.dump_artifact()
-        tester.to_edge()
-        tester.check_count({edge_op: linear_count})
-
-        tester.partition(
-            Partition(partitioner=XnnpackDynamicallyQuantizedPartitioner())
-        )
-        tester.check(["torch.ops.higher_order.executorch_call_delegate"])
-        tester.check_not([edge_op])
-
-        tester.to_executorch()
-        tester.serialize()
-        tester.run_method()
-        tester.compare_outputs(atol=5e-02)

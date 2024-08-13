@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pye-strict
+# pyre-unsafe
 
 import typing
 import unittest
@@ -15,6 +15,7 @@ import executorch.exir as exir
 
 import executorch.exir.schema as schema
 import executorch.exir.tests.models as models
+import pytest
 import torch
 from executorch.exir import (
     EdgeCompileConfig,
@@ -28,6 +29,7 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
 from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
@@ -49,7 +51,10 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.models import Mul
-from executorch.extension.pybindings.aten_lib import _load_for_executorch_from_buffer
+from executorch.extension.pybindings.portable_lib import (
+    _load_for_executorch_from_buffer,
+)
+
 from functorch.experimental import control_flow
 from torch import nn
 
@@ -104,7 +109,7 @@ class TestEmit(unittest.TestCase):
         value = typing.cast(schema.Tensor, values[value_index].val)
         self.assertIsInstance(value, schema.Tensor)
 
-        self.assertEqual(value.constant_buffer_idx, exp_buffer_idx)
+        self.assertEqual(value.data_buffer_idx, exp_buffer_idx)
 
         if not value.allocation_info:
             self.assertIsNone(exp_mem_id)
@@ -188,14 +193,15 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(exec_plan.inputs[0], 0)
         self.assertEqual(exec_plan.outputs[0], 1)
 
+    @pytest.mark.skip(reason="Test not working on OSS")
     def test_nested_return(self) -> None:
         class Foo(torch.nn.Module):
             def forward(
                 self, x: torch.Tensor
             ) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor]]:
                 return (
-                    torch.Tensor(1),
-                    torch.Tensor(2),
+                    torch.tensor(1),
+                    torch.tensor(2),
                     [torch.sin(x).max(), torch.cos(x).max()],
                 )
 
@@ -265,16 +271,24 @@ class TestEmit(unittest.TestCase):
         edge = to_edge(export(f, inputs))
 
         removed_ops = ["aten::relu_", "aten::view"]
-        expected_ops = ["aten::sin", "aten::relu", "aten::max", "aten::view_copy"]
+        expected_ops = [
+            "aten::sin",
+            "aten::relu",
+            "aten::max",
+            "executorch_prim::et_view",  # aten::view_copy if ExecutorchBackendConfig.remove_view_copy = False
+        ]
 
         for opname in removed_ops:
             self.assertEqual(
                 self.count_node(edge.exported_program().graph_module, opname), 0
             )
         for opname in expected_ops:
-            self.assertTrue(
-                self.count_node(edge.exported_program().graph_module, opname) >= 1
-            )
+            if (
+                opname != "executorch_prim::et_view"
+            ):  # et_view appears as call_function with target = memory.view in graph
+                self.assertTrue(
+                    self.count_node(edge.exported_program().graph_module, opname) >= 1
+                )
 
         program = edge.to_executorch().executorch_program
         for opname in removed_ops:
@@ -510,6 +524,7 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 1)
         self._assertCallLength(program, 0, 4)
 
+    @pytest.mark.skip(reason="Test not working on OSS")
     def test_emit_multiple_out(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -521,8 +536,6 @@ class TestEmit(unittest.TestCase):
         program = to_edge(export(f, x)).to_executorch().executorch_program
         self._assertCallLength(program, 0, 8)
 
-    # Non contiguous tensors are not supported in ExecuTorch
-    @unittest.expectedFailure
     def test_emit_layout(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -709,6 +722,43 @@ class TestEmit(unittest.TestCase):
             "executorch_prim::sub",
         )
 
+    def test_load_emit_map(self) -> None:
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                    return x + y
+
+                return control_flow.map(map_fn, x, y)
+
+        f = Foo()
+
+        inputs = (torch.ones(4, 4), torch.ones(4))
+        module = to_edge(
+            export(f, inputs),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        _load_for_executorch_from_buffer(module.to_executorch().buffer)
+
+    def test_run_emit_map(self) -> None:
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                    return x + y
+
+                return control_flow.map(map_fn, x, y)
+
+        f = Foo()
+
+        inputs = (torch.ones(4, 4), torch.ones(4))
+        module = to_edge(
+            export(f, inputs),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        buffer = module.to_executorch().buffer
+        loaded_model = _load_for_executorch_from_buffer(buffer)
+        outputs = loaded_model(inputs)[0]
+        torch.allclose(outputs, f(*inputs))
+
     def test_dim_order(self) -> None:
         class SimpleLinear(torch.nn.Module):
             def __init__(self) -> None:
@@ -758,7 +808,46 @@ class TestEmit(unittest.TestCase):
                     self.assertTrue(weight_tensor.dim_order == weight_dim_order)
         self.assertTrue(addmm_found)
 
-    # cant compare plans directly with __eq__ because of the plan names, and constant_buffer_idx in tensor values
+    def test_non_const_buffer_sizes(self) -> None:
+        class Add(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                b = 3 + 1
+                return x + b
+
+        f = Add()
+
+        edge_program_manager = to_edge(
+            export(
+                f,
+                (torch.ones(3, 2),),
+            )
+        )
+        edge_program_manager._edge_programs["forward"] = constant_prop_pass(
+            edge_program_manager.exported_program()
+        )
+        non_const_buffer_size_with_const_prop_pass = (
+            edge_program_manager.to_executorch()
+            .executorch_program.execution_plan[0]
+            .non_const_buffer_sizes
+        )
+
+        edge_program_manager = to_edge(
+            export(
+                f,
+                (torch.ones(3, 2),),
+            )
+        )
+        non_const_buffer_size_without_const_prop_pass = (
+            edge_program_manager.to_executorch()
+            .executorch_program.execution_plan[0]
+            .non_const_buffer_sizes
+        )
+        self.assertTrue(
+            non_const_buffer_size_with_const_prop_pass[1]
+            < non_const_buffer_size_without_const_prop_pass[1]
+        )
+
+    # cant compare plans directly with __eq__ because of the plan names, and data_buffer_idx in tensor values
     def _compare_execution_plans(
         self, plan_single: ExecutionPlan, plan_merged: ExecutionPlan
     ) -> None:
@@ -840,14 +929,24 @@ class TestEmit(unittest.TestCase):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 return x.to(dtype=torch.float32, memory_format=torch.channels_last)
 
-        # Failure expected when exporting model with illegal memory format (channels_last)
+        # Failure expected when exporting model with illegal memory format (channels_last) when not using dim_order
         model = SimpleLinear()
         inputs = (torch.ones(10, 5, 2, 1),)
         with self.assertRaises(InternalError):
             to_edge(
                 export(model, inputs),
-                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+                compile_config=exir.EdgeCompileConfig(
+                    _check_ir_validity=False, _skip_dim_order=True
+                ),
             ).to_executorch()
+
+        # Success if you use dim_order
+        to_edge(
+            export(model, inputs),
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _skip_dim_order=False
+            ),
+        ).to_executorch()
 
     def test_emit_multiple_entry_points(self) -> None:
         class SimpleLinear(torch.nn.Module):
@@ -1059,6 +1158,9 @@ class TestEmit(unittest.TestCase):
         self.check_tensor_buffer_loc(1, execution_plan.values, 0, 1, 48)
 
     def test_emit_prims(self) -> None:
+        tensor_output = torch.rand(1, 4)
+        tensor_list_output = [torch.rand(1, 4), torch.rand(1, 4)]
+
         class Simple(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
@@ -1072,6 +1174,12 @@ class TestEmit(unittest.TestCase):
             def get_str(self) -> str:
                 return "foo"
 
+            def get_tensor(self) -> torch.Tensor:
+                return tensor_output
+
+            def get_tensor_list(self) -> List[torch.Tensor]:
+                return tensor_list_output
+
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 return torch.nn.functional.sigmoid(self.linear(x))
 
@@ -1084,9 +1192,12 @@ class TestEmit(unittest.TestCase):
         getters = {}
         getters["get_ints"] = model.get_ints()
         getters["get_str"] = model.get_str()
-        print(getters["get_str"])
+        getters["get_tensor"] = model.get_tensor()
+        getters["get_tensor_list"] = model.get_tensor_list()
+
         merged_program = emit_program(exir_input, False, getters).program
-        self.assertEqual(len(merged_program.execution_plan), 3)
+
+        self.assertEqual(len(merged_program.execution_plan), 5)
 
         self.assertEqual(
             merged_program.execution_plan[0].name,
@@ -1100,6 +1211,15 @@ class TestEmit(unittest.TestCase):
             merged_program.execution_plan[2].name,
             "get_str",
         )
+        self.assertEqual(
+            merged_program.execution_plan[3].name,
+            "get_tensor",
+        )
+        self.assertEqual(
+            merged_program.execution_plan[4].name,
+            "get_tensor_list",
+        )
+
         # no instructions in a getter
         self.assertEqual(
             len(merged_program.execution_plan[1].chains[0].instructions),
@@ -1135,6 +1255,17 @@ class TestEmit(unittest.TestCase):
             merged_program.execution_plan[2].values[0].val.string_val,
             "foo",
         )
+        self.assertEqual(len(merged_program.execution_plan[3].outputs), 1)
+        self.assertEqual(len(merged_program.execution_plan[4].outputs), 2)
+
+        merged_program = to_edge(
+            export(model, inputs), constant_methods=getters
+        ).to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(merged_program.buffer)
+        torch.allclose(executorch_module.run_method("get_tensor", [])[0], tensor_output)
+        model_output = executorch_module.run_method("get_tensor_list", [])
+        for i in range(len(tensor_list_output)):
+            torch.allclose(model_output[i], tensor_list_output[i])
 
     def test_emit_debug_handle_map(self) -> None:
         mul_model = Mul()
@@ -1195,7 +1326,7 @@ class TestEmit(unittest.TestCase):
         )
 
     def test_delegate_with_input_list(self) -> None:
-        class BackendWithCompilerDemo(BackendDetails):
+        class BackendWithCompilerExample(BackendDetails):
             @staticmethod
             def preprocess(
                 edge_program,
@@ -1217,7 +1348,7 @@ class TestEmit(unittest.TestCase):
         model = TestModel()
         edgeir_m = to_edge(export(model, inputs))
         lowered_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program(), []
+            "BackendWithCompilerExample", edgeir_m.exported_program(), []
         )
 
         class CompositeModule(torch.nn.Module):
@@ -1235,7 +1366,7 @@ class TestEmit(unittest.TestCase):
         exec_prog.buffer
 
     def test_delegate_with_input_tuple(self) -> None:
-        class BackendWithCompilerDemo(BackendDetails):
+        class BackendWithCompilerExample(BackendDetails):
             @staticmethod
             def preprocess(
                 edge_program,
@@ -1259,7 +1390,7 @@ class TestEmit(unittest.TestCase):
         model = AddMulModule()
         edgeir_m = to_edge(export(model, model_inputs))
         lowered_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program(), []
+            "BackendWithCompilerExample", edgeir_m.exported_program(), []
         )
 
         class CompositeModule(torch.nn.Module):
@@ -1279,7 +1410,7 @@ class TestEmit(unittest.TestCase):
     def test_delegate_mapping(self) -> None:
         debug_handle_map = {1: [1, 2]}
 
-        class BackendWithCompilerDemo(BackendDetails):
+        class BackendWithCompilerExample(BackendDetails):
             @staticmethod
             def preprocess(
                 edge_program,
@@ -1301,7 +1432,7 @@ class TestEmit(unittest.TestCase):
         model = TestModel()
         edgeir_m = to_edge(export(model, inputs))
         lowered_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program(), []
+            "BackendWithCompilerExample", edgeir_m.exported_program(), []
         )
 
         class CompositeModule(torch.nn.Module):
@@ -1326,7 +1457,7 @@ class TestEmit(unittest.TestCase):
         )
         self.assertEqual(
             exec_prog.delegate_map.get("forward").get(0).get("name"),
-            "BackendWithCompilerDemo",
+            "BackendWithCompilerExample",
         )
         self.assertTrue(
             len(exec_prog.delegate_map.get("forward").get(0).get("delegate_map")) != 0

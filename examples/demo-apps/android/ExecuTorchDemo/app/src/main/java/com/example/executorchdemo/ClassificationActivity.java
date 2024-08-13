@@ -22,7 +22,6 @@ import java.io.IOException;
 import org.pytorch.executorch.EValue;
 import org.pytorch.executorch.Module;
 import org.pytorch.executorch.Tensor;
-import org.pytorch.executorch.TensorImageUtils;
 
 public class ClassificationActivity extends Activity implements Runnable {
 

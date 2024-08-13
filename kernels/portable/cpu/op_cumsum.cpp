@@ -11,8 +11,8 @@
 #include <executorch/runtime/platform/assert.h>
 #include <cmath>
 #include <cstddef>
-//#include <cstdint>
-//#include <type_traits>
+// #include <cstdint>
+// #include <type_traits>
 
 namespace torch {
 namespace executor {

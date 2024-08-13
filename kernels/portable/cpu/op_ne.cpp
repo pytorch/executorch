@@ -32,27 +32,28 @@ Tensor& ne_tensor_out(
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
-  ScalarType common_type = promoteTypes(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "ne.Tensor_out", CTYPE_A, [&]() {
     ET_SWITCH_REAL_TYPES_AND(
         Bool, b_type, ctx, "ne.Tensor_out", CTYPE_B, [&]() {
+          using CTYPE_IN =
+              typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
+          ET_DCHECK(
+              CppTypeToScalarType<CTYPE_IN>::value ==
+              promoteTypes(a_type, b_type));
           ET_SWITCH_REAL_TYPES_AND(
-              Bool, common_type, ctx, "ne.Tensor_out", CTYPE_IN, [&]() {
-                ET_SWITCH_REAL_TYPES_AND(
-                    Bool, out_type, ctx, "ne.Tensor_out", CTYPE_OUT, [&]() {
-                      apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-                          [](const CTYPE_A val_a, const CTYPE_B val_b) {
-                            CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                            CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                            bool value = a_casted != b_casted;
-                            return static_cast<CTYPE_OUT>(value);
-                          },
-                          a,
-                          b,
-                          out);
-                    });
+              Bool, out_type, ctx, "ne.Tensor_out", CTYPE_OUT, [&]() {
+                apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+                    [](const CTYPE_A val_a, const CTYPE_B val_b) {
+                      CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                      CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+                      bool value = a_casted != b_casted;
+                      return static_cast<CTYPE_OUT>(value);
+                    },
+                    a,
+                    b,
+                    out);
               });
         });
   });
@@ -76,28 +77,28 @@ Tensor& ne_scalar_out(
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
-  ScalarType common_type = promoteTypes(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "ne.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "ne.Scalar_out", CTYPE_B, [&]() {
+      using CTYPE_IN =
+          typename torch::executor::promote_types<CTYPE_A, CTYPE_B>::type;
+      ET_DCHECK(
+          CppTypeToScalarType<CTYPE_IN>::value == promoteTypes(a_type, b_type));
       ET_SWITCH_REAL_TYPES_AND(
-          Bool, common_type, ctx, "ne.Scalar_out", CTYPE_IN, [&]() {
-            ET_SWITCH_REAL_TYPES_AND(
-                Bool, out_type, ctx, "ne.Scalar_out", CTYPE_OUT, [&]() {
-                  CTYPE_B val_b = 0;
-                  utils::extract_scalar(b, &val_b);
-                  apply_unary_map_fn(
-                      [val_b](const CTYPE_A val_a) {
-                        CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                        CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                        bool value = a_casted != b_casted;
-                        return static_cast<CTYPE_OUT>(value);
-                      },
-                      a.const_data_ptr<CTYPE_A>(),
-                      out.mutable_data_ptr<CTYPE_OUT>(),
-                      out.numel());
-                });
+          Bool, out_type, ctx, "ne.Scalar_out", CTYPE_OUT, [&]() {
+            CTYPE_B val_b = 0;
+            utils::extract_scalar(b, &val_b);
+            apply_unary_map_fn(
+                [val_b](const CTYPE_A val_a) {
+                  CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                  CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+                  bool value = a_casted != b_casted;
+                  return static_cast<CTYPE_OUT>(value);
+                },
+                a.const_data_ptr<CTYPE_A>(),
+                out.mutable_data_ptr<CTYPE_OUT>(),
+                out.numel());
           });
     });
   });

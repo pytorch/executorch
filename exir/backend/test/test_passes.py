@@ -42,6 +42,6 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(len(copied_nodes), 1)
 
         # Check that the new constant node is in the graph
-        FileCheck().check("arg0_1_copy_0").run(
+        FileCheck().check("b_const_copy_0").run(
             edge.exported_program().graph_module.code
         )

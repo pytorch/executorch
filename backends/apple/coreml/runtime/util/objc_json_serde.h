@@ -32,6 +32,8 @@ template <> inline int64_t to_scalar(NSNumber* value) { return value.longLongVal
 
 id to_json_object(const std::string& json_string);
 
+id to_json_object(NSData* data);
+
 std::string to_json_string(id json_object);
 
 template <typename T, typename Enable = void> struct Converter { };

@@ -17,9 +17,9 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
-from executorch.examples.portable.utils import save_pte_program
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.extension.export_util.utils import save_pte_program
 from executorch.sdk import generate_etrecord
 
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -40,6 +40,14 @@ if __name__ == "__main__":
         help="Generate ETRecord metadata to link with runtime results (used for profiling)",
     )
 
+    parser.add_argument(
+        "-f",
+        "--output_folder",
+        type=str,
+        default="",
+        help="The folder to store the exported program",
+    )
+
     args = parser.parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:
@@ -58,7 +66,7 @@ if __name__ == "__main__":
     quantizer.set_bit8_op_quant_config(quant_config)
 
     # Typical pytorch 2.0 quantization flow
-    m = torch._export.capture_pre_autograd_graph(model.eval(), example_inputs)
+    m = torch.export.export(model.eval(), example_inputs).module()
     m = prepare_pt2e(m, quantizer)
     # Calibration
     m(*example_inputs)
@@ -88,11 +96,13 @@ if __name__ == "__main__":
         )
 
     executorch_program = delegated_program.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
+        config=ExecutorchBackendConfig(
+            extract_delegate_segments=False, extract_constant_segment=False
+        )
     )
 
     if args.generate_etrecord:
-        etrecord_path = "etrecord.bin"
+        etrecord_path = args.output_folder + "etrecord.bin"
         generate_etrecord(etrecord_path, edge_copy, executorch_program)
 
-    save_pte_program(executorch_program, args.model_name)
+    save_pte_program(executorch_program, args.model_name, args.output_folder)

@@ -46,7 +46,6 @@ question is a bit more specific, then add a descriptive sufix. */
 
 #pragma once
 
-#include <executorch/runtime/core/function_ref.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -61,7 +60,7 @@ namespace internal {
  * the input tensor element-wise.
  */
 Tensor& unary_ufunc_realh(
-    FunctionRef<double(double)> fn,
+    double (*fn)(double),
     RuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
@@ -73,7 +72,7 @@ Tensor& unary_ufunc_realh(
  * operation which is applied to the input tensor element-wise.
  */
 Tensor& unary_ufunc_realhb_to_bool(
-    FunctionRef<bool(double)> fn,
+    bool (*fn)(double),
     RuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
@@ -85,7 +84,7 @@ Tensor& unary_ufunc_realhb_to_bool(
  * operation which is applied to the input tensor element-wise.
  */
 Tensor& unary_ufunc_realhb_to_floath(
-    FunctionRef<double(double)> fn,
+    double (*fn)(double),
     RuntimeContext& ctx,
     const Tensor& in,
     Tensor& out);
@@ -97,7 +96,7 @@ Tensor& unary_ufunc_realhb_to_floath(
  * binary logical operation which is applied to the input tensors element-wise.
  */
 Tensor& binary_ufunc_realb_realb_to_realb_logical(
-    FunctionRef<bool(bool, bool)> fn,
+    bool (*fn)(bool, bool),
     RuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,

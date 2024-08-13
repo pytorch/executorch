@@ -7,7 +7,7 @@
 # pyre-strict
 
 import itertools
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import executorch.exir as exir
 
@@ -19,6 +19,23 @@ from torch import Tensor
 from torch.export import export
 
 # TODO: add one more test for data dependent op plus repeat
+
+
+class TensorItem(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, arg1: torch.Tensor, arg2: torch.Tensor) -> torch.Tensor:
+        h = arg1.item()
+        w = arg2.item()
+        torch._check(h >= 2)
+        torch._check(h <= 100)
+        torch._check(w >= 2)
+        torch._check(w <= 100)
+        return torch.ones(int(h), int(w))
+
+    def get_random_inputs(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        return (torch.tensor(10), torch.tensor(20))
 
 
 class Repeat(nn.Module):
@@ -33,6 +50,11 @@ class Repeat(nn.Module):
 
     def get_random_inputs(self) -> Tuple[torch.Tensor, torch.Tensor]:
         return (torch.rand(4), torch.rand(5))
+
+    def get_dynamic_shape(self) -> Any:  # pyre-ignore[3]
+        dim = torch.export.Dim("dim", max=10)
+        dim2 = torch.export.Dim("dim2", max=10)
+        return ({0: dim}, {0: dim2})
 
 
 class ModelWithUnusedArg(nn.Module):

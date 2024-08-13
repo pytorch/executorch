@@ -1,4 +1,10 @@
-// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
 import SwiftUI
 import UniformTypeIdentifiers
@@ -144,6 +150,7 @@ struct ContentView: View {
         }
       }
     }
+    .navigationViewStyle(StackNavigationViewStyle())
   }
 
   private func generate() {
@@ -183,7 +190,7 @@ struct ContentView: View {
             if let error {
               message.text = "Model loading failed: error \((error as NSError).code)"
             } else {
-              message.text = "Model loaded in \(String(format: "%.1f", loadTime)) s"
+              message.text = "Model loaded in \(String(format: "%.2f", loadTime)) s"
             }
             messages.append(message)
             if error == nil {
@@ -204,15 +211,21 @@ struct ContentView: View {
         return
       }
       do {
+        var tokens: [String] = []
         try runnerHolder.runner?.generate(text, sequenceLength: seq_len) { token in
-
-          DispatchQueue.main.async {
-            withAnimation {
-              var message = messages.removeLast()
-              message.text += token
-              message.tokenCount += 1
-              message.dateUpdated = Date()
-              messages.append(message)
+          tokens.append(token)
+          if tokens.count > 2 {
+            let text = tokens.joined()
+            let count = tokens.count
+            tokens = []
+            DispatchQueue.main.async {
+              withAnimation {
+                var message = messages.removeLast()
+                message.text += text
+                message.tokenCount += count
+                message.dateUpdated = Date()
+                messages.append(message)
+              }
             }
           }
           if shouldStopGenerating {
@@ -242,7 +255,7 @@ struct ContentView: View {
     case .model:
       return [UTType(filenameExtension: "pte")].compactMap { $0 }
     case .tokenizer:
-      return [UTType(filenameExtension: "bin")].compactMap { $0 }
+      return [UTType(filenameExtension: "bin"), UTType(filenameExtension: "model")].compactMap { $0 }
     }
   }
 

@@ -12,7 +12,6 @@ In this tutorial, you will learn how to export an XNNPACK lowered Model and run 
 :class-card: card-prerequisites
 * [Setting up ExecuTorch](./getting-started-setup.md)
 * [Model Lowering Tutorial](./tutorials/export-to-executorch-tutorial)
-* [Custom Quantization](./quantization-custom-quantization.md)
 * [ExecuTorch XNNPACK Delegate](./native-delegates-executorch-xnnpack-delegate.md)
 :::
 ::::
@@ -23,16 +22,18 @@ In this tutorial, you will learn how to export an XNNPACK lowered Model and run 
 import torch
 import torchvision.models as models
 
-from torch.export import export
+from torch.export import export, ExportedProgram
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.exir import to_edge
+from executorch.exir import EdgeProgramManager, ExecutorchProgramManager, to_edge
+from executorch.exir.backend.backend_api import to_backend
 
 
 mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).eval()
 sample_inputs = (torch.randn(1, 3, 224, 224), )
 
-edge = to_edge(export(mobilenet_v2, sample_inputs))
+exported_program: ExportedProgram = export(mobilenet_v2, sample_inputs)
+edge: EdgeProgramManager = to_edge(exported_program)
 
 edge = edge.to_backend(XnnpackPartitioner())
 ```
@@ -64,7 +65,7 @@ We print the graph after lowering above to show the new nodes that were inserted
 exec_prog = edge.to_executorch()
 
 with open("xnnpack_mobilenetv2.pte", "wb") as file:
-    file.write(exec_prog.buffer)
+    exec_prog.write_to_file(file)
 ```
 After lowering to the XNNPACK Program, we can then prepare it for executorch and save the model as a `.pte` file. `.pte` is a binary format that stores the serialized ExecuTorch graph.
 
@@ -117,14 +118,14 @@ edge = edge.to_backend(XnnpackPartitioner())
 exec_prog = edge.to_executorch()
 
 with open("qs8_xnnpack_mobilenetv2.pte", "wb") as file:
-    file.write(exec_prog.buffer)
+    exec_prog.write_to_file(file)
 ```
 
 ## Lowering with `aot_compiler.py` script
 We have also provided a script to quickly lower and export a few example models. You can run the script to generate lowered fp32 and quantized models. This script is used simply for convenience and performs all the same steps as those listed in the previous two sections.
 
 ```
-python3 -m examples.xnnpack.aot_compiler --model_name="mv2" --quantize --delegate
+python -m examples.xnnpack.aot_compiler --model_name="mv2" --quantize --delegate
 ```
 
 Note in the example above,
@@ -134,14 +135,39 @@ Note in the example above,
 
 The generated model file will be named `[model_name]_xnnpack_[qs8/fp32].pte` depending on the arguments supplied.
 
-## Running the XNNPACK Model
-We will use `buck2` to run the `.pte` file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install [buck2](getting-started-setup.md#building-a-runtime). You can now run it with the prebuilt `xnn_executor_runner` provided in the examples. This will run the model on some sample inputs.
+## Running the XNNPACK Model with CMake
+After exporting the XNNPACK Delegated model, we can now try running it with example inputs using CMake. We can build and use the xnn_executor_runner, which is a sample wrapper for the ExecuTorch Runtime and XNNPACK Backend. We first begin by configuring the CMake build like such:
+```bash
+# cd to the root of executorch repo
+cd executorch
+
+# Get a clean cmake-out directory
+rm -rf cmake-out
+mkdir cmake-out
+
+# Configure cmake
+cmake \
+    -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
+    -DPYTHON_EXECUTABLE=python \
+    -Bcmake-out .
+```
+Then you can build the runtime componenets with
 
 ```bash
-buck2 run examples/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_fp32.pte
+cmake --build cmake-out -j9 --target install --config Release
+```
+
+Now you should be able to find the executable built at `./cmake-out/backends/xnnpack/xnn_executor_runner` you can run the executable with the model you generated as such
+```bash
+./cmake-out/backends/xnnpack/xnn_executor_runner --model_path=./mv2_xnnpack_fp32.pte
 # or to run the quantized variant
-buck2 run examples/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_qs8.pte
+./cmake-out/backends/xnnpack/xnn_executor_runner --model_path=./mv2_xnnpack_q8.pte
 ```
 
 ## Building and Linking with the XNNPACK Backend
-You can build the XNNPACK backend [BUCK target](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/targets.bzl#L54) and [CMake target](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt#L83), and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this [resource](demo-apps-android.md) next.
+You can build the XNNPACK backend [CMake target](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt#L83), and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this [resource](demo-apps-android.md) next.

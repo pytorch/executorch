@@ -4,7 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import json
+import os
 from pathlib import Path
 
 import torch
@@ -48,31 +51,52 @@ class Llama2Model(EagerModelBase):
             # The 1st way
             ckpt_dir = Path(__file__).absolute().parent / "params"
 
-        checkpoint_path = (
-            kwargs["checkpoint"]
-            if "checkpoint" in kwargs
-            else ckpt_dir / "demo_rand_params.pth"
-        )
+        # Check if checkpoint_dir was provided for a sharded checkpoint.
+        checkpoint_dir = kwargs.get("checkpoint_dir", None)
 
-        params_path = (
-            kwargs["params"] if "params" in kwargs else ckpt_dir / "demo_config.json"
-        )
+        # Use single checkpoint file.
+        checkpoint_path = kwargs.get("checkpoint", ckpt_dir / "demo_rand_params.pth")
 
-        self.use_kv_cache = (
-            kwargs["use_kv_cache"] if "use_kv_cache" in kwargs else False
-        )
-        self.use_sdpa_with_kv_cache_op = (
-            kwargs["use_sdpa_with_kv_cache"]
-            if "use_sdpa_with_kv_cache" in kwargs
-            else False
-        )
+        params_path = kwargs.get("params", ckpt_dir / "demo_config.json")
 
-        self.max_seq_len = kwargs["max_seq_len"] if "max_seq_len" in kwargs else 128
+        self.use_kv_cache = kwargs.get("use_kv_cache", False)
+        self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
+        self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
+
+        self.max_seq_len = kwargs.get("max_seq_len", 128)
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
         # flake8: noqa: TOR102
-        checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
+        cps = []
+        if checkpoint_dir is not None:
+            # Load multiple checkpoint; ignore the single path.
+            checkpoint_path = None
+            for i in range(4):
+                cp_name = f"consolidated.{i}.pth"
+                print(f"Loading {cp_name}")
+                cps.append(
+                    torch.load(
+                        os.path.join(checkpoint_dir, cp_name),
+                        map_location=device,
+                        mmap=True,
+                    )
+                )
+            checkpoint = {}
+            for key in cps[0].keys():
+                if not torch.allclose(cps[0][key], cps[1][key]):
+                    values = (cps[0][key], cps[1][key], cps[2][key], cps[3][key])
+                    if "wo" in key or "w2" in key:
+                        # Concat on dim=1 for "wo" and "w2".
+                        checkpoint[key] = torch.cat(values, dim=1)
+                    else:
+                        # Concat on dim=0 for everything else.
+                        checkpoint[key] = torch.cat(values, dim=0)
+                else:
+                    # Do not duplicate layers shared between each checkpoint.
+                    checkpoint[key] = cps[0][key]
+        else:
+            checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
         fairseq2_checkpoint = kwargs.get("fairseq2", False)
         if fairseq2_checkpoint:
             print("Using fairseq2 checkpoint")
@@ -121,6 +145,7 @@ the checkpoint format to avoid generating faulty models.
             max_batch_size=max_batch_size,
             use_kv_cache=self.use_kv_cache,
             use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
+            enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )
         if kwargs.get("fairseq2", False):
@@ -140,16 +165,18 @@ the checkpoint format to avoid generating faulty models.
 
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
-            from .quantize import WeightOnlyInt8QuantHandler
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.examples.models.source_transformation.quantize`
+            from ..source_transformation.quantize import WeightOnlyInt8QuantHandler
 
             simple_quantizer = WeightOnlyInt8QuantHandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
         elif "8da4w" in str(checkpoint_path):
             print("Using int4 weight and int8 dynamic activation quantization!")
-            from .quantize import Int8DynActInt4WeightQuantHandler
+            from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
-            simple_quantizer = Int8DynActInt4WeightQuantHandler(self.model_)
-            self.model_ = simple_quantizer.convert_for_runtime()
+            self.model_ = Int8DynActInt4WeightQuantizer()._convert_for_runtime(
+                self.model_
+            )
 
         # assign=True: load params/buffers by assignment instead of performing an in-place copy.
         # Because we are using device="meta", tensors do not have memory associated with them
@@ -172,11 +199,7 @@ the checkpoint format to avoid generating faulty models.
 
     def get_example_inputs(self):
         if self.use_kv_cache:
-            if self.use_sdpa_with_kv_cache_op:
-                return self.get_example_inputs_kvcache_sdpa()
-            else:
-                # return self.get_example_inputs_kvcache() TODO xnnpack does not handle forwarding symints, update partitioner to not partition symints
-                return self.get_example_inputs_kvcache_sdpa()
+            return self.get_example_inputs_kvcache_sdpa()
         else:
             return (
                 torch.tensor(
@@ -186,21 +209,17 @@ the checkpoint format to avoid generating faulty models.
 
     # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
     def get_example_inputs_kvcache_sdpa(self):
-        return (
-            torch.tensor(
-                [[1]], dtype=torch.long
-            ),  # tokens, with kv cache our input token length is always just 1 token.
-            torch.tensor(
-                [0], dtype=torch.long
-            ),  # start_pos, what token of output are we on.)
-        )
-
-    def get_example_inputs_kvcache(self):
-        return (
-            torch.tensor(
-                [[1, 2, 3]], dtype=torch.long
-            ),  # tokens, with kv cache our input token length is always just 1 token.
-            torch.tensor(
-                [0, 1, 2], dtype=torch.long
-            ),  # start_pos, what token of output are we on.
-        )
+        if self.enable_dynamic_shape:
+            return (
+                torch.tensor([[2, 3, 4]], dtype=torch.long),
+                torch.tensor([0], dtype=torch.long),
+            )
+        else:
+            return (
+                torch.tensor(
+                    [[1]], dtype=torch.long
+                ),  # tokens, with kv cache our input token length is always just 1 token.
+                torch.tensor(
+                    [0], dtype=torch.long
+                ),  # start_pos, what token of output are we on.
+            )

@@ -1,0 +1,25 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+conv2d_dw_output_tile:
+  parameter_names_with_default_values:
+    OPERATOR: X
+    NDIM: 3
+    DTYPE: float
+    TILE_SIZE: 3
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+  shader_variants:
+    - NAME: conv2d_dw_output_tile_3x3
+    - NAME: conv2d_dw_output_tile_3x3_clamp
+      OPERATOR: clamp(X, A, B)
+    - NAME: conv2d_dw_output_tile_5x5
+      TILE_SIZE: 5
+    - NAME: conv2d_dw_output_tile_5x5_clamp
+      OPERATOR: clamp(X, A, B)
+      TILE_SIZE: 5

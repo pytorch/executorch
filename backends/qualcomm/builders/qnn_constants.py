@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from enum import IntEnum, unique
 
 QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
-QNN_uint16 = "uint16"
 
 # Below constants should be same as those in QNN headers.
 # Maybe someday we should expose these constants by pybind
@@ -32,12 +31,23 @@ class OpConcat:
 
 
 @dataclass(init=False, frozen=True)
+class OpContextLoader:
+    namespace: str = "qaisw"
+    meta_ctx_bin: str = "qnn_context_binary"
+
+
+@dataclass(init=False, frozen=True)
 class OpConv2d:
     op_name: str = "Conv2d"
     param_stride: str = "stride"
     param_pad_amount: str = "pad_amount"
     param_group: str = "group"
     param_dilation: str = "dilation"
+
+
+@dataclass(init=False, frozen=True)
+class OpConvert:
+    op_name: str = "Convert"
 
 
 @dataclass(init=False, frozen=True)
@@ -86,6 +96,14 @@ class OpElementWiseMultiply:
 
 
 @dataclass(init=False, frozen=True)
+class OpElementWiseNeuron:
+    op_name: str = "ElementWiseNeuron"
+    param_operation: str = "operation"
+    param_alpha: str = "alpha"
+    param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWisePower:
     op_name: str = "ElementWisePower"
 
@@ -116,6 +134,12 @@ class OpFullyConnected:
 class OpGather:
     op_name: str = "Gather"
     param_axis: str = "axis"
+
+
+@dataclass(init=False, frozen=True)
+class OpGatherND:
+    op_name: str = "GatherNd"
+    param_batch_dims: str = "batch_dims"
 
 
 @dataclass(init=False, frozen=True)
@@ -200,6 +224,11 @@ class OpPoolMax2d:
 
 
 @dataclass(init=False, frozen=True)
+class OpPRelu:
+    op_name: str = "Prelu"
+
+
+@dataclass(init=False, frozen=True)
 class OpQuantize:
     op_name: str = "Quantize"
 
@@ -207,6 +236,13 @@ class OpQuantize:
 @dataclass(init=False, frozen=True)
 class OpReduceMean:
     op_name: str = "ReduceMean"
+    param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
+class OpReduceSum:
+    op_name: str = "ReduceSum"
     param_axes: str = "axes"
     param_keep_dims: str = "keep_dims"
 
@@ -236,6 +272,19 @@ class OpResizeBilinear:
 
 
 @dataclass(init=False, frozen=True)
+class OpResizeNearestNeighbor:
+    op_name: str = "ResizeNearestNeighbor"
+    param_align_corners: str = "align_corners"
+    param_half_pixel_centers: str = "half_pixel_centers"
+
+
+@dataclass(init=False, frozen=True)
+class OpScatterNd:
+    op_name: str = "ScatterNd"
+    param_reduction: str = "reduction"
+
+
+@dataclass(init=False, frozen=True)
 class OpSigmoid:
     op_name: str = "Sigmoid"
 
@@ -245,6 +294,29 @@ class OpSoftmax:
     op_name: str = "Softmax"
     param_axis: str = "axis"
     param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
+class OpSpaceToDepth:
+    op_name: str = "SpaceToDepth"
+    param_block_size: str = "block_size"
+    param_mode: str = "mode"
+
+    @unique
+    class Mode(IntEnum):
+        DCR = 0
+        CRD = 1
+
+
+class OpSplit:
+    op_name: str = "Split"
+    param_axis: str = "axis"
+    param_split_index: str = "split_index"
+
+
+@dataclass(init=False, frozen=True)
+class OpSqrt:
+    op_name: str = "ElementWiseSquareRoot"
 
 
 @dataclass(init=False, frozen=True)

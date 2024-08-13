@@ -88,10 +88,11 @@ MPSGraphBuilder::numel(const flatbuffers::Vector<int32_t>* shape) {
 NSData*
 MPSGraphBuilder::getConstantData(int32_t id) {
   TensorPtr mpsTensor = _flatBufferGraph->mps_values()->Get(id);
-  int32_t constantBufferSize = mpsTensor->constant_buffer_size();
-  const unsigned char* constantBuffer = mpsTensor->constant_buffer()->storage()->data();
+  uint64_t constantBufferSize = mpsTensor->constant_buffer_size();
+  uint64_t segmentOffset = mpsTensor->segment_offset();
+  const unsigned char* constantBuffer = _constant_data_ptr + segmentOffset;
   ET_CHECK_MSG(constantBufferSize > 0 && constantBuffer != nullptr, "[ERROR] Invalid constant buffer");
-  return [[NSData alloc] initWithBytes:constantBuffer
+  return [[NSData alloc] initWithBytesNoCopy:(void*)constantBuffer
                                 length:constantBufferSize];
 }
 
@@ -166,6 +167,7 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
     _DEFINE_MPS_NODE(Isnan);
     _DEFINE_MPS_NODE(Isinf);
     _DEFINE_MPS_NODE(Round);
+    _DEFINE_MPS_NODE(LogicalNot);
     // Clamp ops
     _DEFINE_MPS_NODE(Clamp);
     _DEFINE_MPS_NODE(Where);
@@ -178,6 +180,9 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
     //Indexing ops
     _DEFINE_MPS_NODE(IndexSelect);
     _DEFINE_MPS_NODE(Embedding);
+    _DEFINE_MPS_NODE(IndexTensor);
+    _DEFINE_MPS_NODE(IndexPut);
+    _DEFINE_MPS_NODE(Scatter);
     // Reduce ops
     _DEFINE_MPS_NODE(Mean);
     // Shape ops
@@ -221,6 +226,11 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
         "[ERROR] Unhandled node type: %s!",
         mpsgraph::EnumNameMPSNodeUnion(nodePtr->mpsnode_union_type()));
   }
+}
+
+Error
+MPSGraphBuilder::compileMetalKernel(NodePtr nodePtr) {
+  return addNodeToMPSGraph(nodePtr);
 }
 
 #undef _DEFINE_MPS_NODE

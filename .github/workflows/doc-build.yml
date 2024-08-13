@@ -8,6 +8,7 @@ on:
       - release/*
     tags:
       - v[0-9]+.[0-9]+.[0-9]+
+      - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
@@ -46,13 +47,9 @@ jobs:
         # ET_VERSION_DOCS will be pulled during the doc build to add to the version dropdown
         # on the website. See docs/source/conf.py for details
 
-        REF_TYPE=${{ github.ref_type }}
-        REF_NAME=${{ github.ref_name }}
-
-        echo "$REF_TYPE"
-        echo "$REF_NAME"
-
-        ET_VERSION_DOCS="${REF_NAME}"
+        GITHUB_REF=${{ github.ref }}
+        echo "$GITHUB_REF"
+        export ET_VERSION_DOCS="${GITHUB_REF}"
         echo "$ET_VERSION_DOCS"
 
         set -eux
@@ -68,23 +65,21 @@ jobs:
         make html
         cd ..
 
+        # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
+        echo "GitHub Ref: ${GITHUB_REF}"
+        if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
+          find docs/_build/html/ -name "*.html" -print0 | xargs -0 sed -i '/<head>/a \ \ <meta name="robots" content="noindex">';
+        fi
+
         cp -rf docs/_build/html/* "${RUNNER_DOCS_DIR}"
 
         mv docs/_build/html "${RUNNER_ARTIFACT_DIR}"
 
         ls -R "${RUNNER_ARTIFACT_DIR}"/*/*.html
 
-# Enable preview later. Previews are available publicly
-#
-# upload-preview:
-#    if: github.repository == 'pytorch/executorch' && github.event_name == 'push' &&
-#        (github.ref_type == 'branch' && github.ref_name == 'main')
-#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-
   upload-gh-pages:
     needs: build
-    if: github.repository == 'pytorch/executorch' && github.event_name == 'push' &&
-        ((github.ref_type == 'branch' && github.ref_name == 'main') || github.ref_type == 'tag')
+    if: github.repository == 'pytorch/executorch' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     permissions:
       contents: write
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
@@ -96,22 +91,17 @@ jobs:
       script: |
         set -euo pipefail
 
-        REF_TYPE=${{ github.ref_type }}
-        REF_NAME=${{ github.ref_name }}
+        # Get github.ref for the output doc folder. By default "main"
+        # If matches a tag like refs/tags/v1.12.0-rc3 or
+        # refs/tags/v1.12.0 convert to 1.12
+        export GITHUB_REF=${{ github.ref }}
 
-        # If building for a release tag, branch, set the branch/tag name
-        # as the target folder in the gh-pages branch. The artifacts created
-        # during the build will be copied over to the target dir in the
-        # gh-pages branch.
-        if [[ "${REF_TYPE}" == branch ]]; then
-          TARGET_FOLDER="${REF_NAME}"
-        elif [[ "${REF_TYPE}" == tag ]]; then
-          # Strip the leading "v" as well as the trailing patch version and "-rc" suffix.
-          # For example: 'v0.1.2' -> '0.1' and 'v0.1.2-rc1' -> 0.1.
-          TARGET_FOLDER=$(echo "${REF_NAME}" | sed 's/^v//i; s/-rc[0-9]*$//; s/\.[0-9]*$//')
+        # Convert refs/tags/v1.12.0rc3 into 1.12.
+        # Adopted from https://github.com/pytorch/pytorch/blob/main/.github/workflows/_docs.yml#L150C11-L155C13
+        if [[ "${GITHUB_REF}" =~ ^refs/tags/v([0-9]+\.[0-9]+) ]]; then
+          TARGET_FOLDER="${BASH_REMATCH[1]}"
         else
-          echo "ERROR: Invalid REF_TYPE: ${REF_TYPE}. Expected 'branch' or 'tag'."
-          exit 1
+          TARGET_FOLDER="main"
         fi
         echo "Target Folder: ${TARGET_FOLDER}"
 
@@ -121,12 +111,6 @@ jobs:
         rm -rf "${TARGET_FOLDER}"/*
         mv "${RUNNER_ARTIFACT_DIR}"/html/* "${TARGET_FOLDER}"
         git add "${TARGET_FOLDER}" || true
-
-        # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
-        if [[ "${REF_NAME}" == 'main' ]]; then
-          find "${TARGET_FOLDER}" -type f -name "*.html" -exec sed -i '/<head>/a <meta name="robots" content="noindex">' {} \;
-          git add "${TARGET_FOLDER}"/**/*.html || true
-        fi
 
         git config user.name 'pytorchbot'
         git config user.email 'soumith+bot@pytorch.org'

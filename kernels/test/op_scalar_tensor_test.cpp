@@ -111,3 +111,23 @@ TEST_F(OpScalarTensorOutTest, InvalidOutShapeFails) {
   Tensor out = tf.ones(sizes);
   ET_EXPECT_KERNEL_FAILURE(context_, op_scalar_tensor_out(7, out));
 }
+
+TEST_F(OpScalarTensorOutTest, HalfSupport) {
+  TensorFactory<ScalarType::Half> tf;
+  Tensor out = tf.zeros({});
+
+  op_scalar_tensor_out(false, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({}, {0}));
+
+  op_scalar_tensor_out(true, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({}, {1}));
+
+  op_scalar_tensor_out(7, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({}, {7}));
+
+  op_scalar_tensor_out(2.5, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({}, {2.5}));
+
+  op_scalar_tensor_out(INFINITY, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({}, {INFINITY}));
+}

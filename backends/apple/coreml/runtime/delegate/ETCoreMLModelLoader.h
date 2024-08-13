@@ -16,7 +16,8 @@ struct ModelMetadata;
 
 NS_ASSUME_NONNULL_BEGIN
 /// A class responsible for loading a CoreML model.
-__attribute__((objc_subclassing_restricted)) @interface ETCoreMLModelLoader : NSObject
+__attribute__((objc_subclassing_restricted))
+@interface ETCoreMLModelLoader : NSObject
 
 + (instancetype)new NS_UNAVAILABLE;
 

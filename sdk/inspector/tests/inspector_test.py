@@ -17,9 +17,17 @@ from unittest.mock import patch
 from executorch.exir import ExportedProgram
 from executorch.sdk import generate_etrecord, parse_etrecord
 from executorch.sdk.debug_format.et_schema import OperatorNode
+from executorch.sdk.etdump.schema_flatcc import ProfileEvent
 from executorch.sdk.etrecord.tests.etrecord_test import TestETRecord
 
 from executorch.sdk.inspector import _inspector, Event, EventBlock, Inspector, PerfData
+from executorch.sdk.inspector._inspector import (
+    DebugEventSignature,
+    flatcc,
+    InstructionEvent,
+    InstructionEventSignature,
+    ProfileEventSignature,
+)
 
 
 OP_TYPE = "aten::add"
@@ -183,6 +191,49 @@ class TestInspector(unittest.TestCase):
         expected_ops = ["op_0", "op_1"]
         self.assertEqual(event_with_multiple_debug_handles.op_types, expected_ops)
 
+    def test_inspector_delegate_time_scale_converter(self):
+        def time_scale_converter(event_name, time):
+            return time / 10
+
+        event = Event(
+            name="",
+            _delegate_metadata_parser=None,
+            _delegate_time_scale_converter=None,
+        )
+        event_signature = ProfileEventSignature(
+            name="",
+            instruction_id=0,
+            delegate_id_str="test_event",
+        )
+        instruction_events = [
+            InstructionEvent(
+                signature=InstructionEventSignature(0, 0),
+                profile_events=[
+                    ProfileEvent(
+                        name="test_event",
+                        chain_index=0,
+                        instruction_id=0,
+                        delegate_debug_id_int=None,
+                        delegate_debug_id_str="test_event_delegated",
+                        start_time=100,
+                        end_time=200,
+                        delegate_debug_metadata=None,
+                    )
+                ],
+            )
+        ]
+        Event._populate_profiling_related_fields(
+            event, event_signature, instruction_events, 1
+        )
+        # Value of the perf data before scaling is done.
+        self.assertEqual(event.perf_data.raw[0], 100)
+        event._delegate_time_scale_converter = time_scale_converter
+        Event._populate_profiling_related_fields(
+            event, event_signature, instruction_events, 1
+        )
+        # Value of the perf data after scaling is done. 200/10 - 100/10.
+        self.assertEqual(event.perf_data.raw[0], 10)
+
     def test_inspector_get_exported_program(self):
         # Create a context manager to patch functions called by Inspector.__init__
         with patch.object(
@@ -223,6 +274,140 @@ class TestInspector(unittest.TestCase):
                         inspector_instance.get_exported_program(), ExportedProgram
                     )
                 )
+
+    def test_populate_debugging_related_fields_raises_for_inconsistent_events(self):
+        ret_event: Event = Event(
+            name="event",
+        )
+
+        debug_event_0 = flatcc.DebugEvent(
+            chain_index=1,
+            instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
+            debug_entry=flatcc.Value(
+                val=flatcc.ValueType.TENSOR.value,
+                tensor=flatcc.Tensor(
+                    scalar_type=flatcc.ScalarType.INT,
+                    sizes=[2],
+                    strides=[1],
+                    offset=12345,
+                ),
+                tensor_list=None,
+                int_value=None,
+                float_value=None,
+                double_value=None,
+                bool_value=None,
+                output=None,
+            ),
+        )
+
+        # Note the sizes of this tensor are different from the previous one
+        debug_event_1 = flatcc.DebugEvent(
+            chain_index=1,
+            instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
+            debug_entry=flatcc.Value(
+                val=flatcc.ValueType.TENSOR.value,
+                tensor=flatcc.Tensor(
+                    scalar_type=flatcc.ScalarType.INT,
+                    sizes=[1],
+                    strides=[1],
+                    offset=23456,
+                ),
+                tensor_list=None,
+                int_value=None,
+                float_value=None,
+                double_value=None,
+                bool_value=None,
+                output=None,
+            ),
+        )
+
+        instruction_event_0 = InstructionEvent(
+            signature=InstructionEventSignature(1, 1), debug_events=[debug_event_0]
+        )
+        instruction_event_1 = InstructionEvent(
+            signature=InstructionEventSignature(1, 1), debug_events=[debug_event_1]
+        )
+
+        events = [instruction_event_0, instruction_event_1]
+
+        # Expect AssertionError because 2 tensors have different sizes
+        with self.assertRaises(AssertionError):
+            Event._populate_debugging_related_fields(
+                ret_event=ret_event,
+                debug_event_signature=DebugEventSignature(instruction_id=1),
+                events=events,
+            )
+
+    def test_populate_debugging_related_fields_passes_for_consistent_events(self):
+        ret_event: Event = Event(
+            name="event",
+        )
+
+        debug_event_0 = flatcc.DebugEvent(
+            chain_index=1,
+            instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
+            debug_entry=flatcc.Value(
+                val=flatcc.ValueType.TENSOR.value,
+                tensor=flatcc.Tensor(
+                    scalar_type=flatcc.ScalarType.INT,
+                    sizes=[1],
+                    strides=[1],
+                    offset=12345,
+                ),
+                tensor_list=None,
+                int_value=None,
+                float_value=None,
+                double_value=None,
+                bool_value=None,
+                output=None,
+            ),
+        )
+
+        # Same as the event above except for offset
+        debug_event_1 = flatcc.DebugEvent(
+            chain_index=1,
+            instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
+            debug_entry=flatcc.Value(
+                val=flatcc.ValueType.TENSOR.value,
+                tensor=flatcc.Tensor(
+                    scalar_type=flatcc.ScalarType.INT,
+                    sizes=[1],
+                    strides=[1],
+                    offset=23456,
+                ),
+                tensor_list=None,
+                int_value=None,
+                float_value=None,
+                double_value=None,
+                bool_value=None,
+                output=None,
+            ),
+        )
+
+        instruction_event_0 = InstructionEvent(
+            signature=InstructionEventSignature(1, 1), debug_events=[debug_event_0]
+        )
+        instruction_event_1 = InstructionEvent(
+            signature=InstructionEventSignature(1, 1), debug_events=[debug_event_1]
+        )
+
+        events = [instruction_event_0, instruction_event_1]
+
+        with patch.object(_inspector, "is_inference_output_equal", return_value=True):
+            # Expect it runs with no error because is_inference_output_equal() is mocked to return True
+            Event._populate_debugging_related_fields(
+                ret_event=ret_event,
+                debug_event_signature=DebugEventSignature(instruction_id=1),
+                events=events,
+            )
 
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]

@@ -5,14 +5,23 @@
 
 import logging
 import os
-
-import executorch.backends.arm.tosa_quant_utils as tosa_quant_utils
+from typing import Dict
 
 import numpy as np
 import serializer.tosa_serializer as ts
-from executorch.backends.arm.tosa_mapping import TosaArg
+import torch
+from executorch.backends.arm.operators.node_visitor import NodeVisitor
+from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
+
+from executorch.backends.arm.tosa_quant_utils import (
+    get_quant_node_args,
+    get_quant_node_dtype,
+    is_quant_node,
+    q_op,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
+from torch.fx import Node
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -33,7 +42,7 @@ def dbg_node(node):
     logger.info("  node.meta = ")
     for k, v in node.meta.items():
         logger.info(f"    '{k}' = {v}")
-        if type([]) == type(v):
+        if isinstance(v, list):
             for i in v:
                 logger.info(f"      {i} ")
 
@@ -107,8 +116,16 @@ def transpose_helper(tosa_fb, input, new_order, out_dtype):
     return input_transposed
 
 
-def getNodeArgs(node):
+def getNodeArgs(node: Node) -> list[TosaArg]:
     return [TosaArg(arg) for arg in node.args]
+
+
+def get_input_tensor(node: Node) -> TosaArg:
+    return TosaArg(node.args[0])
+
+
+def get_output_node(node: Node) -> Node:
+    return list(node.users)[0]
 
 
 # Helper function to do broadcasting
@@ -153,12 +170,12 @@ def is_permute_node_before_addmm(node):
     )
 
 
-def is_bias_node_for_addmm(node):
+def is_bias_node_for_quantized_addmm(node):
     consumer_node = list(node.users)[0]
     # consumer node is addmm
     is_rank2_linear_bias = (
         consumer_node.target == exir_ops.edge.aten.addmm.default
-        and list(consumer_node.users)[0].target == tosa_quant_utils.q_op
+        and list(consumer_node.users)[0].target == q_op
     )
 
     # rank>2 linear layers
@@ -170,20 +187,132 @@ def is_bias_node_for_addmm(node):
     ):
         consumer_consumer_node = list(consumer_node.users)[0]
         is_rank_greater_than_2_linear_bias = (
-            list(consumer_consumer_node.users)[0].target == tosa_quant_utils.q_op
+            list(consumer_consumer_node.users)[0].target == q_op
         )
 
     return is_rank2_linear_bias or is_rank_greater_than_2_linear_bias
 
 
+def is_bias_node_for_quantized_conv(node):
+    consumer_node = list(node.users)[0]
+    return (
+        consumer_node.target == exir_ops.edge.aten.convolution.default
+        and list(consumer_node.users)[0].target == q_op
+    )
+
+
 def is_consumer_node_depthwise_conv2d(node):
     consumer_node = list(node.users)[0]
     if consumer_node.target == exir_ops.edge.aten.convolution.default:
-        inputs = []
-        for arg in consumer_node.args:
-            inputs.append(TosaArg(arg))
+        inputs = getNodeArgs(consumer_node)
         group = inputs[-1]
-        if group.number > 1:
+        in_channels = inputs[0].shape[1]
+        out_channels = inputs[1].shape[0]
+        if (in_channels == group.number) and (out_channels % in_channels) == 0:
             return True
 
     return False
+
+
+def build_avg_pool_2d_common(
+    node: torch.fx.Node,
+    tosa_graph: ts.TosaSerializer,
+    input_tensor: TosaArg,
+    kernel_size: list,
+    stride: list,
+    padding: list,
+    is_quant_node: bool,
+    output: TosaArg,
+):
+    accumulator_type = input_tensor.dtype
+
+    if is_quant_node:
+        # Accumulator type always is int32 when input tensor is an integer type.
+        accumulator_type = ts.DType.INT32
+
+    # Initilize zero point to zero.
+    input_zp = 0
+    output_zp = 0
+
+    if is_quant_node:
+        input_zp = get_quant_node_args(node.args[0]).zp
+        output_zp = get_quant_node_args(list(node.users)[0]).zp
+
+    attr = ts.TosaSerializerAttribute()
+    attr.PoolAttribute(
+        kernel=kernel_size,
+        stride=stride,
+        pad=padding,
+        input_zp=input_zp,
+        output_zp=output_zp,
+        accum_dtype=accumulator_type,
+    )
+
+    tosa_graph.addOperator(
+        TosaOp.Op().AVG_POOL2D,
+        [input_tensor.name],
+        [output.name],
+        attr,
+    )
+
+
+def get_two_inputs(node: Node, check: bool = False) -> tuple[Node, Node]:
+    """Returns two input nodes to 'node' in order. If 'node' only has one input,
+    it is returned twice.
+
+    Fails if there are no input nodes.
+    Fails if there are >2 input nodes and 'check' is True,
+    """
+
+    num_inputs = len(node.all_input_nodes)
+    assert num_inputs > 0, f"Node '{node.name}' requires >0 input, got {num_inputs}."
+
+    input1 = node.all_input_nodes[0]
+    if num_inputs == 1:
+        input2 = node.all_input_nodes[0]
+    else:
+        input2 = node.all_input_nodes[1]
+    if check:
+        assert (
+            num_inputs <= 2
+        ), f"Node '{node.name}' requires <=2 inputs, got {num_inputs}."
+
+    return input1, input2
+
+
+def tosa_shape(shape, dim_order):
+    return tuple([shape[dim] for dim in dim_order])
+
+
+def process_call_function(
+    node: torch.fx.Node,
+    tosa_graph: ts.TosaSerializer,
+    node_visitors: Dict[str, NodeVisitor],
+):
+    # Unpack arguments and convert
+    inputs = getNodeArgs(node)
+
+    # Convert output (this node itself)
+    output = TosaArg(node)
+
+    tosa_graph.currRegion.currBasicBlock.addTensor(
+        output.name,
+        (
+            tosa_shape(inputs[0].shape, inputs[0].dim_order)
+            if is_permute_node_before_addmm(node)
+            else tosa_shape(output.shape, output.dim_order)
+        ),
+        map_dtype(get_quant_node_dtype(node)) if is_quant_node(node) else output.dtype,
+    )
+
+    # Visiting each Node
+    if node.target.__name__ in node_visitors:
+        node_visitors[node.target.__name__].define_node(
+            node,
+            tosa_graph,
+            inputs,
+            output,
+            is_quant_node(node),
+        )
+    else:
+        raise RuntimeError(f"Unknown operator {node.target}")

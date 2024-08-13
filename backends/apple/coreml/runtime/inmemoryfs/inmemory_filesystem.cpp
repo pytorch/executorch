@@ -10,7 +10,6 @@
 #include <assert.h>
 #include <fstream>
 #include <iostream>
-#include <range.hpp>
 #include <sstream>
 
 #if __has_include(<filesystem>)
@@ -22,7 +21,8 @@ namespace filesystem = std::experimental::filesystem;
 }
 #endif
 
-#include <reversed_memory_stream.hpp>
+#include "range.hpp"
+#include "reversed_memory_stream.hpp"
 
 namespace {
 using namespace inmemoryfs;
@@ -115,12 +115,6 @@ InMemoryFileSystem::InMemoryNode* get_node(InMemoryFileSystem::InMemoryNode* nod
     return node;
 }
 
-std::string toString(time_t time) {
-    constexpr auto format = "%Y-%m-%dT%TZ";
-    std::stringstream stream;
-    stream << std::put_time(gmtime(&time), format);
-    return stream.str();
-}
 
 time_t toTime(const std::string& str) {
     constexpr auto format = "%Y-%m-%dT%TZ";
@@ -294,7 +288,6 @@ struct Attributes {
 struct FlattenedInMemoryNode {
     InMemoryNodeMetadata metadata;
     InMemoryFileNode* file_node = nullptr;
-    std::pair<size_t, size_t> offset_range = { 0, 0 };
 
     FlattenedInMemoryNode(InMemoryNodeMetadata metadata) noexcept : metadata(std::move(metadata)) { }
 
@@ -334,8 +327,6 @@ void populate(InMemoryFileSystem::InMemoryNode* node,
             auto buffer = file_node->getBuffer();
             size_t size = buffer->size();
             flattened_node.metadata.data_region = Range(offset, size);
-            auto offset_range = buffer->get_offset_range(offset);
-            flattened_node.offset_range = offset_range;
             flattened_node.file_node = file_node;
             node_to_index_map[node] = index;
             break;
@@ -804,18 +795,17 @@ size_t InMemoryFileSystem::get_buffer_size_for_serialization(const std::vector<s
 
     auto flattened_nodes = FlattenedInMemoryNode::flatten(node, alignment);
     size_t length = 0;
-    size_t diff = 0;
+    size_t change = 0;
     for (auto& flattened_node: flattened_nodes) {
         if (flattened_node.file_node == nullptr) {
             continue;
         }
 
         auto& data_region = flattened_node.metadata.data_region;
-        size_t max_offset = flattened_node.offset_range.second;
-        size_t proposed_offset = data_region.offset;
-        // When calculating length make sure that we use the maximum offset.
-        data_region.offset = max_offset + diff;
-        diff += (max_offset - proposed_offset);
+        auto offset_range = flattened_node.file_node->getBuffer()->get_offset_range(data_region.offset + change);
+        size_t max_offset = offset_range.second;
+        change += (max_offset - data_region.offset);
+        data_region.offset = max_offset;
         length = data_region.length();
     }
 
@@ -843,7 +833,7 @@ bool InMemoryFileSystem::serialize(const std::vector<std::string>& canonical_pat
 
     uint8_t* ptr = static_cast<uint8_t*>(dst);
     size_t write_pos = 0;
-    ssize_t diff = 0;
+    ssize_t change = 0;
     auto flattened_nodes = FlattenedInMemoryNode::flatten(node, alignment);
     for (auto& flattened_node: flattened_nodes) {
         if (flattened_node.file_node == nullptr) {
@@ -854,12 +844,12 @@ bool InMemoryFileSystem::serialize(const std::vector<std::string>& canonical_pat
         auto buffer = flattened_node.file_node->getBuffer();
         // Get the revised range that must be used for writing the buffer content.
         Range revised_data_region =
-            buffer->get_revised_range_for_writing(dst, Range(data_region.offset + diff, data_region.size));
+            buffer->get_revised_range_for_writing(dst, Range(data_region.offset + change, data_region.size));
         if (!buffer->write(ptr, revised_data_region.offset, error)) {
             return false;
         }
 
-        diff += (revised_data_region.offset - data_region.offset);
+        change += (revised_data_region.offset - data_region.offset);
         // update data region.
         data_region = revised_data_region;
         write_pos = std::max(write_pos, data_region.length());

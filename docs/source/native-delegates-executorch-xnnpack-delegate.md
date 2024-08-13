@@ -61,29 +61,21 @@ The XNNPACK delegate uses flatbuffer for serialization. In order to improve runt
 The XNNPACK backend’s runtime interfaces with the ExecuTorch runtime through the custom `init` and `execute` function. Each delegated subgraph is contained in an individually serialized XNNPACK blob. When the model is initialized, ExecuTorch calls `init` on all XNNPACK Blobs to load the subgraph from serialized flatbuffer. After, when the model is executed, each subgraph is executed via the backend through the custom `execute` function. To read more about how delegate runtimes interface with ExecuTorch, refer to this [resource](compiler-delegate-and-partitioner.md).
 
 
-#### XNNPACK Library
-The XNNPACK Library currently used by the delegate is on the following [version](https://github.com/google/XNNPACK/tree/51a987591a6fc9f0fc0707077f53d763ac132cbf). XNNPACK delegate supports CPU's on multiple platforms; more information on the supported hardware architectures can be found on the XNNPACK Library’s [README](https://github.com/google/XNNPACK).
+#### **XNNPACK Library**
+XNNPACK delegate supports CPU's on multiple platforms; more information on the supported hardware architectures can be found on the XNNPACK Library’s [README](https://github.com/google/XNNPACK).
 
-#### Init
+#### **Init**
 When calling XNNPACK delegate’s `init`, we deserialize the preprocessed blobs via flatbuffer. We define the nodes (operators) and edges (intermediate tensors) to build the XNNPACK execution graph using the information we serialized ahead-of-time. As we mentioned earlier, the majority of processing has been done ahead-of-time, so that at runtime we can just call the XNNPACK APIs with the serialized arguments in succession. As we define static data into the execution graph, XNNPACK performs weight packing at runtime to prepare static data like weights and biases for efficient execution. After creating the execution graph, we create the runtime object and pass it on to `execute`.
 
 Since weight packing creates an extra copy of the weights inside XNNPACK, We free the original copy of the weights inside the preprocessed XNNPACK Blob, this allows us to remove some of the memory overhead.
 
 
-#### Execute
+#### **Execute**
 When executing the XNNPACK subgraphs, we prepare the tensor inputs and outputs and feed them to the XNNPACK runtime graph. After executing the runtime graph, the output pointers are filled with the computed tensors.
 
-#### Profiling
-We have enabled basic profiling for XNNPACK delegate that can be enabled with the following compiler flag `-DENABLE_XNNPACK_PROFILING`. After running the model it will produce basic per-op and total timings. We provide an example of the profiling below. The timings listed are the average across runs, and the units are in microseconds.
+#### **Profiling**
+We have enabled basic profiling for XNNPACK delegate that can be enabled with the following compiler flag `-DENABLE_XNNPACK_PROFILING`. With ExecuTorch's SDK integration, you can also now use the SDK tools to profile the model. You can follow the steps in [Using the ExecuTorch SDK to Profile a Model](./tutorials/sdk-integration-tutorial) on how to profile ExecuTorch models and use SDK's Inspector API to view XNNPACK's internal profiling information.
 
-```
-Fully Connected (NC, F32) GEMM: 109.510002
-Total Time: 109.510002
-```
-
-::::{note}
-Profiling is a work in progress, and is planned to be integrated with [SDK Tools](sdk-delegate-integration.md) and Tensorboard.
-::::
 
 [comment]: <> (TODO: Refactor quantizer to a more official quantization doc)
 ## Quantization

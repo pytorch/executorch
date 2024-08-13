@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
+#include <executorch/runtime/core/portable_type/half.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 #include <cassert>
@@ -18,126 +20,186 @@
 
 void record_nchw_to_buffer_op(
     api::Context* const context,
-    api::VulkanBuffer& src_buffer,
-    vTensor& v_dst) {
-  uint32_t buf_len = api::utils::safe_downcast<uint32_t>(v_dst.gpu_numel());
-  api::utils::uvec3 global_size = {buf_len, 1u, 1u};
-  api::utils::uvec3 local_size = {32u, 1u, 1u};
-
-  api::UniformParamsBuffer cpu_buffer_metadata(
-      context, v_dst.get_cpu_buffer_metadata());
-  api::PipelineBarrier pipeline_barrier{};
+    vkapi::VulkanBuffer& src_buffer,
+    api::vTensor& v_dst) {
+  vkapi::PipelineBarrier pipeline_barrier{};
 
   context->submit_compute_job(
-      VK_KERNEL(buffer_to_buffer),
+      get_nchw_to_tensor_shader(v_dst),
       pipeline_barrier,
-      global_size,
-      local_size,
+      {uint32_t(v_dst.numel()), 1, 1},
+      {64, 1, 1},
+      {},
       VK_NULL_HANDLE,
+      0,
       v_dst.buffer(
           pipeline_barrier,
-          api::PipelineStage::COMPUTE,
-          api::MemoryAccessType::WRITE),
-      v_dst.buffer_metadata(),
+          vkapi::PipelineStage::COMPUTE,
+          vkapi::MemoryAccessType::WRITE),
       src_buffer,
-      cpu_buffer_metadata.buffer());
+      v_dst.sizes_ubo(),
+      v_dst.strides_ubo(),
+      v_dst.numel_ubo());
 }
 
-bool record_buffer_to_nchw_op(
+void record_buffer_to_nchw_op(
     api::Context* const context,
-    vTensor& v_src,
-    api::VulkanBuffer& dst_buffer) {
-  uint32_t buf_len = api::utils::safe_downcast<uint32_t>(v_src.numel());
-  api::utils::uvec3 global_size = {buf_len, 1u, 1u};
-  api::utils::uvec3 local_size = {4u, 1u, 1u};
-
-  api::UniformParamsBuffer cpu_buffer_metadata(
-      context, v_src.get_cpu_buffer_metadata());
-  api::PipelineBarrier pipeline_barrier{};
-
-  return context->submit_compute_job(
-      VK_KERNEL(buffer_to_buffer),
+    api::vTensor& v_src,
+    vkapi::VulkanBuffer& dst_buffer) {
+  vkapi::PipelineBarrier pipeline_barrier{};
+  context->submit_compute_job(
+      get_tensor_to_nchw_shader(v_src),
       pipeline_barrier,
-      global_size,
-      local_size,
+      {uint32_t(v_src.numel()), 1, 1},
+      {64, 1, 1},
+      {},
       VK_NULL_HANDLE,
+      0,
       dst_buffer,
-      cpu_buffer_metadata.buffer(),
-      v_src.buffer(
-          pipeline_barrier,
-          api::PipelineStage::COMPUTE,
-          api::MemoryAccessType::WRITE),
-      v_src.buffer_metadata());
+      v_src.buffer(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      v_src.sizes_ubo(),
+      v_src.strides_ubo(),
+      v_src.numel_ubo());
 }
 
 void record_nchw_to_image_op(
     api::Context* const context,
-    api::VulkanBuffer& src_buffer,
-    vTensor& v_dst) {
-  api::PipelineBarrier pipeline_barrier{};
+    vkapi::VulkanBuffer& src_buffer,
+    api::vTensor& v_dst) {
+  vkapi::PipelineBarrier pipeline_barrier{};
+  vkapi::SpecVarList specialization_constants = {
+      SV(v_dst.packed_dim_whcn_idx())};
 
   context->submit_compute_job(
-      get_nchw_to_image_shader(v_dst),
+      get_nchw_to_tensor_shader(
+          v_dst, context->adapter_ptr()->has_full_int8_buffers_support()),
       pipeline_barrier,
-      v_dst.virtual_extents(),
-      adaptive_work_group_size(v_dst.virtual_extents()),
+      v_dst.image_extents(),
+      adaptive_work_group_size(v_dst.image_extents()),
+      specialization_constants,
       VK_NULL_HANDLE,
+      0,
       v_dst.image(
           pipeline_barrier,
-          api::PipelineStage::COMPUTE,
-          api::MemoryAccessType::WRITE),
+          vkapi::PipelineStage::COMPUTE,
+          vkapi::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.gpu_sizes_ubo()->buffer(),
-      v_dst.cpu_sizes_ubo()->buffer());
+      v_dst.sizes_ubo());
 }
 
 void record_image_to_nchw_op(
     api::Context* const context,
-    vTensor& v_src,
-    api::VulkanBuffer& dst_buffer) {
-  api::PipelineBarrier pipeline_barrier{};
+    api::vTensor& v_src,
+    vkapi::VulkanBuffer& dst_buffer) {
+  vkapi::PipelineBarrier pipeline_barrier{};
+  vkapi::SpecVarList specialization_constants = {
+      SV(v_src.packed_dim_whcn_idx())};
+
   context->submit_compute_job(
-      get_image_to_nchw_shader(v_src),
+      get_tensor_to_nchw_shader(v_src),
       pipeline_barrier,
-      v_src.virtual_extents(),
-      adaptive_work_group_size(v_src.virtual_extents()),
+      v_src.image_extents(),
+      adaptive_work_group_size(v_src.image_extents()),
+      specialization_constants,
       VK_NULL_HANDLE,
-      v_src.image(pipeline_barrier, api::PipelineStage::COMPUTE),
+      0,
       dst_buffer,
-      v_src.gpu_sizes_ubo()->buffer(),
-      v_src.cpu_sizes_ubo()->buffer());
+      v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      v_src.sizes_ubo());
+}
+
+void record_int8_image_to_nchw_noint8_op(
+    api::Context* const context,
+    api::vTensor& v_src,
+    api::StorageBuffer& dst_buffer) {
+  vkapi::PipelineBarrier pipeline_barrier{};
+  uint32_t buffer_len = utils::safe_downcast<uint32_t>(dst_buffer.numel() / 4);
+  utils::uvec3 global_wg_size = {buffer_len, 1, 1};
+  context->submit_compute_job(
+      VK_KERNEL(int8_image_to_nchw_noint8),
+      pipeline_barrier,
+      global_wg_size,
+      adaptive_work_group_size(global_wg_size),
+      {v_src.packed_dim_whcn_idx()},
+      VK_NULL_HANDLE,
+      0,
+      dst_buffer.buffer(),
+      v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      v_src.sizes_ubo(),
+      v_src.numel_ubo());
+}
+
+void record_conv2d_prepack_weights_op(
+    api::Context* const context,
+    vkapi::VulkanBuffer& src_buffer,
+    api::vTensor& v_dst,
+    const std::vector<int64_t>& original_sizes,
+    const bool transposed) {
+  vkapi::PipelineBarrier pipeline_barrier{};
+
+  std::string kernel_name;
+  if (transposed) {
+    kernel_name = "conv_transpose2d";
+  } else {
+    kernel_name = "conv2d";
+  }
+  kernel_name += "_prepack_weights";
+  add_dtype_suffix(kernel_name, v_dst);
+  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
+
+  api::ParamsBuffer original_sizes_ubo(
+      context, utils::make_ivec4(original_sizes, /*reverse = */ true));
+
+  vkapi::SpecVarList specialization_constants = {};
+  context->submit_compute_job(
+      shader,
+      pipeline_barrier,
+      v_dst.image_extents(),
+      adaptive_work_group_size(v_dst.image_extents()),
+      specialization_constants,
+      VK_NULL_HANDLE,
+      0,
+      v_dst.image(
+          pipeline_barrier,
+          vkapi::PipelineStage::COMPUTE,
+          vkapi::MemoryAccessType::WRITE),
+      src_buffer,
+      v_dst.sizes_ubo(),
+      original_sizes_ubo.buffer());
 }
 
 void record_binary_op(
     api::Context* const context,
     const std::string& op_name,
-    vTensor& v_in1,
-    vTensor& v_in2,
-    vTensor& v_dst) {
-  std::stringstream kernel_name;
-  kernel_name << "binary_" << op_name << "_nobroadcast__test";
-  apply_dtype_suffix(kernel_name, v_dst);
+    api::vTensor& v_in1,
+    api::vTensor& v_in2,
+    api::vTensor& v_dst) {
+  std::string kernel_name = "binary_" + op_name + "_nobroadcast__test";
+  add_dtype_suffix(kernel_name, v_dst);
 
-  api::PipelineBarrier pipeline_barrier{};
+  vkapi::PipelineBarrier pipeline_barrier{};
+  vkapi::SpecVarList specialization_constants = {};
   context->submit_compute_job(
-      VK_KERNEL_FROM_STR(kernel_name.str()),
+      VK_KERNEL_FROM_STR(kernel_name),
       pipeline_barrier,
-      v_dst.virtual_extents(),
-      adaptive_work_group_size(v_dst.virtual_extents()),
+      v_dst.image_extents(),
+      adaptive_work_group_size(v_dst.image_extents()),
+      specialization_constants,
       VK_NULL_HANDLE,
+      0,
       v_dst.image(
           pipeline_barrier,
-          api::PipelineStage::COMPUTE,
-          api::MemoryAccessType::WRITE),
-      v_in1.image(pipeline_barrier, api::PipelineStage::COMPUTE),
-      v_in2.image(pipeline_barrier, api::PipelineStage::COMPUTE),
-      v_dst.extents_ubo()->buffer());
+          vkapi::PipelineStage::COMPUTE,
+          vkapi::MemoryAccessType::WRITE),
+      v_in1.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      v_in2.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      v_dst.sizes_ubo());
 }
 
 void execute_and_check_add(
-    vTensor& a,
-    vTensor& b,
-    vTensor& c,
+    api::vTensor& a,
+    api::vTensor& b,
+    api::vTensor& c,
     float a_val,
     float b_val) {
   // Fill input tensors
@@ -156,20 +218,120 @@ void execute_and_check_add(
   }
 }
 
+void record_index_fill_buffer(api::Context* context, api::vTensor& v_ten) {
+  std::string kernel_name("idx_fill_buffer");
+  switch (v_ten.dtype()) {
+    case vkapi::kFloat:
+      kernel_name += "_float";
+      break;
+    case vkapi::kHalf:
+      kernel_name += "_half";
+      break;
+    case vkapi::kQInt8:
+      kernel_name += "_int8";
+      break;
+    case vkapi::kQUInt8:
+      kernel_name += "_uint8";
+      break;
+    default:
+      throw std::runtime_error("Unsupported dtype");
+      break;
+  }
+
+  api::ParamsBuffer params(api::context(), int32_t(v_ten.numel()));
+
+  {
+    vkapi::PipelineBarrier pipeline_barrier{};
+    vkapi::SpecVarList specialization_constants = {};
+    api::context()->submit_compute_job(
+        VK_KERNEL_FROM_STR(kernel_name),
+        pipeline_barrier,
+        {uint32_t(v_ten.numel()), 1, 1},
+        {64, 1, 1},
+        specialization_constants,
+        VK_NULL_HANDLE,
+        0,
+        v_ten.buffer(
+            pipeline_barrier,
+            vkapi::PipelineStage::COMPUTE,
+            vkapi::MemoryAccessType::READ),
+        params.buffer());
+  }
+}
+
+void record_scalar_add_buffer(
+    api::Context* context,
+    api::vTensor& v_ten,
+    float offset) {
+  vkapi::PipelineBarrier pipeline_barrier{};
+  vkapi::SpecVarList specialization_constants = {SV(offset)};
+  std::string kernel = "scalar_add_buffer";
+  add_dtype_suffix(kernel, v_ten);
+  api::context()->submit_compute_job(
+      VK_KERNEL_FROM_STR(kernel),
+      pipeline_barrier,
+      {uint32_t(v_ten.numel()), 1, 1},
+      {64, 1, 1},
+      specialization_constants,
+      VK_NULL_HANDLE,
+      0,
+      v_ten.buffer(
+          pipeline_barrier,
+          vkapi::PipelineStage::COMPUTE,
+          vkapi::MemoryAccessType::READ | vkapi::MemoryAccessType::WRITE),
+      v_ten.numel_ubo());
+}
+
 //
 // Input & Output Utilities
 //
 
-void fill_vtensor(vTensor& vten, std::vector<float>& data) {
-  api::StorageBuffer staging_buffer(api::context(), api::kFloat, data.size());
+#define FORALL_SUPPORTED_TYPES(_) \
+  _(uint8_t, Byte)                \
+  _(int8_t, Char)                 \
+  _(int32_t, Int)                 \
+  _(torch::executor::Half, Half)  \
+  _(float, Float)                 \
+  _(int8_t, QInt8)
 
-  copy_ptr_to_staging(data.data(), staging_buffer, vten.gpu_nbytes());
+void fill_vtensor(api::vTensor& vten, std::vector<float>& data) {
+  api::StorageBuffer staging_buffer(api::context(), vten.dtype(), data.size());
 
-  if (vten.storage_type() == api::StorageType::BUFFER) {
+#define CASE(ctype, name)                                                     \
+  case vkapi::ScalarType::name: {                                             \
+    std::vector<ctype> data_converted;                                        \
+    data_converted.resize(data.size());                                       \
+    for (int i = 0; i < data.size(); ++i) {                                   \
+      data_converted[i] = ctype(data[i]);                                     \
+    }                                                                         \
+    copy_ptr_to_staging(                                                      \
+        data_converted.data(), staging_buffer, vten.staging_buffer_nbytes()); \
+  } break;
+
+  switch (vten.dtype()) {
+    FORALL_SUPPORTED_TYPES(CASE)
+    default:
+      VK_THROW("Unsupported dtype");
+  }
+
+#undef CASE
+
+  if (vten.storage_type() == utils::StorageType::BUFFER) {
     record_nchw_to_buffer_op(api::context(), staging_buffer.buffer(), vten);
   } else {
     record_nchw_to_image_op(api::context(), staging_buffer.buffer(), vten);
   }
+}
+
+void fill_vtensor(api::vTensor& vten, float val, bool iota) {
+  std::vector<float> vten_data(vten.staging_buffer_numel());
+  if (iota) {
+    std::iota(vten_data.begin(), vten_data.end(), val);
+  } else {
+    std::fill(vten_data.begin(), vten_data.end(), val);
+  }
+
+  fill_vtensor(vten, vten_data);
 }
 
 void fill_vtensor(
@@ -177,7 +339,11 @@ void fill_vtensor(
     const IOValueRef idx,
     float val,
     bool iota) {
-  std::vector<float> data(graph.get_val(idx.value).toTensor().gpu_numel());
+  vTensorPtr t = graph.get_tensor(idx.value);
+  std::vector<float> data(t->numel());
+  if (t->storage_type() != utils::kBuffer) {
+    data.resize(t->staging_buffer_numel());
+  }
   if (iota) {
     std::iota(data.begin(), data.end(), val);
   } else {
@@ -187,21 +353,37 @@ void fill_vtensor(
   graph.copy_into_staging(idx.staging, data.data(), data.size());
 }
 
-void extract_vtensor(vTensor& vten, std::vector<float>& data) {
+void extract_vtensor(api::vTensor& vten, std::vector<float>& data) {
   api::StorageBuffer staging_buffer(
-      api::context(), api::kFloat, vten.gpu_numel());
+      api::context(), vten.dtype(), vten.staging_buffer_numel());
 
-  if (vten.storage_type() == api::StorageType::BUFFER) {
+  if (vten.storage_type() == utils::StorageType::BUFFER) {
     record_buffer_to_nchw_op(api::context(), vten, staging_buffer.buffer());
   } else {
     record_image_to_nchw_op(api::context(), vten, staging_buffer.buffer());
   }
 
-  api::VulkanFence fence = api::context()->fences().get_fence();
+  vkapi::VulkanFence fence = api::context()->fences().get_fence();
   api::context()->submit_cmd_to_gpu(fence.get_submit_handle());
   fence.wait();
 
-  copy_staging_to_ptr(staging_buffer, data.data(), vten.gpu_nbytes());
+#define CASE(ctype, name)                                                     \
+  case vkapi::ScalarType::name: {                                             \
+    std::vector<ctype> data_converted(data.size());                           \
+    copy_staging_to_ptr(                                                      \
+        staging_buffer, data_converted.data(), vten.staging_buffer_nbytes()); \
+    for (int i = 0; i < data.size(); ++i) {                                   \
+      data[i] = float(data_converted[i]);                                     \
+    }                                                                         \
+  } break;
+
+  switch (vten.dtype()) {
+    FORALL_SUPPORTED_TYPES(CASE)
+    default:
+      VK_THROW("Unsupported dtype");
+  }
+
+#undef CASE
 }
 
 //
@@ -209,12 +391,12 @@ void extract_vtensor(vTensor& vten, std::vector<float>& data) {
 //
 
 void submit_to_gpu() {
-  api::VulkanFence fence = api::context()->fences().get_fence();
+  vkapi::VulkanFence fence = api::context()->fences().get_fence();
   api::context()->submit_cmd_to_gpu(fence.get_submit_handle());
   fence.wait();
 }
 
-api::MemoryAllocation allocate_memory_for(const vTensor& vten) {
+vkapi::Allocation allocate_memory_for(const api::vTensor& vten) {
   return api::context()->adapter_ptr()->vma().create_allocation(
       vten.get_memory_requirements(), vten.get_allocation_create_info());
 }
@@ -246,13 +428,13 @@ void execute_graph_and_check_output(
 
   for (size_t i = 0; i < graph.outputs().size(); ++i) {
     IOValueRef out_ioval = graph.outputs().at(i);
-    vTensor& t_out = graph.get_val(out_ioval.value).toTensor();
+    vTensorPtr t_out = graph.get_tensor(out_ioval.value);
 
-    std::vector<float> output_data(t_out.gpu_numel());
+    std::vector<float> output_data(t_out->staging_buffer_numel());
     graph.copy_from_staging(
         out_ioval.staging, output_data.data(), output_data.size());
 
-    for (size_t j = 0; j < t_out.numel(); ++j) {
+    for (size_t j = 0; j < t_out->numel(); ++j) {
       CHECK_VALUE(output_data, j, expected_outputs.at(i));
     }
   }

@@ -20,7 +20,7 @@ Using the ExecuTorch SDK to Profile a Model
 # This tutorial will show a full end-to-end flow of how to utilize the SDK.
 # Specifically, it will:
 #
-# 1. Generate the artifacts consumed by the SDK (`ETRecord <../sdk-etrecord>`__, `ETDump <../sdk-etdump.html>`__).
+# 1. Generate the artifacts consumed by the SDK (`ETRecord <../sdk-etrecord.html>`__, `ETDump <../sdk-etdump.html>`__).
 # 2. Create an Inspector class consuming these artifacts.
 # 3. Utilize the Inspector class to analyze the model.
 
@@ -42,7 +42,7 @@ Using the ExecuTorch SDK to Profile a Model
 #
 # ``executorch.sdk.generate_etrecord`` takes in an output file path (str), the
 # edge dialect model (``EdgeProgramManager``), the ExecuTorch dialect model
-# (``ExecutorchProgramManager``), and an optional dictionary of additional models
+# (``ExecutorchProgramManager``), and an optional dictionary of additional models.
 #
 # In this tutorial, an example model (shown below) is used to demonstrate.
 
@@ -113,9 +113,9 @@ from unittest.mock import patch
 ######################################################################
 #
 # .. warning::
-#    Users should do a deepcopy of the output of to_edge() and pass in the
-#    deepcopy to the generate_etrecord API. This is needed because the
-#    subsequent call, to_executorch(), does an in-place mutation and will
+#    Users should do a deepcopy of the output of ``to_edge()`` and pass in the
+#    deepcopy to the ``generate_etrecord`` API. This is needed because the
+#    subsequent call, ``to_executorch()``, does an in-place mutation and will
 #    lose debug data in the process.
 #
 
@@ -169,24 +169,11 @@ with open(save_path, "wb") as f:
     f.write(serialized_bundled_program)
 
 ######################################################################
-# We provide 2 ways of executing the Bundled Model to generate the ``ETDump``:
-#
-# **Option 1:**
-#
-# Use Buck (follow `these instructions <../getting-started-setup.html#building-a-runtime>`__ to set up buck)::
+# Use CMake (follow `these instructions <../runtime-build-and-cross-compilation.html#configure-the-cmake-build>`__ to set up cmake) to execute the Bundled Program to generate the ``ETDump``::
 #
 #       cd executorch
-#       buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path <bundled_program>
-#
-# **Option 2:**
-#
-# Use CMake (follow `these instructions <../runtime-build-and-cross-compilation.html#configure-the-cmake-build>`__ to set up cmake)::
-#
-#       cd executorch
-#       rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DBUCK2=buck2 -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
-#       cd ..
-#       cmake --build cmake-out -j8 -t sdk_example_runner
-#       ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path <bundled_program>
+#       ./examples/sdk/build_sdk_example_runner.sh
+#       cmake-out/examples/sdk/sdk_example_runner --bundled_program_path="bundled_program.bp"
 
 ######################################################################
 # Creating an Inspector
@@ -308,6 +295,6 @@ print(inspector.find_total_for_module("L__self___conv2"))
 # ^^^^^^^^^^^^^^^
 #
 # - `ExecuTorch SDK <../sdk-overview.html>`__
-# - `ETRecord <../sdk-etrecord>`__
+# - `ETRecord <../sdk-etrecord.html>`__
 # - `ETDump <../sdk-etdump.html>`__
 # - `Inspector <../sdk-inspector.html>`__

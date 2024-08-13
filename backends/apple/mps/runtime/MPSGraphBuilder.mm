@@ -5,35 +5,89 @@
 
 #include <executorch/backends/apple/mps/runtime/MPSGraphBuilder.h>
 #include <executorch/backends/apple/mps/runtime/MPSDevice.h>
+#include <executorch/backends/apple/mps/runtime/MPSDelegateHeader.h>
 
 namespace torch {
 namespace executor {
 namespace mps {
 namespace delegate {
 
-MPSGraphBuilder::MPSGraphBuilder(const void* buffer_pointer, std::unordered_map<MPSGraphTensor*, int32_t>& mpsGraphTensorToId) : _mpsGraphTensorToId(mpsGraphTensorToId), _buffer_pointer(buffer_pointer) {
+MPSGraphBuilder::MPSGraphBuilder(
+  const void* buffer_pointer,
+  size_t num_bytes,
+  std::unordered_map<MPSGraphTensor*, int32_t>& mpsGraphTensorToId) :
+    _mpsGraphTensorToId(mpsGraphTensorToId), _buffer_pointer(buffer_pointer), _num_bytes(num_bytes) {
+
   _mpsGraph = [MPSGraph new];
   _feeds = [NSMutableDictionary dictionary];
   _targetTensors = [NSMutableArray new];
 
   _mpsGraphExecutable = nil;
+  _metal_kernel = false;
 }
 
 Error
 MPSGraphBuilder::compileModel() {
   Error err = Error::Ok;
 
-  ET_CHECK(_buffer_pointer != nullptr);
+  Result<MPSDelegateHeader> header = MPSDelegateHeader::Parse(_buffer_pointer, _num_bytes);
+  const uint8_t* flatbuffer_data_ptr = nullptr;
+
+  if (header.ok()) {
+    flatbuffer_data_ptr = reinterpret_cast<const uint8_t*>(_buffer_pointer) +
+        header->flatbuffer_offset;
+    _constant_data_ptr = reinterpret_cast<const uint8_t*>(_buffer_pointer) +
+        header->constant_data_offset;
+  } else if (header.error() == Error::NotFound) {
+    ET_LOG(
+        Error,
+        "MPSDelegateHeader version mismatch: '%.4s' != expected '%.4s'",
+        // Header Magic and FlatbufferIdentifier are same offset and size
+        flatbuffers::GetBufferIdentifier(_buffer_pointer),
+        MPSDelegateHeader::kMagic);
+    return header.error();
+  } else {
+    ET_LOG(Error, "MPSDelegateHeader may be corrupt");
+    return header.error();
+  }
+
+  ET_CHECK(flatbuffer_data_ptr != nullptr);
   ET_CHECK_OR_RETURN_ERROR(
-    mpsgraph::MPSGraphBufferHasIdentifier(_buffer_pointer),
+    mpsgraph::MPSGraphBufferHasIdentifier(flatbuffer_data_ptr),
     DelegateInvalidCompatibility,
     "MPS Delegate Serialization Format version identifier '%.4s' != expected '%.4s'",
-    flatbuffers::GetBufferIdentifier(_buffer_pointer),
+    flatbuffers::GetBufferIdentifier(flatbuffer_data_ptr),
     mpsgraph::MPSGraphIdentifier());
 
-  _flatBufferGraph = mpsgraph::GetMPSGraph(_buffer_pointer);
-  _idToMPSGraphTensor.resize(_flatBufferGraph->mps_values()->size(), nullptr);
+  _flatBufferGraph = mpsgraph::GetMPSGraph(flatbuffer_data_ptr);
+  switch (_flatBufferGraph->graph_type()) {
+    case mpsgraph::OpType::metal_kernel:
+    {
+      _metal_kernel = true;
+      err = compileMetalKernel();
+      break;
+    }
+    case mpsgraph::OpType::mps_graph:
+    {
+      err = compileMPSGraph();
+      break;
+    }
+    default:
+      ET_CHECK_OR_RETURN_ERROR(
+      false,
+      DelegateInvalidCompatibility,
+      "Received an invalid operation type: expected MPSGraph or metal kernel, but got: %s",
+      EnumNameOpType(_flatBufferGraph->graph_type()));
+  }
 
+  return err;
+}
+
+Error
+MPSGraphBuilder::compileMPSGraph() {
+  Error err = Error::Ok;
+
+  _idToMPSGraphTensor.resize(_flatBufferGraph->mps_values()->size(), nullptr);
   // Add the placeholder nodes to the graph.
   for (auto in_id : *_flatBufferGraph->input_ids()) {
     err = mpsGraphRankedPlaceholder(in_id);
@@ -66,6 +120,30 @@ MPSGraphBuilder::compileModel() {
       "Failed to deserialize the model");
 
     [_targetTensors addObject: _idToMPSGraphTensor[out_id]];
+  }
+
+  return err;
+}
+
+Error
+MPSGraphBuilder::compileMetalKernel() {
+  Error err = Error::Ok;
+
+  ET_CHECK_OR_RETURN_ERROR(
+    _flatBufferGraph->mps_nodes()->size() == 1,
+    DelegateInvalidCompatibility,
+    "Currently supporting dispatching a single Metal kernel.");
+  ET_CHECK_OR_RETURN_ERROR(
+    _flatBufferGraph->constant_ids()->size() == 0,
+    DelegateInvalidCompatibility,
+    "Currently not supporting dispatching Metal kernels with constants.");
+
+  // Compile the corresponding Metal kernel
+  for (auto node : *_flatBufferGraph->mps_nodes()) {
+    err = compileMetalKernel(node);
+    if (err != Error::Ok) {
+      return err;
+    }
   }
 
   return err;

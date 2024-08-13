@@ -24,6 +24,13 @@ enum MPSDataType : short {
   mps_data_type_complex_float32 = 11,
 }
 
+// ops like index.Tensor and index.put are currentely implemented as
+// Metal kernels for unsupported MPSGraph cases.
+enum OpType : short {
+  mps_graph,
+  metal_kernel
+}
+
 // Helper classes to define the number of input and output tensors for a node.
 // Not meant to be used directly.
 
@@ -143,6 +150,28 @@ table MPSEmbedding {
   padding_idx:int;
   scale_grad_by_freq:bool;
   sparse:bool;
+}
+
+table MPSIndexTensor {
+  input1_id:int;
+  indices_id:[int];
+  output_id:int;
+}
+
+table MPSIndexPut {
+  input1_id:int;
+  indices_id:[int];
+  values_shape:[int];
+  values_id:int;
+  output_id:int;
+}
+
+table MPSScatter {
+  input1_id:int;
+  output_id:int;
+  dim:long;
+  idx_id:int;
+  src_id:int;
 }
 
 // Shape ops.
@@ -350,6 +379,7 @@ union MPSNodeUnion {
     MPSIsnan: _MPSNode1x1,
     MPSIsinf: _MPSNode1x1,
     MPSRound: _MPSNode1x1,
+    MPSLogicalNot: _MPSNode1x1,
 
     // Linear algebra ops
     MPSMatMul: _MPSNode2x1,
@@ -366,6 +396,9 @@ union MPSNodeUnion {
     // Indexing ops
     MPSIndexSelect,
     MPSEmbedding,
+    MPSIndexTensor,
+    MPSIndexPut,
+    MPSScatter,
 
     // Reduce ops
     MPSMean,
@@ -417,6 +450,7 @@ table MPSNode {
 
 // taken from executorch
 // Data buffer abstraction.
+// Deprecated
 table Buffer {
   storage:[ubyte] (force_align: 16);
 }
@@ -425,8 +459,21 @@ table MPSTensor {
   datatype:MPSDataType;
   num_dims:int;
   dims:[int];
-  constant_buffer_size:int;
-  constant_buffer:Buffer;
+  constant_buffer_size:uint64;
+  constant_buffer:Buffer; // deprecated
+  segment_offset:uint64;
+}
+
+table DataSegment {
+  // Segment offsets are relative to the segment base offset provided in
+  // the extended file header. Segments will typically be aligned in a
+  // way to make it possible to use mmap() to load them.
+  offset: uint64;
+
+  // The size in bytes of valid data starting at the offset. The segment
+  // data may be followed by padding before the segment that follows it,
+  // to make it easier to use mmap().
+  size: uint64;
 }
 
 table MPSGraph {
@@ -438,6 +485,10 @@ table MPSGraph {
   input_ids:[int];
   output_ids:[int];
   constant_ids:[int];
+
+  graph_type:OpType;
+
+  constant_segment:DataSegment;
 }
 
 root_type MPSGraph;

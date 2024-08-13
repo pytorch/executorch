@@ -53,6 +53,20 @@ enum TensorShapeDynamism : byte {
   DYNAMIC_UNBOUND = 2,
 }
 
+
+// Table to put additional information about tensors in that is not applicable
+// to the vast majority of tensors in the vast majority of programs.
+table ExtraTensorInfo {
+  // [Optional] Specifies the SubsegmentOffsets in
+  //  program.mutable_data_segments that specifies where the data is located in.
+  //  If not present and the data is located in a segment, then the data is in
+  //  the first index.
+  mutable_data_segments_idx:uint64;
+
+  // [Optional] The unique name of the tensor. e.g. 'mod.linear.weight'
+  fully_qualified_name:string;
+}
+
 table Tensor {
   scalar_type:ScalarType;
 
@@ -63,26 +77,47 @@ table Tensor {
 
   sizes:[int];
 
-  // Specifies in what order the dimensions are laid out in memory (from outer to inner).
-  // For example, given a rank 3 Tensor of size (3, 5, 2). If we name dimensions: [row, column, batch], then a dim_order of:
-  // (2, 0, 1) represents a [batch, row, column] ordering where "column" is the innermost dimension, then comes "row", and the outermost dimension is "batch".
-  // (0, 2, 1) represents a [row, batch, column] ordering where "column" is the innermost dimension, then comes "batch", and the outermost dimension is "row".
+  // Specifies in what order the dimensions are laid out in memory (from outer
+  // to inner).
+  //
+  // For example, given a rank 3 Tensor of size (3, 5, 2). If we name
+  // dimensions: [row, column, batch], then a dim_order of:
+  // - (2, 0, 1) represents a [batch, row, column] ordering where "column" is
+  //   the innermost dimension, then comes "row", and the outermost dimension is
+  //   "batch".
+  // - (0, 2, 1) represents a [row, batch, column] ordering where "column" is
+  //   the innermost dimension, then comes "batch", and the outermost dimension
+  //   is "row".
   dim_order:[ubyte];
 
   // out of scope M1
   requires_grad:bool;
 
-  // Overall, a Tensor is either constant or non-constant, except we differentiate 2 special
-  // variants of non-constant Tensor ("input" and control-flow "placeholder") as a special
-  // optimization to avoid holding unnecessary AllocationDetails.
-  // In summary:
-  //   constant_buffer_idx > 0, allocation_info = Null: Tensor is a constant
-  //   constant_buffer_idx = 0, allocation_info = Non Null: Tensor is a non-constant.
-  //   constant_buffer_idx = 0, allocation_info = Null: Tensor is a non-constant
-  //     that will receive a dataptr at input time or during execution.
+  // Overall, a Tensor is either constant or mutable. At method load time
+  //  constant tensors receive a dataptr into the serialized program. Mutable
+  //  tensors can either receive a pointer from the heirarchical allocator or a
+  //  nullptr if they will receive a data pointer at execution time (inputs
+  //  and control flow placeholders can be like this). Mutable tensors may or
+  //  may not also have an initial value in the serialized program.
   //
-  // Index to the program's constant buffer table, value 0 is reserved to indicate non constant
-  constant_buffer_idx:uint;
+  // In summary:
+  //   data_buffer_idx > 0, allocation_info = Null: Tensor is a constant.
+  //   data_buffer_idx = 0, allocation_info = Non Null: Tensor is mutable and
+  //     will receive a dataptr at method load time.
+  //   data_buffer_idx = 0, allocation_info = Null: Tensor is mutable and
+  //     will receive a dataptr at input time or during execution.
+  //   data_buffer_idx > 0, allocation_info = Non Null: Tensor is mutable and
+  //     will receive a dataptr at method load time, and has an initial state.
+  //
+  // Tensor data is stored inline if program.constant_buffer is null. Otherwise
+  //  it is in a segment. If this tensor's allocation_info is null then the
+  //  tensor data location is specified by program.constant_segment. If the
+  //  allocation_info is non_null then the data is somewhere in
+  //  program.mutable_data_segments. If tensor_info is Null, then the data is
+  //  in program.mutable_data_segments[0] otherwise if tensor_info is non-null
+  //  then the mutable_data_segment index is specified by
+  //  tensor_info.mutable_data_segments_index.
+  data_buffer_idx:uint;
 
   // [Optional] preallocation details for non-constants (null otherwise).
   allocation_info:AllocationDetails;
@@ -102,7 +137,11 @@ table Tensor {
   //
   // 3. dynamism == DYNAMIC_UNBOUND: the stored sizes field can be ignored since
   //    shape is fully dynamic.
-  shape_dynamism: TensorShapeDynamism;
+  shape_dynamism:TensorShapeDynamism;
+
+  // [Optional] Additional information about the Tensor that is not applicable
+  // to most tensors.
+  extra_tensor_info:ExtraTensorInfo;
 }
 
 table Int {
@@ -276,9 +315,11 @@ table BackendDelegate {
   compile_specs: [CompileSpec];
 }
 
-// A sequence of blocking instructions to be executed in order. The abstraction is not currently leveraged,
-// all current programs are 1 chain. We are leaving chains as part of the program definition for future
-// use cases around graph level async where different threads will be represented as seperate chains.
+// A sequence of blocking instructions to be executed in order. The
+// abstraction is not currently leveraged, all current programs are 1 chain.
+// We are leaving chains as part of the program definition for future use cases
+// around graph level async where different threads will be represented as
+// seperate chains.
 table Chain {
   // Indices of the values that are (non-static) inputs into this Chain.
   inputs:[int];
@@ -324,7 +365,7 @@ table ExecutionPlan {
   delegates: [BackendDelegate];
 
   // List of buffer sizes for non_constant memory allocations. (Think neural net activations)
-  // A list instead of a single buffer to account for complex memory heirarchies.
+  // A list instead of a single buffer to account for complex memory hierarchies.
   // TODO(jakeszwe, razy): How to reconcile this with the ability for the hierarchical memory allocator
   // to be id based instead of index based.
   // Runtime should use the len(constant_buffer) as the ground truth of the
@@ -401,7 +442,17 @@ table Program {
   // offset. If constant_segment.offsets field is non-empty, constant_buffer
   // must be empty. constant_segment.offsets[0] is reserved to be pointed to by
   // non-constant Tensors.
-  constant_segment: SubsegmentOffsets;
+  constant_segment:SubsegmentOffsets;
+
+  // [Optional] Describes the offsets into various segments for each mutable
+  // tensor. Only mutable tensors with a meaningful initial state are
+  // serialized here (for example weights that will be trained on-device as
+  // opposed to just layer activations). Seperate from the constant_segment to
+  // reduce peak memory usage by letting us read directly from the PTE file
+  // into the mutable tensor, as opposed to loading the .pte data into
+  // constant memory, copying it over, and then being unable to release the
+  // constant segment. No two elements should point to the same segment.
+  mutable_data_segments:[SubsegmentOffsets];
 }
 
 root_type Program;

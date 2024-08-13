@@ -15,7 +15,7 @@ from .qnn_constants import OpRelu, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Relu(NodeVisitor):
-    target = "aten.relu.default"
+    target = ["aten.relu.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -32,6 +32,7 @@ class Relu(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
         relu_input_tensors = [relu_inp_tensor_wrapper]
 
@@ -41,6 +42,7 @@ class Relu(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         relu_output_tensors = [output_tensor_wrapper]
 

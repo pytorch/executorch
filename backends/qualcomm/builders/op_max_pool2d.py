@@ -9,6 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpPoolMax2d, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -16,7 +17,7 @@ from .qnn_constants import OpPoolMax2d, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class MaxPool2d(NodeVisitor):
-    target = "aten.max_pool2d_with_indices.default"
+    target = ["aten.max_pool2d_with_indices.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -33,6 +34,7 @@ class MaxPool2d(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         users = list(node.users.keys())
@@ -51,6 +53,7 @@ class MaxPool2d(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         # kernel info
         filter_size = cast(List[int], node.args[1])
@@ -132,7 +135,7 @@ class MaxPool2d(NodeVisitor):
         max_pool2d_op.AddScalarParam(
             OpPoolMax2d.param_rounding_mode,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(mode)},
+            {QCOM_DATA: np.uint32(mode)},
         )
 
         return max_pool2d_op

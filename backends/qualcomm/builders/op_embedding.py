@@ -9,6 +9,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpGather, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -17,7 +18,7 @@ from .utils import get_parameter
 
 @register_node_visitor
 class Embedding(NodeVisitor):
-    target = "aten.embedding.default"
+    target = ["aten.embedding.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -34,15 +35,17 @@ class Embedding(NodeVisitor):
             weight_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         indices_node = node.args[1]
         indices_tensor = self.get_tensor(indices_node, node)
-        indices_tensor_wrapper = self.define_scalar(
+        indices_tensor_wrapper = self.define_tensor(
             indices_node,
             indices_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         gather_input_tensors = [weight_tensor_wrapper, indices_tensor_wrapper]
@@ -53,6 +56,7 @@ class Embedding(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         gather_output_tensors = [output_tensor_wrapper]
 
@@ -68,7 +72,7 @@ class Embedding(NodeVisitor):
         gather_op.AddScalarParam(
             OpGather.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_32,
-            {"data": np.int32(0)},
+            {QCOM_DATA: np.int32(0)},
         )
 
         return gather_op

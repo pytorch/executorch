@@ -2,19 +2,19 @@
 buck-out/
 cmake-out/
 cmake-android-out/
+cmake-out-android/
 cmake-ios-out/
 ethos-u-scratch/
 executorch.egg-info
+pip-out/
 __pycache__/
-build/lib/
-exir/_serialize/scalar_type.fbs
-exir/_serialize/program.fbs
-sdk/bundled_program/serialize/bundled_program_schema.fbs
-sdk/bundled_program/serialize/scalar_type.fbs
 
 # Any exported models and profiling outputs
 *.pte
+*.model
+!test_tiktoken_tokenizer.model
 *.bin
+!test_bpe_tokenizer.bin
 
 # Editor temporaries
 *.swa
@@ -35,3 +35,4 @@ sdk/bundled_program/serialize/scalar_type.fbs
 *.swp
 *~
 .~lock.*
+*.idea

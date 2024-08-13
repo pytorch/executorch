@@ -221,10 +221,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
             dataCapacity);
       }
       return ManagedTensor(
-          jni->GetDirectBufferAddress(jbuffer.get()),
-          numel,
-          shape_vec,
-          scalar_type);
+          jni->GetDirectBufferAddress(jbuffer.get()), shape_vec, scalar_type);
     }
     facebook::jni::throwNewJavaException(
         facebook::jni::gJavaLangIllegalArgumentException,
@@ -236,7 +233,7 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
 class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
  private:
   friend HybridBase;
-  std::unique_ptr<torch::executor::Module> module_;
+  std::unique_ptr<Module> module_;
 
  public:
   constexpr static auto kJavaDescriptor = "Lorg/pytorch/executorch/NativePeer;";
@@ -246,18 +243,29 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       facebook::jni::alias_ref<jstring> modelPath,
       facebook::jni::alias_ref<
           facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
-          extraFiles) {
-    return makeCxxInstance(modelPath, extraFiles);
+          extraFiles,
+      jint loadMode) {
+    return makeCxxInstance(modelPath, extraFiles, loadMode);
   }
 
   ExecuTorchJni(
       facebook::jni::alias_ref<jstring> modelPath,
       facebook::jni::alias_ref<
           facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
-          extraFiles) {
-    module_ = std::make_unique<torch::executor::Module>(
-        modelPath->toStdString(),
-        torch::executor::Module::MlockConfig::NoMlock);
+          extraFiles,
+      jint loadMode) {
+    Module::LoadMode load_mode = Module::LoadMode::Mmap;
+    if (loadMode == 0) {
+      load_mode = Module::LoadMode::File;
+    } else if (loadMode == 1) {
+      load_mode = Module::LoadMode::Mmap;
+    } else if (loadMode == 2) {
+      load_mode = Module::LoadMode::MmapUseMlock;
+    } else if (loadMode == 3) {
+      load_mode = Module::LoadMode::MmapUseMlockIgnoreErrors;
+    }
+
+    module_ = std::make_unique<Module>(modelPath->toStdString(), load_mode);
   }
 
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> forward(
@@ -324,12 +332,14 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
 #endif
 
-    ET_CHECK_MSG(
-        result.ok(),
-        "Execution of method %s failed with status 0x%" PRIx32,
-        method.c_str(),
-        static_cast<error_code_t>(result.error()));
-    ET_LOG(Info, "Model executed successfully.");
+    if (!result.ok()) {
+      facebook::jni::throwNewJavaException(
+          "java/lang/Exception",
+          "Execution of method %s failed with status 0x%" PRIx32,
+          method.c_str(),
+          static_cast<error_code_t>(result.error()));
+      return {};
+    }
 
     facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> jresult =
         facebook::jni::JArrayClass<JEValue>::newArray(result.get().size());

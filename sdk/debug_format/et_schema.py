@@ -260,7 +260,12 @@ class FXOperatorGraph(OperatorGraph):
                 assert len(args) == 1
                 # Args of op=='output' is a wrapped list of return nodes ([ret_1, ret_2, ...], )
                 in_nodes = [
-                    nodes[FXOperatorGraph._get_node_name(ret)] for ret in args[0]
+                    (
+                        nodes[FXOperatorGraph._get_node_name(ret)]
+                        if ret is not None
+                        else []
+                    )
+                    for ret in args[0]
                 ]
                 node = ValueNode(
                     name,

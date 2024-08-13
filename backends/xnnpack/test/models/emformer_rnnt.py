@@ -21,8 +21,8 @@ class TestEmformerModel(unittest.TestCase):
             self.rnnt = decoder.model
 
     class Joiner(EmformerRnnt):
-        def forward(self, predict_inputs):
-            return self.rnnt.join(*predict_inputs)
+        def forward(self, a, b, c, d):
+            return self.rnnt.join(a, b, c, d)
 
         def get_example_inputs(self):
             join_inputs = (
@@ -31,69 +31,65 @@ class TestEmformerModel(unittest.TestCase):
                 torch.rand([1, 128, 1024]),
                 torch.tensor([128]),
             )
-            return (join_inputs,)
+            return join_inputs
 
     def test_fp32_emformer_joiner(self):
         joiner = self.Joiner()
         (
             Tester(joiner, joiner.get_example_inputs())
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     class Predictor(EmformerRnnt):
-        def forward(self, predict_inputs):
-            return self.rnnt.predict(*predict_inputs)
+        def forward(self, a, b):
+            return self.rnnt.predict(a, b, None)
 
         def get_example_inputs(self):
             predict_inputs = (
                 torch.zeros([1, 128], dtype=int),
                 torch.tensor([128], dtype=int),
-                None,
             )
-            return (predict_inputs,)
+            return predict_inputs
 
-    def test_fp32_emformer_predictor(self):
+    @unittest.skip(
+        "T183426271: Emformer Predictor Takes too long to export + partition"
+    )
+    def _test_fp32_emformer_predictor(self):
         predictor = self.Predictor()
         (
             Tester(predictor, predictor.get_example_inputs())
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     class Transcriber(EmformerRnnt):
-        def forward(self, predict_inputs):
-            return self.rnnt.transcribe(*predict_inputs)
+        def forward(self, a, b):
+            return self.rnnt.transcribe(a, b)
 
         def get_example_inputs(self):
             transcribe_inputs = (
                 torch.randn(1, 128, 80),
                 torch.tensor([128]),
             )
-            return (transcribe_inputs,)
+            return transcribe_inputs
 
     def test_fp32_emformer_transcriber(self):
         transcriber = self.Transcriber()
         (
             Tester(transcriber, transcriber.get_example_inputs())
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

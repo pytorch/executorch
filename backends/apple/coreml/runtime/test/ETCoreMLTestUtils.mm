@@ -344,6 +344,7 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     ETCoreMLModelAnalyzer *analyzer = [[ETCoreMLModelAnalyzer alloc] initWithCompiledModelAsset:compiledModelAsset
                                                                                      modelAsset:modelAsset
                                                                                        metadata:metadata
+                                                                  operationPathToDebugSymbolMap:nil
                                                                                   configuration:configuration
                                                                                    assetManager:assetManager
                                                                                           error:error];

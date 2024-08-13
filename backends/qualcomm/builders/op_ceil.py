@@ -15,7 +15,7 @@ from .qnn_constants import OpElementWiseCeil, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Ceil(NodeVisitor):
-    target = "aten.ceil.default"
+    target = ["aten.ceil.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -32,6 +32,7 @@ class Ceil(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         output_tensor = self.get_tensor(node, node)
@@ -40,6 +41,7 @@ class Ceil(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         ceil_op = PyQnnWrapper.PyQnnOpWrapper(

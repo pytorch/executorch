@@ -1,0 +1,22 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+no_op:
+  parameter_names_with_default_values:
+    DTYPE: float
+    STORAGE: texture3d
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+      - VALUE: float
+      - VALUE: int
+      - VALUE: int8
+    STORAGE:
+      - VALUE: texture3d
+      - VALUE: texture2d
+      - VALUE: buffer
+  shader_variants:
+    - NAME: no_op

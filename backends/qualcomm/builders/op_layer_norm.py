@@ -10,6 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpLayerNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -18,7 +19,7 @@ from .utils import get_parameter
 
 @register_node_visitor
 class LayerNormVisitor(NodeVisitor):
-    target = "aten.native_layer_norm.default"
+    target = ["aten.native_layer_norm.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -35,6 +36,7 @@ class LayerNormVisitor(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         normalized_shapes = node.args[1]
@@ -54,6 +56,7 @@ class LayerNormVisitor(NodeVisitor):
             weight_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         bias_node = node.args[3]
@@ -63,6 +66,7 @@ class LayerNormVisitor(NodeVisitor):
             bias_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         epsilon = node.args[4]
@@ -73,6 +77,7 @@ class LayerNormVisitor(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         layer_norm_op = PyQnnWrapper.PyQnnOpWrapper(
@@ -87,7 +92,7 @@ class LayerNormVisitor(NodeVisitor):
         layer_norm_op.AddScalarParam(
             OpLayerNorm.param_epsilon,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-            {"data": np.float32(epsilon)},
+            {QCOM_DATA: np.float32(epsilon)},
         )
         layer_norm_op.AddTensorParam(
             OpLayerNorm.param_axes,

@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import itertools
 import unittest
 from typing import Optional
 
@@ -124,6 +125,28 @@ class Conv2dBatchNorm(torch.nn.Module):
         return (torch.randn(2, 2, 4, 4),)
 
 
+class Conv2dPermute(torch.nn.Module):
+    def __init__(self, permute_order):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            2,
+            2,
+            (2, 2),
+            bias=False,
+            padding=[2, 2],
+            stride=[2, 2],
+        )
+        self.permute_order = permute_order
+
+    def forward(self, x):
+        result = self.conv(x)
+        channels_last = torch.permute(result, self.permute_order)
+        return channels_last
+
+    def get_inputs(self):
+        return (torch.randn(2, 2, 4, 4),)
+
+
 class TestConv2d(unittest.TestCase):
     def _test(
         self,
@@ -140,20 +163,18 @@ class TestConv2d(unittest.TestCase):
 
         (
             tester.export()
-            .check_count({"torch.ops.aten.convolution.default": conv_count})
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_aten_convolution_default": conv_count
-                }
-            )
-            .partition()
+            .check_count({"torch.ops.aten.conv2d": conv_count})
+            .to_edge_transform_and_lower()
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops__native_batch_norm_legit_no_training_default"
+                ]
+            )
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(qtol=1)
         )
 
     def test_fp16_conv2d(self) -> None:
@@ -163,6 +184,10 @@ class TestConv2d(unittest.TestCase):
     def test_fp32_conv2d(self) -> None:
         for has_bias in (True, False):
             self._test(Conv2d(bias=has_bias))
+
+    def test_fp32_conv2d_permute(self) -> None:
+        for perm_order in list(itertools.permutations([0, 1, 2, 3])):
+            self._test(Conv2dPermute(perm_order))
 
     def test_qs8_conv2d_test(self) -> None:
         for has_bias in (True, False):

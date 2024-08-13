@@ -6,116 +6,90 @@
 
 
 import argparse
-from typing import Optional
 
-import lm_eval
+from typing import Optional, Union
 
 import torch
-from lm_eval.api.model import LM
-from lm_eval.evaluator import evaluate
-from lm_eval.models.huggingface import HFLM as eval_wrapper
-from lm_eval.tasks import get_task_dict
-from sentencepiece import SentencePieceProcessor
-from torch import nn
+from executorch.examples.models.llama2.evaluate import EagerEvalWrapper, evaluate_model
+from executorch.examples.models.llama2.export_llama_lib import (
+    get_quantizer_and_quant_params,
+)
+from executorch.examples.models.llama2.tokenizer.tiktoken import Tokenizer as Tiktoken
 
-from .builder import LlamaEdgeManager
+from executorch.extension.llm.export import LLMEdgeManager
+from executorch.extension.llm.tokenizer.tokenizer import (
+    Tokenizer as SentencePieceTokenizer,
+)
+from executorch.extension.llm.tokenizer.utils import get_tokenizer
+from lm_eval.api.model import LM
+
 from .export_llama_lib import (
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,
 )
 
 
-class GPTFastEvalWrapper(eval_wrapper):
+class ETPybindEvalWrapper(EagerEvalWrapper):
     """
-    A wrapper class based on GPTFast, providing integration with the lm-evaluation-harness library.
+    A wrapper class for ExecuTorch py-binded integration with the
+    lm-evaluation-harness library.
     """
 
     def __init__(
         self,
-        model: nn.Module,
-        tokenizer,
+        model: str,
+        tokenizer: Union[SentencePieceTokenizer, Tiktoken],
         max_seq_length: Optional[int] = None,
     ):
-        super().__init__()
-        self._model = model
-        self._tokenizer = tokenizer
-        self._device = (
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        )
-        self._max_seq_length = 2048 if max_seq_length is None else max_seq_length
+        super().__init__(None, tokenizer, max_seq_length)
+        self._model = model  # Expects model to be path to a .pte file
 
-    @property
-    def eot_token_id(self):
-        return self._tokenizer.eos_id()
+        from executorch.extension.pybindings.portable_lib import _load_for_executorch
 
-    @property
-    def max_length(self):
-        return self._max_seq_length
-
-    @property
-    def max_gen_toks(self):
-        return 50
-
-    @property
-    def batch_size(self):
-        return 1
-
-    @property
-    def device(self):
-        return self._device
-
-    def tok_encode(self, string: str, **kwargs):
-        tokens = [self._tokenizer.bos_id()] + self._tokenizer.encode(string)
-        encoded = torch.tensor(tokens, dtype=torch.int, device=self.device)
-        # encoded is a pytorch tensor, but some internal logic in the
-        # eval harness expects it to be a list instead
-        # TODO: verify this for multi-batch as well
-        encoded = encoded.tolist()
-        return encoded
-
-    def tok_decode(self, tokens):
-        decoded = self._tokenizer.decode(tokens)
-        return decoded
+        self._et_model = _load_for_executorch(self._model)
+        self._use_kv_cache = self._et_model.run_method("use_kv_cache")[0]
 
     def _model_call(self, inps):
-        return self._model(inps)
+        # Given inps (tokens), return the logits from a single forward call
+        # inps: Tensor of shape (1, max_seq_len - 1)
+        # logits: Tensor of shape (1, max_seq_len - 1, vocab_size)
+        if self._use_kv_cache:
+            result_logits = []
+            for pos in range(self._max_seq_length):
+                pos_tensor = torch.tensor([pos], dtype=torch.int64)
+                logits = self._et_model.forward((inps[:, pos : pos + 1], pos_tensor))
+                result_logits.append(logits[0])
+            return torch.cat(result_logits, dim=1)
+        else:
+            result = self._et_model.forward((inps,))
+            return result[0]
 
-    def _model_generate(self, context, max_length, eos_token_id):
-        raise Exception("unimplemented")
 
-
-@torch.no_grad()
-def eval(
-    eval_wrapper: LM,
-    tasks: Optional[list] = None,
-    limit: Optional[int] = None,
-) -> dict:
+class ETRunnerEvalWrapper(EagerEvalWrapper):
     """
-    Evaluates a language model on a specified task using the lm-evaluation-harness library.
-
-    Args:
-        eval_wrapper (LM): A LM wrapper class compatible with lm-evaluation-harness evaluation
-        task (str): The name of the evaluation task to perform.
-        limit (Optional[int]): The maximum number of samples to evaluate (None for all available).
-
-    Returns:
-        eval_results (dict): A dictionary of evaluation results for the specified task(s).
+    A wrapper class for ExecuTorch Runtime integration with the
+    lm-evaluation-harness library.
     """
 
-    if tasks is None:
-        tasks = ["wikitext"]
+    def __init__(
+        self,
+        model: str,
+        tokenizer: Union[SentencePieceTokenizer, Tiktoken],
+        tokenizer_bin: str,
+        max_seq_length: Optional[int] = None,
+    ):
+        super().__init__(None, tokenizer, max_seq_length)
+        self._model = model
+        self._tokenizer_bin = tokenizer_bin
 
-    if "hendrycks_test" in tasks:
-        tasks.remove("hendrycks_test")
-        tasks += list(lm_eval.tasks.hendrycks_test.create_all_tasks().keys())
-    task_dict = get_task_dict(tasks)
+    def _model_call(self, inps):
+        # Given inps (tokens), return the logits from a single
+        # forward call
 
-    eval_results = evaluate(
-        eval_wrapper,
-        task_dict,
-        limit=limit,
-    )
-    return eval_results
+        # Example:
+        # inps: Tensor of shape (1, N)
+        # logits: Tensor of shape (1, N, vocab_size)
+        pass
 
 
 def gen_eval_wrapper(
@@ -129,19 +103,54 @@ def gen_eval_wrapper(
     Returns:
         eval_wrapper (LM): A wrapper interface for the lm-evaluation-harness library.
     """
-    tokenizer = SentencePieceProcessor(model_file=str(args.tokenizer_path))
+    tokenizer = get_tokenizer(args.tokenizer_path)
 
+    # ExecuTorch Binary Evaluation
+    if (model := args.pte) is not None:
+        if (tokenizer_bin := args.tokenizer_bin) is not None:
+            # ETRunnerEvalWrapper: Create a wrapper around an ExecuTorch model, evaluated at runtime
+            return ETRunnerEvalWrapper(
+                model=model,
+                tokenizer=tokenizer,
+                tokenizer_bin=tokenizer_bin,
+                max_seq_length=args.max_seq_length,
+            )
+
+        # ETPybindEvalWrapper: Create a wrapper around an ExecuTorch model, evaluated with pybindings
+        return ETPybindEvalWrapper(
+            model=model,
+            tokenizer=tokenizer,
+            # Exported model takes at most (max_seq_length - 1) tokens.
+            # Note that the eager model takes at most max_seq_length tokens.
+            max_seq_length=args.max_seq_length - 1,
+        )
+
+    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
     # GPTFastEvalWrapper: Create a wrapper around a pre-exported model
-    manager: LlamaEdgeManager = _prepare_for_llama_export(model_name, args)
-    model = (
-        manager.model.eval().to(device="cuda")
-        if torch.cuda.is_available()
-        else manager.model.to(device="cpu")
-    )
-    return GPTFastEvalWrapper(
+    manager: LLMEdgeManager = _prepare_for_llama_export(model_name, args)
+
+    if len(quantizers) != 0:
+        manager = manager.capture_pre_autograd_graph().pt2e_quantize(quantizers)
+        model = (
+            manager.pre_autograd_graph_module.to(device="cuda")
+            if torch.cuda.is_available()
+            else manager.pre_autograd_graph_module.to(device="cpu")
+        )
+    else:
+        # TODO: use manager.pre_autograd_graph_module for the eval to remove the if-else branch
+        # for quantizers. Currently capture_pre_autograd_graph only works with --kv_cache, but
+        # fails without the kv_cache mode
+        model = (
+            manager.model.eval().to(device="cuda")
+            if torch.cuda.is_available()
+            else manager.model.eval().to(device="cpu")
+        )
+
+    return EagerEvalWrapper(
         model=model,
         tokenizer=tokenizer,
         max_seq_length=args.max_seq_length,
+        use_kv_cache=args.use_kv_cache,
     )
 
 
@@ -161,6 +170,21 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--limit", type=int, default=5, help="number of samples to evalulate"
     )
 
+    # Add additional args specific to eval via an ET Runner
+    # Note: For initial integration, the tokenizer.model is also required
+    parser.add_argument(
+        "--pte",
+        type=str,
+        default=None,
+        help="[For ExecuTorch] Path to the ExecuTorch model being evaluated. If provided, don't go through the export flow",
+    )
+    parser.add_argument(
+        "--tokenizer_bin",
+        type=str,
+        default=None,
+        help="[For ExecuTorch] Path to the Tokenizer binary for evaluating ExecuTorch models via runtime",
+    )
+
     return parser
 
 
@@ -172,7 +196,7 @@ def eval_llama(
     eval_wrapper = gen_eval_wrapper(model_name, args)
 
     # Evaluate the model
-    eval_results = eval(
+    eval_results = evaluate_model(
         eval_wrapper,
         args.tasks,
         args.limit,

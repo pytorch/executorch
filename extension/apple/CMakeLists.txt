@@ -6,7 +6,7 @@
 
 # Please this file formatted by running:
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format -i CMakeLists.txt
 # ~~~
 
 cmake_minimum_required(VERSION 3.19)
@@ -18,25 +18,15 @@ endif()
 
 add_library(extension_apple)
 
-set(EXPORTED_SOURCES
-  ExecuTorch/Exported/ExecuTorchLog.mm
-)
+set(EXPORTED_SOURCES ExecuTorch/Exported/ExecuTorchLog.mm)
 
-target_sources(
-  extension_apple PRIVATE
-  ${EXPORTED_SOURCES}
-)
+target_sources(extension_apple PRIVATE ${EXPORTED_SOURCES})
 
-target_include_directories(
-  extension_apple PUBLIC
-  ExecuTorch/Exported
-)
+target_include_directories(extension_apple PUBLIC ExecuTorch/Exported)
 
 find_library(FOUNDATION_FRAMEWORK Foundation)
-target_link_libraries(extension_apple
-  PRIVATE
-  executorch
-  ${FOUNDATION_FRAMEWORK}
+target_link_libraries(
+  extension_apple PRIVATE executorch ${FOUNDATION_FRAMEWORK}
 )
 
 target_compile_options(extension_apple PUBLIC ${_common_compile_options})

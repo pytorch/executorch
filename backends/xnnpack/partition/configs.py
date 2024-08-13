@@ -101,6 +101,8 @@ SUPPORTED_QUANT_OPS = [
     exir_ops.edge.aten.addmm.default,  # TODO(T163877189) add constraint for addmm
 ]
 
+# This set is used to determine if an op is a supported Quantized Op. This is
+# used to determine whether a quantization op is implicit or explicit.
 SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET = {
     op.name()
     for op in (
@@ -108,6 +110,7 @@ SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET = {
         + [
             exir_ops.edge.aten._to_copy.default,
             exir_ops.edge.aten.linear.default,
+            exir_ops.edge.aten.convolution.default,
         ]
     )
 }
@@ -144,14 +147,12 @@ SUPPORTED_DYN_QUANT_LINEAR_MODULES = [
 
 SUPPORTED_DYN_QUANT_MODULES = SUPPORTED_DYN_QUANT_LINEAR_MODULES
 
-# TODO delete this once we catch up to 100% of the supported op with dynamic shape support.
-# This is tobe used only during the transition when we may not want to partition all the
-# nodes for a dynamic model.
-_SUPPORTED_OPS_WITH_DYNAMIC_SHAPE = [
-    exir_ops.edge.aten.add.Tensor,
-    exir_ops.edge.aten.mul.Tensor,
+# XNNPACK supports majority of shape dynamism, however some ops are
+# explicitly static, so we maintain a set here to exclude them from
+# dynamic shape support.
+STATIC_OPS = [
+    exir_ops.edge.aten.cat.default,
+    exir_ops.edge.aten.slice_copy.Tensor,
 ]
-_SUPPORTED_MODULES_WITH_DYNAMIC_SHAPE = [
-    torch.nn.Conv1d,
-    torch.nn.Conv2d,
-]
+
+STATIC_MODULES = []

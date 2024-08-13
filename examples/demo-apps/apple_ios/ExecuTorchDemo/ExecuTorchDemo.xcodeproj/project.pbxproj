@@ -13,7 +13,7 @@
 		032C01B72AC329B6002955E1 /* CustomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C01B62AC329B6002955E1 /* CustomViews.swift */; };
 		032C01B92AC32ADF002955E1 /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C01B82AC32ADF002955E1 /* CameraController.swift */; };
 		032C01E82AC34B60002955E1 /* MobileNetClassifier.mm in Sources */ = {isa = PBXBuildFile; fileRef = 032C01902AC22B16002955E1 /* MobileNetClassifier.mm */; };
-		032C01EC2AC34CAC002955E1 /* libMobileNetClassifier.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 032C01CB2AC34632002955E1 /* libMobileNetClassifier.a */; };
+		032C01EC2AC34CAC002955E1 /* libMobileNetClassifier.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 032C01CB2AC34632002955E1 /* libMobileNetClassifier.a */; platformFilter = ios; };
 		032C02032AC47CFB002955E1 /* mv3_xnnpack_fp32.pte in Resources */ = {isa = PBXBuildFile; fileRef = 032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */; };
 		032C02082AC47CFB002955E1 /* imagenet_classes.txt in Resources */ = {isa = PBXBuildFile; fileRef = 032C02012AC47CFB002955E1 /* imagenet_classes.txt */; };
 		036834D52ACB710D00BA100F /* mv3.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D42ACB710D00BA100F /* mv3.pte */; };
@@ -33,15 +33,15 @@
 		03C8184A2AC7BF470084CC29 /* mv3_xnnpack_fp32.pte in Resources */ = {isa = PBXBuildFile; fileRef = 032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */; };
 		03C8DC7C2AE2533C0064384A /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D72ACB893700BA100F /* mv3_coreml_all.pte */; };
 		03D494E22B5B7AE900FCF524 /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */; };
-		03D76BF12BAD297E0040FD82 /* coreml_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF02BAD297E0040FD82 /* coreml_backend */; };
+		03D76BF12BAD297E0040FD82 /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF02BAD297E0040FD82 /* backend_coreml */; };
 		03D76BF32BAD297E0040FD82 /* executorch in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF22BAD297E0040FD82 /* executorch */; };
-		03D76BF52BAD297E0040FD82 /* mps_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF42BAD297E0040FD82 /* mps_backend */; };
-		03D76BF72BAD297E0040FD82 /* portable_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF62BAD297E0040FD82 /* portable_backend */; };
-		03D76BF92BAD297E0040FD82 /* xnnpack_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF82BAD297E0040FD82 /* xnnpack_backend */; };
-		03D76BFB2BAD29B60040FD82 /* coreml_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BFA2BAD29B60040FD82 /* coreml_backend */; };
-		03D76BFD2BAD29B60040FD82 /* mps_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BFC2BAD29B60040FD82 /* mps_backend */; };
-		03D76BFF2BAD29B60040FD82 /* portable_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BFE2BAD29B60040FD82 /* portable_backend */; };
-		03D76C012BAD29B60040FD82 /* xnnpack_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76C002BAD29B60040FD82 /* xnnpack_backend */; };
+		03D76BF52BAD297E0040FD82 /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF42BAD297E0040FD82 /* backend_mps */; };
+		03D76BF72BAD297E0040FD82 /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF62BAD297E0040FD82 /* kernels_portable */; };
+		03D76BF92BAD297E0040FD82 /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF82BAD297E0040FD82 /* backend_xnnpack */; };
+		03D76BFB2BAD29B60040FD82 /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BFA2BAD29B60040FD82 /* backend_coreml */; };
+		03D76BFD2BAD29B60040FD82 /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BFC2BAD29B60040FD82 /* backend_mps */; };
+		03D76BFF2BAD29B60040FD82 /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BFE2BAD29B60040FD82 /* kernels_portable */; };
+		03D76C012BAD29B60040FD82 /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76C002BAD29B60040FD82 /* backend_xnnpack */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -114,11 +114,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03D76BF72BAD297E0040FD82 /* portable_backend in Frameworks */,
-				03D76BF52BAD297E0040FD82 /* mps_backend in Frameworks */,
-				03D76BF92BAD297E0040FD82 /* xnnpack_backend in Frameworks */,
+				03D76BF72BAD297E0040FD82 /* kernels_portable in Frameworks */,
+				03D76BF52BAD297E0040FD82 /* backend_mps in Frameworks */,
+				03D76BF92BAD297E0040FD82 /* backend_xnnpack in Frameworks */,
 				032C01EC2AC34CAC002955E1 /* libMobileNetClassifier.a in Frameworks */,
-				03D76BF12BAD297E0040FD82 /* coreml_backend in Frameworks */,
+				03D76BF12BAD297E0040FD82 /* backend_coreml in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,11 +135,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03D76BFF2BAD29B60040FD82 /* portable_backend in Frameworks */,
-				03D76BFD2BAD29B60040FD82 /* mps_backend in Frameworks */,
-				03D76C012BAD29B60040FD82 /* xnnpack_backend in Frameworks */,
+				03D76BFF2BAD29B60040FD82 /* kernels_portable in Frameworks */,
+				03D76BFD2BAD29B60040FD82 /* backend_mps in Frameworks */,
+				03D76C012BAD29B60040FD82 /* backend_xnnpack in Frameworks */,
 				03C818282AC760650084CC29 /* libMobileNetClassifier.a in Frameworks */,
-				03D76BFB2BAD29B60040FD82 /* coreml_backend in Frameworks */,
+				03D76BFB2BAD29B60040FD82 /* backend_coreml in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -289,10 +289,10 @@
 			);
 			name = App;
 			packageProductDependencies = (
-				03D76BF02BAD297E0040FD82 /* coreml_backend */,
-				03D76BF42BAD297E0040FD82 /* mps_backend */,
-				03D76BF62BAD297E0040FD82 /* portable_backend */,
-				03D76BF82BAD297E0040FD82 /* xnnpack_backend */,
+				03D76BF02BAD297E0040FD82 /* backend_coreml */,
+				03D76BF42BAD297E0040FD82 /* backend_mps */,
+				03D76BF62BAD297E0040FD82 /* kernels_portable */,
+				03D76BF82BAD297E0040FD82 /* backend_xnnpack */,
 			);
 			productName = ExecuTorchDemo;
 			productReference = 032C016F2AC228E6002955E1 /* ExecuTorchDemo.app */;
@@ -333,10 +333,10 @@
 			);
 			name = MobileNetClassifierTest;
 			packageProductDependencies = (
-				03D76BFA2BAD29B60040FD82 /* coreml_backend */,
-				03D76BFC2BAD29B60040FD82 /* mps_backend */,
-				03D76BFE2BAD29B60040FD82 /* portable_backend */,
-				03D76C002BAD29B60040FD82 /* xnnpack_backend */,
+				03D76BFA2BAD29B60040FD82 /* backend_coreml */,
+				03D76BFC2BAD29B60040FD82 /* backend_mps */,
+				03D76BFE2BAD29B60040FD82 /* kernels_portable */,
+				03D76C002BAD29B60040FD82 /* backend_xnnpack */,
 			);
 			productName = ExecuTorchDemoTests;
 			productReference = 03C8180A2AC66FC30084CC29 /* MobileNetClassifierTest.xctest */;
@@ -480,6 +480,7 @@
 /* Begin PBXTargetDependency section */
 		032C01EB2AC34CA8002955E1 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
+			platformFilter = ios;
 			target = 032C01CA2AC34632002955E1 /* MobileNetClassifier */;
 			targetProxy = 032C01EA2AC34CA8002955E1 /* PBXContainerItemProxy */;
 		};
@@ -635,9 +636,12 @@
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.demo;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -660,9 +664,12 @@
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.demo;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -784,57 +791,57 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
-				branch = main;
+				branch = latest;
 				kind = branch;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		03D76BF02BAD297E0040FD82 /* coreml_backend */ = {
+		03D76BF02BAD297E0040FD82 /* backend_coreml */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = coreml_backend;
+			productName = backend_coreml;
 		};
 		03D76BF22BAD297E0040FD82 /* executorch */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = executorch;
 		};
-		03D76BF42BAD297E0040FD82 /* mps_backend */ = {
+		03D76BF42BAD297E0040FD82 /* backend_mps */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = mps_backend;
+			productName = backend_mps;
 		};
-		03D76BF62BAD297E0040FD82 /* portable_backend */ = {
+		03D76BF62BAD297E0040FD82 /* kernels_portable */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = portable_backend;
+			productName = kernels_portable;
 		};
-		03D76BF82BAD297E0040FD82 /* xnnpack_backend */ = {
+		03D76BF82BAD297E0040FD82 /* backend_xnnpack */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = xnnpack_backend;
+			productName = backend_xnnpack;
 		};
-		03D76BFA2BAD29B60040FD82 /* coreml_backend */ = {
+		03D76BFA2BAD29B60040FD82 /* backend_coreml */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = coreml_backend;
+			productName = backend_coreml;
 		};
-		03D76BFC2BAD29B60040FD82 /* mps_backend */ = {
+		03D76BFC2BAD29B60040FD82 /* backend_mps */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = mps_backend;
+			productName = backend_mps;
 		};
-		03D76BFE2BAD29B60040FD82 /* portable_backend */ = {
+		03D76BFE2BAD29B60040FD82 /* kernels_portable */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = portable_backend;
+			productName = kernels_portable;
 		};
-		03D76C002BAD29B60040FD82 /* xnnpack_backend */ = {
+		03D76C002BAD29B60040FD82 /* backend_xnnpack */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = xnnpack_backend;
+			productName = backend_xnnpack;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -6,9 +6,10 @@
 import collections
 import copy
 import os
+import subprocess
 import tempfile
 import unittest
-from typing import Callable, List, Literal, Optional, Tuple
+from typing import Callable, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
@@ -26,17 +27,87 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
 from executorch.backends.qualcomm.utils.utils import capture_program
-from executorch.examples.qualcomm.scripts.utils import SimpleADB
+from executorch.examples.qualcomm.scripts.utils import (
+    generate_inputs,
+    make_output_dir,
+    SimpleADB,
+)
 
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program._program import ExecutorchProgram
 from executorch.sdk import generate_etrecord
 from executorch.sdk.inspector import Inspector
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+
+def generate_context_binary(
+    module: torch.nn.Module,
+    inputs: Dict[str, torch.Tensor],
+    quantized: bool,
+    artifact_dir: str,
+):
+    # we also expect clang showing in PATH or context may fail to generate
+    qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
+    ndk = os.environ.get("ANDROID_NDK_ROOT", None)
+    assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
+    assert ndk, "ANDROID_NDK_ROOT was not found in environment variable"
+
+    inputs_tup = tuple(inputs.values())
+    jit_module = torch.jit.trace(module, inputs_tup)
+    torch.jit.save(jit_module, f"{artifact_dir}/jit_module.pt")
+
+    # input data
+    if quantized:
+        input_list = []
+        for name, data in inputs.items():
+            file_name = f"{artifact_dir}/{name}.raw"
+            data.detach().numpy().tofile(file_name)
+            input_list.append(file_name)
+
+        with open(f"{artifact_dir}/input_list.txt", "w") as f:
+            f.write(" ".join(input_list))
+
+    # flow of qnn tools
+    target = "x86_64-linux-clang"
+    inputs_str = [
+        f"-d '{k}' {str(tuple(v.shape)).replace(' ', '')[1:-1]}"
+        for k, v in inputs.items()
+    ]
+    cmds = [
+        # setup qnn env
+        f"source {qnn_sdk}/bin/envsetup.sh;"
+        # qnn-pytorch-converter
+        f"{qnn_sdk}/bin/{target}/qnn-pytorch-converter",
+        f"-i {artifact_dir}/jit_module.pt",
+        *inputs_str,
+        f"--input_list {artifact_dir}/input_list.txt" if quantized else "",
+        "--preserve_io",
+        f"-o {artifact_dir}/model.cpp;",
+        # qnn-model-lib-generator
+        f"{qnn_sdk}/bin/{target}/qnn-model-lib-generator",
+        f"-c {artifact_dir}/model.cpp",
+        f"-t {target}",
+        "-l model",
+        f"-o {artifact_dir}/model_libs;",
+        # qnn-context-binary-generator
+        f"{qnn_sdk}/bin/{target}/qnn-context-binary-generator",
+        f"--model {artifact_dir}/model_libs/{target}/libmodel.so",
+        f"--backend {qnn_sdk}/lib/{target}/libQnnHtp.so",
+        "--binary_file model_ctx",
+        f"--output_dir {artifact_dir};",
+    ]
+    result = subprocess.run(
+        " ".join(cmds),
+        shell=True,
+        executable="/bin/bash",
+        capture_output=True,
+    )
+    assert os.path.isfile(f"{artifact_dir}/model_ctx.bin"), print(result.stderr)
 
 
 class TestQNN(unittest.TestCase):
@@ -66,6 +137,7 @@ class TestQNN(unittest.TestCase):
     use_16a16w: str = "16a16w"
     use_16a4w: str = "16a4w"
     shared_buffer: bool = False
+    enable_x86_64: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -113,32 +185,37 @@ class TestQNN(unittest.TestCase):
         self,
         module: torch.nn.Module,
         sample_inputs: Tuple[torch.Tensor],
-        executorch_prog: ExecutorchProgram,
-        etrecord_path: str,
-        expected_profile_events: int,
+        executorch_prog: ExecutorchProgram | LoweredBackendModule,
+        etrecord_path: str = "etrecord.bin",
+        expected_profile_events: int = -1,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
+            buffer = (
+                executorch_prog.buffer
+                if isinstance(executorch_prog, ExecutorchProgram)
+                else executorch_prog.buffer()
+            )
             (
                 input_list,
                 ref_outputs,
                 pte_fname,
             ) = self._save_model_and_expected_output(
                 module,
-                executorch_prog.buffer,
+                buffer,
                 sample_inputs,
                 tmp_dir,
             )
 
-            device_output_dir = f"{tmp_dir}/outputs"
-            device_outputs = []
+            output_dir = f"{tmp_dir}/outputs"
+            outputs = []
             etdump_path = f"{tmp_dir}/etdump.etdp"
 
             def post_process():
-                for i, f in enumerate(os.listdir(device_output_dir)):
-                    filename = os.path.join(device_output_dir, f)
+                for i, f in enumerate(sorted(os.listdir(output_dir))):
+                    filename = os.path.join(output_dir, f)
                     output = np.fromfile(filename, dtype=ref_outputs[i].numpy().dtype)
                     output = torch.from_numpy(output).reshape(ref_outputs[i].shape)
-                    device_outputs.append(output)
+                    outputs.append(output)
 
             def validate_profile():
                 inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
@@ -146,23 +223,76 @@ class TestQNN(unittest.TestCase):
                     len(inspector.to_dataframe().index) == expected_profile_events
                 )
 
-            adb = SimpleADB(
-                qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-                artifact_path=self.build_folder,
-                pte_path=pte_fname,
-                workspace="/data/local/tmp/qnn_executorch_test",
-                device_id=self.device,
-                host_id=self.host,
-                soc_model=self.model,
-                error_only=self.error_only,
-            )
-            adb.push(inputs=[sample_inputs], input_list=input_list)
-            adb.execute()
-            adb.pull(output_path=tmp_dir, callback=post_process)
-            self._assert_outputs_equal(device_outputs, ref_outputs)
+            if self.enable_x86_64:
+                generate_inputs(tmp_dir, "input_list.txt", [sample_inputs], input_list)
+                make_output_dir(output_dir)
 
-            if expected_profile_events != -1:
-                adb.pull_etdump(etdump_path, callback=validate_profile)
+                target = "x86_64-linux-clang"
+                qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
+                assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
+
+                build_folder = self.build_folder
+                if os.path.isabs(self.build_folder):
+                    # obey user's opinion
+                    pass
+                else:
+                    # ok, assuming the user give a relative path to cwd
+                    build_folder = os.path.join(os.getcwd(), self.build_folder)
+
+                cmd = [
+                    # qnn_executor_runner
+                    f"{build_folder}/examples/qualcomm/qnn_executor_runner",
+                    "--model_path",
+                    f"{pte_fname}",
+                    "--input_list_path",
+                    f"{tmp_dir}/input_list.txt",
+                    "--output_folder_path",
+                    f"{output_dir}",
+                ]
+
+                env = dict(os.environ)
+                env["LD_LIBRARY_PATH"] = f"{qnn_sdk}/lib/{target}/:{build_folder}/lib"
+                proc = subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    cwd=tmp_dir,
+                )
+
+                self.assertEqual(
+                    proc.returncode,
+                    0,
+                    f"The process running qnn_executorch_runner return {proc.returncode}, "
+                    "STDOUT=\n"
+                    f"{proc.stdout.decode('utf-8')}",
+                )
+
+                # Verify the outputs
+                post_process()
+                self._assert_outputs_equal(outputs, ref_outputs)
+
+                # Verify the etdump
+                if expected_profile_events != -1:
+                    validate_profile()
+            else:
+                adb = SimpleADB(
+                    qnn_sdk=os.getenv("QNN_SDK_ROOT"),
+                    build_path=self.build_folder,
+                    pte_path=pte_fname,
+                    workspace="/data/local/tmp/qnn_executorch_test",
+                    device_id=self.device,
+                    host_id=self.host,
+                    soc_model=self.model,
+                    error_only=self.error_only,
+                )
+                adb.push(inputs=[sample_inputs], input_list=input_list)
+                adb.execute()
+                adb.pull(output_path=tmp_dir, callback=post_process)
+                self._assert_outputs_equal(outputs, ref_outputs)
+
+                if expected_profile_events != -1:
+                    adb.pull_etdump(etdump_path, callback=validate_profile)
 
     def lower_module_and_test_output(
         self,
@@ -187,6 +317,7 @@ class TestQNN(unittest.TestCase):
         )
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
+                extract_delegate_segments=False,
                 # For shared buffer, user must pass the memory address
                 # which is allocated by RPC memory to executor runner.
                 # Therefore, won't want to pre-allocate
@@ -195,13 +326,14 @@ class TestQNN(unittest.TestCase):
                     memory_planning_algo="greedy",
                     alloc_graph_input=not self.shared_buffer,
                     alloc_graph_output=not self.shared_buffer,
-                )
+                ),
             )
         )
 
         # Assert the backend name is qnn
         self.assertEqual(
-            len(exec_prog.program.execution_plan[0].delegates), expected_partitions
+            len(exec_prog.program.execution_plan[0].delegates),
+            expected_partitions,
         )
         for i in range(expected_partitions):
             self.assertEqual(
@@ -224,14 +356,16 @@ class TestQNN(unittest.TestCase):
         module: torch.nn.Module,
         inputs: Tuple[torch.Tensor],
         is_conv_per_channel: Optional[bool] = True,
+        is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
     ) -> torch.fx.GraphModule:
-        m = torch._export.capture_pre_autograd_graph(module, inputs)
+        m = torch.export.export(module, inputs).module()
 
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_quant_annotations)
-        quantizer.set_per_channel_quant(is_conv_per_channel)
+        quantizer.set_per_channel_conv_quant(is_conv_per_channel)
+        quantizer.set_per_channel_linear_quant(is_linear_per_channel)
 
         if quant_dtype == QuantDtype.use_8a8w:
             pass  # default setting
@@ -286,6 +420,8 @@ class TestQNN(unittest.TestCase):
                             (node,),
                         )
                         inserted_node.meta["val"] = node.meta["val"]
+                        if "quant_attrs" in node.meta:
+                            inserted_node.meta["quant_attrs"] = node.meta["quant_attrs"]
                         for user in users:
                             user.replace_input_with(node, inserted_node)
 

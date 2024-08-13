@@ -10,17 +10,12 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#ifdef USE_VULKAN_API
-
-#include <ATen/native/vulkan/api/Context.h>
-#include <ATen/native/vulkan/api/Tensor.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
 #include <executorch/backends/vulkan/runtime/graph/containers/Types.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 using ValueRef = int32_t;
 
@@ -57,7 +52,7 @@ struct Value final {
       bool as_bool;
     } u;
 
-    vTensor as_tensor;
+    api::vTensor as_tensor;
     api::StorageBuffer as_staging;
     TensorRef as_tensorref;
 
@@ -97,9 +92,10 @@ struct Value final {
     payload.u.member_name = rhs.payload.u.member_name;           \
     break;
 
-#define CASE_MOVE_MOVEABLE_TYPE(type_tag, type, member_name)             \
+#define CASE_MOVE_MOVEABLE_TYPE(type_tag, type, member_name, dtor_name)  \
   case type_tag:                                                         \
     new (&payload.member_name) type(std::move(rhs.payload.member_name)); \
+    rhs.payload.member_name.~dtor_name();                                \
     break;
 
   Value(Value&& rhs) noexcept : tag(rhs.tag) {
@@ -109,20 +105,24 @@ struct Value final {
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::DOUBLE, as_double);
       CASE_MOVE_TRIVIALLY_COPYABLE_TYPE(TypeTag::BOOL, as_bool);
       // Tensor and tensor adjacent types
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::TENSOR, vTensor, as_tensor);
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::STAGING, api::StorageBuffer, as_staging);
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::TENSORREF, TensorRef, as_tensorref);
+      CASE_MOVE_MOVEABLE_TYPE(
+          TypeTag::TENSOR, api::vTensor, as_tensor, vTensor);
+      CASE_MOVE_MOVEABLE_TYPE(
+          TypeTag::STAGING, api::StorageBuffer, as_staging, StorageBuffer);
+      CASE_MOVE_MOVEABLE_TYPE(
+          TypeTag::TENSORREF, TensorRef, as_tensorref, TensorRef);
       // Scalar lists
       CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::INTLIST, std::vector<int64_t>, as_int_list);
+          TypeTag::INTLIST, std::vector<int64_t>, as_int_list, vector);
       CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::DOUBLELIST, std::vector<double>, as_double_list);
+          TypeTag::DOUBLELIST, std::vector<double>, as_double_list, vector);
       CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::BOOLLIST, std::vector<bool>, as_bool_list);
+          TypeTag::BOOLLIST, std::vector<bool>, as_bool_list, vector);
       // Special types
       CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::VALUELIST, std::vector<ValueRef>, as_value_list);
-      CASE_MOVE_MOVEABLE_TYPE(TypeTag::STRING, std::string, as_string);
+          TypeTag::VALUELIST, std::vector<ValueRef>, as_value_list, vector);
+      CASE_MOVE_MOVEABLE_TYPE(
+          TypeTag::STRING, std::string, as_string, basic_string);
 
       case TypeTag::NONE:
         clearToNone();
@@ -230,9 +230,21 @@ struct Value final {
         tag,                                                \
         " instead.");                                       \
     return payload.member_name;                             \
+  }                                                         \
+  inline const type& toConst##type_name() const {           \
+    VK_CHECK_COND(                                          \
+        is##type_name(),                                    \
+        "Expected value to have type " #type_name ", got ", \
+        tag,                                                \
+        " instead.");                                       \
+    return payload.member_name;                             \
   }
 
-  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(vTensor, Tensor, TypeTag::TENSOR, as_tensor);
+  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
+      api::vTensor,
+      Tensor,
+      TypeTag::TENSOR,
+      as_tensor);
 
   SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
       api::StorageBuffer,
@@ -293,8 +305,4 @@ struct Value final {
   }
 };
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

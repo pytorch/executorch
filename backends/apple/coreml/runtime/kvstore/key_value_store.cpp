@@ -53,8 +53,7 @@ get_create_store_statement(std::string_view store_name, StorageType key_storage_
 
 std::string get_create_index_statement(std::string_view store_name, std::string_view column_name) {
     std::stringstream ss;
-    ss << "CREATE INDEX IF NOT EXISTS " << column_name << "_INDEX"
-       << " ON " << store_name << "(" << column_name << ")";
+    ss << "CREATE INDEX IF NOT EXISTS " << column_name << "_INDEX" << " ON " << store_name << "(" << column_name << ")";
 
     return ss.str();
 }

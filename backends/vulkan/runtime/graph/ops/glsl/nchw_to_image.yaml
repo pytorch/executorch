@@ -6,25 +6,16 @@
 
 nchw_to_image:
   parameter_names_with_default_values:
-    NDIM: 3
+    STORAGE: texture3d
     DTYPE: float
-    PACKING: CHANNELS_PACKED
   generate_variant_forall:
-    PACKING:
-      - VALUE: CHANNELS_PACKED
-        SUFFIX: C_packed
-      - VALUE: WIDTH_PACKED
-        SUFFIX: W_packed
-      - VALUE: HEIGHT_PACKED
-        SUFFIX: H_packed
     DTYPE:
       - VALUE: half
-        SUFFIX: half
       - VALUE: float
-        SUFFIX: float
       - VALUE: int
-        SUFFIX: int
+      - VALUE: int8
+    STORAGE:
+      - VALUE: texture3d
+      - VALUE: texture2d
   shader_variants:
-    - NAME: nchw_to_image3d
-    - NAME: nchw_to_image2d
-      NDIM: 2
+    - NAME: nchw_to_image

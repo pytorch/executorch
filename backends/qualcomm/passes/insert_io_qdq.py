@@ -8,8 +8,15 @@ from typing import Dict
 import torch
 
 from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_ENCODING,
+    QCOM_QUANT_ATTRS,
+    QCOM_QUANTIZED_IO,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
+
+from .utils import q_ops
 
 
 class InsertIOQDQ(ExportPass):
@@ -45,12 +52,14 @@ class InsertIOQDQ(ExportPass):
             if name == "out_dtype":
                 continue
             value = quant_attrs[name]
-            if type(arg_schema.type) == torch.tensor and type(value) in [int, float]:
+            if isinstance(arg_schema.type, torch.Tensor) and (
+                isinstance(value, int) or isinstance(value, float)
+            ):
                 value = torch.tensor(value)
             ret.append(value)
         return ret
 
-    def _insert_node(
+    def _create_node(
         self,
         graph_module: torch.fx.GraphModule,
         node: torch.fx.node,
@@ -60,7 +69,7 @@ class InsertIOQDQ(ExportPass):
         # check if there has a specified quant_attrs
         # if not, use the existent info. from current node
         if quant_attrs is None:
-            quant_attrs = node.meta.get("quant_attrs")
+            quant_attrs = node.meta.get(QCOM_QUANT_ATTRS)
 
         inserted_node = graph_module.graph.create_node(
             "call_function",
@@ -69,7 +78,7 @@ class InsertIOQDQ(ExportPass):
         )
         meta_val = node.meta["val"]
         if target in self.q_dq_map:
-            inserted_node.meta["quant_attrs"] = node.meta.pop("quant_attrs")
+            inserted_node.meta[QCOM_QUANT_ATTRS] = node.meta.pop(QCOM_QUANT_ATTRS)
             meta_val = meta_val.to(quant_attrs["dtype"])
 
         inserted_node.meta["val"] = meta_val
@@ -84,9 +93,11 @@ class InsertIOQDQ(ExportPass):
     ) -> torch.fx.Node:
         with graph_module.graph.inserting_after(node):
             users = list(node.users.keys())
-            inserted_node = self._insert_node(graph_module, node, target, quant_attrs)
+            inserted_node = self._create_node(graph_module, node, target, quant_attrs)
             for user in users:
-                user.replace_input_with(node, inserted_node)
+                # If we found mix quantization pattern and reuse the existing q_node, we skip adding a new q node.
+                if user.target not in q_ops:
+                    user.replace_input_with(node, inserted_node)
 
         return inserted_node
 
@@ -98,31 +109,40 @@ class InsertIOQDQ(ExportPass):
     ) -> None:
         with graph_module.graph.inserting_after(node):
             users = list(node.users.keys())
-            inserted_node = self._insert_node(graph_module, node, target)
+            inserted_node = self._create_node(graph_module, node, target)
             for user in users:
                 if user.op == "output":
                     user.replace_input_with(node, inserted_node)
 
     def _insert(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
-            # insert q after input
+            # do nothing when a node is expected to output a quant tensor
+            if n.meta.get(QCOM_QUANTIZED_IO):
+                continue
+
+            # insert q after input or fold mix_quantization dq if applicable
             if (
                 n.op == "placeholder"
-                and n.meta.get("quant_attrs")
+                and n.meta.get(QCOM_QUANT_ATTRS)
                 and not is_parameter(n, self.edge_program)
             ):
                 self._insert_quant_node(
-                    graph_module, n, n.meta["quant_attrs"]["encoding"]
+                    graph_module, n, n.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING]
                 )
 
-            # insert dq before output
+            # insert dq before output or fold mix_quantization q if applicable
             users = list(n.users.keys())
-            if n.meta.get("quant_attrs") and any(user.op == "output" for user in users):
+            if n.meta.get(QCOM_QUANT_ATTRS) and any(
+                user.op == "output" for user in users
+            ):
                 self._insert_dequant_node(
-                    graph_module, n, self.q_dq_map[n.meta["quant_attrs"]["encoding"]]
+                    graph_module,
+                    n,
+                    self.q_dq_map[n.meta[QCOM_QUANT_ATTRS][QCOM_ENCODING]],
                 )
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._insert(graph_module)
+        graph_module.graph.eliminate_dead_code()
         graph_module.recompile()
         return PassResult(graph_module, True)

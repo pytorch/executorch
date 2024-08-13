@@ -8,7 +8,6 @@ import logging
 
 import torch
 
-# pyre-ignore
 from torchvision.models import mobilenet_v2  # @manual
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
@@ -21,7 +20,6 @@ class MV2Model(EagerModelBase):
 
     def get_eager_model(self) -> torch.nn.Module:
         logging.info("Loading mobilenet_v2 model")
-        # pyre-ignore
         mv2 = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
         logging.info("Loaded mobilenet_v2 model")
         return mv2
@@ -36,7 +34,6 @@ class MV2UntrainedModel(EagerModelBase):
         pass
 
     def get_eager_model(self) -> torch.nn.Module:
-        # pyre-ignore
         mv2 = mobilenet_v2()
         return mv2
 

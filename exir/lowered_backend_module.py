@@ -24,6 +24,7 @@ from executorch.exir.passes.spec_prop_pass import make_spec, SpecPropPass
 from executorch.exir.schema import Program
 
 from executorch.exir.tracer import Value
+from torch._library.fake_class_registry import FakeScriptObject
 
 from torch._subclasses import FakeTensor
 from torch.export.exported_program import (
@@ -90,8 +91,8 @@ class LoweredBackendModule(torch.nn.Module):
             module_call_graph=copy.deepcopy(
                 self._original_exported_program.module_call_graph
             ),
-            verifier=copy.deepcopy(self._original_exported_program.verifier),
             constants=self._original_exported_program.constants,
+            verifiers=[copy.deepcopy(self._original_exported_program.verifier)],
         )
 
         res = LoweredBackendModule(
@@ -138,6 +139,7 @@ class LoweredBackendModule(torch.nn.Module):
         segment_alignment: int = 4096,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
+        memory_planning: MemoryPlanningPass = None,
     ) -> bytes:
         """
         Returns a buffer containing the serialized ExecuTorch binary.
@@ -145,7 +147,7 @@ class LoweredBackendModule(torch.nn.Module):
         # TODO(T181463742): avoid calling bytes(..) which incurs large copies.
         out = bytes(
             _serialize_pte_binary(
-                program=self.program(),
+                program=self.program(memory_planning=memory_planning),
                 extract_delegate_segments=extract_delegate_segments,
                 segment_alignment=segment_alignment,
                 constant_tensor_alignment=constant_tensor_alignment,
@@ -156,7 +158,11 @@ class LoweredBackendModule(torch.nn.Module):
 
     # TODO(chenlai): re-consider recapture instead of manually constructing the program because
     # the meta data construction is done manually.
-    def program(self, emit_stacktrace: bool = False) -> Program:
+    def program(
+        self,
+        emit_stacktrace: bool = False,
+        memory_planning: MemoryPlanningPass = None,
+    ) -> Program:
         # Fix autodpes introuces cyclic dependencies:
         # program -> verifier -> lowered_backend_module -> program
         # @manual
@@ -316,11 +322,11 @@ class LoweredBackendModule(torch.nn.Module):
             range_constraints=lowered_exported_program.range_constraints,
             module_call_graph=lowered_exported_program.module_call_graph,
             example_inputs=None,
-            verifier=lowered_exported_program.verifier,
+            verifiers=[lowered_exported_program.verifier],
         )
-        exported_program = _transform(
-            exported_program, SpecPropPass(), MemoryPlanningPass("greedy")
-        )
+        if memory_planning is None:
+            memory_planning = MemoryPlanningPass("greedy")
+        exported_program = _transform(exported_program, SpecPropPass(), memory_planning)
         emitted_program = emit_program(
             exported_program, emit_stacktrace=emit_stacktrace
         ).program
@@ -430,7 +436,7 @@ def _get_new_signature(  # noqa: C901
 ) -> Tuple[
     ExportGraphSignature,
     Dict[str, Union[torch.Tensor, torch.nn.Parameter]],
-    Dict[str, Union[torch.Tensor, torch.ScriptObject]],
+    Dict[str, Union[torch.Tensor, FakeScriptObject, torch.ScriptObject]],
 ]:
     """
     Args:
@@ -454,17 +460,17 @@ def _get_new_signature(  # noqa: C901
     new_state_dict = {}
     new_constants = {}
 
-    input_tensor_node_to_sig = {
-        input_spec.arg.name: input_spec
-        for input_spec in old_signature.input_specs
-        if isinstance(input_spec.arg, TensorArgument)
-    }
+    placeholder_nodes = [
+        node.name for node in original_program.graph.nodes if node.op == "placeholder"
+    ]
+    assert len(placeholder_nodes) == len(old_signature.input_specs)
+    input_node_to_sig = dict(zip(placeholder_nodes, old_signature.input_specs))
 
     for node in gm.graph.nodes:
         is_tagged = tag is None or node.meta.get("delegation_tag", None) == tag
         if node.op == "placeholder":
 
-            if node.name not in input_tensor_node_to_sig:
+            if node.name not in input_node_to_sig:
                 assert tag is not None
                 input_specs.append(
                     InputSpec(
@@ -475,7 +481,7 @@ def _get_new_signature(  # noqa: C901
                 )
                 continue
 
-            orig_input_spec = input_tensor_node_to_sig[node.name]
+            orig_input_spec = input_node_to_sig[node.name]
 
             if not isinstance(orig_input_spec.arg, TensorArgument):
                 input_specs.append(orig_input_spec)
@@ -528,7 +534,7 @@ def _get_new_signature(  # noqa: C901
                         output_specs.append(
                             OutputSpec(
                                 kind=OutputKind.USER_OUTPUT,
-                                arg=ConstantArgument(output_node),
+                                arg=ConstantArgument(name="", value=output_node),
                                 target=None,
                             )
                         )
@@ -555,7 +561,7 @@ def _get_new_signature(  # noqa: C901
                         output_specs.append(
                             OutputSpec(
                                 kind=OutputKind.USER_OUTPUT,
-                                arg=ConstantArgument(output_node),
+                                arg=ConstantArgument(name="", value=output_node),
                                 target=None,
                             )
                         )
@@ -610,8 +616,8 @@ def create_exported_program_from_submodule(
                 ),
             )
         ],
-        verifier=owning_program.verifier,
         constants=subgraph_constants,
+        verifiers=[owning_program.verifier],
     )
 
 

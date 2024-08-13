@@ -24,6 +24,7 @@ from executorch.exir.program import (
     ExirExportedProgram,
     to_edge,
 )
+from executorch.exir.serde.serialize import load, save
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.export import ExportedProgram, ExportGraphSignature
 
@@ -49,4 +50,6 @@ __all__ = [
     "ExecutorchBackendConfig",
     "Value",
     "ExirDynamoConfig",
+    "load",
+    "save",
 ]

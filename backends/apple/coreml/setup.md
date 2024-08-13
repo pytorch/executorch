@@ -29,8 +29,8 @@ python3 -m examples.apple.coreml.scripts.export --model_name add
 4. You can now integrate the **Core ML** backend in code.
 
 ```python
-# Lower to Core ML backend
-lowered_module = to_backend('CoreMLBackend', to_be_lowered_exir_submodule, [])
+# Delegate to Core ML backend
+delegated_program_manager = edge_program_manager.to_backend(CoreMLPartitioner())
 ```
 
 
@@ -46,15 +46,15 @@ lowered_module = to_backend('CoreMLBackend', to_be_lowered_exir_submodule, [])
 xcode-select --install
 ```
 
-2. Build **Core ML** delegate. The following will create a `executorch.xcframework` in `cmake-out` directory.
+4. Build **Core ML** delegate. The following will create `executorch.xcframework` and `coreml_backend.xcframework` in the `cmake-out` directory.
 
 ```bash
 cd executorch
-./build/build_apple_frameworks.sh --Release --coreml
+./build/build_apple_frameworks.sh --coreml
 ```
-3. Open the project in Xcode, and drag the `executorch.xcframework` generated from Step 2 to Frameworks.
+5. Open the project in Xcode, and drag `executorch.xcframework` and `coreml_backend.xcframework` frameworks generated from Step 2 to Frameworks.
 
-4. Go to project Target’s Build Phases -  Link Binaries With Libraries, click the + sign, and add the following frameworks:
+6. Go to project Target’s Build Phases -  Link Binaries With Libraries, click the + sign, and add the following frameworks:
 
 ```
 executorch.xcframework
@@ -63,9 +63,9 @@ coreml_backend.xcframework
 
 5. Go to project Target’s Build Phases -  Link Binaries With Libraries, click the + sign, and add the following frameworks.
 ```
-- Accelerate.framework
-- CoreML.framework
-- libsqlite3.tbd
+Accelerate.framework
+CoreML.framework
+libsqlite3.tbd
 ```
 
 6. The target could now run a **Core ML** delegated **Program**.

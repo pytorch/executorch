@@ -20,6 +20,18 @@ buck_targets = [
   "//runtime/executor:program",
 ]
 deps = [
+  "executorch_no_prim_ops",
+]
+filters = [
+  ".cpp$",
+]
+
+
+[targets.executorch_no_prim_ops]
+buck_targets = [
+  "//runtime/executor:program_no_prim_ops",
+]
+deps = [
   "program_schema",
 ]
 filters = [
@@ -43,6 +55,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
 ]
 
 [targets.optimized_kernels]
@@ -59,6 +72,8 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
+  "portable_kernels",
 ]
 
 [targets.quantized_kernels]
@@ -75,6 +90,8 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
+  "portable_kernels",
 ]
 
 [targets.program_schema]
@@ -85,19 +102,22 @@ filters = [
   ".fbs$",
 ]
 
-# ---------------------------------- core end ----------------------------------
-# ---------------------------------- extension start ----------------------------------
-
-[targets.extension_aot_util]
+[targets.optimized_cpublas]
 buck_targets = [
-  "//extension/aot_util:aot_util",
+  "//kernels/optimized:libblas",
 ]
 filters = [
   ".cpp$",
 ]
+excludes = [
+]
 deps = [
+  "executorch_no_prim_ops",
   "executorch",
 ]
+
+# ---------------------------------- core end ----------------------------------
+# ---------------------------------- extension start ----------------------------------
 [targets.extension_data_loader]
 buck_targets = [
   "//extension/data_loader:buffer_data_loader",
@@ -109,6 +129,7 @@ filters = [
   ".cpp$",
 ]
 deps = [
+  "executorch_no_prim_ops",
   "executorch",
 ]
 
@@ -121,6 +142,7 @@ filters = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
   "extension_data_loader",
 ]
 
@@ -133,6 +155,7 @@ filters = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
 ]
 
 # ---------------------------------- extension end ----------------------------------
@@ -150,6 +173,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
   "portable_kernels",
   "quantized_kernels",
 ]
@@ -165,6 +189,7 @@ excludes = [
   "^codegen",
 ]
 deps = [
+  "executorch_no_prim_ops",
   "executorch",
 ]
 # ---------------------------------- binary end ----------------------------------
@@ -181,6 +206,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
   "portable_kernels",
 ]
 
@@ -193,6 +219,7 @@ filters = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
 ]
 
 [targets.mps_schema]
@@ -218,6 +245,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
   "xnnpack_backend",
   "portable_kernels",
 ]
@@ -231,14 +259,7 @@ filters = [
 ]
 deps = [
   "executorch",
-]
-
-[targets.xnnpack_dynamic_quant_utils]
-buck_targets = [
-  "//backends/xnnpack:dynamic_quant_utils",
-]
-filters = [
-  ".cpp$",
+  "executorch_no_prim_ops",
 ]
 
 [targets.xnnpack_schema]
@@ -259,6 +280,22 @@ filters = [
 ]
 # ---------------------------------- Vulkan end -----------------------------------
 # ---------------------------------- LLama start ----------------------------------
+[targets.custom_ops]
+buck_targets = [
+  "//extension/llm/custom_ops:custom_ops",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "executorch_no_prim_ops",
+  "optimized_kernels",
+  "xnnpack_backend",
+]
 
 [targets.llama_runner]
 buck_targets = [
@@ -271,7 +308,9 @@ excludes = [
   "^codegen",
 ]
 deps = [
+  "custom_ops",
   "executorch",
+  "executorch_no_prim_ops",
   "extension_data_loader",
   "extension_module",
   "portable_kernels",

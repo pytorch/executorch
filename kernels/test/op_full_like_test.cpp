@@ -53,24 +53,6 @@ class OpFullLikeTest : public OperatorTest {
     EXPECT_TENSOR_EQ(out, tf.ones(sizes));
   }
 
-  template <>
-  void test_full_like_out<ScalarType::Bool>() {
-    TensorFactory<ScalarType::Bool> tf;
-    const std::vector<int32_t> sizes = {2, 2};
-    Tensor in = tf.zeros(sizes);
-    Tensor out = tf.zeros(sizes);
-    Scalar value = true;
-    MemoryFormat memory_format = MemoryFormat::Contiguous;
-
-    // Check that it matches the expected output.
-    op_full_like_out(in, value, memory_format, out);
-    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, true, true, true}));
-
-    value = false;
-    op_full_like_out(in, value, memory_format, out);
-    EXPECT_TENSOR_EQ(out, tf.zeros(sizes));
-  }
-
   template <ScalarType DTYPE>
   void test_full_like_out_mismatched_shape() {
     TensorFactory<DTYPE> tf;
@@ -84,6 +66,24 @@ class OpFullLikeTest : public OperatorTest {
         context_, op_full_like_out(in, value, memory_format, out));
   }
 };
+
+template <>
+void OpFullLikeTest::test_full_like_out<ScalarType::Bool>() {
+  TensorFactory<ScalarType::Bool> tf;
+  const std::vector<int32_t> sizes = {2, 2};
+  Tensor in = tf.zeros(sizes);
+  Tensor out = tf.zeros(sizes);
+  Scalar value = true;
+  MemoryFormat memory_format = MemoryFormat::Contiguous;
+
+  // Check that it matches the expected output.
+  op_full_like_out(in, value, memory_format, out);
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, true, true, true}));
+
+  value = false;
+  op_full_like_out(in, value, memory_format, out);
+  EXPECT_TENSOR_EQ(out, tf.zeros(sizes));
+}
 
 TEST_F(OpFullLikeTest, AllRealOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_full_like_out<ScalarType::dtype>();
@@ -186,4 +186,26 @@ TEST_F(OpFullLikeTest, DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = op_full_like_out(x, Scalar(3.0), MemoryFormat::Contiguous, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST_F(OpFullLikeTest, HalfSupport) {
+  TensorFactory<ScalarType::Half> tf;
+  optional<MemoryFormat> memory_format;
+  Tensor in = tf.ones({2, 3});
+  Tensor out = tf.zeros({2, 3});
+
+  op_full_like_out(in, false, memory_format, out);
+  EXPECT_TENSOR_CLOSE(out, tf.full({2, 3}, 0));
+
+  op_full_like_out(in, true, memory_format, out);
+  EXPECT_TENSOR_CLOSE(out, tf.full({2, 3}, 1));
+
+  op_full_like_out(in, 7, memory_format, out);
+  EXPECT_TENSOR_CLOSE(out, tf.full({2, 3}, 7));
+
+  op_full_like_out(in, 2.5, memory_format, out);
+  EXPECT_TENSOR_CLOSE(out, tf.full({2, 3}, 2.5));
+
+  op_full_like_out(in, INFINITY, memory_format, out);
+  EXPECT_TENSOR_CLOSE(out, tf.full({2, 3}, INFINITY));
 }

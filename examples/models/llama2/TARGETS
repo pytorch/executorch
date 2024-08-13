@@ -10,15 +10,18 @@ define_common_targets()
 
 runtime.python_library(
     name = "llama_transformer",
-    srcs = ["llama_transformer.py"],
+    srcs = [
+        "llama_transformer.py",
+        "rope.py",
+    ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama2",
     visibility = [
         "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/examples/models/llama2/custom_ops:llama_custom_ops_aot_lib",
     ],
 )
 
@@ -28,7 +31,6 @@ runtime.python_library(
         "__init__.py",
         "fairseq2.py",
         "model.py",
-        "quantize.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama2",
@@ -37,21 +39,22 @@ runtime.python_library(
     },
     visibility = [
         "//bento/...",
+        "//bento_kernels/...",
         "//executorch/...",
     ],
     deps = [
         "//caffe2:torch",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models/llama2:llama_transformer",
-        "//executorch/examples/models/llama2/ops:quantized_aot_lib",
     ],
 )
 
 runtime.python_binary(
     name = "export_llama",
-    main_module = "executorch.examples.models.llama2.export_llama",
+    main_function = "executorch.examples.models.llama2.export_llama.main",
     # visibility = ["//executorch/examples/..."],
     preload_deps = [
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_lib",
         "//executorch/kernels/quantized:aot_lib",
     ],
     deps = [
@@ -64,37 +67,36 @@ runtime.python_binary(
 runtime.python_library(
     name = "export_library",
     srcs = [
-        "GPTQ.py",
-        "builder.py",
         "export_llama.py",
         "export_llama_lib.py",
         "model.py",
-        "quantize.py",
+        "source_transformation/quantize.py",
+        "source_transformation/rope.py",
+        "source_transformation/sdpa.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama2",
     visibility = [
         "//bento/...",
+        "//bento_kernels/...",
         "//executorch/examples/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
-        "//executorch/backends/xnnpack:xnnpack_backend",
-        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
-        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
-        "//executorch/examples/portable:utils",
-        "//executorch/exir:lib",
-        "//executorch/sdk/etrecord:etrecord",
-        "//executorch/util:memory_profiler",
-        "//executorch/util:python_profiler",
+        "//executorch/extension/llm/custom_ops:custom_ops_aot_py",
+        "//executorch/extension/llm/export:export_lib",
         # one definition has to be included in the user of the libarary
         # depending on what library the client wants to use
         # "//executorch/extension/pybindings:aten_lib",
         # "//executorch/extension/pybindings:portable_lib",
         # "//executorch/extension/pybindings:portable_lib_plus_custom",
+        "//executorch/sdk/etrecord:etrecord",
+        "//executorch/util:memory_profiler",
+        "//executorch/util:python_profiler",
+        "fbsource//third-party/pypi/coremltools:coremltools",
         "fbsource//third-party/pypi/sentencepiece:sentencepiece",
     ],
 )

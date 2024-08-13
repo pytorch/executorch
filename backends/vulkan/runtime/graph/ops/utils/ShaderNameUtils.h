@@ -8,24 +8,32 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
-#include <ATen/native/vulkan/api/api.h>
+#include <string>
 
-#include <sstream>
+namespace vkcompute {
 
-namespace at {
-namespace native {
-namespace vulkan {
+constexpr size_t kShaderNameReserve = 64u;
 
-void apply_dtype_suffix(std::stringstream& kernel_name, const vTensor& tensor);
+void add_storage_type_suffix(
+    std::string& kernel_name,
+    const utils::StorageType storage_type);
+void add_storage_type_suffix(
+    std::string& kernel_name,
+    const api::vTensor& tensor);
 
-void apply_memory_layout_suffix(
-    std::stringstream& kernel_name,
-    const vTensor& tensor);
+void add_dtype_suffix(std::string& kernel_name, const vkapi::ScalarType dtype);
+void add_dtype_suffix(std::string& kernel_name, const api::vTensor& tensor);
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+void add_ndim_suffix(std::string& kernel_name, const size_t ndim);
+void add_ndim_suffix(std::string& kernel_name, const api::vTensor& tensor);
 
-#endif /* USE_VULKAN_API */
+void add_memory_layout_suffix(
+    std::string& kernel_name,
+    const utils::GPUMemoryLayout layout);
+void add_memory_layout_suffix(
+    std::string& kernel_name,
+    const api::vTensor& tensor);
+
+} // namespace vkcompute

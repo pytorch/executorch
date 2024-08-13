@@ -22,6 +22,8 @@
 #import <iostream>
 #import <memory>
 #import <model_metadata.h>
+#import <multiarray.h>
+#import <objc_array_util.h>
 #import <optional>
 #import <os/lock.h>
 #import <serde_json.h>
@@ -29,8 +31,10 @@
 #import <system_error>
 #import <vector>
 
-#ifdef ET_EVENT_TRACER_ENABLED
+#if ET_EVENT_TRACER_ENABLED
 #import <ETCoreMLModelAnalyzer.h>
+#import <ETCoreMLModelStructurePath.h>
+#import <objc_safe_cast.h>
 #endif
 
 namespace {
@@ -96,44 +100,88 @@ MLPredictionOptions *get_prediction_options(NSArray<MLMultiArray *> *outputs,
     return options;
 }
 
-BOOL copy(MLMultiArray *src, MLMultiArray *dst, NSError * __autoreleasing *error) {
-    if (![src.shape isEqualToArray:dst.shape]) {
-        ETCoreMLLogErrorAndSetNSError(error, 0, "%@: Model is broken", NSStringFromClass(ETCoreMLModelManager.class));
-        return NO;
-    }
+void copy(MLMultiArray *src, MLMultiArray *dst) {
     if (::is_backed_by_same_buffer(src, dst)) {
-        return YES;
+        return;
     }
-    @autoreleasepool {
-        [src copyInto:dst];
-    }
-    return YES;
+    
+    [src copyInto:dst];
 }
 
-BOOL set_outputs(NSArray<MLMultiArray *> *outputs,
-                 NSArray<MLMultiArray *> *model_outputs,
-                 NSError * __autoreleasing *error) {
+void set_outputs(NSArray<MLMultiArray *> *outputs, NSArray<MLMultiArray *> *model_outputs) {
     NSEnumerator<MLMultiArray *> *enumerator = [model_outputs objectEnumerator];
     for (MLMultiArray *output in outputs) {
         MLMultiArray *model_output = [enumerator nextObject];
-        if (!::copy(output, model_output, error)) {
-            return NO;
-        }
+        ::copy(model_output, output);
     }
-    
-    return YES;
 }
 
-std::optional<ModelMetadata> get_model_metadata(const inmemoryfs::InMemoryFileSystem& inMemoryFS) {
-    std::error_code error;
-    const auto& file_path = ::canonical_path(ETCoreMLStrings.metadataFileRelativePath);
-    auto buffer = inMemoryFS.get_file_content(file_path, error);
-    if (!buffer) {
+std::optional<MultiArray::DataType> get_data_type(MLMultiArrayDataType data_type) {
+    switch (data_type) {
+        case MLMultiArrayDataTypeFloat16: {
+            return MultiArray::DataType::Float16;
+        }
+        case MLMultiArrayDataTypeFloat32: {
+            return MultiArray::DataType::Float32;
+        }
+        case MLMultiArrayDataTypeFloat64: {
+            return MultiArray::DataType::Float64;
+        }
+        case MLMultiArrayDataTypeInt32: {
+            return MultiArray::DataType::Int32;
+        }
+        default: {
+            return std::nullopt;
+        }
+    }
+}
+
+void copy(MLMultiArray *src, executorchcoreml::MultiArray& dst) {
+    [src getBytesWithHandler:^(const void * _Nonnull bytes, NSInteger size) {
+        if (bytes == dst.data()) {
+            return;
+        }
+        
+        MultiArray::MemoryLayout src_layout(get_data_type(src.dataType).value(), to_vector<size_t>(src.shape), to_vector<ssize_t>(src.strides));
+        MultiArray(const_cast<void *>(bytes), std::move(src_layout)).copy(dst);
+    }];
+}
+
+void set_outputs(std::vector<executorchcoreml::MultiArray>& outputs,
+                 NSArray<MLMultiArray *> *model_outputs) {
+    NSEnumerator<MLMultiArray *> *enumerator = [model_outputs objectEnumerator];
+    for (auto& output : outputs) {
+        MLMultiArray *model_output = [enumerator nextObject];
+        ::copy(model_output, output);
+    }
+}
+
+NSData * _Nullable get_file_data(const inmemoryfs::InMemoryFileSystem *inMemoryFS,
+                                 NSString *fileName) {
+    std::error_code ec;
+    const auto& file_path = ::canonical_path(fileName);
+    __block auto buffer = inMemoryFS->get_file_content(file_path, ec);
+    if (!buffer ||  buffer->size() == 0) {
+        return nil;
+    }
+    
+    NSData *file_data = [[NSData alloc] initWithBytesNoCopy:buffer->data()
+                                                     length:buffer->size()
+                                                deallocator:^(void * _Nonnull __unused bytes, NSUInteger __unused length) {
+        buffer.reset();
+    }];
+    
+    return file_data;
+}
+
+std::optional<ModelMetadata> get_model_metadata(const inmemoryfs::InMemoryFileSystem *inMemoryFS) {
+    NSData *file_data = get_file_data(inMemoryFS, ETCoreMLStrings.metadataFileRelativePath);
+    if (!file_data) {
         return std::nullopt;
     }
     
     std::string contents;
-    contents.assign(reinterpret_cast<char *>(buffer->data()), buffer->size());
+    contents.assign(static_cast<const char *>(file_data.bytes), file_data.length);
     ModelMetadata metadata;
     metadata.from_json_string(std::move(contents));
     if (metadata.is_valid()) {
@@ -256,6 +304,7 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     identifier.append(to_string(compute_units));
 }
 
+#if ET_EVENT_TRACER_ENABLED
 ETCoreMLAsset * _Nullable make_asset(NSURL *url,
                                      NSString *identifier,
                                      NSFileManager *fm,
@@ -267,6 +316,35 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     
     return [[ETCoreMLAsset alloc] initWithBackingAsset:std::move(backingAsset.value())];
 }
+
+NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation_path_to_symbol_name_map(const inmemoryfs::InMemoryFileSystem *inMemoryFS,
+                                                                                                         NSError * __autoreleasing *error) {
+    NSData *file_data = get_file_data(inMemoryFS, ETCoreMLStrings.debugInfoFileRelativePath);
+    if (!file_data) {
+        return nil;
+    }
+    
+    id object = [NSJSONSerialization JSONObjectWithData:file_data options:(NSJSONReadingOptions)0 error:error];
+    if (!object) {
+        return nil;
+    }
+    
+    NSDictionary<NSString *, id> *json_dict = SAFE_CAST(object, NSDictionary);
+    NSMutableDictionary<ETCoreMLModelStructurePath *, NSString *> *result = [NSMutableDictionary dictionaryWithCapacity:json_dict.count];
+    NSDictionary<NSString *, NSArray<id> *> *debug_symbol_to_operation_path_map = SAFE_CAST(json_dict[ETCoreMLStrings.debugSymbolToOperationPathKeyName], NSDictionary);
+    for (NSString *symbol_name in debug_symbol_to_operation_path_map) {
+        NSArray<NSDictionary<NSString *, id> *> *components = SAFE_CAST(debug_symbol_to_operation_path_map[symbol_name], NSArray);
+        if (components.count == 0) {
+            continue;
+        }
+        ETCoreMLModelStructurePath *path = [[ETCoreMLModelStructurePath alloc] initWithComponents:components];
+        result[path] = symbol_name;
+    }
+    
+    return result;
+}
+
+#endif
 } //namespace
 
 @interface ETCoreMLModelManager () {
@@ -274,6 +352,7 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
 }
 
 @property (nonatomic, readonly, strong) NSFileManager *fileManager;
+@property (strong, readonly, nonatomic) ETCoreMLAssetManager* assetManager;
 @property (nonatomic, readonly, strong) NSMutableDictionary<NSValue *, id<ETCoreMLModelExecutor>> *handleToExecutorMap;
 @property (nonatomic, readonly, strong) NSMapTable<NSString *, dispatch_queue_t> *modelIdentifierToLoadingQueueMap;
 @property (nonatomic, readonly, strong) NSMutableDictionary<NSString *, ETCoreMLAsset *> *modelIdentifierToPrewarmedAssetMap;
@@ -410,10 +489,17 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
         return nil;
     }
     
-
+    NSError *localError = nil;
+    NSDictionary<ETCoreMLModelStructurePath *, NSString *> *operation_path_to_symbol_name_map = get_operation_path_to_symbol_name_map(inMemoryFS,
+                                                                                                                                      &localError);
+    if (localError) {
+        ETCoreMLLogError(localError, "Failed to parse debug info file");
+    }
+    
     return [[ETCoreMLModelAnalyzer alloc] initWithCompiledModelAsset:compiledModelAsset
                                                           modelAsset:modelAsset
                                                             metadata:metadata
+                                       operationPathToDebugSymbolMap:operation_path_to_symbol_name_map
                                                        configuration:configuration
                                                         assetManager:self.assetManager
                                                                error:error];
@@ -466,7 +552,7 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
         return nil;
     }
     
-    std::optional<ModelMetadata> metadata = ::get_model_metadata(*inMemoryFS);
+    std::optional<ModelMetadata> metadata = ::get_model_metadata(inMemoryFS.get());
     if (!metadata) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedMetadata,
@@ -569,7 +655,7 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
             
             NSError *prewarmError = nil;
             if (![asset prewarmAndReturnError:&prewarmError]) {
-                ETCoreMLLogError(localError,
+                ETCoreMLLogError(prewarmError,
                                  "%@: Failed to prewarm asset with identifier = %@",
                                  NSStringFromClass(strongSelf.assetManager.class),
                                  asset.identifier);
@@ -585,6 +671,48 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     os_unfair_lock_lock(&_lock);
     [self.modelIdentifierToPrewarmedAssetMap setObject:asset forKey:asset.identifier];
     os_unfair_lock_unlock(&_lock);
+}
+
+- (nullable NSArray<MLMultiArray *> *)executeModelUsingExecutor:(id<ETCoreMLModelExecutor>)executor
+                                                         inputs:(NSArray<MLMultiArray *> *)inputs
+                                                 outputBackings:(NSArray<MLMultiArray *> *)outputBackings
+                                                 loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
+                                                    eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
+                                                          error:(NSError * __autoreleasing *)error {
+    NSError *localError = nil;
+    ETCoreMLModel *model = executor.model;
+    MLPredictionOptions *predictionOptions = ::get_prediction_options(outputBackings, model.orderedOutputNames, error);
+    if (!predictionOptions) {
+        return nil;
+    }
+    
+    id<MLFeatureProvider> inputFeatures = ::get_feature_provider(inputs, model.orderedInputNames, error);
+    if (!inputFeatures) {
+        return nil;
+    }
+    
+    NSArray<MLMultiArray *> *modelOutputs = [executor executeModelWithInputs:inputFeatures
+                                                           predictionOptions:predictionOptions
+                                                             loggingOptions:loggingOptions
+                                                                 eventLogger:eventLogger
+                                                                       error:&localError];
+    // Try without output backings.
+    if (!modelOutputs && predictionOptions.outputBackings.count > 0) {
+        localError = nil;
+        executor.ignoreOutputBackings = YES;
+    }
+    
+    modelOutputs = [executor executeModelWithInputs:inputFeatures
+                                  predictionOptions:predictionOptions
+                                     loggingOptions:loggingOptions
+                                        eventLogger:eventLogger
+                                              error:&localError];
+    
+    if (error) {
+        *error = localError;
+    }
+    
+    return modelOutputs;
 }
 
 - (BOOL)executeModelWithHandle:(ModelHandle *)handle
@@ -605,33 +733,91 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     if (args.count != model.orderedInputNames.count + model.orderedOutputNames.count) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedModel,
-                                      "%@: Model is invalid.",
+                                      "%@: Model is invalid, expected args count to be %lu but got %lu.",
+                                      NSStringFromClass(self.class),
+                                      static_cast<unsigned long>(model.orderedInputNames.count + model.orderedOutputNames.count),
+                                      args.count);
+        return NO;
+    }
+    @autoreleasepool {
+        NSArray<MLMultiArray *> *inputs = [args subarrayWithRange:NSMakeRange(0, model.orderedInputNames.count)];
+        NSArray<MLMultiArray *> *outputs = [args subarrayWithRange:NSMakeRange(model.orderedInputNames.count, args.count - model.orderedInputNames.count)];
+        NSArray<MLMultiArray *> *outputBackings = @[];
+        if (executor.ignoreOutputBackings == NO) {
+            outputBackings = outputs;
+        }
+        
+        NSArray<MLMultiArray *> *modelOutputs = [self executeModelUsingExecutor:executor
+                                                                         inputs:inputs
+                                                                 outputBackings:outputBackings
+                                                                 loggingOptions:loggingOptions
+                                                                    eventLogger:eventLogger
+                                                                          error:error];
+        if (!modelOutputs) {
+            return NO;
+        }
+        
+        ::set_outputs(outputs, modelOutputs);
+    }
+    
+    return YES;
+}
+
+- (BOOL)executeModelWithHandle:(ModelHandle *)handle
+                       argsVec:(const std::vector<executorchcoreml::MultiArray>&)argsVec
+                loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
+                   eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
+                         error:(NSError * __autoreleasing *)error {
+    id<ETCoreMLModelExecutor> executor = [self executorWithHandle:handle];
+    if (!executor) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      0,
+                                      "%@: Model is already unloaded.",
                                       NSStringFromClass(self.class));
         return NO;
     }
     
-    NSArray<MLMultiArray *> *inputs = [args subarrayWithRange:NSMakeRange(0, model.orderedInputNames.count)];
-    NSArray<MLMultiArray *> *outputs = [args subarrayWithRange:NSMakeRange(model.orderedInputNames.count, args.count - model.orderedInputNames.count)];
-    id<MLFeatureProvider> inputFeatures = ::get_feature_provider(inputs, model.orderedInputNames, error);
-    if (!inputFeatures) {
+    ETCoreMLModel *model = executor.model;
+    if (argsVec.size() != model.orderedInputNames.count + model.orderedOutputNames.count) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "%@: Model is invalid, expected args count to be %lu but got %lu.",
+                                      NSStringFromClass(self.class),
+                                      static_cast<unsigned long>(model.orderedInputNames.count + model.orderedOutputNames.count),
+                                      argsVec.size());
         return NO;
     }
     
-    MLPredictionOptions *predictionOptions = ::get_prediction_options(outputs, model.orderedOutputNames, error);
-    if (!predictionOptions) {
-        return NO;
+    std::vector<executorchcoreml::MultiArray> inputArgs(argsVec.begin(), argsVec.begin() + model.orderedInputNames.count);
+    std::vector<executorchcoreml::MultiArray> outputArgs(argsVec.begin() + model.orderedInputNames.count, argsVec.end());
+    @autoreleasepool {
+        NSArray<MLMultiArray *> *inputs = [model prepareInputs:inputArgs error:error];
+        if (!inputs) {
+            return NO;
+        }
+        
+        NSArray<MLMultiArray *> *outputBackings = @[];
+        if (executor.ignoreOutputBackings == NO) {
+            outputBackings = [model prepareOutputBackings:outputArgs error:error];
+        }
+        
+        if (!outputBackings) {
+            return NO;
+        }
+        
+        NSArray<MLMultiArray *> *modelOutputs = [self executeModelUsingExecutor:executor
+                                                                         inputs:inputs
+                                                                 outputBackings:outputBackings
+                                                                 loggingOptions:loggingOptions
+                                                                    eventLogger:eventLogger
+                                                                          error:error];
+        if (!modelOutputs) {
+            return NO;
+        }
+        
+        ::set_outputs(outputArgs, modelOutputs);
+        return YES;
     }
-    
-    NSArray<MLMultiArray *> *modelOutputs = [executor executeModelWithInputs:inputFeatures
-                                                           predictionOptions:predictionOptions
-                                                             loggingOptions:loggingOptions
-                                                                 eventLogger:eventLogger
-                                                                       error:error];
-    if (!outputs) {
-        return NO;
-    }
-    
-    return ::set_outputs(outputs, modelOutputs, error);
 }
 
 - (BOOL)unloadModelWithHandle:(ModelHandle *)handle {
@@ -645,6 +831,10 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     }
     
     return result;
+}
+
+- (BOOL)purgeModelsCacheAndReturnError:(NSError *__autoreleasing *)error {
+    return [self.assetManager purgeAndReturnError:error];
 }
 
 @end

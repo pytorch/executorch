@@ -562,3 +562,15 @@ TEST_F(OpAddScalarOutKernelTest, OptimizedSanityCheck) {
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {6.62, 7.42, 9.92, 13.52}));
 }
+
+TEST_F(OpAddScalarOutKernelTest, DtypeTest_float16_bool_int_float16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Half> tfHalf;
+
+  exec_aten::Tensor self = tfHalf.ones({2, 2});
+  exec_aten::Scalar other = exec_aten::Scalar(true);
+  exec_aten::Scalar alpha = exec_aten::Scalar(1);
+  exec_aten::Tensor out = tfHalf.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfHalf.full({2, 2}, 2.0);
+  op_add_scalar_out(self, other, alpha, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}

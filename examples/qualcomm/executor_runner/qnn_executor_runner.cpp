@@ -13,7 +13,7 @@
  * This tool can run ExecuTorch model files with Qualcomm AI Engine Direct
  * and the portable kernels.
  *
- * User could specify arguments like desired input data, iterfations, etc.
+ * User could specify arguments like desired input data, iterations, etc.
  * Currently we assume that the outputs are all fp32 tensors.
  */
 
@@ -31,6 +31,7 @@
 
 #include <gflags/gflags.h>
 
+#include <chrono>
 #include <fstream>
 #include <memory>
 
@@ -258,7 +259,7 @@ int main(int argc, char** argv) {
       // This can error if the outputs are already pre-allocated. Ignore
       // this error because it doesn't affect correctness, but log it.
       ET_LOG(
-          Error, "ignoring error from set_output_data_ptr(): 0x%" PRIx32, ret);
+          Info, "ignoring error from set_output_data_ptr(): 0x%" PRIx32, ret);
     }
   }
   ET_LOG(Info, "Inputs prepared.");
@@ -411,6 +412,21 @@ int main(int argc, char** argv) {
         method_name,
         status);
     ET_LOG(Info, "Model executed successfully.");
+  }
+
+  // Dump the etdump data containing profiling/debugging data to the specified
+  // file.
+  etdump_result result = etdump_gen.get_etdump_data();
+  if (result.buf != nullptr && result.size > 0) {
+    ET_LOG(
+        Info,
+        "Write etdump to %s, Size = %zu",
+        FLAGS_etdump_path.c_str(),
+        result.size);
+    FILE* f = fopen(FLAGS_etdump_path.c_str(), "w+");
+    fwrite((uint8_t*)result.buf, 1, result.size, f);
+    fclose(f);
+    free(result.buf);
   }
 
   return 0;

@@ -24,15 +24,12 @@ class TestAbs(unittest.TestCase):
             Tester(self.Abs(), inputs)
             .export()
             .check_count({"torch.ops.aten.abs.default": 1})
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_abs_default": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_abs_default"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_abs(self):

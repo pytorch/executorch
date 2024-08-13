@@ -16,7 +16,7 @@ from .qnn_constants import OpStridedSlice, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class StrideSlice(NodeVisitor):
-    target = "aten.slice_copy.Tensor"
+    target = ["aten.slice_copy.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -35,6 +35,7 @@ class StrideSlice(NodeVisitor):
             input_tensor,
             tensor_type,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         output_tensor = self.get_tensor(node, node)
@@ -43,6 +44,7 @@ class StrideSlice(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         dim = cast(int, node.args[1])
@@ -59,7 +61,9 @@ class StrideSlice(NodeVisitor):
         ranges = []
         for i in range(input_tensor_rank):
             if i == dim:
-                ranges.extend([start, end, 1])
+                # find step
+                step = node.args[4] if len(node.args) > 4 else 1
+                ranges.extend([start, end, step])
             else:
                 ranges.extend([0, input_tensor.shape[i], 1])
 

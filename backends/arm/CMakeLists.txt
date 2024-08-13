@@ -19,25 +19,17 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 # Third-party folder and Ethos-U driver inclued
 set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
 set(DRIVER_ETHOSU_INCLUDE_DIR "${THIRD_PARTY_ROOT}/ethos-u-core-driver/include")
-include_directories( ${DRIVER_ETHOSU_INCLUDE_DIR} )
+include_directories(${DRIVER_ETHOSU_INCLUDE_DIR})
 
-set(_arm_baremetal_sources
-  backends/arm/runtime/ArmBackendEthosU.cpp
-  backends/arm/runtime/VelaBinStream.cpp
+set(_arm_baremetal_sources backends/arm/runtime/ArmBackendEthosU.cpp
+                           backends/arm/runtime/VelaBinStream.cpp
 )
 list(TRANSFORM _arm_baremetal_sources PREPEND "${EXECUTORCH_ROOT}/")
 
-add_library(
-  executorch_delegate_ethos_u
-  STATIC ${_arm_baremetal_sources}
+add_library(executorch_delegate_ethos_u STATIC ${_arm_baremetal_sources})
+target_include_directories(
+  executorch_delegate_ethos_u PUBLIC ${_common_include_directories}
 )
 target_include_directories(
-  executorch_delegate_ethos_u
-  PUBLIC
-  ${_common_include_directories}
-)
-target_include_directories(
-  executorch_delegate_ethos_u
-  PUBLIC
-  ${DRIVER_ETHOSU_INCLUDE_DIR}
+  executorch_delegate_ethos_u PUBLIC ${DRIVER_ETHOSU_INCLUDE_DIR}
 )

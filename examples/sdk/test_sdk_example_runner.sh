@@ -18,8 +18,7 @@ cmake_install_executorch_sdk_lib() {
   echo "Installing libexecutorch.a, libportable_kernels.a, libetdump.a, libbundled_program.a"
   rm -rf cmake-out
 
-  retry cmake -DBUCK2="$BUCK" \
-          -DCMAKE_INSTALL_PREFIX=cmake-out \
+  retry cmake -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_SDK=ON \
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \

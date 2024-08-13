@@ -4,48 +4,71 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 # Example script for exporting Llama2 to flatbuffer
 
 import argparse
 import copy
+import json
 import logging
 import shlex
-from dataclasses import dataclass
-
-from functools import partial
+from enum import Enum
+from json import JSONDecodeError
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional, Union
 
 import pkg_resources
+
 import torch
-from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackDynamicallyQuantizedPartitioner,
+
+from executorch.examples.models.llama2.llama_transformer import ModelArgs
+
+from executorch.extension.llm.export.builder import DType, LLMEdgeManager
+
+from executorch.extension.llm.export.partitioner_lib import (
+    get_coreml_partitioner,
+    get_mps_partitioner,
+    get_qnn_partitioner,
+    get_vulkan_partitioner,
+    get_xnnpack_partitioner,
 )
 
-from executorch.examples.models.llama2.llama_transformer import Transformer
-from executorch.exir.backend.backend_details import CompileSpec
+from executorch.extension.llm.export.quantizer_lib import (
+    get_coreml_quantizer,
+    get_pt2e_quantization_params,
+    get_pt2e_quantizers,
+    get_qnn_quantizer,
+)
 
 from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from sentencepiece import SentencePieceProcessor
-from torch.ao.quantization.quantizer import Quantizer
-from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
+
+from ..model_factory import EagerModelFactory
+from .source_transformation.quantize import (
+    get_quant_embedding_transform,
+    get_quant_weight_transform,
 )
-
-from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
-
-from .quantize import EmbeddingOnlyInt8QuantHandler, WeightOnlyInt8QuantHandler
-
+from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
+from .source_transformation.sdpa import (
+    replace_causal_mask,
+    replace_kv_cache_with_simple_kv_cache,
+    replace_sdpa_with_custom_op,
+    replace_sdpa_with_flex_sdpa,
+    replace_sdpa_with_simple_sdpa,
+)
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 pkg_name = __name__
+verbosity_setting = None
+
+
+class WeightType(Enum):
+    LLAMA = "LLAMA"
+    FAIRSEQ2 = "FAIRSEQ2"
 
 
 def set_pkg_name(name: str) -> None:
@@ -57,214 +80,13 @@ def get_resource_path(resource_name) -> str:
     return pkg_resources.resource_filename(pkg_name, resource_name)
 
 
-@dataclass
-class EmbeddingQuantOptions:
-    is_per_channel: bool = True
-    group_size: int = -1
-
-    def __post_init__(self):
-        if self.group_size != -1:
-            raise RuntimeError(
-                "PT2E embedding quantizer does not support groupwise at the moment."
-            )
+def set_verbosity(val):
+    global verbosity_setting
+    verbosity_setting = val
 
 
-@dataclass
-class DynamicQuantLinearOptions:
-    is_per_channel: bool = True
-    is_qc4: bool = False
-
-
-@dataclass
-class PT2EQuantOptions:
-    quantize_embedding: Optional[EmbeddingQuantOptions] = None
-    quantize_linear: Optional[DynamicQuantLinearOptions] = None
-
-
-def _get_pt2e_quantization_params(args) -> Optional[PT2EQuantOptions]:
-    if args.pt2e_quantize is None:
-        return None
-    if args.quantization_mode:
-        raise ValueError("Cannot specify both --quantization_mode and --pt2e_quantize")
-
-    quantization_options = args.pt2e_quantize.split(",")
-    quantization_options = [option.strip() for option in quantization_options]
-    # This can really be improved significantly.
-    # Hopefully we dont release this in its current form.
-    # Just using this for quick experiments.
-    quant_options = None
-    if "embedding" in quantization_options:
-        quant_options = quant_options or PT2EQuantOptions()
-        quant_options.quantize_embedding = EmbeddingQuantOptions()
-    if (
-        "xnnpack_dynamic" in quantization_options
-        and "xnnpack_dynamic_qc4" in quantization_options
-    ):
-        raise RuntimeError(
-            "For dynamic linear quantization via xnnpack quantizer you can chose only qc8 or qc4 option, not both."
-        )
-    if (
-        "xnnpack_dynamic" in quantization_options
-        or "xnnpack_dynamic_qc4" in quantization_options
-    ):
-        quant_options = quant_options or PT2EQuantOptions()
-        quant_options.quantize_linear = DynamicQuantLinearOptions()
-        if "xnnpack_dynamic_qc4" in quantization_options:
-            quant_options.quantize_linear.is_qc4 = True
-
-    return quant_options
-
-
-# TODO: move args is used only get so_file. Refactor this
-def get_pt2e_quantizers(
-    quant_params: Optional[PT2EQuantOptions], args
-) -> List[Quantizer]:
-    """
-    Get a list of quantizers from quantization params
-    Args:
-        args: quant params
-    Returns:
-        A list of quantizers to pass into LlamaBuilder.
-    """
-
-    def check_embedding_byte_registered():
-        try:
-            _ = torch.ops.quantized_decomposed.embedding_byte.out
-        except AttributeError:
-            if args.so_library:
-                print(f"Loading library {args.so_library}")
-                torch.ops.load_library(args.so_library)
-            else:
-                raise RuntimeError(
-                    "Need to specify shared library path to register quantized ops (and their out variants) into EXIR.\n"
-                    "Follow the following steps to build the needed lib via cmake.\n"
-                    'Use `python -c "import torch as _; print(_.__path__)"` to find where torch package is installed.\n'
-                    "Set that as TORCH_PACKAGE_DIR.\n"
-                    "Then from root executorch dir do the following:\n"
-                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DCMAKE_PREFIX_PATH=$TORCH_PACKAGE_DIR -DEXECUTORCH_REGISTER_QUANTIZED_OPS=ON ..) && cmake --build . -j16\n"
-                    'To find the location of the lib: find cmake-out -name "libquantized_ops_aot_lib*"\n'
-                    "Then specify the said library via -s <path to libquantized_ops_aot_lib.so\n"
-                )
-
-    quantizers = []
-    if quant_params is not None and quant_params.quantize_embedding is not None:
-        logging.info("Apply PT2E embedding quantization.")
-        check_embedding_byte_registered()
-        quantizers.append(EmbeddingQuantizer())
-    if quant_params is not None and quant_params.quantize_linear is not None:
-        logging.info("Apply PT2E dynamic linear quantization.")
-        dynamic_quantizer = XNNPACKQuantizer()
-        assert quant_params.quantize_linear is not None
-        if not quant_params.quantize_linear.is_per_channel:
-            raise ValueError(
-                "At the moment only per channel weight quantization is supported."
-            )
-        if quant_params.quantize_linear.is_qc4:
-            operator_config_dynamic = get_symmetric_quantization_config(
-                is_per_channel=True, is_dynamic=True, weight_qmin=-8, weight_qmax=7
-            )
-        else:
-            operator_config_dynamic = get_symmetric_quantization_config(
-                is_per_channel=True, is_dynamic=True
-            )
-        dynamic_quantizer.set_global(operator_config_dynamic)
-        quantizers.append(dynamic_quantizer)
-    return quantizers
-
-
-def materialze_broadcast_of_rope_freq_cis(
-    module: torch.nn.Module,
-):
-    assert isinstance(module, Transformer)
-    assert module.freqs_cos.dim() == 2
-    dim0 = module.freqs_cos.size(0)
-    dim1 = module.freqs_cos.size(1)
-    assert (
-        module.layers[0].attention.n_local_kv_heads
-        == module.layers[0].attention.n_local_heads
-    ), f"For rope freqs to be materialzed for broadcast q, k, v num heads must match. For q got {module.attention.n_kv_heads} for k got {module.attention.n_local_heads} and v got {module.attention.n_local_kv_heads}"
-    num_heads = module.layers[0].attention.n_local_heads
-    module.freqs_cos = module.freqs_cos.view(dim0, 1, dim1)
-    module.freqs_cos = module.freqs_cos.expand(dim0, num_heads, dim1).contiguous()
-    assert module.freqs_sin.dim() == 2
-    assert dim0 == module.freqs_sin.size(
-        0
-    ), f"sin and cos freq table sizes must match. Mismatch found at dim 0: {dim0} vs {module.freqs_sin.size(0)}"
-    assert dim1 == module.freqs_sin.size(
-        1
-    ), f"sin and cos freq table sizes must match. Mismatch found at dim 1: {dim1} vs {module.freqs_sin.size(1)}"
-    module.freqs_sin = module.freqs_sin.view(dim0, 1, dim1)
-    module.freqs_sin = module.freqs_sin.expand(dim0, num_heads, dim1).contiguous()
-    return module
-
-
-def quantize(
-    model: torch.nn.Module,
-    qmode: str,
-    activation_dtype: Optional[DType],
-    checkpoint_path: Optional[Path] = None,
-    # following arguments only available when setting int4 quantization.
-    group_size: int = 128,
-    # following arguments only used for GPTQ
-    calibration_tasks: Optional[list] = None,
-    calibration_limit: int = 5,
-    calibration_seq_length: int = 100,
-    pad_calibration_inputs: bool = False,
-    percdamp: float = 0.01,
-    blocksize: int = 128,
-    tokenizer_path: Optional[Path] = None,
-) -> torch.nn.Module:
-    """
-    Quantizes a model by converting all weights to int8.
-    Args:
-        model: A model to quantize.
-        qmode: quantization mode, e.g. int8, 8da4w, 8da4w-gptq
-    Returns:
-        A quantized model.
-    """
-    if activation_dtype is not None:
-        torch_dtype = activation_dtype.to_torch_dtype()
-    else:
-        torch_dtype = torch.float16
-
-    if checkpoint_path is None:
-        checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
-
-    if calibration_tasks is None:
-        calibration_tasks = ["wikitext"]
-
-    if qmode == "int8":
-        # Add quantization mode options here: group size, bit width, etc.
-        return WeightOnlyInt8QuantHandler(model).quantized_model()
-    elif qmode == "8da4w":
-        from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
-
-        model = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(model)
-        print("quantized model:", model)
-        return model
-    elif qmode == "8da4w-gptq":
-        from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
-
-        if tokenizer_path is None:
-            tokenizer_path = checkpoint_path.parent / "tokenizer.model"
-        assert tokenizer_path.is_file(), tokenizer_path
-        tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
-            model_file=str(tokenizer_path)
-        )
-        gptq_quantizer = Int8DynActInt4WeightGPTQQuantizer(
-            tokenizer,
-            blocksize,
-            percdamp,
-            group_size,
-            calibration_tasks,
-            calibration_limit,
-            calibration_seq_length,
-            pad_calibration_inputs,
-        )
-        model = gptq_quantizer.quantize(model)
-        return model
-    else:
-        raise Exception(f"Unrecognized quantize mode: {qmode}")
+def verbose_export():
+    return verbosity_setting
 
 
 def build_model(
@@ -303,6 +125,18 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--pt2e_quantize",
         default=None,
+        choices=[
+            "xnnpack_dynamic",
+            "xnnpack_dynamic_qc4",
+            "qnn_8a8w",
+            "qnn_16a16w",
+            "qnn_16a4w",
+            "coreml_c4w",
+            "coreml_8a_c8w",
+            "coreml_8a_c4w",
+            "coreml_baseline_8a_c8w",
+            "coreml_baseline_8a_c4w",
+        ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
     parser.add_argument(
@@ -320,23 +154,30 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=f"{ckpt_dir}/params/demo_rand_params.pth",
         help="checkpoint path",
     )
+
+    parser.add_argument(
+        "--checkpoint_dir",
+        default=None,
+        help="checkpoint directory. Use with a sharded checkpoint, not for the standard llama2 model. Note, checkpoint_dir takes precedence over checkpoint if both are set.",
+    )
+
     parser.add_argument(
         "--calibration_tasks",
         nargs="+",
         type=str,
-        default=[],
+        default=None,
         help="Tasks for GPTQ calibration",
     )
     parser.add_argument(
         "--calibration_limit",
         type=int,
-        default=5,
+        default=None,
         help="number of samples used for calibration",
     )
     parser.add_argument(
         "--calibration_seq_length",
         type=int,
-        default=2048,
+        default=None,
         help="Sequence length for GPTQ calibration",
     )
     parser.add_argument(
@@ -357,6 +198,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="Whether to use sdpa_with_kv_cache update op when using kv cache",
+    )
+    parser.add_argument(
+        "--disable_dynamic_shape",
+        dest="enable_dynamic_shape",
+        default=True,  # Enable this by default
+        action="store_false",
+        help="Enable dynamic shape along seq dim. Used for faster prefill",
     )
     parser.add_argument(
         "-p",
@@ -390,7 +238,11 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Use cProfile to profile model export. Results saved to profile_path as a html file.",
     )
     parser.add_argument(
-        "-G", "--group_size", default=None, help="group_size for weight quantization"
+        "-G",
+        "--group_size",
+        type=int,
+        default=None,
+        help="group_size for weight quantization",
     )
 
     parser.add_argument(
@@ -398,8 +250,9 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--dtype-override",
         default="fp32",
         type=str,
-        choices=["fp32"],
-        help="Override the dtype of the model (default is the checkpoint dtype). Options: fp32",
+        choices=["fp32", "fp16"],
+        help="Override the dtype of the model (default is the checkpoint dtype)."
+        "Options: fp32, fp16. Please be aware that only some backends support fp16.",
     )
 
     parser.add_argument(
@@ -446,9 +299,13 @@ def build_args_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def canonical_path(path: str, *, dir: bool = False) -> str:
+def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
 
-    print(f"creating canonical path for {path}")
+    path = str(path)
+
+    if verbose_export():
+        print(f"creating canonical path for {path}")
+
     if not path.startswith("par:"):
         return path
 
@@ -457,7 +314,8 @@ def canonical_path(path: str, *, dir: bool = False) -> str:
         return path[4:]
     else:
         return_val = pkg_resources.resource_filename(pkg_name, path[4:])
-        print(f"canonical name is: {return_val}")
+        if verbose_export():
+            print(f"canonical name is: {return_val}")
         return return_val
 
 
@@ -467,29 +325,39 @@ def export_llama(modelname, args) -> str:
             from executorch.util.python_profiler import CProfilerFlameGraph
 
             with CProfilerFlameGraph(args.profile_path):
-                return _export_llama(modelname, args)
+                builder = _export_llama(modelname, args)
+                assert (
+                    filename := builder.get_saved_pte_filename()
+                ) is not None, "Fail to get file name from builder"
+                return filename
         except ImportError:
             print(
                 "Please run `pip install snakeviz` to install required dependencies for cProfiler flamegraph."
             )
             return ""
     else:
-        return _export_llama(modelname, args)
+        builder = _export_llama(modelname, args)
+        assert (
+            filename := builder.get_saved_pte_filename()
+        ) is not None, "Fail to get file name from builder"
+        return filename
 
 
-def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
+def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
     """
     Helper function for export_llama. Loads the model from checkpoint and params,
-    and sets up a LlamaEdgeManager with initial transforms and dtype conversion.
+    and sets up a LLMEdgeManager with initial transforms and dtype conversion.
 
-    Returns a LlamaEdgeManager prior to calling export_to_edge with quantizers
+    Returns a LLMEdgeManager prior to calling export_to_edge with quantizers
     """
 
     # load model from checkpoint and params.json
-    checkpoint_path = canonical_path(args.checkpoint)
+    checkpoint_path = canonical_path(args.checkpoint) if args.checkpoint else None
+    checkpoint_dir = (
+        canonical_path(args.checkpoint_dir) if args.checkpoint_dir else None
+    )
     params_path = canonical_path(args.params)
     output_dir_path = canonical_path(args.output_dir, dir=True)
-    modelname = "llama2"
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
 
     # dtype override
@@ -505,209 +373,138 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     if args.quantization_mode:
         modelname = f"{modelname}_q"
         transforms.append(
-            partial(
-                quantize,
-                qmode=args.quantization_mode,
-                activation_dtype=dtype_override,
-                checkpoint_path=(
-                    Path(path) if (path := args.checkpoint) is not None else None
-                ),
-                tokenizer_path=(
-                    Path(path) if (path := args.tokenizer_path) is not None else None
-                ),
-                group_size=args.group_size,
-                calibration_tasks=args.calibration_tasks,
-                calibration_limit=args.calibration_limit,
-                calibration_seq_length=args.calibration_seq_length,
-            )
+            get_quant_weight_transform(args, dtype_override, verbose_export())
         )
 
     if args.embedding_quantize:
         modelname = f"{modelname}_e"
-        bitwidth, group_size = args.embedding_quantize.split(",")
-        if group_size == "none" or group_size == "None" or group_size == "0":
-            group_size = None
-        else:
-            group_size = int(group_size)
-        bitwidth = int(bitwidth)
-        transforms.append(
-            lambda model: EmbeddingOnlyInt8QuantHandler(
-                model, bitwidth=bitwidth, group_size=group_size
-            ).quantized_model()
-        )
+        transforms.append(get_quant_embedding_transform(args))
 
     if args.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
+    if args.use_sdpa_with_kv_cache:
+        transforms.append(replace_sdpa_with_custom_op)
+
+    if args.use_kv_cache:
+        if args.qnn:
+            transforms.append(replace_kv_cache_with_simple_kv_cache)
+            transforms.append(replace_sdpa_with_flex_sdpa)
+            transforms.append(replace_causal_mask)
+
+        elif args.coreml or args.mps:
+            # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
+            # to get free perf gain.
+            transforms.append(replace_sdpa_with_simple_sdpa)
+            transforms.append(replace_causal_mask)
     return (
-        load_llama_model(
+        _load_llama_model(
+            modelname=modelname,
             checkpoint=checkpoint_path,
+            checkpoint_dir=checkpoint_dir,
             params_path=params_path,
             use_kv_cache=args.use_kv_cache,
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             weight_type=weight_type,
+            enable_dynamic_shape=args.enable_dynamic_shape,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
+            metadata_str=args.metadata,
         )
         .set_output_dir(output_dir_path)
-        .set_metadata(args.metadata)
-        .source_transform(transforms)
         .to_dtype(dtype_override)
+        .source_transform(transforms)
     )
 
 
-def _export_llama(modelname, args) -> str:  # noqa: C901
-    # export_to_edge
-    pt2e_quant_params = _get_pt2e_quantization_params(args)
-    quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
-    if args.qnn:
-        assert (
-            args.quantization_mode is None
-        ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
-        try:
-            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.quantizer.quantizer`
-            from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
-
-            # reset quantizers and pt2e_quant_params from xnnpack backend
-            pt2e_quant_params = None
-            quantizers = []
-        except ImportError:
-            raise ImportError(
-                "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
-            )
-
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
-        qnn_quantizer = QnnQuantizer()
-        # more custom quantization are supported including 16a4w etc. default to 8bit quantized
-        custom_annotations = ()
-        qnn_quantizer.add_custom_quant_annotations(custom_annotations)
+def get_quantizer_and_quant_params(args):
+    pt2e_quant_params = get_pt2e_quantization_params(
+        args.pt2e_quantize, args.quantization_mode
+    )
+    quantizers = get_pt2e_quantizers(pt2e_quant_params, args.so_library)
+    quant_dtype = None
+    if args.qnn and args.pt2e_quantize:
+        assert len(quantizers) == 0, "Should not enable both xnnpack and qnn"
+        qnn_quantizer, quant_dtype = get_qnn_quantizer(
+            args.pt2e_quantize, args.quantization_mode
+        )
         quantizers.append(qnn_quantizer)
+    if args.coreml and args.pt2e_quantize:
+        assert len(quantizers) == 0, "Should not enable both xnnpack / qnn and coreml"
+        coreml_quantizer = get_coreml_quantizer(args.pt2e_quantize)
+        quantizers.append(coreml_quantizer)
+    logging.info(f"Applying quantizers: {quantizers}")
+    return pt2e_quant_params, quantizers, quant_dtype
 
-    builder_exported_to_edge = _prepare_for_llama_export(
-        modelname, args
-    ).export_to_edge(quantizers)
+
+def _validate_args(args):
+    """
+    TODO: Combine all the backends under --backend args
+    """
+    if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
+        raise ValueError(
+            "Dynamic shape is not supported with coreml, MPS or qnn backends."
+            " Please use --disable_dynamic_shape."
+        )
+
+
+def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
+    _validate_args(args)
+    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
+
+    # export_to_edge
+    builder_exported_to_edge = (
+        _prepare_for_llama_export(modelname, args)
+        .capture_pre_autograd_graph()
+        .pt2e_quantize(quantizers)
+        .export_to_edge()
+    )
+
+    modelname = builder_exported_to_edge.modelname
 
     # to_backend
-    partitioner = None
+    partitioners = []
     if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
-        partitioner = XnnpackDynamicallyQuantizedPartitioner()
+        partitioners.append(get_xnnpack_partitioner())
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
-        # Following changes due to.
-        # 1. We need dynamically quantized partitioner for both pt2e_quantize options
-        #    as well as "qmode 8da4w" which is also dynamic quantizes linear layers.
-        # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
-        partitioner = XnnpackDynamicallyQuantizedPartitioner()
-        # partitioner = XnnpackPartitioner()
+        partitioners.append(get_xnnpack_partitioner())
         modelname = f"xnnpack_{modelname}"
 
     if args.vulkan:
-        assert (
-            args.dtype_override == "fp32" or args.dtype_override is None
-        ), "Vulkan backend does not support non fp32 dtypes at the moment"
-        assert (
-            args.quantization_mode is None
-        ), "Vulkan backend does not support quantization at the moment"
-
-        partitioner = VulkanPartitioner()
+        partitioners.append(
+            get_vulkan_partitioner(
+                args.dtype_override,
+                args.quantization_mode,
+            )
+        )
         modelname = f"vulkan_{modelname}"
 
     if args.mps:
-        assert (
-            args.use_kv_cache is True
-        ), "MPS backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
-        try:
-            # pyre-ignore Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.mps.partition.mps_partitioner`.
-            from executorch.backends.apple.mps.partition.mps_partitioner import (
-                MPSPartitioner,
-            )
-        except ImportError:
-            raise ImportError(
-                "Please install the MPS backend follwing https://pytorch.org/executorch/main/build-run-mps.html"
-            )
-
-        compile_specs = [CompileSpec("use_fp16", bytes([True]))]
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
-        partitioner = MPSPartitioner(compile_specs)
+        partitioners.append(get_mps_partitioner(args.use_kv_cache))
         modelname = f"mps_{modelname}"
 
     if args.coreml:
-        assert (
-            args.use_kv_cache is True
-        ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
-        try:
-            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`.
-            import coremltools as ct
-
-            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.compiler`
-            from executorch.backends.apple.coreml.compiler import CoreMLBackend
-
-            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`
-            from executorch.backends.apple.coreml.partition.coreml_partitioner import (
-                CoreMLPartitioner,
-            )
-        except ImportError:
-            raise ImportError(
-                "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
-            )
-
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
-        compile_specs = CoreMLBackend.generate_compile_specs(
-            compute_precision=ct.precision(ct.precision.FLOAT16.value),
-            compute_unit=ct.ComputeUnit[ct.ComputeUnit.ALL.name.upper()],
-            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
-            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
+        coreml_partitioner = get_coreml_partitioner(
+            args.use_kv_cache, args.pt2e_quantize
         )
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
-        partitioner = CoreMLPartitioner(
-            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
-        )
+        partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
-        assert (
-            args.use_kv_cache is True
-        ), "Qualcomm backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
-        try:
-            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.partition.qnn_partitioner`
-            from executorch.backends.qualcomm.partition.qnn_partitioner import (
-                QnnPartitioner,
+        partitioners.append(
+            get_qnn_partitioner(
+                quant_dtype,
+                args.use_kv_cache,
+                args.pt2e_quantize,
             )
-
-            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.serialization.qnn_compile_spec_schema`
-            from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
-                QcomChipset,
-            )
-
-            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
-            from executorch.backends.qualcomm.utils.utils import (
-                _transform,
-                generate_htp_compiler_spec,
-                generate_qnn_executorch_compiler_spec,
-            )
-        except ImportError:
-            raise ImportError(
-                "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
-            )
-
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        backend_options = generate_htp_compiler_spec(use_fp16=False)
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        partitioner = QnnPartitioner(
-            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-            generate_qnn_executorch_compiler_spec(
-                # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
-                soc_model=QcomChipset.SM8650,  # default to SM8650
-                backend_options=backend_options,
-                debug=False,
-                saver=False,
-            ),
-            skip_node_id_set={},
-            skip_node_op_set={},
         )
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        _transform(builder_exported_to_edge.export_program())
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
+        from executorch.backends.qualcomm.utils.utils import _transform
+
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`, Optional type has no attribute `exported_program`
+        _transform(builder_exported_to_edge.edge_manager.exported_program())
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
@@ -716,18 +513,18 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         logging.info("Generating etrecord")
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-        builder = builder_exported_to_edge.to_backend(partitioner).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
         # Generate ETRecord
         if edge_manager_copy:
             generate_etrecord(
-                etrecord_path="etrecord.bin",
+                et_record="etrecord.bin",
                 edge_dialect_program=edge_manager_copy,
                 executorch_program=builder.export_program,
             )
             logging.info("Generated etrecord.bin")
     else:
-        builder = builder_exported_to_edge.to_backend(partitioner).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
@@ -751,4 +548,119 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
     builder.save_to_pte(output_file)
 
-    return output_file
+    return builder
+
+
+def _load_llama_model_metadata(
+    weight_type: WeightType,
+    use_kv_cache: bool,
+    use_sdpa_with_kv_cache: bool,
+    enable_dynamic_shape: bool,
+    model_args: ModelArgs,
+    metadata_str: Optional[str] = None,
+):
+    is_fairseq2 = weight_type == WeightType.FAIRSEQ2
+    metadata = {
+        "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
+        "get_bos_id": (
+            model_args.bos_idx
+            if model_args.bos_idx is not None
+            else (3 if is_fairseq2 else 1)
+        ),
+        "get_eos_id": (
+            model_args.eos_idx
+            if model_args.eos_idx is not None
+            else (3 if is_fairseq2 else 2)
+        ),
+        "get_max_seq_len": model_args.max_seq_len,
+        "get_n_bos": 1,
+        "get_n_eos": 2 if is_fairseq2 else 1,
+        "get_vocab_size": model_args.vocab_size,
+        "use_kv_cache": use_kv_cache,
+        "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
+        "enable_dynamic_shape": enable_dynamic_shape,
+    }
+    if metadata_str:
+        try:
+            extra = json.loads(metadata_str)
+            for k, v in extra.items():
+                metadata[k] = v
+        except JSONDecodeError:
+            logging.error("Invalid metadata, should be a valid JSON string")
+    return metadata
+
+
+def _load_llama_model(
+    *,
+    modelname: str = "llama2",
+    checkpoint: Optional[str] = None,
+    checkpoint_dir: Optional[str] = None,
+    params_path: str,
+    use_kv_cache: bool = False,
+    use_sdpa_with_kv_cache: bool = False,
+    weight_type: WeightType = WeightType.LLAMA,
+    enable_dynamic_shape: bool = False,
+    verbose: bool = False,
+    max_seq_len: int = 128,
+    metadata_str: Optional[str] = None,
+) -> "LLMEdgeManager":
+    """
+    A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
+    can help further lower the model to ExecuTorch.
+    Returns:
+        An instance of LLMEdgeManager which contains the eager mode model.
+    """
+    assert (
+        checkpoint or checkpoint_dir
+    ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
+    logging.info(
+        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
+    )
+    model, example_inputs, _ = EagerModelFactory.create_model(
+        "llama2",
+        "Llama2Model",
+        checkpoint=checkpoint,
+        checkpoint_dir=checkpoint_dir,
+        params=params_path,
+        use_kv_cache=use_kv_cache,
+        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
+        fairseq2=weight_type == WeightType.FAIRSEQ2,
+        max_seq_len=max_seq_len,
+        enable_dynamic_shape=enable_dynamic_shape,
+    )
+    state_dict = model.state_dict()
+    dtype = state_dict[next(iter(state_dict))].dtype
+    assert dtype in [
+        torch.bfloat16,
+        torch.float16,
+        torch.float32,
+    ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
+    logging.info(f"Loaded model with dtype={dtype}")
+
+    if dtype == torch.bfloat16:
+        dtype = DType.bf16
+    elif dtype == torch.float16:
+        dtype = DType.fp16
+    elif dtype == torch.float32:
+        dtype = DType.fp32
+    else:
+        raise ValueError(f"Unsupported dtype {dtype}")
+
+    return LLMEdgeManager(
+        model=model,
+        modelname=modelname,
+        max_seq_len=model.params.max_seq_len,
+        dtype=dtype,
+        use_kv_cache=use_kv_cache,
+        example_inputs=example_inputs,
+        enable_dynamic_shape=enable_dynamic_shape,
+        verbose=verbose,
+        metadata=_load_llama_model_metadata(
+            weight_type,
+            use_kv_cache,
+            use_sdpa_with_kv_cache,
+            enable_dynamic_shape,
+            model.params,
+            metadata_str,
+        ),
+    )

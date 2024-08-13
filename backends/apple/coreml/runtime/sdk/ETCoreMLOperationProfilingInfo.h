@@ -12,7 +12,8 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /// A class representing the profiling info of an operation.
-__attribute__((objc_subclassing_restricted)) @interface ETCoreMLOperationProfilingInfo : NSObject<NSCopying>
+__attribute__((objc_subclassing_restricted))
+@interface ETCoreMLOperationProfilingInfo : NSObject<NSCopying>
 
 - (instancetype)init NS_UNAVAILABLE;
 

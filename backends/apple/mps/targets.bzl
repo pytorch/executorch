@@ -22,6 +22,7 @@ def define_common_targets(is_xplat = False, platforms = []):
             "-Wno-unused-const-variable",
             "-Wno-unused-variable",
             "-fno-objc-arc",
+            "-std=c++17",
         ],
         "deps": [
             "//executorch/runtime/core:core",
@@ -55,11 +56,11 @@ def define_common_targets(is_xplat = False, platforms = []):
 
     if is_xplat:
         kwargs["fbobjc_frameworks"] = [
+            "Foundation",
             "Metal",
             "MetalPerformanceShaders",
             "MetalPerformanceShadersGraph",
         ]
-        kwargs["fbobjc_ios_target_sdk_version"] = "17.0"
         kwargs["platforms"] = platforms
 
     if runtime.is_oss or is_xplat:

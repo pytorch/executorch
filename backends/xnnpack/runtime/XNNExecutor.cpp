@@ -87,6 +87,12 @@ __ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
     if (i < input_ids_.size()) {
       size_t num_dims = tensor->dim();
       size_t dims[XNN_MAX_TENSOR_DIMS];
+      ET_CHECK_OR_RETURN_ERROR(
+          num_dims <= XNN_MAX_TENSOR_DIMS,
+          InvalidArgument,
+          "XNNPACK backend accepts tensors with at most %d dims, but got %zu",
+          XNN_MAX_TENSOR_DIMS,
+          num_dims);
       for (int d = 0; d < num_dims; ++d) {
         dims[d] = tensor->size(d);
       }

@@ -15,7 +15,7 @@ from .qnn_constants import OpSigmoid, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Sigmoid(NodeVisitor):
-    target = "aten.sigmoid.default"
+    target = ["aten.sigmoid.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -32,6 +32,7 @@ class Sigmoid(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
         sigmoid_input_tensors = [sigmoid_inp_tensor_wrapper]
 
@@ -41,6 +42,7 @@ class Sigmoid(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         sigmoid_output_tensors = [output_tensor_wrapper]
 

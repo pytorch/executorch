@@ -27,6 +27,7 @@ from torch.fx.passes.utils.source_matcher_utils import SourcePartition
 T_QuantPerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 T_DQuantPerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 
+
 log: logging.Logger = logging.getLogger(__name__)
 
 
@@ -237,7 +238,9 @@ def _maybe_duplicate_constant_nodes(
     copied_nodes = set()
     for candidate_node in candidate_nodes:
         # Both tagged exported program and the owning program need to go through the same duplication pass
-        copied_nodes = duplicate_constant_node(tagged_exported_program, candidate_node)
+        copied_nodes = copied_nodes.union(
+            duplicate_constant_node(tagged_exported_program, candidate_node)
+        )
         duplicate_constant_node(owning_program, candidate_node)
     candidate_node_with_copies = candidate_nodes.union(copied_nodes)
     _assign_new_tag(tagged_exported_program, candidate_node_with_copies)
@@ -280,9 +283,16 @@ def get_delegates(graph: torch.fx.Graph) -> List[torch.fx.Node]:
     ]
 
 
-def print_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
+def print_delegated_graph(graph_module: torch.fx.GraphModule) -> None:
     """
-    Print the graph of including lowered_module (both backend id and original graph) together with the graph module. Example output:
+    Print the formatted graph string.
+    """
+    print(format_delegated_graph(graph_module))
+
+
+def format_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
+    """
+    Return the formatted graph string of including lowered_module (both backend id and original graph) together with the graph module. Example output:
     graph():
         %arg0_1 : [num_users=2] = placeholder[target=arg0_1]
         %arg1_1 : [num_users=2] = placeholder[target=arg1_1]
@@ -340,28 +350,42 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
     subgraph. Throw error when const/param/buffers is used across different partitions. That is the
     underlying data will be owned by multiple delegates.
     """
+    mutated_buffer = set()
     for node in edge_program.graph.nodes:
-        # go through const/param/buffer nodes
-        is_attr = (
-            node.op == "placeholder"
-            and (
-                is_param(edge_program, node)
-                or is_buffer(edge_program, node)
-                or is_lifted_tensor_constant(edge_program, node)
-            )
-        ) or (node.op == "get_attr")
-        # if all users of const/param/buffer nodes are partitioned then partition
-        if is_attr:
-            user_tags = set()
-            for user in node.users:
-                user_tags.add(user.meta.get("delegation_tag", None))
-            assert len(user_tags) <= 1, (
-                "Const/Param/Buffer users have multiple tags because one constant data can't "
-                "be owned by multiple backends. Consider duplicating the constant data so that "
-                "each user is unique"
-            )
-            if len(user_tags) == 1:
-                node.meta["delegation_tag"] = user_tags.pop()
+        if node.op == "placeholder" and (
+            is_param(edge_program, node)
+            or is_buffer(edge_program, node)
+            or is_lifted_tensor_constant(edge_program, node)
+        ):
+            for node_user in node.users:
+                if node_user.name in edge_program.graph_signature.buffers_to_mutate:
+                    logging.info(
+                        "The buffer node is a mutated buffer node, which is not constant."
+                    )
+                    mutated_buffer.add(node)
+
+    for node in edge_program.graph.nodes:
+        # go through const/param/buffer nodes, if all users of const/param/buffer nodes are partitioned then partition
+        if node.op == "placeholder" and (
+            is_param(edge_program, node)
+            or is_buffer(edge_program, node)
+            or is_lifted_tensor_constant(edge_program, node)
+        ):
+            if node not in mutated_buffer:
+                user_tags = set()
+                for user in node.users:
+                    user_tag = user.meta.get("delegation_tag", None)
+                    if user_tag is not None:
+                        user_tags.add(user_tag)
+                if len(user_tags) > 1:
+                    logging.info(
+                        f"The data node is used across multiple partitions, including {user_tags}. "
+                        "If the data is too large and it's not preferred to copy, please tag the "
+                        "constant node like node.['no_copy'] = True and they won't be copied."
+                    )
+                # tag the data node with the same tag as the last user
+                if len(user_tags) > 0:
+                    node.meta["delegation_tag"] = user_tags.pop()
 
 
 # TODO - style: use templated types

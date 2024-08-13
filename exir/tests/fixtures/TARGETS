@@ -1,7 +1,0 @@
-load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
-
-oncall("executorch")
-
-export_file(name = "basic_sin_max.txt")
-
-export_file(name = "composite_delegate.txt")

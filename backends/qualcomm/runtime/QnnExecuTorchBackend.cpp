@@ -11,27 +11,24 @@
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/schema_generated.h>
-
-#include <string>
 namespace torch {
 namespace executor {
 // ========== Public method implementations =========================
 using namespace qnn;
 using namespace qnn_delegate;
 constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
-
 Result<DelegateHandle*> QnnExecuTorchBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
     ArrayRef<CompileSpec> compile_specs) const {
   // covert SizedBuffer to qnn ExecuTorch option
   QnnExecuTorchContextBinary qnn_context_blob;
-  const qnn_delegate::QnnExecuTorchOptions* qnn_executorch_options;
+  const qnn_delegate::QnnExecuTorchOptions* qnn_executorch_options = nullptr;
 
   qnn_context_blob.buffer = const_cast<void*>(processed->data());
   qnn_context_blob.nbytes = processed->size();
 
-  // covert CompileSpec to qnn ExecuTorch option
+  // convert CompileSpec to qnn ExecuTorch option
   for (auto& compile_spec : compile_specs) {
     if (std::strcmp(compile_spec.key, QNN_COMPILE_SPEC) == 0)
       qnn_executorch_options =
@@ -193,8 +190,9 @@ Error QnnExecuTorchBackend::execute(
     if (qnn_manager->RegisterMem(
             args[i]->toTensor().mutable_data_ptr(), input_tensors[i]) !=
         Error::Ok) {
+      // update data ptr only should be fine
       input_tensors[i]->FillDataBuffer(
-          args[i]->toTensor().const_data_ptr(), true /* copy_data */);
+          args[i]->toTensor().const_data_ptr(), false /* copy_data */);
     }
     input_tensor_structs.push_back(input_tensors[i]->CloneTensorStruct());
   }

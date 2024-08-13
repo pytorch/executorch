@@ -8,34 +8,39 @@
 # https://github.com/pytorch/pytorch/blob/main/cmake/Dependencies.cmake
 set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
 
-# --- cpuinfo
-set(CPUINFO_SOURCE_DIR "${THIRD_PARTY_ROOT}/cpuinfo")
-set(CPUINFO_BUILD_TOOLS OFF CACHE BOOL "")
-set(CPUINFO_BUILD_UNIT_TESTS OFF CACHE BOOL "")
-set(CPUINFO_BUILD_MOCK_TESTS OFF CACHE BOOL "")
-set(CPUINFO_BUILD_BENCHMARKS OFF CACHE BOOL "")
-set(CPUINFO_LIBRARY_TYPE "static" CACHE STRING "")
-set(CPUINFO_LOG_LEVEL "error" CACHE STRING "")
-set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
-add_subdirectory("${CPUINFO_SOURCE_DIR}")
-list(APPEND xnnpack_third_party cpuinfo)
-
-# --- pthreadpool
-set(PTHREADPOOL_SOURCE_DIR "${THIRD_PARTY_ROOT}/pthreadpool")
-set(PTHREADPOOL_BUILD_TESTS OFF CACHE BOOL "")
-set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "")
-set(PTHREADPOOL_LIBRARY_TYPE "static" CACHE STRING "")
-set(PTHREADPOOL_ALLOW_DEPRECATED_API ON CACHE BOOL "")
-add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
-list(APPEND xnnpack_third_party pthreadpool)
-
 # --- XNNPACK
+
+# Setting this global PIC flag for all XNNPACK targets. This is needed for
+# Object libraries within XNNPACK which must be PIC to successfully link this
+# static libXNNPACK
+set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+    ${CMAKE_POSITION_INDEPENDENT_CODE}
+)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 set(XNNPACK_SOURCE_DIR "${THIRD_PARTY_ROOT}/XNNPACK")
 set(XNNPACK_INCLUDE_DIR "${XNNPACK_SOURCE_DIR}/include")
-set(XNNPACK_LIBRARY_TYPE "static" CACHE STRING "")
-set(XNNPACK_BUILD_BENCHMARKS OFF CACHE BOOL "")
-set(XNNPACK_BUILD_TESTS OFF CACHE BOOL "")
-set(XNNPACK_ENABLE_AVXVNNI OFF CACHE BOOL "")
+set(XNNPACK_LIBRARY_TYPE
+    "static"
+    CACHE STRING ""
+)
+set(XNNPACK_BUILD_BENCHMARKS
+    OFF
+    CACHE BOOL ""
+)
+set(XNNPACK_BUILD_TESTS
+    OFF
+    CACHE BOOL ""
+)
+set(XNNPACK_ENABLE_AVXVNNI
+    OFF
+    CACHE BOOL ""
+)
 add_subdirectory("${XNNPACK_SOURCE_DIR}")
 include_directories(SYSTEM ${XNNPACK_INCLUDE_DIR})
 list(APPEND xnnpack_third_party XNNPACK)
+
+# Revert PIC Flag to what it originally was
+set(CMAKE_POSITION_INDEPENDENT_CODE
+    ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG}
+)

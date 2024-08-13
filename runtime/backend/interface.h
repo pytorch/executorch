@@ -67,13 +67,16 @@ class PyTorchBackendInterface {
    *     memory.
    * @param[in] compile_specs The exact same compiler specification that
    *     was used ahead-of-time to produce `processed`.
-   * @param[in] memory_allocator The allocator to allocate from if necessary.
    *
    * @returns On success, an opaque handle representing the the method
    *     implemented by the delegate. This handle is passed to `execute()` and
    *     `destroy()`, and the memory it points to is owned by the backend.
    *     Typically points to a backend-private class/struct.
-   * @returns On error, a value other than Error:Ok.
+   * @returns On error, returns an error code other than Error::Ok. If the
+   *     compiled unit (the preprocessed result from ahead of time) is not
+   *     compatible with the current backend runtime, return the error code
+   *     Error::DelegateInvalidCompatibility. Other backend delegate
+   *     specific error codes can be found in error.h.
    */
   __ET_NODISCARD virtual Result<DelegateHandle*> init(
       BackendInitContext& context,
@@ -126,7 +129,7 @@ class BackendRegistry {
   /**
    * Registers the Backend object (i.e. string name and PyTorchBackendInterface
    * pair) so that it could be called via the name during the runtime.
-   * @param[in] name Name of the user-defined backend delegate.
+   * @param[in] backend Backend object of the user-defined backend delegate.
    * @retval Error code representing whether registration was successful.
    */
   __ET_NODISCARD Error register_backend(const Backend& backend);

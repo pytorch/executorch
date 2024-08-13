@@ -11,12 +11,33 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS,
+    QCOM_AXIS_ORDER,
+    QCOM_BITWIDTH,
+    QCOM_DTYPE,
+    QCOM_ENCODING,
+    QCOM_OFFSET,
+    QCOM_QUANT_ATTRS,
+    QCOM_QUANT_MAX,
+    QCOM_QUANT_MIN,
+    QCOM_REQUANTIZE,
+    QCOM_SCALE,
+    QCOM_SCALE_OFFSET,
+    QCOM_SCALES,
+    QCOM_ZERO_POINT,
+    QCOM_ZERO_POINTS,
+)
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from .qnn_constants import QNN_uint16
-
-from .utils import get_parameter, is_graph_input, is_graph_output, is_parameter
+from .utils import (
+    deduce_dtype,
+    get_parameter,
+    is_graph_input,
+    is_graph_output,
+    is_parameter,
+)
 
 
 QNN_QUANT_TYPE_MAP = {
@@ -26,16 +47,17 @@ QNN_QUANT_TYPE_MAP = {
     # Note that there is no int64 tensor data type in Qnn.
     torch.int64: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UNDEFINED,
     torch.uint8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8,
-    QNN_uint16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_16,
+    torch.uint16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_16,
 }
 QNN_TENSOR_TYPE_MAP = {
+    torch.bool: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
     torch.float32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
     torch.int8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_8,
     torch.int16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_16,
     torch.int32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_32,
     torch.int64: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_64,
     torch.uint8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_8,
-    QNN_uint16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_16,
+    torch.uint16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_16,
     float: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
 }
 
@@ -84,15 +106,15 @@ class NodeVisitor:
             return node.meta["val"]
 
         tensor = _get_tensor(input_node, idx)
-        if len(tensor.shape) != 0 and "axis_order" in op_node.meta:
-            tensor = tensor.permute(dims=op_node.meta["axis_order"]).contiguous()
+        if len(tensor.shape) != 0 and QCOM_AXIS_ORDER in op_node.meta:
+            tensor = tensor.permute(dims=op_node.meta[QCOM_AXIS_ORDER]).contiguous()
         return tensor
 
     def make_qnn_per_channel_config(self, node: torch.fx.Node, quant_attrs: Dict):
         quant_config = copy.deepcopy(quant_attrs)
 
-        scales = quant_attrs["scales"]
-        zero_points = quant_attrs["zero_points"]
+        scales = quant_attrs[QCOM_SCALES]
+        zero_points = quant_attrs[QCOM_ZERO_POINTS]
         assert len(scales) == len(
             zero_points
         ), f"Per channel encoding of node {node}, has different size for scales {len(scales)} and zero_points {len(zero_points)}"
@@ -110,18 +132,18 @@ class NodeVisitor:
             "convolution" in user_0.target.__name__
             and list(node.users)[0].args[1] == node
         ):
-            quant_config["axis"] = 3
+            quant_config[QCOM_AXIS] = 3
 
         else:
-            quant_config["axis"] = quant_attrs["axis"]
+            quant_config[QCOM_AXIS] = quant_attrs[QCOM_AXIS]
 
-        quant_config["scale_offset"] = scale_offset
+        quant_config[QCOM_SCALE_OFFSET] = scale_offset
         # special case for 4 bits
         if (
-            quant_config["dtype"] == torch.int8
-            and quant_config["quant_max"] - quant_config["quant_min"] <= 15
+            quant_config[QCOM_DTYPE] == torch.int8
+            and quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN] <= 15
         ):
-            quant_config["bitwidth"] = 4
+            quant_config[QCOM_BITWIDTH] = 4
             return (
                 PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
                 quant_config,
@@ -134,13 +156,13 @@ class NodeVisitor:
     def make_qnn_per_tensor_config(self, quant_attrs: Dict):
         quant_config = copy.deepcopy(quant_attrs)
         # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
-        quant_config["offset"] = -quant_attrs["zero_point"]
+        quant_config[QCOM_OFFSET] = -quant_attrs[QCOM_ZERO_POINT]
         # special case for 4 bits
         if (
-            quant_config["dtype"] == torch.int8
-            and quant_config["quant_max"] - quant_config["quant_min"] <= 15
+            quant_config[QCOM_DTYPE] == torch.int8
+            and quant_config[QCOM_QUANT_MAX] - quant_config[QCOM_QUANT_MIN] <= 15
         ):
-            quant_config["bitwidth"] = 4
+            quant_config[QCOM_BITWIDTH] = 4
             return (
                 PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET,
                 quant_config,
@@ -150,44 +172,39 @@ class NodeVisitor:
             quant_config,
         )
 
-    def get_quant_encoding_conf(self, node: torch.fx.Node) -> Tuple[Any, Dict]:
-        if not node.meta.get("quant_attrs", None):
+    def get_quant_encoding_conf(
+        self, node: torch.fx.Node, is_input_tensor: bool = False
+    ) -> Tuple[Any, Dict]:
+        if not node.meta.get(QCOM_QUANT_ATTRS, None):
             return (
                 PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_UNDEFINED,
                 {},
             )
-
         quant_attrs = (
-            node.meta["requantize"]["dq_attrs"]
-            if "requantize" in node.meta
-            else node.meta["quant_attrs"]
+            node.meta[QCOM_REQUANTIZE]
+            if QCOM_REQUANTIZE in node.meta and is_input_tensor
+            else node.meta[QCOM_QUANT_ATTRS]
         )
-
-        if quant_attrs["encoding"] in PER_CHANNEL_ENCODING:
+        if quant_attrs[QCOM_ENCODING] in PER_CHANNEL_ENCODING:
             return self.make_qnn_per_channel_config(node, quant_attrs)
 
         return self.make_qnn_per_tensor_config(quant_attrs)
 
     def get_quant_tensor_value(
-        self, tensor: torch.Tensor, quant_attrs: Dict, dtype, bitwidth
+        self, tensor: torch.Tensor, quant_attrs: Dict, quant_configs: Dict
     ) -> torch.Tensor:
-        if quant_attrs["encoding"] in PER_TENSOR_ENCODING:
-            scale = quant_attrs["scale"]
-            zero_point = quant_attrs["zero_point"]
+        if quant_attrs[QCOM_ENCODING] in PER_TENSOR_ENCODING:
+            scale = quant_attrs[QCOM_SCALE]
+            zero_point = quant_attrs[QCOM_ZERO_POINT]
         else:  # per channel case
-            scale = quant_attrs["scales"]
-            zero_point = quant_attrs["zero_points"]
+            scale = quant_attrs[QCOM_SCALES]
+            zero_point = quant_attrs[QCOM_ZERO_POINTS]
 
-        # To bypass torch.uint16 quantization is not supported
-        dtype = (
-            torch.int32
-            if dtype == PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_16
-            else quant_attrs["dtype"]
-        )
+        dtype = quant_configs[QCOM_DTYPE]
 
-        tensor = tensor.div(scale).add(zero_point).round().to(dtype)
+        tensor = tensor.div(scale + 1e-6).add(zero_point).round().to(dtype)
         # Make the backends access data correctly
-        if bitwidth == 4:
+        if quant_configs.get(QCOM_BITWIDTH) == 4:
             mask = torch.full(tensor.size(), 0x0F, dtype=torch.int8)
             tensor = torch.bitwise_and(mask, tensor)
         return tensor
@@ -221,27 +238,12 @@ class NodeVisitor:
         self,
         tensor: torch.Tensor,
         quant_config: Dict,
-        is_tensor: bool,
     ) -> PyQnnWrapper.Qnn_TensorType_t:
-        if quant_config and is_tensor:
-            quant_range = quant_config["quant_max"] - quant_config["quant_min"]
-            unsigned = quant_config["quant_min"] >= 0
-            if quant_range <= torch.iinfo(torch.int8).max - torch.iinfo(torch.int8).min:
-                if unsigned:
-                    quant_config["dtype"] = torch.uint8
-                else:
-                    quant_config["dtype"] = torch.int8
-            elif (
-                quant_range
-                <= torch.iinfo(torch.int16).max - torch.iinfo(torch.int16).min
-            ):
-                if unsigned:
-                    quant_config["dtype"] = QNN_uint16
-                else:
-                    quant_config["dtype"] = torch.int16
-            return QNN_QUANT_TYPE_MAP[quant_config["dtype"]]
-        else:
-            return QNN_TENSOR_TYPE_MAP[tensor.dtype]
+        if quant_config:
+            quant_config[QCOM_DTYPE] = deduce_dtype(tensor, quant_config)
+            return QNN_QUANT_TYPE_MAP[quant_config[QCOM_DTYPE]]
+
+        return QNN_TENSOR_TYPE_MAP[tensor.dtype]
 
     def define_custom_tensor_wrapper(
         self,
@@ -253,10 +255,11 @@ class NodeVisitor:
         dims: torch.Size,
         tensor: torch.Tensor,
         is_fake_tensor: bool,
-        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
+        wrapper_idx: int = 0,
     ) -> PyQnnWrapper.TensorWrapper:
-        if node_name in nodes_to_wrappers:
-            return nodes_to_wrappers[node_name]
+        if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
+            return cached
         if is_fake_tensor:
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
                 node_name,
@@ -272,30 +275,47 @@ class NodeVisitor:
         else:
             # Can implement non-fake tensor when there is a need
             return None
-        nodes_to_wrappers[node_name] = tensor_wrapper
+        nodes_to_wrappers[node_name][wrapper_idx] = tensor_wrapper
         return tensor_wrapper
 
-    def define_value(
+    def define_tensor(
         self,
         node: torch.fx.Node,
         tensor: torch.Tensor,
         tensor_type: PyQnnWrapper.Qnn_TensorType_t,
-        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
-        is_tensor: bool,
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
+        is_input_tensor: bool,
         node_name: str = None,
+        wrapper_idx: int = 0,
     ) -> PyQnnWrapper.TensorWrapper:
+        """
+        Covert torch.Tensor to TensorWrapper
+
+        Args:
+            node: EdgeIR Node
+            tensor: EdgeIR Tensor
+            tensor_type: QNN tensor type
+            nodes_to_wrappers: Set contains edge_graph values(node targets)
+            is_input_tensor: Whether tensor is a fake input tensor relatively to
+                             the op builder that is calling this function
+        """
         if node_name is None:
             node_name = node.name
 
-        if node_name in nodes_to_wrappers:
-            return nodes_to_wrappers[node_name]
-        tensor_name = node.name
+        if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
+            return cached
+
+        tensor_name = f"{node.name}_{wrapper_idx}"
+        if is_graph_input(node, self.edge_program):
+            tensor_name = "input_" + str(self.external_ids[node]) + "_" + tensor_name
         if is_graph_output(node):
             tensor_name = "output_" + tensor_name
         dims = [1] if len(tensor.size()) == 0 else tensor.size()
         tensor_type = self.get_tensor_type(node, tensor_type)
-        quant_encoding, quant_configs = self.get_quant_encoding_conf(node)
-        dtype = self.get_data_type(tensor, quant_configs, is_tensor)
+        quant_encoding, quant_configs = self.get_quant_encoding_conf(
+            node, is_input_tensor
+        )
+        dtype = self.get_data_type(tensor, quant_configs)
         if isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
                 tensor_name,
@@ -312,9 +332,8 @@ class NodeVisitor:
             if quant_configs:
                 tensor = self.get_quant_tensor_value(
                     tensor,
-                    node.meta["quant_attrs"],
-                    dtype,
-                    quant_configs.get("bitwidth"),
+                    node.meta[QCOM_QUANT_ATTRS],
+                    quant_configs,
                 )
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
                 tensor_name,
@@ -327,59 +346,13 @@ class NodeVisitor:
                 tensor.detach().numpy(),
                 True,
             )
-        nodes_to_wrappers[node_name] = tensor_wrapper
+        nodes_to_wrappers[node_name][wrapper_idx] = tensor_wrapper
         return tensor_wrapper
-
-    def define_scalar(
-        self,
-        node: torch.fx.Node,
-        tensor: torch.Tensor,
-        tensor_type: PyQnnWrapper.Qnn_TensorType_t,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
-    ) -> PyQnnWrapper.TensorWrapper:
-        """
-        Covert constant scalar to TensorWrapper
-
-        Args:
-            tensor: EdgeIR Tensor
-            nodes_to_wrappers: Set contains edge_graph values(node targets)
-        """
-        return self.define_value(
-            node,
-            tensor,
-            tensor_type,
-            nodes_to_wrappers,
-            is_tensor=False,
-        )
-
-    def define_tensor(
-        self,
-        node: torch.fx.Node,
-        tensor: torch.Tensor,
-        tensor_type: PyQnnWrapper.Qnn_TensorType_t,
-        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
-        node_name: str = None,
-    ) -> PyQnnWrapper.TensorWrapper:
-        """
-        Covert torch.Tensor to TensorWrapper
-
-        Args:
-            tensor: EdgeIR Tensor
-            nodes_to_wrappers: Set contains edge_graph values(node targets)
-        """
-        return self.define_value(
-            node,
-            tensor,
-            tensor_type,
-            nodes_to_wrappers,
-            is_tensor=True,
-            node_name=node_name,
-        )
 
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
+        nodes_to_wrappers: Dict[str, Dict[int, PyQnnWrapper.TensorWrapper]],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         """Convert torch.fx.Node to OpWrapper"""
         raise NotImplementedError("NodeVisitor must be extended!")
@@ -396,7 +369,8 @@ def register_node_visitor(visitor):
         and issubclass(visitor, NodeVisitor)
         and hasattr(visitor, "target")
     ), f"Illformed NodeVisitor subclass, can't register!, got: {visitor}"
-    _node_visitor_dict[visitor.target] = visitor
+    for target in visitor.target:
+        _node_visitor_dict[target] = visitor
 
 
 def generate_node_to_external_map(
@@ -410,10 +384,8 @@ def generate_node_to_external_map(
         if is_graph_input(node, edge_program):
             node_to_external_map[node] = len(node_to_external_map)
     for node in edge_program.graph_module.graph.nodes:
-        if node.op == "output":
-            for output_nodes in node.args:
-                for output_node in output_nodes:
-                    node_to_external_map[output_node] = len(node_to_external_map)
+        if is_graph_output(node):
+            node_to_external_map[node] = len(node_to_external_map)
     return node_to_external_map
 
 

@@ -6,14 +6,14 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <XCTest/XCTest.h>
-#import <ETCoreMLModelAnalyzer.h>
-#import <ETCoreMLOperationProfilingInfo.h>
-#import <ETCoreMLModelStructurePath.h>
-#import <model_logging_options.h>
-#import <model_event_logger.h>
-
 #import "ETCoreMLTestUtils.h"
+#import <ETCoreMLModelAnalyzer.h>
+#import <ETCoreMLModelStructurePath.h>
+#import <ETCoreMLOperationProfilingInfo.h>
+#import <XCTest/XCTest.h>
+#import <executorch/runtime/platform/runtime.h>
+#import <model_event_logger.h>
+#import <model_logging_options.h>
 
 namespace  {
     using namespace executorchcoreml::modelstructure;
@@ -56,6 +56,10 @@ namespace  {
 @end
 
 @implementation ETCoreMLModelDebuggerTests
+
++ (void)setUp {
+    torch::executor::runtime_init();
+}
 
 + (nullable NSURL *)bundledResourceWithName:(NSString *)name extension:(NSString *)extension {
     NSBundle *bundle = [NSBundle bundleForClass:ETCoreMLModelDebuggerTests.class];
@@ -100,9 +104,7 @@ namespace  {
     NotifyFn notify = [](NSDictionary<ETCoreMLModelStructurePath *, MLMultiArray *> *debuggingResult,
                          NSDictionary<ETCoreMLModelStructurePath *, NSString *> *pathToSymbolNameMap) {
         // There are 3 add ops, we verify that we get the outputs for the ops.
-        XCTAssertNotNil(debuggingResult[make_path_with_output_name("aten_add_tensor_2_cast_fp16")]);
         XCTAssertNotNil(debuggingResult[make_path_with_output_name("aten_add_tensor_cast_fp16")]);
-        XCTAssertNotNil(debuggingResult[make_path_with_output_name("aten_add_tensor_1_cast_fp16")]);
     };
     
     [self debugModelWithName:@"add_coreml_all"

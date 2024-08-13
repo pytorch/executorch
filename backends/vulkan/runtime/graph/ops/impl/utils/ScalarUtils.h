@@ -8,15 +8,11 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
-
-#include <ATen/native/vulkan/api/api.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 template <typename T>
 T extract_scalar(const Value& value) {
@@ -32,8 +28,4 @@ T extract_scalar(const Value& value) {
   VK_THROW("Cannot extract scalar from Value with type ", value.type());
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

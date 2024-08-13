@@ -10,8 +10,9 @@ import tempfile
 import unittest
 
 import torch
-from executorch.backends.arm.test.test_models import TosaProfile
-from executorch.backends.arm.test.tester.arm_tester import ArmBackendSelector, ArmTester
+from executorch.backends.arm.test import common
+
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -25,7 +26,7 @@ class Linear(torch.nn.Module):
         bias: bool = True,
     ):
         super().__init__()
-        self.inputs = (torch.ones(5, 10, 25, in_features),)
+        self.inputs = (torch.randn(5, 10, 25, in_features),)
         self.fc = torch.nn.Linear(
             in_features=in_features,
             out_features=out_features,
@@ -40,13 +41,14 @@ class Linear(torch.nn.Module):
 
 
 class TestDumpPartitionedArtifact(unittest.TestCase):
+    """Tests dumping the partition artifact in ArmTester. Both to file and to stdout."""
+
     def _tosa_MI_pipeline(self, module: torch.nn.Module, dump_file=None):
         (
             ArmTester(
                 module,
-                inputs=module.get_inputs(),
-                profile=TosaProfile.MI,
-                backend=ArmBackendSelector.TOSA,
+                example_inputs=module.get_inputs(),
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
             .to_edge()
@@ -59,9 +61,8 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         (
             ArmTester(
                 module,
-                inputs=module.get_inputs(),
-                profile=TosaProfile.BI,
-                backend=ArmBackendSelector.TOSA,
+                example_inputs=module.get_inputs(),
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
             .export()
@@ -94,3 +95,57 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
         if self._is_tosa_marker_in_file(tmp_file):
             return  # Implicit pass test
         self.fail("File does not contain TOSA dump!")
+
+
+class TestNumericalDiffPrints(unittest.TestCase):
+    """Tests trigging the exception printout from the ArmTester's run and compare function."""
+
+    def test_numerical_diff_prints(self):
+        model = Linear(20, 30)
+        tester = (
+            ArmTester(
+                model,
+                example_inputs=model.get_inputs(),
+                compile_spec=common.get_tosa_compile_spec(),
+            )
+            .quantize()
+            .export()
+            .to_edge()
+            .partition()
+            .to_executorch()
+        )
+        # We expect an assertion error here. Any other issues will cause the
+        # test to fail. Likewise the test will fail if the assertion error is
+        # not present.
+        try:
+            # Tolerate 0 difference => we want to trigger a numerical diff
+            tester.run_method_and_compare_outputs(atol=0, rtol=0, qtol=0)
+        except AssertionError:
+            pass  # Implicit pass test
+        else:
+            self.fail()
+
+
+class TestDumpOperatorsAndDtypes(unittest.TestCase):
+    def test_dump_ops_and_dtypes(self):
+        model = Linear(20, 30)
+        (
+            ArmTester(
+                model,
+                example_inputs=model.get_inputs(),
+                compile_spec=common.get_tosa_compile_spec(),
+            )
+            .quantize()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .export()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .to_edge()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .partition()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+        )
+        # Just test that there are no execeptions.

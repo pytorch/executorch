@@ -15,7 +15,7 @@ from .qnn_constants import OpElementWiseMultiply, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Mul(NodeVisitor):
-    target = "aten.mul.Tensor"
+    target = ["aten.mul.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -31,6 +31,7 @@ class Mul(NodeVisitor):
             out_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         mul_output_tensors = [output_tensor_wrapper]
 
@@ -45,6 +46,7 @@ class Mul(NodeVisitor):
                 input_tensor,
                 tensor_type,
                 nodes_to_wrappers,
+                is_input_tensor=True,
             )
             mul_input_tensors.append(input_tensor_wrapper)
 

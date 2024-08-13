@@ -25,50 +25,6 @@
 namespace {
 using namespace executorchcoreml;
 static constexpr NSInteger MAX_MODEL_OUTPUTS_COUNT = 50;
-
-NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_symbol_name_map(ETCoreMLAsset *model_asset,
-                                                                                               NSFileManager *fm,
-                                                                                               NSError * __autoreleasing *error) {
-    auto package_info = ModelPackageInfo::make(model_asset.contentURL, fm, error);
-    if (!package_info) {
-        return nil;
-    }
-    
-    const auto& items = package_info.value().items;
-    auto debug_symbols_file_name = std::string(ETCoreMLStrings.debugSymbols.UTF8String);
-    auto it = std::find_if(items.begin(), items.end(), [&debug_symbols_file_name](const auto& pair) {
-        return pair.second.name == debug_symbols_file_name;
-    });
-    
-    if (it == items.end()) {
-        return nil;
-    }
-    
-    NSURL *debug_symbols_file_url = [model_asset.contentURL URLByAppendingPathComponent:@(it->second.path.c_str())];
-    NSData *data = [NSData dataWithContentsOfURL:debug_symbols_file_url
-                                         options:NSDataReadingMapped
-                                           error:error];
-    if (!data) {
-        return nil;
-    }
-    
-    id object = [NSJSONSerialization JSONObjectWithData:data options:(NSJSONReadingOptions)0 error:error];
-    if (!object) {
-        return nil;
-    }
-    
-    NSDictionary<NSString *, id> *json_dict = SAFE_CAST(object, NSDictionary);
-    NSCAssert(json_dict != nil, @"The contents of %s is not a json dictionary.", it->second.path.c_str());
-    NSMutableDictionary<ETCoreMLModelStructurePath *, NSString *> *result = [NSMutableDictionary dictionaryWithCapacity:json_dict.count];
-    for (NSString *symbol_name in json_dict) {
-        NSArray<NSDictionary<NSString *, id> *> *components = SAFE_CAST(json_dict[symbol_name], NSArray);
-        NSCAssert(components != nil, @"The path=%@ is invalid.", json_dict[symbol_name]);
-        ETCoreMLModelStructurePath *path = [[ETCoreMLModelStructurePath alloc] initWithComponents:json_dict[symbol_name]];
-        result[path] = symbol_name;
-    }
-    
-    return result;
-}
 } //namespace
 
 @interface ETCoreMLModelAnalyzer ()
@@ -78,7 +34,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
 @property (strong, nonatomic, nullable) ETCoreMLModelProfiler *profiler;
 @property (strong, nonatomic, nullable) ETCoreMLModelDebugger *debugger;
 @property (strong, nonatomic, nullable) id<ETCoreMLModelExecutor> executor;
-@property (readonly, copy, nonatomic, nullable) NSDictionary<ETCoreMLModelStructurePath *, NSString *> *pathToSymbolNameMap;
+@property (readonly, copy, nonatomic, nullable) NSDictionary<ETCoreMLModelStructurePath *, NSString *> *operationPathToDebugSymbolMap;
 @property (readonly, strong, nonatomic) MLModelConfiguration *configuration;
 
 @end
@@ -88,6 +44,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
 - (nullable instancetype)initWithCompiledModelAsset:(ETCoreMLAsset *)compiledModelAsset
                                          modelAsset:(nullable ETCoreMLAsset *)modelAsset
                                            metadata:(const executorchcoreml::ModelMetadata&)metadata
+                      operationPathToDebugSymbolMap:(nullable NSDictionary<ETCoreMLModelStructurePath *, NSString *> *)operationPathToDebugSymbolMap
                                       configuration:(MLModelConfiguration *)configuration
                                        assetManager:(ETCoreMLAssetManager *)assetManager
                                               error:(NSError * __autoreleasing *)error {
@@ -111,25 +68,13 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
                          NSStringFromClass(ETCoreMLAssetManager.class));
     }
     
-    localError = nil;
-    NSDictionary<ETCoreMLModelStructurePath *, NSString *> *pathToSymbolNameMap = get_path_to_symbol_name_map(modelAsset,
-                                                                                                              assetManager.fileManager,
-                                                                                                              &localError);
-    
-    if (localError) {
-        ETCoreMLLogError(localError,
-                         "%@: The model package at path=%@ has invalid or missing debug symbols file.",
-                         NSStringFromClass(ETCoreMLModelAnalyzer.class),
-                         modelAsset.contentURL.path);
-    }
-    
     self = [super init];
     if (self) {
         _model = model;
         _modelAsset = modelAsset;
         _assetManager = assetManager;
         _configuration = configuration;
-        _pathToSymbolNameMap = pathToSymbolNameMap;
+        _operationPathToDebugSymbolMap = operationPathToDebugSymbolMap;
         _executor = [[ETCoreMLDefaultModelExecutor alloc] initWithModel:model];
     }
     
@@ -168,7 +113,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
         return nil;
     }
     
-    eventLogger->log_profiling_infos(profilingInfos, self.pathToSymbolNameMap);
+    eventLogger->log_profiling_infos(profilingInfos, self.operationPathToDebugSymbolMap);
     return modelOutputs;
 }
 
@@ -212,7 +157,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
             }
             
             if (outputs.count > 0) {
-                eventLogger->log_intermediate_tensors(outputs, self.pathToSymbolNameMap);
+                eventLogger->log_intermediate_tensors(outputs, self.operationPathToDebugSymbolMap);
             }
         }
     }
@@ -225,6 +170,10 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
                                               loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
                                                  eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
                                                        error:(NSError * __autoreleasing *)error {
+    if (self.ignoreOutputBackings) {
+        predictionOptions.outputBackings = @{};
+    }
+    
     NSError *localError = nil;
     NSArray<MLMultiArray *> *outputs = nil;
     if (loggingOptions.log_profiling_info) {

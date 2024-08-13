@@ -38,9 +38,11 @@ def define_common_targets():
         preprocessor_flags = [
             # "-DENABLE_XNNPACK_PROFILING",
         ],
+        exported_deps = [
+            "//executorch/runtime/backend:interface",
+        ],
         deps = [
             third_party_dep("XNNPACK"),
-            "//executorch/runtime/backend:interface",
             "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",
             "//executorch/backends/xnnpack/threadpool:threadpool",
             "//executorch/runtime/core/exec_aten/util:tensor_util",

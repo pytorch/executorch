@@ -8,7 +8,6 @@
 
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
-#include <executorch/runtime/core/function_ref.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -17,7 +16,7 @@ namespace native {
 namespace internal {
 
 Tensor& binary_ufunc_realb_realb_to_realb_logical(
-    FunctionRef<bool(bool, bool)> fn,
+    bool (*fn)(bool, bool),
     RuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,

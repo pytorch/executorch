@@ -9,6 +9,12 @@ from typing import List, Tuple
 import torch
 
 from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_INSERTED_PERMUTE,
+    QCOM_QUANT_ATTRS,
+    QCOM_REQUANTIZE,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.sym_util import eval_shape
@@ -24,41 +30,47 @@ class LayoutTransform(ExportPass):
     """
 
     layout_sensitive_ops = {
-        exir_ops.edge.aten.convolution.default,
-        exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
-        exir_ops.edge.aten.max_pool2d_with_indices.default,
         exir_ops.edge.aten.avg_pool2d.default,
-        exir_ops.edge.aten.upsample_bilinear2d.default,
+        exir_ops.edge.aten.convolution.default,
+        exir_ops.edge.aten.max_pool2d_with_indices.default,
+        exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
         exir_ops.edge.aten.pixel_shuffle.default,
+        exir_ops.edge.aten.pixel_unshuffle.default,
+        exir_ops.edge.aten.upsample_bilinear2d.default,
+        exir_ops.edge.aten.upsample_nearest2d.default,
     }
 
     layout_agnostic_ops = {
         exir_ops.edge.aten.add.Tensor,
-        exir_ops.edge.aten.cat.default,
-        exir_ops.edge.aten.mul.Tensor,
-        exir_ops.edge.aten.relu.default,
-        exir_ops.edge.aten.hardtanh.default,
-        exir_ops.edge.aten.hardswish.default,
-        exir_ops.edge.aten.mean.dim,
-        exir_ops.edge.aten.linear.default,
-        exir_ops.edge.aten.clamp.default,
-        exir_ops.edge.aten._to_copy.default,
-        exir_ops.edge.aten.sub.Tensor,
-        exir_ops.edge.aten.div.Tensor,
-        exir_ops.edge.aten.ceil.default,
-        exir_ops.edge.aten._softmax.default,  # TODO: Need to find a new solution to do "axis_order" to transform axis.
-        exir_ops.edge.aten._log_softmax.default,
-        exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.bmm.default,
+        exir_ops.edge.aten.cat.default,
+        exir_ops.edge.aten.ceil.default,
+        exir_ops.edge.aten.clamp.default,
+        exir_ops.edge.aten.constant_pad_nd.default,
+        exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.full.default,
         exir_ops.edge.aten.gelu.default,
+        exir_ops.edge.aten.hardswish.default,
+        exir_ops.edge.aten.hardsigmoid.default,
+        exir_ops.edge.aten.hardtanh.default,
+        exir_ops.edge.aten.leaky_relu.default,
+        exir_ops.edge.aten.linear.default,
+        exir_ops.edge.aten._log_softmax.default,
+        exir_ops.edge.aten.mean.dim,
+        exir_ops.edge.aten.mul.Tensor,
+        exir_ops.edge.aten.pow.Tensor_Scalar,
+        exir_ops.edge.aten.prelu.default,
+        exir_ops.edge.aten.relu.default,
+        exir_ops.edge.aten._softmax.default,  # TODO: Need to find a new solution to do "axis_order" to transform axis.
+        exir_ops.edge.aten.sqrt.default,
+        exir_ops.edge.aten.sub.Tensor,
+        exir_ops.edge.aten.sum.dim_IntList,
+        exir_ops.edge.aten._to_copy.default,
+        exir_ops.edge.aten.split_with_sizes.default,
         *q_ops,
         *dq_ops,
         _operator.getitem,
     }
-
-    layout_transformed_tag = "axis_order"
-    inserted_permute_tag = "qnn_permute"
 
     layout_type = {
         1: ("N", "N"),
@@ -92,29 +104,32 @@ class LayoutTransform(ExportPass):
                     f"got {getitem_node.target.__name__}"
                 )
             index = getitem_node.args[1]
-            node.meta[self.layout_transformed_tag] = self.get_axis_order(
+            node.meta[QCOM_AXIS_ORDER] = self.get_axis_order(
                 eval_shape(node.meta["val"][index].shape)
             )
         else:
-            node.meta[self.layout_transformed_tag] = self.get_axis_order(
+            node.meta[QCOM_AXIS_ORDER] = self.get_axis_order(
                 eval_shape(node.meta["val"].shape)
             )
 
     def is_transformed_node(self, node: torch.fx.Node) -> bool:
         if not hasattr(node, "meta"):
             return False
-        return self.layout_transformed_tag in node.meta
+        return QCOM_AXIS_ORDER in node.meta
 
     def is_layout_sensitive(self, node: torch.fx.Node) -> bool:
         return node.target in self.layout_sensitive_ops
 
     def is_layout_agnostic(self, node: torch.fx.Node) -> bool:
-        if node.target == exir_ops.edge.aten.mean.dim:
+        if node.target in [
+            exir_ops.edge.aten.mean.dim,
+            exir_ops.edge.aten.sum.dim_IntList,
+        ]:
             # if dimemsion is not kept, we'll have no clue how to do layout transform
             if len(node.args) < 3 or not node.args[2]:
                 return False
         if node.target in self.qdq_opset:
-            return "requantize" in node.meta
+            return QCOM_REQUANTIZE in node.meta
         return node.target in self.layout_agnostic_ops
 
     def is_edge_condition(self, node):
@@ -127,11 +142,11 @@ class LayoutTransform(ExportPass):
                 node.op == "get_attr",
                 (
                     node.target == exir_ops.edge.aten.permute_copy.default
-                    and node.meta.get(self.inserted_permute_tag, False)
+                    and node.meta.get(QCOM_INSERTED_PERMUTE, False)
                 ),
                 (
                     node.op != "output"
-                    and not isinstance(node.meta["val"], tuple)
+                    and not isinstance(node.meta["val"], (tuple, list))
                     and len(node.meta["val"].shape) == 0
                 ),
                 is_parameter(node, self.edge_program),
@@ -166,9 +181,9 @@ class LayoutTransform(ExportPass):
                 ),
             )
             permute.meta["val"] = tensor
-            permute.meta["quant_attrs"] = node.meta.get("quant_attrs")
+            permute.meta[QCOM_QUANT_ATTRS] = node.meta.get(QCOM_QUANT_ATTRS)
             # we need this to check the annotation boundary
-            permute.meta[self.inserted_permute_tag] = True
+            permute.meta[QCOM_INSERTED_PERMUTE] = True
 
             for user in users:
                 user.replace_input_with(node, permute)

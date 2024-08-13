@@ -1,1 +1,1 @@
-```{include} ../../examples/demo-apps/apple_ios/README.md
+```{include} ../../examples/demo-apps/apple_ios/ExecuTorchDemo/README.md

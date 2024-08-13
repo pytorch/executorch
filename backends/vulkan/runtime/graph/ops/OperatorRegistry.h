@@ -8,21 +8,18 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <functional>
 #include <unordered_map>
 
-#define VK_HAS_OP(name) ::at::native::vulkan::operator_registry().has_op(name)
+#define VK_HAS_OP(name) ::vkcompute::operator_registry().has_op(name)
 
-#define VK_GET_OP_FN(name) \
-  ::at::native::vulkan::operator_registry().get_op_fn(name)
+#define VK_GET_OP_FN(name) ::vkcompute::operator_registry().get_op_fn(name)
 
-#define VK_REGISTER_OP(name, function)                   \
-  ::at::native::vulkan::operator_registry().register_op( \
-      #name,                                             \
+#define VK_REGISTER_OP(name, function)          \
+  ::vkcompute::operator_registry().register_op( \
+      #name,                                    \
       std::bind(&function, std::placeholders::_1, std::placeholders::_2))
 
 #define REGISTER_OPERATORS                              \
@@ -30,15 +27,14 @@
   static const OperatorRegisterInit reg(&register_ops); \
   static void register_ops()
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 /*
- * The Vulkan operator registry maps ATen operator names to their Vulkan
- * delegate function implementation. It is a simplified version of
- * executorch/runtime/kernel/operator_registry.h that uses the C++ Standard
- * Library.
+ * The Vulkan operator registry maps ATen operator names
+ * to their Vulkan delegate function implementation. It is
+ * a simplified version of
+ * executorch/runtime/kernel/operator_registry.h that uses
+ * the C++ Standard Library.
  */
 class OperatorRegistry final {
   using OpFunction =
@@ -77,8 +73,4 @@ class OperatorRegisterInit final {
 // where it is declared as a static local variable.
 OperatorRegistry& operator_registry();
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

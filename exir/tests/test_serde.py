@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import io
 import unittest
 from typing import Tuple
 
@@ -47,7 +48,7 @@ class TestSerde(unittest.TestCase):
             self.assertTrue(torch.allclose(orig, loaded))
 
     # pyre-ignore
-    def check_serde(self, m, inputs) -> None:
+    def check_serde(self, m, inputs, check_executorch=True) -> None:
         aten = export(m, inputs)
         aten_new = deserialize(serialize(aten))
         self.check_ep(aten, aten_new, inputs)
@@ -56,10 +57,23 @@ class TestSerde(unittest.TestCase):
         edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, inputs)
 
+        buffer = io.BytesIO()
+        exir.save(edge.exported_program(), buffer)
+        buffer.seek(0)
+        loaded_ep = exir.load(buffer)
+        self.check_ep(edge.exported_program(), loaded_ep, inputs)
+
         executorch = edge.to_executorch().exported_program()
         executorch_new = deserialize(serialize(executorch))
-        with torch.no_grad():
-            self.check_ep(executorch, executorch_new, inputs)
+        if check_executorch:
+            with torch.no_grad():
+                self.check_ep(executorch, executorch_new, inputs)
+
+                buffer = io.BytesIO()
+                exir.save(executorch, buffer)
+                buffer.seek(0)
+                loaded_ep = exir.load(buffer)
+                self.check_ep(executorch, loaded_ep, inputs)
 
     def test_basic(self) -> None:
         class MyModule(torch.nn.Module):
@@ -88,7 +102,12 @@ class TestSerde(unittest.TestCase):
 
         model = MyModel()
         inputs = model.get_random_inputs()
-        self.check_serde(model, inputs)
+        # We set check_executorch to false for this test because this triggers
+        # an edge case where calling .module() on the executorch exported program
+        # will cause an unlift pass to be run on the graph and dead code elimination
+        # will be subsequently run, which essentially causes the split_copy op to be
+        # removed.
+        self.check_serde(model, inputs, check_executorch=False)
 
     def test_to_out_variant_multiple_out(self) -> None:
         class MyModel(torch.nn.Module):
@@ -139,6 +158,28 @@ class TestSerde(unittest.TestCase):
         edge = to_edge(export(composite_model, model_inputs))
         edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, model_inputs)
+
+    def test_model_with_weights(self) -> None:
+        class LinearAdd(nn.Module):
+            def __init__(self, M: int, N: int):
+                super().__init__()
+                self.M = M
+                self.N = N
+                self.linear = torch.nn.Linear(M, N)
+
+            def forward(self, x, y):
+                x = self.linear(x)
+                y = self.linear(y)
+                return torch.add(x, y)
+
+            @classmethod
+            def _get_random_inputs(cls):
+                return (torch.rand(128, 20), torch.rand(128, 20))
+
+        linear_add = LinearAdd(20, 30)
+        model_inputs = LinearAdd._get_random_inputs()
+
+        self.check_serde(linear_add, model_inputs)
 
     def test_delegate_partitioner(self) -> None:
         class Model(torch.nn.Module):

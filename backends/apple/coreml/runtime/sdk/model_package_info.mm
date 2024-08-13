@@ -70,7 +70,7 @@ std::optional<ModelPackageInfo> ModelPackageInfo::make(NSURL* model_package_url,
         return std::nullopt;
     }
     
-    NSData *data = [NSData dataWithContentsOfURL:manifest_url options:NSDataReadingMapped error:error];
+    NSData *data = [NSData dataWithContentsOfURL:manifest_url options:NSDataReadingMappedIfSafe error:error];
     if (!data) {
         return std::nullopt;
     }

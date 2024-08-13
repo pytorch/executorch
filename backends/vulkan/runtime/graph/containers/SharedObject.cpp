@@ -10,18 +10,16 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 void SharedObject::add_user(ComputeGraph* const graph, const ValueRef idx) {
-  vTensor& t = graph->get_val(idx).toTensor();
+  vTensorPtr t = graph->get_tensor(idx);
 
   //
   // Aggregate Memory Requirements
   //
 
-  const VkMemoryRequirements mem_reqs = t.get_memory_requirements();
+  const VkMemoryRequirements mem_reqs = t->get_memory_requirements();
   aggregate_memory_requirements.size =
       std::max(mem_reqs.size, aggregate_memory_requirements.size);
   aggregate_memory_requirements.alignment =
@@ -32,12 +30,13 @@ void SharedObject::add_user(ComputeGraph* const graph, const ValueRef idx) {
   // Aggregate Allocation Create Info
   //
 
-  const VmaAllocationCreateInfo create_info = t.get_allocation_create_info();
+  const VmaAllocationCreateInfo create_info = t->get_allocation_create_info();
   // Clear out CREATE_STRATEGY bit flags in case of conflict
   VmaAllocationCreateFlags clear_mask = ~VMA_ALLOCATION_CREATE_STRATEGY_MASK;
   VmaAllocationCreateFlags create_flags = create_info.flags & clear_mask;
   // Use the default allocation strategy
-  aggregate_create_info.flags = create_flags | api::DEFAULT_ALLOCATION_STRATEGY;
+  aggregate_create_info.flags =
+      create_flags | vkapi::DEFAULT_ALLOCATION_STRATEGY;
 
   // Set the usage flag if it is currently not set
   if (aggregate_create_info.usage == VMA_MEMORY_USAGE_UNKNOWN) {
@@ -64,10 +63,8 @@ void SharedObject::bind_users(ComputeGraph* const graph) {
     return;
   }
   for (const ValueRef idx : users) {
-    graph->get_val(idx).toTensor().bind_allocation(allocation);
+    graph->get_tensor(idx)->bind_allocation(allocation);
   }
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

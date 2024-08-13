@@ -30,6 +30,7 @@ from executorch.backends.apple.mps.serialization.mps_graph_schema import (
     MPSLog,
     MPSLog10,
     MPSLog2,
+    MPSLogicalNot,
     MPSNeg,
     MPSReciprocal,
     MPSRound,
@@ -79,6 +80,7 @@ class UnaryOpVisitor(NodeVisitor):
         "aten.isnan.default",
         "aten.isinf.default",
         "aten.round.default",
+        "aten.logical_not.default",
     ]
 
     def __init__(self, *args) -> None:
@@ -115,6 +117,7 @@ class UnaryOpVisitor(NodeVisitor):
             exir_ops.edge.aten.isnan.default: MPSIsnan,
             exir_ops.edge.aten.isinf.default: MPSIsinf,
             exir_ops.edge.aten.round.default: MPSRound,
+            exir_ops.edge.aten.logical_not.default: MPSLogicalNot,
         }
 
     def define_node(

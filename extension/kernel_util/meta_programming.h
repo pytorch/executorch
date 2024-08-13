@@ -49,7 +49,7 @@ struct is_compile_time_function_pointer<
     CompileTimeFunctionPointer<FuncType, func_ptr>> : std::true_type {};
 
 #define EXECUTORCH_FN_TYPE(func)                                      \
-  CompileTimeFunctionPointer<                                         \
+  ::torch::executor::CompileTimeFunctionPointer<                      \
       std::remove_pointer_t<std::remove_reference_t<decltype(func)>>, \
       func>
 #define EXECUTORCH_FN(func) EXECUTORCH_FN_TYPE(func)()
