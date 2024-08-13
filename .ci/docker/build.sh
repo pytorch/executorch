@@ -79,7 +79,7 @@ docker build \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
   --build-arg "ARM_SDK=${ARM_SDK:-}" \
-  --build-arg "QNN_SDK=${QNN_SDK:-}" \
+  # --build-arg "QNN_SDK=${QNN_SDK:-}" \
   --build-arg "ANDROID_NDK_VERSION=${ANDROID_NDK_VERSION:-}" \
   -f "${OS}"/Dockerfile \
   "$@" \
