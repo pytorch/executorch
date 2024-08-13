@@ -159,6 +159,41 @@ class Module final {
   }
 
   /**
+   * Retrieve the output value of a specific method with the given input.
+   * Loads the program and method before execution if needed.
+   *
+   * @param[in] method_name The name of the method to execute.
+   * @param[in] input A vector of input values to be passed to the method.
+   *
+   * @returns A Result object containing either the first output value from the
+   * method or an error to indicate failure.
+   */
+  __ET_NODISCARD
+  Result<EValue> get(
+      const std::string& method_name,
+      const std::vector<EValue>& input) {
+    auto result = ET_UNWRAP(execute(method_name, input));
+    if (result.empty()) {
+      return Error::InvalidArgument;
+    }
+    return result[0];
+  }
+
+  /**
+   * Retrieve the output value of a specific method without any input values.
+   * Loads the program and method before execution if needed.
+   *
+   * @param[in] method_name The name of the method to execute.
+   *
+   * @returns A Result object containing either the first output value from the
+   * method or an error to indicate failure.
+   */
+  __ET_NODISCARD
+  Result<EValue> get(const std::string& method_name) {
+    return get(method_name, {});
+  }
+
+  /**
    * Execute the 'forward' method with the given input and retrieve output.
    * Loads the program and method before executing if needed.
    *
