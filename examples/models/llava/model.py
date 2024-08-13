@@ -1,16 +1,7 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
-# An ExecuTorch friendly implementation of Llava-1.5.
-
 import math
 
 import re
 
-from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import requests
@@ -22,56 +13,97 @@ from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
 from executorch.examples.models.model_base import EagerModelBase
-from llava.constants import (
-    DEFAULT_IM_END_TOKEN,
-    DEFAULT_IM_START_TOKEN,
-    DEFAULT_IMAGE_TOKEN,
-    IMAGE_PLACEHOLDER,
-    IMAGE_TOKEN_INDEX,
-)
-
-from llava.conversation import conv_templates
-
-from llava.mm_utils import get_model_name_from_path, tokenizer_image_token
-
-from llava.model.builder import load_pretrained_model
-
-from llava.model.llava_arch import LlavaMetaForCausalLM
-
-from llava.model.multimodal_encoder.clip_encoder import CLIPVisionTower
 from PIL import Image
 
 from torch import nn
 from torch.export import Dim
 from torchvision.transforms.v2 import functional as F
 
-from transformers import LlamaForCausalLM
+from transformers import (
+    AutoProcessor,
+    CLIPImageProcessor,
+    CLIPVisionModel,
+    LlamaForCausalLM,
+    LlavaForConditionalGeneration,
+)
 
 
-@dataclass
-class PreprocessConfig:
-    crop_size: dict
-    image_mean: list[float]
-    image_std: list[float]
-    rescale_factor: float
+class CLIPVisionTower(nn.Module):
+    def __init__(
+        self,
+        vision_tower: CLIPVisionModel,
+        *,
+        vision_feature_layer=-2,
+        vision_feature_select_strategy="default",
+    ):
+        super().__init__()
+
+        self.vision_tower = vision_tower
+        self.vision_feature_layer = vision_feature_layer
+        self.vision_feature_select_strategy = vision_feature_select_strategy
+
+    def feature_select(self, image_outputs):
+        selected_image_feature = image_outputs.hidden_states[self.vision_feature_layer]
+
+        if self.vision_feature_select_strategy == "default":
+            selected_image_feature = selected_image_feature[:, 1:]
+        elif self.vision_feature_select_strategy == "full":
+            selected_image_feature = selected_image_feature
+        else:
+            raise ValueError(
+                f"Unexpected select feature: {self.vision_feature_select_strategy}"
+            )
+        return selected_image_feature
+
+    @torch.no_grad()
+    def forward(self, images):
+        if type(images) is list:
+            image_features = []
+            for image in images:
+                image_forward_out = self.vision_tower(
+                    image.to(device=self.device, dtype=self.dtype).unsqueeze(0),
+                    output_hidden_states=True,
+                )
+                image_feature = self.feature_select(image_forward_out).to(image.dtype)
+                image_features.append(image_feature)
+        else:
+            image_forward_outs = self.vision_tower(
+                images.to(device=self.device, dtype=self.dtype),
+                output_hidden_states=True,
+            )
+            image_features = self.feature_select(image_forward_outs).to(images.dtype)
+
+        return image_features
+
+    @property
+    def dtype(self):
+        return self.vision_tower.dtype
+
+    @property
+    def device(self):
+        return self.vision_tower.device
 
 
 class Llava(torch.nn.Module):
     def __init__(
         self,
-        llava_model: LlavaMetaForCausalLM,
-        image_processor: CLIPVisionTower,
-        config: PreprocessConfig,
+        llava_model: LlavaForConditionalGeneration,
+        image_processor: CLIPImageProcessor,
         use_sdpa_with_kv_cache_op: bool = True,
     ):
         super().__init__()
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
-        self.config = config
         self.model_ = llava_model
+        self.image_processor = image_processor
+        self.vision_tower = CLIPVisionTower(
+            self.model_.vision_tower,
+            vision_feature_layer=self.model_.config.vision_feature_layer,
+            vision_feature_select_strategy=self.model_.config.vision_feature_select_strategy,
+        )
         self.text_model_args = ModelArgs(
             use_kv_cache=True,
-            vocab_size=self.model_.config.vocab_size,
-            hidden_dim=self.model_.config.intermediate_size,
+            vocab_size=self.model_.config.text_config.vocab_size,
+            hidden_dim=self.model_.config.text_config.intermediate_size,
             max_batch_size=1,  # doesn't work with default batch size 32
             ffn_dim_multiplier=1,  # TODO: a hack to make rotary embedding happy
             enable_dynamic_shape=True,  # allow parallel prefill
@@ -79,8 +111,8 @@ class Llava(torch.nn.Module):
             use_hf_rope=True,
         )
         self.embed_tokens = nn.Embedding(
-            self.model_.config.vocab_size,
-            self.model_.config.hidden_size,
+            self.model_.config.text_config.vocab_size,
+            self.model_.config.text_config.hidden_size,
             self.model_.config.pad_token_id,
         )
         self.text_model = Transformer(self.text_model_args)
@@ -94,14 +126,13 @@ class Llava(torch.nn.Module):
             assign=True,
         )
         self.embed_tokens.load_state_dict(
-            state_dict=self.get_model().embed_tokens.state_dict(),
+            state_dict=self.model_.language_model.model.embed_tokens.state_dict(),
             strict=True,
             assign=True,
         )
-        self.image_processor = image_processor
 
     def _translate_state_dict_for_text_model(self) -> Dict[str, Any]:
-        state_dict = self.model_.state_dict()
+        state_dict = self.model_.language_model.state_dict()
         key_map = {
             # fmt: off
             r"model.layers.([0-9]+).self_attn.q_proj.": r"layers.\1.attention.wq.",
@@ -140,9 +171,9 @@ class Llava(torch.nn.Module):
         return self.model_.get_model()
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
-        images = images.to(dtype=self.get_model().dtype)
-        image_features = self.get_model().vision_tower(images)
-        image_features = self.get_model().mm_projector(image_features)
+        images = images.to(dtype=self.model_.dtype)
+        image_features = self.vision_tower(images)
+        image_features = self.model_.multi_modal_projector(image_features)
         return image_features
 
     def image_preprocess(self, img: torch.Tensor) -> torch.Tensor:
@@ -175,9 +206,11 @@ class Llava(torch.nn.Module):
         # print(resized.shape)
         # cropped = F.center_crop(img, output_size=[w, w])
         # print(cropped.shape)
-        scaled = resized * self.config.rescale_factor
+        scaled = resized * self.image_processor.rescale_factor
         # print(scaled)
-        normed = F.normalize(scaled, self.config.image_mean, self.config.image_std)
+        normed = F.normalize(
+            scaled, self.image_processor.image_mean, self.image_processor.image_std
+        )
         # print(normed)
         return normed.unsqueeze(0)
 
@@ -223,7 +256,7 @@ class Llava(torch.nn.Module):
         """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
         embeds = self.prefill_embedding(prompt_before_image, images, prompt_after_image)
         return LlamaForCausalLM.forward(
-            self.model_,
+            self.model_.language_model,
             inputs_embeds=embeds,
             return_dict=False,
             use_cache=False,
@@ -237,82 +270,24 @@ class Llava(torch.nn.Module):
         return self.image_embedding(images)
 
 
-def get_prompt(query: str, mm_use_im_start_end: bool, model_name: str) -> str:
-    qs = query
-    image_token_se = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN
-    if IMAGE_PLACEHOLDER in qs:
-        if mm_use_im_start_end:
-            qs = re.sub(IMAGE_PLACEHOLDER, image_token_se, qs)
-        else:
-            qs = re.sub(IMAGE_PLACEHOLDER, DEFAULT_IMAGE_TOKEN, qs)
-    else:
-        if mm_use_im_start_end:
-            qs = image_token_se + "\n" + qs
-        else:
-            qs = DEFAULT_IMAGE_TOKEN + "\n" + qs
-
-    def get_conv_mode(model_name: str) -> str:
-        if "llama-2" in model_name.lower():
-            conv_mode = "llava_llama_2"
-        elif "mistral" in model_name.lower():
-            conv_mode = "mistral_instruct"
-        elif "v1.6-34b" in model_name.lower():
-            conv_mode = "chatml_direct"
-        elif "v1" in model_name.lower():
-            conv_mode = "llava_v1"
-        elif "mpt" in model_name.lower():
-            conv_mode = "mpt"
-        else:
-            conv_mode = "llava_v0"
-        return conv_mode
-
-    conv = conv_templates[get_conv_mode(model_name)].copy()
-    conv.append_message(conv.roles[0], qs)
-    conv.append_message(conv.roles[1], None)
-    prompt = conv.get_prompt()
-    return prompt
-
-
 class LlavaModel(EagerModelBase):
     def __init__(self, use_sdpa_with_kv_cache_op=True):
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
-        self.model_path = "liuhaotian/llava-v1.5-7b"
-        self.tokenizer, self.model, self.image_processor, context_len = (
-            load_pretrained_model(
-                model_path=self.model_path,
-                model_base=None,
-                model_name=get_model_name_from_path(self.model_path),
-                device_map="cpu",
-                device="cpu",
-            )
-        )
-        self.config = PreprocessConfig(
-            self.image_processor.crop_size,
-            self.image_processor.image_mean,
-            self.image_processor.image_std,
-            self.image_processor.rescale_factor,
+        self.processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
+        self.tokenizer = self.processor.tokenizer
+        self.image_processor = self.processor.image_processor
+        self.model = LlavaForConditionalGeneration.from_pretrained(
+            "llava-hf/llava-1.5-7b-hf",
+            device_map="cpu",
         )
         self.image = Image.open(
             requests.get(
                 "https://llava-vl.github.io/static/images/view.jpg", stream=True
             ).raw
         )
-        self.args = type(
-            "Args",
-            (),
-            {
-                "model_path": self.model_path,
-                "model_base": None,
-                "model_name": get_model_name_from_path(self.model_path),
-                "query": "What are the things I should be cautious about when I visit here?",
-                "conv_mode": None,
-                "sep": ",",
-                "temperature": 0,
-                "top_p": None,
-                "num_beams": 1,
-                "max_new_tokens": 512,
-            },
-        )()
+        self.prompt = """A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: <image>
+What are the things I should be cautious about when I visit here? ASSISTANT:"""
+        self.model_name = "llava-1.5-7b-hf"
         # set input to None and initialize them lazily
         self.input = None
         self.resized_image = None
@@ -321,7 +296,6 @@ class LlavaModel(EagerModelBase):
         model = Llava(
             self.model,
             self.image_processor,
-            self.config,
             self.use_sdpa_with_kv_cache_op,
         )
         model.to(dtype=torch.float32)
@@ -344,16 +318,8 @@ class LlavaModel(EagerModelBase):
         """Returns prompts as well as image."""
         if self.input:
             return self.input
-        model_name = get_model_name_from_path(self.model_path)
-        self.prompt = get_prompt(self.args.query, False, model_name)
-        self.input_ids = (
-            tokenizer_image_token(
-                self.prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
-            )
-            .unsqueeze(0)
-            .cpu()
-        )
-        index = torch.where(self.input_ids == IMAGE_TOKEN_INDEX)[1]
+        self.input_ids = self.tokenizer.encode(self.prompt, return_tensors="pt").cpu()
+        index = torch.where(self.input_ids == self.model.config.image_token_index)[1]
         self.prompt_before_image = self.input_ids[:, :index]
         # print(prompt_before_image.shape)
         self.prompt_after_image = self.input_ids[:, index + 1 :]
