@@ -48,13 +48,9 @@ jobs:
         # Setup Apple certificate for iOS development
         .ci/scripts/setup-ios.sh
 
-        RC=0
         # Build and test iOS Demo App
-        if ! PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output build/test_ios_ci.sh; then
-          RC=1
-        fi
-
-        exit $RC
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+        build/test_ios_ci.sh
 
   build-frameworks-ios:
     name: build-frameworks-ios
