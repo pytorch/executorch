@@ -529,7 +529,7 @@ cp<span class="w"> </span>dl3_xnnpack_fp32.pte<span class="w"> </span>examples/d
 <h4>Qualcomm Hexagon NPU<a class="headerlink" href="#qualcomm-hexagon-npu" title="Permalink to this heading">¶</a></h4>
 <p>For delegating to Qualcomm Hexagon NPU, please follow the tutorial <a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">here</span></a>.</p>
 <p>After generating the model, copy the model to <code class="docutils literal notranslate"><span class="pre">assets</span></code> directory.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build_android<span class="w"> </span>-m<span class="w"> </span>SM8450<span class="w"> </span>-s<span class="w"> </span>&lt;adb_connected_device_serial&gt;
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>cmake-out-android<span class="w"> </span>-m<span class="w"> </span>SM8450<span class="w"> </span>-s<span class="w"> </span>&lt;adb_connected_device_serial&gt;
 cp<span class="w"> </span>deeplab_v3/dlv3_qnn.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 </pre></div>
 </div>

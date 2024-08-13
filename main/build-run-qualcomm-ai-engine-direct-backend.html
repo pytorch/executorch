@@ -689,7 +689,7 @@ We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands t
 cp<span class="w"> </span>schema/program.fbs<span class="w"> </span>exir/_serialize/program.fbs
 cp<span class="w"> </span>schema/scalar_type.fbs<span class="w"> </span>exir/_serialize/scalar_type.fbs
 
-python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build_android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--compile_only<span class="w"> </span>--download
+python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>cmake-out-android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--compile_only<span class="w"> </span>--download
 </pre></div>
 </div>
 <p>You might see something like below:</p>
@@ -777,8 +777,8 @@ adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span
 where to find these libraries by setting <code class="docutils literal notranslate"><span class="pre">ADSP_LIBRARY_PATH</span></code> and <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code>.
 So, we can run <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> like</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>./deeplab_v3/dlv3_qnn.pte<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
-adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/build_android/examples/qualcomm/qnn_executor_runner<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
-adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/build_android/lib/libqnn_executorch_backend.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/cmake-out-android/examples/qualcomm/executor_runner/qnn_executor_runner<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/cmake-out-android/lib/libqnn_executorch_backend.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;cd </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
 <span class="s2">           &amp;&amp; export LD_LIBRARY_PATH=</span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
 <span class="s2">           &amp;&amp; export ADSP_LIBRARY_PATH=</span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
@@ -799,7 +799,7 @@ adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;c
 </div>
 <p>The model is merely executed. If we want to feed real inputs and get model outputs, we can use</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
-python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build_android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--download<span class="w"> </span>-s<span class="w"> </span>&lt;device_serial&gt;
+python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>cmake-out-android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--download<span class="w"> </span>-s<span class="w"> </span>&lt;device_serial&gt;
 </pre></div>
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">&lt;device_serial&gt;</span></code> can be found by <code class="docutils literal notranslate"><span class="pre">adb</span> <span class="pre">devices</span></code> command.</p>
