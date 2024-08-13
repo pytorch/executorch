@@ -21,9 +21,9 @@ from executorch.examples.models.llama2.export_llama_lib import (
 from executorch.examples.models.llama2.source_transformation.quantize import (
     get_quant_weight_transform,
 )
-from executorch.examples.models.llama2.source_transformation.sdpa import (
-    replace_sdpa_with_custom_op,
-)
+# from executorch.examples.models.llama2.source_transformation.sdpa import (
+#     replace_sdpa_with_custom_op,
+# )
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.program._program import _to_edge_transform_and_lower
 
@@ -87,8 +87,8 @@ def export_text_model(llava, embeddings, dynamic_shapes):
     quant_transform = get_quant_weight_transform(args, dtype_override, False)
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
     source_transforms = []
-    if llava.use_sdpa_with_kv_cache_op:
-        source_transforms.append(replace_sdpa_with_custom_op)
+    # if llava.use_sdpa_with_kv_cache_op:
+    #     source_transforms.append(replace_sdpa_with_custom_op)
     source_transforms.append(quant_transform)
     manager = (
         text_model_em.set_output_dir("./")
@@ -198,6 +198,10 @@ def main():
         prompt_before_image, resized, prompt_after_image
     )
 
+    for mod in llava.modules():
+        if mod.__class__.__name__ == "KVCache":
+            mod.k_cache = mod.k_cache.permute(0, 2, 1, 3)
+            mod.v_cache = mod.v_cache.permute(0, 2, 1, 3)
     text_model_ep = export_text_model(
         llava, embeddings, llava_model._get_prompt_dynamic_shapes()
     )

@@ -18,9 +18,9 @@ import torch
 import torchvision
 from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
 
-from executorch.examples.models.llama2.source_transformation.sdpa import (
-    replace_sdpa_with_custom_op,
-)
+# from executorch.examples.models.llama2.source_transformation.sdpa import (
+#     replace_sdpa_with_custom_op,
+# )
 from executorch.examples.models.model_base import EagerModelBase
 from llava.constants import (
     DEFAULT_IM_END_TOKEN,
@@ -85,8 +85,8 @@ class Llava(torch.nn.Module):
         )
         self.text_model = Transformer(self.text_model_args)
         # use custom op for SDPA.
-        if use_sdpa_with_kv_cache_op:
-            self.text_model = replace_sdpa_with_custom_op(self.text_model)
+        # if use_sdpa_with_kv_cache_op:
+        #     self.text_model = replace_sdpa_with_custom_op(self.text_model)
         # load state dict
         self.text_model.load_state_dict(
             state_dict=self._translate_state_dict_for_text_model(),
@@ -99,8 +99,8 @@ class Llava(torch.nn.Module):
             assign=True,
         )
         self.image_processor = image_processor
-        self.vision_tower = self.get_model().vision_tower
-        self.mm_projector = self.get_model().mm_projector
+        # self.vision_tower = self.get_model().vision_tower
+        # self.mm_projector = self.get_model().mm_projector
 
     def _translate_state_dict_for_text_model(self) -> Dict[str, Any]:
         state_dict = self.model_.state_dict()
@@ -143,8 +143,9 @@ class Llava(torch.nn.Module):
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
         images = images.to(dtype=self.get_model().dtype)
-        image_features = self.vision_tower(images)
-        image_features = self.mm_projector(image_features)
+        # image_features = self.vision_tower(images)
+        image_features = self.get_model().vision_tower(images)
+        image_features = self.get_model().mm_projector(image_features)
         return image_features
 
     def image_preprocess(self, img: torch.Tensor) -> torch.Tensor:
