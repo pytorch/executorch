@@ -189,9 +189,9 @@ class _BaseExtension(Extension):
             installer: The InstallerBuildExt instance that is installing the
                 file.
         """
-        # TODO(dbort): share the cmake-out location with CustomBuild. Can get a
-        # handle with installer.get_finalized_command('build')
-        cmake_cache_dir: Path = Path().cwd() / installer.build_temp / "cmake-out"
+        # share the cmake-out location with CustomBuild.
+        # Get a handle with installer.get_finalized_command('build')
+        cmake_cache_dir = Path(installer.get_finalized_command("build").cmake_cache_dir)
 
         # Construct the full source path, resolving globs. If there are no glob
         # pattern characters, this will just ensure that the source file exists.
@@ -397,7 +397,7 @@ class Buck2EnvironmentFixer(contextlib.AbstractContextManager):
         self.saved_env = {}
 
     def __enter__(self):
-        if os.geteuid() == 0 and "HOME" in os.environ:
+        if os.name != "nt" and os.geteuid() == 0 and "HOME" in os.environ:
             log.info("temporarily unsetting HOME while running as root")
             self.saved_env["HOME"] = os.environ.pop("HOME")
         return self
@@ -508,6 +508,9 @@ class CustomBuild(build):
                 item for item in os.environ["CMAKE_BUILD_ARGS"].split(" ") if item
             ]
 
+        if os.name == "nt":
+            build_args += ["--config", cfg]
+
         # Put the cmake cache under the temp directory, like
         # "pip-out/temp.<plat>/cmake-out".
         cmake_cache_dir = os.path.join(repo_root, self.build_temp, "cmake-out")
@@ -545,6 +548,8 @@ class CustomBuild(build):
             "build/pip_data_bin_init.py.in",
             os.path.join(bin_dir, "__init__.py"),
         )
+        # share the cmake-out location with _BaseExtension.
+        self.cmake_cache_dir = cmake_cache_dir
 
         # Finally, run the underlying subcommands like build_py, build_ext.
         build.run(self)
@@ -553,11 +558,21 @@ class CustomBuild(build):
 def get_ext_modules() -> List[Extension]:
     """Returns the set of extension modules to build."""
 
+    debug = os.environ.get("DEBUG", 0)
+    cfg = "Debug" if debug else "Release"
+
     ext_modules = []
     if ShouldBuild.flatc():
-        ext_modules.append(
-            BuiltFile("third-party/flatbuffers/flatc", "executorch/data/bin/")
-        )
+        if os.name == "nt":
+            ext_modules.append(
+                BuiltFile(
+                    f"third-party/flatbuffers/{cfg}/flatc.exe", "executorch/data/bin/"
+                )
+            )
+        else:
+            ext_modules.append(
+                BuiltFile("third-party/flatbuffers/flatc", "executorch/data/bin/")
+            )
 
     if ShouldBuild.pybindings():
         ext_modules.append(
@@ -569,20 +584,35 @@ def get_ext_modules() -> List[Extension]:
             )
         )
     if ShouldBuild.llama_custom_ops():
-        ext_modules.append(
-            # Install the prebuilt library for custom ops used in llama.
-            BuiltFile(
-                "extension/llm/custom_ops/libcustom_ops_aot_lib.*",
-                "executorch/extension/llm/custom_ops/",
+        if os.name == "nt":
+            ext_modules.append(
+                BuiltFile(
+                    f"extension/llm/custom_ops/{cfg}/custom_ops_aot_lib.dll",
+                    "executorch/extension/llm/custom_ops",
+                )
             )
-        )
-        ext_modules.append(
-            # Install the prebuilt library for quantized ops required by custom ops.
-            BuiltFile(
-                "kernels/quantized/libquantized_ops_aot_lib.*",
-                "executorch/kernels/quantized/",
+            ext_modules.append(
+                # Install the prebuilt library for quantized ops required by custom ops.
+                BuiltFile(
+                    f"kernels/quantized/{cfg}/quantized_ops_aot_lib.dll",
+                    "executorch/kernels/quantized/",
+                )
             )
-        )
+        else:
+            ext_modules.append(
+                # Install the prebuilt library for custom ops used in llama.
+                BuiltFile(
+                    "extension/llm/custom_ops/libcustom_ops_aot_lib.*",
+                    "executorch/extension/llm/custom_ops/",
+                )
+            )
+            ext_modules.append(
+                # Install the prebuilt library for quantized ops required by custom ops.
+                BuiltFile(
+                    "kernels/quantized/libquantized_ops_aot_lib.*",
+                    "executorch/kernels/quantized/",
+                )
+            )
 
     # Note that setuptools uses the presence of ext_modules as the main signal
     # that a wheel is platform-specific. If we install any platform-specific

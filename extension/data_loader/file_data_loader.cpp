@@ -17,7 +17,16 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifndef _WIN32
 #include <unistd.h>
+#else
+#include <io.h>
+#endif
+
+#ifdef _WIN32
+#include <stddef.h>
+using ssize_t = ptrdiff_t;
+#endif
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -57,6 +66,10 @@ FileDataLoader::~FileDataLoader() {
   std::free(const_cast<char*>(file_name_));
   // fd_ can be -1 if this instance was moved from, but closing a negative fd is
   // safe (though it will return an error).
+#ifdef _WIN32
+  if (fd_ == -1)
+    return;
+#endif
   ::close(fd_);
 }
 
