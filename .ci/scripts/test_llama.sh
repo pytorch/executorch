@@ -115,7 +115,7 @@ cmake_install_executorch_libraries() {
         -DEXECUTORCH_BUILD_MPS="$MPS" \
         -DEXECUTORCH_BUILD_COREML="$COREML" \
         -DEXECUTORCH_BUILD_QNN="$QNN" \
-        -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
+        -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Debug
