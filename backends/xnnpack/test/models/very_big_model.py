@@ -34,8 +34,7 @@ class TestVeryBigModel(unittest.TestCase):
         (
             Tester(self.BigModel(), (torch.randn(1, 5000),))
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()

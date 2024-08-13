@@ -104,8 +104,8 @@ class ModelArgs:
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     # Additional Model Metadata needed at runtime
-    bos_idx: int = 1
-    eos_idx: int = 3
+    bos_idx: Optional[int] = None
+    eos_idx: Optional[int] = None
     bos_count: int = -1  # i.e., a single EOS is used as BOS
     eos_count: int = 2
 
@@ -161,6 +161,9 @@ class KVCache(nn.Module):
         else:
             cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
 
+        self.max_batch_size = max_batch_size
+        self.n_heads = n_heads
+        self.head_dim = head_dim
         self.transpose_cache = transpose_cache
         self.enable_dynamic_shape = enable_dynamic_shape
         self.register_buffer(

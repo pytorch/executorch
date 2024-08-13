@@ -26,9 +26,7 @@ class TestMeanDim(unittest.TestCase):
             Tester(self.MeanDim((-1, -2)), inputs)
             .export()
             .check_count({"torch.ops.aten.mean.dim": 1})
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
             .to_executorch()
@@ -54,9 +52,7 @@ class TestMeanDim(unittest.TestCase):
             Tester(self.MeanDim((3)), inputs)
             .export()
             .check_count({"torch.ops.aten.mean.dim": 1})
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
         )
 
@@ -72,9 +68,7 @@ class TestMeanDim(unittest.TestCase):
                     torch.ops.quantized_decomposed.quantize_per_tensor.default: 3,
                 }
             )
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [

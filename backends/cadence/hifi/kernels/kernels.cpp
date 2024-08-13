@@ -6,9 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "kernels.h"
-#include "NatureDSP_Signal.h"
-#include "NatureDSP_Signal_vector.h"
+#include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include "xa_nnlib_common.h"
 #include "xa_nnlib_common_macros.h"
 
