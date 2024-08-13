@@ -7,19 +7,23 @@
 
 # Please refer to README.md in the same folder for more information.
 
-
-import json
-import math
 from dataclasses import dataclass
-from pathlib import Path
+import math
+from functools import partial
 from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 
+from executorch.examples.models.llama2.rope import (
+    apply_rotary_emb,
+    hf_apply_rotary_emb,
+    hf_precompute_freqs_cis,
+    precompute_freqs_cis,
+)
+
 from torch import nn
 
-from ..model_base import EagerModelBase
 
 class RMSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
@@ -50,7 +54,7 @@ class RMSNorm(torch.nn.Module):
             torch.Tensor: The normalized tensor.
 
         """
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
         """
@@ -66,10 +70,12 @@ class RMSNorm(torch.nn.Module):
         output = self._norm(x.float()).type_as(x)
         return output * self.weight
 
+
 def find_multiple(n: int, k: int) -> int:
     if n % k == 0:
         return n
     return n + k - (n % k)
+
 
 @dataclass
 class ModelArgs:
@@ -138,46 +144,119 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
     )
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
-    t = torch.arange(end, device=freqs.device)  # pyre-ignore
-    freqs = torch.outer(t, freqs).float()  # pyre-ignore
-    freqs_cos = torch.cos(freqs)
-    freqs_sin = torch.sin(freqs)
-    return freqs_cos, freqs_sin
+class KVCache(nn.Module):
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_seq_length: int,
+        n_heads: int,
+        head_dim: int,
+        transpose_cache: bool,
+        enable_dynamic_shape: bool,
+        dtype=torch.float32,
+    ):
+        super().__init__()
+        self.max_seq_length = max_seq_length
+        if transpose_cache:
+            cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
+        else:
+            cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
+
+        self.max_batch_size = max_batch_size
+        self.n_heads = n_heads
+        self.head_dim = head_dim
+        self.transpose_cache = transpose_cache
+        self.enable_dynamic_shape = enable_dynamic_shape
+        self.register_buffer(
+            "k_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+        )
+        self.register_buffer(
+            "v_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+        )
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # input_pos: [S], k_val: [B, H, S, D] or [B, S, H, D] depending on transpose_cache
+        if self.enable_dynamic_shape:
+            start_pos = input_pos[-1].item()
+            torch._check_is_size(start_pos)
+            torch._check(start_pos < self.max_seq_length)
+            seq_length = k_val.size(2)
+            # Replace the entry in the cache for this token
+            # The following lines are equivalent to:
+            # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+            # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+            # We use .narrow() here to make the compiler happy
+            # pyre-ignore: Incompatible parameter type [6]
+            narrowed_k = self.k_cache.narrow(2, start_pos, seq_length)
+            # pyre-ignore: Incompatible parameter type [6]
+            narrowed_v = self.v_cache.narrow(2, start_pos, seq_length)
+
+            narrowed_k.copy_(k_val)
+            narrowed_v.copy_(v_val)
+            return self.k_cache, self.v_cache
+        else:
+            k_out = self.k_cache
+            v_out = self.v_cache
+            k_out[:, :, input_pos] = k_val
+            v_out[:, :, input_pos] = v_val
+
+            return k_out, v_out
 
 
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
-    ndim = x.ndim
-    assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-    return freqs_cis.view(shape)
+class SDPA(nn.Module):
+    def __init__(
+        self,
+        kv_cache: KVCache,
+        dim: int,
+        head_dim: int,
+        n_rep: int,
+        max_seq_len: int,
+        enable_dynamic_shape: bool,
+    ):
+        super().__init__()
+        self.kv_cache = kv_cache
+        self.dim = dim
+        self.head_dim = head_dim
+        self.n_rep = n_rep
+        self.max_seq_len = max_seq_len
+        self.enable_dynamic_shape = enable_dynamic_shape
 
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz,
+        seqlen,
+        mask: torch.Tensor,
+    ) -> torch.Tensor:
+        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
 
-def apply_rotary_emb(
-    xq: torch.Tensor, xk: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor]:
+        k, v = self.kv_cache.update(input_pos, k, v)
+        if self.enable_dynamic_shape:
+            start_pos = input_pos[-1].item()
+            torch._check_is_size(start_pos)
+            torch._check(start_pos < self.max_seq_len)
+            seq_length = q.size(2)
+            # pyre-ignore: Incompatible parameter type [6]
+            attn_mask = mask.narrow(0, start_pos, seq_length)
+        else:
+            attn_mask = mask[None, None, input_pos]
 
-    xq_r, xq_i = xq.float().reshape(xq.shape[:-1] + (-1, 2)).unbind(-1)
-    xk_r, xk_i = xk.float().reshape(xk.shape[:-1] + (-1, 2)).unbind(-1)
+        k = k.repeat_interleave(self.n_rep, dim=1)
+        v = v.repeat_interleave(self.n_rep, dim=1)
+        y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=0.0)
 
-    freqs_cos = reshape_for_broadcast(freqs_cos, xq_r)
-    freqs_sin = reshape_for_broadcast(freqs_sin, xq_r)
-
-    xq_out_r = xq_r * freqs_cos - xq_i * freqs_sin
-    xq_out_i = xq_r * freqs_sin + xq_i * freqs_cos
-    xk_out_r = xk_r * freqs_cos - xk_i * freqs_sin
-    xk_out_i = xk_r * freqs_sin + xk_i * freqs_cos
-
-    xq_out = torch.stack([xq_out_r, xq_out_i], dim=-1).flatten(3)
-    xk_out = torch.stack([xk_out_r, xk_out_i], dim=-1).flatten(3)
-
-    return xq_out.type_as(xq), xk_out.type_as(xk)
+        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
 
 
 class Attention(nn.Module):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
         self.n_kv_heads = args.n_heads if args.n_kv_heads is None else args.n_kv_heads
         assert args.n_heads % self.n_kv_heads == 0
@@ -194,6 +273,7 @@ class Attention(nn.Module):
         mask = torch.full((1, 1, args.max_seq_len, args.max_seq_len), float("-inf"))
         mask = torch.triu(mask, diagonal=1)
         self.register_buffer("mask", mask)
+        self.layer_id = layer_id
 
     def forward(
         self,
@@ -245,31 +325,76 @@ class Attention(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim: int, hidden_dim: int, multiple_of: int):
+    def __init__(self, args: ModelArgs):
         super().__init__()
-        hidden_dim = int(2 * hidden_dim / 3)
-        hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
-        self.w1 = nn.Linear(dim, hidden_dim, bias=False)
-        self.w2 = nn.Linear(hidden_dim, dim, bias=False)
-        self.w3 = nn.Linear(dim, hidden_dim, bias=False)
+        assert args.hidden_dim is not None
+        hidden_dim: int = args.hidden_dim
+        self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, args.dim, bias=False)
+        self.w3 = nn.Linear(args.dim, hidden_dim, bias=False)
 
     def forward(self, x):
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 
+class ConditionalFeedForward(nn.Module):
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+        self.dim = args.dim
+        hidden_dim = args.hidden_dim
+        if hidden_dim is None:
+            # If hidden_dim is not explicitly set in the ModelArgs,
+            # then calculate implicitly based on dim and also multiple of `args.multiple_of`
+            multiple_of = args.multiple_of
+            hidden_dim = 4 * self.dim
+            hidden_dim = int(2 * hidden_dim / 3)
+            hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+
+        self.w1 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
+        self.w2 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
+        self.w3 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
+        self.num_experts = args.num_experts
+
+    def forward(self, x: torch.Tensor, expert_indices: torch.Tensor) -> torch.Tensor:
+        w1_weights = self.w1[expert_indices].transpose(-1, -2)  # [T, A, D, D]
+        w3_weights = self.w3[expert_indices].transpose(-1, -2)  # [T, A, D, D]
+        w2_weights = self.w2[expert_indices]  # [T, A, D, D]
+        x1 = F.silu(torch.einsum("ti,taio -> tao", x, w1_weights))
+        x3 = torch.einsum("ti, taio -> tao", x, w3_weights)
+        expert_outs = torch.einsum("tao, taoi -> tai", (x1 * x3), w2_weights)
+        return expert_outs
+
+
+class MOEFeedForward(nn.Module):
+    def __init__(self, config) -> None:
+        super().__init__()
+        self.gate = nn.Linear(config.dim, config.num_experts, bias=False)
+        self.cond_ffn = ConditionalFeedForward(config)
+        self.dim = config.dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.view(-1, self.dim)
+        # T = num_tokens, E = num_experts, D = hidden dim, A = activated experts
+        # x: [T, D]
+        scores = self.gate(x)  # [T, E]
+        expert_weights, expert_indices = torch.topk(scores, 2, dim=-1)  # [T, A], [T, A]
+        expert_weights = expert_weights.softmax(dim=-1)  # [T, A]
+        expert_outs = self.cond_ffn(x, expert_indices)
+        return torch.einsum("tai,ta -> ti", expert_outs, expert_weights)
+
+
 class TransformerBlock(nn.Module):
     def __init__(self, layer_id: int, args: ModelArgs):
         super().__init__()
+        self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
         self.dim = args.dim
         self.head_dim = args.dim // args.n_heads
-        self.attention = Attention(args)
-        self.feed_forward = FeedForward(
-            dim=args.dim,
-            hidden_dim=4 * args.dim,
-            multiple_of=args.multiple_of,
-        )
-        self.layer_id = layer_id
+        self.attention = Attention(args, layer_id)
+        if args.moe:
+            self.block_sparse_moe = MOEFeedForward(args)
+        else:
+            self.feed_forward = FeedForward(args)
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
@@ -277,7 +402,6 @@ class TransformerBlock(nn.Module):
         h = x + self.attention.forward(self.attention_norm(x), freqs_cos, freqs_sin)
         out = h + self.feed_forward.forward(self.ffn_norm(h))
         return out
-
 
 class Transformer(nn.Module):
     def __init__(self, params: ModelArgs):
@@ -292,74 +416,36 @@ class Transformer(nn.Module):
             self.layers.append(TransformerBlock(layer_id, params))
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
-
-        freqs_cos, freqs_sin = precompute_freqs_cis(
-            self.params.dim // self.params.n_heads, self.params.max_seq_len
+        self.use_kv_cache = params.use_kv_cache
+        self.max_seq_len = params.max_seq_len
+        if params.use_hf_rope:
+            self.precompute_freqs_cis = hf_precompute_freqs_cis
+        else:
+            self.precompute_freqs_cis = partial(
+                precompute_freqs_cis, use_scaled=params.use_scaled_rope
+            )
+        freqs_cos, freqs_sin = self.precompute_freqs_cis(
+            params.dim // params.n_heads,
+            (
+                params.max_seq_len  # Normal llama2.
+                if params.ffn_dim_multiplier is None
+                else params.max_seq_len * 2  # Sharded checkpoint.
+            ),
+            params.rope_freq_base,
         )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
         _bsz, seqlen = tokens.shape
-        print(f"_bsz: {_bsz}, seqlen: {seqlen}")
         h = self.tok_embeddings(tokens)
         freqs_cos = self.freqs_cos[:seqlen]
         freqs_sin = self.freqs_sin[:seqlen]
 
         for layer in self.layers:
             h = layer(h, freqs_cos, freqs_sin)
-        # h = self.layers[0](h, freqs_cos, freqs_sin) # myuan: hack one layer for debug
 
         h = self.norm(h)
 
         logits = self.output(h)
         return logits
-
-
-class Llama2Model(EagerModelBase):
-    def __init__(self, **kwargs):
-        import pkg_resources
-
-        ckpt_dir = Path(__file__).absolute().parent
-
-        # Get the path to the resource file
-        params_path = (
-            Path(ckpt_dir) / kwargs["checkpoint"]
-            if "checkpoint" in kwargs
-            else pkg_resources.resource_filename(
-                "executorch.examples.portable.scripts", "demo_config.json"
-            )
-        )
-        checkpoint_path = (
-            Path(ckpt_dir) / kwargs["params"]
-            if "params" in kwargs
-            else pkg_resources.resource_filename(
-                "executorch.examples.portable.scripts", "demo_rand_params.pth"
-            )
-        )
-
-        # The example is using a dummy small model with random weights for demo purpose only.
-        # Follow the instruction in https://github.com/facebookresearch/llama to download the model
-        device = "cpu"
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-        with open(params_path, "r") as f:
-            params = json.loads(f.read())
-        max_seq_len = 128
-        max_batch_size = 1
-        model_args: ModelArgs = ModelArgs(
-            max_seq_len=max_seq_len,
-            max_batch_size=max_batch_size,
-            **params,
-        )
-        self.model_ = Transformer(model_args)
-        self.model_.load_state_dict(
-            checkpoint, strict=False
-        )  # self.model_ = Transformer(gptconf)
-
-    # @staticmethod
-    def get_eager_model(self):
-        return self.model_
-
-    @staticmethod
-    def get_example_inputs():
-        return (torch.tensor([[1]]),)
