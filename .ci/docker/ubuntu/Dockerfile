@@ -83,9 +83,7 @@ COPY --chown=ci-user:ci-user ./arm /opt/arm
 RUN if [ -n "${ARM_SDK}" ]; then git config --global user.email "ossci@example.com"; git config --global user.name "OSS CI"; bash /opt/arm/setup.sh --i-agree-to-the-contained-eula /opt/arm-sdk; chown -R ci-user:ci-user /opt/arm-sdk; fi
 
 ARG QNN_SDK
-COPY --chown=ci-user:ci-user ./qualcomm /opt/qualcomm
-# Set up QNN SDK if needed
-RUN if [ -n "${QNN_SDK}" ]; then git config --global user.email "ossci@example.com"; git config --global user.name "OSS CI"; fi
+# TODO: run .ci/scripts/setup-qnn-deps.sh here
 
 USER ci-user
 CMD ["bash"]
