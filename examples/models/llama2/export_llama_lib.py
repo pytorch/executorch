@@ -50,6 +50,13 @@ from .source_transformation.quantize import (
     get_quant_weight_transform,
 )
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
+from .source_transformation.sdpa import (
+    replace_causal_mask,
+    replace_kv_cache_with_simple_kv_cache,
+    replace_sdpa_with_custom_op,
+    replace_sdpa_with_flex_sdpa,
+    replace_sdpa_with_simple_sdpa,
+)
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -643,6 +650,7 @@ def _load_llama_model(
         example_inputs=example_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
         verbose=verbose,
+        dynamic_shapes=None,
         metadata=_load_llama_model_metadata(
             weight_type,
             use_kv_cache,

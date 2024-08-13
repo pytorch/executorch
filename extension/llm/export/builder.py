@@ -85,7 +85,7 @@ class LLMEdgeManager:
         self.edge_manager: Optional[EdgeProgramManager] = None
         self.export_program = None
         self.output_dir = "."
-        self.dynamic_shapes = None
+        self.dynamic_shapes = dynamic_shapes
         self._saved_pte_filename = None
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
@@ -159,7 +159,6 @@ class LLMEdgeManager:
 
     def capture_pre_autograd_graph(self) -> "LLMEdgeManager":
         dynamic_shape = self._get_dynamic_shape()
-        print("dynamic_shape", dynamic_shape)
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():

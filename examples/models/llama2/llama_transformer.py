@@ -258,21 +258,22 @@ class SDPA(nn.Module):
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
+        self.use_kv_cache = args.use_kv_cache
         self.n_kv_heads = args.n_heads if args.n_kv_heads is None else args.n_kv_heads
         assert args.n_heads % self.n_kv_heads == 0
         model_parallel_size = 1
         self.n_local_heads = args.n_heads // model_parallel_size
         self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
+        self.max_batch_size = args.max_batch_size
+        self.max_seq_len = args.max_seq_len
+        self.dim = args.dim
+        # args.dim = 4096, args.n_heads = 32, self.head_dim = 4096 / 32 = 125
         self.head_dim = args.dim // args.n_heads
         self.wq = nn.Linear(args.dim, args.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
-
-        mask = torch.full((1, 1, args.max_seq_len, args.max_seq_len), float("-inf"))
-        mask = torch.triu(mask, diagonal=1)
-        self.register_buffer("mask", mask)
         self.layer_id = layer_id
 
     def forward(
@@ -293,15 +294,8 @@ class Attention(nn.Module):
         xq, xk = apply_rotary_emb(xq, xk, freqs_cos, freqs_sin)
 
         # grouped multiquery attention: expand out keys and values
-        print("xk.shape before repeat kv: ", xk.shape)
-        # xk = repeat_kv(xk, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
-        # xv = repeat_kv(xv, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
         xk = [torch.cat([xk[:, : , i:i+1, :]] * self.n_rep, dim=2) for i in range(xk.size(2))]
-        # print("xk[i].shape after repeat kv: ", xk[i].shape)
         xk = torch.cat(xk, dim=2)
-
-        print("xk.shape after repeat kv: ", xk.shape)
-
         xv = [torch.cat([xv[:, : , i:i+1, :]] * self.n_rep, dim=2) for i in range(xv.size(2))]
         xv = torch.cat(xv, dim=2)        
 

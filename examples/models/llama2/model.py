@@ -143,8 +143,8 @@ the checkpoint format to avoid generating faulty models.
         model_args: ModelArgs = ModelArgs(
             max_seq_len=max_seq_len,
             max_batch_size=max_batch_size,
-            # use_kv_cache=self.use_kv_cache,
-            # use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
+            use_kv_cache=self.use_kv_cache,
+            use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )
@@ -160,9 +160,8 @@ the checkpoint format to avoid generating faulty models.
 
         # Within the device="meta" context, tensors that are created do not carry data.
         # They possess all other metadata a tensor carries such as size, stride, requires_grad.
-        # with torch.device("meta"):
-        #     self.model_ = Transformer(model_args)
-        self.model_ = Transformer(model_args)
+        with torch.device("meta"):
+            self.model_ = Transformer(model_args)
 
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
