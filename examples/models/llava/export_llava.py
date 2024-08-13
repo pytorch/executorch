@@ -24,11 +24,11 @@ from executorch.examples.models.llama2.source_transformation.quantize import (
 from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
+from executorch.examples.models.llava.model import LlavaModel
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.program._program import _to_edge_transform_and_lower
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
-from model import LlavaModel
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
