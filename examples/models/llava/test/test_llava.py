@@ -43,8 +43,7 @@ class TestLlava(unittest.TestCase):
         with torch.inference_mode():
             output_ids = self.llava_model.model.generate(
                 self.llava_model.input_ids,
-                images=preprocessed,
-                image_sizes=[preprocessed.size],
+                pixel_values=preprocessed,
                 do_sample=False,
                 num_beams=1,
                 max_new_tokens=5,
