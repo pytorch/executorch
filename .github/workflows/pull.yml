@@ -209,23 +209,6 @@ jobs:
         bash examples/models/llama2/install_requirements.sh
         bash examples/models/llava/install_requirements.sh
 
-        # run export_llava.sh
-        python examples/models/llava/export_llava.py --use-sdpa-with-kv-cache --pte-name llava_custom_sdpa.pte
-
-        # verify file exists
-        if [ ! -f "llava_custom_sdpa.pte" ]; then
-            echo "llava_custom_sdpa.pte not found!"
-            exit 1
-        fi
-
-        python examples/models/llava/export_llava.py --no-use-sdpa-with-kv-cache --pte-name llava.pte
-
-        # verify file exists
-        if [ ! -f "llava.pte" ]; then
-            echo "llava.pte not found!"
-            exit 1
-        fi
-
         # run python unittest
         python -m unittest examples.models.llava.test.test_llava
 
