@@ -74,7 +74,7 @@ class TextTokenGenerator {
     ManagedTensor start_pos_managed(&pos, {1}, ScalarType::Long);
 
     // Generate our tokens
-    while (pos < seq_len) {
+    while (pos < seq_len - 1) {
       // Run the model
       Result<exec_aten::Tensor> logits_res =
           text_decoder_runner_->step(tokens_managed, start_pos_managed);
