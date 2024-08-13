@@ -52,6 +52,11 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         build/test_ios_ci.sh
 
+    secrets:
+      BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+      BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+
   build-frameworks-ios:
     name: build-frameworks-ios
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main

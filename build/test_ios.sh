@@ -112,3 +112,27 @@ xcodebuild test \
   -project "$APP_PATH.xcodeproj" \
   -scheme MobileNetClassifierTest \
   -destination name="$SIMULATOR_NAME"
+
+# NB: https://docs.aws.amazon.com/devicefarm/latest/developerguide/test-types-ios-xctest-ui.html
+say "Package The Test Suite"
+
+xcodebuild build-for-testing \
+  -project "$APP_PATH.xcodeproj" \
+  -scheme MobileNetClassifierTest \
+  -destination platform="iOS"
+
+# The hack to figure out where the xctest package locates
+BUILD_DIR=$(xcodebuild -showBuildSettings -project "$APP_PATH.xcodeproj" -json | jq -r ".[0].buildSettings.BUILD_DIR")
+
+MODE="Debug"
+PLATFORM="iphoneos"
+pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
+
+rm -rf Payload && mkdir Payload
+MOCK_APP_NAME=DeviceFarm
+cp -r "${MOCK_APP_NAME}.app" Payload && zip -vr "${MOCK_APP_NAME}.ipa" Payload
+
+# DEBUG
+ls -lah
+
+popd
