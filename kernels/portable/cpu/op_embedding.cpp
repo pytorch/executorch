@@ -37,7 +37,8 @@ void embedding_kernel(
   char* out_data = out.mutable_data_ptr<char>();
   const CTYPE* indices_ptr = indices.const_data_ptr<CTYPE>();
   ssize_t weight_height = weight.size(0);
-  for (int i = 0; i < indices.numel(); i++) {
+  const auto indices_numel = indices.numel();
+  for (int i = 0; i < indices_numel; i++) {
     // Ensure index is larger than 0 and smaller than weight.size(0)
     ET_KERNEL_CHECK_MSG(
         ctx,

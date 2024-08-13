@@ -55,7 +55,9 @@ def get_mps_partitioner(use_kv_cache: bool = False):
     return MPSPartitioner(compile_specs)
 
 
-def get_coreml_partitioner(use_kv_cache: bool = False):
+def get_coreml_partitioner(
+    use_kv_cache: bool = False, pt2e_quantize: Optional[str] = None
+):
     assert (
         use_kv_cache is True
     ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
@@ -72,7 +74,26 @@ def get_coreml_partitioner(use_kv_cache: bool = False):
             "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
         )
 
+    minimum_deployment_target = ct.target.iOS15
+    # In Core ML, quantization in introduced in iOS 16
+    if pt2e_quantize is not None:
+        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS16)
+    # In Core ML, 8-bit activation quantization is introduced in iOS 17
+    if pt2e_quantize in ("coreml_8a_c8w", "coreml_baseline_8a_c8w"):
+        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS17)
+    # In Core ML, 4-bit weight compression is introduced in iOS 18
+    if pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w"):
+        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
+    # In Core ML, stateful execution is introduced in iOS 18
+    # TODO (https://github.com/pytorch/executorch/issues/4209)
+    # For now, since mutable buffer is kept in executorch runtime,
+    # state is out of place and can be handled by older iOS.
+    # Once mutable buffer can be handed over to delegate, i.e. state becomes in-place, we will have
+    # if use_kv_cache:
+    #     minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
+
     compile_specs = CoreMLBackend.generate_compile_specs(
+        minimum_deployment_target=minimum_deployment_target,
         compute_precision=ct.precision(ct.precision.FLOAT16.value),
         # using `ComputeUnit.ALL` can increase the model load time, default to `ComputeUnit.CPU_AND_GPU`
         compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_GPU.name.upper()],
@@ -95,9 +116,6 @@ def get_qnn_partitioner(
             QnnPartitioner,
         )
 
-        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.quantizer.quantizer`
-        from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
-
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.serialization.qnn_compile_spec_schema`
         from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
             QcomChipset,
@@ -117,16 +135,6 @@ def get_qnn_partitioner(
     skip_node_op_set = {}
     if pt2e_quantize is not None:
         use_fp16 = False
-        # TODO: fix the lowering error without skipping nodes
-
-        if quant_dtype == QuantDtype.use_8a8w:
-            raise NotImplementedError("8a8w for llama is still under development")
-
-        elif quant_dtype == QuantDtype.use_16a16w:
-            raise NotImplementedError("16a16w for llama is still under development")
-
-        elif quant_dtype == QuantDtype.use_16a4w:
-            raise NotImplementedError("16a4w for llama is still under development")
 
     return QnnPartitioner(
         generate_qnn_executorch_compiler_spec(

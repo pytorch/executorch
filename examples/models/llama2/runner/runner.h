@@ -15,14 +15,19 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 
-#include <executorch/examples/models/llama2/sampler/sampler.h>
-#include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
+#include <executorch/extension/llm/runner/stats.h>
+#include <executorch/extension/llm/runner/text_decoder_runner.h>
+#include <executorch/extension/llm/runner/text_prefiller.h>
+#include <executorch/extension/llm/sampler/sampler.h>
+#include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
 namespace torch::executor {
+using Stats = ::executorch::llm::Stats;
 
 class Runner {
  public:
@@ -30,32 +35,6 @@ class Runner {
       const std::string& model_path,
       const std::string& tokenizer_path,
       const float temperature = 0.8f);
-
-  struct Stats {
-    // Scaling factor for timestamps - in this case, we use ms.
-    const long SCALING_FACTOR_UNITS_PER_SECOND = 1000;
-    // Time stamps for the different stages of the execution
-    // model_load_start_ms: Start of model loading.
-    long model_load_start_ms;
-    // model_load_end_ms: End of model loading.
-    long model_load_end_ms;
-    // inference_start_ms: Immediately after the model is loaded (or we check
-    // for model load), measure the inference time.
-    long inference_start_ms;
-    // prompt_eval_end_ms: Prompt array allocation and tokenization. Ends right
-    // before the inference loop starts
-    long prompt_eval_end_ms;
-    // first_token: Timestamp when the first generated token is emitted
-    long first_token_ms;
-    // inference_end_ms: End of inference/generation.
-    long inference_end_ms;
-    // Keep a running total of the time spent in sampling.
-    long aggregate_sampling_time_ms;
-    // Token count from prompt
-    int64_t num_prompt_tokens;
-    // Token count from generated (total - prompt)
-    int64_t num_generated_tokens;
-  };
 
   bool is_loaded() const;
   Error load();
@@ -68,20 +47,6 @@ class Runner {
 
  private:
   // metadata
-  template <typename T>
-  T getMetadataHelper(const std::string& method_name, T default_val);
-  int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
-  Result<torch::executor::Tensor> prefill(
-      const std::vector<uint64_t>& tokens,
-      ManagedTensor& managed_tokens,
-      ManagedTensor& managed_start_pos,
-      std::function<void(const std::string&)> token_callback);
-  Result<torch::executor::Tensor> run_model_step(
-      int64_t input_token,
-      ManagedTensor& tokens,
-      ManagedTensor& start_pos,
-      size_t max_seq_len);
-  // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
   int32_t eos_id_;
@@ -91,16 +56,21 @@ class Runner {
   bool use_kv_cache_;
   bool use_sdpa_with_kv_cache_;
   bool append_eos_;
+  float temperature_;
+  bool enable_parallel_prefill_;
+  bool shouldStop_{false};
+
+  // model
   std::unordered_set<std::string> model_methods_;
   std::string model_path_;
   std::unique_ptr<Module> module_;
+  std::unique_ptr<TextDecoderRunner> text_decoder_runner_;
+  std::unique_ptr<TextPrefiller> text_prefiller_;
   std::string tokenizer_path_;
-  float temperature_;
   std::unique_ptr<Tokenizer> tokenizer_;
-  std::unique_ptr<Sampler> sampler_;
-  bool shouldStop_{false};
+
+  // stats
   Stats stats_;
-  bool enable_parallel_prefill_;
 };
 
 } // namespace torch::executor

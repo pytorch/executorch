@@ -54,11 +54,11 @@ class SimpleADB:
     ):
         self.qnn_sdk = qnn_sdk
         self.build_path = build_path
-        self.pte_path = pte_path
+        self.pte_path = pte_path if isinstance(pte_path, list) else [pte_path]
         self.workspace = workspace
         self.device_id = device_id
         self.host_id = host_id
-        self.working_dir = Path(self.pte_path).parent.absolute()
+        self.working_dir = Path(self.pte_path[0]).parent.absolute()
         self.input_list_filename = "input_list.txt"
         self.etdump_path = f"{self.workspace}/etdump.etdp"
         self.output_folder = f"{self.workspace}/outputs"
@@ -84,19 +84,13 @@ class SimpleADB:
             cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
         )
 
-    def push(self, inputs, input_list, files=None):
+    def push(self, inputs=None, input_list=None, files=None):
         self._adb(["shell", f"rm -rf {self.workspace}"])
         self._adb(["shell", f"mkdir -p {self.workspace}"])
 
-        # prepare input list
-        input_list_file = f"{self.working_dir}/{self.input_list_filename}"
-        with open(input_list_file, "w") as f:
-            f.write(input_list)
-            f.flush()
-
         # necessary artifacts
-        for artifact in [
-            f"{self.pte_path}",
+        artifacts = [
+            *self.pte_path,
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtp.so",
             (
                 f"{self.qnn_sdk}/lib/hexagon-v{self.soc_model}/"
@@ -110,21 +104,25 @@ class SimpleADB:
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
             f"{self.build_path}/{self.runner}",
             f"{self.build_path}/backends/qualcomm/libqnn_executorch_backend.so",
-            input_list_file,
-        ]:
+        ]
+
+        input_list_file, input_files = generate_inputs(
+            self.working_dir, self.input_list_filename, inputs, input_list
+        )
+
+        # prepare input list
+        artifacts.append(input_list_file)
+        for artifact in artifacts:
             self._adb(["push", artifact, self.workspace])
 
         # input data
-        for idx, data in enumerate(inputs):
-            for i, d in enumerate(data):
-                file_name = f"{self.working_dir}/input_{idx}_{i}.raw"
-                d.detach().numpy().tofile(file_name)
-                self._adb(["push", file_name, self.workspace])
+        for file_name in input_files:
+            self._adb(["push", file_name, self.workspace])
 
-        # extra files
+        # custom files
         if files is not None:
-            for f in files:
-                self._adb(["push", f, self.workspace])
+            for file_name in files:
+                self._adb(["push", file_name, self.workspace])
 
     def execute(self, custom_runner_cmd=None):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
@@ -132,7 +130,7 @@ class SimpleADB:
         if custom_runner_cmd is None:
             qnn_executor_runner_args = " ".join(
                 [
-                    f"--model_path {os.path.basename(self.pte_path)}",
+                    f"--model_path {os.path.basename(self.pte_path[0])}",
                     f"--output_folder_path {self.output_folder}",
                     f"--input_list_path {self.input_list_filename}",
                     f"--etdump_path {self.etdump_path}",
@@ -153,12 +151,12 @@ class SimpleADB:
         self._adb(["shell", f"{qnn_executor_runner_cmds}"])
 
     def pull(self, output_path, callback=None):
-        self._adb(["pull", "-a", f"{self.output_folder}", output_path])
+        self._adb(["pull", "-a", self.output_folder, output_path])
         if callback:
             callback()
 
     def pull_etdump(self, output_path, callback=None):
-        self._adb(["pull", f"{self.etdump_path}", output_path])
+        self._adb(["pull", self.etdump_path, output_path])
         if callback:
             callback()
 
@@ -183,6 +181,7 @@ def build_executorch_binary(
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_annotations)
         quantizer.set_per_channel_linear_quant(per_channel_linear)
+        quantizer.set_per_channel_conv_quant(True)
 
         if quant_dtype == QuantDtype.use_8a8w:
             pass  # default setting
@@ -200,7 +199,7 @@ def build_executorch_binary(
         else:
             raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
 
-        captured_model = torch._export.capture_pre_autograd_graph(model, inputs)
+        captured_model = torch.export.export(model, inputs).module()
         annotated_model = prepare_pt2e(captured_model, quantizer)
         print("Quantizing the model...")
         # calibration
@@ -210,7 +209,6 @@ def build_executorch_binary(
             for data in dataset:
                 annotated_model(*data)
         quantized_model = convert_pt2e(annotated_model)
-
         edge_prog = capture_program(quantized_model, inputs)
     else:
         edge_prog = capture_program(model, inputs)
@@ -338,7 +336,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-b",
         "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/build_android",
+        help="path to cmake binary directory for android, e.g., /path/to/cmake-out-android",
         type=str,
         required=True,
     )
@@ -433,3 +431,25 @@ def parse_skip_delegation_node(args):
         print("Skipping following node ops: ", skip_node_op_set)
 
     return skip_node_id_set, skip_node_op_set
+
+
+def generate_inputs(dest_path: str, file_name: str, inputs=None, input_list=None):
+    input_list_file = ""
+    input_files = []
+
+    # Prepare input list
+    if input_list is not None:
+        input_list_file = f"{dest_path}/{file_name}"
+        with open(input_list_file, "w") as f:
+            f.write(input_list)
+            f.flush()
+
+    # Prepare input data
+    if inputs is not None:
+        for idx, data in enumerate(inputs):
+            for i, d in enumerate(data):
+                file_name = f"{dest_path}/input_{idx}_{i}.raw"
+                d.detach().numpy().tofile(file_name)
+                input_files.append(file_name)
+
+    return input_list_file, input_files

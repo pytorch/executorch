@@ -47,21 +47,12 @@ idx_fill_buffer:
 idx_fill_texture:
   parameter_names_with_default_values:
     DTYPE: float
-    NDIM: 3
-    PACKING: CHANNELS_PACKED
   generate_variant_forall:
-    PACKING:
-      - VALUE: "CHANNELS_PACKED"
-        SUFFIX: "C_packed"
-      - VALUE: "WIDTH_PACKED"
-        SUFFIX: "W_packed"
-      - VALUE: "HEIGHT_PACKED"
-        SUFFIX: "H_packed"
     DTYPE:
-      - VALUE: "half"
-        SUFFIX: "half"
-      - VALUE: "float"
-        SUFFIX: "float"
+      - VALUE: half
+      - VALUE: float
+      - VALUE: int
+      - VALUE: int8
   shader_variants:
     - NAME: idx_fill_texture
 

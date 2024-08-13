@@ -8,6 +8,14 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
+from executorch.backends.qualcomm.utils.constants import (
+    QCOM_AXIS_ORDER,
+    QCOM_QUANT_ATTRS,
+    QCOM_QUANT_MAX,
+    QCOM_QUANT_MIN,
+    QCOM_SCALE,
+    QCOM_ZERO_POINT,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from .node_visitor import get_parameter, NodeVisitor, register_node_visitor
@@ -43,14 +51,18 @@ class PReLU(NodeVisitor):
             coeff_node = node.args[1]
             coeff_tensor = torch.zeros(input_node.meta["val"].shape)
             coeff = get_parameter(coeff_node, self.edge_program)
+            # param nodes will be FakeTensor when doing partition
+            # fill in random numeric for validation
+            if isinstance(coeff, torch._subclasses.fake_tensor.FakeTensor):
+                coeff = torch.ones(coeff.shape)
             # per-channel activation
             if coeff_node.meta["val"].shape[0] > 1:
                 for i in range(input_node.meta["val"].shape[1]):
                     coeff_tensor = coeff_tensor.index_fill(
                         1, torch.tensor([i]), coeff[i]
                     )
-                if "axis_order" in input_node.meta:
-                    axis_order = input_node.meta["axis_order"]
+                if QCOM_AXIS_ORDER in input_node.meta:
+                    axis_order = input_node.meta[QCOM_AXIS_ORDER]
                     coeff_tensor = coeff_tensor.permute(dims=axis_order).contiguous()
                 # simple min-max quantization
                 coeff = torch.max(coeff).item()
@@ -67,13 +79,13 @@ class PReLU(NodeVisitor):
             (),  # args
             {},  # kwargs
         )
-        if pow_quant_attrs := node.meta.get("quant_attrs"):
+        if pow_quant_attrs := node.meta.get(QCOM_QUANT_ATTRS):
             quant_attrs = pow_quant_attrs.copy()
-            quant_range = quant_attrs["quant_max"] - quant_attrs["quant_min"]
+            quant_range = quant_attrs[QCOM_QUANT_MAX] - quant_attrs[QCOM_QUANT_MIN]
             # coeff is guaranteed to be positive
-            quant_attrs["zero_point"] = 0
-            quant_attrs["scale"] = coeff / quant_range
-            scalar_node.meta["quant_attrs"] = quant_attrs
+            quant_attrs[QCOM_ZERO_POINT] = 0
+            quant_attrs[QCOM_SCALE] = coeff / quant_range
+            scalar_node.meta[QCOM_QUANT_ATTRS] = quant_attrs
 
         scalar_tensor_wrapper = self.define_tensor(
             scalar_node,

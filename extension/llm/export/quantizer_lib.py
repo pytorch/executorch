@@ -146,6 +146,10 @@ def get_qnn_quantizer(
     quantization_mode: Optional[str] = None,
 ):
     try:
+        from executorch.backends.qualcomm.quantizer.custom_annotation import (
+            custom_annotate_llama_matmul_16a8w,
+        )
+
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.quantizer.quantizer`
         from executorch.backends.qualcomm.quantizer.quantizer import (
             get_16a4w_qnn_ptq_config,
@@ -153,6 +157,7 @@ def get_qnn_quantizer(
             QnnQuantizer,
             QuantDtype,
         )
+        from torch.ao.quantization.observer import MinMaxObserver
 
     except ImportError:
         raise ImportError(
@@ -169,20 +174,25 @@ def get_qnn_quantizer(
     # more custom quantization are supported including 16a4w etc. default to 8bit quantized
     custom_annotations = ()
     if quant_config == "8a8w":
-        raise NotImplementedError("8a8w for llama is still under development")
         quant_dtype = QuantDtype.use_8a8w
-        pass
     elif quant_config == "16a16w":
-        raise NotImplementedError("16a16w for llama is still under development")
         quant_dtype = QuantDtype.use_16a16w
         qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
-        qnn_quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
+        qnn_quantizer.set_bit16_op_quant_config(
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+            get_default_16bit_qnn_ptq_config(act_observer=MinMaxObserver)
+        )
     elif quant_config == "16a4w":
-        raise NotImplementedError("16a4w for llama is still under development")
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
         quant_dtype = QuantDtype.use_16a4w
         qnn_quantizer.add_16bit_quant_ops(qnn_quantizer.SUPPORTED_OPS)
-        qnn_quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config())
+        qnn_quantizer.set_bit16_op_quant_config(
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+            get_16a4w_qnn_ptq_config(act_observer=MinMaxObserver)
+        )
         qnn_quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+        custom_annotations = (custom_annotate_llama_matmul_16a8w,)
     else:
         raise AssertionError(
             f"No support for quant type {quant_config}. Support 8a8w, 16a16w and 16a4w."
@@ -193,3 +203,52 @@ def get_qnn_quantizer(
     ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
     qnn_quantizer.add_custom_quant_annotations(custom_annotations)
     return qnn_quantizer, quant_dtype
+
+
+def get_coreml_quantizer(pt2e_quantize: str):
+    try:
+        from coremltools.optimize.torch.quantization.quantization_config import (
+            LinearQuantizerConfig,
+            QuantizationScheme,
+        )
+
+        # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.quantizer`.
+        from executorch.backends.apple.coreml.quantizer import CoreMLQuantizer
+    except ImportError:
+        raise ImportError(
+            "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+        )
+
+    if pt2e_quantize == "coreml_8a_c8w":
+        config = LinearQuantizerConfig.from_dict(
+            {
+                "global_config": {
+                    "quantization_scheme": QuantizationScheme.affine,
+                    "activation_dtype": torch.quint8,
+                    "weight_dtype": torch.qint8,
+                    "weight_per_channel": True,
+                }
+            }
+        )
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
+        quantizer = CoreMLQuantizer(config)
+
+    elif pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w"):
+        raise NotImplementedError("4-bit Core ML quantizer is still under development")
+
+    elif pt2e_quantize == "coreml_baseline_8a_c8w":
+        config = get_symmetric_quantization_config(
+            is_per_channel=True, is_dynamic=False
+        )
+        quantizer = XNNPACKQuantizer().set_global(config)
+
+    elif pt2e_quantize == "coreml_baseline_8a_c4w":
+        config = get_symmetric_quantization_config(
+            is_per_channel=True, is_dynamic=False, weight_qmin=-8, weight_qmax=7
+        )
+        quantizer = XNNPACKQuantizer().set_global(config)
+
+    else:
+        raise ValueError(f"Unsupported Core ML quantizer specification {pt2e_quantize}")
+
+    return quantizer

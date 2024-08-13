@@ -22,6 +22,8 @@ from executorch.sdk.etrecord.tests.etrecord_test import TestETRecord
 
 from executorch.sdk.inspector import _inspector, Event, EventBlock, Inspector, PerfData
 from executorch.sdk.inspector._inspector import (
+    DebugEventSignature,
+    flatcc,
     InstructionEvent,
     InstructionEventSignature,
     ProfileEventSignature,
@@ -272,6 +274,140 @@ class TestInspector(unittest.TestCase):
                         inspector_instance.get_exported_program(), ExportedProgram
                     )
                 )
+
+    def test_populate_debugging_related_fields_raises_for_inconsistent_events(self):
+        ret_event: Event = Event(
+            name="event",
+        )
+
+        debug_event_0 = flatcc.DebugEvent(
+            chain_index=1,
+            instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
+            debug_entry=flatcc.Value(
+                val=flatcc.ValueType.TENSOR.value,
+                tensor=flatcc.Tensor(
+                    scalar_type=flatcc.ScalarType.INT,
+                    sizes=[2],
+                    strides=[1],
+                    offset=12345,
+                ),
+                tensor_list=None,
+                int_value=None,
+                float_value=None,
+                double_value=None,
+                bool_value=None,
+                output=None,
+            ),
+        )
+
+        # Note the sizes of this tensor are different from the previous one
+        debug_event_1 = flatcc.DebugEvent(
+            chain_index=1,
+            instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
+            debug_entry=flatcc.Value(
+                val=flatcc.ValueType.TENSOR.value,
+                tensor=flatcc.Tensor(
+                    scalar_type=flatcc.ScalarType.INT,
+                    sizes=[1],
+                    strides=[1],
+                    offset=23456,
+                ),
+                tensor_list=None,
+                int_value=None,
+                float_value=None,
+                double_value=None,
+                bool_value=None,
+                output=None,
+            ),
+        )
+
+        instruction_event_0 = InstructionEvent(
+            signature=InstructionEventSignature(1, 1), debug_events=[debug_event_0]
+        )
+        instruction_event_1 = InstructionEvent(
+            signature=InstructionEventSignature(1, 1), debug_events=[debug_event_1]
+        )
+
+        events = [instruction_event_0, instruction_event_1]
+
+        # Expect AssertionError because 2 tensors have different sizes
+        with self.assertRaises(AssertionError):
+            Event._populate_debugging_related_fields(
+                ret_event=ret_event,
+                debug_event_signature=DebugEventSignature(instruction_id=1),
+                events=events,
+            )
+
+    def test_populate_debugging_related_fields_passes_for_consistent_events(self):
+        ret_event: Event = Event(
+            name="event",
+        )
+
+        debug_event_0 = flatcc.DebugEvent(
+            chain_index=1,
+            instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
+            debug_entry=flatcc.Value(
+                val=flatcc.ValueType.TENSOR.value,
+                tensor=flatcc.Tensor(
+                    scalar_type=flatcc.ScalarType.INT,
+                    sizes=[1],
+                    strides=[1],
+                    offset=12345,
+                ),
+                tensor_list=None,
+                int_value=None,
+                float_value=None,
+                double_value=None,
+                bool_value=None,
+                output=None,
+            ),
+        )
+
+        # Same as the event above except for offset
+        debug_event_1 = flatcc.DebugEvent(
+            chain_index=1,
+            instruction_id=0,
+            delegate_debug_id_int=1,
+            delegate_debug_id_str=None,
+            debug_entry=flatcc.Value(
+                val=flatcc.ValueType.TENSOR.value,
+                tensor=flatcc.Tensor(
+                    scalar_type=flatcc.ScalarType.INT,
+                    sizes=[1],
+                    strides=[1],
+                    offset=23456,
+                ),
+                tensor_list=None,
+                int_value=None,
+                float_value=None,
+                double_value=None,
+                bool_value=None,
+                output=None,
+            ),
+        )
+
+        instruction_event_0 = InstructionEvent(
+            signature=InstructionEventSignature(1, 1), debug_events=[debug_event_0]
+        )
+        instruction_event_1 = InstructionEvent(
+            signature=InstructionEventSignature(1, 1), debug_events=[debug_event_1]
+        )
+
+        events = [instruction_event_0, instruction_event_1]
+
+        with patch.object(_inspector, "is_inference_output_equal", return_value=True):
+            # Expect it runs with no error because is_inference_output_equal() is mocked to return True
+            Event._populate_debugging_related_fields(
+                ret_event=ret_event,
+                debug_event_signature=DebugEventSignature(instruction_id=1),
+                events=events,
+            )
 
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]

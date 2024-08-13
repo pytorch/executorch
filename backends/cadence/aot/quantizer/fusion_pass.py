@@ -11,23 +11,23 @@ from typing import Any, Dict, List, Tuple
 import torch
 from executorch.backends.cadence.aot.quantizer.patterns import (
     AddmmPattern,
+    BmmPattern,
     Conv1dPattern,
     Conv2dPattern,
-    LayerNormFunctionalPattern,
     LayerNormPattern,
-    LinearFunctionalPattern,
     LinearPattern,
     MatmulPattern,
-    ReluPattern,
+    ReluPattern0,
+    ReluPattern1,
 )
 from executorch.backends.cadence.aot.quantizer.utils import (
     create_zero_bias_int32,
+    find_sequential_partitions_aten,
     get_conv_args,
     quantize_tensor_multiplier,
 )
 from executorch.exir.pass_base import ExportPass
 from torch import fx
-from torch.ao.quantization.pt2e.graph_utils import find_sequential_partitions
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.fx.passes.utils.fuser_utils import legalize_graph
@@ -36,6 +36,9 @@ from torch.fx.passes.utils.fuser_utils import legalize_graph
 # Use this to avoid pyre errors
 # pyre-ignore[33]: `_ModelInputsType` cannot alias to `Any`.
 ArgsType = Any
+
+# Use this part for patterns with multiple aten ops
+ReluPatterns = (ReluPattern0, ReluPattern1)
 
 
 # Helper function to get the args and kwargs for the linear replacement op
@@ -284,7 +287,15 @@ def get_args_and_kwargs_relu(
     graph_module: GraphModule,
     inputs_inputs: List[fx.Node],
     dequants_inputs: List[fx.Node],
+    quant_node: fx.Node,
 ) -> Tuple[Tuple[ArgsType], Dict[str, ArgsType]]:
+    input_scale = dequants_inputs[0].args[1]
+    # pyre-fixme[58]: Unsupported operand types
+    requantize_scale = input_scale / quant_node.args[1]
+    requantize_scale_t = torch.tensor([requantize_scale])
+
+    (out_multiplier, out_shift) = quantize_tensor_multiplier(requantize_scale_t)
+
     # Make the args and kwargs for the replacement op
     args = tuple(inputs_inputs)
 
@@ -293,9 +304,22 @@ def get_args_and_kwargs_relu(
         ([1], dequants_inputs[0].args[2]),
         {"dtype": torch.int32},
     )
+    out_multiplier_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], out_multiplier[0].item()),
+        {"dtype": torch.int32},
+    )
+    out_shift_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], out_shift[0].item()),
+        {"dtype": torch.int32},
+    )
 
     kwargs = {
         "X_zero_point": X_zero_point,
+        "out_zero_point": quant_node.args[2],
+        "out_multiplier": out_multiplier_,
+        "out_shift": out_shift_,
     }
     return args, kwargs
 
@@ -309,7 +333,7 @@ class QuantFusion(ExportPass):
 
     def call(self, graph_module: fx.GraphModule) -> PassResult:  # noqa: C901
         for pattern in self.patterns:
-            fused_partitions = find_sequential_partitions(
+            fused_partitions = find_sequential_partitions_aten(
                 graph_module,
                 pattern.partition_types(),
             )
@@ -361,9 +385,7 @@ class QuantFusion(ExportPass):
                         inputs_inputs + weights_inputs + other_inputs + bias_inputs
                     )
                     kwargs = {}
-                    if isinstance(pattern, Conv1dPattern) or isinstance(
-                        pattern, Conv2dPattern
-                    ):
+                    if isinstance(pattern, (Conv1dPattern, Conv2dPattern)):
                         args, kwargs = get_args_and_kwargs_conv(
                             graph_module,
                             inputs_inputs,
@@ -374,9 +396,7 @@ class QuantFusion(ExportPass):
                             quant_node,
                             op_node,
                         )
-                    elif isinstance(pattern, LinearPattern) or isinstance(
-                        pattern, LinearFunctionalPattern
-                    ):
+                    elif isinstance(pattern, LinearPattern):
                         args, kwargs = get_args_and_kwargs_linear(
                             graph_module,
                             inputs_inputs,
@@ -386,9 +406,7 @@ class QuantFusion(ExportPass):
                             bias_inputs,
                             quant_node,
                         )
-                    elif isinstance(pattern, LayerNormPattern) or isinstance(
-                        pattern, LayerNormFunctionalPattern
-                    ):
+                    elif isinstance(pattern, LayerNormPattern):
                         args, kwargs = get_args_and_kwargs_layer_norm(
                             graph_module,
                             inputs_inputs,
@@ -396,7 +414,7 @@ class QuantFusion(ExportPass):
                             other_inputs,
                             quant_node,
                         )
-                    elif isinstance(pattern, MatmulPattern):
+                    elif isinstance(pattern, (BmmPattern, MatmulPattern)):
                         args, kwargs = get_args_and_kwargs_matmul(
                             inputs_inputs,
                             dequants_inputs,
@@ -418,11 +436,12 @@ class QuantFusion(ExportPass):
                             bias_inputs,
                             quant_node,
                         )
-                    elif isinstance(pattern, ReluPattern):
+                    elif isinstance(pattern, ReluPatterns):
                         args, kwargs = get_args_and_kwargs_relu(
                             graph_module,
                             inputs_inputs,
                             dequants_inputs,
+                            quant_node,
                         )
                     fused = graph_module.graph.call_function(
                         pattern.replacement_op(),

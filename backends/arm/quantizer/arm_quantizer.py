@@ -17,8 +17,11 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 import torch
 import torch.nn.functional as F
+
+from executorch.backends.arm.quantizer import arm_quantizer_utils
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (
     convert_scalars_to_attrs,
+    mark_nodes_as_annotated,
     propagate_annotation,
 )
 from executorch.backends.arm.quantizer.quantization_annotation import (
@@ -41,6 +44,10 @@ from torch.ao.quantization.observer import (
 )
 from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
 from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
+from torch.ao.quantization.quantizer.utils import (
+    _annotate_input_qspec_map,
+    _annotate_output_qspec,
+)
 from torch.fx import GraphModule, Node
 
 __all__ = [
@@ -66,6 +73,7 @@ def _supported_symmetric_quantized_operators() -> Dict[str, List[OperatorPattern
             [torch.nn.AdaptiveAvgPool2d],
             [F.adaptive_avg_pool2d],
         ],
+        "sub": [[torch.sub]],
     }
     return copy.deepcopy(supported_operators)
 
@@ -254,12 +262,15 @@ class ArmQuantizer(Quantizer):
         "adaptive_avg_pool2d",
         "max_pool2d",
         "add",
+        "sub",
         "mul",
+        "sigmoid",
     ]
 
     def __init__(self) -> None:
         super().__init__()
         self.global_config: Optional[QuantizationConfig] = None
+        self.io_config: Optional[QuantizationConfig] = None
         self.module_type_config: Dict[Callable, Optional[QuantizationConfig]] = {}
         self.module_name_config: Dict[str, Optional[QuantizationConfig]] = {}
 
@@ -289,6 +300,11 @@ class ArmQuantizer(Quantizer):
             quantization_config is not None
         ), " quantization_config == None is not supported yet"
         self.module_name_config[module_name] = quantization_config
+        return self
+
+    def set_io(self, quantization_config):
+        """Set quantization_config for input and output nodes."""
+        self.io_config = quantization_config
         return self
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
@@ -355,7 +371,32 @@ class ArmQuantizer(Quantizer):
             self.global_config,
             _get_not_module_type_or_name_filter(tp_list, module_name_list),
         )
+
+        if self.io_config:
+            self._annotate_io(model, self.io_config)
+
         return model
+
+    def _annotate_io(
+        self,
+        model: GraphModule,
+        quantization_config: QuantizationConfig,
+    ):
+        for node in model.graph.nodes:
+            if arm_quantizer_utils.is_annotated(node):
+                continue
+            if node.op == "placeholder":
+                _annotate_output_qspec(
+                    node,
+                    quantization_config.get_output_act_qspec(),
+                )
+                mark_nodes_as_annotated([node])
+            if node.op == "output":
+                parent = node.all_input_nodes[0]
+                _annotate_input_qspec_map(
+                    node, parent, quantization_config.get_input_act_qspec()
+                )
+                mark_nodes_as_annotated([node])
 
     def validate(self, model: GraphModule) -> None:
         pass

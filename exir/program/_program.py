@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import copy
 import io
 import logging
@@ -43,6 +45,7 @@ from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from executorch.exir.passes.weights_to_outputs_pass import weights_to_outputs_pass
 from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.schema import Program
 from executorch.exir.tracer import _default_decomposition_table
@@ -193,8 +196,8 @@ def _transform(self, *passes: PassType) -> "ExportedProgram":
         range_constraints=_get_updated_range_constraints(transformed_gm),
         module_call_graph=copy.deepcopy(self._module_call_graph),
         example_inputs=self.example_inputs,
-        verifier=self.verifier,
         constants=self.constants,
+        verifiers=[self.verifier],
     )
     transformed_ep.graph_module.meta.update(self.graph_module.meta)
     transformed_ep.graph_module.meta.update(res.graph_module.meta)
@@ -225,7 +228,7 @@ def lift_constant_tensor_pass(ep):
         return ep
 
     graph_signature = ep.graph_signature
-    buffers = graph_signature.buffers
+    buffers = list(graph_signature.buffers)
 
     fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
     first_user_input = None
@@ -590,8 +593,8 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
                 range_constraints=ep.exported_program.range_constraints,
                 module_call_graph=ep.exported_program.module_call_graph,
                 example_inputs=ep.exported_program.example_inputs,
-                verifier=get_aten_verifier(enable=config._check_ir_validity),
                 constants=ep.exported_program.constants,
+                verifiers=[get_aten_verifier(enable=config._check_ir_validity)],
             ),
             False,
         )
@@ -626,11 +629,13 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         range_constraints=new_ep.exported_program.range_constraints,
         module_call_graph=new_ep.exported_program.module_call_graph,
         example_inputs=new_ep.exported_program.example_inputs,
-        verifier=EXIREdgeDialectVerifier(
-            edge_compile_config=config,
-            class_only=True,
-        ),
         constants=new_ep.exported_program.constants,
+        verifiers=[
+            EXIREdgeDialectVerifier(
+                edge_compile_config=config,
+                class_only=True,
+            )
+        ],
     )
     new_ep.after_to_edge_passes = True
     return new_ep
@@ -708,12 +713,14 @@ def _generate_edge_program(
         range_constraints=program.range_constraints,
         module_call_graph=program.module_call_graph,
         example_inputs=program.example_inputs,
-        verifier=EXIREdgeDialectVerifier(
-            edge_compile_config=config,
-            class_only=True,
-            exception_list=ops_set_to_not_decompose,
-        ),
         constants=program.constants,
+        verifiers=[
+            EXIREdgeDialectVerifier(
+                edge_compile_config=config,
+                class_only=True,
+                exception_list=ops_set_to_not_decompose,
+            )
+        ],
     )
     # Lift the tensor constants created in ScalarToTensorPass
     edge_program = lift_constant_tensor_pass(edge_program)
@@ -859,6 +866,66 @@ def _sanity_check_graph_for_non_decomp_ops(
                     logging.warning(warning_str)
 
 
+def _gen_edge_manager_for_partitioners(
+    partitioner: Dict[str, List[Partitioner]],
+    aten_programs: Dict[str, ExportedProgram],
+    config: EdgeCompileConfig,
+    constant_methods: Optional[Dict[str, Any]],
+) -> "EdgeProgramManager":
+    """
+    Generates EdgeProgramManager for subsequent lowering to the
+    partitioners specified by partitioner. The EdgeProgramManager is generated from
+    aten_programs.
+
+    Partitioners specify what nodes should not be decomposed from the original aten programs.
+    This is done through two passes of run_decompositions.
+        - First pass preserves all aten_targets specified by partitioners to preserve
+          them from nested decompositions
+        - Second pass uses check_op fn provided by partitioners to perform additional checks
+          on nodes with preserved aten targets. They are then replaces with transformed ops to
+          keep them through the second pass of decompositions
+    """
+    ops_set_to_not_decompose_by_program = {}
+    edge_programs: Dict[str, ExportedProgram] = {}
+    for name, program in aten_programs.items():
+        if partitioner is not None:
+            # preserve all ops listed by all partitioners first
+            all_ops_no_decomp = set()
+            for curr_partitioner in partitioner.get(name, []):
+                curr_ops_no_decomp, _ = curr_partitioner.ops_to_not_decompose(program)
+                all_ops_no_decomp |= set(curr_ops_no_decomp)
+
+            program = program.run_decompositions(
+                _default_decomposition_table(), _preserve_ops=tuple(all_ops_no_decomp)
+            )
+            # Among all the preserved aten ops, use the check_op_fn to do an additional
+            # check on which ops need to be preserved and which ops need to be decomposed
+            # Those which are truly preserved will be replaced with transformed ops
+            ops_set_to_not_decompose_by_program[name] = (
+                _replace_aten_ops_with_transformed_ops(name, program, partitioner) or []
+            )
+        program = program.run_decompositions(_default_decomposition_table())
+
+        _restore_transformed_ops_to_aten_ops(program)
+
+        edge_programs[name] = program
+
+        edge_programs[name] = _generate_edge_program(
+            name,
+            config,
+            program,
+            list(ops_set_to_not_decompose_by_program.get(name, [])),
+        )
+
+    edge_manager = EdgeProgramManager(
+        edge_programs,
+        constant_methods,
+        config,
+        list(set().union(*ops_set_to_not_decompose_by_program.values())),
+    )
+    return edge_manager
+
+
 def _to_edge_transform_and_lower(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
@@ -909,8 +976,6 @@ def _to_edge_transform_and_lower(
     Returns:
         EdgeProgramManager
     """
-    ops_set_to_not_decompose = set()
-
     assert not isinstance(constant_methods, EdgeCompileConfig)
     config = compile_config or EdgeCompileConfig()
     if not isinstance(programs, dict):
@@ -920,34 +985,11 @@ def _to_edge_transform_and_lower(
 
     if not isinstance(partitioner, dict) and partitioner is not None:
         partitioner = {"forward": partitioner}
-    else:
-        partitioner = {}
+    elif partitioner is None:
+        partitioner = {"forward": []}
 
-    ops_set_to_not_decompose_by_program = {}
-    edge_programs: Dict[str, ExportedProgram] = {}
-    for name, program in aten_programs.items():
-        if partitioner is not None:
-            ops_set_to_not_decompose_by_program[name] = (
-                _replace_aten_ops_with_transformed_ops(name, program, partitioner)
-            )
-        program = program.run_decompositions(_default_decomposition_table())
-
-        _restore_transformed_ops_to_aten_ops(program)
-
-        edge_programs[name] = program
-
-        edge_programs[name] = _generate_edge_program(
-            name,
-            config,
-            program,
-            list(ops_set_to_not_decompose_by_program.get(name, [])),
-        )
-
-    edge_manager = EdgeProgramManager(
-        edge_programs,
-        constant_methods,
-        config,
-        list(set().union(*ops_set_to_not_decompose_by_program.values())),
+    edge_manager = _gen_edge_manager_for_partitioners(
+        partitioner, aten_programs, config, constant_methods
     )
 
     if transform_passes is not None:
@@ -1158,7 +1200,7 @@ class EdgeProgramManager:
                 if name in partitioner.keys():
                     new_edge_programs[name] = to_backend(program, partitioner[name])
                 else:
-                    new_edge_programs[name] = copy.deepcopy(program)
+                    new_edge_programs[name] = program
 
         else:  # apply partitioner to every method
             for name, program in self._edge_programs.items():
@@ -1188,6 +1230,7 @@ class EdgeProgramManager:
 
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
+            program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
@@ -1283,6 +1326,7 @@ class ExecutorchProgramManager:
         # Serialize emitter output, ready to be written to a file.
         self._pte_data: Cord = _serialize_pte_binary(
             program=self._emitter_output.program,
+            mutable_data=self._emitter_output.mutable_data,
             extract_delegate_segments=backend_config.extract_delegate_segments,
             extract_constant_segment=backend_config.extract_constant_segment,
             segment_alignment=backend_config.segment_alignment,

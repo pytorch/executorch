@@ -426,6 +426,11 @@ if(EXECUTORCH_BUILD_FLATC)
       CACHE BOOL ""
   )
   add_subdirectory(third-party/flatbuffers)
+
+  # exir lets users set the alignment of tensor data embedded in the flatbuffer,
+  # and some users need an alignment larger than the default, which is typically
+  # 32.
+  target_compile_definitions(flatc PRIVATE FLATBUFFERS_MAX_ALIGNMENT=1024)
 endif()
 if(NOT FLATC_EXECUTABLE)
   message(
@@ -487,24 +492,26 @@ if(MAX_KERNEL_NUM)
   )
 endif()
 
-# shared version
-add_library(
-  executorch_no_prim_ops_shared SHARED ${_executorch_no_prim_ops__srcs}
-)
-target_link_libraries(executorch_no_prim_ops_shared PRIVATE program_schema)
-if(DL_LIBRARY_EXISTS)
-  target_link_libraries(executorch_no_prim_ops_shared PRIVATE dl) # For dladdr()
-endif()
-target_include_directories(
-  executorch_no_prim_ops_shared PUBLIC ${_common_include_directories}
-)
-target_compile_options(
-  executorch_no_prim_ops_shared PUBLIC ${_common_compile_options}
-)
-if(MAX_KERNEL_NUM)
-  target_compile_definitions(
-    executorch_no_prim_ops_shared PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
+if(EXECUTORCH_BUILD_PYBIND AND APPLE)
+  # shared version
+  add_library(
+    executorch_no_prim_ops_shared SHARED ${_executorch_no_prim_ops__srcs}
   )
+  target_link_libraries(executorch_no_prim_ops_shared PRIVATE program_schema)
+  if(DL_LIBRARY_EXISTS)
+    target_link_libraries(executorch_no_prim_ops_shared PRIVATE dl) # For dladdr()
+  endif()
+  target_include_directories(
+    executorch_no_prim_ops_shared PUBLIC ${_common_include_directories}
+  )
+  target_compile_options(
+    executorch_no_prim_ops_shared PUBLIC ${_common_compile_options}
+  )
+  if(MAX_KERNEL_NUM)
+    target_compile_definitions(
+      executorch_no_prim_ops_shared PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
+    )
+  endif()
 endif()
 
 #
@@ -555,7 +562,7 @@ endif()
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
 install(
-  TARGETS executorch executorch_no_prim_ops executorch_no_prim_ops_shared
+  TARGETS executorch executorch_no_prim_ops
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
@@ -679,7 +686,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       executorch
       extension_data_loader
       portable_ops_lib
-      quantized_ops_aot_lib
       util
       torch
   )
@@ -700,7 +706,6 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     target_link_options_shared_lib(quantized_ops_lib)
-    list(APPEND _dep_libs quantized_kernels quantized_ops_lib)
   endif()
 
   # compile options for pybind
@@ -754,6 +759,25 @@ if(EXECUTORCH_BUILD_PYBIND)
                  # the torch libs are in `site-packages/torch/lib`.
                  BUILD_RPATH "@loader_path/../../../torch/lib"
                  INSTALL_RPATH "@loader_path/../../../torch/lib"
+                 # Assume <executorch> is the root `site-packages/executorch`
+                 # Need to add <executorch>/extension/llm/custom_ops for
+                 # libcustom_ops_aot_lib.dylib
+                 BUILD_RPATH "@loader_path/../../extension/llm/custom_ops"
+                 INSTALL_RPATH "@loader_path/../../extension/llm/custom_ops"
+                 # Need to add <executorch>/kernels/quantized for
+                 # libquantized_ops_aot_lib.dylib
+                 BUILD_RPATH "@loader_path/../../kernels/quantized"
+                 INSTALL_RPATH "@loader_path/../../kernels/quantized"
+    )
+  else()
+    set_target_properties(
+      portable_lib
+      PROPERTIES # Assume <executorch> is the root `site-packages/executorch`
+                 # Need to add <executorch>/extension/llm/custom_ops for
+                 # libcustom_ops_aot_lib
+                 # Need to add <executorch>/kernels/quantized for
+                 # libquantized_ops_aot_lib
+                 BUILD_RPATH "$ORIGIN:$ORIGIN/../../extension/llm/custom_ops:$ORIGIN/../../kernels/quantized"
     )
   endif()
 
@@ -765,7 +789,7 @@ endif()
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
   add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops
+    ${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops
   )
 endif()
 

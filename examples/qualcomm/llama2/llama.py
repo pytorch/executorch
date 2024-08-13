@@ -8,8 +8,6 @@ import codecs
 import getpass
 import json
 import os
-import shutil
-import stat
 import time
 from multiprocessing.connection import Client
 
@@ -17,20 +15,19 @@ import torch
 
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.passes.build_quant_io import BuildQuantIo
-from executorch.backends.qualcomm.passes.utils import q_io_key
 
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer, QuantDtype
 from executorch.backends.qualcomm.quantizer.utils import get_16a4w_qnn_ptq_config
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANTIZED_IO
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     convert_linear_to_conv2d,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
 )
-from executorch.examples.models.llama2.builder import DType
 from executorch.examples.qualcomm.llama2.model.static_llama import LlamaModel, ModelArgs
 from executorch.examples.qualcomm.scripts.utils import (
     make_output_dir,
@@ -41,6 +38,7 @@ from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program._program import _get_updated_graph_signature
+from executorch.extension.llm.export.builder import DType
 
 from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.observer import MinMaxObserver
@@ -62,7 +60,6 @@ def annotate_matmul_16a8w(gm: torch.fx.GraphModule) -> None:
     """
     This function is specific for matmul op 16a8w.
     """
-    from typing import Sequence
 
     from executorch.backends.qualcomm.quantizer.quantizer import (
         get_16a8w_qnn_ptq_config,
@@ -263,14 +260,14 @@ class SingleLlama:
                 and len(users := list(n.users)) == 1
                 and users[0].meta["val"].size()[-2:] in input_cache_shape
             ):
-                n.meta[q_io_key] = kv_type
+                n.meta[QCOM_QUANTIZED_IO] = kv_type
             elif n.op == "output":
                 for a in n.args[0]:
                     if (
                         a.meta["val"].flatten().size()[0]
                         == self.llama_meta["get_head_dim"]
                     ):
-                        a.meta[q_io_key] = kv_type
+                        a.meta[QCOM_QUANTIZED_IO] = kv_type
 
     def quantize(self, quant_dtype, custom_annotations=()):
         self.quant_dtype = quant_dtype
@@ -294,9 +291,9 @@ class SingleLlama:
         fx_graph_module = None
 
         with torch.no_grad():
-            fx_graph_module = torch._export.capture_pre_autograd_graph(
+            fx_graph_module = torch.export.export(
                 self.llama_model, self.inputs
-            )
+            ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
         print("Quantizing the model...")
         calibrate(
@@ -343,16 +340,6 @@ class SingleLlama:
                 constant_methods=self.llama_meta,
                 compile_config=EdgeCompileConfig(_check_ir_validity=False),
             )
-
-            setattr(
-                edge_prog_mgr.exported_program(),
-                "_graph_signature",
-                _get_updated_graph_signature(
-                    edge_prog_mgr.exported_program().graph_signature,
-                    edge_prog_mgr.exported_program().graph_module,
-                ),
-            )
-
             edge_prog_mgr = edge_prog_mgr.to_backend(partitioner)
             exec_prog_mgr = edge_prog_mgr.to_executorch(config=executorch_config)
             with open(f"{work_space}/{pte_filename}.pte", "wb") as file:
@@ -520,7 +507,6 @@ if __name__ == "__main__":
         "-P",
         "--ptq",
         help="If specified, will do PTQ quantization. default is 16bits activation and 4bits weight. Support 8a8w and 16a4w.",
-        required=True,
         default="16a4w",
     )
 
@@ -600,4 +586,11 @@ if __name__ == "__main__":
     if args.compile_only:
         exit(f"Finish compile_only and save to {args.artifact}")
 
-    inference(args)
+    try:
+        inference(args)
+    except Exception as e:
+        if args.ip and args.port != -1:
+            with Client((args.ip, args.port)) as conn:
+                conn.send(json.dumps({"Error": str(e)}))
+        else:
+            raise Exception(e)

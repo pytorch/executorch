@@ -9,7 +9,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:pass_manager",
-        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir/backend/canonical_partitioners:config_partitioner_lib",
         "//executorch/exir/dialects:lib",
         "//pytorch/ao:torchao",  # @manual
     ],

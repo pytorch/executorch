@@ -28,3 +28,5 @@ binary_op:
       OPERATOR: pow(X, Y)
     - NAME: binary_floor_divide
       OPERATOR: floor(X / Y)
+    - NAME: binary_minimum
+      OPERATOR: min(X, Y)

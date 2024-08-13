@@ -219,6 +219,9 @@ class Verifier:
                 if _is_mutable_buffer(nd, self.graph_signature):
                     continue
                 assert len(specs) > 0, "Expect tensor specs"
+                specs = list(filter(lambda spec: not spec.const, specs))
+                if len(specs) == 0:
+                    continue
                 allocated = any(
                     spec is None or spec.mem_offset is not None for spec in specs
                 )
@@ -424,7 +427,11 @@ def collect_specs_from_nodes(  # noqa: C901
                 continue
             if ignore_graph_output and spec in graph_output_tensors:
                 continue
-            if ignore_const and spec.const:
+            if (
+                ignore_const
+                and spec.const
+                and not node.meta.get("weight_has_gradient", False)
+            ):
                 continue
             if dedup:
                 if spec in unique_spec:
@@ -765,7 +772,9 @@ def apply_algo(
     )
     insert_calls_to_free(graph_module, specs)
 
-    def handle_submodule(submodule_nd: torch.fx.Node) -> None:
+    def handle_submodule(
+        submodule_nd: torch.fx.Node, alloc_graph_input: bool = False
+    ) -> None:
         nonlocal bufsizes
         assert submodule_nd.op == "get_attr"
         submodule = getattr(graph_module, submodule_nd.target)
@@ -777,7 +786,7 @@ def apply_algo(
             submodule,
             alignment,
             graph_signature,
-            alloc_graph_input=False,
+            alloc_graph_input=alloc_graph_input,
             alloc_graph_output=True,
         )
         submodule.meta.update({"non_const_buffer_sizes": bufsizes})
@@ -792,7 +801,9 @@ def apply_algo(
     # TODO: Add test coverage for map operator once dynamo tracing is
     # fully supported for this. T142287208
     for map_node in get_map_nodes(graph_module):
-        handle_submodule(typing.cast(torch.fx.Node, map_node.args[0]))
+        handle_submodule(
+            typing.cast(torch.fx.Node, map_node.args[0]), alloc_graph_input=True
+        )
 
     graph_module.meta.update({"non_const_buffer_sizes": bufsizes})
 

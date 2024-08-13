@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 # Example script for exporting Llama2 to flatbuffer
 
 import argparse
@@ -22,6 +24,8 @@ import torch
 
 from executorch.examples.models.llama2.llama_transformer import ModelArgs
 
+from executorch.extension.llm.export.builder import DType, LLMEdgeManager
+
 from executorch.extension.llm.export.partitioner_lib import (
     get_coreml_partitioner,
     get_mps_partitioner,
@@ -31,6 +35,7 @@ from executorch.extension.llm.export.partitioner_lib import (
 )
 
 from executorch.extension.llm.export.quantizer_lib import (
+    get_coreml_quantizer,
     get_pt2e_quantization_params,
     get_pt2e_quantizers,
     get_qnn_quantizer,
@@ -40,8 +45,6 @@ from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
-
-from .builder import DType, LlamaEdgeManager
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
@@ -49,7 +52,9 @@ from .source_transformation.quantize import (
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
+    replace_kv_cache_with_simple_kv_cache,
     replace_sdpa_with_custom_op,
+    replace_sdpa_with_flex_sdpa,
     replace_sdpa_with_simple_sdpa,
 )
 
@@ -126,6 +131,11 @@ def build_args_parser() -> argparse.ArgumentParser:
             "qnn_8a8w",
             "qnn_16a16w",
             "qnn_16a4w",
+            "coreml_c4w",
+            "coreml_8a_c8w",
+            "coreml_8a_c4w",
+            "coreml_baseline_8a_c8w",
+            "coreml_baseline_8a_c4w",
         ],
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
@@ -333,12 +343,12 @@ def export_llama(modelname, args) -> str:
         return filename
 
 
-def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
+def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
     """
     Helper function for export_llama. Loads the model from checkpoint and params,
-    and sets up a LlamaEdgeManager with initial transforms and dtype conversion.
+    and sets up a LLMEdgeManager with initial transforms and dtype conversion.
 
-    Returns a LlamaEdgeManager prior to calling export_to_edge with quantizers
+    Returns a LLMEdgeManager prior to calling export_to_edge with quantizers
     """
 
     # load model from checkpoint and params.json
@@ -377,7 +387,12 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
         transforms.append(replace_sdpa_with_custom_op)
 
     if args.use_kv_cache:
-        if args.qnn or args.coreml or args.mps:
+        if args.qnn:
+            transforms.append(replace_kv_cache_with_simple_kv_cache)
+            transforms.append(replace_sdpa_with_flex_sdpa)
+            transforms.append(replace_causal_mask)
+
+        elif args.coreml or args.mps:
             # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
@@ -414,6 +429,10 @@ def get_quantizer_and_quant_params(args):
             args.pt2e_quantize, args.quantization_mode
         )
         quantizers.append(qnn_quantizer)
+    if args.coreml and args.pt2e_quantize:
+        assert len(quantizers) == 0, "Should not enable both xnnpack / qnn and coreml"
+        coreml_quantizer = get_coreml_quantizer(args.pt2e_quantize)
+        quantizers.append(coreml_quantizer)
     logging.info(f"Applying quantizers: {quantizers}")
     return pt2e_quant_params, quantizers, quant_dtype
 
@@ -425,11 +444,11 @@ def _validate_args(args):
     if args.enable_dynamic_shape and (args.coreml or args.mps or args.qnn):
         raise ValueError(
             "Dynamic shape is not supported with coreml, MPS or qnn backends."
-            " Please us --disble_dynamic_shape."
+            " Please use --disable_dynamic_shape."
         )
 
 
-def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
+def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
     _validate_args(args)
     pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
 
@@ -467,7 +486,10 @@ def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
         modelname = f"mps_{modelname}"
 
     if args.coreml:
-        partitioners.append(get_coreml_partitioner(args.use_kv_cache))
+        coreml_partitioner = get_coreml_partitioner(
+            args.use_kv_cache, args.pt2e_quantize
+        )
+        partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
@@ -531,27 +553,29 @@ def _export_llama(modelname, args) -> LlamaEdgeManager:  # noqa: C901
 
 def _load_llama_model_metadata(
     weight_type: WeightType,
-    dtype: DType,
     use_kv_cache: bool,
     use_sdpa_with_kv_cache: bool,
     enable_dynamic_shape: bool,
-    modelArgs: ModelArgs,
+    model_args: ModelArgs,
     metadata_str: Optional[str] = None,
 ):
     is_fairseq2 = weight_type == WeightType.FAIRSEQ2
     metadata = {
         "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
-        "get_bos_id": 3 if is_fairseq2 else 1,
-        "get_dtype": 5 if dtype == DType.fp16 else 6,
-        "get_eos_id": 3 if is_fairseq2 else 2,
-        "get_head_dim": modelArgs.dim // modelArgs.n_heads,
-        "get_max_batch_size": modelArgs.max_batch_size,
-        "get_max_seq_len": modelArgs.max_seq_len,
+        "get_bos_id": (
+            model_args.bos_idx
+            if model_args.bos_idx is not None
+            else (3 if is_fairseq2 else 1)
+        ),
+        "get_eos_id": (
+            model_args.eos_idx
+            if model_args.eos_idx is not None
+            else (3 if is_fairseq2 else 2)
+        ),
+        "get_max_seq_len": model_args.max_seq_len,
         "get_n_bos": 1,
         "get_n_eos": 2 if is_fairseq2 else 1,
-        "get_n_kv_heads": modelArgs.n_kv_heads,
-        "get_n_layers": modelArgs.n_layers,
-        "get_vocab_size": modelArgs.vocab_size,
+        "get_vocab_size": model_args.vocab_size,
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
@@ -579,12 +603,12 @@ def _load_llama_model(
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
-) -> "LlamaEdgeManager":
+) -> "LLMEdgeManager":
     """
-    A helper util that builds a Llama2 model. It returns a LlamaEdgeManager that
+    A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
     can help further lower the model to ExecuTorch.
     Returns:
-        An instance of LlamaEdgeManager which contains the eager mode model.
+        An instance of LLMEdgeManager which contains the eager mode model.
     """
     assert (
         checkpoint or checkpoint_dir
@@ -622,19 +646,17 @@ def _load_llama_model(
     else:
         raise ValueError(f"Unsupported dtype {dtype}")
 
-    return LlamaEdgeManager(
+    return LLMEdgeManager(
         model=model,
         modelname=modelname,
-        weight_type=weight_type,
+        max_seq_len=model.params.max_seq_len,
         dtype=dtype,
         use_kv_cache=use_kv_cache,
-        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
         example_inputs=example_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
         verbose=verbose,
         metadata=_load_llama_model_metadata(
             weight_type,
-            dtype,
             use_kv_cache,
             use_sdpa_with_kv_cache,
             enable_dynamic_shape,

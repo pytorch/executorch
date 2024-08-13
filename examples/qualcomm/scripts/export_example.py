@@ -17,9 +17,9 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
-from executorch.examples.portable.utils import save_pte_program
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.extension.export_util.utils import save_pte_program
 from executorch.sdk import generate_etrecord
 
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     quantizer.set_bit8_op_quant_config(quant_config)
 
     # Typical pytorch 2.0 quantization flow
-    m = torch._export.capture_pre_autograd_graph(model.eval(), example_inputs)
+    m = torch.export.export(model.eval(), example_inputs).module()
     m = prepare_pt2e(m, quantizer)
     # Calibration
     m(*example_inputs)

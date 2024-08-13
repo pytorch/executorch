@@ -11,20 +11,21 @@ import argparse
 import logging
 
 import torch
-from executorch.backends.arm.arm_backend import generate_ethosu_compile_spec
+
+from executorch.backends.arm.arm_backend import ArmCompileSpecBuilder
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.quantizer.arm_quantizer import (
     ArmQuantizer,
     get_symmetric_quantization_config,
 )
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.extension.export_util.utils import export_to_edge, save_pte_program
 
 # Quantize model if required using the standard export quantizaion flow.
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
-from ..portable.utils import export_to_edge, save_pte_program
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
@@ -212,12 +213,13 @@ if __name__ == "__main__":
     if args.delegate is True:
         edge = edge.to_backend(
             ArmPartitioner(
-                generate_ethosu_compile_spec(
-                    "ethos-u55-128",
-                    permute_memory_to_nhwc=args.model_name
-                    in MODEL_NAME_TO_MODEL.keys(),
-                    quantize_io=True,
+                ArmCompileSpecBuilder()
+                .ethosu_compile_spec("ethos-u55-128")
+                .set_permute_memory_format(
+                    args.model_name in MODEL_NAME_TO_MODEL.keys()
                 )
+                .set_quantize_io(True)
+                .build()
             )
         )
         logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")

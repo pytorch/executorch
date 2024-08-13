@@ -4,11 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANTIZED_IO
 
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.tensor import TensorSpec
-
-from .utils import q_io_key
 
 
 class BuildQuantIo(ExportPass):
@@ -38,12 +37,12 @@ class BuildQuantIo(ExportPass):
         assert len(call_delegate) == 1
         spec = []
         for n in graph_module.graph.nodes:
-            if q_io_key in n.meta:
-                n.meta["val"] = n.meta["val"].to(dtype=n.meta[q_io_key])
+            if QCOM_QUANTIZED_IO in n.meta:
+                n.meta["val"] = n.meta["val"].to(dtype=n.meta[QCOM_QUANTIZED_IO])
             if n.op == "call_function" and "getitem" in n.name:
                 fake_tensor = n.meta["val"]
-                if q_io_key in n.meta:
-                    fake_tensor = fake_tensor.to(dtype=n.meta[q_io_key])
+                if QCOM_QUANTIZED_IO in n.meta:
+                    fake_tensor = fake_tensor.to(dtype=n.meta[QCOM_QUANTIZED_IO])
                 spec.append(self._make_spec(fake_tensor))
 
         call_delegate[0].meta["spec"] = tuple(spec)

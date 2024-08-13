@@ -31,6 +31,12 @@ class OpConcat:
 
 
 @dataclass(init=False, frozen=True)
+class OpContextLoader:
+    namespace: str = "qaisw"
+    meta_ctx_bin: str = "qnn_context_binary"
+
+
+@dataclass(init=False, frozen=True)
 class OpConv2d:
     op_name: str = "Conv2d"
     param_stride: str = "stride"
@@ -119,13 +125,6 @@ class OpExpandDims:
 
 
 @dataclass(init=False, frozen=True)
-class OpReduceSum:
-    op_name: str = "ReduceSum"
-    param_axes: str = "axes"
-    param_keep_dims: str = "keep_dims"
-
-
-@dataclass(init=False, frozen=True)
 class OpFullyConnected:
     op_name: str = "FullyConnected"
     param_keep_dims: str = "keep_dims"
@@ -138,13 +137,14 @@ class OpGather:
 
 
 @dataclass(init=False, frozen=True)
-class OpGelu:
-    op_name: str = "Gelu"
+class OpGatherND:
+    op_name: str = "GatherNd"
+    param_batch_dims: str = "batch_dims"
 
 
 @dataclass(init=False, frozen=True)
-class OpSqrt:
-    op_name: str = "ElementWiseSquareRoot"
+class OpGelu:
+    op_name: str = "Gelu"
 
 
 @dataclass(init=False, frozen=True)
@@ -241,6 +241,13 @@ class OpReduceMean:
 
 
 @dataclass(init=False, frozen=True)
+class OpReduceSum:
+    op_name: str = "ReduceSum"
+    param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
 class OpRelu:
     op_name: str = "Relu"
 
@@ -272,6 +279,12 @@ class OpResizeNearestNeighbor:
 
 
 @dataclass(init=False, frozen=True)
+class OpScatterNd:
+    op_name: str = "ScatterNd"
+    param_reduction: str = "reduction"
+
+
+@dataclass(init=False, frozen=True)
 class OpSigmoid:
     op_name: str = "Sigmoid"
 
@@ -299,6 +312,11 @@ class OpSplit:
     op_name: str = "Split"
     param_axis: str = "axis"
     param_split_index: str = "split_index"
+
+
+@dataclass(init=False, frozen=True)
+class OpSqrt:
+    op_name: str = "ElementWiseSquareRoot"
 
 
 @dataclass(init=False, frozen=True)

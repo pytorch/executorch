@@ -13,6 +13,7 @@ MODEL_NAME=$1 # stories110M.pt
 BUILD_TOOL=$2 # buck2 or cmake
 DTYPE=$3 # fp16 or fp32
 MODE=${4:-"xnnpack+custom"} # portable or xnnpack+custom or xnnpack+custom+qe
+UPLOAD_DIR=${5:-}
 if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
     echo "Expecting atleast 4 positional arguments"
     echo "Usage: [...]"
@@ -71,6 +72,25 @@ fi
 
 echo "COREML option ${COREML}"
 
+if [[ "${MODE}" =~ .*qnn.* ]]; then
+  QNN=ON
+  export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+  export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
+  export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
+  export PYTHONPATH=".."
+  cp schema/program.fbs exir/_serialize/program.fbs
+  cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
+  cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
+  cp -f build-x86/backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
+
+else
+  QNN=OFF
+  QNN_SDK_ROOT=""
+fi
+
+echo "QNN option ${QNN}"
+echo "QNN_SDK_ROOT: ${QNN_SDK_ROOT}"
+
 if [[ -z "${BUCK:-}" ]]; then
   BUCK=buck2
 fi
@@ -95,6 +115,8 @@ cmake_install_executorch_libraries() {
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DEXECUTORCH_BUILD_MPS="$MPS" \
         -DEXECUTORCH_BUILD_COREML="$COREML" \
+        -DEXECUTORCH_BUILD_QNN="$QNN" \
+        -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Debug
@@ -124,6 +146,15 @@ cleanup_files() {
   rm "${EXPORTED_MODEL_NAME}"
   rm result.txt
   rm params.json
+}
+
+prepare_artifacts_upload() {
+  if [ -n "$UPLOAD_DIR" ]; then
+    echo "Preparing for uploading generated artifacs"
+    zip -j model.zip "${EXPORTED_MODEL_NAME}" tokenizer.bin
+    mkdir -p "${UPLOAD_DIR}"
+    mv model.zip "${UPLOAD_DIR}"
+  fi
 }
 
 # Download and create artifacts.
@@ -166,12 +197,15 @@ fi
 if [[ "${COREML}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -kv -v --coreml --disable_dynamic_shape"
 fi
+if [[ "${QNN}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} -kv -v --qnn --disable_dynamic_shape"
+fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"
-$PYTHON_EXECUTABLE -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
+$PYTHON_EXECUTABLE -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 
 
 RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.bin --prompt=Once --temperature=0 --seq_len=10"
@@ -205,6 +239,7 @@ if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
   echo "Actual result: ${RESULT}"
   echo "Success"
 
+  prepare_artifacts_upload
   cleanup_files
 else
   echo "Expected result prefix: ${EXPECTED_PREFIX}"

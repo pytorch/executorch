@@ -5,7 +5,7 @@ For more details, see [Llama 2 repo](https://github.com/facebookresearch/llama) 
 
 Pretrained models are not included in this repo. Users are suggested to download them [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/).
 
-# What are Llama 2 and 3?
+# What is Llama?
 Llama is a collection of large language models that use publicly available data for training. These models are based on the transformer architecture, which allows it to process input sequences of arbitrary length and generate output sequences of variable length. One of the key features of Llama models is its ability to generate coherent and contextually relevant text. This is achieved through the use of attention mechanisms, which allow the model to focus on different parts of the input sequence as it generates output. Additionally, Llama models use a technique called “masked language modeling” to pre-train the model on a large corpus of text, which helps it learn to predict missing words in a sentence.
 
 Llama models have shown to perform well on a variety of natural language processing tasks, including language translation, question answering, and text summarization and are also capable of generating human-like text, making Llama models a useful tool for creative writing and other applications where natural language generation is important.
@@ -59,6 +59,9 @@ Note that since Llama3's vocabulary size is 4x that of Llama2, we had to quantiz
 |Galaxy S24 | 10.91 tokens/second | 11.21 tokens/second |
 |OnePlus 12 | 10.85 tokens/second | 11.02 tokens/second |
 
+### Llama3.1
+> :warning: **use the main branch**: Llama3.1 is supported on the ExecuTorch main branch (not release 0.3).
+
 # Instructions
 
 ## Tested on
@@ -90,7 +93,7 @@ You can export and run the original Llama 2 7B model.
 4. Create tokenizer.bin.
 
     ```
-    python -m examples.models.llama2.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
+    python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
 
 ### Option B: Download and export stories110M model
@@ -113,13 +116,12 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
 4. Create tokenizer.bin.
 
     ```
-    python -m examples.models.llama2.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
+    python -m extension.llm.tokenizer.tokenizer -t <tokenizer.model> -o tokenizer.bin
     ```
 
 ### Option C: Download and export Llama 3 8B instruct model
 
 You can export and run the original Llama 3 8B instruct model.
-> :warning: **use the main branch**: Llama 3 is only supported on the ExecuTorch main branch (not release 2.0)
 
 1. Llama 3 pretrained parameters can be downloaded from [Meta's official Llama 3 repository](https://github.com/meta-llama/llama3/).
 
@@ -208,6 +210,7 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
 
     cmake --build cmake-out -j16 --target install --config Release
     ```
+Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the session of Common Issues and Mitigations below for solutions.
 
 2. Build llama runner.
     ```
@@ -351,3 +354,24 @@ pip uninstall executorch
 rm -rf cmake-out
 ```
 - If you encounter `pthread` related issues during link time, add `pthread` in `target_link_libraries` in `CMakeLists.txt`
+- On Mac, if there is linking error in Step 4 with error message like
+```
+0  0x100823648  __assert_rtn + 72
+1  0x10074bc5c  ld::Fixup::applyFixup(ld::Atom const*, ld::LayoutLinkedImage const&, unsigned char*) const + 8268
+2  0x1007de7d8  ___ZN2ld16LayoutExecutable27writeContentWithoutLinkEditENSt3__14spanIhLm18446744073709551615EEEy_block_invoke + 332
+3  0x188cca428  _dispatch_client_callout2 + 20
+4  0x188cde850  _dispatch_apply_invoke3 + 336
+5  0x188cca3e8  _dispatch_client_callout + 20
+6  0x188ccbc68  _dispatch_once_callout + 32
+7  0x188cdeeec  _dispatch_apply_invoke_and_wait + 372
+8  0x188cdde9c  _dispatch_apply_with_attr_f + 1212
+9  0x188cde08c  dispatch_apply + 96
+10  0x1007de9e4  void mapReduce<ld::Atom const*, mach_o::Error>(std::__1::span<ld::Atom const*, 18446744073709551615ul>, unsigned long, void (unsigned long, mach_o::Error&, std::__1::span<ld::Atom const*, 18446744073709551615ul>) block_pointer, void (std::__1::span<mach_o::Error, 18446744073709551615ul>) block_pointer) + 336
+11  0x1007de594  ld::LayoutExecutable::writeContentWithoutLinkEdit(std::__1::span<unsigned char, 18446744073709551615ul>, unsigned long long) + 1180
+12  0x1007e4020  ld::LayoutExecutable::writeToFile(char const*) + 15248
+13  0x1007962e8  main + 9424
+ld: Assertion failed: (extras.otherInstrOffset != 0 && "Kind::arm64_adrp_ldr missing extra info"), function applyFixup, file Fixup.cpp, line 793.
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+```
+It's a known issue for Xcode version 15.1.
+Mitigation: update to most recent Xcode version, clean and rebuild.

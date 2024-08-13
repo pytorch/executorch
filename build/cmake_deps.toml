@@ -282,7 +282,7 @@ filters = [
 # ---------------------------------- LLama start ----------------------------------
 [targets.custom_ops]
 buck_targets = [
-  "//examples/models/llama2/custom_ops:custom_ops",
+  "//extension/llm/custom_ops:custom_ops",
 ]
 filters = [
   ".cpp$",

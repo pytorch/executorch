@@ -7,11 +7,15 @@
 # pyre-strict
 
 import logging
+from typing import Optional
 
 import torch
 
 from executorch.backends.cadence.aot.passes import (
+    InitializePipeline,
+    RemoveNopExpandOpPass,
     RemoveZeroSizedCatArgsPass,
+    ReplaceLogicalNotBooleanWhereWithWherePass,
     ReplacePT2DequantWithCadenceDequantPass,
     ReplacePT2QuantWithCadenceQuantPass,
     ReplaceScalarTensorWithFullPass,
@@ -20,6 +24,10 @@ from executorch.backends.cadence.aot.passes import (
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
 from executorch.backends.cadence.aot.utils import model_is_quantized
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
+from executorch.backends.transforms.remove_clone_ops import RemoveCloneOpsTransform
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.pt2e.export_utils import model_is_exported
@@ -29,19 +37,30 @@ from torch.export import export
 from torch.export.exported_program import ExportedProgram
 
 
-def quantize_pt2(
+# Note: this is not meant as a primary API since it can create inconsistencies
+# if the quantizer here is different from the quantizer used to convert. It is
+# however useful for unit tests to separate the converted model from the fused
+# model, to be able to get reference numerics.
+# If this does not apply, please use quantize_and_fuse_pt2 instead.
+def convert_pt2(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
+    quantizer: CadenceQuantizer,
 ) -> torch.fx.GraphModule:
     """
-    Instantiate the CadenceQuantizer (PTQ), prepare, convert and fuse the model.
-    Returns a GraphModule with the quantized model.
+    Prepare and convert a model using the given quantizer.
+    The quantizer must be supplied and be the same as the one used to
+    fuse the model later, if applicable. If you do not expect that behavior,
+    please use quantize_and_fuse_pt2 instead, which will instantiate a
+    default quantizer for you if needed.
+    Returns a GraphModule with the converted model.
     """
-    # Quantizer
-    quantizer = CadenceQuantizer()
 
     # Export with dynamo
     model_exp = capture_pre_autograd_graph(model, inputs)
+
+    # Decompose SDPA
+    DecomposeScaledDotProductAttention(False)(model_exp)
 
     # Prepare
     prepared_model = prepare_pt2e(model_exp, quantizer)
@@ -52,18 +71,61 @@ def quantize_pt2(
     # Convert
     converted_model = convert_pt2e(prepared_model)
 
-    # Get patterns and apply fusion of dq -> op -> q to qop
-    # pyre-fixme[16]: Pyre doesn't get that CadenceQuantizer has a patterns attribute
-    patterns = [q.pattern for q in quantizer.quantizers]
-    QuantFusion(patterns)(converted_model)
-
     return converted_model
+
+
+# Note: this is not meant as a primary API since it can create inconsistencies
+# if the quantizer here is different from the quantizer used to convert. It is
+# however useful for unit tests to separate the converted model from the fused
+# model, to be able to get reference numerics.
+# If this does not apply, please use quantize_and_fuse_pt2 instead.
+def fuse_pt2(
+    converted_graph_module: torch.fx.GraphModule,
+    quantizer: CadenceQuantizer,
+) -> torch.fx.GraphModule:
+    """
+    Fuse a converted graph module using the given quantizer.
+    The quantizer must be the same as the one used to convert the model.
+    If you do not expect that behavior, please use quantize_and_fuse_pt2 instead,
+    which will instantiate a default quantizer for you if needed.
+    Returns a GraphModule with the fused model.
+    """
+    # Get patterns and apply fusion of dq -> op -> q to qop
+    # pyre-ignore[16]: no attribute
+    patterns = [q.pattern for q in quantizer.quantizers]
+    QuantFusion(patterns)(converted_graph_module)
+
+    return converted_graph_module
+
+
+# Note: this is the one-liner API to quantize and fuse a model.
+def quantize_pt2(
+    model: torch.nn.Module,
+    inputs: tuple[object, ...],
+    quantizer: Optional[CadenceQuantizer] = None,
+) -> torch.fx.GraphModule:
+    """
+    Prepare, convert and fuse the model using the given quantizer.
+    Returns a GraphModule with the quantized model.
+    """
+    # Quantizer
+    if not quantizer:
+        quantizer = CadenceQuantizer()
+
+    # Get converted graph module
+    converted_gm = convert_pt2(model, inputs, quantizer)
+
+    # Get fused model
+    fused_gm = fuse_pt2(converted_gm, quantizer)
+
+    return fused_gm
 
 
 # Export the model and lower it to an ExportedProgram (in aten IR)
 def export_program(
     model: torch.nn.Module,
     inputs: tuple[object, ...],
+    dump_graphs: bool = False,
 ) -> ExportedProgram:
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
@@ -87,7 +149,13 @@ def export_program(
     torch._C._set_mkldnn_enabled(False)
 
     # else: capture the model and return it.
-    return export(model, inputs)
+    expo_program = export(model, inputs)
+
+    if dump_graphs:
+        logging.info("Exported graph:")
+        expo_program.graph_module.graph.print_tabular()
+
+    return expo_program
 
 
 # Export the model and lower it to an EdgeProgramManager (in edge IR).
@@ -99,11 +167,7 @@ def export_to_edge(
     assert isinstance(model, torch.nn.Module), "model should be an nn.Module"
 
     # Export the model into an ExportedProgram.
-    expo_program = export_program(model, inputs)
-
-    if dump_graphs:
-        logging.info("Exported graph:")
-        expo_program.graph_module.graph.print_tabular()
+    expo_program = export_program(model, inputs, dump_graphs=dump_graphs)
 
     # Call to_edge to convert the graph to edge IR.
     # Note: dim_order is skipped (https://github.com/pytorch/executorch/issues/3704)
@@ -133,8 +197,12 @@ def export_to_cadence(
     # Run a couple required passes for quant/dequant ops
     cadence_program_manager = edge_program_manager.transform(
         [
+            InitializePipeline(),
             RemoveZeroSizedCatArgsPass(),
+            ReplaceLogicalNotBooleanWhereWithWherePass(),
             ReplaceScalarTensorWithFullPass(),
+            RemoveCloneOpsTransform(),
+            RemoveNopExpandOpPass(),
             ReplaceSqueezeAndUnsqueezeWithViewPass(),
             ReplacePT2QuantWithCadenceQuantPass(),
             ReplacePT2DequantWithCadenceDequantPass(),

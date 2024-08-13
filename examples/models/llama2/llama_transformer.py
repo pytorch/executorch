@@ -8,10 +8,18 @@
 # Please refer to README.md in the same folder for more information.
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
+
+from executorch.examples.models.llama2.rope import (
+    apply_rotary_emb,
+    hf_apply_rotary_emb,
+    hf_precompute_freqs_cis,
+    precompute_freqs_cis,
+)
 
 from torch import nn
 
@@ -89,13 +97,15 @@ class ModelArgs:
         False  # Use custom sdpa op that updates kv cache in-place
     )
     enable_dynamic_shape: bool = False  # export model with dynamic shape support
+    use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     rope_theta: Optional[float] = (
         None  # The official name to override self.rope_freq_base.
     )
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
+    use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     # Additional Model Metadata needed at runtime
-    bos_idx: int = 1
-    eos_idx: int = 3
+    bos_idx: Optional[int] = None
+    eos_idx: Optional[int] = None
     bos_count: int = -1  # i.e., a single EOS is used as BOS
     eos_count: int = 2
 
@@ -133,54 +143,6 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
     )
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float):
-    freqs = 1.0 / (
-        theta ** (torch.arange(0, dim, 2, device="cpu")[: (dim // 2)].float() / dim)
-    )
-    t = torch.arange(end, device=freqs.device)  # pyre-ignore
-    freqs = torch.outer(t, freqs).float()  # pyre-ignore
-    freqs_cos = torch.cos(freqs)
-    freqs_sin = torch.sin(freqs)
-    return freqs_cos, freqs_sin
-
-
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
-    ndim = x.ndim
-    freqs_cis_ndim = freqs_cis.ndim
-    if freqs_cis_ndim == 3:
-        # freqs_cis: (seq_len, n_heads, head_dim // 2)
-        assert freqs_cis.shape == (x.shape[-3], x.shape[-2], x.shape[-1])
-        shape = [
-            d if (i == ndim - 3 or i == ndim - 2 or i == ndim - 1) else 1
-            for i, d in enumerate(x.shape)
-        ]
-    else:
-        # freqs_cis: (seq_len, head_dim // 2)
-        assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-        shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-    return freqs_cis.view(shape)
-
-
-def apply_rotary_emb(
-    xq: torch.Tensor, xk: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    xq_r, xq_i = xq.float().reshape(xq.shape[:-1] + (-1, 2)).unbind(-1)
-    xk_r, xk_i = xk.float().reshape(xk.shape[:-1] + (-1, 2)).unbind(-1)
-
-    freqs_cos = reshape_for_broadcast(freqs_cos, xq_r)
-    freqs_sin = reshape_for_broadcast(freqs_sin, xq_r)
-
-    xq_out_r = xq_r * freqs_cos - xq_i * freqs_sin
-    xq_out_i = xq_r * freqs_sin + xq_i * freqs_cos
-    xk_out_r = xk_r * freqs_cos - xk_i * freqs_sin
-    xk_out_i = xk_r * freqs_sin + xk_i * freqs_cos
-
-    xq_out = torch.stack([xq_out_r, xq_out_i], dim=-1).flatten(3)
-    xk_out = torch.stack([xk_out_r, xk_out_i], dim=-1).flatten(3)
-
-    return xq_out.type_as(xq), xk_out.type_as(xk)
-
-
 class KVCache(nn.Module):
     def __init__(
         self,
@@ -199,6 +161,9 @@ class KVCache(nn.Module):
         else:
             cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
 
+        self.max_batch_size = max_batch_size
+        self.n_heads = n_heads
+        self.head_dim = head_dim
         self.transpose_cache = transpose_cache
         self.enable_dynamic_shape = enable_dynamic_shape
         self.register_buffer(
@@ -338,6 +303,10 @@ class Attention(nn.Module):
                 max_seq_len=self.max_seq_len,
                 enable_dynamic_shape=args.enable_dynamic_shape,
             )
+        if args.use_hf_rope:
+            self.apply_rotary_emb = hf_apply_rotary_emb
+        else:
+            self.apply_rotary_emb = apply_rotary_emb
 
     def forward(
         self,
@@ -356,7 +325,7 @@ class Attention(nn.Module):
         v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
         # RoPE relative positional embeddings
-        q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
+        q, k = self.apply_rotary_emb(q, k, freqs_cos, freqs_sin)
 
         if self.use_kv_cache:
             assert input_pos is not None
@@ -486,8 +455,13 @@ class Transformer(nn.Module):
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
         self.max_seq_len = params.max_seq_len
-
-        freqs_cos, freqs_sin = precompute_freqs_cis(
+        if params.use_hf_rope:
+            self.precompute_freqs_cis = hf_precompute_freqs_cis
+        else:
+            self.precompute_freqs_cis = partial(
+                precompute_freqs_cis, use_scaled=params.use_scaled_rope
+            )
+        freqs_cos, freqs_sin = self.precompute_freqs_cis(
             params.dim // params.n_heads,
             (
                 params.max_seq_len  # Normal llama2.
@@ -501,13 +475,19 @@ class Transformer(nn.Module):
 
     def forward(
         self,
-        tokens: torch.Tensor,
+        tokens: Optional[torch.LongTensor] = None,  # tokens
         input_pos: Optional[
-            torch.Tensor
+            torch.LongTensor
         ] = None,  # Scalar tensor indicating size of window of the caches
+        h: Optional[torch.FloatTensor] = None,  # embeddings
     ) -> torch.Tensor:
-        _bsz, seqlen = tokens.shape
-        h = self.tok_embeddings(tokens)
+        if (tokens is None) ^ (h is not None):
+            raise ValueError(
+                "You cannot specify both tokens and h at the same time, and must specify either one"
+            )
+        if tokens is not None and h is None:
+            h = self.tok_embeddings(tokens)
+        seqlen = h.shape[1]
 
         if self.use_kv_cache:
             assert (

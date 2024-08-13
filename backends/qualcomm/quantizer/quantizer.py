@@ -7,16 +7,15 @@ from enum import IntEnum, unique
 from typing import Callable, Dict, Optional, Sequence, Set
 
 import torch
-from executorch.backends.qualcomm.passes.decompose_scaled_dot_product_attention import (
-    DecomposeScaledDotProductAttention,
-)
 from executorch.backends.qualcomm.passes.decompose_silu import DecomposeSilu
 from executorch.backends.qualcomm.passes.recompose_pixel_unshuffle import (
     RecomposePixelUnshuffle,
 )
 from executorch.backends.qualcomm.passes.reduce_dynamic_range import ReduceDynamicRange
-from executorch.backends.qualcomm.passes.remove_redundancy import RemoveRedundancy
 from executorch.backends.qualcomm.passes.replace_inf_buffer import ReplaceInfBuffer
+from executorch.backends.transforms.decompose_sdpa import (
+    DecomposeScaledDotProductAttention,
+)
 
 from torch._ops import OpOverload
 from torch.ao.quantization.quantizer import Quantizer
@@ -182,7 +181,6 @@ class QnnQuantizer(Quantizer):
         self._update_per_channel_weight_quant_ops(linear_ops, enable)
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
-        model = RemoveRedundancy()(model).graph_module
         model = ReduceDynamicRange()(model).graph_module
         model = RecomposePixelUnshuffle(quantization_capture=True)(model).graph_module
         model = DecomposeScaledDotProductAttention()(model).graph_module

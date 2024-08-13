@@ -10,6 +10,7 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_DATA
 
 from .node_visitor import NodeVisitor, register_node_visitor
 from .qnn_constants import OpLayerNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
@@ -91,7 +92,7 @@ class LayerNormVisitor(NodeVisitor):
         layer_norm_op.AddScalarParam(
             OpLayerNorm.param_epsilon,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
-            {"data": np.float32(epsilon)},
+            {QCOM_DATA: np.float32(epsilon)},
         )
         layer_norm_op.AddTensorParam(
             OpLayerNorm.param_axes,

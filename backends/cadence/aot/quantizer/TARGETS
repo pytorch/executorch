@@ -17,6 +17,7 @@ python_library(
     srcs = [
         "patterns.py",
     ],
+    typing = True,
     deps = [
         ":utils",
         "//caffe2:torch",
@@ -28,6 +29,7 @@ python_library(
     srcs = [
         "quantizer.py",
     ],
+    typing = True,
     deps = [
         ":patterns",
         ":utils",

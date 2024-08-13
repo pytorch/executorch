@@ -8,6 +8,8 @@
 
 import operator
 
+from executorch.backends.vulkan.passes.custom_ops_defs import grid_priors_op  # noqa
+
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
@@ -45,6 +47,7 @@ PRIM_OPS = [
 BINARY_OPS = [
     exir_ops.edge.aten.add.Tensor,
     exir_ops.edge.aten.sub.Tensor,
+    exir_ops.edge.aten.minimum.default,
     exir_ops.edge.aten.mul.Tensor,
     exir_ops.edge.aten.div.Tensor,
     exir_ops.edge.aten.div.Tensor_mode,
@@ -84,9 +87,10 @@ CONVOLUTION_OPS = [
 ]
 
 REDUCTION_OPS = [
+    exir_ops.edge.aten.mean.dim,
     exir_ops.edge.aten.sum.dim_IntList,
-    exir_ops.edge.aten._softmax.default,
     exir_ops.edge.aten._log_softmax.default,
+    exir_ops.edge.aten._softmax.default,
 ]
 
 NORMALIZATION_OPS = [
@@ -95,6 +99,7 @@ NORMALIZATION_OPS = [
 ]
 
 SHAPE_MANIPULATION_OPS = [
+    exir_ops.edge.aten.squeeze_copy.dims,
     exir_ops.edge.aten.unsqueeze_copy.default,
     exir_ops.edge.aten.view_copy.default,
     exir_ops.edge.aten.permute_copy.default,
@@ -126,6 +131,7 @@ CREATION_OPS = [
     exir_ops.edge.aten.upsample_nearest2d.vec,
     exir_ops.edge.aten.zeros.default,
     exir_ops.edge.aten.zeros_like.default,
+    exir_ops.edge.et_vk.grid_priors.default,
 ]
 
 

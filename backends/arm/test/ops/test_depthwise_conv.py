@@ -9,6 +9,8 @@ import unittest
 
 from typing import Tuple
 
+import pytest
+
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.ops.test_conv import Conv2d
@@ -130,6 +132,9 @@ testsuite_u55.remove(("3x3_1x3x256x256_gp3_st1", dw_conv2d_3x3_1x3x256x256_gp3_s
 
 
 class TestDepthwiseConv2D(unittest.TestCase):
+    """Tests Conv2D where groups == in_channels and out_channels = K * in_channels. This
+    is a special case enables depthwise convolution."""
+
     def _test_dw_conv2d_tosa_MI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
@@ -189,7 +194,9 @@ class TestDepthwiseConv2D(unittest.TestCase):
     def test_dw_conv2d_tosa_MI(self, test_name, model):
         self._test_dw_conv2d_tosa_MI_pipeline(model, model.get_inputs())
 
+    # TODO: Investigate flakyness (MLTORCH-307)
     @parameterized.expand(testsuite)
+    @pytest.mark.flaky(reruns=3)
     def test_dw_conv2d_tosa_BI(self, test_name, model):
         self._test_dw_conv2d_tosa_BI_pipeline(model, model.get_inputs())
 

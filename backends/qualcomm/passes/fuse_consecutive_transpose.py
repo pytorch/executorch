@@ -6,7 +6,7 @@
 
 
 import torch
-from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm.utils.constants import QCOM_INSERTED_PERMUTE
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -67,12 +67,9 @@ class FuseConsecutiveTranspose(ExportPass):
 
                     # copy metadata
                     permute_node.meta = output_node.meta
-                    # Without inserted_permute_tag, we might obtain wrong input shape
-                    if [
-                        pn.meta.get(LayoutTransform.inserted_permute_tag)
-                        for pn in self.nodes
-                    ]:
-                        permute_node.meta[LayoutTransform.inserted_permute_tag] = True
+                    # Without "qnn_permute", we might obtain wrong input shape
+                    if [pn.meta.get(QCOM_INSERTED_PERMUTE) for pn in self.nodes]:
+                        permute_node.meta[QCOM_INSERTED_PERMUTE] = True
 
             # clear current stack
             self.nodes = []

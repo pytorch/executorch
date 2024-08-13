@@ -73,7 +73,7 @@ class ExecuTorchLlamaCallbackJni
     method(self(), s);
   }
 
-  void onStats(const Runner::Stats& result) const {
+  void onStats(const Stats& result) const {
     static auto cls = ExecuTorchLlamaCallbackJni::javaClassStatic();
     static const auto method = cls->getMethod<void(jfloat)>("onStats");
     double eval_time =
@@ -132,7 +132,7 @@ class ExecuTorchLlamaJni
         prompt->toStdString(),
         128,
         [callback](std::string result) { callback->onResult(result); },
-        [callback](const Runner::Stats& result) { callback->onStats(result); });
+        [callback](const Stats& result) { callback->onStats(result); });
     return 0;
   }
 

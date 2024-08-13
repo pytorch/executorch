@@ -10,14 +10,14 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#include <executorch/backends/vulkan/runtime/api/utils/MacroUtils.h>
+#include <executorch/backends/vulkan/runtime/utils/MacroUtils.h>
 
-#include <executorch/backends/vulkan/runtime/api/vk_api/Adapter.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/Command.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/Descriptor.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/Fence.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/QueryPool.h>
-#include <executorch/backends/vulkan/runtime/api/vk_api/Runtime.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Command.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Descriptor.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Fence.h>
+#include <executorch/backends/vulkan/runtime/vk_api/QueryPool.h>
+#include <executorch/backends/vulkan/runtime/vk_api/Runtime.h>
 
 namespace vkcompute {
 namespace api {

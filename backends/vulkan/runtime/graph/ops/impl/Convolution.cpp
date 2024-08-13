@@ -88,8 +88,8 @@ ValueRef prepack_biases(
     const ValueRef vref,
     const ValueRef weight,
     const bool transposed,
-    const vkapi::StorageType storage_type,
-    const vkapi::GPUMemoryLayout memory_layout) {
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout) {
   auto sizes = graph.sizes_of(weight);
   const int64_t out_channels = transposed ? sizes.at(1) : sizes.at(0);
 
@@ -198,8 +198,8 @@ ValueRef prepack_weights(
   ValueRef v = graph.add_tensor(
       final_sizes,
       graph.dtype_of(vref),
-      vkapi::kTexture2D,
-      vkapi::kChannelsPacked);
+      utils::kTexture2D,
+      utils::kChannelsPacked);
   vTensorPtr t = graph.get_tensor(v);
 
   vkapi::ShaderInfo shader =
@@ -222,8 +222,8 @@ ValueRef prepack_weights(
 }
 
 void check_conv_args(const api::vTensor& in, const api::vTensor& out) {
-  VK_CHECK_COND(check_memory_layout_is(in, vkapi::kChannelsPacked));
-  VK_CHECK_COND(check_memory_layout_is(out, vkapi::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(in, utils::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, utils::kChannelsPacked));
 }
 
 struct Conv2dParams final {
@@ -242,10 +242,8 @@ Conv2dParams create_conv2d_params(
     const Kernel2dParams& p,
     const bool transposed) {
   const auto& overlay_region = utils::make_ivec2({
-      p.kernel_size.data[0] +
-          (p.kernel_size.data[0] - 1) * (p.dilation.data[0] - 1),
-      p.kernel_size.data[1] +
-          (p.kernel_size.data[1] - 1) * (p.dilation.data[1] - 1),
+      p.kernel_size[0] + (p.kernel_size[0] - 1) * (p.dilation[0] - 1),
+      p.kernel_size[1] + (p.kernel_size[1] - 1) * (p.dilation[1] - 1),
   });
   const auto weight_sizes = graph.sizes_of(weight);
   const int32_t in_group_size = utils::safe_downcast<int32_t>(
@@ -255,15 +253,13 @@ Conv2dParams create_conv2d_params(
 
 void check_conv2d_params(const Kernel2dParams& p, const bool transposed) {
   if (transposed) {
-    if (p.dilation.data[0] > 1 || p.dilation.data[1] > 1) {
+    if (p.dilation[0] > 1 || p.dilation[1] > 1) {
       VK_THROW(
           "aten.convolution.default: transposed = true, dilation > 1 is not supported yet!");
     }
   }
-  if ((p.padding.data[0] > 0 && p.kernel_size.data[0] > 1 &&
-       p.dilation.data[0] > 1) ||
-      (p.padding.data[1] > 0 && p.kernel_size.data[1] > 1 &&
-       p.dilation.data[1] > 1)) {
+  if ((p.padding[0] > 0 && p.kernel_size[0] > 1 && p.dilation[0] > 1) ||
+      (p.padding[1] > 0 && p.kernel_size[1] > 1 && p.dilation[1] > 1)) {
     VK_THROW(
         "aten.convolution.default: padding > 0 while dilation, kernel_size > 1 is not supported yet!");
   }
@@ -297,9 +293,9 @@ utils::uvec3 create_conv2d_global_wg_size(
   if (method == Conv2dMethod::Pointwise) {
     const utils::uvec3 image_extents = graph.image_extents_of(out);
     return {
-        utils::div_up(image_extents.data[0u], 2u),
-        utils::div_up(image_extents.data[1u], 2u),
-        image_extents.data[2u]};
+        utils::div_up(image_extents[0u], 2u),
+        utils::div_up(image_extents[1u], 2u),
+        image_extents[2u]};
   } else {
     return graph.create_global_wg_size(out);
   }
@@ -343,8 +339,8 @@ void add_conv2d_node(
       bias,
       weight,
       transposed_val,
-      /* storage_type = */ vkapi::kTexture2D,
-      /* memory_layout = */ vkapi::kWidthPacked);
+      /* storage_type = */ utils::kTexture2D,
+      /* memory_layout = */ utils::kWidthPacked);
 
   vTensorPtr t_in = graph.get_tensor(arg_in);
   vTensorPtr t_out = graph.get_tensor(out);
@@ -408,14 +404,14 @@ void add_conv1d_node(
     const bool clamp_out) {
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
   ValueRef arg_weight =
-      prepack_if_tensor_ref(graph, weight, vkapi::kWidthPacked);
+      prepack_if_tensor_ref(graph, weight, utils::kWidthPacked);
   ValueRef arg_bias = prepack_biases(
       graph,
       bias,
       weight,
       /*transposed = */ false,
-      /*storage_type = */ vkapi::kTexture3D,
-      /*memory_layout = */ vkapi::kChannelsPacked);
+      /*storage_type = */ utils::kTexture3D,
+      /*memory_layout = */ utils::kChannelsPacked);
 
   float out_min_val = 0.0f;
   float out_max_val = 0.0f;

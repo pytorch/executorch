@@ -47,7 +47,7 @@ bool check_same_sizes_at(
 
 bool check_memory_layout_is(
     const api::vTensor& t,
-    vkapi::GPUMemoryLayout layout) {
+    utils::GPUMemoryLayout layout) {
   return t.gpu_memory_layout() == layout;
 }
 
@@ -79,11 +79,11 @@ bool is_packed_dim_broadcasted(
   // We assume that the tensors are broadcastable. If values aren't equal at
   // some index, then the value of rcvr is 1 and hence should be broadcasted.
   switch (sndr.gpu_memory_layout()) {
-    case vkapi::kChannelsPacked:
+    case utils::kChannelsPacked:
       return utils::val_at(-3, sndr.sizes()) > utils::val_at(-3, rcvr.sizes());
-    case vkapi::kHeightPacked:
+    case utils::kHeightPacked:
       return utils::val_at(-2, sndr.sizes()) > utils::val_at(-2, rcvr.sizes());
-    case vkapi::kWidthPacked:
+    case utils::kWidthPacked:
       return utils::val_at(-1, sndr.sizes()) > utils::val_at(-1, rcvr.sizes());
   }
 }
@@ -101,15 +101,15 @@ utils::ivec2 create_broadcast_params(
 
 utils::uvec3 adaptive_work_group_size(const utils::uvec3& global_work_group) {
   utils::uvec3 local_group_size = {4, 4, 4};
-  if (global_work_group.data[2u] == 1) {
-    if (global_work_group.data[1u] < 8) {
-      local_group_size.data[0u] = 16;
-      local_group_size.data[1u] = 4;
-      local_group_size.data[2u] = 1;
+  if (global_work_group[2u] == 1) {
+    if (global_work_group[1u] < 8) {
+      local_group_size[0u] = 16;
+      local_group_size[1u] = 4;
+      local_group_size[2u] = 1;
     } else {
-      local_group_size.data[0u] = 8;
-      local_group_size.data[1u] = 8;
-      local_group_size.data[2u] = 1;
+      local_group_size[0u] = 8;
+      local_group_size[1u] = 8;
+      local_group_size[2u] = 1;
     }
   }
   return local_group_size;

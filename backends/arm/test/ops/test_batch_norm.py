@@ -497,6 +497,8 @@ test_no_stats_data_suite = [
 
 
 class TestBatchNorm2d(unittest.TestCase):
+    """Tests BatchNorm2d."""
+
     class BatchNorm2d(torch.nn.Module):
         def __init__(
             self,

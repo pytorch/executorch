@@ -86,7 +86,10 @@ endif()
 
 # custom ops library
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  add_subdirectory(custom_ops)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/custom_ops
+    ${CMAKE_CURRENT_BINARY_DIR}/../../../extension/llm/custom_ops
+  )
 endif()
 
 # llama_runner library
@@ -97,8 +100,14 @@ if(EXECUTORCH_USE_TIKTOKEN)
   set(ABSL_PROPAGATE_CXX_STD ON)
   set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/abseil-cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
+  )
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/llm/third-party/re2
+    ${CMAKE_CURRENT_BINARY_DIR}/re2
+  )
   set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
   target_link_libraries(llama_runner PUBLIC re2::re2)
 endif()
@@ -210,7 +219,11 @@ endif()
 
 add_executable(llama_main ${_srcs})
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
+  if(APPLE)
+    target_link_options(llama_main PRIVATE "LINKER:-dead_strip")
+  else()
+    target_link_options(llama_main PRIVATE "LINKER:--gc-sections,-s")
+  endif()
 endif()
 
 target_include_directories(llama_main PUBLIC ${_common_include_directories})

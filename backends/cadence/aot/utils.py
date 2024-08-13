@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 import logging
 import operator
 from typing import Dict, List, Tuple
@@ -116,7 +118,7 @@ def get_ops_count(graph_module: torch.fx.GraphModule) -> Dict[str, int]:
 def print_ops_info(
     to_edge_gm: torch.fx.GraphModule,
     jarvis_gm: torch.fx.GraphModule,
-):
+) -> None:
     to_edge_ops_count = get_ops_count(to_edge_gm)
     jarvis_ops_count = get_ops_count(jarvis_gm)
 

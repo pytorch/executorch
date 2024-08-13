@@ -109,7 +109,7 @@ class TestEmit(unittest.TestCase):
         value = typing.cast(schema.Tensor, values[value_index].val)
         self.assertIsInstance(value, schema.Tensor)
 
-        self.assertEqual(value.constant_buffer_idx, exp_buffer_idx)
+        self.assertEqual(value.data_buffer_idx, exp_buffer_idx)
 
         if not value.allocation_info:
             self.assertIsNone(exp_mem_id)
@@ -722,6 +722,43 @@ class TestEmit(unittest.TestCase):
             "executorch_prim::sub",
         )
 
+    def test_load_emit_map(self) -> None:
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                    return x + y
+
+                return control_flow.map(map_fn, x, y)
+
+        f = Foo()
+
+        inputs = (torch.ones(4, 4), torch.ones(4))
+        module = to_edge(
+            export(f, inputs),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        _load_for_executorch_from_buffer(module.to_executorch().buffer)
+
+    def test_run_emit_map(self) -> None:
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                    return x + y
+
+                return control_flow.map(map_fn, x, y)
+
+        f = Foo()
+
+        inputs = (torch.ones(4, 4), torch.ones(4))
+        module = to_edge(
+            export(f, inputs),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        buffer = module.to_executorch().buffer
+        loaded_model = _load_for_executorch_from_buffer(buffer)
+        outputs = loaded_model(inputs)[0]
+        torch.allclose(outputs, f(*inputs))
+
     def test_dim_order(self) -> None:
         class SimpleLinear(torch.nn.Module):
             def __init__(self) -> None:
@@ -810,7 +847,7 @@ class TestEmit(unittest.TestCase):
             < non_const_buffer_size_without_const_prop_pass[1]
         )
 
-    # cant compare plans directly with __eq__ because of the plan names, and constant_buffer_idx in tensor values
+    # cant compare plans directly with __eq__ because of the plan names, and data_buffer_idx in tensor values
     def _compare_execution_plans(
         self, plan_single: ExecutionPlan, plan_merged: ExecutionPlan
     ) -> None:

@@ -41,6 +41,21 @@
  */
 #define alignup4(x) ((x + 3) & -4)
 
+/*
+ * Input: (W, H, C, N) strides of a tensor
+ * Returns: the WHCN index of the fastest moving dimension
+ */
+int find_packed_dim(const ivec4 strides) {
+  int packed_dim = 0;
+  for (int i = 0; i <= 3; i++) {
+    if (strides[i] == 1) {
+      packed_dim = i;
+      break;
+    }
+  }
+  return packed_dim;
+}
+
 //
 // (w, h, c, n) Tensor Index <-> Contiguous Buffer Index Conversion
 //
@@ -74,27 +89,49 @@ ivec4 from_nchw_buffer_i(int buf_i, ivec4 sizes) {
       (buf_i / (sizes.x * sizes.y * sizes.z)));
 }
 
+int to_nchw_buffer_i(const ivec4 tensor_idx, const ivec4 sizes) {
+  return tensor_idx.w * sizes.x * sizes.y * sizes.z +
+      tensor_idx.z * sizes.x * sizes.y + tensor_idx.y * sizes.x + tensor_idx.x;
+}
+
 /*
  * Input: Texel buffer index, (W, H, C, N) strides of a tensor, which dim is
  *        packed along a texel
- * Returns: The (x, y, z, n) texel position corresponding to the first element
- *          of the texel at the specified buffer index
+ * Returns: The (w, h, c, n) tensor index corresponding to the buffer element
  */
-ivec4 to_texel_pos(int buf_i, ivec4 strides, int packed_dim) {
+ivec4 to_tensor_idx(int buffer_id, const ivec4 strides, const int packed_dim) {
   ivec4 idx;
   for (int i = 3; i >= 0; i--) {
     if (i != packed_dim) {
-      idx[i] = buf_i / strides[i];
-      buf_i %= strides[i];
+      idx[i] = buffer_id / strides[i];
+      buffer_id %= strides[i];
     }
   }
-  idx[packed_dim] = buf_i;
+  idx[packed_dim] = buffer_id;
   return idx;
 }
 
-int to_texel_idx(const ivec4 texel_pos, ivec4 strides) {
-  return texel_pos.x * strides.x + texel_pos.y * strides.y +
-      texel_pos.z * strides.z + texel_pos.w * strides.w;
+/*
+ * Input: Texel buffer index, (W, H, C, N) strides of a tensor
+ * Returns: The (w, h, c, n) tensor index corresponding to the buffer element
+ *
+ * This is a convenience overload of the above function. If the packed dim is
+ * not known, it can be found by finding the first dimension with a stride of 1.
+ * However, this process adds some overhead, so if performance is a concern then
+ * the above function should be used instead so that the packed dim is provided.
+ */
+ivec4 to_tensor_idx(int buffer_id, const ivec4 strides) {
+  int packed_dim = find_packed_dim(strides);
+  return to_tensor_idx(buffer_id, strides, packed_dim);
+}
+
+/*
+ * Input: (w, h, c, n) tensor index, (W, H, C, N) strides of the tensor buffer
+ * Returns: the buffer index corresponding to the specified tensor index
+ */
+int to_buffer_id(const ivec4 tensor_idx, ivec4 strides) {
+  return tensor_idx.x * strides.x + tensor_idx.y * strides.y +
+      tensor_idx.z * strides.z + tensor_idx.w * strides.w;
 }
 
 //

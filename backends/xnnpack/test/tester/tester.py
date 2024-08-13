@@ -11,11 +11,10 @@ import random
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import torch
 import torch.export._trace as export_trace
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import (
@@ -29,6 +28,7 @@ from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program
+from executorch.exir.program._program import _to_edge_transform_and_lower
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -40,6 +40,7 @@ except ImportError as e:
     logger.warning(f"{e=}")
     pass
 
+from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.quantizer import Quantizer
@@ -234,23 +235,76 @@ class RunPasses(Stage):
     ):
         self.pass_list = pass_list
         self.pass_functions = pass_functions
+        self.edge_or_aten_program = None
+
+    def run(
+        self, artifact: Union[EdgeProgramManager, ExportedProgram], inputs=None
+    ) -> None:
+        if isinstance(artifact, EdgeProgramManager):
+            self.edge_or_aten_program = artifact
+            if self.pass_list:
+                pass_manager = XNNPACKPassManager(
+                    artifact.exported_program(), self.pass_list
+                )
+                self.edge_or_aten_program._edge_programs["forward"] = (
+                    pass_manager.transform()
+                )
+            if self.pass_functions:
+                assert isinstance(self.pass_functions, list)
+                for pass_function in self.pass_functions:
+                    self.edge_or_aten_program._edge_programs["forward"] = pass_function(
+                        self.edge_or_aten_program.exported_program()
+                    )
+        else:
+            transformed_ep = artifact
+            if self.pass_list:
+                assert isinstance(self.pass_list, list)
+                for pass_ in self.pass_list:
+                    transformed_ep = _transform(transformed_ep, pass_())
+
+            if self.pass_functions:
+                assert isinstance(self.pass_functions, list)
+                for pass_function in self.pass_functions:
+                    transformed_ep = pass_function(transformed_ep)
+
+            self.edge_or_aten_program = transformed_ep
+
+    @property
+    def artifact(self) -> Union[EdgeProgramManager, ExportedProgram]:
+        return self.edge_or_aten_program
+
+    @property
+    def graph_module(self) -> str:
+        if isinstance(self.edge_or_aten_program, EdgeProgramManager):
+            return self.edge_or_aten_program.exported_program().graph_module
+        else:
+            return self.edge_or_aten_program.graph_module
+
+
+@register_stage
+class ToEdgeTransformAndLower(Stage):
+    def __init__(
+        self,
+        partitioners: Optional[List[Partitioner]] = None,
+        edge_compile_config: Optional[EdgeCompileConfig] = None,
+    ):
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
+            XnnpackPartitioner,
+        )
+
+        self.partitioners = partitioners or [XnnpackPartitioner()]
+        self.edge_compile_conf = (
+            edge_compile_config or get_xnnpack_edge_compile_config()
+        )
         self.edge_dialect_program = None
 
-    def run(self, artifact: EdgeProgramManager, inputs=None) -> None:
-        self.edge_dialect_program = artifact
-        if self.pass_list:
-            pass_manager = XNNPACKPassManager(
-                artifact.exported_program(), self.pass_list
-            )
-            self.edge_dialect_program._edge_programs["forward"] = (
-                pass_manager.transform()
-            )
-        if self.pass_functions:
-            assert isinstance(self.pass_functions, list)
-            for pass_function in self.pass_functions:
-                self.edge_dialect_program._edge_programs["forward"] = pass_function(
-                    self.edge_dialect_program.exported_program()
-                )
+    def run(self, artifact: ExportedProgram, inputs=None) -> None:
+        artifact_to_run = copy.deepcopy(artifact)
+        self.edge_dialect_program = _to_edge_transform_and_lower(
+            artifact_to_run,
+            compile_config=self.edge_compile_conf,
+            partitioner=self.partitioners,
+        )
 
     @property
     def artifact(self) -> EdgeProgramManager:
@@ -264,6 +318,10 @@ class RunPasses(Stage):
 @register_stage
 class Partition(Stage):
     def __init__(self, partitioner: Optional[Partitioner] = None):
+        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+            XnnpackPartitioner,
+        )
+
         self.partitioner = partitioner or XnnpackPartitioner()
         self.delegate_module = None
 
@@ -372,13 +430,22 @@ class Tester:
         self.pipeline = {
             self.stage_name(Quantize): [self.stage_name(Export)],
             self.stage_name(Export): [
+                self.stage_name(RunPasses),
                 self.stage_name(ToEdge),
+                self.stage_name(ToEdgeTransformAndLower),
+            ],
+            self.stage_name(ToEdgeTransformAndLower): [
+                self.stage_name(RunPasses),
+                self.stage_name(ToExecutorch),
             ],
             self.stage_name(ToEdge): [
                 self.stage_name(Partition),
                 self.stage_name(RunPasses),
             ],
-            self.stage_name(RunPasses): [self.stage_name(Partition)],
+            self.stage_name(RunPasses): [
+                self.stage_name(Partition),
+                self.stage_name(ToEdgeTransformAndLower),
+            ],
             # TODO Make this Stage optional
             self.stage_name(Partition): [self.stage_name(ToExecutorch)],
             self.stage_name(ToExecutorch): [self.stage_name(Serialize)],
@@ -437,7 +504,7 @@ class Tester:
                             dim_spec.max, 1000
                         )  # unbounded int max is too large
                         lower_bound = (
-                            dim_spec.min if dim_spec.min != 2 else 1
+                            dim_spec.min if dim_spec.min >= 2 else 1
                         )  # 0/1 specialization means dim_spec.min can never be 1
                         dim_name_to_size[dim_name] = fn(
                             random.randint(lower_bound, upper_bound)
@@ -501,6 +568,11 @@ class Tester:
             to_edge_stage = ToEdge()
         to_edge_stage.edge_compile_conf._skip_dim_order = True
         return self._run_stage(to_edge_stage)
+
+    def to_edge_transform_and_lower(
+        self, to_edge_and_transform_stage: Optional[ToEdgeTransformAndLower] = None
+    ):
+        return self._run_stage(to_edge_and_transform_stage or ToEdgeTransformAndLower())
 
     def run_passes(self, run_passes_stage: Optional[RunPasses] = None):
         return self._run_stage(run_passes_stage or RunPasses())

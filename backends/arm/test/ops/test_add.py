@@ -5,7 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 
 from typing import Tuple
@@ -16,11 +15,10 @@ from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.exir import EdgeCompileConfig
 from parameterized import parameterized
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
 
 class TestSimpleAdd(unittest.TestCase):
+    """Tests a single add op, x+x and x+y."""
+
     class Add(torch.nn.Module):
         test_parameters = [
             (torch.FloatTensor([1, 2, 3, 5, 7]),),
@@ -29,10 +27,6 @@ class TestSimpleAdd(unittest.TestCase):
             (torch.ones(1, 1, 4, 4),),
             (torch.ones(1, 3, 4, 2),),
         ]
-
-        def __init__(self):
-            super().__init__()
-            self.permute_memory_to_nhwc = False
 
         def forward(self, x):
             return x + x
@@ -51,7 +45,6 @@ class TestSimpleAdd(unittest.TestCase):
 
         def __init__(self):
             super().__init__()
-            self.permute_memory_to_nhwc = False
 
         def forward(self, x, y):
             return x + y

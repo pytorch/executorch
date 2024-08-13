@@ -55,11 +55,11 @@ qcir::DataType ToDataType(Qnn_DataType_t type) {
       {QNN_DATATYPE_FLOAT_16, qcir::DataType::FLOAT16},
       {QNN_DATATYPE_FLOAT_32, qcir::DataType::FLOAT32},
       // {QNN_DATATYPE_FLOAT_64, qcir::DataType::FLOAT64},
-      // {QNN_DATATYPE_SFIXED_POINT_4, qcir::DataType::SFIXED4},
+      {QNN_DATATYPE_SFIXED_POINT_4, qcir::DataType::SFIXED4},
       {QNN_DATATYPE_SFIXED_POINT_8, qcir::DataType::SFIXED8},
       {QNN_DATATYPE_SFIXED_POINT_16, qcir::DataType::SFIXED16},
       {QNN_DATATYPE_SFIXED_POINT_32, qcir::DataType::SFIXED32},
-      // {QNN_DATATYPE_UFIXED_POINT_4, qcir::DataType::UFIXED4},
+      {QNN_DATATYPE_UFIXED_POINT_4, qcir::DataType::UFIXED4},
       {QNN_DATATYPE_UFIXED_POINT_8, qcir::DataType::UFIXED8},
       {QNN_DATATYPE_UFIXED_POINT_16, qcir::DataType::UFIXED16},
       {QNN_DATATYPE_UFIXED_POINT_32, qcir::DataType::UFIXED32},
@@ -84,11 +84,11 @@ Qnn_DataType_t ToDataType(qcir::DataType type) {
       {qcir::DataType::FLOAT16, QNN_DATATYPE_FLOAT_16},
       {qcir::DataType::FLOAT32, QNN_DATATYPE_FLOAT_32},
       // {qcir::DataType::FLOAT64, QNN_DATATYPE_FLOAT_64},
-      // {qcir::DataType::SFIXED4, QNN_DATATYPE_SFIXED_POINT_4},
+      {qcir::DataType::SFIXED4, QNN_DATATYPE_SFIXED_POINT_4},
       {qcir::DataType::SFIXED8, QNN_DATATYPE_SFIXED_POINT_8},
       {qcir::DataType::SFIXED16, QNN_DATATYPE_SFIXED_POINT_16},
       {qcir::DataType::SFIXED32, QNN_DATATYPE_SFIXED_POINT_32},
-      // {qcir::DataType::UFIXED4, QNN_DATATYPE_UFIXED_POINT_4},
+      {qcir::DataType::UFIXED4, QNN_DATATYPE_UFIXED_POINT_4},
       {qcir::DataType::UFIXED8, QNN_DATATYPE_UFIXED_POINT_8},
       {qcir::DataType::UFIXED16, QNN_DATATYPE_UFIXED_POINT_16},
       {qcir::DataType::UFIXED32, QNN_DATATYPE_UFIXED_POINT_32},
@@ -100,7 +100,7 @@ Qnn_DataType_t ToDataType(qcir::DataType type) {
 }
 
 flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
-    const Qnn_QuantizeParams_t& param,
+    const Qnn_Tensor_t& tensor,
     flatbuffers::FlatBufferBuilder* builder) {
   static const std::unordered_map<Qnn_Definition_t, qcir::QuantizeDef> def_map{
       {QNN_DEFINITION_IMPL_GENERATED, qcir::QuantizeDef::IMPL_GENERATED},
@@ -114,13 +114,21 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
                qcir::QuantizeType::SCALE_OFFSET},
               {QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
                qcir::QuantizeType::AXIS_SCALE_OFFSET},
+              {QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET,
+               qcir::QuantizeType::BW_SCALE_OFFSET},
+              {QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
+               qcir::QuantizeType::BW_AXIS_SCALE_OFFSET},
               {QNN_QUANTIZATION_ENCODING_UNDEFINED,
                qcir::QuantizeType::UNDEFINED},
           };
 
-  int axis = 0;
+  int32_t axis = 0;
+  uint32_t bitwidth = 0;
+  auto param = QNN_VER_PTR(tensor)->quantizeParams;
   auto quant_type = type_map.at(param.quantizationEncoding);
   std::vector<qcir::ScaleOffset> data;
+  std::vector<float> scales;
+  std::vector<int32_t> offsets;
   switch (quant_type) {
     case qcir::QuantizeType::SCALE_OFFSET: {
       data.emplace_back(qcir::ScaleOffset(
@@ -129,20 +137,47 @@ flatbuffers::Offset<qcir::QuantizeParam> ToQuantizeParam(
     case qcir::QuantizeType::AXIS_SCALE_OFFSET: {
       size_t len = param.axisScaleOffsetEncoding.numScaleOffsets;
       axis = param.axisScaleOffsetEncoding.axis;
+      data.reserve(len);
       for (uint i = 0; i < len; ++i) {
         data.emplace_back(qcir::ScaleOffset(
             param.axisScaleOffsetEncoding.scaleOffset[i].scale,
             param.axisScaleOffsetEncoding.scaleOffset[i].offset));
       }
     } break;
+    case qcir::QuantizeType::BW_SCALE_OFFSET: {
+      bitwidth = param.bwScaleOffsetEncoding.bitwidth;
+      scales.push_back(param.bwScaleOffsetEncoding.scale);
+      offsets.push_back(param.bwScaleOffsetEncoding.offset);
+    } break;
+    case qcir::QuantizeType::BW_AXIS_SCALE_OFFSET: {
+      bitwidth = param.bwAxisScaleOffsetEncoding.bitwidth;
+      axis = param.bwAxisScaleOffsetEncoding.axis;
+      size_t len = param.bwAxisScaleOffsetEncoding.numElements;
+      scales.reserve(len);
+      offsets.reserve(len);
+      for (size_t i = 0; i < len; ++i) {
+        scales.push_back(param.bwAxisScaleOffsetEncoding.scales[i]);
+        offsets.push_back(param.bwAxisScaleOffsetEncoding.offsets[i]);
+      }
+    } break;
     default:
+      QNN_EXECUTORCH_LOG_WARN(
+          "QNN_QUANTIZATION_ENCODING_UNDEFINED detected: %s",
+          QNN_VER_PTR(tensor)->name);
       break;
   }
   return CreateQuantizeParamDirect(
-      *builder, def_map.at(param.encodingDefinition), quant_type, axis, &data);
+      *builder,
+      def_map.at(param.encodingDefinition),
+      quant_type,
+      bitwidth,
+      axis,
+      &scales,
+      &offsets,
+      &data);
 }
 
-Qnn_QuantizeParams_t ToQuantizeParam(const qparam_type& param) {
+Qnn_QuantizeParams_t ToQuantizeParam(const tensor_type& tensor) {
   static const std::unordered_map<qcir::QuantizeDef, Qnn_Definition_t> def_map{
       {qcir::QuantizeDef::IMPL_GENERATED, QNN_DEFINITION_IMPL_GENERATED},
       {qcir::QuantizeDef::DEFINED, QNN_DEFINITION_DEFINED},
@@ -155,11 +190,16 @@ Qnn_QuantizeParams_t ToQuantizeParam(const qparam_type& param) {
                QNN_QUANTIZATION_ENCODING_SCALE_OFFSET},
               {qcir::QuantizeType::AXIS_SCALE_OFFSET,
                QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET},
+              {qcir::QuantizeType::BW_SCALE_OFFSET,
+               QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET},
+              {qcir::QuantizeType::BW_AXIS_SCALE_OFFSET,
+               QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET},
               {qcir::QuantizeType::UNDEFINED,
                QNN_QUANTIZATION_ENCODING_UNDEFINED},
           };
 
   Qnn_QuantizeParams_t p = QNN_QUANTIZE_PARAMS_INIT;
+  auto param = tensor->qparam();
   p.encodingDefinition = def_map.at(param->def());
   p.quantizationEncoding = type_map.at(param->type());
   switch (p.quantizationEncoding) {
@@ -174,7 +214,24 @@ Qnn_QuantizeParams_t ToQuantizeParam(const qparam_type& param) {
           reinterpret_cast<Qnn_ScaleOffset_t*>(
               const_cast<uint8_t*>(param->data()->Data()));
     } break;
+    case QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET: {
+      p.bwAxisScaleOffsetEncoding.bitwidth = param->bitwidth();
+      p.bwScaleOffsetEncoding.scale = param->scales()->Get(0);
+      p.bwScaleOffsetEncoding.offset = param->offsets()->Get(0);
+    } break;
+    case QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET: {
+      p.bwAxisScaleOffsetEncoding.bitwidth = param->bitwidth();
+      p.bwAxisScaleOffsetEncoding.axis = param->axis();
+      p.bwAxisScaleOffsetEncoding.numElements = param->scales()->size();
+      p.bwAxisScaleOffsetEncoding.scales =
+          const_cast<float*>(param->scales()->data());
+      p.bwAxisScaleOffsetEncoding.offsets =
+          const_cast<int32_t*>(param->offsets()->data());
+    } break;
     default:
+      QNN_EXECUTORCH_LOG_WARN(
+          "qcir::QuantizeType::UNDEFINED detected: %s",
+          tensor->name()->c_str());
       break;
   }
   return p;
@@ -197,7 +254,7 @@ flatbuffers::Offset<qcir::Tensor> ToTensor(
       &shape,
       ToTensorType(QNN_VER_PTR(tensor)->type),
       ToDataType(QNN_VER_PTR(tensor)->dataType),
-      ToQuantizeParam(QNN_VER_PTR(tensor)->quantizeParams, builder),
+      ToQuantizeParam(tensor, builder),
       &buffer);
 }
 
@@ -210,10 +267,9 @@ Qnn_Tensor_t ToTensor(const tensor_type& tensor) {
   QNN_VER_PTR(t)->name = tensor->name()->c_str();
   QNN_VER_PTR(t)->type = ToTensorType(tensor->type());
   QNN_VER_PTR(t)->dataType = ToDataType(tensor->dtype());
-  QNN_VER_PTR(t)->quantizeParams = ToQuantizeParam(tensor->qparam());
+  QNN_VER_PTR(t)->quantizeParams = ToQuantizeParam(tensor);
   QNN_VER_PTR(t)->rank = tensor->shape()->size();
-  QNN_VER_PTR(t)->dimensions = reinterpret_cast<uint32_t*>(
-      const_cast<uint8_t*>(tensor->shape()->Data()));
+  QNN_VER_PTR(t)->dimensions = const_cast<uint32_t*>(tensor->shape()->data());
   QNN_VER_PTR(t)->clientBuf.dataSize = tensor->data()->size();
   QNN_VER_PTR(t)->clientBuf.data = is_io_tensor(QNN_VER_PTR(t)->type)
       ? nullptr
