@@ -46,6 +46,20 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
+            name = "text_token_generator" + aten_suffix,
+            exported_headers = ["text_token_generator.h"],
+            visibility = [
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                ":text_decoder_runner" + aten_suffix,
+                "//executorch/extension/llm/tokenizer:tokenizer_header",
+                "//executorch/extension/module:module" + aten_suffix,
+                "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
+            ],
+        )
+
+        runtime.cxx_library(
             name = "metadata_util" + aten_suffix,
             exported_headers = ["metadata_util.h"],
             visibility = [

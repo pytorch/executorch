@@ -21,6 +21,7 @@
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
+#include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
@@ -66,6 +67,7 @@ class Runner {
   std::unique_ptr<Module> module_;
   std::unique_ptr<TextDecoderRunner> text_decoder_runner_;
   std::unique_ptr<TextPrefiller> text_prefiller_;
+  std::unique_ptr<TextTokenGenerator> text_token_generator_;
   std::string tokenizer_path_;
   std::unique_ptr<Tokenizer> tokenizer_;
 
