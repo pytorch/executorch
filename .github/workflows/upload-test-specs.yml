@@ -17,7 +17,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  upload-android-test-spec-for-validation:
+    runs-on: linux.2xlarge
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Upload the spec as a GitHub artifact for validation
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifact
+          retention-days: 1
+          if-no-files-found: error
+          path: examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
+
+  validate-android-test-spec:
+    needs: upload-android-test-spec-for-validation
+    uses: ./.github/workflows/android-perf.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      # Just use a small model here with a minimal amount of configuration to test the spec
+      models: stories110M
+      test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/android-llm-device-farm-test-spec.yml
+
   upload-android-test-spec:
+    needs: validate-android-test-spec
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
@@ -59,30 +86,5 @@ jobs:
             AWS_CMD="aws s3 cp"
           fi
 
-          if [[ -e "${SPEC_FILE}" ]]; then
-            shasum -a 256 "${SPEC_FILE}"
-            ${AWS_CMD} "${SPEC_FILE}" s3://ossci-android/executorch/ --acl public-read
-          else
-            echo "${SPEC_FILE} doesn't exist"
-            exit 1
-          fi
-
-      - name: Upload the spec as artifact
-        uses: seemethere/upload-artifact-s3@v5
-        with:
-          s3-bucket: gha-artifacts
-          s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/artifact
-          retention-days: 1
-          if-no-files-found: error
-          path: examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
-
-  validate-android-test-spec:
-    needs: upload-android-test-spec
-    uses: ./.github/workflows/android-perf.yml
-    permissions:
-      id-token: write
-      contents: read
-    with:
-      models: stories110M
-      test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/android-llm-device-farm-test-spec.yml
+          shasum -a 256 "${SPEC_FILE}"
+          ${AWS_CMD} "${SPEC_FILE}" s3://ossci-android/executorch/ --acl public-read
