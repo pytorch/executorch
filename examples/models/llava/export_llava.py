@@ -85,7 +85,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         ["-X", "-qmode", "8da4w", "--group_size", "128", "--embedding-quantize", "4,32"]
     )
     quant_transform = get_quant_weight_transform(args, dtype_override, False)
-    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
+    _, quantizers, _ = get_quantizer_and_quant_params(args)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:
         source_transforms.append(replace_sdpa_with_custom_op)
@@ -149,15 +149,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
 
 
 def export_token_embedding(llava, prompt):
-    embed = torch.nn.Embedding(
-        llava.model_.config.vocab_size,
-        llava.model_.config.hidden_size,
-        llava.model_.config.pad_token_id,
-    )
-    embed.load_state_dict(
-        llava.model_.get_model().embed_tokens.state_dict(), strict=True, assign=True
-    )
-    embed = embed.to(torch.float32)
+    embed = llava.embed_tokens
     token_dim_1 = Dim("token_dim_1", min=2, max=3518)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
