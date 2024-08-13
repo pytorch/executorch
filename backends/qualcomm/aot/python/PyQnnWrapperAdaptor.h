@@ -86,7 +86,7 @@ class PyQnnOpWrapper {
         break;
       default:
         QNN_EXECUTORCH_LOG_ERROR(
-            "%s has invalid data type: %d", name.c_str(), data_type);
+            "%s has invalid data type: %d", name, data_type);
         break;
     }
   }
