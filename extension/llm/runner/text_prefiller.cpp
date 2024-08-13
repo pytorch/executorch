@@ -59,9 +59,11 @@ Result<uint64_t> TextPrefiller::prefill(
     // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
     uint64_t prev = prompt_tokens[0];
     uint64_t cur;
-    for (int i = 1; i < prompt_tokens.size(); i++) {
+    for (int i = 0; i < prompt_tokens.size(); i++) {
       cur = prompt_tokens[i];
-      token_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
+      if (cur != tokenizer_->bos_tok()) {
+        token_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
+      }
       prev = cur;
     }
     cur_token = text_decoder_runner_->logits_to_token(outputs_res.get());
@@ -82,6 +84,11 @@ Result<uint64_t> TextPrefiller::prefill(
     // is bos so don't callback.
     exec_aten::Tensor logits_tensor = ET_UNWRAP(
         text_decoder_runner_->step(managed_tokens, managed_start_pos));
+
+    // if first token is not bos, we need to callback
+    if (cur_token != tokenizer_->bos_tok()) {
+      token_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
+    }
     pos = 1; // start from index 1
 
     while (pos < num_prompt_tokens) {

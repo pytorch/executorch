@@ -52,7 +52,8 @@ Runner::Runner(
 }
 
 bool Runner::is_loaded() const {
-  return module_->is_loaded() && tokenizer_ && text_decoder_runner_;
+  return module_->is_loaded() && tokenizer_ && text_decoder_runner_ &&
+      text_prefiller_ && text_token_generator_;
 }
 
 Error Runner::load() {
@@ -103,6 +104,13 @@ Error Runner::load() {
       text_decoder_runner_.get(),
       use_kv_cache_,
       enable_parallel_prefill_);
+
+  text_token_generator_ = std::make_unique<TextTokenGenerator>(
+      tokenizer_.get(),
+      text_decoder_runner_.get(),
+      use_kv_cache_,
+      eos_id_,
+      &stats_);
 
   return Error::Ok;
 }
@@ -176,81 +184,19 @@ Error Runner::generate(
   wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
 
   // start the main loop
-  int64_t pos = num_prompt_tokens; // position in the sequence
+  prompt_tokens.push_back(cur_token);
+  int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
+      prompt_tokens, num_prompt_tokens, seq_len, wrapped_callback));
 
-  // Generate the rest of the sequence
-  std::vector<uint64_t> token_data; // allocate space for the tokens
-  std::vector<exec_aten::SizesType> token_shape;
-
-  if (use_kv_cache_) {
-    // hard code these to size 1 as kv cache is locked to static size right now.
-    token_data = {cur_token};
-    token_shape = {1, 1};
-  } else {
-    token_data = prompt_tokens;
-    token_data.push_back(cur_token);
-    token_shape = {1, num_prompt_tokens + 1};
-  }
-
-  // initialize tensor wrappers
-  ManagedTensor tokens_managed(
-      token_data.data(), token_shape, ScalarType::Long);
-
-  ManagedTensor start_pos_managed(&pos, {1}, ScalarType::Long);
-
-  uint64_t prev_token;
-
-  // Generate our tokens
-  while (pos < seq_len - 1) {
-    // Run the model
-    Result<exec_aten::Tensor> logits_res =
-        text_decoder_runner_->step(tokens_managed, start_pos_managed);
-
-    ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
-    exec_aten::Tensor& logits_tensor = logits_res.get();
-
-    prev_token = cur_token;
-
-    long sample_start_time_ms = util::time_in_ms();
-    cur_token = text_decoder_runner_->logits_to_token(logits_tensor);
-    stats_.aggregate_sampling_time_ms +=
-        util::time_in_ms() - sample_start_time_ms;
-
-    pos++;
-
-    if (use_kv_cache_) {
-      // update the token tensor. token_data will not be empty.
-      // NOLINTNEXTLINE(facebook-hte-LocalUncheckedArrayBounds)
-      token_data[0] = cur_token;
-    } else {
-      // push it to the back
-      token_data.push_back(cur_token);
-      tokens_managed.resize({1, static_cast<int>(token_data.size())});
-    }
-
-    // data-dependent terminating condition: we have n_eos_ number of EOS
-    if (pos >= num_prompt_tokens && cur_token == eos_id_) {
-      printf("\n");
-      ET_LOG(Info, "\nReached to the end of generation");
-      break;
-    }
-
-    // print the token as string, decode it with the Tokenizer object
-    wrapped_callback(ET_UNWRAP(tokenizer_->decode(prev_token, cur_token)));
-
-    if (shouldStop_) {
-      break;
-    }
-  }
   stats_.inference_end_ms = util::time_in_ms();
   printf("\n");
 
-  if (pos == seq_len) {
+  if (num_prompt_tokens + num_generated_tokens == seq_len) {
     ET_LOG(Info, "Sequence length (%i tokens) reached!", seq_len);
   }
 
   stats_.num_prompt_tokens = num_prompt_tokens;
-  stats_.num_generated_tokens = pos - num_prompt_tokens;
+  stats_.num_generated_tokens = num_generated_tokens;
   ::executorch::llm::print_report(stats_);
   if (stats_callback) {
     stats_callback(stats_);
@@ -260,6 +206,10 @@ Error Runner::generate(
 }
 
 void Runner::stop() {
-  shouldStop_ = true;
+  if (is_loaded()) {
+    text_token_generator_->stop();
+  } else {
+    ET_LOG(Error, "Token generator is not loaded, cannot stop");
+  }
 }
 } // namespace torch::executor

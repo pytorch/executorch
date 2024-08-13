@@ -53,6 +53,10 @@ class TextDecoderRunner {
     return module_->is_method_loaded(method_name);
   }
 
+  inline void stop() {
+    should_stop_ = true;
+  }
+
   /**
    * Sample the next token from the logits tensor.
    * @param logits_tensor The logits tensor.
@@ -90,6 +94,7 @@ class TextDecoderRunner {
   Module* module_;
   std::unique_ptr<Sampler> sampler_;
   bool use_kv_cache_;
+  bool should_stop_{false};
 };
 
 } // namespace torch::executor
