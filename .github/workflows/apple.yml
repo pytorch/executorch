@@ -28,16 +28,14 @@ jobs:
   test-demo-ios:
     name: test-demo-ios
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    secrets:
-      BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-      BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
-      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+    secrets: inherit
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      secrets-env: BUILD_CERTIFICATE_BASE64 BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
       script: |
         BUILD_TOOL=cmake
 
@@ -48,16 +46,6 @@ jobs:
         .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
         # Setup Apple certificate for iOS development
-        CERTIFICATE_PATH="${RUNNER_TEMP}"/build_certificate.p12
-        export $CERTIFICATE_PATH
-
-        PP_FILENAME=build_pp.mobileprovision
-        PP_PATH="${RUNNER_TEMP}/${PP_FILENAME}"
-        export $PP_PATH
-
-        KEYCHAIN_PATH="${RUNNER_TEMP}"/app-signing.keychain-db
-        export $KEYCHAIN_PATH
-
         .ci/scripts/setup-ios.sh
 
         RC=0
@@ -65,12 +53,6 @@ jobs:
         if ! PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output build/test_ios_ci.sh; then
           RC=1
         fi
-
-        # Clean up the certifcate and exit, note that this is not needed on GitHub
-        # MacOS runners, we keep the clean up logic here just in case we want to
-        # switch to our self-hosted runners
-        security delete-keychain "${KEYCHAIN_PATH}"
-        rm ~/Library/MobileDevice/Provisioning\ Profiles/"${PP_FILENAME}"
 
         exit $RC
 
