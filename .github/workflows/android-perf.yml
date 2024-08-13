@@ -48,11 +48,27 @@ jobs:
       - name: Set parameters
         id: set-parameters
         shell: bash
+        env:
+          # Separate default values from the workflow dispatch. To ensure defaults are accessible
+          # during scheduled runs and to provide flexibility for different defaults between
+          # on-demand and periodic benchmarking.
+          CRON_DEFAULT_MODELS: "stories110M"
+          CRON_DEFAULT_DEVICES: "samsung_galaxy_s2x"
+          CRON_DEFAULT_DELEGATES: "xnnpack"
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
+          if [ -z "$MODELS" ]; then
+            MODELS="$CRON_DEFAULT_MODELS"
+          fi
           DEVICES="${{ inputs.devices }}"
+          if [ -z "$DEVICES" ]; then
+            DEVICES="$CRON_DEFAULT_DEVICES"
+          fi
           DELEGATES="${{ inputs.delegates }}"
+          if [ -z "$DELEGATES" ]; then
+            DELEGATES="$CRON_DEFAULT_DELEGATES"
+          fi
 
           # Mapping devices to their corresponding device-pool-arn
           declare -A DEVICE_POOL_ARNS
@@ -218,7 +234,6 @@ jobs:
       # TODO: Hard code llm_demo_bpe for now in this job.
       android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_bpe/app-debug.apk
       android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_bpe/app-debug-androidTest.apk
-      # The test spec can be downloaded from https://ossci-assets.s3.amazonaws.com/android-llama2-device-farm-test-spec.yml
-      test-spec: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/abd86868-fa63-467e-a5c7-218194665a77
+      test-spec: https://ossci-assets.s3.amazonaws.com/android-llm-device-farm-test-spec.yml
       # Uploaded to S3 from the previous job
       extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip

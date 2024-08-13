@@ -26,8 +26,8 @@ class TextTokenGenerator {
       Stats* stats)
       : tokenizer_(tokenizer),
         text_decoder_runner_(text_decoder_runner),
-        use_kv_cache_(use_kv_cache),
         eos_id_(eos_id),
+        use_kv_cache_(use_kv_cache),
         stats_(stats) {}
 
   /**

@@ -16,7 +16,7 @@
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #endif /* ET_USE_TIKTOKEN*/
 #include <executorch/extension/evalue_util/print_evalue.h>
-#include <executorch/extension/module/metadata_util.h>
+#include <executorch/extension/llm/runner/metadata_util.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
 #include <ctime>
