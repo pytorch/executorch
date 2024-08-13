@@ -103,6 +103,7 @@ which "${PYTHON_EXECUTABLE}"
 
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
+    rm -rf cmake-out
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Debug \
