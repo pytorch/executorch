@@ -165,7 +165,7 @@ $PIP_EXECUTABLE install --extra-index-url "${TORCH_NIGHTLY_URL}" \
 # The --extra-index-url may be necessary if pyproject.toml has a dependency on a
 # pre-release or nightly version of a torch package.
 #
-
+CMAKE_ARGS="$CMAKE_ARGS -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON"
 EXECUTORCH_BUILD_PYBIND="${EXECUTORCH_BUILD_PYBIND}" \
     CMAKE_ARGS="${CMAKE_ARGS}" \
     CMAKE_BUILD_ARGS="${CMAKE_BUILD_ARGS}" \

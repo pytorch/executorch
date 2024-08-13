@@ -26,6 +26,10 @@ from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
 
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
 
+	
+from executorch.exir.passes._quant_patterns_and_replacements import (  # noqa
+    quantized_decomposed_lib,
+)
 
 class CompletionPrediction(TypedDict, total=False):
     generation: str
