@@ -50,13 +50,6 @@ from .source_transformation.quantize import (
     get_quant_weight_transform,
 )
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
-from .source_transformation.sdpa import (
-    replace_causal_mask,
-    replace_kv_cache_with_simple_kv_cache,
-    replace_sdpa_with_custom_op,
-    replace_sdpa_with_flex_sdpa,
-    replace_sdpa_with_simple_sdpa,
-)
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -387,12 +380,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
         transforms.append(replace_sdpa_with_custom_op)
 
     if args.use_kv_cache:
-        if args.qnn:
-            transforms.append(replace_kv_cache_with_simple_kv_cache)
-            transforms.append(replace_sdpa_with_flex_sdpa)
-            transforms.append(replace_causal_mask)
-
-        elif args.coreml or args.mps:
+        if args.coreml or args.mps:
             # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
