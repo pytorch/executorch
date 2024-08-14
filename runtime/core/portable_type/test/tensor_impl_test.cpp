@@ -267,6 +267,93 @@ TEST_F(TensorImplTest, TestSetSizesContigUnbounded) {
   EXPECT_NE(err, Error::Ok);
 }
 
+TEST_F(TensorImplTest, TestDynamicTensorNoStridesDimOrder) {
+  SizesType sizes[3] = {2, 3, 4};
+  float data[24] = {0};
+  TensorImpl t(
+      ScalarType::Float,
+      3,
+      sizes,
+      data,
+      nullptr,
+      nullptr,
+      TensorShapeDynamism::DYNAMIC_BOUND);
+
+  EXPECT_EQ(t.dim(), 3);
+  EXPECT_EQ(t.numel(), 24);
+  EXPECT_EQ(t.nbytes(), 24 * sizeof(float));
+
+  SizesType new_sizes[3] = {3, 2, 4};
+  Error err = resize_tensor_impl(&t, {new_sizes, 3});
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(t.dim(), 3);
+  EXPECT_EQ(t.size(0), 3);
+  EXPECT_EQ(t.size(1), 2);
+  EXPECT_EQ(t.size(2), 4);
+  EXPECT_EQ(t.numel(), 3 * 2 * 4);
+
+  const float* y = t.data<float>();
+  EXPECT_EQ(y, data);
+}
+
+TEST_F(TensorImplTest, TestDynamicTensorNoStridesDimOrderResizeDown) {
+  SizesType sizes[3] = {4, 4, 4};
+  float data[64] = {0};
+  TensorImpl t(
+      ScalarType::Float,
+      3,
+      sizes,
+      data,
+      nullptr,
+      nullptr,
+      TensorShapeDynamism::DYNAMIC_BOUND);
+
+  EXPECT_EQ(t.dim(), 3);
+  EXPECT_EQ(t.numel(), 64);
+  EXPECT_EQ(t.nbytes(), 64 * sizeof(float));
+
+  SizesType new_sizes[3] = {2, 2, 2};
+  Error err = resize_tensor_impl(&t, {new_sizes, 3});
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(t.dim(), 3);
+  EXPECT_EQ(t.size(0), 2);
+  EXPECT_EQ(t.size(1), 2);
+  EXPECT_EQ(t.size(2), 2);
+  EXPECT_EQ(t.numel(), 2 * 2 * 2);
+
+  const float* y = t.data<float>();
+  EXPECT_EQ(y, data);
+}
+
+TEST_F(TensorImplTest, TestDynamicTensorNoStridesDimOrderResizeZeroDim) {
+  SizesType sizes[3] = {4, 4, 4};
+  float data[64] = {0};
+  TensorImpl t(
+      ScalarType::Float,
+      3,
+      sizes,
+      data,
+      nullptr,
+      nullptr,
+      TensorShapeDynamism::DYNAMIC_BOUND);
+
+  EXPECT_EQ(t.dim(), 3);
+  EXPECT_EQ(t.numel(), 64);
+  EXPECT_EQ(t.nbytes(), 64 * sizeof(float));
+
+  SizesType new_sizes[3] = {0, 4, 4};
+  Error err = resize_tensor_impl(&t, {new_sizes, 3});
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(t.dim(), 3);
+  EXPECT_EQ(t.size(0), 0);
+  EXPECT_EQ(t.size(1), 4);
+  EXPECT_EQ(t.size(2), 4);
+  EXPECT_EQ(t.numel(), 0);
+
+  const float* y = t.data<float>();
+  EXPECT_EQ(y, data);
+}
+
 TEST_F(TensorImplTest, TestWriteRead) {
   SizesType sizes[1] = {1};
   DimOrderType dim_order[1] = {0};

@@ -227,6 +227,30 @@ class Program final {
   __ET_NODISCARD Result<FreeableBuffer> LoadSegment(
       const DataLoader::SegmentInfo& segment_info) const;
 
+  /**
+   * Loads a portion of a mutable segment into the provided buffer.
+   *
+   * @param[in] mutable_data_segments_index The index into the
+   * mutable_data_segments_array.
+   * @param[in] offset_index The index into the segment's offsets array.
+   * @param[in] size The number of bytes to load.
+   * @param[in] buffer The buffer to load data into. Must point to at least
+   * `size` bytes of memory.
+   *
+   * @returns An error code on if the load was successful.
+   * @retval Error::Ok The load was successful.
+   * @retval Error::NotFound The program does not contain any segments or the
+   *     indices are out of range.
+   * @returns Other errors depending on the implementation of
+   *     DataLoader: The Program.segment table is inconsistent, or the
+   *     data cannot be accessed.
+   */
+  __ET_NODISCARD Error load_mutable_subsegment_into(
+      size_t mutable_data_segments_index,
+      size_t offset_index,
+      size_t size,
+      void* buffer) const;
+
  private:
   Program(
       DataLoader* loader,

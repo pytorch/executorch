@@ -171,13 +171,10 @@ void CommandBuffer::dispatch(const utils::uvec3& global_workgroup_size) {
 
   vkCmdDispatch(
       handle_,
+      utils::div_up(global_workgroup_size[0u], bound_.local_workgroup_size[0u]),
+      utils::div_up(global_workgroup_size[1u], bound_.local_workgroup_size[1u]),
       utils::div_up(
-          global_workgroup_size.data[0u], bound_.local_workgroup_size.data[0u]),
-      utils::div_up(
-          global_workgroup_size.data[1u], bound_.local_workgroup_size.data[1u]),
-      utils::div_up(
-          global_workgroup_size.data[2u],
-          bound_.local_workgroup_size.data[2u]));
+          global_workgroup_size[2u], bound_.local_workgroup_size[2u]));
 
   state_ = CommandBuffer::State::RECORDING;
 }
