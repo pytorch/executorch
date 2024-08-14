@@ -133,3 +133,56 @@ TEST_F(BufferDataLoaderTest, OutOfBoundsLoadFails) {
     EXPECT_NE(fb.error(), Error::Ok);
   }
 }
+
+TEST_F(BufferDataLoaderTest, LoadIntoNullDstFails) {
+  // Wrap some data in a loader.
+  uint8_t data[256] = {};
+  BufferDataLoader edl(data, sizeof(data));
+
+  // Loading beyond the end of the data should fail.
+  {
+    Result<FreeableBuffer> fb = edl.load_into(
+        /*offset=*/0,
+        /*size=*/1,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+        nullptr);
+    EXPECT_NE(fb.error(), Error::Ok);
+  }
+
+  // Loading zero bytes still fails if dst is null.
+  {
+    Result<FreeableBuffer> fb = edl.load_into(
+        /*offset=*/0,
+        /*size=*/0,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+        nullptr);
+    EXPECT_NE(fb.error(), Error::Ok);
+  }
+}
+
+TEST_F(BufferDataLoaderTest, InBoundsLoadIntoSucceeds) {
+  // Wrap some data in a loader.
+  uint8_t data[256] = {};
+  data[0] = 1;
+  uint8_t buffer[256] = {};
+  buffer[0] = 0;
+  BufferDataLoader edl(data, sizeof(data));
+
+  {
+    // Buffer contains 0 before load_into.
+    EXPECT_EQ(buffer[0], 0);
+    Error fb = edl.load_into(
+        /*offset=*/0,
+        /*size=*/1,
+        /*segment_info=*/
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program),
+        buffer);
+    EXPECT_EQ(fb, Error::Ok);
+    // Buffer contains 1 after load_into.
+    EXPECT_EQ(buffer[0], 1);
+    // Data is unaltered.
+    EXPECT_EQ(data[0], 1);
+  }
+}
