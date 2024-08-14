@@ -23,15 +23,13 @@ void record_nchw_to_buffer_op(
     vkapi::VulkanBuffer& src_buffer,
     api::vTensor& v_dst) {
   vkapi::PipelineBarrier pipeline_barrier{};
-  vkapi::SpecVarList specialization_constants = {
-      SV(v_dst.packed_dim_whcn_idx())};
 
   context->submit_compute_job(
       get_nchw_to_tensor_shader(v_dst),
       pipeline_barrier,
       {uint32_t(v_dst.numel()), 1, 1},
       {64, 1, 1},
-      specialization_constants,
+      {},
       VK_NULL_HANDLE,
       0,
       v_dst.buffer(
@@ -39,6 +37,8 @@ void record_nchw_to_buffer_op(
           vkapi::PipelineStage::COMPUTE,
           vkapi::MemoryAccessType::WRITE),
       src_buffer,
+      v_dst.sizes_ubo(),
+      v_dst.strides_ubo(),
       v_dst.numel_ubo());
 }
 
@@ -47,19 +47,18 @@ void record_buffer_to_nchw_op(
     api::vTensor& v_src,
     vkapi::VulkanBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
-  vkapi::SpecVarList specialization_constants = {
-      SV(v_src.packed_dim_whcn_idx())};
-
   context->submit_compute_job(
       get_tensor_to_nchw_shader(v_src),
       pipeline_barrier,
       {uint32_t(v_src.numel()), 1, 1},
       {64, 1, 1},
-      specialization_constants,
+      {},
       VK_NULL_HANDLE,
       0,
       dst_buffer,
       v_src.buffer(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      v_src.sizes_ubo(),
+      v_src.strides_ubo(),
       v_src.numel_ubo());
 }
 
