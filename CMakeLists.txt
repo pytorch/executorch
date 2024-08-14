@@ -445,7 +445,7 @@ endif()
 add_subdirectory(schema)
 
 #
-# executorch_no_prim_ops: Minimal runtime library
+# executorch_core: Minimal runtime library
 #
 # The bare-minimum runtime library, supporting the Program and Method
 # interfaces. Does not contain any operators, including primitive ops. Does not
@@ -453,14 +453,14 @@ add_subdirectory(schema)
 #
 
 # Remove any PAL-definition files from the sources.
-list(FILTER _executorch_no_prim_ops__srcs EXCLUDE REGEX
+list(FILTER _executorch_core__srcs EXCLUDE REGEX
      "runtime/platform/default/[^/]*.cpp$"
 )
 
 # Add the source file that maps to the requested default PAL implementation.
 if(EXECUTORCH_PAL_DEFAULT MATCHES "^(posix|minimal)$")
   message(STATUS "executorch: Using PAL default '${EXECUTORCH_PAL_DEFAULT}'")
-  list(APPEND _executorch_no_prim_ops__srcs
+  list(APPEND _executorch_core__srcs
        "runtime/platform/default/${EXECUTORCH_PAL_DEFAULT}.cpp"
   )
 else()
@@ -470,44 +470,44 @@ else()
   )
 endif()
 
-add_library(executorch_no_prim_ops ${_executorch_no_prim_ops__srcs})
-target_link_libraries(executorch_no_prim_ops PRIVATE program_schema)
+add_library(executorch_core ${_executorch_core__srcs})
+target_link_libraries(executorch_core PRIVATE program_schema)
 if(EXECUTORCH_USE_DL)
   # Check if dl exists for this toolchain and only then link it.
   find_library(DL_LIBRARY_EXISTS NAMES dl)
   # Check if the library was found
   if(DL_LIBRARY_EXISTS)
-    target_link_libraries(executorch_no_prim_ops PRIVATE dl) # For dladdr()
+    target_link_libraries(executorch_core PRIVATE dl) # For dladdr()
   endif()
 endif()
 target_include_directories(
-  executorch_no_prim_ops PUBLIC ${_common_include_directories}
+  executorch_core PUBLIC ${_common_include_directories}
 )
-target_compile_options(executorch_no_prim_ops PUBLIC ${_common_compile_options})
+target_compile_options(executorch_core PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
   target_compile_definitions(
-    executorch_no_prim_ops PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
+    executorch_core PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
   )
 endif()
 
 if(EXECUTORCH_BUILD_PYBIND AND APPLE)
   # shared version
   add_library(
-    executorch_no_prim_ops_shared SHARED ${_executorch_no_prim_ops__srcs}
+    executorch_core_shared SHARED ${_executorch_core__srcs}
   )
-  target_link_libraries(executorch_no_prim_ops_shared PRIVATE program_schema)
+  target_link_libraries(executorch_core_shared PRIVATE program_schema)
   if(DL_LIBRARY_EXISTS)
-    target_link_libraries(executorch_no_prim_ops_shared PRIVATE dl) # For dladdr()
+    target_link_libraries(executorch_core_shared PRIVATE dl) # For dladdr()
   endif()
   target_include_directories(
-    executorch_no_prim_ops_shared PUBLIC ${_common_include_directories}
+    executorch_core_shared PUBLIC ${_common_include_directories}
   )
   target_compile_options(
-    executorch_no_prim_ops_shared PUBLIC ${_common_compile_options}
+    executorch_core_shared PUBLIC ${_common_compile_options}
   )
   if(MAX_KERNEL_NUM)
     target_compile_definitions(
-      executorch_no_prim_ops_shared PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
+      executorch_core_shared PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM}
     )
   endif()
 endif()
@@ -520,7 +520,7 @@ endif()
 # any backends.
 #
 add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PRIVATE executorch_no_prim_ops)
+target_link_libraries(executorch PRIVATE executorch_core)
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(executorch)
@@ -560,7 +560,7 @@ endif()
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
 install(
-  TARGETS executorch executorch_no_prim_ops
+  TARGETS executorch executorch_core
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories}
@@ -786,6 +786,62 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops
   )
 endif()
+
+function(executorch_runtime target_name)
+  set(options OPTIMIZED QUANTIZED)
+  set(multi_value_args BACKEND EXTENSION)
+
+  cmake_parse_arguments(ETR "${options}" "" "${multi_value_args}" ${ARGN})
+
+  set(runtime_deps executorch)
+
+  # Link backends.
+  foreach(backend IN LISTS ETR_BACKEND)
+    string(TOLOWER "${backend}" backend_l)
+
+    if(backend_l STREQUAL "coreml")
+      list(APPEND runtime_deps coremldelegate)
+    elseif(backend_l STREQUAL "mps")
+      list(APPEND runtime_deps mpsdelegate)
+    elseif(backend_l STREQUAL "qualcomm")
+      list(APPEND runtime_deps qnn_executorch_backend)
+    elseif(backend_l STREQUAL "vulkan")
+      list(APPEND runtime_deps vulkan_backend)
+    elseif(backend_l STREQUAL "xnnpack")
+      list(APPEND runtime_deps xnnpack_backend)
+    else()
+      message(FATAL_ERROR "Unknown backend \"${backend}}\".")
+    endif()
+  endforeach()
+
+  # Link extensions.
+  foreach(extension IN LISTS ETR_EXTENSION)
+    string(TOLOWER "${extension}" extension_l)
+
+    if(extension_l STREQUAL "apple")
+      list(APPEND runtime_deps extension_apple)
+    elseif(extension_l STREQUAL "dataloader")
+      list(APPEND runtime_deps extension_data_loader)
+    elseif(extension_l STREQUAL "module")
+      list(APPEND runtime_deps extension_module)
+    endif()
+  endforeach()
+
+  # Include optimized or portable operator library.
+  if(ETR_OPTIMIZED)
+    list(APPEND runtime_deps optimized_native_cpu_ops_lib)
+  else()
+    list(APPEND runtime_deps portable_ops_lib)
+  endif()
+
+  # Include quantized operator library.
+  if(ETR_QUANTIZED)
+    list(APPEND runtime_deps quantized_ops_lib)
+  endif()
+
+  add_library("${target_name}" INTERFACE)
+  target_link_libraries("${target_name}" INTERFACE "${runtime_deps}")
+endfunction()
 
 # Print all summary
 executorch_print_configuration_summary()

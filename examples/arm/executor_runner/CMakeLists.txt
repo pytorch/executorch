@@ -54,12 +54,12 @@ set_property(
                              "${ET_BUILD_DIR_PATH}/libexecutorch.a"
 )
 
-add_library(executorch_no_prim_ops STATIC IMPORTED)
+add_library(executorch_core STATIC IMPORTED)
 set_property(
-  TARGET executorch_no_prim_ops
-  PROPERTY IMPORTED_LOCATION "${ET_BUILD_DIR_PATH}/libexecutorch_no_prim_ops.a"
+  TARGET executorch_core
+  PROPERTY IMPORTED_LOCATION "${ET_BUILD_DIR_PATH}/libexecutorch_core.a"
 )
-target_link_libraries(executorch INTERFACE executorch_no_prim_ops)
+target_link_libraries(executorch INTERFACE executorch_core)
 
 add_library(executorch_delegate_ethos_u STATIC IMPORTED)
 set_property(
