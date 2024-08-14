@@ -119,3 +119,17 @@ def define_common_targets():
         link_whole = True,
         force_static = True,
     )
+
+    runtime.cxx_test(
+        name = "op_tile_crop_test",
+        srcs = [
+            "op_tile_crop_test.cpp",
+        ],
+        visibility = ["//executorch/..."],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/kernels/test:test_util",
+            ":op_tile_crop",
+        ],
+    )

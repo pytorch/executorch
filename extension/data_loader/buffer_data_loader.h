@@ -12,6 +12,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
+#include <cstring>
 
 namespace executorch {
 namespace extension {
@@ -46,6 +47,24 @@ class BufferDataLoader : public executorch::runtime::DataLoader {
 
   __ET_NODISCARD executorch::runtime::Result<size_t> size() const override {
     return size_;
+  }
+
+  __ET_NODISCARD executorch::runtime::Error load_into(
+      size_t offset,
+      size_t size,
+      __ET_UNUSED const SegmentInfo& segment_info,
+      void* buffer) override {
+    ET_CHECK_OR_RETURN_ERROR(
+        buffer != nullptr,
+        InvalidArgument,
+        "Destination buffer cannot be null");
+
+    auto result = load(offset, size, segment_info);
+    if (!result.ok()) {
+      return result.error();
+    }
+    std::memcpy(buffer, result->data(), size);
+    return executorch::runtime::Error::Ok;
   }
 
  private:
