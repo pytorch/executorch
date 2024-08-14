@@ -6,10 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include "kernels.h"
-
+#include <math.h>
 #include <algorithm>
-#include <limits>
+#include <cstring>
+#include <numeric>
 
 namespace impl {
 namespace reference {

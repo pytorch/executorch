@@ -171,7 +171,7 @@ def build_rescale(
     output_shape,
     input_zp,
     output_zp,
-    is_double_round,
+    is_double_round=False,
 ):
     scale_width = 32 if is_scale32(output_type) else 16
     multiplier, shift = compute_multiplier_and_shift(scale, scale_width)
@@ -197,7 +197,7 @@ def build_rescale(
 
 
 def build_rescale_to_int32(
-    tosa_fb, input, input_zp, rescale_scale, is_scale32=True, is_double_round=True
+    tosa_fb, input, input_zp, rescale_scale, is_scale32=True, is_double_round=False
 ) -> TosaSerializerTensor:
     multiplier, shift = compute_multiplier_and_shift(rescale_scale)
     attr_rescale = ts.TosaSerializerAttribute()
@@ -230,7 +230,7 @@ def build_rescale_from_int32(
     output_zp,
     rescale_scale,
     is_scale32=True,
-    is_double_round=True,
+    is_double_round=False,
 ) -> TosaSerializerTensor:
     multiplier, shift = compute_multiplier_and_shift(rescale_scale)
     attr_rescale_output = ts.TosaSerializerAttribute()
@@ -329,9 +329,6 @@ def build_rescale_conv_output(
     output_scale,
     output_zp,
 ):
-    # Only use double round if we are doing 32 bit scaling
-    double_round = is_scale32(output_type)
-
     # TODO add check to verify if this is a Per-channel quantization.
     post_conv2d_scale = (input_scale.number * weight_scale.number) / output_scale.number
 
@@ -345,6 +342,5 @@ def build_rescale_conv_output(
         op.shape,
         0,
         output_zp.number,
-        double_round,
     )
     return

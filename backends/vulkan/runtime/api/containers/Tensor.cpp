@@ -15,18 +15,23 @@ namespace api {
 
 std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
-    const utils::GPUMemoryLayout memory_layout,
-    const bool texel_strides) {
+    const utils::GPUMemoryLayout memory_layout) {
+  // For zero dim tensors
+  if (sizes.size() == 0) {
+    return {1};
+  }
+
   const int64_t dim_offset =
       utils::to_packed_dim_nchw_offset<int64_t>(memory_layout);
-  const int64_t last_dim = sizes.size() - dim_offset;
-  VK_CHECK_COND(last_dim >= 0);
+  int64_t last_dim = sizes.size() - dim_offset;
+  if (last_dim < 0) {
+    last_dim = sizes.size() - 1;
+  }
 
   size_t ndim = sizes.size();
   std::vector<int64_t> strides(ndim);
 
-  const int64_t last_dim_size =
-      texel_strides ? utils::div_up_4(sizes.at(last_dim)) : sizes.at(last_dim);
+  const int64_t last_dim_size = sizes.at(last_dim);
 
   for (int stride_d = ndim - 1; stride_d >= 0; stride_d--) {
     strides.at(stride_d) = 1;
@@ -41,6 +46,23 @@ std::vector<int64_t> calculate_strides(
     }
   }
   return strides;
+}
+
+std::vector<int64_t> unsqueeze_strides(
+    const std::vector<int64_t>& strides,
+    const int64_t numel) {
+  const size_t ndim = strides.size();
+  const size_t ndim_up4 = utils::align_up_4(strides.size());
+  std::vector<int64_t> unsqueezed_strides(ndim_up4);
+  for (int32_t i = 1; i <= ndim; ++i) {
+    int64_t dim_stride = strides.at(ndim - i);
+    unsqueezed_strides.at(ndim_up4 - i) = dim_stride;
+  }
+
+  for (int32_t i = ndim + 1; i <= ndim_up4; ++i) {
+    unsqueezed_strides.at(ndim_up4 - i) = numel;
+  }
+  return unsqueezed_strides;
 }
 
 std::vector<int64_t> calculate_padded_sizes(
@@ -108,15 +130,19 @@ vTensor::vTensor(
     const bool allocate_memory)
     : dtype_(dtype),
       memory_layout_(memory_layout),
-      // Calculate sizes and strides
+      // Calculate tensor size metadata
       sizes_(sizes.begin(), sizes.end()),
+      strides_(calculate_strides(sizes, memory_layout_)),
+      numel_(utils::multiply_integers(sizes_)),
       padded_sizes_{calculate_padded_sizes(sizes, memory_layout_)},
+      unsqueezed_strides_{unsqueeze_strides(strides_, numel_)},
+      padded_numel_(utils::multiply_integers(padded_sizes_)),
       texture_limits_{{0, 0, 0}},
       // Utility Uniform Buffers that can be passed to shaders as arguments
       sizes_uniform_(),
+      strides_uniform_(),
+      numel_uniform_(),
       texture_limits_uniform_(),
-      texel_strides_uniform_(),
-      ntexels_uniform_(),
       // Construct Tensor storage
       storage_(
           context,
@@ -127,9 +153,9 @@ vTensor::vTensor(
           allocate_memory) {
   if (storage_type != utils::kBuffer) {
     texture_limits_.limits = utils::ivec3{
-        utils::safe_downcast<int32_t>(storage_.image_extents_.data[0]),
-        utils::safe_downcast<int32_t>(storage_.image_extents_.data[1]),
-        utils::safe_downcast<int32_t>(storage_.image_extents_.data[2])};
+        utils::safe_downcast<int32_t>(storage_.image_extents_[0]),
+        utils::safe_downcast<int32_t>(storage_.image_extents_[1]),
+        utils::safe_downcast<int32_t>(storage_.image_extents_[2])};
   }
 
   if (dtype == vkapi::kHalf) {
@@ -178,6 +204,14 @@ const vkapi::BufferBindInfo vTensor::sizes_ubo() {
   return vkapi::BufferBindInfo(sizes_uniform_.buffer());
 }
 
+const vkapi::BufferBindInfo vTensor::strides_ubo() {
+  if (!strides_uniform_.buffer()) {
+    strides_uniform_ = ParamsBuffer(
+        storage_.context_, utils::make_whcn_ivec4(unsqueezed_strides_));
+  }
+  return vkapi::BufferBindInfo(strides_uniform_.buffer());
+}
+
 const vkapi::BufferBindInfo vTensor::texture_limits_ubo() {
   if (!texture_limits_uniform_.buffer()) {
     texture_limits_uniform_ = ParamsBuffer(storage_.context_, texture_limits_);
@@ -185,21 +219,24 @@ const vkapi::BufferBindInfo vTensor::texture_limits_ubo() {
   return vkapi::BufferBindInfo(texture_limits_uniform_.buffer());
 }
 
-const vkapi::BufferBindInfo vTensor::texel_strides_ubo() {
-  if (!texel_strides_uniform_.buffer()) {
-    texel_strides_uniform_ = ParamsBuffer(
-        storage_.context_,
-        utils::make_whcn_ivec4(
-            calculate_strides(padded_sizes_, memory_layout_)));
+const vkapi::BufferBindInfo vTensor::numel_ubo() {
+  if (!numel_uniform_.buffer()) {
+    numel_uniform_ = ParamsBuffer(storage_.context_, numel_);
   }
-  return vkapi::BufferBindInfo(texel_strides_uniform_.buffer());
+  return vkapi::BufferBindInfo(numel_uniform_.buffer());
 }
 
-const vkapi::BufferBindInfo vTensor::ntexels_ubo() {
-  if (!ntexels_uniform_.buffer()) {
-    ntexels_uniform_ = ParamsBuffer(storage_.context_, texel_numel());
+size_t vTensor::staging_buffer_numel() const {
+  const bool is_int8 = dtype_ == vkapi::kChar;
+  const bool int8_supported =
+      storage_.context_->adapter_ptr()->has_full_int8_buffers_support();
+  if (is_int8 && !int8_supported) {
+    return utils::align_up_4(numel_);
   }
-  return vkapi::BufferBindInfo(ntexels_uniform_.buffer());
+  if (storage_type() == utils::kBuffer) {
+    return numel_;
+  }
+  return padded_numel_;
 }
 
 VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
@@ -238,7 +275,12 @@ void vTensor::bind_allocation(const vkapi::Allocation& allocation) {
 
 void vTensor::update_size_metadata(const std::vector<int64_t>& new_sizes) {
   sizes_ = new_sizes;
+  strides_ = calculate_strides(new_sizes, memory_layout_);
+  numel_ = utils::multiply_integers(sizes_);
+
   padded_sizes_ = calculate_padded_sizes(sizes_, memory_layout_);
+  unsqueezed_strides_ = unsqueeze_strides(strides_, numel_);
+  padded_numel_ = utils::multiply_integers(padded_sizes_);
 
   // Calculate the extents of the image texture that would have been required
   // for a tensor of the new sizes.
@@ -247,9 +289,9 @@ void vTensor::update_size_metadata(const std::vector<int64_t>& new_sizes) {
 
   // Update the texture limits to reflect the new virtual extents.
   texture_limits_.limits = utils::ivec3{
-      utils::safe_downcast<int32_t>(virtual_extents.data[0]),
-      utils::safe_downcast<int32_t>(virtual_extents.data[1]),
-      utils::safe_downcast<int32_t>(virtual_extents.data[2])};
+      utils::safe_downcast<int32_t>(virtual_extents[0]),
+      utils::safe_downcast<int32_t>(virtual_extents[1]),
+      utils::safe_downcast<int32_t>(virtual_extents[2])};
 
   if (sizes_uniform_.buffer()) {
     sizes_uniform_.update(utils::make_whcn_ivec4(sizes_));
@@ -257,12 +299,11 @@ void vTensor::update_size_metadata(const std::vector<int64_t>& new_sizes) {
   if (texture_limits_uniform_.buffer()) {
     texture_limits_uniform_.update(texture_limits_);
   }
-  if (texel_strides_uniform_.buffer()) {
-    texel_strides_uniform_.update(utils::make_whcn_ivec4(
-        calculate_strides(padded_sizes_, memory_layout_)));
+  if (strides_uniform_.buffer()) {
+    strides_uniform_.update(utils::make_whcn_ivec4(unsqueezed_strides_));
   }
-  if (ntexels_uniform_.buffer()) {
-    ntexels_uniform_.update(texel_numel());
+  if (numel_uniform_.buffer()) {
+    numel_uniform_.update(numel_);
   }
 }
 
@@ -281,11 +322,9 @@ void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
     utils::uvec3 virtual_extents =
         calculate_image_extents(padded_sizes_, memory_layout_);
 
-    bool valid_resize = virtual_extents.data[0] <= image_extents().data[0];
-    valid_resize =
-        valid_resize && virtual_extents.data[1] <= image_extents().data[1];
-    valid_resize =
-        valid_resize && virtual_extents.data[2] <= image_extents().data[2];
+    bool valid_resize = virtual_extents[0] <= image_extents()[0];
+    valid_resize = valid_resize && virtual_extents[1] <= image_extents()[1];
+    valid_resize = valid_resize && virtual_extents[2] <= image_extents()[2];
 
     VK_CHECK_COND(
         valid_resize,

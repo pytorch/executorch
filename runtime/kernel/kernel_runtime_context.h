@@ -121,10 +121,10 @@ using ::executorch::runtime::KernelRuntimeContext;
 // TODO(T147221312): Remove these aliases once all code uses
 // KernelRuntimeContext.
 namespace exec_aten {
-using RuntimeContext = executorch::runtime::KernelRuntimeContext;
+using RuntimeContext = ::executorch::runtime::KernelRuntimeContext;
 } // namespace exec_aten
 namespace torch {
 namespace executor {
-using RuntimeContext = executorch::runtime::KernelRuntimeContext;
+using RuntimeContext = ::executorch::runtime::KernelRuntimeContext;
 } // namespace executor
 } // namespace torch
