@@ -8,7 +8,7 @@
 
 #include <fstream>
 
-#include <executorch/examples/qualcomm/llama2/qaihub_runner/io_memory.h>
+#include <executorch/examples/qualcomm/qaihub_scripts/llama2/runner/io_memory.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace torch {
@@ -126,7 +126,8 @@ void BertMemory::prepare_io(
             hidden_state->dim_order().data()));
     // reuse inputs for following tensors
     for (int shard_index = 1; shard_index < 4; ++shard_index) {
-      // inpus of shard1,2,3: hidden_state, atten_mask, pos_ids_cos, pos_ids_sin
+      // inputs of shard1,2,3: hidden_state, atten_mask, pos_ids_cos,
+      // pos_ids_sin
       input_tensors_[shard_index].push_back(hidden_state_.get());
       input_tensors_[shard_index].push_back(attention_mask_.get());
       input_tensors_[shard_index].push_back(position_ids_cos_.get());
@@ -269,7 +270,7 @@ void KVCachedMemory::prepare_io(
         const_cast<TensorImpl::DimOrderType*>(pos_ids_sin->dim_order().data()));
     input_tensors_[0].push_back(position_ids_sin_.get());
     // [IO]: hidden_state => [I] shard2,3,4
-    int output_index = 8 * 2 * 32; // layres*(k + v caches)*heads
+    int output_index = 8 * 2 * 32; // layers*(k + v caches)*heads
     Result<TensorInfo> hidden_state =
         methods_meta[0]->output_tensor_meta(output_index);
     hidden_state_ = std::make_unique<TensorImpl>(

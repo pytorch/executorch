@@ -18,7 +18,7 @@ namespace torch::executor {
 // Assuming kv cache and parallel prefill are enabled.
 class ImagePrefiller {
  public:
-  ImagePrefiller(Module* module) : module_(module){};
+  explicit ImagePrefiller(Module* module) : module_(module) {}
   /**
    * Prefill an LLM Module with the given image input.
    * @param image The image input to the multimodal LLM.

@@ -1,7 +1,16 @@
-// The module takes in a string as input and emits a string as output.
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+// A simple image struct.
 
 #pragma once
 #include <cstdint>
+// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <vector>
 
 namespace torch::executor {

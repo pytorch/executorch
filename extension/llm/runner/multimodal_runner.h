@@ -13,10 +13,13 @@
 #pragma once
 
 #include <cstdint>
+// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <functional>
 #include <memory>
+// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <string>
 #include <type_traits>
+// patternlint-disable-next-line executorch-cpp-nostdinc
 #include <unordered_map>
 
 #include <executorch/extension/llm/runner/image.h>
@@ -47,7 +50,7 @@ class MultimodalRunner {
         "Creating Multimodal LLM runner: model_path=%s, tokenizer_path=%s",
         model_path.c_str(),
         tokenizer_path.c_str());
-  };
+  }
 
   virtual bool is_loaded() = 0;
   virtual Error load() = 0;
