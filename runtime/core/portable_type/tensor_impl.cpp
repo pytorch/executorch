@@ -8,8 +8,8 @@
 
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 
+#include <algorithm>
 #include <cstdint>
-#include <cstring> // std::memcpy
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -25,11 +25,11 @@ namespace {
  * Compute the number of elements based on the sizes of a tensor.
  */
 ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
-  ssize_t n = 1;
-  for (ssize_t i = 0; i < dim; i++) {
-    n *= sizes[i];
+  ssize_t numel = 1; // Zero-dimensional tensors (scalars) have numel == 1.
+  for (ssize_t i = 0; i < dim; ++i) {
+    numel *= sizes[i];
   }
-  return n;
+  return numel;
 }
 } // namespace
 
@@ -67,7 +67,7 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   ET_CHECK_OR_RETURN_ERROR(
       new_sizes.size() == dim_,
       NotSupported,
-      "ETensor rank is immutable old: %zu new: %zu",
+      "Attempted to change the tensor rank which is immutable: old=%zu, new=%zu",
       dim_,
       new_sizes.size());
 
@@ -82,55 +82,33 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   if (dim_ == 0) {
     return Error::Ok;
   }
-
-  // Can only resize a StaticShape Tensor to the same size
-  if (shape_dynamism_ == TensorShapeDynamism::STATIC) {
-    for (int i = 0; i < new_sizes.size(); i++) {
+  switch (shape_dynamism_) {
+    case TensorShapeDynamism::STATIC:
       ET_CHECK_OR_RETURN_ERROR(
-          new_sizes[i] == sizes_[i],
+          std::equal(sizes_, sizes_ + dim_, new_sizes.begin()),
           NotSupported,
-          "Attempted to resize a static tensor to a new shape at "
-          "dimension %d old_size: %d new_size: %d",
-          i,
-          sizes_[i],
-          new_sizes[i]);
-    }
-    // no work to do after checking for error
-    return Error::Ok;
-  }
-
-  const auto new_numel = compute_numel(new_sizes.data(), dim_);
-
-  // Bounded tensors can be reshaped, but not beyond the upper bound.
-  if (shape_dynamism_ == TensorShapeDynamism::DYNAMIC_BOUND ||
+          "Attempted to resize a static tensor");
+      break;
+    case TensorShapeDynamism::DYNAMIC_BOUND:
       // TODO(T175194371): Unbounded dynamic tensor resizing is not yet
       // supported: treat them as upper-bounded.
-      shape_dynamism_ == TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    ET_CHECK_OR_RETURN_ERROR(
-        new_numel <= numel_bound_,
-        NotSupported,
-        "Attempted to resize a bounded tensor with capacity of %zu elements to %zu elements.",
-        new_numel,
-        numel_bound_);
+    case TensorShapeDynamism::DYNAMIC_UNBOUND: {
+      const auto new_numel = compute_numel(new_sizes.data(), dim_);
+      ET_CHECK_OR_RETURN_ERROR(
+          new_numel <= numel_bound_,
+          NotSupported,
+          "Attempted to resize a bounded tensor with capacity of %zu elements to %zu elements.",
+          new_numel,
+          numel_bound_);
+
+      if (strides_ && dim_order_) {
+        ET_CHECK_OK_OR_RETURN_ERROR(
+            dim_order_to_stride(new_sizes.data(), dim_order_, dim_, strides_));
+      }
+      numel_ = new_numel;
+      std::copy(new_sizes.begin(), new_sizes.end(), sizes_);
+    }
   }
-
-  // Copy sizes over
-  std::memcpy(sizes_, new_sizes.data(), sizeof(SizesType) * dim_);
-
-  // Compute new strides
-  ET_CHECK_OR_RETURN_ERROR(
-      strides_ != nullptr, Internal, "Strides cannot be nullptr for resize");
-  ET_CHECK_OR_RETURN_ERROR(
-      dim_order_ != nullptr,
-      Internal,
-      "Dim order cannot be nullptr for resize");
-  auto status = dim_order_to_stride(sizes_, dim_order_, dim_, strides_);
-  ET_CHECK_OR_RETURN_ERROR(
-      status == Error::Ok,
-      Internal,
-      "dim_order_to_stride returned invalid status");
-  numel_ = new_numel;
-
   return Error::Ok;
 }
 
