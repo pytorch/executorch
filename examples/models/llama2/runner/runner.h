@@ -15,14 +15,14 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 
 #include <executorch/extension/llm/runner/stats.h>
-#include <executorch/extension/llm/sampler/sampler.h>
+#include <executorch/extension/llm/runner/text_decoder_runner.h>
+#include <executorch/extension/llm/runner/text_prefiller.h>
+#include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 
 namespace torch::executor {
 using Stats = ::executorch::llm::Stats;
@@ -44,37 +44,21 @@ class Runner {
   void stop();
 
  private:
-  int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
-  Result<exec_aten::Tensor> prefill(
-      const std::vector<uint64_t>& tokens,
-      ManagedTensor& managed_tokens,
-      ManagedTensor& managed_start_pos,
-      std::function<void(const std::string&)> token_callback);
-  Result<exec_aten::Tensor> run_model_step(
-      int64_t input_token,
-      ManagedTensor& tokens,
-      ManagedTensor& start_pos,
-      size_t max_seq_len);
-  // metadata
-  int32_t vocab_size_;
-  int32_t bos_id_;
-  int32_t eos_id_;
-  int32_t n_bos_;
-  int32_t n_eos_;
-  int32_t max_seq_len_;
-  bool use_kv_cache_;
-  bool use_sdpa_with_kv_cache_;
-  bool append_eos_;
-  std::unordered_set<std::string> model_methods_;
-  std::string model_path_;
+  float temperature_;
+  bool enable_parallel_prefill_;
+  bool shouldStop_{false};
+
+  // model
   std::unique_ptr<Module> module_;
   std::string tokenizer_path_;
-  float temperature_;
   std::unique_ptr<Tokenizer> tokenizer_;
-  std::unique_ptr<Sampler> sampler_;
-  bool shouldStop_{false};
+  std::unordered_map<std::string, int64_t> metadata_;
+  std::unique_ptr<TextDecoderRunner> text_decoder_runner_;
+  std::unique_ptr<TextPrefiller> text_prefiller_;
+  std::unique_ptr<TextTokenGenerator> text_token_generator_;
+
+  // stats
   Stats stats_;
-  bool enable_parallel_prefill_;
 };
 
 } // namespace torch::executor
