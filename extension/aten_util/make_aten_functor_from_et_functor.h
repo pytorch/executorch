@@ -20,8 +20,8 @@
 #endif
 #include <ATen/native/Resize.h>
 #include <executorch/extension/kernel_util/type_list.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <torch/torch.h>
 
 namespace torch {
@@ -104,25 +104,39 @@ struct type_convert<
             typename remove_const_ref<ETensor>::type,
             torch::executor::Tensor>>>
     final {
- public:
-  ATensor val;
-  std::unique_ptr<ManagedTensor> managed_tensor;
-  torch::executor::Tensor converted;
-  std::vector<exec_aten::SizesType> sizes;
-  explicit type_convert(ATensor value)
-      : val(value), converted(torch::executor::Tensor(nullptr)) {
-    for (auto size : val.sizes()) {
-      sizes.push_back(size);
-    }
-    torch::executor::ScalarType scalar_type =
-        static_cast<torch::executor::ScalarType>(val.scalar_type());
-    managed_tensor = std::make_unique<ManagedTensor>(
-        val.mutable_data_ptr(), sizes, scalar_type);
-    converted = managed_tensor->get_aliasing_tensor();
+  explicit type_convert(ATensor value) : value_(value) {
+    auto sizes = std::make_shared<std::vector<Tensor::SizesType>>(
+        value_.sizes().begin(), value_.sizes().end());
+    const ssize_t dim = sizes->size();
+    auto dim_order = std::make_shared<std::vector<Tensor::DimOrderType>>(dim);
+    auto strides = std::make_shared<std::vector<Tensor::StridesType>>(dim);
+
+    std::iota(dim_order->begin(), dim_order->end(), 0);
+    dim_order_to_stride_nocheck(
+        sizes->data(), dim_order->data(), dim, strides->data());
+
+    auto tensor_impl = std::make_shared<TensorImpl>(
+        static_cast<torch::executor::ScalarType>(value_.scalar_type()),
+        sizes->size(),
+        sizes->data(),
+        value_.mutable_data_ptr(),
+        dim_order->data(),
+        strides->data());
+
+    converted_ = std::unique_ptr<Tensor, std::function<void(Tensor*)>>(
+        new Tensor(tensor_impl.get()),
+        [sizes, dim_order, strides, tensor_impl](Tensor* pointer) {
+          delete pointer;
+        });
   }
+
   ETensor call() {
-    return converted;
+    return *converted_;
   }
+
+ private:
+  ATensor value_;
+  std::unique_ptr<Tensor, std::function<void(Tensor*)>> converted_;
 };
 
 // Tensors: ETen to ATen.
@@ -136,21 +150,22 @@ struct type_convert<
             typename remove_const_ref<ETensor>::type,
             torch::executor::Tensor>>>
     final {
- public:
-  ETensor val;
-  at::Tensor converted;
-  std::vector<int64_t> sizes;
-  explicit type_convert(ETensor value) : val(value) {
-    for (auto size : val.sizes()) {
-      sizes.push_back(size);
-    }
-    c10::ScalarType scalar_type =
-        static_cast<c10::ScalarType>(val.scalar_type());
-    converted = at::from_blob(val.mutable_data_ptr(), sizes, scalar_type);
+  explicit type_convert(ETensor value)
+      : value_(value), sizes_(value_.sizes().begin(), value_.sizes().end()) {
+    converted_ = at::from_blob(
+        value_.mutable_data_ptr(),
+        sizes_,
+        static_cast<c10::ScalarType>(value_.scalar_type()));
   }
+
   ATensor call() {
-    return converted;
+    return converted_;
   }
+
+ private:
+  ETensor value_;
+  at::Tensor converted_;
+  std::vector<int64_t> sizes_;
 };
 
 // Optionals: ATen to ETen.
