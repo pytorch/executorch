@@ -62,6 +62,10 @@ set(FLATCC_REFLECTION
     OFF
     CACHE BOOL ""
 )
+set(FLATCC_DEBUG_CLANG_SANITIZE
+    OFF
+    CACHE BOOL ""
+)
 set(_flatcc_source_dir ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc)
 add_subdirectory(${_flatcc_source_dir} ${CMAKE_BINARY_DIR}/third-party/flatcc)
 
