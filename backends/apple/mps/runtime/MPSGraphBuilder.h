@@ -40,7 +40,8 @@ using NodePtr = const mpsgraph::MPSNode *;
  */
 class MPSGraphBuilder {
 public:
-  MPSGraphBuilder(const void *buffer_pointer, std::unordered_map<MPSGraphTensor *, int32_t> &mpsGraphTensorToId);
+  MPSGraphBuilder(const void *buffer_pointer, size_t num_bytes,
+                  std::unordered_map<MPSGraphTensor *, int32_t> &mpsGraphTensorToId);
   ~MPSGraphBuilder() = default;
 
   Error compileModel();
@@ -178,12 +179,15 @@ private:
   const mpsgraph::MPSGraph *_flatBufferGraph;
   // FlatBuffer raw bytes of the serialized MPS model.
   const void *_buffer_pointer;
+  size_t _num_bytes;
 
   bool _metal_kernel;
   MPSGraph *_mpsGraph;
   MPSGraphExecutable *_mpsGraphExecutable;
   NSMutableDictionary<MPSGraphTensor *, MPSGraphShapedType *> *_feeds;
   NSMutableArray<MPSGraphTensor *> *_targetTensors;
+
+  const uint8_t *_constant_data_ptr;
 };
 
 #undef _DEFINE_MPS_OP

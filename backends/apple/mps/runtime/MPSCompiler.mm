@@ -43,7 +43,7 @@ __ET_NODISCARD Error MPSCompiler::compileModel(
   Error err = Error::Ok;
 
   std::unique_ptr<MPSGraphBuilder> mpsGraphBuilder(
-    new MPSGraphBuilder(buffer_pointer, executor->_mpsGraphTensorToId));
+    new MPSGraphBuilder(buffer_pointer, num_bytes, executor->_mpsGraphTensorToId));
   err = mpsGraphBuilder->compileModel();
   ET_CHECK_OR_RETURN_ERROR(
     err == Error::Ok, Internal, "Failed to construct the MPS graph object");
