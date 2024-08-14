@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include "QnnTypes.h"
 #include <executorch/backends/qualcomm/aot/ir/qcir_generated.h>
+#include "QnnTypes.h"
 
 namespace torch {
 namespace executor {
