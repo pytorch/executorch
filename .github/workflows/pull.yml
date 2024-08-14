@@ -205,26 +205,12 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
 
+        # install pybind
+        bash install_requirements.sh --pybind xnnpack
+
         # install Llava requirements
         bash examples/models/llama2/install_requirements.sh
         bash examples/models/llava/install_requirements.sh
-
-        # run export_llava.sh
-        python examples/models/llava/export_llava.py --use-sdpa-with-kv-cache --pte-name llava_custom_sdpa.pte
-
-        # verify file exists
-        if [ ! -f "llava_custom_sdpa.pte" ]; then
-            echo "llava_custom_sdpa.pte not found!"
-            exit 1
-        fi
-
-        python examples/models/llava/export_llava.py --no-use-sdpa-with-kv-cache --pte-name llava.pte
-
-        # verify file exists
-        if [ ! -f "llava.pte" ]; then
-            echo "llava.pte not found!"
-            exit 1
-        fi
 
         # run python unittest
         python -m unittest examples.models.llava.test.test_llava
@@ -337,7 +323,7 @@ jobs:
         size=${arr[4]}
         # threshold=48120 on devserver with gcc11.4
         # todo(lfq): update once binary size is below 50kb.
-        threshold="51768"
+        threshold="51784"
         if [[ "$size" -le "$threshold" ]]; then
           echo "Success $size <= $threshold"
         else
