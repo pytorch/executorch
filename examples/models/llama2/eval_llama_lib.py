@@ -44,8 +44,12 @@ class ETPybindEvalWrapper(EagerEvalWrapper):
         super().__init__(None, tokenizer, max_seq_length)
         self._model = model  # Expects model to be path to a .pte file
 
+        from executorch.extension.pybindings import portable_lib  # noqa
         from executorch.extension.pybindings.portable_lib import _load_for_executorch
-
+        # Note: import this after portable_lib
+        from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
+        from executorch.kernels import quantized
+        
         self._et_model = _load_for_executorch(self._model)
         self._use_kv_cache = self._et_model.run_method("use_kv_cache")[0]
 
