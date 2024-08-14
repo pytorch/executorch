@@ -36,39 +36,29 @@ class ManagedTensor {
   using DimOrderType = exec_aten::DimOrderType;
   /// The type used for elements of `strides()`.
   using StridesType = exec_aten::StridesType;
+
   ManagedTensor() = delete;
 
   explicit ManagedTensor(
       void* data,
       const std::vector<SizesType>& sizes,
       exec_aten::ScalarType dtype)
-      : dtype_(dtype), sizes_(sizes), data_ptr_(data) {
+      : sizes_(sizes) {
 #ifdef USE_ATEN_LIB
-    tensor_ = torch::from_blob(data, sizes, dtype_);
+    tensor_ = torch::from_blob(data, sizes, dtype);
 #else
-    ssize_t dim = sizes.size();
-    dim_order_.resize(dim);
-    strides_.resize(dim);
-    for (size_t i = 0; i < dim; ++i) {
-      dim_order_[i] = i;
-    }
-    executorch::runtime::dim_order_to_stride_nocheck(
-        sizes.data(), dim_order_.data(), dim, strides_.data());
     tensor_impl_ = std::make_unique<exec_aten::TensorImpl>(
-        dtype_,
-        dim,
+        dtype,
+        sizes_.size(),
         sizes_.data(),
-        data_ptr_,
-        dim_order_.data(),
-        strides_.data(),
+        data,
+        nullptr,
+        nullptr,
         executorch::runtime::TensorShapeDynamism::DYNAMIC_BOUND);
 #endif
   }
 
   void resize(const std::vector<SizesType>& new_sizes) {
-    ET_CHECK_MSG(
-        new_sizes.size() == sizes_.size(),
-        "Cannot change rank of a managed tensor");
     auto err = executorch::runtime::resize_tensor(
         this->get_aliasing_tensor(),
         exec_aten::ArrayRef<SizesType>(new_sizes.data(), new_sizes.size()));
@@ -87,12 +77,8 @@ class ManagedTensor {
   }
 
  private:
-  exec_aten::ScalarType dtype_;
   std::unique_ptr<exec_aten::TensorImpl> tensor_impl_;
   std::vector<SizesType> sizes_;
-  std::vector<StridesType> strides_;
-  std::vector<DimOrderType> dim_order_;
-  void* data_ptr_ = nullptr;
 #ifdef USE_ATEN_LIB
   exec_aten::Tensor tensor_;
 #endif

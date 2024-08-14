@@ -42,15 +42,6 @@ TEST_F(ManagedTensorTest, Smoke) {
 
   EXPECT_EQ(tensor.sizes(), ArrayRef<SizesType>(sizes_.data(), sizes_.size()));
   EXPECT_EQ(tensor.scalar_type(), ScalarType::Long);
-  std::vector<DimOrderType> expected_dim_order = {0, 1};
-  EXPECT_EQ(
-      tensor.dim_order(),
-      ArrayRef<DimOrderType>(
-          expected_dim_order.data(), expected_dim_order.size()));
-  std::vector<StridesType> expected_strides = {3, 1};
-  EXPECT_EQ(
-      tensor.strides(),
-      ArrayRef<StridesType>(expected_strides.data(), expected_strides.size()));
   EXPECT_EQ(tensor.const_data_ptr(), data_.data());
 }
 
@@ -74,15 +65,6 @@ TEST_F(ManagedTensorTest, ResizeShrink) {
       tensor.sizes(),
       ArrayRef<SizesType>(expected_sizes.data(), expected_sizes.size()));
   EXPECT_EQ(tensor.scalar_type(), ScalarType::Long);
-  std::vector<DimOrderType> expected_dim_order = {0, 1};
-  EXPECT_EQ(
-      tensor.dim_order(),
-      ArrayRef<DimOrderType>(
-          expected_dim_order.data(), expected_dim_order.size()));
-  std::vector<StridesType> expected_strides = {2, 1};
-  EXPECT_EQ(
-      tensor.strides(),
-      ArrayRef<StridesType>(expected_strides.data(), expected_strides.size()));
   EXPECT_EQ(tensor.const_data_ptr(), data_.data());
 }
 
@@ -95,14 +77,5 @@ TEST_F(ManagedTensorTest, Resize) {
       tensor.sizes(),
       ArrayRef<SizesType>(expected_sizes.data(), expected_sizes.size()));
   EXPECT_EQ(tensor.scalar_type(), ScalarType::Long);
-  std::vector<DimOrderType> expected_dim_order = {0, 1};
-  EXPECT_EQ(
-      tensor.dim_order(),
-      ArrayRef<DimOrderType>(
-          expected_dim_order.data(), expected_dim_order.size()));
-  std::vector<StridesType> expected_strides = {2, 1};
-  EXPECT_EQ(
-      tensor.strides(),
-      ArrayRef<StridesType>(expected_strides.data(), expected_strides.size()));
   EXPECT_EQ(tensor.const_data_ptr(), data_.data());
 }

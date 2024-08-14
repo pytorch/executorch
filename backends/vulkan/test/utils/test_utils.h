@@ -36,16 +36,16 @@ using namespace vkcompute;
       utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED,  \
       allocate_memory);
 
-#define DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(tensor) \
-  api::StorageBuffer staging_buffer_##tensor(               \
-      api::context(), vkapi::kFloat, tensor.gpu_numel());   \
-  record_nchw_to_image_op(                                  \
+#define DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(tensor)          \
+  api::StorageBuffer staging_buffer_##tensor(                        \
+      api::context(), vkapi::kFloat, tensor.staging_buffer_numel()); \
+  record_nchw_to_image_op(                                           \
       api::context(), staging_buffer_##tensor.buffer(), tensor);
 
-#define DEFINE_STAGING_BUFFER_AND_RECORD_FROM_GPU_FOR(tensor) \
-  api::StorageBuffer staging_buffer_##tensor(                 \
-      api::context(), vkapi::kFloat, tensor.gpu_numel());     \
-  record_image_to_nchw_op(                                    \
+#define DEFINE_STAGING_BUFFER_AND_RECORD_FROM_GPU_FOR(tensor)        \
+  api::StorageBuffer staging_buffer_##tensor(                        \
+      api::context(), vkapi::kFloat, tensor.staging_buffer_numel()); \
+  record_image_to_nchw_op(                                           \
       api::context(), tensor, staging_buffer_##tensor.buffer());
 
 #define CHECK_VALUE(data, idx, expected)                          \
@@ -142,7 +142,7 @@ void fill_vtensor(
 void extract_vtensor(api::vTensor& vten, std::vector<float>& data);
 
 inline std::vector<float> extract_vtensor(api::vTensor& vten) {
-  std::vector<float> data_out(vten.gpu_numel());
+  std::vector<float> data_out(vten.staging_buffer_numel());
   extract_vtensor(vten, data_out);
   return data_out;
 }

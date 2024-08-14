@@ -16,6 +16,10 @@ not_supported_operator = [
     exir_ops.edge.aten.copy.default,
 ]
 
+to_be_implemented_operator = [
+    exir_ops.edge.aten.where.default,
+]
+
 allow_list_operator = [
     _operator.getitem,
 ]

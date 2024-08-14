@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include "kernels.h"
 
 #include <algorithm>
 #include <cmath>
@@ -25,7 +25,7 @@ namespace native {
 template <typename T>
 void quantized_layer_norm_(
     const Tensor& input,
-    float input_scale,
+    double input_scale,
     int64_t input_zero_point,
     const Tensor& weight,
     const Tensor& bias,
@@ -39,7 +39,7 @@ void quantized_layer_norm_(
   const float* __restrict__ weight_data = weight.const_data_ptr<float>();
   const float* __restrict__ bias_data = bias.const_data_ptr<float>();
 
-  float output_inv_scale = XT_RECIP_S(output_scale);
+  float output_inv_scale = 1.0f / output_scale;
 
   size_t last_dim = input.size(input.dim() - 1);
   size_t leading_dims = getLeadingDims(input, input.dim() - 1);
@@ -47,15 +47,14 @@ void quantized_layer_norm_(
   // Visualize the input tensor as a set of 1d vectors, and compute the
   // layer_norm for each vector.
   for (size_t i = 0; i < leading_dims; ++i) {
-    const T* __restrict__ x = in_data + i * last_dim;
-    T* __restrict__ y = out_data + i * last_dim;
+    const T* x = in_data + i * last_dim;
+    T* y = out_data + i * last_dim;
 
     // compute sum and squared sum. The fp32 sum can be approximated as:
     // (X_1 - in_zero_point) * in_scale + (X_2 - in_zero_point) * in_scale + ...
     // (X_N - in_zero_point) * in_scale.
     int32_t sum = 0;
     int32_t sq_sum = last_dim * input_zero_point * input_zero_point;
-#pragma simd
     for (size_t j = 0; j < last_dim; ++j) {
       int32_t val = x[j];
       sum += val;
@@ -64,19 +63,18 @@ void quantized_layer_norm_(
     sq_sum -= (2 * sum * input_zero_point);
     sum -= (last_dim * input_zero_point);
 
-    float mean = XT_DIV_S(XT_MUL_S(input_scale, sum), last_dim);
+    float mean = (input_scale * sum) / last_dim;
     float variance =
-        XT_DIV_S(
-            XT_MUL_S(sq_sum, XT_MUL_S(input_scale, input_scale)), last_dim) -
-        XT_MUL_S(mean, mean);
-    float inv_std = XT_RECIP_S(XT_SQRT_S(XT_ADD_S(variance, (float)eps)));
+        (sq_sum * input_scale * input_scale) / last_dim - mean * mean;
+    float inv_std = 1.0f / std::sqrt(variance + eps);
 
     // y = (x - mean) / std * kGamma + kBeta
-#pragma simd
-    for (size_t j = 0; j < last_dim; ++j) {
+    for (int j = 0; j < last_dim; ++j) {
+      // y[j] = (x[j] - mean) / std * kGamma + kBeta;
       // Since X is quantized, we dequantize it, compute fp32 result, and
       // quantize the result to an int8/uint8 value.
       float val = kernels::dequantize<T>(x[j], input_scale, input_zero_point);
+
       val = (val - mean) * inv_std * weight_data[j] + bias_data[j];
       y[j] = kernels::quantize<T>(val, output_inv_scale, output_zero_point);
     }
