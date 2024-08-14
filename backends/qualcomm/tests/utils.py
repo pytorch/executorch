@@ -27,7 +27,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
 from executorch.backends.qualcomm.utils.utils import capture_program
-from executorch.examples.qualcomm.scripts.utils import (
+from executorch.examples.qualcomm.utils import (
     generate_inputs,
     make_output_dir,
     SimpleADB,
@@ -241,7 +241,7 @@ class TestQNN(unittest.TestCase):
 
                 cmd = [
                     # qnn_executor_runner
-                    f"{build_folder}/examples/qualcomm/qnn_executor_runner",
+                    f"{build_folder}/examples/qualcomm/executor_runner/qnn_executor_runner",
                     "--model_path",
                     f"{pte_fname}",
                     "--input_list_path",
