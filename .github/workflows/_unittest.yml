@@ -16,7 +16,7 @@ jobs:
   linux:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     with:
-      runner: amz2.linux.2xlarge
+      runner: am2.linux.2xlarge
       docker-image: ${{ inputs.docker-image }}
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
