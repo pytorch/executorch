@@ -202,6 +202,21 @@ TEST_F(ModuleTest, TestExecuteOnCurrupted) {
   EXPECT_FALSE(result.ok());
 }
 
+TEST_F(ModuleTest, TestGet) {
+  Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
+
+  std::array<float, 2> input{1, 2};
+  std::array<int32_t, 2> sizes{1, 2};
+  TensorImpl tensor(
+      ScalarType::Float, sizes.size(), sizes.data(), input.data());
+
+  const auto result = module.get("forward", {EValue(Tensor(&tensor))});
+
+  EXPECT_TRUE(result.ok());
+  const auto data = result->toTensor().const_data_ptr<float>();
+  EXPECT_NEAR(data[0], 1.5, 1e-5);
+}
+
 TEST_F(ModuleTest, TestForward) {
   auto module = std::make_unique<Module>(
       std::getenv("RESOURCES_PATH") + std::string("/model.pte"));

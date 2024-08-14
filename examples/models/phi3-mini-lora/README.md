@@ -5,9 +5,8 @@ In this exmaple, we export a model ([phi-3-mini](https://github.com/pytorch/exec
 ### Step 1: [Optional] Install ExecuTorch dependencies
 `./install_requirements.sh` in ExecuTorch root directory.
 
-### Step 2: Install TorchTune nightly
-The LoRA model used is recent and is not yet officially released on `TorchTune`. To be able to run this example, you will need to run the following to install TorchTune nighly:
-- `./examples/models/llava_encoder/install_requirements.sh`'
+### Step 2: Install Requirements
+- `./examples/models/phi3-mini-lora/install_requirements.sh`
 
 ### Step 3: Export and run the model
 1. Export the model to ExecuTorch.
