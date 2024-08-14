@@ -7,7 +7,8 @@
  */
 
 // A simple LLaVA runner that includes preprocessing and post processing logic.
-// The module takes in a string as input and emits a string as output.
+// The runner takes in a prompt string as well as a list of images as input and
+// emits a string as output.
 
 #include <executorch/examples/models/llava/runner/llava_image_prefiller.h>
 #include <executorch/examples/models/llava/runner/llava_runner.h>
