@@ -9,6 +9,9 @@ import torch
 from executorch.backends.arm.passes.annotate_channels_last_dim_order_pass import (
     AnnotateChannelsLastDimOrder,
 )
+from executorch.backends.arm.passes.convert_expand_copy_to_repeat import (
+    ConvertExpandCopyToRepeatPass,
+)
 from executorch.backends.arm.passes.remove_clone_pass import RemoveClonePass
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
@@ -24,6 +27,7 @@ class ArmPassManager(PassManager):
     ):
         """Apply passes before transforming program to backend"""
         self.add_pass(RemoveClonePass())
+        self.add_pass(ConvertExpandCopyToRepeatPass())
         for spec in compile_spec:
             if spec.key == "permute_memory_format":
                 memory_format = spec.value.decode()

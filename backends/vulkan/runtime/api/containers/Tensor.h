@@ -24,16 +24,14 @@ namespace api {
  * of the tensor in NCHW dimension order. The GPU memory layout will be used to
  * determine which dimension is packed along a texel; that dimension will be
  * used as the "fasted moving" dimension with a stride of 1.
- *
- * If texel_strides is true, then the strides will be calculated for a texel
- * buffer (i.e. the size of the packed dimension will be modified by the
- * div_up_4 function before being used in calculations). Otherwise, the strides
- * will be calculated assuming a contiguous scalar buffer.
  */
 std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
-    const utils::GPUMemoryLayout memory_layout,
-    const bool texel_strides = true);
+    const utils::GPUMemoryLayout memory_layout);
+
+std::vector<int64_t> unsqueeze_strides(
+    const std::vector<int64_t>& strides,
+    const int64_t numel);
 
 /*
  * When stored on the GPU, tensor data is stored using texels (i.e. a vector of
@@ -169,11 +167,24 @@ class vTensor final {
 
   // sizes of the tensor in NCHW dimension order
   std::vector<int64_t> sizes_;
+  // strides of the tensor in NCHW dimension order
+  std::vector<int64_t> strides_;
+  // Contains the number of elements in the tensor according to the canonical
+  // sizes.
+  size_t numel_;
   // padded sizes of the tensor in NCHW dimension order. See the
-  // calculate_padded_sizes() function for more context.
+  // calculate_padded_sizes() function for more context. Note that padded sizes
+  // are only used for texture storage, and not for buffer storage.
   std::vector<int64_t> padded_sizes_;
+  // Contains the strides of the tensor, with the dimensionality padded to the
+  // nearest multiple of 4. Unsqueezed dims will have a stride of int32_t max.
+  std::vector<int64_t> unsqueezed_strides_;
+  // Contains the number of elements in the tensor according to the padded
+  // sizes.
+  size_t padded_numel_;
   // Contains the "virtual" texture extents of the tensor. See the
-  // texture_limits() function for more context.
+  // texture_limits() function for more context. Note that the texture limits
+  // are only relevant for texture storage, and not for buffer storage.
   TextureLimits texture_limits_;
 
   /*
@@ -186,9 +197,9 @@ class vTensor final {
    * context about the data contained in each buffer.
    */
   ParamsBuffer sizes_uniform_;
+  ParamsBuffer strides_uniform_;
+  ParamsBuffer numel_uniform_;
   ParamsBuffer texture_limits_uniform_;
-  ParamsBuffer texel_strides_uniform_;
-  ParamsBuffer ntexels_uniform_;
 
   vTensorStorage storage_;
 
@@ -266,12 +277,28 @@ class vTensor final {
     return sizes_.size();
   }
 
+  inline const std::vector<int64_t>& strides() const {
+    return strides_;
+  }
+
+  inline const std::vector<int64_t>& unsqueezed_strides() const {
+    return unsqueezed_strides_;
+  }
+
   /*
    * Returns a GPU buffer containing the sizes of the tensor in WHCN order.
    * Note that dimensions that are not present in the tensor's sizes are set to
    * a size of 1.
    */
   const vkapi::BufferBindInfo sizes_ubo();
+
+  /*
+   * Returns a GPU buffer containing the strides of the tensor in WHCN order.
+   * Note that the strides are extended to a dimensionality that is a multiple
+   * of 4, thus dimensions that are not present in the tensor's sizes are set to
+   * have a stride equal to the stride of the "slowest moving" dimension.
+   */
+  const vkapi::BufferBindInfo strides_ubo();
 
   /*
    * Returns a GPU buffer containing the virtual image extents of the tensor.
@@ -285,22 +312,16 @@ class vTensor final {
   const vkapi::BufferBindInfo texture_limits_ubo();
 
   /*
-   * Returns the strides of the texel buffer used to store the tensor, as
-   * calculated by calculate_strides().
+   * Returns the number of elements in the buffer used to store the tensor.
    */
-  const vkapi::BufferBindInfo texel_strides_ubo();
-
-  /*
-   * Returns the number of texels in the texel buffer used to store the tensor.
-   */
-  const vkapi::BufferBindInfo ntexels_ubo();
+  const vkapi::BufferBindInfo numel_ubo();
 
   inline const utils::ivec3 texture_limits() const {
     return texture_limits_.limits;
   }
 
   inline size_t numel() const {
-    return utils::multiply_integers(sizes());
+    return numel_;
   }
 
   inline size_t nbytes() const {
@@ -310,23 +331,14 @@ class vTensor final {
   /*
    * Returns numel but based on padded_sizes_ instead of sizes_
    */
-  inline size_t gpu_numel() const {
-    return utils::multiply_integers(padded_sizes_);
+  inline size_t padded_numel() const {
+    return padded_numel_;
   }
 
-  /*
-   * Returns the number of texels in the image texture or texel buffer used to
-   * store the tensor's data.
-   */
-  inline int32_t texel_numel() const {
-    return utils::safe_downcast<int32_t>(gpu_numel() / 4);
-  }
+  size_t staging_buffer_numel() const;
 
-  /*
-   * Return nbytes but based on padded_sizes_ instead of sizes_
-   */
-  inline VkDeviceSize gpu_nbytes() const {
-    return element_size(dtype()) * gpu_numel();
+  inline size_t staging_buffer_nbytes() const {
+    return element_size(dtype()) * staging_buffer_numel();
   }
 
   /*
