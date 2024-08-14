@@ -24,11 +24,11 @@ from executorch.examples.models.llama2.source_transformation.quantize import (
 from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
+from executorch.examples.models.llava.model import LlavaModel
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.program._program import _to_edge_transform_and_lower
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
-from model import LlavaModel
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
@@ -85,7 +85,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         ["-X", "-qmode", "8da4w", "--group_size", "128", "--embedding-quantize", "4,32"]
     )
     quant_transform = get_quant_weight_transform(args, dtype_override, False)
-    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
+    _, quantizers, _ = get_quantizer_and_quant_params(args)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:
         source_transforms.append(replace_sdpa_with_custom_op)
@@ -149,15 +149,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
 
 
 def export_token_embedding(llava, prompt):
-    embed = torch.nn.Embedding(
-        llava.model_.config.vocab_size,
-        llava.model_.config.hidden_size,
-        llava.model_.config.pad_token_id,
-    )
-    embed.load_state_dict(
-        llava.model_.get_model().embed_tokens.state_dict(), strict=True, assign=True
-    )
-    embed = embed.to(torch.float32)
+    embed = llava.embed_tokens
     token_dim_1 = Dim("token_dim_1", min=2, max=3518)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
@@ -167,24 +159,7 @@ def export_token_embedding(llava, prompt):
     return token_embedding_ep
 
 
-def main():
-    parser = ArgumentParser()
-    parser.add_argument(
-        "--use-sdpa-with-kv-cache",
-        default=True,
-        action=BooleanOptionalAction,
-        help="Use sdpa_with_kv_cache custom op in LLava text model.",
-    )
-    parser.add_argument(
-        "--pte-name",
-        default="llava_combined_xnnpack.pte",
-        help="Name of the exported ExecuTorch program.",
-    )
-    args = parser.parse_args()
-    logging.info(
-        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}"
-    )
-    llava_model = LlavaModel(use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache)
+def export_all(llava_model: LlavaModel):
     llava = llava_model.get_eager_model()
 
     (
@@ -226,6 +201,29 @@ def main():
     )
 
     executorch_program = lowered_and_edge.to_executorch()
+    return executorch_program
+
+
+def main():
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--use-sdpa-with-kv-cache",
+        default=True,
+        action=BooleanOptionalAction,
+        help="Use sdpa_with_kv_cache custom op in LLava text model.",
+    )
+    parser.add_argument(
+        "--pte-name",
+        default="llava_combined_xnnpack.pte",
+        help="Name of the exported ExecuTorch program.",
+    )
+    args = parser.parse_args()
+    logging.info(
+        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}"
+    )
+    llava_model = LlavaModel(use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache)
+
+    executorch_program = export_all(llava_model)
 
     with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)
