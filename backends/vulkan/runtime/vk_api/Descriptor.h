@@ -39,8 +39,10 @@ struct BufferBindInfo final {
 struct ParamsBindList final {
   std::vector<BufferBindInfo> bind_infos;
 
+  ParamsBindList() = default;
   ParamsBindList(std::initializer_list<const BufferBindInfo> init_list);
 
+  void append(const BufferBindInfo& bind_info);
   void append(const ParamsBindList& other);
 };
 
