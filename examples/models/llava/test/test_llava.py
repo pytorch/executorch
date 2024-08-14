@@ -11,10 +11,14 @@ import torch
 from executorch.examples.models.llava.export_llava import export_all
 
 from executorch.examples.models.llava.model import LlavaModel
-from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
-from executorch.extension.pybindings.portable_lib import (
-    _load_for_executorch_from_buffer,
-)
+
+# import order matters. We need to import portable_lib first since it contains the static op registry
+# which will be used in the import of custom ops. Otherwise, the registration of custom ops will be skipped.
+# I don't know how to mute UFMT so I'm just using if True: to avoid the error
+if True:
+    from executorch.extension.pybindings import _load_for_executorch_from_buffer
+from executorch.extension.llm import sdpa_with_kv_cache  # noqa: F401
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,7 +53,8 @@ class TestLlava(unittest.TestCase):
                 max_new_tokens=5,
                 use_cache=True,
             )
-
+        # the output includes prompt, removing it
+        output_ids = output_ids[:, -5:]
         ref_outputs = self.llava_model.tokenizer.batch_decode(
             output_ids, skip_special_tokens=True
         )[0].strip()
