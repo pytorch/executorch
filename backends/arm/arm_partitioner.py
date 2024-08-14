@@ -38,6 +38,7 @@ class TOSASupportedOperators(OperatorSupportBase):
         supported = node.op == "call_function" and node.target in [
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.addmm.default,
+            exir_ops.edge.aten.expand_copy.default,
             exir_ops.edge.aten.permute_copy.default,
             exir_ops.edge.aten.hardtanh.default,
             exir_ops.edge.aten.convolution.default,
@@ -47,6 +48,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.avg_pool2d.default,
             exir_ops.edge.aten.sigmoid.default,
             exir_ops.edge.aten.mm.default,
+            exir_ops.edge.aten.repeat.default,
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.slice_copy.Tensor,
             exir_ops.edge.aten.sub.Tensor,

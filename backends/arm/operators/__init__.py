@@ -19,6 +19,7 @@ from . import (  # noqa
     op_mm,
     op_permute,
     op_quant,
+    op_repeat,
     op_sigmoid,
     op_slice,
     op_softmax,

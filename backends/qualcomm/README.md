@@ -1,12 +1,14 @@
 # Qualcomm AI Engine Direct Backend
 
 Disclaimer: At present, we do not offer any backward compatibility guarantees
-for any APIs. We are currently in a pre-alpha development phase, and as such,
+for any APIs. We are currently in a development phase, and as such,
 we reserve the right to modify interfaces and implementations.
 
 This backend is implemented on the top of
 [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk).
-Please follow [tutorial](https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html) to setup environment, build, and run executorch models by this backend (Qualcomm AI Engine Direct is also referred to as QNN in the source and documentation).
+Please follow [tutorial](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md) to setup environment, build, and run executorch models by this backend (Qualcomm AI Engine Direct is also referred to as QNN in the source and documentation).
+
+A website version of the tutorial is [here](https://pytorch.org/executorch/stable/build-run-qualcomm-ai-engine-direct-backend.html).
 
 ## Delegate Options
 
@@ -29,7 +31,7 @@ Add SoC model into QcomChipset enum in [schema](./serialization/schema.fbs) and 
 Insert new SoC information into _soc_info_table in [qnn_compile_spec_schema](./serialization/qnn_compile_spec_schema.py).
 
 #### Step 3: Recompile the .pte file
-Follow [setup](setup.md) to setup environment and build runtime with new schema header.
+Follow [setup](../../docs/source/build-run-qualcomm-ai-engine-direct-backend.md) to setup environment and build runtime with new schema header.
 
 ### Supported Inference Type
 - Quantized
@@ -46,6 +48,7 @@ backends/qualcomm
 ├── partition # QNN Partitioner (AoT Part).
 ├── passes # Various passes helping lower models to QNN backend (AoT Part).
 ├── python # Places to put pybind artifacts for accessing QNN APIs, structures, etc (AoT Part).
+├── quantizer # QNN Quantizer
 ├── runtime # Here is QNN runtime responsbile for compiling a model on x64.
 |   |       # Meanwhile, this is also the runtime responsbile for executing compiled
 |   |       # models on a device.
@@ -58,8 +61,11 @@ backends/qualcomm
 ├── tests # Unit tests and model tests go here.
 └── utils # Miscellaneous utilities.
 
-examples
-└── qualcomm # Examples to run QNN backends.
+examples/qualcomm
+├── executor_runner # A general runner that is capable of running most of the basic models.
+├── oss_scripts # Scripts for OSS(Open Source Software) models and customized runner for some specific models.
+├── qaihub_scripts # Scripts for Qaihub models and corresponding customized runner for these models.
+└── scripts # Scripts for models provided by executorch.
 ```
 
 ## Examples
