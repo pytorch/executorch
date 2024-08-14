@@ -130,9 +130,9 @@ cleanup_files() {
 prepare_artifacts_upload() {
   if [ -n "$UPLOAD_DIR" ]; then
     echo "Preparing for uploading generated artifacs"
+    zip -j model.zip "${EXPORTED_MODEL_NAME}" tokenizer.bin
     mkdir -p "${UPLOAD_DIR}"
-    zip -j "model.zip" "${MODEL_NAME}" tokenizer.bin
-    cp "model.zip" "${UPLOAD_DIR}"
+    mv model.zip "${UPLOAD_DIR}"
   fi
 }
 
