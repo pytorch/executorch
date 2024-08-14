@@ -40,12 +40,12 @@ DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
+DEFINE_uint32(num_executions, 1, "Number of times to run the model.");
 #ifdef ET_EVENT_TRACER_ENABLED
 DEFINE_string(
     etdump_path,
     "model.etdump",
     "If ETDump generation is enabled an ETDump will be written out to this path.");
-DEFINE_uint32(num_executions, 10, "Number of times to run the model.");
 #endif // ET_EVENT_TRACER_ENABLED
 
 using namespace torch::executor;
@@ -153,7 +153,6 @@ int main(int argc, char** argv) {
   // the method can mutate the memory-planned buffers, so the method should only
   // be used by a single thread at at time, but it can be reused.
   //
-  uint32_t num_executions = 1;
   EventTracer* event_tracer_ptr = nullptr;
 #ifdef ET_EVENT_TRACER_ENABLED
   std::unique_ptr<FILE, decltype(&fclose)> etdump_file(
@@ -163,7 +162,6 @@ int main(int argc, char** argv) {
       "Failed to open ETDump file at %s.",
       FLAGS_etdump_path.c_str());
 
-  num_executions = FLAGS_num_executions;
   torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
   event_tracer_ptr = &etdump_gen;
 #endif // ET_EVENT_TRACER_ENABLED
@@ -187,7 +185,7 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Inputs prepared.");
 
   // Run the model.
-  for (uint32_t i = 0; i < num_executions; i++) {
+  for (uint32_t i = 0; i < FLAGS_num_executions; i++) {
     Error status = method->execute();
     ET_CHECK_MSG(
         status == Error::Ok,
@@ -195,7 +193,7 @@ int main(int argc, char** argv) {
         method_name,
         (uint32_t)status);
   }
-  ET_LOG(Info, "Model executed successfully %i time(s).", num_executions);
+  ET_LOG(Info, "Model executed successfully %i time(s).", FLAGS_num_executions);
 
   // Print the outputs.
   std::vector<EValue> outputs(method->outputs_size());
