@@ -36,7 +36,6 @@ build_executorch() {
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
     -DEXECUTORCH_BUILD_SDK=ON \
-    -DEXECUTORCH_BUILD_VULKAN=$BUILD_VULKAN \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -Bcmake-out
   cmake --build cmake-out -j9 --target install
@@ -52,7 +51,7 @@ build_gtest() {
 }
 
 export_test_model() {
-  python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry" --outdir "cmake-out" 2> /dev/null
+  python -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry,ModuleSimpleTrain" --outdir "cmake-out" 2> /dev/null
   python3 -m test.models.export_delegated_program --modules "ModuleAddMul" --backend_id "StubBackend" --outdir "cmake-out" || true
 
   ET_MODULE_ADD_HALF_PATH="$(realpath cmake-out/ModuleAddHalf.pte)"
@@ -65,6 +64,8 @@ export_test_model() {
   ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH="$(realpath cmake-out/ModuleAddMul-nosegments-da1024.pte)"
   ET_MODULE_ADD_MUL_NOSEGMENTS_PATH="$(realpath cmake-out/ModuleAddMul-nosegments.pte)"
   ET_MODULE_ADD_MUL_PATH="$(realpath cmake-out/ModuleAddMul.pte)"
+  ET_MODULE_SIMPLE_TRAIN_PATH="$(realpath cmake-out/ModuleSimpleTrain.pte)"
+
   export ET_MODULE_ADD_HALF_PATH
   export ET_MODULE_ADD_PATH
   export ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH
@@ -75,17 +76,18 @@ export_test_model() {
   export ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH
   export ET_MODULE_ADD_MUL_NOSEGMENTS_PATH
   export ET_MODULE_ADD_MUL_PATH
+  export ET_MODULE_SIMPLE_TRAIN_PATH
 }
 
 build_and_run_test() {
   local test_dir=$1
-  cmake "${test_dir}" \
+  cmake runtime/executor/test \
     -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DEXECUTORCH_USE_CPP_CODE_COVERAGE=ON \
     -DCMAKE_PREFIX_PATH="$(pwd)/third-party/googletest/build" \
-    -Bcmake-out/"${test_dir}"
-  cmake --build cmake-out/"${test_dir}" -j9
+    -Bcmake-out/runtime/executor/test
+  cmake --build cmake-out/runtime/executor/test -j9
 
   if [[ "$test_dir" =~ .*examples/models/llama2/tokenizer.* ]]; then
     RESOURCES_PATH=$(realpath examples/models/llama2/tokenizer/test/resources)
