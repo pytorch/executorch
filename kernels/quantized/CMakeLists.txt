@@ -84,38 +84,31 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
         ${EXECUTORCH_ROOT}/kernels/portable/cpu/util/reduce_util.cpp
         ${EXECUTORCH_ROOT}/runtime/core/exec_aten/util/tensor_util_aten.cpp
     )
-
-    # Build aot library for embedding ops. Used for pybindings only.
-    # set(_embedding_aot_ops
-    #   "quantized_decomposed::embedding_4bit.dtype_out"
-    # )
-
-    # gen_selected_ops(
-    #   LIB_NAME "embedding_ops_aot_lib" ROOT_OPS ${_embedding_aot_ops}
-    # )
-
-    # # Expect gen_selected_ops output file to be
-    # # embedding_ops_aot_lib/selected_operators.yaml
-    # generate_bindings_for_kernels(
-    #   LIB_NAME "embedding_ops_aot_lib" CUSTOM_OPS_YAML "${_yaml_file}"
-    # )
-    # set(_out_dir ${CMAKE_CURRENT_BINARY_DIR}/embedding_ops_aot_lib)
-
-    # add_library(
-    #   embedding_ops_aot_lib
-    #   ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp
-    #   ${_out_dir}/Functions.h ${_out_dir}/NativeFunctions.h
-    # )
-
-    # target_link_libraries(embedding_ops_aot_lib PRIVATE executorch_no_prim_ops)
-    # list(APPEND _quantized_sources ${_out_dir}/RegisterCodegenUnboxedKernelsEverything.cpp ${_out_dir}/Functions.h)
     gen_custom_ops_aot_lib(
       LIB_NAME "quantized_ops_aot_lib" KERNEL_SOURCES "${_quantized_sources}"
     )
-    target_include_directories(
-      quantized_ops_aot_lib PUBLIC "${_common_include_directories}"
-    )
 
+    if (TARGET portable_lib)
+      add_library(quantized_pybind_kernels_lib ${_quantized_kernels__srcs})
+      target_link_libraries(quantized_pybind_kernels_lib PRIVATE portable_lib)
+      target_compile_options(quantized_pybind_kernels_lib PUBLIC ${_common_compile_options})
+      target_include_directories(
+        quantized_pybind_kernels_lib PUBLIC "${_common_include_directories}"
+      )
+      gen_selected_ops(
+        LIB_NAME "quantized_ops_pybind_lib" OPS_SCHEMA_YAML "${_yaml_file}"
+      )
+      generate_bindings_for_kernels(
+        LIB_NAME "quantized_ops_pybind_lib" CUSTOM_OPS_YAML "${_yaml_file}"
+      )
+      # Build a library for pybind usage
+      #
+      # quantized_ops_pybind_lib: Register quantized ops kernels into Executorch runtime for pybind
+      gen_operators_lib(
+        LIB_NAME "quantized_ops_pybind_lib" KERNEL_LIBS quantized_pybind_kernels_lib DEPS portable_lib
+      )
+      target_link_libraries(quantized_ops_aot_lib PUBLIC quantized_ops_pybind_lib)
+    endif()
     # target_link_libraries(quantized_ops_aot_lib PUBLIC embedding_ops_aot_lib)
   endif()
 endif()
