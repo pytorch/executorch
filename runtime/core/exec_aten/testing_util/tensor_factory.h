@@ -564,7 +564,8 @@ namespace internal {
 // values while using the defaults for everything else.
 template <torch::executor::ScalarType DTYPE>
 struct ScalarTypeToCppTypeWrapper {
-  using ctype = typename executorch::runtime::ScalarTypeToCppType<DTYPE>::type;
+  using ctype =
+      typename ::executorch::runtime::ScalarTypeToCppType<DTYPE>::type;
 };
 
 // Use a C type of `uint8_t` instead of `bool`. The C type will be used to
