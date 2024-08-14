@@ -12,8 +12,7 @@ pip install torchao==0.1
 
 # Install lm-eval for Model Evaluation with lm-evalution-harness
 # Install tiktoken for tokenizer
-pip install lm_eval==0.4.2
-pip install tiktoken blobfile
+pip install lm-eval tiktoken blobfile
 
 # Call the install helper for further setup
 python examples/models/llama2/install_requirement_helper.py

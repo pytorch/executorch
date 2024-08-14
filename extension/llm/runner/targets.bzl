@@ -69,7 +69,7 @@ def define_common_targets():
                 "//executorch/extension/module:module" + aten_suffix,
             ],
         )
-        
+
         runtime.cxx_library(
             name = "runner_lib" + aten_suffix,
             exported_headers = [
