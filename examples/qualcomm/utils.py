@@ -19,6 +19,7 @@ from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitione
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_16a4w_qnn_ptq_config,
     get_default_16bit_qnn_ptq_config,
+    get_default_8bit_qnn_ptq_config,
     QnnQuantizer,
     QuantDtype,
 )
@@ -30,7 +31,7 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
 )
-from executorch.exir import EdgeCompileConfig, EdgeProgramManager
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
@@ -178,6 +179,39 @@ class SimpleADB:
             callback()
 
 
+def make_quantizer(
+    quant_dtype: Optional[QuantDtype],
+    custom_annotations=(),
+    per_channel_conv=True,
+    per_channel_linear=False,
+    act_observer=MovingAverageMinMaxObserver,
+):
+    quantizer = QnnQuantizer()
+    quantizer.add_custom_quant_annotations(custom_annotations)
+    quantizer.set_per_channel_conv_quant(per_channel_conv)
+    quantizer.set_per_channel_linear_quant(per_channel_linear)
+
+    if quant_dtype == QuantDtype.use_8a8w:
+        quantizer.set_bit8_op_quant_config(
+            get_default_8bit_qnn_ptq_config(act_observer=act_observer)
+        )
+    elif quant_dtype == QuantDtype.use_16a16w:
+        quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
+        quantizer.set_bit16_op_quant_config(
+            get_default_16bit_qnn_ptq_config(act_observer=act_observer)
+        )
+    elif quant_dtype == QuantDtype.use_16a4w:
+        quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
+        quantizer.set_bit16_op_quant_config(
+            get_16a4w_qnn_ptq_config(act_observer=act_observer)
+        )
+        quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
+    else:
+        raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
+
+    return quantizer
+
+
 # TODO: refactor to support different backends
 def build_executorch_binary(
     model,  # noqa: B006
@@ -195,27 +229,13 @@ def build_executorch_binary(
     act_observer=MovingAverageMinMaxObserver,
 ):
     if quant_dtype is not None:
-        quantizer = QnnQuantizer()
-        quantizer.add_custom_quant_annotations(custom_annotations)
-        quantizer.set_per_channel_linear_quant(per_channel_linear)
-        quantizer.set_per_channel_conv_quant(True)
-
-        if quant_dtype == QuantDtype.use_8a8w:
-            pass  # default setting
-        elif quant_dtype == QuantDtype.use_16a16w:
-            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(
-                get_default_16bit_qnn_ptq_config(act_observer=act_observer)
-            )
-        elif quant_dtype == QuantDtype.use_16a4w:
-            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
-            quantizer.set_bit16_op_quant_config(
-                get_16a4w_qnn_ptq_config(act_observer=act_observer)
-            )
-            quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
-        else:
-            raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
-
+        quantizer = make_quantizer(
+            quant_dtype=quant_dtype,
+            custom_annotations=custom_annotations,
+            per_channel_conv=True,
+            per_channel_linear=per_channel_linear,
+            act_observer=act_observer,
+        )
         captured_model = torch.export.export(model, inputs).module()
         annotated_model = prepare_pt2e(captured_model, quantizer)
         print("Quantizing the model...")
@@ -225,6 +245,7 @@ def build_executorch_binary(
         else:
             for data in dataset:
                 annotated_model(*data)
+
         quantized_model = convert_pt2e(annotated_model)
         edge_prog = capture_program(quantized_model, inputs)
     else:
@@ -237,10 +258,7 @@ def build_executorch_binary(
         generate_qnn_executorch_compiler_spec(
             soc_model=getattr(QcomChipset, soc_model),
             backend_options=backend_options,
-            debug=False,
-            saver=False,
             shared_buffer=shared_buffer,
-            profile=False,
         ),
         skip_node_id_set,
         skip_node_op_set,
@@ -256,15 +274,12 @@ def build_executorch_binary(
             alloc_graph_input=not shared_buffer,
             alloc_graph_output=not shared_buffer,
         ),
-        extract_delegate_segments=True,
     )
 
     if metadata is None:
-        edge_prog.exported_program = to_backend(
-            edge_prog.exported_program, qnn_partitioner
-        )
-        edge_prog.exported_program.graph_module.graph.print_tabular()
-        exec_prog = edge_prog.to_executorch(config=executorch_config)
+        exported_program = to_backend(edge_prog.exported_program, qnn_partitioner)
+        exported_program.graph_module.graph.print_tabular()
+        exec_prog = to_edge(exported_program).to_executorch(config=executorch_config)
         with open(f"{file_name}.pte", "wb") as file:
             file.write(exec_prog.buffer)
     else:
