@@ -128,7 +128,7 @@ target_include_directories(
   coremldelegate PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
 )
 target_include_directories(coremldelegate PRIVATE ${EXECUTORCH_ROOT}/..)
-target_link_libraries(coremldelegate PRIVATE executorch_no_prim_ops)
+target_link_libraries(coremldelegate PRIVATE executorch_core)
 
 if(EXECUTORCH_BUILD_SDK)
   target_sources(coremldelegate PRIVATE ${SDK_SOURCES} ${PROTOBUF_SOURCES})
@@ -151,7 +151,7 @@ find_library(SQLITE_LIBRARY sqlite3)
 
 target_link_libraries(
   coremldelegate
-  PRIVATE executorch_no_prim_ops ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
+  PRIVATE executorch_core ${ACCELERATE_FRAMEWORK} ${COREML_FRAMEWORK}
           ${FOUNDATION_FRAMEWORK} ${SQLITE_LIBRARY}
 )
 
@@ -168,7 +168,7 @@ target_compile_options(coremldelegate PRIVATE "-fno-exceptions")
 
 if(EXECUTORCH_BUILD_SDK)
   target_compile_options(
-    executorch_no_prim_ops PUBLIC -DET_EVENT_TRACER_ENABLED
+    executorch_core PUBLIC -DET_EVENT_TRACER_ENABLED
   )
   target_compile_options(coremldelegate PRIVATE "-frtti")
   target_compile_options(libprotobuf-lite PRIVATE "-frtti")

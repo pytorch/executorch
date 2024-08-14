@@ -47,7 +47,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "program" + aten_suffix,
             exported_deps = [
-                ":program_no_prim_ops" + aten_suffix,
+                ":program_core" + aten_suffix,
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
             ],
             visibility = [
@@ -57,7 +57,7 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
-            name = "program_no_prim_ops" + aten_suffix,
+            name = "program_core" + aten_suffix,
             srcs = [
                 "method.cpp",
                 "method_meta.cpp",

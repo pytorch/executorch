@@ -28,7 +28,7 @@ set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 add_library(executor_backend STATIC ExecutorBackendRegister.cpp ExecutorBackend.cpp)
 target_link_libraries(
-  executor_backend PRIVATE executorch_no_prim_ops
+  executor_backend PRIVATE executorch_core
 )
 
 target_include_directories(

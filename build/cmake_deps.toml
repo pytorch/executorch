@@ -20,16 +20,16 @@ buck_targets = [
   "//runtime/executor:program",
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 filters = [
   ".cpp$",
 ]
 
 
-[targets.executorch_no_prim_ops]
+[targets.executorch_core]
 buck_targets = [
-  "//runtime/executor:program_no_prim_ops",
+  "//runtime/executor:program_core",
 ]
 deps = [
   "program_schema",
@@ -55,7 +55,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.optimized_kernels]
@@ -72,7 +72,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "portable_kernels",
 ]
 
@@ -90,7 +90,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "portable_kernels",
 ]
 
@@ -112,7 +112,7 @@ filters = [
 excludes = [
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
   "executorch",
 ]
 
@@ -129,7 +129,7 @@ filters = [
   ".cpp$",
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
   "executorch",
 ]
 
@@ -142,7 +142,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "extension_data_loader",
 ]
 
@@ -155,7 +155,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 # ---------------------------------- extension end ----------------------------------
@@ -173,7 +173,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "portable_kernels",
   "quantized_kernels",
 ]
@@ -189,7 +189,7 @@ excludes = [
   "^codegen",
 ]
 deps = [
-  "executorch_no_prim_ops",
+  "executorch_core",
   "executorch",
 ]
 # ---------------------------------- binary end ----------------------------------
@@ -206,7 +206,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "portable_kernels",
 ]
 
@@ -219,7 +219,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.mps_schema]
@@ -245,7 +245,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "xnnpack_backend",
   "portable_kernels",
 ]
@@ -259,7 +259,7 @@ filters = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
 ]
 
 [targets.xnnpack_schema]
@@ -292,7 +292,7 @@ excludes = [
 ]
 deps = [
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "optimized_kernels",
   "xnnpack_backend",
 ]
@@ -310,7 +310,7 @@ excludes = [
 deps = [
   "custom_ops",
   "executorch",
-  "executorch_no_prim_ops",
+  "executorch_core",
   "extension_data_loader",
   "extension_module",
   "portable_kernels",
