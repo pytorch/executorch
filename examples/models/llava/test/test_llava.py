@@ -139,4 +139,4 @@ class TestLlava(unittest.TestCase):
             torch.tensor([new_tokens]), skip_special_tokens=True
         )[0].strip()
         print(outputs)
-        self.assertEqual(new_tokens.size(), 5)
+        self.assertEqual(len(new_tokens), 5)
