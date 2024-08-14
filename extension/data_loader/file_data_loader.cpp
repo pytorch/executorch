@@ -23,11 +23,6 @@
 #include <io.h>
 #endif
 
-#ifdef _WIN32
-#include <stddef.h>
-using ssize_t = ptrdiff_t;
-#endif
-
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
