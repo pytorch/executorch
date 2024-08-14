@@ -10,22 +10,14 @@
 
 #define PRECISION ${PRECISION}
 
-#define VEC4_T ${texel_load_type(DTYPE, "buffer")}
+${define_required_extensions(DTYPE)}
 
-$if DTYPE == "half":
-  #extension GL_EXT_shader_16bit_storage : require
-  #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
-$elif DTYPE == "int8":
-  #extension GL_EXT_shader_8bit_storage : require
-  #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
-$elif DTYPE == "uint8":
-  #extension GL_EXT_shader_8bit_storage : require
-  #extension GL_EXT_shader_explicit_arithmetic_types_uint8 : require
+#define T ${buffer_scalar_type(DTYPE)}
 
 layout(std430) buffer;
 
 ${layout_declare_tensor(0, "rw", "buffer_in", DTYPE, "buffer")}
-${layout_declare_ubo(1, "int", "ntexels")}
+${layout_declare_ubo(1, "int", "numel")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -33,9 +25,9 @@ layout(constant_id = 3) const float scalar = 2.0;
 
 void main() {
   const int t_id = ivec3(gl_GlobalInvocationID).x;
-  if (t_id >= ntexels) {
+  if (t_id >= numel) {
     return;
   }
 
-  buffer_in[t_id] = buffer_in[t_id] + VEC4_T(scalar);// buffer_in[t_id];
+  buffer_in[t_id] = buffer_in[t_id] + T(scalar);
 }
