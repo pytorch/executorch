@@ -410,5 +410,90 @@ Result<FreeableBuffer> Program::LoadSegment(
       segment_base_offset_ + segment->offset(), segment->size(), segment_info);
 }
 
+Error Program::load_mutable_subsegment_into(
+    size_t mutable_data_segments_index,
+    size_t offset_index,
+    size_t size,
+    void* buffer) const {
+  EXECUTORCH_SCOPE_PROF("Program::load_subsegment_into");
+  // Check that the program has segments.
+  if (loader_ == nullptr || segment_base_offset_ == 0) {
+    ET_LOG(Error, "No segments in program");
+    return Error::NotFound;
+  }
+
+  // Check that the program has mutable data segments.
+  if (internal_program_->mutable_data_segments() == nullptr) {
+    ET_LOG(Error, "No mutable data segments in program");
+    return Error::NotFound;
+  }
+  if (mutable_data_segments_index >=
+      internal_program_->mutable_data_segments()->size()) {
+    ET_LOG(
+        Error,
+        "mutable_data_segments_index %zu out of range >= %" PRIu64,
+        mutable_data_segments_index,
+        (uint64_t)internal_program_->mutable_data_segments()->size());
+    return Error::NotFound;
+  }
+
+  // Grab the mutable data segment info.
+  const auto& segment_offsets = internal_program_->mutable_data_segments()->Get(
+      mutable_data_segments_index);
+
+  // Check that the offset is valid.
+  if (segment_offsets->offsets() == nullptr) {
+    ET_LOG(Error, "No offsets in mutable data segment");
+    return Error::NotFound;
+  }
+  if (offset_index >= segment_offsets->offsets()->size()) {
+    ET_LOG(
+        Error,
+        "offset index %zu out of range >= %" PRIu64,
+        offset_index,
+        (uint64_t)segment_offsets->offsets()->size());
+    return Error::NotFound;
+  }
+
+  // Grab the offset. Note: This offset is relative to the start of the segment,
+  // so we will need to adjust when calling the loader.
+  size_t offset = segment_offsets->offsets()->Get(offset_index);
+
+  // Grab the segment index
+  size_t num_segments = internal_program_->segments()->size();
+  if (segment_offsets->segment_index() >= num_segments) {
+    ET_LOG(
+        Error,
+        "Segment index %u out of range (>= %zu)",
+        segment_offsets->segment_index(),
+        num_segments);
+    return Error::NotFound;
+  }
+
+  // Grab the segment
+  auto segment =
+      internal_program_->segments()->Get(segment_offsets->segment_index());
+
+  // Check size
+  if (offset + size > segment->size()) {
+    ET_LOG(
+        Error,
+        "offset %zu + size %zu out of range > %" PRIu64,
+        offset,
+        size,
+        segment->size());
+    return Error::InvalidArgument;
+  }
+
+  DataLoader::SegmentInfo info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Mutable,
+      segment_offsets->segment_index(),
+      nullptr);
+
+  // Load the data
+  return loader_->load_into(
+      segment_base_offset_ + segment->offset() + offset, size, info, buffer);
+}
+
 } // namespace executor
 } // namespace torch

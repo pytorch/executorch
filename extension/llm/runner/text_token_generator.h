@@ -26,8 +26,8 @@ class TextTokenGenerator {
       Stats* stats)
       : tokenizer_(tokenizer),
         text_decoder_runner_(text_decoder_runner),
-        use_kv_cache_(use_kv_cache),
         eos_id_(eos_id),
+        use_kv_cache_(use_kv_cache),
         stats_(stats) {}
 
   /**
@@ -74,7 +74,7 @@ class TextTokenGenerator {
     ManagedTensor start_pos_managed(&pos, {1}, ScalarType::Long);
 
     // Generate our tokens
-    while (pos < seq_len) {
+    while (pos < seq_len - 1) {
       // Run the model
       Result<exec_aten::Tensor> logits_res =
           text_decoder_runner_->step(tokens_managed, start_pos_managed);

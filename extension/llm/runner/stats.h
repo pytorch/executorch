@@ -8,11 +8,11 @@
 
 // Runner stats for LLM
 #pragma once
+#include <executorch/extension/llm/runner/util.h>
+#include <executorch/runtime/platform/log.h>
 #include <cinttypes>
 #include <sstream>
 // patternlint-disable-next-line executorch-cpp-nostdinc
-#include <executorch/extension/llm/runner/util.h>
-#include <executorch/runtime/platform/log.h>
 #include <string>
 namespace executorch::llm {
 
