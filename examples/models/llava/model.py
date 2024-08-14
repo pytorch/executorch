@@ -30,66 +30,9 @@ from torchvision.transforms.v2 import functional as F
 from transformers import (
     AutoProcessor,
     CLIPImageProcessor,
-    CLIPVisionModel,
     LlamaForCausalLM,
     LlavaForConditionalGeneration,
 )
-
-
-class CLIPVisionTower(nn.Module):
-    def __init__(
-        self,
-        vision_tower: CLIPVisionModel,
-        *,
-        vision_feature_layer=-2,
-        vision_feature_select_strategy="default",
-    ):
-        super().__init__()
-
-        self.vision_tower = vision_tower
-        self.vision_feature_layer = vision_feature_layer
-        self.vision_feature_select_strategy = vision_feature_select_strategy
-
-    def feature_select(self, image_outputs):
-        selected_image_feature = image_outputs.hidden_states[self.vision_feature_layer]
-
-        if self.vision_feature_select_strategy == "default":
-            selected_image_feature = selected_image_feature[:, 1:]
-        elif self.vision_feature_select_strategy == "full":
-            selected_image_feature = selected_image_feature
-        else:
-            raise ValueError(
-                f"Unexpected select feature: {self.vision_feature_select_strategy}"
-            )
-        return selected_image_feature
-
-    @torch.no_grad()
-    def forward(self, images):
-        if type(images) is list:
-            image_features = []
-            for image in images:
-                image_forward_out = self.vision_tower(
-                    image.to(device=self.device, dtype=self.dtype).unsqueeze(0),
-                    output_hidden_states=True,
-                )
-                image_feature = self.feature_select(image_forward_out).to(image.dtype)
-                image_features.append(image_feature)
-        else:
-            image_forward_outs = self.vision_tower(
-                images.to(device=self.device, dtype=self.dtype),
-                output_hidden_states=True,
-            )
-            image_features = self.feature_select(image_forward_outs).to(images.dtype)
-
-        return image_features
-
-    @property
-    def dtype(self):
-        return self.vision_tower.dtype
-
-    @property
-    def device(self):
-        return self.vision_tower.device
 
 
 class Llava(torch.nn.Module):
@@ -103,10 +46,9 @@ class Llava(torch.nn.Module):
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
         self.model_ = llava_model
         self.image_processor = image_processor
-        self.vision_tower = CLIPVisionTower(
-            self.model_.vision_tower,
-            vision_feature_layer=self.model_.config.vision_feature_layer,
-            vision_feature_select_strategy=self.model_.config.vision_feature_select_strategy,
+        self.vision_feature_layer = self.model_.config.vision_feature_layer
+        self.vision_feature_select_strategy = (
+            self.model_.config.vision_feature_select_strategy
         )
         self.text_model_args = ModelArgs(
             use_kv_cache=True,
@@ -175,12 +117,41 @@ class Llava(torch.nn.Module):
 
         return new_state_dict
 
+    def _feature_select(self, image_outputs):
+        selected_image_feature = image_outputs.hidden_states[self.vision_feature_layer]
+
+        if self.vision_feature_select_strategy == "default":
+            selected_image_feature = selected_image_feature[:, 1:]
+        elif self.vision_feature_select_strategy == "full":
+            selected_image_feature = selected_image_feature
+        else:
+            raise ValueError(
+                f"Unexpected select feature: {self.vision_feature_select_strategy}"
+            )
+        return selected_image_feature
+
     def get_model(self):
         return self.model_.get_model()
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
         images = images.to(dtype=self.model_.dtype)
-        image_features = self.vision_tower(images)
+        if type(images) is list:
+            image_features = []
+            for image in images:
+                image_forward_out = self.model_.vision_tower(
+                    image.to(
+                        device=self.model_.device, dtype=self.model_.dtype
+                    ).unsqueeze(0),
+                    output_hidden_states=True,
+                )
+                image_feature = self._feature_select(image_forward_out).to(image.dtype)
+                image_features.append(image_feature)
+        else:
+            image_forward_outs = self.model_.vision_tower(
+                images.to(device=self.model_.device, dtype=self.model_.dtype),
+                output_hidden_states=True,
+            )
+            image_features = self._feature_select(image_forward_outs).to(images.dtype)
         image_features = self.model_.multi_modal_projector(image_features)
         return image_features
 
