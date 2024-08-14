@@ -1923,7 +1923,7 @@ class TestExampleQaihubScript(TestQNN):
         prompt = "Explain the rules of baseball"
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/llama2/qaihub_llama2_7b.py",
+            f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/llama/llama2/qaihub_llama2_7b.py",
             "--artifact",
             self.artifact_dir,
             "--build_folder",
@@ -1934,6 +1934,47 @@ class TestExampleQaihubScript(TestQNN):
             self.model,
             "--tokenizer_bin",
             f"{self.artifact_dir}/tokenizer.bin",
+            "--context_binaries",
+            f"{self.artifact_dir}",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                model_out = msg["result"]
+                self.assertTrue(model_out.startswith(prompt))
+
+    def test_llama3_8b(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "Explain the rules of baseball"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/llama/llama3/qaihub_llama3_8b.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--tokenizer_model",
+            f"{self.artifact_dir}/tokenizer.model",
             "--context_binaries",
             f"{self.artifact_dir}",
             "--ip",

@@ -18,6 +18,14 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/runtime/executor/method_meta.h>
 
+#if defined(QAIHUB_LLAMA3_RUNNER)
+#define QAIHUB_LLAMA_NUM_HEADS 8
+#define QAIHUB_LLAMA_LOGITS 128256
+#else
+#define QAIHUB_LLAMA_NUM_HEADS 32
+#define QAIHUB_LLAMA_LOGITS 32000
+#endif
+
 namespace torch {
 namespace executor {
 
@@ -49,7 +57,8 @@ class BertMemory : public Memory {
  public:
   BertMemory(
       const std::vector<std::string>& pos_embs_path,
-      std::vector<std::shared_ptr<Module>>& modules);
+      std::vector<std::shared_ptr<Module>>& modules,
+      std::vector<int> shard_layers);
   void prepare_io(const std::vector<Result<MethodMeta>>& methods_meta) override;
   void update_io(
       int64_t cur_token,
@@ -61,9 +70,9 @@ class BertMemory : public Memory {
     uint16_t attention_mask[1024 * 1024];
     uint16_t position_ids_cos[1024 * 64];
     uint16_t position_ids_sin[1024 * 64];
-    uint8_t k_cache[32][32][128 * 1024];
-    uint8_t v_cache[32][32][1024 * 128];
-    uint16_t logits[32000];
+    uint8_t k_cache[32][QAIHUB_LLAMA_NUM_HEADS][128 * 1024];
+    uint8_t v_cache[32][QAIHUB_LLAMA_NUM_HEADS][1024 * 128];
+    uint16_t logits[QAIHUB_LLAMA_LOGITS];
   };
 
  private:
@@ -75,6 +84,8 @@ class BertMemory : public Memory {
   std::vector<std::unique_ptr<TensorImpl>> k_cache_;
   std::vector<std::unique_ptr<TensorImpl>> v_cache_;
   std::unique_ptr<TensorImpl> logits_;
+  std::vector<int> shard_layers_;
+  int num_heads_;
 };
 
 class ThreadPool {
@@ -106,7 +117,8 @@ class KVCachedMemory : public Memory {
  public:
   KVCachedMemory(
       const std::vector<std::string>& pos_embs_path,
-      std::vector<std::shared_ptr<Module>>& modules);
+      std::vector<std::shared_ptr<Module>>& modules,
+      std::vector<int> shard_layers);
   void prepare_io(const std::vector<Result<MethodMeta>>& methods_meta) override;
   void update_io(
       int64_t cur_token,
@@ -118,10 +130,10 @@ class KVCachedMemory : public Memory {
     uint16_t attention_mask[1024];
     uint16_t position_ids_cos[1024 * 64];
     uint16_t position_ids_sin[1024 * 64];
-    uint8_t k_cache[32][32][129 * 1023];
-    uint8_t v_cache[32][33 * 1023 * 128];
-    uint8_t k_cache_out[32][32][128];
-    uint16_t logits[32000];
+    uint8_t k_cache[32][QAIHUB_LLAMA_NUM_HEADS][129 * 1023];
+    uint8_t v_cache[32][(QAIHUB_LLAMA_NUM_HEADS + 1) * 1023 * 128];
+    uint8_t k_cache_out[32][QAIHUB_LLAMA_NUM_HEADS][128];
+    uint16_t logits[QAIHUB_LLAMA_LOGITS];
   };
   struct LoopRange {
     int32_t start;
@@ -143,6 +155,8 @@ class KVCachedMemory : public Memory {
   std::vector<LoopRange> lr_update_kv_;
   std::vector<std::future<void>> futures_;
   ThreadPool thread_pool_;
+  std::vector<int> shard_layers_;
+  int num_heads_;
 };
 
 } // namespace executor

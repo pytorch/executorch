@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// A simple llama2 runner that includes preprocessing and post processing logic.
-// The module takes in a string as input and emits a string as output.
+// A simple llama2/3 runner that includes preprocessing and post processing
+// logic. The module takes in a string as input and emits a string as output.
 
 #pragma once
 
@@ -17,7 +17,7 @@
 #include <string>
 #include <unordered_map>
 
-#include <executorch/examples/qualcomm/qaihub_scripts/llama2/runner/io_memory.h>
+#include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/io_memory.h>
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
@@ -31,6 +31,7 @@ class Runner {
   explicit Runner(
       const std::vector<std::string>& models_path,
       const std::vector<std::string>& pos_embs_path,
+      const std::vector<int>& shard_layers,
       const std::string& tokenizer_path,
       const int eval_mode,
       const float temperature,
