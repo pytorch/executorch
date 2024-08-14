@@ -204,7 +204,7 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
-        
+
         # install pybind
         bash install_requirements.sh --pybind xnnpack
 
