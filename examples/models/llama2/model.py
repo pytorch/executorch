@@ -143,9 +143,9 @@ the checkpoint format to avoid generating faulty models.
         model_args: ModelArgs = ModelArgs(
             max_seq_len=max_seq_len,
             max_batch_size=max_batch_size,
-            use_kv_cache=self.use_kv_cache,
-            use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
-            enable_dynamic_shape=self.enable_dynamic_shape,
+            # use_kv_cache=self.use_kv_cache,
+            # use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
+            # enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )
         if kwargs.get("fairseq2", False):
@@ -160,8 +160,9 @@ the checkpoint format to avoid generating faulty models.
 
         # Within the device="meta" context, tensors that are created do not carry data.
         # They possess all other metadata a tensor carries such as size, stride, requires_grad.
-        with torch.device("meta"):
-            self.model_ = Transformer(model_args)
+        # with torch.device("meta"):
+        #     self.model_ = Transformer(model_args)
+        self.model_ = Transformer(model_args)
 
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
@@ -181,11 +182,11 @@ the checkpoint format to avoid generating faulty models.
         # assign=True: load params/buffers by assignment instead of performing an in-place copy.
         # Because we are using device="meta", tensors do not have memory associated with them
         # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
-        self.model_.load_state_dict(
-            checkpoint,
-            strict=False,
-            assign=True,
-        )  # self.model_ = Transformer(gptconf)
+        # self.model_.load_state_dict(
+        #     checkpoint,
+        #     strict=False,
+        #     assign=True,
+        # )  # self.model_ = Transformer(gptconf)
 
     def get_eager_model(self):
         if self.dtype:
@@ -201,18 +202,22 @@ the checkpoint format to avoid generating faulty models.
         if self.use_kv_cache:
             return self.get_example_inputs_kvcache_sdpa()
         else:
-            return (
-                torch.tensor(
-                    [[1, 2, 3]], dtype=torch.long
-                ),  # tokens, with kv cache our input token length is always just 1 token.
-            )
+            # return (
+            #     torch.tensor(
+            #         [[1, 2, 3]], dtype=torch.long
+            #     ),  # tokens, with kv cache our input token length is always just 1 token.
+            # )
+            # b = torch.ones(1, 32, dtype=torch.long)
+            b = torch.ones(1, 16, dtype=torch.long)
+            # b = torch.ones(1, 1, dtype=torch.long)
+            return (b, )
 
     # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
     def get_example_inputs_kvcache_sdpa(self):
         if self.enable_dynamic_shape:
             return (
                 torch.tensor([[2, 3, 4]], dtype=torch.long),
-                torch.tensor([0], dtype=torch.long),
+                torch.tensor([0, 1, 2], dtype=torch.long),
             )
         else:
             return (

@@ -452,6 +452,8 @@ def generate_qnn_executorch_compiler_spec(
     qnn_executorch_options.online_prepare = online_prepare
     qnn_executorch_options.is_from_context_binary = is_from_context_binary
 
+    print("qnn_executorch_options: ", qnn_executorch_options)
+
     return [
         CompileSpec(
             QCOM_QNN_COMPILE_SPEC, convert_to_flatbuffer(qnn_executorch_options)

@@ -132,7 +132,6 @@ class LLMEdgeManager:
         return self
 
     def _get_dynamic_shape(self) -> Any:
-        return None
         if self.dynamic_shapes:
             return self.dynamic_shapes
 
@@ -147,6 +146,7 @@ class LLMEdgeManager:
         else:
             # Two input arguments: tokens and input_pos but both are of static shape
             self.dynamic_shapes = None
+        self.dynamic_shapes = None
         return self.dynamic_shapes
 
     def _get_edge_config(self) -> EdgeCompileConfig:
@@ -165,9 +165,35 @@ class LLMEdgeManager:
             self.pre_autograd_graph_module = capture_pre_autograd_graph(
                 self.model, self.example_inputs, dynamic_shapes=dynamic_shape
             )
+        logging.info(f"self.pre_autograd_graph_module: {self.pre_autograd_graph_module.graph}")
         return self
 
-    def pt2e_quantize(self, quantizers: Optional[List[Quantizer]]) -> "LLMEdgeManager":
+    def calibrate(self, module: torch.fx.GraphModule):
+        if self.calibration_tasks is not None and self.calibration_limit is not None and self.calibration_seq_length is not None:
+            tokenizer = Tiktoken(tokenizer_path)
+            tokenizer = SentencePieceTokenizer(tokenizer_path)
+            eval_wrapper = EagerEvalWrapper(
+                model=m.to(device="cuda"),
+                tokenizer=tokenizer,
+                max_seq_length=seq_len,
+                use_kv_cache=self.use_kv_cache,
+            )
+            eval_results = eval(
+                eval_wrapper,
+                tasks=["wikitext"],
+                # limit=300,
+                limit=5,
+                # limit=1,
+            )
+            for task, res in eval_results["results"].items():
+                print(f"{task}: {res}")
+        else:
+            raise Exception("No calibration task provided")
+
+
+    def pt2e_quantize(
+        self, quantizers: Optional[List[Quantizer]]
+    ) -> "LlamaEdgeManager":
         """
         Quantize the model via pt2e flow and retrieve LLMEdgeManager including the quantized model.
         Args:
@@ -190,6 +216,7 @@ class LLMEdgeManager:
                 ), "Please run capture_pre_autograd_graph first"
                 m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
                 # Calibrate
+                # self.calibrate(m)
                 m(*self.example_inputs)
                 m = convert_pt2e(m)
                 DuplicateDynamicQuantChainPass()(m)
@@ -213,6 +240,9 @@ class LLMEdgeManager:
                 self.pre_autograd_graph_module = capture_pre_autograd_graph(
                     self.model, self.example_inputs, dynamic_shapes=dynamic_shape
                 )
+            
+            print(f"self.example_inputs: {self.example_inputs}")
+                
             self.edge_manager = export_to_edge(
                 self.pre_autograd_graph_module,
                 self.example_inputs,

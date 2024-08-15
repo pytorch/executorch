@@ -317,7 +317,7 @@ class TestQNN(unittest.TestCase):
         )
         exec_prog = delegated_program.to_executorch(
             exir.ExecutorchBackendConfig(
-                extract_delegate_segments=False,
+                extract_delegate_segments=True,
                 # For shared buffer, user must pass the memory address
                 # which is allocated by RPC memory to executor runner.
                 # Therefore, won't want to pre-allocate
