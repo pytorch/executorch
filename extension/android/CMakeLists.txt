@@ -63,7 +63,7 @@ if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
 endif()
 
-add_library(executorch_jni SHARED jni/jni_layer.cpp)
+add_library(executorch_jni SHARED jni/jni_layer.cpp ${EXECUTORCH_ROOT}/extension/evalue_util/print_evalue.cpp ${EXECUTORCH_ROOT}/extension/runner_util/inputs.cpp ${EXECUTORCH_ROOT}/extension/runner_util/inputs_portable.cpp)
 target_link_libraries(executorch_jni ${link_libraries})
 target_include_directories(
   executorch_jni PRIVATE ${_common_include_directories}
