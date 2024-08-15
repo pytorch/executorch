@@ -479,7 +479,7 @@
 
 <span class="kn">import</span> <span class="nn">copy</span>
 <span class="kn">import</span> <span class="nn">operator</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch.utils._pytree</span> <span class="k">as</span> <span class="nn">pytree</span>
@@ -903,46 +903,67 @@
 <span class="k">def</span> <span class="nf">_get_new_signature</span><span class="p">(</span>  <span class="c1"># noqa: C901</span>
     <span class="n">original_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
-    <span class="n">tag</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">call_module_node</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">,</span>
+    <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span>
     <span class="n">ExportGraphSignature</span><span class="p">,</span>
     <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">]],</span>
     <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">FakeScriptObject</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">ScriptObject</span><span class="p">]],</span>
+    <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">InputSpec</span><span class="p">],</span>
+    <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">OutputSpec</span><span class="p">],</span>
 <span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Args:</span>
-<span class="sd">        tag: If tag is None, this means that we are constructing the graph</span>
-<span class="sd">        signature for the toplevel graph, after delegation. We need to do this</span>
-<span class="sd">        because sometimes delegates will swallow some parameters/buffers, so we</span>
-<span class="sd">        need to update the graph signature/state dict to reflect these changes.</span>
-<span class="sd">        Otherwise, if tag is not None, this means we are constructing the graph</span>
-<span class="sd">        signature for the delegated modules. In this case, we need to look</span>
-<span class="sd">        through the input nodes and see which ones were originally</span>
-<span class="sd">        parameters/buffers, and lower them down to the delegate.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">        original_program: The original program that we are paritioning</span>
+<span class="sd">        gm: The partitioned graph module.</span>
+<span class="sd">        call_module_node: The node in the original program that is calling the</span>
+<span class="sd">            partitioned graph module.</span>
+<span class="sd">        tag: The tag being used for this partitioned submodule. This is used to</span>
+<span class="sd">            tell if a particular parameter/buffer/constant node is being tagged,</span>
+<span class="sd">            aka consumed by the delegate.</span>
+<span class="sd">        is_submodule: True if we are currently partitioning inside of a</span>
+<span class="sd">            submodule (like cond&#39;s submodule). If we are inside of a submodule,</span>
+<span class="sd">            we do not care about consuming params/buffers.</span>
 
+<span class="sd">    Returns:</span>
+
+<span class="sd">        new_signature (ExportGraphSignature): The new signature for the</span>
+<span class="sd">            partitioned graph module.</span>
+<span class="sd">        new_state_dict (Dict[str, Union[torch.Tensor, torch.nn.Parameter]]): The</span>
+<span class="sd">            new state dict containing the consumed params/buffers.</span>
+<span class="sd">        new_constants (Dict[str, Union[torch.Tensor, FakeScriptObject,</span>
+<span class="sd">            torch.ScriptObject]]): The new constants table containing the</span>
+<span class="sd">            consumed constants .</span>
+<span class="sd">        input_specs_to_delete (Dict[str, InputSpec]): The input specs that have</span>
+<span class="sd">            been consumed by the delegate (param/buffer input nodes) and should</span>
+<span class="sd">            be removed from the toplevel ExportedProgram.</span>
+<span class="sd">        output_specs_to_delete (Dict[str, InputSpec]): The output specs that have</span>
+<span class="sd">            been consumed by the delegate (buffer mutation nodes) and should be</span>
+<span class="sd">            removed from the toplevel ExportedProgram.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">old_signature</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph_signature</span>
 
     <span class="n">input_specs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">output_specs</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="n">new_signature</span> <span class="o">=</span> <span class="n">ExportGraphSignature</span><span class="p">(</span>
-        <span class="n">input_specs</span><span class="o">=</span><span class="n">input_specs</span><span class="p">,</span> <span class="n">output_specs</span><span class="o">=</span><span class="n">output_specs</span>
-    <span class="p">)</span>
+    <span class="n">input_specs_to_delete</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">output_specs_to_delete</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">new_state_dict</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">new_constants</span> <span class="o">=</span> <span class="p">{}</span>
 
-    <span class="n">placeholder_nodes</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span> <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span>
-    <span class="p">]</span>
-    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">placeholder_nodes</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">old_signature</span><span class="o">.</span><span class="n">input_specs</span><span class="p">)</span>
-    <span class="n">input_node_to_sig</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">placeholder_nodes</span><span class="p">,</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">input_specs</span><span class="p">))</span>
+    <span class="c1"># If we are within a submodule, we do not need to care about consuming</span>
+    <span class="c1"># parameter/buffers</span>
+    <span class="n">input_node_to_sig</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">InputSpec</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">{</span><span class="n">input_spec</span><span class="o">.</span><span class="n">arg</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="n">input_spec</span> <span class="k">for</span> <span class="n">input_spec</span> <span class="ow">in</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">input_specs</span><span class="p">}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">is_submodule</span>
+        <span class="k">else</span> <span class="p">{}</span>
+    <span class="p">)</span>
 
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
         <span class="n">is_tagged</span> <span class="o">=</span> <span class="n">tag</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span>
         <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
 
             <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">input_node_to_sig</span><span class="p">:</span>
-                <span class="k">assert</span> <span class="n">tag</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="n">InputSpec</span><span class="p">(</span>
                         <span class="n">kind</span><span class="o">=</span><span class="n">InputKind</span><span class="o">.</span><span class="n">USER_INPUT</span><span class="p">,</span>
@@ -960,29 +981,36 @@
             <span class="k">elif</span> <span class="n">is_tagged</span><span class="p">:</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">orig_input_spec</span><span class="p">)</span>
 
-                <span class="k">if</span> <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">InputKind</span><span class="o">.</span><span class="n">PARAMETER</span><span class="p">:</span>
-                    <span class="n">new_state_dict</span><span class="p">[</span><span class="n">orig_input_spec</span><span class="o">.</span><span class="n">target</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-                        <span class="n">original_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">[</span><span class="n">orig_input_spec</span><span class="o">.</span><span class="n">target</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">InputKind</span><span class="o">.</span><span class="n">USER_INPUT</span><span class="p">:</span>
+                    <span class="k">continue</span>
+
+                <span class="c1"># The following input specs are all attributes that should be</span>
+                <span class="c1"># consumed by the delegate, so we want to remove it from the</span>
+                <span class="c1"># toplevel module input/output</span>
+                <span class="n">input_specs_to_delete</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">orig_input_spec</span>
+
+                <span class="n">input_target</span> <span class="o">=</span> <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">target</span>
+                <span class="k">if</span> <span class="n">input_target</span> <span class="ow">in</span> <span class="n">original_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">:</span>
+                    <span class="k">assert</span> <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="ow">in</span> <span class="p">(</span>
+                        <span class="n">InputKind</span><span class="o">.</span><span class="n">PARAMETER</span><span class="p">,</span>
+                        <span class="n">InputKind</span><span class="o">.</span><span class="n">BUFFER</span><span class="p">,</span>
                     <span class="p">)</span>
-                <span class="k">elif</span> <span class="p">(</span>
-                    <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">InputKind</span><span class="o">.</span><span class="n">BUFFER</span>
-                    <span class="ow">and</span> <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">persistent</span>
-                <span class="p">):</span>
-                    <span class="n">new_state_dict</span><span class="p">[</span><span class="n">orig_input_spec</span><span class="o">.</span><span class="n">target</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-                        <span class="n">original_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">[</span><span class="n">orig_input_spec</span><span class="o">.</span><span class="n">target</span><span class="p">]</span>
+
+                    <span class="n">new_state_dict</span><span class="p">[</span><span class="n">input_target</span><span class="p">]</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">[</span>
+                        <span class="n">input_target</span>
+                    <span class="p">]</span>
+                <span class="k">elif</span> <span class="n">input_target</span> <span class="ow">in</span> <span class="n">original_program</span><span class="o">.</span><span class="n">constants</span><span class="p">:</span>
+                    <span class="k">assert</span> <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="ow">in</span> <span class="p">(</span>
+                        <span class="n">InputKind</span><span class="o">.</span><span class="n">CONSTANT_TENSOR</span><span class="p">,</span>
+                        <span class="n">InputKind</span><span class="o">.</span><span class="n">CUSTOM_OBJ</span><span class="p">,</span>
+                        <span class="n">InputKind</span><span class="o">.</span><span class="n">BUFFER</span><span class="p">,</span>
                     <span class="p">)</span>
-                <span class="k">elif</span> <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">InputKind</span><span class="o">.</span><span class="n">BUFFER</span><span class="p">:</span>
-                    <span class="k">assert</span> <span class="ow">not</span> <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">persistent</span>
-                    <span class="n">new_constants</span><span class="p">[</span><span class="n">orig_input_spec</span><span class="o">.</span><span class="n">target</span><span class="p">]</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">constants</span><span class="p">[</span>
-                        <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">target</span>
+
+                    <span class="n">new_constants</span><span class="p">[</span><span class="n">input_target</span><span class="p">]</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">constants</span><span class="p">[</span>
+                        <span class="n">input_target</span>
                     <span class="p">]</span>
-                <span class="k">elif</span> <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="ow">in</span> <span class="p">(</span>
-                    <span class="n">InputKind</span><span class="o">.</span><span class="n">CONSTANT_TENSOR</span><span class="p">,</span>
-                    <span class="n">InputKind</span><span class="o">.</span><span class="n">CUSTOM_OBJ</span><span class="p">,</span>
-                <span class="p">):</span>
-                    <span class="n">new_constants</span><span class="p">[</span><span class="n">orig_input_spec</span><span class="o">.</span><span class="n">target</span><span class="p">]</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">constants</span><span class="p">[</span>
-                        <span class="n">orig_input_spec</span><span class="o">.</span><span class="n">target</span>
-                    <span class="p">]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid input spec </span><span class="si">{</span><span class="n">orig_input_spec</span><span class="si">}</span><span class="s2"> received&quot;</span><span class="p">)</span>
 
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
@@ -996,60 +1024,46 @@
         <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
             <span class="n">output_nodes</span> <span class="o">=</span> <span class="n">pytree</span><span class="o">.</span><span class="n">tree_leaves</span><span class="p">((</span><span class="n">node</span><span class="o">.</span><span class="n">args</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">kwargs</span><span class="p">))</span>
 
-            <span class="k">if</span> <span class="n">tag</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="c1"># We are constructing output_specs for the delegate outputs.</span>
-                <span class="c1"># These don&#39;t have any buffer mutations.</span>
+            <span class="k">for</span> <span class="n">output_node</span> <span class="ow">in</span> <span class="n">output_nodes</span><span class="p">:</span>
 
-                <span class="k">for</span> <span class="n">output_node</span> <span class="ow">in</span> <span class="n">output_nodes</span><span class="p">:</span>
-                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">output_node</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">):</span>
-                        <span class="n">output_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                            <span class="n">OutputSpec</span><span class="p">(</span>
-                                <span class="n">kind</span><span class="o">=</span><span class="n">OutputKind</span><span class="o">.</span><span class="n">USER_OUTPUT</span><span class="p">,</span>
-                                <span class="n">arg</span><span class="o">=</span><span class="n">ConstantArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">output_node</span><span class="p">),</span>
-                                <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                            <span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">output_node</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">):</span>
+                    <span class="n">output_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">OutputSpec</span><span class="p">(</span>
+                            <span class="n">kind</span><span class="o">=</span><span class="n">OutputKind</span><span class="o">.</span><span class="n">USER_OUTPUT</span><span class="p">,</span>
+                            <span class="n">arg</span><span class="o">=</span><span class="n">ConstantArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">output_node</span><span class="p">),</span>
+                            <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                         <span class="p">)</span>
-                    <span class="k">else</span><span class="p">:</span>
-                        <span class="n">output_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                            <span class="n">OutputSpec</span><span class="p">(</span>
-                                <span class="n">kind</span><span class="o">=</span><span class="n">OutputKind</span><span class="o">.</span><span class="n">USER_OUTPUT</span><span class="p">,</span>
-                                <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">output_node</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
-                                <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                            <span class="p">)</span>
+                    <span class="p">)</span>
+
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">output_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="n">OutputSpec</span><span class="p">(</span>
+                            <span class="n">kind</span><span class="o">=</span><span class="n">OutputKind</span><span class="o">.</span><span class="n">USER_OUTPUT</span><span class="p">,</span>
+                            <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">output_node</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                            <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                         <span class="p">)</span>
+                    <span class="p">)</span>
 
-            <span class="k">else</span><span class="p">:</span>
-                <span class="c1"># We are reconstruting the toplevel module which contains</span>
-                <span class="c1"># delegates. Delegation should not change the number of outputs</span>
-                <span class="c1"># in the toplevel module, and it does not touch the mutated buffers</span>
+    <span class="n">new_signature</span> <span class="o">=</span> <span class="n">ExportGraphSignature</span><span class="p">(</span>
+        <span class="n">input_specs</span><span class="o">=</span><span class="n">input_specs</span><span class="p">,</span> <span class="n">output_specs</span><span class="o">=</span><span class="n">output_specs</span>
+    <span class="p">)</span>
 
-                <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">old_signature</span><span class="o">.</span><span class="n">output_specs</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">output_nodes</span><span class="p">)</span>
-                <span class="k">for</span> <span class="n">prev_output_spec</span><span class="p">,</span> <span class="n">output_node</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
-                    <span class="n">old_signature</span><span class="o">.</span><span class="n">output_specs</span><span class="p">,</span> <span class="n">output_nodes</span>
-                <span class="p">):</span>
-                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">output_node</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">):</span>
-                        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">prev_output_spec</span><span class="o">.</span><span class="n">arg</span><span class="p">,</span> <span class="n">ConstantArgument</span><span class="p">)</span>
-                        <span class="n">output_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                            <span class="n">OutputSpec</span><span class="p">(</span>
-                                <span class="n">kind</span><span class="o">=</span><span class="n">OutputKind</span><span class="o">.</span><span class="n">USER_OUTPUT</span><span class="p">,</span>
-                                <span class="n">arg</span><span class="o">=</span><span class="n">ConstantArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">value</span><span class="o">=</span><span class="n">output_node</span><span class="p">),</span>
-                                <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-                            <span class="p">)</span>
-                        <span class="p">)</span>
-
-                    <span class="k">else</span><span class="p">:</span>
-                        <span class="n">new_output_spec</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">prev_output_spec</span><span class="p">)</span>
-                        <span class="n">new_output_spec</span><span class="o">.</span><span class="n">arg</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">output_node</span><span class="o">.</span><span class="n">name</span>
-                        <span class="n">output_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_output_spec</span><span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">new_signature</span><span class="p">,</span> <span class="n">new_state_dict</span><span class="p">,</span> <span class="n">new_constants</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">new_signature</span><span class="p">,</span>
+        <span class="n">new_state_dict</span><span class="p">,</span>
+        <span class="n">new_constants</span><span class="p">,</span>
+        <span class="n">input_specs_to_delete</span><span class="p">,</span>
+        <span class="n">output_specs_to_delete</span><span class="p">,</span>
+    <span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">create_exported_program_from_submodule</span><span class="p">(</span>
     <span class="n">submodule</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+    <span class="n">call_module_node</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">,</span>
+    <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">InputSpec</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">OutputSpec</span><span class="p">]]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Creates an ExportedProgram from the given submodule using the parameters and buffers</span>
 <span class="sd">    from the top-level owning program</span>
@@ -1061,34 +1075,52 @@
 
 <span class="sd">    Returns:</span>
 <span class="sd">        The ExportedProgram created from submodule</span>
+<span class="sd">        input_specs_to_delete (Dict[str, InputSpec]): The input specs that have</span>
+<span class="sd">            been consumed by the delegate (param/buffer input nodes) and should</span>
+<span class="sd">            be removed from the toplevel ExportedProgram.</span>
+<span class="sd">        output_specs_to_delete (Dict[str, InputSpec]): The output specs that have</span>
+<span class="sd">            been consumed by the delegate (buffer mutation nodes) and should be</span>
+<span class="sd">            removed from the toplevel ExportedProgram.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Arrange the submodule&#39;s placeholders in order</span>
     <span class="n">submodule</span> <span class="o">=</span> <span class="n">arrange_graph_placeholders</span><span class="p">(</span><span class="n">submodule</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">)</span>
 
+    <span class="c1"># TODO: we probably need to arrange the outputs wrt buffer mutations.</span>
+
     <span class="c1"># Get updated graph signature</span>
-    <span class="n">subgraph_signature</span><span class="p">,</span> <span class="n">subgraph_state_dict</span><span class="p">,</span> <span class="n">subgraph_constants</span> <span class="o">=</span> <span class="n">_get_new_signature</span><span class="p">(</span>
-        <span class="n">owning_program</span><span class="p">,</span> <span class="n">submodule</span><span class="p">,</span> <span class="n">tag</span>
+    <span class="p">(</span>
+        <span class="n">subgraph_signature</span><span class="p">,</span>
+        <span class="n">subgraph_state_dict</span><span class="p">,</span>
+        <span class="n">subgraph_constants</span><span class="p">,</span>
+        <span class="n">toplevel_input_specs_to_delete</span><span class="p">,</span>
+        <span class="n">toplevel_output_specs_to_delete</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">=</span> <span class="n">_get_new_signature</span><span class="p">(</span>
+        <span class="n">owning_program</span><span class="p">,</span> <span class="n">submodule</span><span class="p">,</span> <span class="n">call_module_node</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">is_submodule</span>
     <span class="p">)</span>
 
     <span class="n">in_spec</span> <span class="o">=</span> <span class="n">pytree</span><span class="o">.</span><span class="n">tree_flatten</span><span class="p">((</span><span class="nb">tuple</span><span class="p">(</span><span class="n">subgraph_signature</span><span class="o">.</span><span class="n">user_inputs</span><span class="p">),</span> <span class="p">{}))[</span><span class="mi">1</span><span class="p">]</span>
     <span class="n">out_spec</span> <span class="o">=</span> <span class="n">pytree</span><span class="o">.</span><span class="n">tree_flatten</span><span class="p">(</span><span class="n">subgraph_signature</span><span class="o">.</span><span class="n">user_outputs</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
 
-    <span class="k">return</span> <span class="n">ExportedProgram</span><span class="p">(</span>
-        <span class="n">root</span><span class="o">=</span><span class="n">submodule</span><span class="p">,</span>
-        <span class="n">graph</span><span class="o">=</span><span class="n">submodule</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
-        <span class="n">graph_signature</span><span class="o">=</span><span class="n">subgraph_signature</span><span class="p">,</span>
-        <span class="n">state_dict</span><span class="o">=</span><span class="n">subgraph_state_dict</span><span class="p">,</span>
-        <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">owning_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">),</span>
-        <span class="n">module_call_graph</span><span class="o">=</span><span class="p">[</span>
-            <span class="n">ModuleCallEntry</span><span class="p">(</span>
-                <span class="s2">&quot;&quot;</span><span class="p">,</span>
-                <span class="n">ModuleCallSignature</span><span class="p">(</span>
-                    <span class="n">inputs</span><span class="o">=</span><span class="p">[],</span> <span class="n">outputs</span><span class="o">=</span><span class="p">[],</span> <span class="n">in_spec</span><span class="o">=</span><span class="n">in_spec</span><span class="p">,</span> <span class="n">out_spec</span><span class="o">=</span><span class="n">out_spec</span>
-                <span class="p">),</span>
-            <span class="p">)</span>
-        <span class="p">],</span>
-        <span class="n">constants</span><span class="o">=</span><span class="n">subgraph_constants</span><span class="p">,</span>
-        <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span><span class="n">owning_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">],</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">ExportedProgram</span><span class="p">(</span>
+            <span class="n">root</span><span class="o">=</span><span class="n">submodule</span><span class="p">,</span>
+            <span class="n">graph</span><span class="o">=</span><span class="n">submodule</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
+            <span class="n">graph_signature</span><span class="o">=</span><span class="n">subgraph_signature</span><span class="p">,</span>
+            <span class="n">state_dict</span><span class="o">=</span><span class="n">subgraph_state_dict</span><span class="p">,</span>
+            <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">owning_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">),</span>
+            <span class="n">module_call_graph</span><span class="o">=</span><span class="p">[</span>
+                <span class="n">ModuleCallEntry</span><span class="p">(</span>
+                    <span class="s2">&quot;&quot;</span><span class="p">,</span>
+                    <span class="n">ModuleCallSignature</span><span class="p">(</span>
+                        <span class="n">inputs</span><span class="o">=</span><span class="p">[],</span> <span class="n">outputs</span><span class="o">=</span><span class="p">[],</span> <span class="n">in_spec</span><span class="o">=</span><span class="n">in_spec</span><span class="p">,</span> <span class="n">out_spec</span><span class="o">=</span><span class="n">out_spec</span>
+                    <span class="p">),</span>
+                <span class="p">)</span>
+            <span class="p">],</span>
+            <span class="n">constants</span><span class="o">=</span><span class="n">subgraph_constants</span><span class="p">,</span>
+            <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span><span class="n">owning_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">],</span>
+        <span class="p">),</span>
+        <span class="n">toplevel_input_specs_to_delete</span><span class="p">,</span>
+        <span class="n">toplevel_output_specs_to_delete</span><span class="p">,</span>
     <span class="p">)</span>
 
 
@@ -1211,6 +1243,64 @@
             <span class="n">lowered_programs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lowered_backend_module</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">lowered_programs</span>
+
+
+<span class="k">def</span> <span class="nf">_unsafe_adjust_original_program</span><span class="p">(</span>
+    <span class="n">original_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">call_delegate_node</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">,</span>
+    <span class="n">input_specs_to_delete</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">InputSpec</span><span class="p">],</span>
+    <span class="n">output_specs_to_delete</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">OutputSpec</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Directly modify the original exported program&#39;s signature and state dict</span>
+<span class="sd">    based on the consumed params/buffers in the delegate.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">original_program</span><span class="o">.</span><span class="n">_graph_signature</span><span class="o">.</span><span class="n">input_specs</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">input_spec</span>
+        <span class="k">for</span> <span class="n">input_spec</span> <span class="ow">in</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">input_specs</span>
+        <span class="k">if</span> <span class="n">input_spec</span><span class="o">.</span><span class="n">arg</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">input_specs_to_delete</span>
+    <span class="p">]</span>
+
+    <span class="n">currently_used_targets</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">input_spec</span><span class="o">.</span><span class="n">target</span>
+        <span class="k">for</span> <span class="n">input_spec</span> <span class="ow">in</span> <span class="n">original_program</span><span class="o">.</span><span class="n">_graph_signature</span><span class="o">.</span><span class="n">input_specs</span>
+        <span class="k">if</span> <span class="n">input_spec</span><span class="o">.</span><span class="n">target</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="p">}</span>
+
+    <span class="n">original_program</span><span class="o">.</span><span class="n">_graph_signature</span><span class="o">.</span><span class="n">output_specs</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">output_spec</span>
+        <span class="k">for</span> <span class="n">output_spec</span> <span class="ow">in</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">output_specs</span>
+        <span class="k">if</span> <span class="n">output_spec</span><span class="o">.</span><span class="n">arg</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">output_specs_to_delete</span>
+    <span class="p">]</span>
+
+    <span class="c1"># Delete all parameters/buffers consumed by the created exported program</span>
+    <span class="c1"># from the graph signature, state dict, constants table</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">input_specs_to_delete</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">users</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+                <span class="n">original_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">break</span>
+
+    <span class="k">for</span> <span class="n">input_spec</span> <span class="ow">in</span> <span class="n">input_specs_to_delete</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="n">input_target</span> <span class="o">=</span> <span class="n">input_spec</span><span class="o">.</span><span class="n">target</span>
+        <span class="k">assert</span> <span class="n">input_target</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">input_target</span> <span class="ow">in</span> <span class="n">currently_used_targets</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="k">if</span> <span class="n">input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">InputKind</span><span class="o">.</span><span class="n">PARAMETER</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">original_program</span><span class="o">.</span><span class="n">_state_dict</span><span class="p">[</span><span class="n">input_target</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="n">input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">InputKind</span><span class="o">.</span><span class="n">BUFFER</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">input_spec</span><span class="o">.</span><span class="n">persistent</span><span class="p">:</span>
+                <span class="k">del</span> <span class="n">original_program</span><span class="o">.</span><span class="n">_state_dict</span><span class="p">[</span><span class="n">input_target</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">del</span> <span class="n">original_program</span><span class="o">.</span><span class="n">_constants</span><span class="p">[</span><span class="n">input_spec</span><span class="o">.</span><span class="n">target</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="n">input_spec</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">InputKind</span><span class="o">.</span><span class="n">CONSTANT_TENSOR</span><span class="p">:</span>
+            <span class="k">del</span> <span class="n">original_program</span><span class="o">.</span><span class="n">_constants</span><span class="p">[</span><span class="n">input_spec</span><span class="o">.</span><span class="n">target</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid input spec </span><span class="si">{</span><span class="n">input_spec</span><span class="si">}</span><span class="s2"> received&quot;</span><span class="p">)</span>
 </pre></div>
 
              </article>

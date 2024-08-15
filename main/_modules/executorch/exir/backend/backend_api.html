@@ -477,7 +477,7 @@
 
 <span class="kn">import</span> <span class="nn">copy</span>
 <span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">from</span> <span class="nn">contextlib</span> <span class="kn">import</span> <span class="n">contextmanager</span>
+<span class="kn">from</span> <span class="nn">contextlib</span> <span class="kn">import</span> <span class="n">contextmanager</span><span class="p">,</span> <span class="n">nullcontext</span>
 <span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">singledispatch</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Generator</span><span class="p">,</span> <span class="n">List</span>
 
@@ -496,12 +496,11 @@
 
 <span class="kn">from</span> <span class="nn">executorch.exir.graph_module</span> <span class="kn">import</span> <span class="n">get_control_flow_submodules</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.lowered_backend_module</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">_get_new_signature</span><span class="p">,</span>
+    <span class="n">_unsafe_adjust_original_program</span><span class="p">,</span>
     <span class="n">create_exported_program_from_submodule</span><span class="p">,</span>
     <span class="n">create_submodule_from_nodes</span><span class="p">,</span>
     <span class="n">LoweredBackendModule</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.pass_base</span> <span class="kn">import</span> <span class="n">ExportPass</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.program._fake_program</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">get_fake_program</span><span class="p">,</span>
     <span class="n">update_to_real_program</span><span class="p">,</span>
@@ -664,6 +663,7 @@
     <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">partition_result</span><span class="p">:</span> <span class="n">PartitionResult</span><span class="p">,</span>
     <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Partitioned and lowered the graph module based on the partition tag, this is to handle one graph module.</span>
@@ -681,21 +681,40 @@
 
         <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;For tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">, found nodes </span><span class="si">{</span><span class="n">node_list</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="c1"># Tag the nodes that are params as buffers, so we can order the submodule as (Parms + Buffers) (User Inputs)</span>
-        <span class="n">submodule</span><span class="p">,</span> <span class="n">call_module_node</span> <span class="o">=</span> <span class="n">create_submodule_from_nodes</span><span class="p">(</span>
-            <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">node_list</span><span class="p">,</span> <span class="n">tag</span>
+
+        <span class="n">replace_ctx</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">_set_replace_hook</span><span class="p">(</span>
+                <span class="n">owning_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">get_replace_hook</span><span class="p">()</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">is_submodule</span>
+            <span class="k">else</span> <span class="n">nullcontext</span><span class="p">()</span>
         <span class="p">)</span>
+        <span class="k">with</span> <span class="n">replace_ctx</span><span class="p">:</span>
+            <span class="n">submodule</span><span class="p">,</span> <span class="n">call_module_node</span> <span class="o">=</span> <span class="n">create_submodule_from_nodes</span><span class="p">(</span>
+                <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">node_list</span><span class="p">,</span> <span class="n">tag</span>
+            <span class="p">)</span>
+
         <span class="n">tagged_graph_module_output_node</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">node</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span> <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span>
-        <span class="p">]</span>
+        <span class="p">][</span><span class="mi">0</span><span class="p">]</span>
         <span class="n">submodule_output_node</span> <span class="o">=</span> <span class="p">[</span>
             <span class="n">node</span> <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">submodule</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span> <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span>
-        <span class="p">]</span>
-        <span class="c1"># Copy the output node meta from the original output node, because create_submodule_from_nodes doesn&#39;t cover the meta field</span>
-        <span class="n">submodule_output_node</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="n">tagged_graph_module_output_node</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">meta</span>
+        <span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+        <span class="c1"># Copy the output node meta from the original output node, because</span>
+        <span class="c1"># create_submodule_from_nodes doesn&#39;t cover the meta field</span>
+        <span class="n">submodule_output_node</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="n">tagged_graph_module_output_node</span><span class="o">.</span><span class="n">meta</span>
         <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Partitioned graph module: </span><span class="si">{</span><span class="n">tagged_graph_module</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-        <span class="n">submodule_program</span> <span class="o">=</span> <span class="n">create_exported_program_from_submodule</span><span class="p">(</span>
-            <span class="n">submodule</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">,</span> <span class="n">tag</span>
+        <span class="p">(</span>
+            <span class="n">submodule_program</span><span class="p">,</span>
+            <span class="n">toplevel_input_specs_to_delete</span><span class="p">,</span>
+            <span class="n">toplevel_output_specs_to_delete</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">=</span> <span class="n">create_exported_program_from_submodule</span><span class="p">(</span>
+            <span class="n">submodule</span><span class="p">,</span>
+            <span class="n">owning_program</span><span class="p">,</span>
+            <span class="n">tag</span><span class="p">,</span>
+            <span class="n">call_module_node</span><span class="p">,</span>
+            <span class="n">is_submodule</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="n">lowered_submodule</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span>
@@ -728,31 +747,24 @@
             <span class="n">call_delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;debug_handle&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span>
                 <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span>
             <span class="p">)</span>
+            <span class="n">call_delegate_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">submodule_output_node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span>
             <span class="n">call_module_node</span><span class="o">.</span><span class="n">replace_all_uses_with</span><span class="p">(</span><span class="n">call_delegate_node</span><span class="p">)</span>
             <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">call_module_node</span><span class="p">)</span>
 
-        <span class="c1"># Delete all parameters/buffers consumed by the created exported program</span>
-        <span class="n">toplevel_signature</span> <span class="o">=</span> <span class="n">owning_program</span><span class="o">.</span><span class="n">graph_signature</span>
-        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-            <span class="c1"># Find placeholders consumed by the delegate</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">!=</span> <span class="s2">&quot;placeholder&quot;</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">users</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
-                <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">is_submodule</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">toplevel_input_specs_to_delete</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">toplevel_output_specs_to_delete</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+        <span class="k">elif</span> <span class="p">(</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">toplevel_input_specs_to_delete</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span>
+            <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">toplevel_output_specs_to_delete</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span>
+        <span class="p">):</span>
+            <span class="n">_unsafe_adjust_original_program</span><span class="p">(</span>
+                <span class="n">owning_program</span><span class="p">,</span>
+                <span class="n">call_delegate_node</span><span class="p">,</span>
+                <span class="n">toplevel_input_specs_to_delete</span><span class="p">,</span>
+                <span class="n">toplevel_output_specs_to_delete</span><span class="p">,</span>
+            <span class="p">)</span>
 
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">toplevel_signature</span><span class="o">.</span><span class="n">inputs_to_buffers</span><span class="p">:</span>
-                <span class="c1"># Delete the consumed buffers</span>
-                <span class="n">buffer_name</span> <span class="o">=</span> <span class="n">toplevel_signature</span><span class="o">.</span><span class="n">inputs_to_buffers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">buffer_name</span> <span class="ow">in</span> <span class="n">owning_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">:</span>
-                    <span class="n">owning_program</span><span class="o">.</span><span class="n">state_dict</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">buffer_name</span><span class="p">)</span>
-                <span class="k">else</span><span class="p">:</span>
-                    <span class="n">owning_program</span><span class="o">.</span><span class="n">constants</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">buffer_name</span><span class="p">)</span>
-                <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">toplevel_signature</span><span class="o">.</span><span class="n">inputs_to_parameters</span><span class="p">:</span>
-                <span class="c1"># Delete the consumed parameters</span>
-                <span class="n">param_name</span> <span class="o">=</span> <span class="n">toplevel_signature</span><span class="o">.</span><span class="n">inputs_to_parameters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-                <span class="n">owning_program</span><span class="o">.</span><span class="n">state_dict</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">param_name</span><span class="p">)</span>
-                <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
-
-        <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">recompile</span><span class="p">()</span>
     <span class="k">return</span> <span class="n">tagged_graph_module</span>
 
 
@@ -760,31 +772,22 @@
     <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">partition_result</span><span class="p">:</span> <span class="n">PartitionResult</span><span class="p">,</span>
     <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">is_submodule</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Partitions the graph module into submodules based on tags, and then lowered the nodes with the same tag as one lowered module, including the submodule from control flow</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">partitioned_module</span> <span class="o">=</span> <span class="n">_partition_and_lower_one_graph_module</span><span class="p">(</span>
-        <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">partition_result</span><span class="p">,</span> <span class="n">owning_program</span>
+        <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">partition_result</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">,</span> <span class="n">is_submodule</span>
     <span class="p">)</span>
 
     <span class="c1"># Recursively partition and lower for submodules</span>
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">submod</span><span class="p">,</span> <span class="n">_node</span> <span class="ow">in</span> <span class="n">get_control_flow_submodules</span><span class="p">(</span><span class="n">partitioned_module</span><span class="p">):</span>
         <span class="n">partitioned_submodule</span> <span class="o">=</span> <span class="n">_partition_and_lower</span><span class="p">(</span>
-            <span class="n">submod</span><span class="p">,</span> <span class="n">partition_result</span><span class="p">,</span> <span class="n">owning_program</span>
+            <span class="n">submod</span><span class="p">,</span> <span class="n">partition_result</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">,</span> <span class="n">is_submodule</span><span class="o">=</span><span class="kc">True</span>
         <span class="p">)</span>
         <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">add_module</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">partitioned_submodule</span><span class="p">)</span>
-
-    <span class="c1"># Run the export pass over the graph module so that the call delegate</span>
-    <span class="c1"># nodes will match Edge dialect</span>
-    <span class="c1"># TODO(angelayi): ExportPass will rerun the graph, however all we need</span>
-    <span class="c1"># here is to add metadata to the call delegate nodes to preserve Edge</span>
-    <span class="c1"># dialect.  There&#39;s work going on to generate a random tensor from a</span>
-    <span class="c1"># fake tensor and possibly it can help to address the issue.</span>
-    <span class="n">res</span> <span class="o">=</span> <span class="n">ExportPass</span><span class="p">()(</span><span class="n">tagged_graph_module</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-    <span class="n">tagged_graph_module</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">graph_module</span>
 
     <span class="k">return</span> <span class="n">tagged_graph_module</span>
 
@@ -820,6 +823,8 @@
 <span class="sd">    Returns:</span>
 <span class="sd">        ExportedProgram: The input program, with some portions targeted for delegation.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">edge_program</span><span class="o">.</span><span class="n">_validate</span><span class="p">()</span>
+
     <span class="c1"># Use fake program, with FakeTensors in the state dict, to avoid copying large constant values.</span>
     <span class="c1"># Fall back to deepcopy if no fake mode is found. TODO(T182910699): Remove this fallback.</span>
     <span class="k">try</span><span class="p">:</span>
@@ -848,28 +853,24 @@
     <span class="n">update_to_real_program</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">edge_program</span><span class="p">)</span>
 
     <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">partitioner_result</span><span class="o">.</span><span class="n">partition_tags</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="n">_maybe_duplicate_constant_nodes</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">edge_program</span><span class="p">)</span>
+        <span class="n">_maybe_duplicate_constant_nodes</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">tag</span><span class="p">)</span>
 
     <span class="n">tagged_graph_module</span> <span class="o">=</span> <span class="n">_partition_and_lower</span><span class="p">(</span>
-        <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">partitioner_result</span><span class="p">,</span> <span class="n">edge_program</span>
+        <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
+        <span class="n">partitioner_result</span><span class="p">,</span>
+        <span class="n">tagged_exported_program</span><span class="p">,</span>
     <span class="p">)</span>
 
-    <span class="c1"># TODO(angelayi): Update this signature in a less manual way (maybe through</span>
-    <span class="c1"># retracing)</span>
-    <span class="n">new_signature</span><span class="p">,</span> <span class="n">new_state_dict</span><span class="p">,</span> <span class="n">new_constants</span> <span class="o">=</span> <span class="n">_get_new_signature</span><span class="p">(</span>
-        <span class="n">edge_program</span><span class="p">,</span>
-        <span class="n">tagged_graph_module</span><span class="p">,</span>
-    <span class="p">)</span>
     <span class="k">return</span> <span class="n">ExportedProgram</span><span class="p">(</span>
         <span class="n">root</span><span class="o">=</span><span class="n">tagged_graph_module</span><span class="p">,</span>
         <span class="n">graph</span><span class="o">=</span><span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
-        <span class="n">graph_signature</span><span class="o">=</span><span class="n">new_signature</span><span class="p">,</span>
-        <span class="n">state_dict</span><span class="o">=</span><span class="n">new_state_dict</span><span class="p">,</span>
-        <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">),</span>
-        <span class="n">module_call_graph</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">),</span>
+        <span class="n">graph_signature</span><span class="o">=</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span>
+        <span class="n">state_dict</span><span class="o">=</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+        <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">),</span>
+        <span class="n">module_call_graph</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">),</span>
         <span class="n">example_inputs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
-        <span class="n">constants</span><span class="o">=</span><span class="n">new_constants</span><span class="p">,</span>
-        <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span><span class="n">edge_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">],</span>
+        <span class="n">constants</span><span class="o">=</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
+        <span class="n">verifiers</span><span class="o">=</span><span class="p">[</span><span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">],</span>
     <span class="p">)</span>
 </pre></div>
 
