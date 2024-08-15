@@ -23,10 +23,14 @@
  * The benefit of defining these hooks is that we can easily control whether or
  * not we want to compile in the EventTracer code based on the status of the
  * ET_EVENT_TRACER_ENABLED flag.
+ *
+ * TODO(dbort): Make this a private header of runtime/executor. It only contains
+ * runtime-internal functions and should not be part of the public set of
+ * headers.
  */
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace internal {
 
 /**
@@ -249,6 +253,25 @@ inline void event_tracer_set_bundled_input_index(
 #endif
 }
 
+} // namespace internal
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace internal {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::internal::event_tracer_begin_profiling_event;
+using ::executorch::runtime::internal::event_tracer_create_event_block;
+using ::executorch::runtime::internal::event_tracer_end_profiling_event;
+using ::executorch::runtime::internal::event_tracer_log_evalue;
+using ::executorch::runtime::internal::event_tracer_log_evalue_output;
+using ::executorch::runtime::internal::event_tracer_set_bundled_input_index;
+using ::executorch::runtime::internal::event_tracer_track_allocation;
+using ::executorch::runtime::internal::event_tracer_track_allocator;
+using ::executorch::runtime::internal::EventTracerProfileInstructionScope;
+using ::executorch::runtime::internal::EventTracerProfileScope;
 } // namespace internal
 } // namespace executor
 } // namespace torch

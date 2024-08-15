@@ -27,8 +27,8 @@
  * ET_EVENT_TRACER_ENABLED flag.
  */
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Start the profiling of a delegate event. Similar to start_profiling it will
@@ -62,6 +62,7 @@ inline EventTracerEntry event_tracer_start_profiling_delegate(
   // There is no active tracer; this value will be ignored.
   return EventTracerEntry();
 }
+
 /**
  * Signal the end of the delegate profiling event contained in
  * event_tracer_entry. Users also have the option to log some some free-from
@@ -174,8 +175,9 @@ inline void event_tracer_log_output_delegate(
   if (event_tracer) {
     static_assert(
         std::is_same<T, int>::value || std::is_same<T, bool>::value ||
-            std::is_same<T, double>::value || std::is_same<T, Tensor>::value ||
-            std::is_same<T, ArrayRef<Tensor>>::value,
+            std::is_same<T, double>::value ||
+            std::is_same<T, exec_aten::Tensor>::value ||
+            std::is_same<T, ArrayRef<exec_aten::Tensor>>::value,
         "Unsupported type for intermediate output");
     event_tracer->log_intermediate_output_delegate(
         name, delegate_debug_id, output);
@@ -187,5 +189,16 @@ inline void event_tracer_log_output_delegate(
 #endif
 }
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::event_tracer_end_profiling_delegate;
+using ::executorch::runtime::event_tracer_log_output_delegate;
+using ::executorch::runtime::event_tracer_log_profiling_delegate;
+using ::executorch::runtime::event_tracer_start_profiling_delegate;
 } // namespace executor
 } // namespace torch
