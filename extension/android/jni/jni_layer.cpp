@@ -368,7 +368,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
   const char* model_path = model_path_.c_str();
-  Result<FileDataLoader> loader = FileDataLoader::from(model_path);
+  Result<torch::executor::util::FileDataLoader> loader = FileDataLoader::from(model_path);
   ET_CHECK_MSG(
       loader.ok(),
       "FileDataLoader::from() failed: 0x%" PRIx32,
@@ -499,7 +499,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("forward", ExecuTorchJni::forward),
         makeNativeMethod("execute", ExecuTorchJni::execute),
         makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
-        makeNativeMethod("forwardOnes", ExecutorchJni::forward_ones),
+        makeNativeMethod("forwardOnes", ExecuTorchJni::forward_ones),
     });
   }
 };
