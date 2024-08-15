@@ -15,9 +15,9 @@
 
 using namespace ::testing;
 using exec_aten::ScalarType;
-using torch::executor::BoxedEvalueList;
-using torch::executor::EValue;
-using torch::executor::Tag;
+using executorch::runtime::BoxedEvalueList;
+using executorch::runtime::EValue;
+using executorch::runtime::Tag;
 using torch::executor::testing::TensorFactory;
 
 TEST(TestEValue, CopyTrivialType) {

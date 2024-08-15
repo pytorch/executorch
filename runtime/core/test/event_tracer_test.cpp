@@ -8,16 +8,26 @@
 
 #include <gtest/gtest.h>
 
+#include <executorch/runtime/core/array_ref.h>
+#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/event_tracer.h>
 // Enable flag for test
 #define ET_EVENT_TRACER_ENABLED
 #include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 
-namespace torch {
-namespace executor {
-
-using namespace internal;
+using exec_aten::Tensor;
+using executorch::runtime::AllocatorID;
+using executorch::runtime::ArrayRef;
+using executorch::runtime::ChainID;
+using executorch::runtime::DebugHandle;
+using executorch::runtime::EValue;
+using executorch::runtime::EventTracer;
+using executorch::runtime::EventTracerDebugLogLevel;
+using executorch::runtime::EventTracerEntry;
+using executorch::runtime::kUnsetChainId;
+using executorch::runtime::kUnsetDebugHandle;
+using executorch::runtime::LoggedEValueType;
 
 class DummyEventTracer : public EventTracer {
  public:
@@ -159,6 +169,14 @@ class DummyEventTracer : public EventTracer {
  * Exercise all the event_tracer API's for a basic sanity check.
  */
 void RunSimpleTracerTest(EventTracer* event_tracer) {
+  using executorch::runtime::internal::event_tracer_begin_profiling_event;
+  using executorch::runtime::internal::event_tracer_create_event_block;
+  using executorch::runtime::internal::event_tracer_end_profiling_event;
+  using executorch::runtime::internal::event_tracer_track_allocation;
+  using executorch::runtime::internal::event_tracer_track_allocator;
+  using executorch::runtime::internal::EventTracerProfileInstructionScope;
+  using executorch::runtime::internal::EventTracerProfileScope;
+
   event_tracer_create_event_block(event_tracer, "ExampleEvent");
   event_tracer_create_event_block(event_tracer, "ExampleEvent");
   EventTracerEntry event_entry =
@@ -216,6 +234,9 @@ TEST(TestEventTracer, SimpleEventTracerTestDelegate) {
 }
 
 TEST(TestEventTracer, SimpleEventTracerTestLogging) {
+  using executorch::runtime::internal::event_tracer_log_evalue;
+  using executorch::runtime::internal::event_tracer_log_evalue_output;
+
   EValue test_eval(true);
 
   {
@@ -259,8 +280,5 @@ TEST(TestEventTracer, SimpleEventTracerTestLogging) {
   event_tracer_log_evalue_output(nullptr, test_eval);
 }
 
-} // namespace executor
-} // namespace torch
-
-// TODO : (T163645377) Add more test coverage to log and verify events passed
-// into DummyTracer.
+// TODO(T163645377): Add more test coverage to log and verify events passed into
+// DummyTracer.
