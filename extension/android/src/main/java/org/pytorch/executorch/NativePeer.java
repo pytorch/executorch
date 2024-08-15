@@ -37,6 +37,9 @@ class NativePeer implements INativePeer {
   public native EValue[] forward(EValue... inputs);
 
   @DoNotStrip
+  public native int forwardOnes();
+
+  @DoNotStrip
   public native EValue[] execute(String methodName, EValue... inputs);
 
   @DoNotStrip
