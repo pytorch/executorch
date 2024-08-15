@@ -11,9 +11,7 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/profiler.h>
-
 #include <memory>
-#include <mutex>
 
 #pragma clang diagnostic ignored "-Wglobal-constructors"
 
