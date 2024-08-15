@@ -64,6 +64,7 @@ void et_pal_emit_log_message(
 #endif
 
 using namespace torch::executor;
+static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
 namespace executorch_jni {
 class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
@@ -368,7 +369,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
   const char* model_path = model_path_.c_str();
-  Result<torch::executor::util::FileDataLoader> loader = FileDataLoader::from(model_path);
+  Result<torch::executor::util::FileDataLoader> loader = torch::executor::util::FileDataLoader::from(model_path);
   ET_CHECK_MSG(
       loader.ok(),
       "FileDataLoader::from() failed: 0x%" PRIx32,
