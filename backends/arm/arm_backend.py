@@ -166,6 +166,17 @@ def get_intermediate_path(compile_spec: List[CompileSpec]) -> str:
     return None
 
 
+def _get_first_delegation_tag(graph_module) -> str | None:
+    """Get the first delegation tag from the graph_module or return None."""
+    for node in graph_module.graph.nodes:
+        tag = node.meta.get("delegation_tag")
+        if tag:
+            return tag
+
+    logger.debug("No delegation tag found in partition.")
+    return None
+
+
 @final
 class ArmBackend(BackendDetails):
     @staticmethod
@@ -220,8 +231,13 @@ class ArmBackend(BackendDetails):
         # TODO: It would be awesome if this dump could somehow be done on top level and not here.
         # Problem is that the desc.json has to be created on the tosa_graph object, which we can't
         # access from top level.
-        if artifact_path is not None:
-            dbg_tosa_dump(tosa_graph, artifact_path)
+        if artifact_path:
+            tag = _get_first_delegation_tag(graph_module)
+            dbg_tosa_dump(
+                tosa_graph,
+                artifact_path,
+                suffix="{}".format(f"_{tag}" if tag else ""),
+            )
 
         # Serialize and return the program. While we have always produced TOSA
         # output as an intermediate, some flows compile to device binaries in

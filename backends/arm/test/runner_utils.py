@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -325,7 +326,18 @@ class RunnerUtil:
             self._has_init_run
         ), "RunnerUtil needs to be initialized using init_run() before running tosa reference."
 
-        desc_file_path = os.path.join(self.intermediate_path, "desc.json")
+        all_desc_file_paths = [
+            str(path) for path in Path(self.intermediate_path).glob("desc*.json")
+        ]
+        assert (
+            all_desc_file_paths
+        ), f"No TOSA description file found in '{self.intermediate_path}'."
+        if len(all_desc_file_paths) != 1:
+            raise NotImplementedError(
+                "Graphs with more than one partition are currently not supported."
+            )
+
+        desc_file_path = all_desc_file_paths[0]
         assert os.path.exists(
             desc_file_path
         ), f"desc_file_path: {desc_file_path} does not exist"
