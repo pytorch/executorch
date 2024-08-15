@@ -28,10 +28,10 @@ TEST(ClockTest, ConvertTicksToNsSanity) {
   InterceptWith iw(spy);
 
   spy.tick_ns_multiplier = {3, 2};
-  auto ns = torch::executor::ticks_to_ns(10);
+  auto ns = executorch::runtime::ticks_to_ns(10);
   ASSERT_EQ(15, ns); // 10 ticks * 3/2 = 15 ns
 
   spy.tick_ns_multiplier = {2, 7};
-  ns = torch::executor::ticks_to_ns(14);
+  ns = executorch::runtime::ticks_to_ns(14);
   ASSERT_EQ(4, ns); // 14 ticks * 2/7 = 4 ns
 }
