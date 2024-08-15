@@ -651,10 +651,6 @@ cmake<span class="w"> </span><span class="se">\</span>
 <h2>Building and Linking with the XNNPACK Backend<a class="headerlink" href="#building-and-linking-with-the-xnnpack-backend" title="Permalink to this heading">¶</a></h2>
 <p>You can build the XNNPACK backend <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt#L83">CMake target</a>, and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this <a class="reference internal" href="demo-apps-android.html"><span class="doc std std-doc">resource</span></a> next.</p>
 </div>
-<div class="section" id="profiling">
-<h2>Profiling<a class="headerlink" href="#profiling" title="Permalink to this heading">¶</a></h2>
-<p>To enable profiling in the <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span></code> pass the flags <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_ENABLE_EVENT_TRACER=ON</span></code> and <code class="docutils literal notranslate"><span class="pre">-DEXECUTORCH_BUILD_SDK=ON</span></code> to the build command (add <code class="docutils literal notranslate"><span class="pre">-DENABLE_XNNPACK_PROFILING=ON</span></code> for additional details). This will enable ETDump generation when running the inference and enables command line flags for profiling (see <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span> <span class="pre">--help</span></code> for details).</p>
-</div>
 </div>
 
 
@@ -708,7 +704,6 @@ cmake<span class="w"> </span><span class="se">\</span>
 <li><a class="reference internal" href="#lowering-with-aot-compiler-py-script">Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script</a></li>
 <li><a class="reference internal" href="#running-the-xnnpack-model-with-cmake">Running the XNNPACK Model with CMake</a></li>
 <li><a class="reference internal" href="#building-and-linking-with-the-xnnpack-backend">Building and Linking with the XNNPACK Backend</a></li>
-<li><a class="reference internal" href="#profiling">Profiling</a></li>
 </ul>
 </li>
 </ul>
