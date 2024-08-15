@@ -27,7 +27,6 @@ jobs:
   test-demo-ios:
     name: test-demo-ios
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    environment: ios-app
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
@@ -43,35 +42,9 @@ jobs:
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
-        # Setup Apple certificate for iOS development
-        CERTIFICATE_PATH="${RUNNER_TEMP}"/build_certificate.p12
-        export $CERTIFICATE_PATH
-
-        PP_FILENAME=build_pp.mobileprovision
-        PP_PATH="${RUNNER_TEMP}/${PP_FILENAME}"
-        export $PP_PATH
-
-        KEYCHAIN_PATH="${RUNNER_TEMP}"/app-signing.keychain-db
-        export $KEYCHAIN_PATH
-
-        .ci/scripts/setup-ios.sh
-
-        RC=0
         # Build and test iOS Demo App
-        if ! PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output build/test_ios_ci.sh; then
-          RC=1
-        fi
-
-        # Clean up the certifcate and exit
-        security delete-keychain "${KEYCHAIN_PATH}"
-        rm ~/Library/MobileDevice/Provisioning\ Profiles/"${PP_FILENAME}"
-
-        exit $RC
-
-    secrets:
-      BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-      BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
-      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+        build/test_ios_ci.sh
 
   build-frameworks-ios:
     name: build-frameworks-ios
