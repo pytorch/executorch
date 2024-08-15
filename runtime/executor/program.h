@@ -35,6 +35,11 @@ namespace testing {
 class ProgramTestFriend;
 } // namespace testing
 
+namespace deserialization {
+// Provides Tensor deserializaiton access to private Program methods.
+class TensorParser;
+} // namespace deserialization
+
 /**
  * A deserialized ExecuTorch program binary.
  */
@@ -194,6 +199,7 @@ class Program final {
   friend class BackendDelegate;
   friend class Executor;
   friend class Method;
+  friend class deserialization::TensorParser;
   friend class testing::ProgramTestFriend;
 
   const executorch_flatbuffer::Program* get_internal_program() const {
