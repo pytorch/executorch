@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: 0 0 * * *
   # Note: GitHub has an upper limit of 10 inputs
+  pull_request:
   workflow_dispatch:
     inputs:
       models:
@@ -78,6 +79,7 @@ jobs:
       models: ${{ steps.set-parameters.outputs.models }}
       devices: ${{ steps.set-parameters.outputs.devices }}
       delegates: ${{ steps.set-parameters.outputs.delegates }}
+      test_spec: ${{ steps.set-parameters.outputs.test_spec }}
     steps:
       - name: Set parameters
         id: set-parameters
@@ -89,6 +91,7 @@ jobs:
           CRON_DEFAULT_MODELS: "stories110M"
           CRON_DEFAULT_DEVICES: "samsung_galaxy_s2x"
           CRON_DEFAULT_DELEGATES: "xnnpack"
+          CRON_DEFAULT_TEST_SPEC: "https://ossci-android.s3.amazonaws.com/executorch/android-llm-device-farm-test-spec.yml"
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
@@ -102,6 +105,10 @@ jobs:
           DELEGATES="${{ inputs.delegates }}"
           if [ -z "$DELEGATES" ]; then
             DELEGATES="$CRON_DEFAULT_DELEGATES"
+          fi
+          TEST_SPEC="${{ inputs.test_spec }}"
+          if [ -z "$TEST_SPEC" ]; then
+            TEST_SPEC="$CRON_DEFAULT_TEST_SPEC"
           fi
 
           # Mapping devices to their corresponding device-pool-arn
@@ -125,6 +132,7 @@ jobs:
           MAPPED_ARNS_JSON=$(printf '%s\n' "${MAPPED_ARNS[@]}" | jq -R . | jq -s .)
           echo "devices=$(echo "$MAPPED_ARNS_JSON" | jq -c .)" >> $GITHUB_OUTPUT
           echo "delegates=$(echo $DELEGATES | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
+          echo "test_spec=$(echo $TEST_SPEC)" >> $GITHUB_OUTPUT
 
   export-models:
     name: export-models
@@ -254,6 +262,8 @@ jobs:
         model: ${{ fromJson(needs.set-parameters.outputs.models) }}
         delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
         device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
+    env:
+      test_spec: ${{ fromJson(needs.set-parameters.outputs.test_spec) }}
     with:
       device-type: android
       runner: linux.2xlarge
@@ -268,6 +278,6 @@ jobs:
       # TODO: Hard code llm_demo_bpe for now in this job.
       android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_bpe/app-debug.apk
       android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_bpe/app-debug-androidTest.apk
-      test-spec: ${{ inputs.test_spec }}
+      test-spec: ${test_spec}
       # Uploaded to S3 from the previous job
       extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
