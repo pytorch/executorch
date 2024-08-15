@@ -339,6 +339,7 @@
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -471,9 +472,10 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="module-executorch.exir">
-<span id="export-to-executorch-api-reference"></span><h1>Export to ExecuTorch API Reference<a class="headerlink" href="#module-executorch.exir" title="Permalink to this heading">¶</a></h1>
-<dl class="py function">
+  <div class="section" id="export-to-executorch-api-reference">
+<h1>Export to ExecuTorch API Reference<a class="headerlink" href="#export-to-executorch-api-reference" title="Permalink to this heading">¶</a></h1>
+<p>For detailed information on how APIs evolve and the deprecation process, please refer to the <a class="reference external" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a>.</p>
+<span class="target" id="module-executorch.exir"></span><dl class="py function">
 <dt class="sig sig-object py" id="executorch.exir.to_edge">
 <span class="sig-prename descclassname"><span class="pre">executorch.exir.</span></span><span class="sig-name descname"><span class="pre">to_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#to_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.exir.to_edge" title="Permalink to this definition">¶</a></dt>
 <dd><p><a class="reference internal" href="#executorch.exir.to_edge" title="executorch.exir.to_edge"><code class="xref py py-func docutils literal notranslate"><span class="pre">to_edge()</span></code></a> constructs an EdgeProgramManager from a set of exported programs in

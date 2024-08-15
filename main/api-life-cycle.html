@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>How ExecuTorch Works &mdash; ExecuTorch main documentation</title>
+  <title>ExecuTorch API Life Cycle and Deprecation Policy &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="High-level Architecture and Components of ExecuTorch" href="getting-started-architecture.html" />
-    <link rel="prev" title="ExecuTorch Overview" href="intro-overview.html" />
+    <link rel="next" title="Export IR Specification" href="ir-exir.html" />
+    <link rel="prev" title="ExecuTorch Runtime API Reference" href="executorch-runtime-api-reference.html" />
 
 
   <!-- Google Tag Manager -->
@@ -301,9 +301,9 @@
          
          
               <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">How ExecuTorch Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
 <li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
 </ul>
@@ -336,10 +336,10 @@
 <li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api-life-cycle.html">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch API Life Cycle and Deprecation Policy</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -434,13 +434,13 @@
       </li>
 
         
-      <li>How ExecuTorch Works</li>
+      <li>ExecuTorch API Life Cycle and Deprecation Policy</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/intro-how-it-works.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/api-life-cycle.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -472,30 +472,209 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <p>This page describes how ExecuTorch works and its key benefits.</p>
-<div class="section" id="how-executorch-works">
-<h1>How ExecuTorch Works<a class="headerlink" href="#how-executorch-works" title="Permalink to this heading">¶</a></h1>
-<p>At a high-level, there are three steps for running a PyTorch model with ExecuTorch across edge devices, such as laptops, mobile phones, wearables, and IoT devices.</p>
-<ol class="arabic simple">
-<li><p><strong>Export the model.</strong> The first step is to capture the PyTorch program as a graph, which is a new representation of the model that can be expressed in terms of a series of operators such as addition, multiplication, or convolution. This process safely preserves the semantics of the original PyTorch program. This representation is the first step to enable running the model on edge use cases that have low memory and/or low compute.</p></li>
-<li><p><strong>Compile the exported model to an ExecuTorch program.</strong> Given an exported model from step 1, convert it to an executable format called an ExecuTorch program that the runtime can use for inference. This step provides entry points for various optimizations such as compressing the model (e.g., quantization) to reduce size and further compiling subgraphs down to on-device specialized hardware accelerators to improve latency. It also provides an entry point for memory planning, i.e. to efficiently plan the location of intermediate tensors to reduce the runtime memory footprint.</p></li>
-<li><p><strong>Run the ExecuTorch program on a target device.</strong> Given an input–such as an image represented as an input activation tensor–the ExecuTorch runtime loads the ExecuTorch program, executes the instructions represented by the program, and computes an output. This step is efficient because (1) the runtime is lightweight and (2) an efficient execution plan has already been calculated in steps 1 and 2, making it possible to do performant inference. Furthermore, portability of the core runtime enabled performant execution even on highly-constrained devices.</p></li>
-</ol>
-<p>This figure illustrates the three-step process of exporting a PyTorch program, compiling it into an ExecuTorch program that targets a specific hardware device, and finally executing the program on the device using the ExecuTorch runtime.
-<img alt="name" src="_images/how-executorch-works-high-level.png" /></p>
-<div class="section" id="key-benefits">
-<h2>Key Benefits<a class="headerlink" href="#key-benefits" title="Permalink to this heading">¶</a></h2>
-<p>ExecuTorch provides the following benefits to engineers who need to deploy machine learning models to an edge device:</p>
+  <div class="section" id="executorch-api-life-cycle-and-deprecation-policy">
+<h1>ExecuTorch API Life Cycle and Deprecation Policy<a class="headerlink" href="#executorch-api-life-cycle-and-deprecation-policy" title="Permalink to this heading">¶</a></h1>
+<div class="section" id="api-life-cycle">
+<h2>API Life Cycle<a class="headerlink" href="#api-life-cycle" title="Permalink to this heading">¶</a></h2>
+<p><img alt="name" src="_images/api_life_cycle.png" /></p>
+<p>Each API of ExecuTorch falls into one of the following life cycle states:</p>
+<p><em>Experimental</em></p>
 <ul class="simple">
-<li><p><strong>Export that is robust and powerful.</strong> Export uses <a class="reference external" href="https://pytorch.org/docs/main/export.html"><code class="docutils literal notranslate"><span class="pre">torch.export()</span></code></a>, which uses the same technology used in PyTorch 2.x to capture PyTorch programs for fast execution. While eager mode is flexible and allows experimentation in Python, it may not work well if Python isn’t available or cannot deliver efficient execution. The <em>Export Intermediate Representation (Export IR)</em> that export flow generates can describe a wide range of dynamism in PyTorch models, including control flow and dynamic shapes, which makes it a powerful tool for fully capturing existing PyTorch models with little effort.</p></li>
-<li><p><strong>Operator standardization.</strong> During the graph export process, the nodes in the graph represent operators such as addition, multiplication, or convolution. These operators are part of a small standardized list called the <a class="reference external" href="https://pytorch.org/docs/main/torch.compiler_ir.html#core-aten-ir">Core ATen Op set</a>. Most PyTorch programs can be decomposed into a graph using this small set of operators during export. Small list of standardized operators reduces the surface, needed to be covered, by third-party operator libraries as well as accelerator backends, in order to run models exported for ExecuTorch. ExecuTorch runtime ships with one such library, called portable operator library, that implements core ATen opset.</p></li>
-<li><p><strong>Standardization for compiler interfaces (aka delegates) and the OSS ecosystem.</strong> In addition to the <em>Operator standardization</em> above, ExecuTorch has a standardized interface for delegation to compilers. This allows third-party vendors and compilers to implement interfaces and API entry points for compilation and execution of (either partial or full) graphs targeting their specialized hardware. This provides greater flexibility in terms of hardware support and performance optimization, as well as easier integration with the PyTorch open source ecosystem for on-device AI.</p></li>
-<li><p><strong>First-party SDK and toolchain.</strong> Due to the above standardization efforts, it was possible to build a unified first-party SDK for ExecuTorch, where developers can export, compile, and deploy to a wide range of target devices–such as iOS, Android, and microcontrollers–using the same SDK, streamlining the process and gaining productivity. Additionally, the SDK provides profiling and debugging functionality to easily inspect intermediate states, which are core parts of most developer workflows.</p></li>
-<li><p><strong>No intermediate conversions necessary.</strong> ExecuTorch’s main design principle is to allow developers to run their models on target devices without the need for converting to third-party intermediate representations. This eliminates a number of problems that on-device developers typically face when working with these conversion steps, such as lack of debuggability and profiling, the need to familiarize themselves with hardware-specific tools, and models not being able to run due to conversion steps failing.</p></li>
-<li><p><strong>Ease of customization.</strong> Developers can optimize their deployment for even better performance gains on the target architecture by applying custom techniques, such as linking with high-performance operator implementations or customizing memory planning based on storage and latency trade-offs. This level of customization is made possible through the standardization of the compiler pass interface and registration APIs on exported graphs.</p></li>
-<li><p><strong>Low overhead runtime and execution.</strong> The ExecuTorch runtime, written in C++, is highly efficient and can run on a wide range of architectures, including Linux, iOS, Android, embedded systems, and bare metal hardware, with little additional setup or configuration. It is capable of linking in only those operators needed for the model, resulting in a minimal runtime binary size. It is also able to run at low latency because of ahead-of-time compilation and memory planning stages, with the runtime responsible only for execution (e.g., call operator <code class="docutils literal notranslate"><span class="pre">conv</span></code> and save the result in memory location X).</p></li>
+<li><p>APIs in this stage are under active development and may change or be removed
+at any time. That said, the expectation is that we will eventually promote it
+to <em>Stable</em>, unless sufficient negative signals have been collected from the
+community or better alternatives have been found.</p></li>
+<li><p><em>Experimental</em> APIs will be clearly marked (see the “How to Mark API State”
+section below).</p></li>
+<li><p><em>Experimental</em> APIs may be changed or removed without notice, and developers
+should expect no stability guarantees.</p></li>
 </ul>
-<p>The above highlights the key advantages of ExecuTorch across three main categories: portability, productivity, and performance. We consider it to be an ideal choice for enabling on-device AI across mobile and edge computing platforms.</p>
+<p><em>Stable</em></p>
+<ul class="simple">
+<li><p>APIs are considered to be <em>Stable</em> if they are not marked as <em>Experimental</em> or
+<em>Deprecated.</em></p></li>
+<li><p>APIs in this stage have been thoroughly tested and are considered ready for
+production use.</p></li>
+<li><p>The recommended best practice is to not deprecate stable APIs. When writing an
+API, write it in such a way that it doesn’t need to be deprecated in the
+future.</p></li>
+<li><p><em>Stable</em> APIs can be changed, but not in a breaking way. If breaking changes
+have to be made, <em>Stable</em> APIs will always transition to <em>Deprecated</em> before
+being broken/removed from the library.</p></li>
+</ul>
+<p><em>Deprecated</em></p>
+<ul class="simple">
+<li><p>APIs in this stage are no longer recommended for use and will be removed in a
+future version of ExecuTorch.</p></li>
+<li><p><em>Deprecated</em> APIs will be clearly marked (see the “How to Mark API State”
+section below).</p></li>
+<li><p><em>Deprecated</em> APIs will remain functional for at least the <em>deprecation period</em>
+(see the “Deprecation Period” section below) to allow developers time to
+migrate to alternative APIs.</p></li>
+</ul>
+<p><em>Deleted</em></p>
+<ul class="simple">
+<li><p>APIs whose removal are made permanent. Cleaned up from both code and
+documentation.</p></li>
+</ul>
+</div>
+<div class="section" id="deprecation-policy">
+<h2>Deprecation Policy<a class="headerlink" href="#deprecation-policy" title="Permalink to this heading">¶</a></h2>
+<p>Follow these steps to deprecate and remove an API:</p>
+<ol class="arabic simple">
+<li><p>Discuss the change and collect initial feedback.</p></li>
+<li><p>Clearly mark the API deprecated in code and documentation (See “How to Mark
+API State” below).</p></li>
+<li><p>Listen to user feedback after the first release that deprecates the API.
+Users who weren’t involved in the original discussion may have good arguments
+for not deprecating or removing the API.</p></li>
+<li><p>Once the deprecation period has passed, the API may be removed (See
+“Deprecation Period” below). Be sure to also remove references from the
+documentation.</p></li>
+</ol>
+<p>We also use deprecation as a way to make breaking changes to an existing
+interface: for example, if adding a non-optional parameter to a method. To do
+this without breaking existing users:</p>
+<ol class="arabic simple">
+<li><p>In a single commit:</p>
+<ul class="simple">
+<li><p>Create a new API that meets the new requirements.</p></li>
+<li><p>Deprecate the old API and recommend that users move to the new API.</p></li>
+</ul>
+</li>
+<li><p>Migrate use cases from the old API to the new API.</p></li>
+<li><p>Delete the old API after the deprecation period.</p></li>
+</ol>
+</div>
+<div class="section" id="how-to-mark-api-state">
+<h2>How to Mark API State<a class="headerlink" href="#how-to-mark-api-state" title="Permalink to this heading">¶</a></h2>
+<p>When possible, the ExecuTorch code uses language-standard ways to annotate API
+lifecycle state in the code. This makes it easier for IDEs and other tools to
+communicate state to developers.</p>
+<table>
+  <tr>
+   <td><strong>Language</strong>
+   </td>
+   <td><strong>Code</strong>
+   </td>
+   <td><strong>Documentation</strong>
+   </td>
+  </tr>
+  <tr>
+   <td>Python
+   </td>
+   <td>
+<p>Use the
+<a href="https://typing-extensions.readthedocs.io/en/latest/#typing_extensions.deprecated">typing_extensions.deprecated</a>
+decorator</p>
+<p>
+Use ExecuTorch's native experimental decorator (TODO not yet implemented)
+   </td>
+   <td>
+<p>Use <code>.. warning::</code> in the docstrings of deprecated and experimental
+APIs. See
+<a href="https://github.com/pytorch/pytorch/blob/cd8bbdc71a0258292381a7d54c8b353988d02ff4/torch/nn/utils/stateless.py#L170">example
+usage</a></p>
+</ul>
+   </td>
+  </tr>
+  <tr>
+   <td>C++
+   </td>
+   <td>
+<p>Use <code>__ET_DEPRECATED</code> macros. See <a href="https://github.com/pytorch/executorch/blob/8e0f856ee269b319ac4195509cf31e3f548aa0e8/runtime/executor/program.h#L81">example usage</a></p>
+<p>
+<p>
+Use <code>__ET_EXPERIMENTAL</code> macros (TODO not yet implemented)
+</ul>
+   </td>
+   <td>
+<p>Start Doxygen comments with <code>DEPRECATED:</code> See
+<a href="https://github.com/pytorch/executorch/blob/9d859653ae916d0a72f6b2b5c5925bed38832140/runtime/executor/program.h#L139">example
+usage</a></p>
+<p>
+<p>
+Start Doxygen comments with <code>EXPERIMENTAL:</code>
+   </td>
+  </tr>
+  <tr>
+   <td>Java
+   </td>
+   <td>
+<p>Use <a href="https://docs.oracle.com/javase/9/docs/api/java/lang/Deprecated.html">java.lang.Deprecated</a></p>
+<p>
+<p>
+<p>Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:docs/api_guidelines/annotations.md">androidx.annotation.RequiresOptIn</a></p>
+   </td>
+   <td>
+<p>
+<pre><code>/**
+* @deprecated Use {@link #newMethod()} instead.
+*/
+</code></pre>
+<p>
+<pre><code>/**
+* Warning: This API is experimental.
+*/</code></pre>
+   </td>
+  </tr>
+  <tr>
+   <td>Objective-C
+   </td>
+   <td>
+<p>
+<code>__attribute__((deprecated("Use newMethod instead")));</code>
+<p>
+<p>
+<code>__attribute__((experimental("Use newMethod instead")));</code> (TODO not yet implemented)
+   </td>
+   <td>
+<p>
+<pre><code>
+/**
+* @deprecated Use `newMethod` instead.
+*/
+</code></pre>
+<p>
+<pre><code>
+/**
+* @experimental This API is experimental.
+*/</code></pre>
+<p>
+   </td>
+  </tr>
+  <tr>
+   <td>Swift
+   </td>
+   <td>
+<p>
+<code>@available(*, deprecated, message: "Use newMethod instead")</code>
+<p>
+<p>
+<code>@available(*, message: "This API is experimental")</code>
+   </td>
+   <td>
+<p>
+<code>/// - Warning: Deprecated. Use `newMethod()` instead.</code>
+<p>
+<code>/// - Warning: This API is experimental.</code>
+   </td>
+  </tr>
+</table>
+<p>The annotations would trigger static and/or runtime warning that contains at
+least these information:</p>
+<ol class="arabic simple">
+<li><p>Clearly point to the non-deprecated alternative to migrate to, or be clear if
+there is no alternative;</p></li>
+<li><p>Specify the earliest version in which the API may actually be removed (See
+“Deprecation Period” below).</p></li>
+</ol>
+</div>
+<div class="section" id="deprecation-period">
+<h2>Deprecation Period<a class="headerlink" href="#deprecation-period" title="Permalink to this heading">¶</a></h2>
+<p>Here we recommend waiting for at least 2 minor releases before the removal. For
+example, if a function is marked as <em>deprecated</em> in release 1.3.x, then it can
+be <em>deleted</em> in 1.5.x or later.</p>
 </div>
 </div>
 
@@ -507,10 +686,10 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="getting-started-architecture.html" class="btn btn-neutral float-right" title="High-level Architecture and Components of ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="ir-exir.html" class="btn btn-neutral float-right" title="Export IR Specification" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="intro-overview.html" class="btn btn-neutral" title="ExecuTorch Overview" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="executorch-runtime-api-reference.html" class="btn btn-neutral" title="ExecuTorch Runtime API Reference" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -544,8 +723,11 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">How ExecuTorch Works</a><ul>
-<li><a class="reference internal" href="#key-benefits">Key Benefits</a></li>
+<li><a class="reference internal" href="#">ExecuTorch API Life Cycle and Deprecation Policy</a><ul>
+<li><a class="reference internal" href="#api-life-cycle">API Life Cycle</a></li>
+<li><a class="reference internal" href="#deprecation-policy">Deprecation Policy</a></li>
+<li><a class="reference internal" href="#how-to-mark-api-state">How to Mark API State</a></li>
+<li><a class="reference internal" href="#deprecation-period">Deprecation Period</a></li>
 </ul>
 </li>
 </ul>
