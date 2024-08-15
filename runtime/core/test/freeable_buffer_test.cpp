@@ -11,7 +11,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::FreeableBuffer;
+using executorch::runtime::FreeableBuffer;
 
 struct FreeCallArgs {
   size_t calls;
