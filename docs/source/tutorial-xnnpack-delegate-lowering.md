@@ -171,6 +171,3 @@ Now you should be able to find the executable built at `./cmake-out/backends/xnn
 
 ## Building and Linking with the XNNPACK Backend
 You can build the XNNPACK backend [CMake target](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt#L83), and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this [resource](demo-apps-android.md) next.
-
-## Profiling
-To enable profiling in the `xnn_executor_runner` pass the flags `-DEXECUTORCH_ENABLE_EVENT_TRACER=ON` and `-DEXECUTORCH_BUILD_SDK=ON` to the build command (add `-DENABLE_XNNPACK_PROFILING=ON` for additional details). This will enable ETDump generation when running the inference and enables command line flags for profiling (see `xnn_executor_runner --help` for details).
