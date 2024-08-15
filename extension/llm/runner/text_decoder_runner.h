@@ -32,25 +32,24 @@ class TextDecoderRunner {
    * Module.
    * @return The output of the LLM Module. This will be a tensor of logits.
    */
-  Result<exec_aten::Tensor> step(
+  virtual Result<exec_aten::Tensor> step(
       ManagedTensor& input,
       ManagedTensor& start_pos);
 
   /**
-   * Load the Module for a given method name.
-   * @param method_name The name of the method to load.
+   * Load the Module for text decode purpose.
    * @return The error code.
    */
-  inline Error load(const std::string& method_name = "forward") {
-    return module_->load_method(method_name);
+  virtual Error load() {
+    return module_->load_method("forward");
   }
 
   /**
-   * Check if the Module is loaded.
+   * Check if the required methods in the Module is loaded.
    * @return True if the Module is loaded, false otherwise.
    */
-  inline bool is_method_loaded(const std::string& method_name = "forward") {
-    return module_->is_method_loaded(method_name);
+  virtual bool is_method_loaded() {
+    return module_->is_method_loaded("forward");
   }
 
   inline void stop() {

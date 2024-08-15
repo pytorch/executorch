@@ -130,6 +130,10 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
+option(EXECUTORCH_DO_NOT_USE_CXX11_ABI "Define _GLIBCXX_USE_CXX11_ABI=0 if ON" OFF)
+if(EXECUTORCH_DO_NOT_USE_CXX11_ABI)
+  add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
+endif()
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
 # disables exceptions and runtime type.
@@ -178,6 +182,8 @@ option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
 option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
 
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
+
+option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
 
 option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
@@ -622,6 +628,10 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+endif()
+
+if(EXECUTORCH_BUILD_NEURON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
