@@ -15,16 +15,14 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
 
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/runner/text_prefiller.h>
-#include <executorch/extension/llm/sampler/sampler.h>
+#include <executorch/extension/llm/runner/text_token_generator.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 
 namespace torch::executor {
 using Stats = ::executorch::llm::Stats;
@@ -46,28 +44,18 @@ class Runner {
   void stop();
 
  private:
-  // metadata
-  int32_t vocab_size_;
-  int32_t bos_id_;
-  int32_t eos_id_;
-  int32_t n_bos_;
-  int32_t n_eos_;
-  int32_t max_seq_len_;
-  bool use_kv_cache_;
-  bool use_sdpa_with_kv_cache_;
-  bool append_eos_;
   float temperature_;
   bool enable_parallel_prefill_;
   bool shouldStop_{false};
 
   // model
-  std::unordered_set<std::string> model_methods_;
-  std::string model_path_;
   std::unique_ptr<Module> module_;
-  std::unique_ptr<TextDecoderRunner> text_decoder_runner_;
-  std::unique_ptr<TextPrefiller> text_prefiller_;
   std::string tokenizer_path_;
   std::unique_ptr<Tokenizer> tokenizer_;
+  std::unordered_map<std::string, int64_t> metadata_;
+  std::unique_ptr<TextDecoderRunner> text_decoder_runner_;
+  std::unique_ptr<TextPrefiller> text_prefiller_;
+  std::unique_ptr<TextTokenGenerator> text_token_generator_;
 
   // stats
   Stats stats_;

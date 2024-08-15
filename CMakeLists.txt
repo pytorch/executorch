@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -178,6 +179,8 @@ option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
 option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
 
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
+
+option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
 
 option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
@@ -586,6 +589,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs portable_ops_lib)
   endif()
 
+  if(EXECUTORCH_ENABLE_EVENT_TRACER)
+    list(APPEND _executor_runner_libs etdump flatccrt)
+  endif()
+
   # Generate lib to register quantized ops
   if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     list(APPEND _executor_runner_libs quantized_ops_lib)
@@ -622,6 +629,10 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+endif()
+
+if(EXECUTORCH_BUILD_NEURON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)

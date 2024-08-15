@@ -29,7 +29,8 @@ class XNNCompiler {
       const void* buffer_pointer,
       size_t num_bytes,
       XNNExecutor* executor,
-      MemoryAllocator* runtime_allocator);
+      MemoryAllocator* runtime_allocator,
+      xnn_workspace_t workspace);
 };
 
 } // namespace delegate

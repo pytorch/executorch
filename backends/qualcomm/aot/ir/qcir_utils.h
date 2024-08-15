@@ -15,10 +15,10 @@ namespace torch {
 namespace executor {
 namespace qnn {
 
-typedef flatbuffers::Vector<::flatbuffers::Offset<qcir::Tensor>>::value_type
+typedef flatbuffers::Vector<::flatbuffers::Offset<qcir::Tensor>>::return_type
     tensor_type;
 typedef flatbuffers::Vector<
-    ::flatbuffers::Offset<qcir::QuantizeParam>>::value_type qparam_type;
+    ::flatbuffers::Offset<qcir::QuantizeParam>>::return_type qparam_type;
 
 qcir::TensorType ToTensorType(Qnn_TensorType_t type);
 Qnn_TensorType_t ToTensorType(qcir::TensorType type);
