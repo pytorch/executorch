@@ -449,7 +449,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
   MemoryManager memory_manager(&method_allocator, &planned_memory);
 
   Result<Method> method =
-      program->load_method(method_name, &memory_manager, event_tracer_ptr);
+      program->load_method(method_name, &memory_manager);
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
