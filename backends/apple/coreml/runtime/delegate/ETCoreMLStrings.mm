@@ -95,11 +95,6 @@
     return ETCoreMLDebugSymbolToOperationPathKeyName;
 }
 
-+ (NSString *)debugSymbolToHandlesKeyName {
-    static NSString * const ETCoreMLDebugSymbolToHandlesKeyName = @"debugSymbolToHandles";
-    return ETCoreMLDebugSymbolToHandlesKeyName;
-}
-
 + (nullable NSString *)assetsDirectoryPath {
     static dispatch_once_t onceToken;
     static NSString *result = nil;
