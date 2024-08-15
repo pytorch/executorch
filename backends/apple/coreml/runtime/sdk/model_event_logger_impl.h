@@ -10,7 +10,7 @@
 #import <CoreML/CoreML.h>
 #import <model_event_logger.h>
 
-namespace torch::executor {
+namespace executorch::runtime {
 class EventTracer;
 }
 
@@ -21,7 +21,7 @@ namespace executorchcoreml {
 class ModelEventLoggerImpl final : public ModelEventLogger {
 public:
     /// Construct a `ModelEventLoggerImpl` from the `EventTracer`.
-    explicit ModelEventLoggerImpl(torch::executor::EventTracer* tracer) : tracer_(tracer) { }
+    explicit ModelEventLoggerImpl(::executorch::runtime::EventTracer* tracer) : tracer_(tracer) { }
 
     /// Logs profiling infos.
     ///
@@ -44,6 +44,6 @@ public:
         NSDictionary<ETCoreMLModelStructurePath*, NSString*>* op_path_to_debug_symbol_name_map) const noexcept override;
 
 private:
-    torch::executor::EventTracer* tracer_;
+    ::executorch::runtime::EventTracer* tracer_;
 };
 } // namespace executorchcoreml
