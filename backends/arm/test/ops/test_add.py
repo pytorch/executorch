@@ -37,9 +37,9 @@ class TestSimpleAdd(unittest.TestCase):
                 torch.FloatTensor([1, 2, 3, 5, 7]),
                 (torch.FloatTensor([2, 1, 2, 1, 10])),
             ),
-            (torch.ones(1, 1, 4, 4), torch.ones(1, 1, 4, 4)),
+            (torch.ones(1, 10, 4, 6), torch.ones(1, 10, 4, 6)),
             (torch.randn(1, 1, 4, 4), torch.ones(1, 1, 4, 1)),
-            (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
+            (torch.randn(1, 3, 4, 4), torch.randn(1, 3, 4, 4)),
             (10000 * torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
         ]
 
@@ -101,7 +101,7 @@ class TestSimpleAdd(unittest.TestCase):
             ArmTester(
                 module,
                 example_inputs=test_data,
-                compile_spec=common.get_u55_compile_spec(),
+                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
             .export()

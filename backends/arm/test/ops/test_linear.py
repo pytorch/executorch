@@ -26,17 +26,17 @@ test_data_suite_rank1 = [
     (
         "model_linear_rank1_zeros",
         torch.zeros(10),
-        10,
+        15,
     ),
     (
         "model_linear_rank1_ones",
         torch.ones(10),
-        10,
+        15,
     ),
     (
         "model_linear_rank1_negative_ones",
         torch.ones(10) * (-1),
-        10,
+        20,
     ),
     (
         "model_linear_rank1_rand",
@@ -46,12 +46,12 @@ test_data_suite_rank1 = [
     (
         "model_linear_rank1_negative_large_rand",
         torch.rand(10) * (-100),
-        10,
+        30,
     ),
     (
         "model_linear_rank1_large_randn",
-        torch.randn(10) * 100,
-        10,
+        torch.randn(15) * 100,
+        20,
     ),
 ]
 

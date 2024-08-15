@@ -71,7 +71,8 @@ void et_pal_emit_log_message(
     size_t line,
     const char* message,
     ET_UNUSED size_t length) {
-  fprintf(stderr, "%c executorch:%s:%zu] %s\n", level, filename, line, message);
+  fprintf(
+      stderr, "%c [executorch:%s:%zu] %s\n", level, filename, line, message);
 }
 
 namespace {
