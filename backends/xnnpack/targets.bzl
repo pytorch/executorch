@@ -36,7 +36,10 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         preprocessor_flags = [
+            # Uncomment to enable per operator timings
             # "-DENABLE_XNNPACK_PROFILING",
+            # Uncomment to enable workspace sharing across delegates
+            # "-DENABLE_XNNPACK_SHARED_WORKSPACE"
         ],
         exported_deps = [
             "//executorch/runtime/backend:interface",
