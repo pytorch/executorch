@@ -153,7 +153,6 @@ int main(int argc, char** argv) {
   // the method can mutate the memory-planned buffers, so the method should only
   // be used by a single thread at at time, but it can be reused.
   //
-  EventTracer* event_tracer_ptr = nullptr;
 #ifdef ET_EVENT_TRACER_ENABLED
   std::unique_ptr<FILE, decltype(&fclose)> etdump_file(
       fopen(FLAGS_etdump_path.c_str(), "w+"), fclose);
@@ -163,10 +162,12 @@ int main(int argc, char** argv) {
       FLAGS_etdump_path.c_str());
 
   torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
-  event_tracer_ptr = &etdump_gen;
-#endif // ET_EVENT_TRACER_ENABLED
+  EventTracer* event_tracer_ptr = &etdump_gen;
   Result<Method> method =
       program->load_method(method_name, &memory_manager, event_tracer_ptr);
+#else
+  Result<Method> method = program->load_method(method_name, &memory_manager);
+#endif // ET_EVENT_TRACER_ENABLED
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
