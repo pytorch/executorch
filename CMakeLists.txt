@@ -1,5 +1,4 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -587,10 +586,6 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs cadence_ops_lib)
   else()
     list(APPEND _executor_runner_libs portable_ops_lib)
-  endif()
-
-  if(EXECUTORCH_ENABLE_EVENT_TRACER)
-    list(APPEND _executor_runner_libs etdump flatccrt)
   endif()
 
   # Generate lib to register quantized ops
