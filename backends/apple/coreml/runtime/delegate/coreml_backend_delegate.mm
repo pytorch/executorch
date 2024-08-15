@@ -124,8 +124,7 @@ ModelLoggingOptions get_logging_options(BackendExecutionContext& context) {
     auto event_tracer = context.event_tracer();
     if (event_tracer) {
         options.log_profiling_info = true;
-        auto debug_level = event_tracer->event_tracer_debug_level();
-        options.log_intermediate_tensors = (debug_level >= EventTracerDebugLogLevel::kIntermediateOutputs);
+        options.log_intermediate_tensors = event_tracer->intermediate_outputs_logging_status();
     }
     
     return options;
