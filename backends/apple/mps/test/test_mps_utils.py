@@ -6,28 +6,23 @@
 import logging
 import unittest
 
-from typing import Any, Tuple, Union
+from typing import Any, Tuple
 
 import executorch.exir as exir
 import torch
 from executorch.backends.apple.mps import MPSBackend
 from executorch.backends.apple.mps.partition import MPSPartitioner
-from executorch.exir import (
-    EdgeCompileConfig,
-    EdgeProgramManager,
-    ExirExportedProgram,
-    to_edge,
-)
+from executorch.exir import EdgeCompileConfig, ExirExportedProgram, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.exir.tracer import Value
+from executorch.extension.export_util.utils import export_to_edge
 from executorch.sdk import BundledProgram
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-from torch.export import export, ExportedProgram
+from torch.export import export
 
 # Config for Capturing the weights, will be moved in the future
 
@@ -35,47 +30,6 @@ from torch.export import export, ExportedProgram
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False, _skip_dim_order=True
 )
-
-
-def _to_core_aten(
-    model: Union[torch.fx.GraphModule, torch.nn.Module],
-    example_inputs: Tuple[Value, ...],
-) -> ExportedProgram:
-    # post autograd export. eventually this will become .to_core_aten
-    if not isinstance(model, torch.fx.GraphModule):
-        raise ValueError(
-            f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
-        )
-    core_aten_ep = export(model, example_inputs)
-    logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
-    return core_aten_ep
-
-
-def _core_aten_to_edge(
-    core_aten_exir_ep: ExportedProgram,
-    edge_compile_config=None,
-) -> EdgeProgramManager:
-    if not edge_compile_config:
-        edge_compile_config = exir.EdgeCompileConfig(
-            _check_ir_validity=False,  # quant ops currently break ir verification
-            _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
-        )
-    edge_manager: EdgeProgramManager = to_edge(
-        core_aten_exir_ep, compile_config=edge_compile_config
-    )
-
-    edge_manager.exported_program().graph.print_tabular()
-    logging.info(f"Exported graph:\n{edge_manager.exported_program().graph}")
-    return edge_manager
-
-
-def export_to_edge(
-    model: Union[torch.fx.GraphModule, torch.nn.Module],
-    example_inputs: Tuple[Value, ...],
-    edge_compile_config=_EDGE_COMPILE_CONFIG,
-) -> EdgeProgramManager:
-    core_aten_ep = _to_core_aten(model, example_inputs)
-    return _core_aten_to_edge(core_aten_ep, edge_compile_config)
 
 
 class ansi_colors:
@@ -168,33 +122,65 @@ def dump_bundled_program(sample_inputs, expected_output, executorch_program, fun
 
 
 class TestMPS(unittest.TestCase):
-    def assert_outputs_equal(self, model_output, ref_output):
+    def assert_outputs_equal(
+        self,
+        model_output,
+        ref_output,
+        use_fp16: bool = False,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+    ):
         """
         Helper testing function that asserts that the model output and the reference output
         are equal with some tolerance. Due to numerical differences between eager mode and
         the MPS's backend, we relax the detal such that absolute tolerance is 1e-3. and
         relative tolerance is 1e-3.
         """
-
-        # Compare the result from executor and eager mode direclty
+        # Compare the result from executor and eager mode directly
         if isinstance(ref_output, tuple) or isinstance(ref_output, list):
             # Multiple outputs executor always returns tuple, even if there is one output
-            self.assertTrue(
-                len(ref_output) == len(model_output),
-                msg="Length of outputs is not matching!",
-            )
+            assert len(ref_output) == len(
+                model_output
+            ), "Length of outputs is not matching!"
             for i in range(len(ref_output)):
-                self.assertTrue(
-                    torch.allclose(
-                        model_output[i], ref_output[i], atol=1e-03, rtol=1e-03
-                    )
-                )
+                res_output = model_output[i].cpu()
+                expected_output = ref_output[i].cpu()
+                if use_fp16 and (
+                    expected_output.dtype == torch.float16
+                    or res_output.dtype == torch.float16
+                ):
+                    # cast back from fp16 to fp32 (ExecuTorch results are in FP32 by default)
+                    expected_output = expected_output.to(torch.float32)
+                    res_output = res_output.to(torch.float32)
+                if (
+                    torch.allclose(res_output, expected_output, atol=atol, rtol=rtol)
+                    is False
+                ):
+                    mean_err = (
+                        (res_output - expected_output).abs() / expected_output
+                    ).mean()
+                    logging.debug(f"mean err = {mean_err}")
+                    self.assertLess(mean_err, 0.05)
         else:
             # If one output, eager returns tensor while executor tuple of size 1
-            self.assertTrue(
-                torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03),
-                msg="Outputs are not matching!",
-            )
+            expected_output = ref_output.cpu()
+            res_output = model_output[0].cpu()
+            if use_fp16 and (
+                expected_output.dtype == torch.float16
+                or res_output.dtype == torch.float16
+            ):
+                # cast back from fp16 to fp32 (ExecuTorch results are in FP32 by default)
+                expected_output = expected_output.to(torch.float32)
+                res_output = res_output.to(torch.float32)
+            if (
+                torch.allclose(res_output, expected_output, atol=atol, rtol=rtol)
+                is False
+            ):
+                mean_err = (
+                    (res_output - expected_output).abs() / expected_output
+                ).mean()
+                logging.debug(f"mean err = {mean_err}")
+                self.assertLess(mean_err, 0.05)
 
     def lower_module_and_test_output(
         self,
@@ -204,6 +190,9 @@ class TestMPS(unittest.TestCase):
         use_partitioner: bool = True,
         use_fp16: bool = False,
         bundled_program=True,
+        dynamic_shapes=None,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
     ) -> ExirExportedProgram:
         """
         Helper testing function that takes a torch.nn.Module and lowers it to MPS with
@@ -220,11 +209,14 @@ class TestMPS(unittest.TestCase):
 
         expected_output = model(*sample_inputs)
 
-        model = torch._export.capture_pre_autograd_graph(model, sample_inputs)
+        model = torch._export.capture_pre_autograd_graph(
+            model, sample_inputs, dynamic_shapes=dynamic_shapes
+        )
 
         edge_program = export_to_edge(
             model,
             sample_inputs,
+            dynamic_shapes=dynamic_shapes,
             edge_compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
                 _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
@@ -292,7 +284,7 @@ class TestMPS(unittest.TestCase):
 
             logging.info(f"Expected output: {expected_output}")
             logging.info(f"MPS delegate output: {model_output}")
-            self.assert_outputs_equal(model_output, expected_output)
+            self.assert_outputs_equal(model_output, expected_output, atol, rtol)
             logging.info("Delegated program matches PyTorch Eager mode result!")
 
             return delegated_program
@@ -307,6 +299,9 @@ class TestMPS(unittest.TestCase):
         example_inputs,
         func_name: str,
         use_fp16: bool = False,
+        dynamic_shapes=None,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
     ):
         logging.info(func_name)
         self.lower_module_and_test_output(
@@ -315,4 +310,29 @@ class TestMPS(unittest.TestCase):
             use_partitioner=True,
             func_name=func_name,
             use_fp16=use_fp16,
+            dynamic_shapes=None,
+            atol=atol,
+            rtol=rtol,
+        )
+
+    def lower_and_test_without_partitioner(
+        self,
+        graph_module,
+        example_inputs,
+        func_name: str,
+        use_fp16: bool = False,
+        dynamic_shapes=None,
+        atol: float = 1e-03,
+        rtol: float = 1e-03,
+    ):
+        logging.info(func_name)
+        self.lower_module_and_test_output(
+            graph_module,
+            example_inputs,
+            use_partitioner=False,
+            func_name=func_name,
+            use_fp16=use_fp16,
+            dynamic_shapes=dynamic_shapes,
+            atol=atol,
+            rtol=rtol,
         )

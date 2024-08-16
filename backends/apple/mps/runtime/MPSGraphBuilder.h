@@ -16,6 +16,7 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 // MPS headers
+#include <executorch/backends/apple/mps/runtime/operations/MPSGraphSequoiaOps.h>
 #include <executorch/backends/apple/mps/runtime/operations/MPSGraphVenturaOps.h>
 #include <executorch/backends/apple/mps/runtime/operations/OperationUtils.h>
 #include <executorch/backends/apple/mps/schema_generated.h>
@@ -155,6 +156,8 @@ private:
   _DEFINE_MPS_OP(ConstantPadND);
   // Range ops
   _DEFINE_MPS_OP(Arange);
+  // Quant-Dequant ops
+  _DEFINE_MPS_OP(DequantizePerChannelGroup);
 
   // Helper functions
   Error addNodeToMPSGraph(NodePtr nodePtr);

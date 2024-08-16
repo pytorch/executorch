@@ -8,7 +8,7 @@
 
 import copy
 import operator
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 import torch.utils._pytree as pytree
@@ -432,46 +432,67 @@ def arrange_graph_placeholders(
 def _get_new_signature(  # noqa: C901
     original_program: ExportedProgram,
     gm: torch.fx.GraphModule,
-    tag: Optional[str] = None,
+    call_module_node: torch.fx.Node,
+    tag: str,
+    is_submodule: bool = False,
 ) -> Tuple[
     ExportGraphSignature,
     Dict[str, Union[torch.Tensor, torch.nn.Parameter]],
     Dict[str, Union[torch.Tensor, FakeScriptObject, torch.ScriptObject]],
+    Dict[str, InputSpec],
+    Dict[str, OutputSpec],
 ]:
     """
     Args:
-        tag: If tag is None, this means that we are constructing the graph
-        signature for the toplevel graph, after delegation. We need to do this
-        because sometimes delegates will swallow some parameters/buffers, so we
-        need to update the graph signature/state dict to reflect these changes.
-        Otherwise, if tag is not None, this means we are constructing the graph
-        signature for the delegated modules. In this case, we need to look
-        through the input nodes and see which ones were originally
-        parameters/buffers, and lower them down to the delegate.
-    """
+        original_program: The original program that we are paritioning
+        gm: The partitioned graph module.
+        call_module_node: The node in the original program that is calling the
+            partitioned graph module.
+        tag: The tag being used for this partitioned submodule. This is used to
+            tell if a particular parameter/buffer/constant node is being tagged,
+            aka consumed by the delegate.
+        is_submodule: True if we are currently partitioning inside of a
+            submodule (like cond's submodule). If we are inside of a submodule,
+            we do not care about consuming params/buffers.
 
+    Returns:
+
+        new_signature (ExportGraphSignature): The new signature for the
+            partitioned graph module.
+        new_state_dict (Dict[str, Union[torch.Tensor, torch.nn.Parameter]]): The
+            new state dict containing the consumed params/buffers.
+        new_constants (Dict[str, Union[torch.Tensor, FakeScriptObject,
+            torch.ScriptObject]]): The new constants table containing the
+            consumed constants .
+        input_specs_to_delete (Dict[str, InputSpec]): The input specs that have
+            been consumed by the delegate (param/buffer input nodes) and should
+            be removed from the toplevel ExportedProgram.
+        output_specs_to_delete (Dict[str, InputSpec]): The output specs that have
+            been consumed by the delegate (buffer mutation nodes) and should be
+            removed from the toplevel ExportedProgram.
+    """
     old_signature = original_program.graph_signature
 
     input_specs = []
     output_specs = []
-    new_signature = ExportGraphSignature(
-        input_specs=input_specs, output_specs=output_specs
-    )
+    input_specs_to_delete = {}
+    output_specs_to_delete = {}
     new_state_dict = {}
     new_constants = {}
 
-    placeholder_nodes = [
-        node.name for node in original_program.graph.nodes if node.op == "placeholder"
-    ]
-    assert len(placeholder_nodes) == len(old_signature.input_specs)
-    input_node_to_sig = dict(zip(placeholder_nodes, old_signature.input_specs))
+    # If we are within a submodule, we do not need to care about consuming
+    # parameter/buffers
+    input_node_to_sig: Dict[str, InputSpec] = (
+        {input_spec.arg.name: input_spec for input_spec in old_signature.input_specs}
+        if not is_submodule
+        else {}
+    )
 
     for node in gm.graph.nodes:
         is_tagged = tag is None or node.meta.get("delegation_tag", None) == tag
         if node.op == "placeholder":
 
             if node.name not in input_node_to_sig:
-                assert tag is not None
                 input_specs.append(
                     InputSpec(
                         kind=InputKind.USER_INPUT,
@@ -489,29 +510,36 @@ def _get_new_signature(  # noqa: C901
             elif is_tagged:
                 input_specs.append(orig_input_spec)
 
-                if orig_input_spec.kind == InputKind.PARAMETER:
-                    new_state_dict[orig_input_spec.target] = (
-                        original_program.state_dict[orig_input_spec.target]
+                if orig_input_spec.kind == InputKind.USER_INPUT:
+                    continue
+
+                # The following input specs are all attributes that should be
+                # consumed by the delegate, so we want to remove it from the
+                # toplevel module input/output
+                input_specs_to_delete[node.name] = orig_input_spec
+
+                input_target = orig_input_spec.target
+                if input_target in original_program.state_dict:
+                    assert orig_input_spec.kind in (
+                        InputKind.PARAMETER,
+                        InputKind.BUFFER,
                     )
-                elif (
-                    orig_input_spec.kind == InputKind.BUFFER
-                    and orig_input_spec.persistent
-                ):
-                    new_state_dict[orig_input_spec.target] = (
-                        original_program.state_dict[orig_input_spec.target]
+
+                    new_state_dict[input_target] = original_program.state_dict[
+                        input_target
+                    ]
+                elif input_target in original_program.constants:
+                    assert orig_input_spec.kind in (
+                        InputKind.CONSTANT_TENSOR,
+                        InputKind.CUSTOM_OBJ,
+                        InputKind.BUFFER,
                     )
-                elif orig_input_spec.kind == InputKind.BUFFER:
-                    assert not orig_input_spec.persistent
-                    new_constants[orig_input_spec.target] = original_program.constants[
-                        orig_input_spec.target
+
+                    new_constants[input_target] = original_program.constants[
+                        input_target
                     ]
-                elif orig_input_spec.kind in (
-                    InputKind.CONSTANT_TENSOR,
-                    InputKind.CUSTOM_OBJ,
-                ):
-                    new_constants[orig_input_spec.target] = original_program.constants[
-                        orig_input_spec.target
-                    ]
+                else:
+                    raise RuntimeError(f"Invalid input spec {orig_input_spec} received")
 
             else:
                 input_specs.append(
@@ -525,60 +553,46 @@ def _get_new_signature(  # noqa: C901
         if node.op == "output":
             output_nodes = pytree.tree_leaves((node.args, node.kwargs))
 
-            if tag is not None:
-                # We are constructing output_specs for the delegate outputs.
-                # These don't have any buffer mutations.
+            for output_node in output_nodes:
 
-                for output_node in output_nodes:
-                    if not isinstance(output_node, torch.fx.Node):
-                        output_specs.append(
-                            OutputSpec(
-                                kind=OutputKind.USER_OUTPUT,
-                                arg=ConstantArgument(name="", value=output_node),
-                                target=None,
-                            )
+                if not isinstance(output_node, torch.fx.Node):
+                    output_specs.append(
+                        OutputSpec(
+                            kind=OutputKind.USER_OUTPUT,
+                            arg=ConstantArgument(name="", value=output_node),
+                            target=None,
                         )
-                    else:
-                        output_specs.append(
-                            OutputSpec(
-                                kind=OutputKind.USER_OUTPUT,
-                                arg=TensorArgument(name=output_node.name),
-                                target=None,
-                            )
+                    )
+
+                else:
+                    output_specs.append(
+                        OutputSpec(
+                            kind=OutputKind.USER_OUTPUT,
+                            arg=TensorArgument(name=output_node.name),
+                            target=None,
                         )
+                    )
 
-            else:
-                # We are reconstruting the toplevel module which contains
-                # delegates. Delegation should not change the number of outputs
-                # in the toplevel module, and it does not touch the mutated buffers
+    new_signature = ExportGraphSignature(
+        input_specs=input_specs, output_specs=output_specs
+    )
 
-                assert len(old_signature.output_specs) == len(output_nodes)
-                for prev_output_spec, output_node in zip(
-                    old_signature.output_specs, output_nodes
-                ):
-                    if not isinstance(output_node, torch.fx.Node):
-                        assert isinstance(prev_output_spec.arg, ConstantArgument)
-                        output_specs.append(
-                            OutputSpec(
-                                kind=OutputKind.USER_OUTPUT,
-                                arg=ConstantArgument(name="", value=output_node),
-                                target=None,
-                            )
-                        )
-
-                    else:
-                        new_output_spec = copy.deepcopy(prev_output_spec)
-                        new_output_spec.arg.name = output_node.name
-                        output_specs.append(new_output_spec)
-
-    return new_signature, new_state_dict, new_constants
+    return (
+        new_signature,
+        new_state_dict,
+        new_constants,
+        input_specs_to_delete,
+        output_specs_to_delete,
+    )
 
 
 def create_exported_program_from_submodule(
     submodule: torch.fx.GraphModule,
     owning_program: ExportedProgram,
     tag: str,
-) -> ExportedProgram:
+    call_module_node: torch.fx.Node,
+    is_submodule: bool,
+) -> Tuple[ExportedProgram, Dict[str, InputSpec], Dict[str, OutputSpec]]:
     """
     Creates an ExportedProgram from the given submodule using the parameters and buffers
     from the top-level owning program
@@ -590,34 +604,52 @@ def create_exported_program_from_submodule(
 
     Returns:
         The ExportedProgram created from submodule
+        input_specs_to_delete (Dict[str, InputSpec]): The input specs that have
+            been consumed by the delegate (param/buffer input nodes) and should
+            be removed from the toplevel ExportedProgram.
+        output_specs_to_delete (Dict[str, InputSpec]): The output specs that have
+            been consumed by the delegate (buffer mutation nodes) and should be
+            removed from the toplevel ExportedProgram.
     """
     # Arrange the submodule's placeholders in order
     submodule = arrange_graph_placeholders(submodule, owning_program)
 
+    # TODO: we probably need to arrange the outputs wrt buffer mutations.
+
     # Get updated graph signature
-    subgraph_signature, subgraph_state_dict, subgraph_constants = _get_new_signature(
-        owning_program, submodule, tag
+    (
+        subgraph_signature,
+        subgraph_state_dict,
+        subgraph_constants,
+        toplevel_input_specs_to_delete,
+        toplevel_output_specs_to_delete,
+    ) = _get_new_signature(
+        owning_program, submodule, call_module_node, tag, is_submodule
     )
 
     in_spec = pytree.tree_flatten((tuple(subgraph_signature.user_inputs), {}))[1]
     out_spec = pytree.tree_flatten(subgraph_signature.user_outputs)[1]
 
-    return ExportedProgram(
-        root=submodule,
-        graph=submodule.graph,
-        graph_signature=subgraph_signature,
-        state_dict=subgraph_state_dict,
-        range_constraints=copy.deepcopy(owning_program.range_constraints),
-        module_call_graph=[
-            ModuleCallEntry(
-                "",
-                ModuleCallSignature(
-                    inputs=[], outputs=[], in_spec=in_spec, out_spec=out_spec
-                ),
-            )
-        ],
-        constants=subgraph_constants,
-        verifiers=[owning_program.verifier],
+    return (
+        ExportedProgram(
+            root=submodule,
+            graph=submodule.graph,
+            graph_signature=subgraph_signature,
+            state_dict=subgraph_state_dict,
+            range_constraints=copy.deepcopy(owning_program.range_constraints),
+            module_call_graph=[
+                ModuleCallEntry(
+                    "",
+                    ModuleCallSignature(
+                        inputs=[], outputs=[], in_spec=in_spec, out_spec=out_spec
+                    ),
+                )
+            ],
+            constants=subgraph_constants,
+            verifiers=[owning_program.verifier],
+        ),
+        toplevel_input_specs_to_delete,
+        toplevel_output_specs_to_delete,
     )
 
 
@@ -740,3 +772,61 @@ def get_lowered_backend_modules(
             lowered_programs.append(lowered_backend_module)
 
     return lowered_programs
+
+
+def _unsafe_adjust_original_program(
+    original_program: ExportedProgram,
+    call_delegate_node: torch.fx.Node,
+    input_specs_to_delete: Dict[str, InputSpec],
+    output_specs_to_delete: Dict[str, OutputSpec],
+) -> None:
+    """
+    Directly modify the original exported program's signature and state dict
+    based on the consumed params/buffers in the delegate.
+    """
+    original_program._graph_signature.input_specs = [
+        input_spec
+        for input_spec in original_program.graph_signature.input_specs
+        if input_spec.arg.name not in input_specs_to_delete
+    ]
+
+    currently_used_targets: Set[str] = {
+        input_spec.target
+        for input_spec in original_program._graph_signature.input_specs
+        if input_spec.target is not None
+    }
+
+    original_program._graph_signature.output_specs = [
+        output_spec
+        for output_spec in original_program.graph_signature.output_specs
+        if output_spec.arg.name not in output_specs_to_delete
+    ]
+
+    # Delete all parameters/buffers consumed by the created exported program
+    # from the graph signature, state dict, constants table
+    for node in original_program.graph.nodes:
+        if node.op == "placeholder":
+            if node.name in input_specs_to_delete:
+                assert len(node.users) == 0
+                original_program.graph.erase_node(node)
+        else:
+            break
+
+    for input_spec in input_specs_to_delete.values():
+        input_target = input_spec.target
+        assert input_target is not None
+
+        if input_target in currently_used_targets:
+            continue
+
+        if input_spec.kind == InputKind.PARAMETER:
+            del original_program._state_dict[input_target]
+        elif input_spec.kind == InputKind.BUFFER:
+            if input_spec.persistent:
+                del original_program._state_dict[input_target]
+            else:
+                del original_program._constants[input_spec.target]
+        elif input_spec.kind == InputKind.CONSTANT_TENSOR:
+            del original_program._constants[input_spec.target]
+        else:
+            raise RuntimeError(f"Invalid input spec {input_spec} received")

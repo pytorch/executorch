@@ -47,7 +47,9 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_split_with_sizes_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_sub.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_to_copy.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_where.cpp")
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_where.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_expand_copy.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_gelu.cpp")
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)
 target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
@@ -82,7 +84,7 @@ generate_bindings_for_kernels(
   LIB_NAME "cadence_ops_lib" OPS_SCHEMA_YAML
   FUNCTIONS_YAML ${CMAKE_CURRENT_SOURCE_DIR}/../../aot/functions.yaml
 )
-message("Generated files ${gen_command_sources}")
+message("Generated cadence x86 files ${gen_command_sources}")
 
 gen_operators_lib(
   LIB_NAME "cadence_ops_lib"
