@@ -352,6 +352,17 @@ class ComputeGraph final {
       const utils::GPUMemoryLayout memory_layout);
 
   /*
+   * Use the copy constructor of `api::vTensor` to create a "view" of the
+   * `vTensor` value at `vref`. See the copy constructor of `api::vTensor` for
+   * more details.
+   */
+  ValueRef add_tensor_view(
+      const ValueRef vref,
+      const std::vector<int64_t>& sizes,
+      const std::vector<int64_t>& strides,
+      const size_t offset_numel = 0);
+
+  /*
    * Add a `TensorRef` value to the graph with the specific properties. A
    * `TensorRef` is a reference to a `api::vTensor` whose data is stored in an
    * external CPU buffer.
