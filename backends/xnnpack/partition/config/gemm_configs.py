@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from itertools import chain
-from typing import List, Optional, Tuple
+from typing import cast, List, Optional, Tuple
 
 import torch
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
@@ -266,6 +266,23 @@ class ConvolutionConfig(GEMMConfig):
             act_idx=0,
             fused_acts=["relu.default", "hardtanh.default"],
         )
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        """
+        Currently we have no support for convolution 3d and transposed convolution
+        """
+        if not super().check_constraints(node, ep):
+            return False
+
+        conv_stride = cast(List[int], node.args[3])
+        if len(conv_stride) > 2:
+            return False  # Only support 1D + 2D Conv
+
+        transposed = cast(bool, node.args[6])
+        if transposed:
+            return False  # Currently don't support transposed conv
+
+        return True
 
     def supported_precision_types(self):
         return [
