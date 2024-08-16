@@ -116,7 +116,7 @@ def get_qnn_partitioner(
     if pt2e_quantize is not None:
         use_fp16 = False
     compile_spec = generate_qnn_executorch_compiler_spec(
-        soc_model=QcomChipset.SM8550,  # default to SM8650
+        soc_model=QcomChipset.SM8650,  # default to SM8650
         backend_options=generate_htp_compiler_spec(
             use_fp16=use_fp16,
             use_multi_contexts=num_sharding is not None,

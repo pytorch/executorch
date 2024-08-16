@@ -205,8 +205,6 @@ class Attention(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, multiple_of: int):
         super().__init__()
-        hidden_dim = int(2 * hidden_dim / 3)
-        hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
         self.w1 = nn.Linear(dim, hidden_dim, bias=False)
         self.w2 = nn.Linear(hidden_dim, dim, bias=False)
         self.w3 = nn.Linear(dim, hidden_dim, bias=False)
@@ -222,9 +220,18 @@ class TransformerBlock(nn.Module):
         self.dim = args.dim
         self.head_dim = args.dim // args.n_heads
         self.attention = Attention(args)
+        if args.hidden_dim is None:
+            hidden_dim = 4 * args.dim
+            hidden_dim = int(2 * hidden_dim / 3)
+            hidden_dim = args.multiple_of * (
+                (hidden_dim + args.multiple_of - 1) // args.multiple_of
+            )
+        else:
+            hidden_dim = args.hidden_dim
+
         self.feed_forward = FeedForward(
             dim=args.dim,
-            hidden_dim=4 * args.dim,
+            hidden_dim=hidden_dim,
             multiple_of=args.multiple_of,
         )
         self.layer_id = layer_id
