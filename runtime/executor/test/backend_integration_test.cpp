@@ -164,7 +164,7 @@ StubBackend StubBackend::singleton_;
  * A DataLoader that wraps a real DataLoader and records the operations
  * performed on it and the FreeableBuffers it loads.
  */
-class DataLoaderSpy : public DataLoader {
+class DataLoaderSpy final : public DataLoader {
  public:
   /// A record of an operation performed on this DataLoader.
   struct Operation {
@@ -178,8 +178,10 @@ class DataLoaderSpy : public DataLoader {
 
   explicit DataLoaderSpy(DataLoader* delegate) : delegate_(delegate) {}
 
-  Result<FreeableBuffer>
-  load(size_t offset, size_t size, const SegmentInfo& segment_info) override {
+  Result<FreeableBuffer> load(
+      size_t offset,
+      size_t size,
+      const SegmentInfo& segment_info) const override {
     Result<FreeableBuffer> buf = delegate_->load(offset, size, segment_info);
     if (!buf.ok()) {
       return buf.error();
@@ -268,7 +270,7 @@ class DataLoaderSpy : public DataLoader {
   /// The real loader to delegate to.
   DataLoader* delegate_;
 
-  std::vector<Operation> operations_;
+  mutable std::vector<Operation> operations_;
 };
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024;

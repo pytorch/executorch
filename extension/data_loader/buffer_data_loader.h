@@ -25,7 +25,7 @@ namespace util {
  * This can be used to wrap data that is directly embedded into the firmware
  * image, or to wrap data that was allocated elsewhere.
  */
-class BufferDataLoader : public DataLoader {
+class BufferDataLoader final : public DataLoader {
  public:
   BufferDataLoader(const void* data, size_t size)
       : data_(reinterpret_cast<const uint8_t*>(data)), size_(size) {}
@@ -33,7 +33,7 @@ class BufferDataLoader : public DataLoader {
   __ET_NODISCARD Result<FreeableBuffer> load(
       size_t offset,
       size_t size,
-      __ET_UNUSED const DataLoader::SegmentInfo& segment_info) override {
+      __ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
     ET_CHECK_OR_RETURN_ERROR(
         offset + size <= size_,
         InvalidArgument,
@@ -52,7 +52,7 @@ class BufferDataLoader : public DataLoader {
       size_t offset,
       size_t size,
       __ET_UNUSED const SegmentInfo& segment_info,
-      void* buffer) override {
+      void* buffer) const override {
     ET_CHECK_OR_RETURN_ERROR(
         buffer != nullptr,
         InvalidArgument,
