@@ -187,7 +187,7 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
-  test-export-llava-linux:
+  test-llava-runner-linux:
     name: test-export-llava-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
@@ -214,6 +214,9 @@ jobs:
 
         # run python unittest
         python -m unittest examples.models.llava.test.test_llava
+
+        # run e2e (export, tokenizer and runner)
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llava.sh
 
   test-quantized-aot-lib-linux:
     name: test-quantized-aot-lib-linux
