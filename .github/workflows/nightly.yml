@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: update-install-requirements-pytorch-nightly-version
-        run:
+        run: |
           set -eux
           sed -i '/dev20240716/dev20240717' install_requirements.sh
           cat install_requirements.sh
