@@ -77,10 +77,7 @@ class EagerEvalWrapper(eval_wrapper):
 
     def _model_call(self, inps):
         if self._use_kv_cache:
-            pos_tensor = torch.arange(
-                self._max_seq_length, dtype=torch.int64, device=self.device
-            )
-
+            pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
             # Batch process the whole sequence.
             logits = self._model(inps[:, : self._max_seq_length], pos_tensor)
             return logits
