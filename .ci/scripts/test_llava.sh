@@ -94,5 +94,5 @@ run_and_verify() {
 
 cmake_install_executorch_libraries
 cmake_build_llava_runner
-# export_llava
+export_llava
 run_and_verify
