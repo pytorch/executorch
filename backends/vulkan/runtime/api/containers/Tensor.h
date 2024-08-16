@@ -87,7 +87,19 @@ class vTensorStorage final {
       const vkapi::ScalarType dtype,
       const bool allocate_memory = true);
 
-  vTensorStorage(const vTensorStorage& other) = delete;
+ protected:
+  /*
+   * This allows for creation of tensors that use the same underlying storage
+   * as another tensor. Note that this functionality is currently enabled for
+   * tensors that have buffer storage only. The created tensor will not have
+   * ownership of the underlying VkBuffer. This constructor is marked protected
+   * because this behaviour is unsafe, since the original tensor may be
+   * destroyed before the copy is destroyed.
+   */
+  vTensorStorage(const vTensorStorage& other, const size_t buffer_offset = 0);
+
+ public:
+  // To discourage creating copies, the assignment operator is still deleted.
   vTensorStorage& operator=(const vTensorStorage& other) = delete;
 
   vTensorStorage(vTensorStorage&& other) = default;
@@ -157,6 +169,22 @@ class vTensor final {
 
   vTensor(const vTensor& other) = delete;
   vTensor& operator=(const vTensor& other) = delete;
+
+  /*
+   * This constructor allows for the creation of a vTensor that references the
+   * same buffer resource of another vTensor, but with different sizes and
+   * strides metatdata. The created vTensor will not own the underlying
+   * resource. This is only applicable for buffer backed tensors at the moment.
+   *
+   * The offset_numel argument allows the aliased tensor's memory region to
+   * begin at an offset of N elements from the start of the original tensor's
+   * buffer.
+   */
+  vTensor(
+      const vTensor& other,
+      const std::vector<int64_t>& sizes,
+      const std::vector<int64_t>& strides,
+      const size_t offset_numel = 0);
 
   vTensor(vTensor&& other) = default;
   vTensor& operator=(vTensor&& other) = default;
