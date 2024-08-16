@@ -65,8 +65,8 @@ class Module final {
       std::unique_ptr<EventTracer> event_tracer = nullptr);
   Module(const Module&) = delete;
   Module& operator=(const Module&) = delete;
-  Module(Module&&) = default;
-  Module& operator=(Module&&) = default;
+  Module(Module&&) = delete;
+  Module& operator=(Module&&) = delete;
 
   /**
    * Loads the program using the specified data loader and memory allocator.
