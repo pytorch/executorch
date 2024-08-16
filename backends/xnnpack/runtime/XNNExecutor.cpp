@@ -86,6 +86,11 @@ __ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
     // Reshape runtime inputs
     if (i < input_ids_.size()) {
       size_t num_dims = tensor->dim();
+      ET_CHECK_OR_RETURN_ERROR(
+          is_contiguous_dim_order(tensor->dim_order().data(), tensor->dim()),
+          Internal,
+          "Expecting default dim_order but got a non default dim_order tensor for external input %u",
+          i);
       size_t dims[XNN_MAX_TENSOR_DIMS];
       ET_CHECK_OR_RETURN_ERROR(
           num_dims <= XNN_MAX_TENSOR_DIMS,
