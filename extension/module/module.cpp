@@ -72,12 +72,12 @@ Error Module::load(const Program::Verification verification) {
               ET_UNWRAP_UNIQUE(util::FileDataLoader::from(file_path_.c_str()));
           break;
         case LoadMode::Mmap:
-          data_loader_ =
-              ET_UNWRAP_UNIQUE(util::MmapDataLoader::from(file_path_.c_str()));
-          break;
-        case LoadMode::MmapUseMlock:
           data_loader_ = ET_UNWRAP_UNIQUE(util::MmapDataLoader::from(
               file_path_.c_str(), util::MmapDataLoader::MlockConfig::NoMlock));
+          break;
+        case LoadMode::MmapUseMlock:
+          data_loader_ =
+              ET_UNWRAP_UNIQUE(util::MmapDataLoader::from(file_path_.c_str()));
           break;
         case LoadMode::MmapUseMlockIgnoreErrors:
           data_loader_ = ET_UNWRAP_UNIQUE(util::MmapDataLoader::from(

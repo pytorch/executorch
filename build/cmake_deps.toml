@@ -158,6 +158,19 @@ deps = [
   "executorch_no_prim_ops",
 ]
 
+[targets.extension_llm_runner]
+buck_targets = [
+  "//extension/llm/runner:runner_lib",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "executorch_no_prim_ops",
+  "extension_module",
+  "extension_runner_util",
+]
 # ---------------------------------- extension end ----------------------------------
 # ---------------------------------- binary start ----------------------------------
 
