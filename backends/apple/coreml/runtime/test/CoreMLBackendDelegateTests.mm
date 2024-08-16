@@ -25,14 +25,14 @@ NSData * _Nullable read_data(const std::string& filePath) {
     return [NSData dataWithContentsOfURL:url];
 }
 
-class DataLoaderImpl: public DataLoader {
+class DataLoaderImpl final : public DataLoader {
 public:
     DataLoaderImpl(std::string filePath)
     :data_(read_data(filePath))
     {}
 
     Result<FreeableBuffer> load(
-        size_t offset, size_t size, __ET_UNUSED const DataLoader::SegmentInfo& segment_info) override {
+        size_t offset, size_t size, __ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
         NSData *subdata = [data_ subdataWithRange:NSMakeRange(offset, size)];
         return FreeableBuffer(subdata.bytes, size, nullptr);
     }
@@ -42,7 +42,7 @@ public:
     }
 
 private:
-   NSData *data_;
+   NSData * const data_;
 };
 
 using Buffer = std::vector<uint8_t>;

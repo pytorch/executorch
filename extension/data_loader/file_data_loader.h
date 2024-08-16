@@ -25,7 +25,7 @@ namespace util {
  * Note that this will keep the file open for the duration of its lifetime, to
  * avoid the overhead of opening it again for every load() call.
  */
-class FileDataLoader : public DataLoader {
+class FileDataLoader final : public DataLoader {
  public:
   /**
    * Creates a new FileDataLoader that wraps the named file.
@@ -57,10 +57,10 @@ class FileDataLoader : public DataLoader {
         file_size_(rhs.file_size_),
         alignment_(rhs.alignment_),
         fd_(rhs.fd_) {
-    rhs.file_name_ = nullptr;
-    rhs.file_size_ = 0;
-    rhs.alignment_ = 0;
-    rhs.fd_ = -1;
+    const_cast<const char*&>(rhs.file_name_) = nullptr;
+    const_cast<size_t&>(rhs.file_size_) = 0;
+    const_cast<size_t&>(rhs.alignment_) = 0;
+    const_cast<int&>(rhs.fd_) = -1;
   }
 
   ~FileDataLoader() override;
@@ -68,7 +68,7 @@ class FileDataLoader : public DataLoader {
   __ET_NODISCARD Result<FreeableBuffer> load(
       size_t offset,
       size_t size,
-      const DataLoader::SegmentInfo& segment_info) override;
+      const DataLoader::SegmentInfo& segment_info) const override;
 
   __ET_NODISCARD Result<size_t> size() const override;
 
@@ -76,7 +76,7 @@ class FileDataLoader : public DataLoader {
       size_t offset,
       size_t size,
       __ET_UNUSED const SegmentInfo& segment_info,
-      void* buffer) override;
+      void* buffer) const override;
 
  private:
   FileDataLoader(
@@ -94,10 +94,10 @@ class FileDataLoader : public DataLoader {
   FileDataLoader& operator=(const FileDataLoader&) = delete;
   FileDataLoader& operator=(FileDataLoader&&) = delete;
 
-  const char* file_name_; // Owned by the instance.
-  size_t file_size_;
-  size_t alignment_;
-  int fd_; // Owned by the instance.
+  const char* const file_name_; // Owned by the instance.
+  const size_t file_size_;
+  const size_t alignment_;
+  const int fd_; // Owned by the instance.
 };
 
 } // namespace util
