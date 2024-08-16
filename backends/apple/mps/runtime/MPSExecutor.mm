@@ -29,7 +29,7 @@ MPSExecutor::MPSExecutor() {
 #if TARGET_OS_SIMULATOR or defined(__x86_64__)
   _use_shared_mem = false;
 #endif
-  if (!isMacOS13OrNewer(MacOSVersion::MACOS_VER_14_0_PLUS)) {
+  if (!is_macos_13_or_newer(MacOSVersion::MACOS_VER_14_0_PLUS)) {
     _use_shared_mem = false;
   }
 
