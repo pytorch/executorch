@@ -208,7 +208,6 @@ def _assign_new_tag(
 def _maybe_duplicate_constant_nodes(
     tagged_exported_program: ExportedProgram,
     tag: str,
-    owning_program: ExportedProgram,
 ) -> None:
     """
     If the constants node is shared by different tagged nodes, like
@@ -241,7 +240,6 @@ def _maybe_duplicate_constant_nodes(
         copied_nodes = copied_nodes.union(
             duplicate_constant_node(tagged_exported_program, candidate_node)
         )
-        duplicate_constant_node(owning_program, candidate_node)
     candidate_node_with_copies = candidate_nodes.union(copied_nodes)
     _assign_new_tag(tagged_exported_program, candidate_node_with_copies)
 
