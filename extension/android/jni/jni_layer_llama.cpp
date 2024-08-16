@@ -16,6 +16,8 @@
 #include <vector>
 
 #include <executorch/examples/models/llama2/runner/runner.h>
+#include <executorch/examples/models/llava/runner/llava_runner.h>
+#include <executorch/extension/llm/runner/image.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -90,21 +92,28 @@ class ExecuTorchLlamaJni
     : public facebook::jni::HybridClass<ExecuTorchLlamaJni> {
  private:
   friend HybridBase;
+  int model_type_category_;
   std::unique_ptr<Runner> runner_;
+  std::unique_ptr<MultimodalRunner> multi_modal_runner_;
 
  public:
   constexpr static auto kJavaDescriptor =
       "Lorg/pytorch/executorch/LlamaModule;";
 
+  constexpr static int MODEL_TYPE_CATEGORY_LLM = 1;
+  constexpr static int MODEL_TYPE_CATEGORY_MULTIMODAL = 2;
+
   static facebook::jni::local_ref<jhybriddata> initHybrid(
       facebook::jni::alias_ref<jclass>,
+      jint model_type_category,
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature) {
-    return makeCxxInstance(model_path, tokenizer_path, temperature);
+    return makeCxxInstance(model_type_category, model_path, tokenizer_path, temperature);
   }
 
   ExecuTorchLlamaJni(
+      jint model_type_category,
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature) {
@@ -119,30 +128,72 @@ class ExecuTorchLlamaJni
     }
 #endif
 
-    runner_ = std::make_unique<Runner>(
-        model_path->toStdString().c_str(),
-        tokenizer_path->toStdString().c_str(),
-        temperature);
+    model_type_category_ = model_type_category;
+    if (model_type_category == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      multi_modal_runner_ = std::make_unique<LlavaRunner>(
+          model_path->toStdString().c_str(),
+          tokenizer_path->toStdString().c_str(),
+          temperature);
+    } else if (model_type_category == MODEL_TYPE_CATEGORY_LLM) {
+      runner_ = std::make_unique<Runner>(
+          model_path->toStdString().c_str(),
+          tokenizer_path->toStdString().c_str(),
+          temperature);
+    }
   }
 
   jint generate(
+      facebook::jni::alias_ref<jintArray> image,
+      jint width,
+      jint height,
+      jint channels,
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
-    runner_->generate(
-        prompt->toStdString(),
-        seq_len,
-        [callback](std::string result) { callback->onResult(result); },
-        [callback](const Stats& result) { callback->onStats(result); });
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      auto image_size = image->size();
+      std::vector<Image> images;
+      if (image_size != 0) {
+        std::vector<jint> image_data_jint(image_size);
+        std::vector<uint8_t> image_data(image_size);
+        image->getRegion(0, image_size, image_data_jint.data());
+        for (int i = 0; i < image_size; i++) {
+          image_data[i] = image_data_jint[i];
+        }
+        Image image_runner{image_data, width, height, channels};
+        images.push_back(image_runner);
+      }
+      multi_modal_runner_->generate(
+          images,
+          prompt->toStdString(),
+          seq_len,
+          [callback](std::string result) { callback->onResult(result); },
+          [callback](const Stats& result) { callback->onStats(result); });
+    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      runner_->generate(
+          prompt->toStdString(),
+          seq_len,
+          [callback](std::string result) { callback->onResult(result); },
+          [callback](const Stats& result) { callback->onStats(result); });
+    }
     return 0;
   }
 
   void stop() {
-    runner_->stop();
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      multi_modal_runner_->stop();
+    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      runner_->stop();
+    }
   }
 
   jint load() {
-    return static_cast<jint>(runner_->load());
+    if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(multi_modal_runner_->load());
+    } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
+      return static_cast<jint>(runner_->load());
+    }
+    return static_cast<jint>(Error::InvalidArgument);
   }
 
   static void registerNatives() {
