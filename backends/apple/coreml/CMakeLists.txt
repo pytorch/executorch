@@ -13,6 +13,11 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
+if(EXECUTORCH_BUILD_SDK)
+# protobuf requires frtti
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -frtti" )
+endif()
+  
 option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
 
 # inmemoryfs sources
@@ -59,6 +64,7 @@ set(SDK_SOURCES
     runtime/sdk/ETCoreMLModelAnalyzer.mm
     runtime/sdk/ETCoreMLModelStructurePath.mm
     runtime/sdk/ETCoreMLOperationProfilingInfo.mm
+    runtime/sdk/ETCoreMLModelDebugInfo.mm
     runtime/sdk/ETCoreMLModelDebugger.mm
     runtime/sdk/ETCoreMLModelProfiler.mm
     runtime/sdk/ETCoreMLPair.mm
@@ -141,6 +147,8 @@ if(EXECUTORCH_BUILD_SDK)
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
   )
+
+  target_link_options_shared_lib(libprotobuf-lite)
   target_link_libraries(coremldelegate PRIVATE libprotobuf-lite)
 endif()
 

@@ -30,6 +30,7 @@ def define_common_targets():
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
+            # qnn_executorch_backend can be added below //executorch/backends/qualcomm:qnn_executorch_backend
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
                 "//executorch/extension/llm/runner:stats",
