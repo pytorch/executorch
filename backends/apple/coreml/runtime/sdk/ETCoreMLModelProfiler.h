@@ -5,10 +5,11 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
+#import "ETCoreMLPair.h"
 #import <CoreML/CoreML.h>
-#import <ETCoreMLPair.h>
 #import <TargetConditionals.h>
 
+@class ETCoreMLAsset;
 @class ETCoreMLModel;
 @class ETCoreMLModelStructurePath;
 @class ETCoreMLOperationProfilingInfo;
