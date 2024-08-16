@@ -23,28 +23,13 @@
 namespace torch::executor {
 
 bool LlavaRunner::is_loaded() {
-  Result<std::unordered_set<std::string>> methods_res = module_->method_names();
-  if (methods_res.error() != Error::Ok) {
-    ET_LOG(Error, "Failed to get method names");
-    ET_CHECK_MSG(false, "Failed to get method names");
+  bool instantiated = tokenizer_ && text_decoder_runner_ && text_prefiller_ &&
+      image_prefiller_ && text_token_generator_;
+  if (!instantiated) {
+    return false;
   }
-  std::unordered_set<std::string> methods = methods_res.get();
-  bool methods_exist = methods.find("image_encoder") != methods.end() &&
-      methods.find("token_embedding") != methods.end() &&
-      methods.find("text_decoder") != methods.end();
-  if (!methods_exist) {
-    for (const auto& method : methods) {
-      ET_LOG(Error, "Method: %s", method.c_str());
-    }
-    ET_CHECK_MSG(
-        methods_exist,
-        "Missing required methods (image_encoder, token_embedding, text_decoder) in the model");
-  }
-  bool methods_loaded = module_->is_method_loaded("image_encoder") &&
-      module_->is_method_loaded("token_embedding") &&
-      module_->is_method_loaded("text_decoder");
-  return methods_loaded && tokenizer_ && text_decoder_runner_ &&
-      text_prefiller_ && image_prefiller_ && text_token_generator_;
+  return text_decoder_runner_->is_method_loaded() &&
+      image_prefiller_->is_method_loaded();
 }
 
 Error LlavaRunner::load() {
@@ -53,10 +38,6 @@ Error LlavaRunner::load() {
   }
   stats_.model_load_start_ms = util::time_in_ms();
 
-  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("image_encoder"));
-  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("token_embedding"));
-  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("text_decoder"));
-
   // Load the tokenizer
   tokenizer_ = std::make_unique<BPETokenizer>();
   tokenizer_->load(tokenizer_path_);
@@ -64,6 +45,7 @@ Error LlavaRunner::load() {
   // Load the text decoder runner
   text_decoder_runner_ = std::make_unique<LlavaTextDecoderRunner>(
       module_.get(), tokenizer_->vocab_size(), temperature_);
+  text_decoder_runner_->load();
 
   // Load the text prefiller
   text_prefiller_ = std::make_unique<TextPrefiller>(
@@ -74,6 +56,7 @@ Error LlavaRunner::load() {
 
   // Load the image prefiller
   image_prefiller_ = std::make_unique<LlavaImagePrefiller>(module_.get());
+  image_prefiller_->load();
 
   // Load the text token generator
   text_token_generator_ = std::make_unique<TextTokenGenerator>(

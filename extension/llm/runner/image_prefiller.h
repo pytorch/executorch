@@ -29,6 +29,9 @@ class ImagePrefiller {
       Image& image,
       int64_t start_pos = 0) = 0;
 
+  virtual Error load() = 0;
+  virtual bool is_method_loaded() = 0;
+
  protected:
   Module* module_;
 };
