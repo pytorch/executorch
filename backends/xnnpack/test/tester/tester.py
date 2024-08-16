@@ -15,6 +15,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import torch
 import torch.export._trace as export_trace
+from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
+    XnnpackPartitioner,
+)
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import (
@@ -27,6 +30,7 @@ from executorch.exir import (
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+
 from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.program._program import _to_edge_transform_and_lower
 
@@ -288,10 +292,6 @@ class ToEdgeTransformAndLower(Stage):
         partitioners: Optional[List[Partitioner]] = None,
         edge_compile_config: Optional[EdgeCompileConfig] = None,
     ):
-        from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
-            XnnpackPartitioner,
-        )
-
         self.partitioners = partitioners or [XnnpackPartitioner()]
         self.edge_compile_conf = (
             edge_compile_config or get_xnnpack_edge_compile_config()
@@ -318,10 +318,6 @@ class ToEdgeTransformAndLower(Stage):
 @register_stage
 class Partition(Stage):
     def __init__(self, partitioner: Optional[Partitioner] = None):
-        from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-            XnnpackPartitioner,
-        )
-
         self.partitioner = partitioner or XnnpackPartitioner()
         self.delegate_module = None
 

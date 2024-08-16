@@ -494,37 +494,45 @@ class TestLinear(unittest.TestCase):
             dynamic_shape = (dynamic_shape,)
             print(dynamic_shape)
 
-            tester = Tester(module, inputs, dynamic_shapes=dynamic_shape)
+            for legacy_mode in (True, False):
+                tester = Tester(module, inputs, dynamic_shapes=dynamic_shape)
 
-            if quant:
-                if quant_type == "per_channel":
-                    quant_config = get_symmetric_quantization_config(
-                        is_per_channel=True,
-                        is_dynamic=False,
-                    )
-                elif quant_type == "per_tensor":
-                    quant_config = get_symmetric_quantization_config(
-                        is_per_channel=False,
-                        is_dynamic=False,
-                    )
+                if quant:
+                    if quant_type == "per_channel":
+                        quant_config = get_symmetric_quantization_config(
+                            is_per_channel=True,
+                            is_dynamic=False,
+                        )
+                    elif quant_type == "per_tensor":
+                        quant_config = get_symmetric_quantization_config(
+                            is_per_channel=False,
+                            is_dynamic=False,
+                        )
+                    else:
+                        raise ValueError(f"Unsupported quant type {quant_type}")
+                    tester.quantize(Quantize(quantization_config=quant_config))
+
+                tester.export()
+                if quant:
+                    tester.check(["torch.ops.quantized_decomposed"])
+
+                if legacy_mode:
+                    tester.to_edge()
+                    tester.partition()
                 else:
-                    raise ValueError(f"Unsupported quant type {quant_type}")
-                tester.quantize(Quantize(quantization_config=quant_config))
+                    tester.to_edge_transform_and_lower()
 
-            tester.export()
-            if quant:
-                tester.check(["torch.ops.quantized_decomposed"])
+                tester.check_count(
+                    {"torch.ops.higher_order.executorch_call_delegate": 1}
+                )
+                tester.check_not([edge_op])
 
-            tester.to_edge_transform_and_lower()
-            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            tester.check_not([edge_op])
+                if quant:
+                    tester.check_not([edge_op, "torch.ops.quantized_decomposed"])
 
-            if quant:
-                tester.check_not([edge_op, "torch.ops.quantized_decomposed"])
-
-            tester.to_executorch()
-            tester.serialize()
-            tester.run_method_and_compare_outputs(qtol=quant, atol=atol)
+                tester.to_executorch()
+                tester.serialize()
+                tester.run_method_and_compare_outputs(qtol=quant, atol=atol)
 
     def _test_dqlinear(
         self,
@@ -551,28 +559,20 @@ class TestLinear(unittest.TestCase):
             for per_op_mode in (True, False):
                 tester = Tester(module, inputs, dynamic_shapes=dynamic_shapes)
                 tester.quantize(Quantize(quantization_config=quant_config))
-
+                DynamicallyQuantizedPartitioner = XnnpackPartitioner(
+                    config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+                    per_op_mode=per_op_mode,
+                )
                 tester.export()
 
                 if legacy_partitioner:
                     tester.to_edge()
-                    tester.partition(
-                        Partition(XnnpackDynamicallyQuantizedPartitioner())
-                    )
+                    tester.partition(Partition(DynamicallyQuantizedPartitioner))
                 else:
                     tester.to_edge_transform_and_lower(
-                        ToEdgeTransformAndLower(
-                            [
-                                XnnpackPartitioner(
-                                    config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
-                                    per_op_mode=per_op_mode,
-                                )
-                            ]
-                        )
+                        ToEdgeTransformAndLower([DynamicallyQuantizedPartitioner])
                     )
-                num_call_delegates = (
-                    linear_count if legacy_partitioner or per_op_mode else 1
-                )
+                num_call_delegates = linear_count if per_op_mode else 1
                 tester.check_count(
                     {
                         "torch.ops.higher_order.executorch_call_delegate": num_call_delegates
@@ -872,20 +872,17 @@ class TestLinear(unittest.TestCase):
                 )
             )
 
+            DynamicallyQuantizedPartitioner = XnnpackPartitioner(
+                config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+                per_op_mode=True,
+            )
             if legacy_partitioner:
                 tester.to_edge()
-                tester.partition(Partition(XnnpackDynamicallyQuantizedPartitioner()))
+                tester.partition(Partition(DynamicallyQuantizedPartitioner))
             else:
                 (
                     tester.to_edge_transform_and_lower(
-                        ToEdgeTransformAndLower(
-                            [
-                                XnnpackPartitioner(
-                                    config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
-                                    per_op_mode=True,
-                                )
-                            ]
-                        )
+                        ToEdgeTransformAndLower([DynamicallyQuantizedPartitioner])
                     )
                 )
 
