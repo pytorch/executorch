@@ -17,18 +17,18 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::Error;
-using torch::executor::HierarchicalAllocator;
-using torch::executor::MemoryAllocator;
-using torch::executor::Result;
-using torch::executor::Span;
+using executorch::runtime::Error;
+using executorch::runtime::HierarchicalAllocator;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Result;
+using executorch::runtime::Span;
 
 class HierarchicalAllocatorTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
