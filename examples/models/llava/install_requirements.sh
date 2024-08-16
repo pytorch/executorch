@@ -7,6 +7,6 @@
 
 set -x
 
-pip install transformers
+pip install transformers accelerate
 
 pip list
