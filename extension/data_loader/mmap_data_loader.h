@@ -23,7 +23,7 @@ namespace util {
  * Note that this will keep the file open for the duration of its lifetime, to
  * avoid the overhead of opening it again for every load() call.
  */
-class MmapDataLoader : public DataLoader {
+class MmapDataLoader final : public DataLoader {
  public:
   /**
    * Describes how and whether to lock loaded pages with `mlock()`.
@@ -77,11 +77,11 @@ class MmapDataLoader : public DataLoader {
         page_size_(rhs.page_size_),
         fd_(rhs.fd_),
         mlock_config_(rhs.mlock_config_) {
-    rhs.file_name_ = nullptr;
-    rhs.file_size_ = 0;
-    rhs.page_size_ = 0;
-    rhs.fd_ = -1;
-    rhs.mlock_config_ = MlockConfig::NoMlock;
+    const_cast<const char*&>(rhs.file_name_) = nullptr;
+    const_cast<size_t&>(rhs.file_size_) = 0;
+    const_cast<size_t&>(rhs.page_size_) = 0;
+    const_cast<int&>(rhs.fd_) = -1;
+    const_cast<MlockConfig&>(rhs.mlock_config_) = MlockConfig::NoMlock;
   }
 
   ~MmapDataLoader() override;
@@ -89,7 +89,7 @@ class MmapDataLoader : public DataLoader {
   __ET_NODISCARD Result<FreeableBuffer> load(
       size_t offset,
       size_t size,
-      const DataLoader::SegmentInfo& segment_info) override;
+      const DataLoader::SegmentInfo& segment_info) const override;
 
   __ET_NODISCARD Result<size_t> size() const override;
 
@@ -111,11 +111,11 @@ class MmapDataLoader : public DataLoader {
   MmapDataLoader& operator=(const MmapDataLoader&) = delete;
   MmapDataLoader& operator=(MmapDataLoader&&) = delete;
 
-  const char* file_name_; // String data is owned by the instance.
-  size_t file_size_;
-  size_t page_size_;
-  int fd_; // Owned by the instance.
-  MlockConfig mlock_config_;
+  const char* const file_name_; // String data is owned by the instance.
+  const size_t file_size_;
+  const size_t page_size_;
+  const int fd_; // Owned by the instance.
+  const MlockConfig mlock_config_;
 };
 
 } // namespace util

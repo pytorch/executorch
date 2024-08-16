@@ -24,7 +24,7 @@ namespace util {
  *
  * This can be used to wrap data that was allocated elsewhere.
  */
-class SharedPtrDataLoader : public DataLoader {
+class SharedPtrDataLoader final : public DataLoader {
  public:
   SharedPtrDataLoader(std::shared_ptr<void> data, size_t size)
       : data_(data), size_(size) {}
@@ -32,7 +32,7 @@ class SharedPtrDataLoader : public DataLoader {
   __ET_NODISCARD Result<FreeableBuffer> load(
       size_t offset,
       size_t size,
-      __ET_UNUSED const DataLoader::SegmentInfo& segment_info) override {
+      __ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
     ET_CHECK_OR_RETURN_ERROR(
         offset + size <= size_,
         InvalidArgument,

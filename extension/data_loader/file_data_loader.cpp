@@ -122,7 +122,7 @@ void FreeSegment(void* context, void* data, __ET_UNUSED size_t size) {
 Result<FreeableBuffer> FileDataLoader::load(
     size_t offset,
     size_t size,
-    __ET_UNUSED const DataLoader::SegmentInfo& segment_info) {
+    __ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
@@ -209,7 +209,7 @@ __ET_NODISCARD Error FileDataLoader::load_into(
     size_t offset,
     size_t size,
     __ET_UNUSED const SegmentInfo& segment_info,
-    void* buffer) {
+    void* buffer) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
