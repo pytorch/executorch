@@ -135,24 +135,39 @@ jobs:
       fail-fast: false
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: executorch-ubuntu-22.04-clang12-android
       submodules: 'true'
       timeout: 60
       upload-artifact: android-models
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
+        echo "::group::Setting up dev environment"
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
-
+        if [[ ${{ matrix.delegate }} == "qnn" ]]; then
+            PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+            PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+        fi
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "cmake"
-        echo "Exporting model: ${{ matrix.model }}"
-        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}_${{ matrix.delegate }}
+        ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}_${{ matrix.delegate }}
+        echo "::endgroup::"
 
-        # TODO(T197546696): Note that the following scripts/steps only work for llama. It's expected to fail for other models+delegates.
-        # Install requirements for export_llama
-        PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
-        # Test llama2
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}.pt" "cmake" "fp32" "xnnpack+custom+qe" "${ARTIFACTS_DIR_NAME}"\
+        echo "::group::Exporting ${{ matrix.delegate }} model: ${{ matrix.model }}"
+        BUILD_MODE="cmake"
+        DTYPE="fp32"
+
+        if [[ ${{ matrix.model }} == "llama*" ]]; then
+            # Install requirements for export_llama
+            PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
+            # Test llama2
+            if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
+                DELEGATE_CONFIG="xnnpack+custom+qe"
+            fi
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}.pt" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
+        else
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
+        fi
+        echo "::endgroup::"
 
   # Upload models to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-models:
