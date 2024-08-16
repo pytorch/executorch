@@ -1,0 +1,6 @@
+datasets
+huggingface-hub
+safetensors
+sentencepiece
+tokenizers
+transformers
