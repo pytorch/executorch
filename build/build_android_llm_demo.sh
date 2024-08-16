@@ -9,7 +9,7 @@ set -ex
 
 build_jar() {
   pushd extension/android
-  ./gradlew build
+  ./gradlew -Dhttps.proxyHost=fwdproxy -Dhttps.proxyPort=8080 build
   popd
   mkdir -p "${BUILD_AAR_DIR}/libs"
   cp extension/android/build/libs/executorch.jar "${BUILD_AAR_DIR}/libs/"
@@ -25,11 +25,14 @@ build_android_native_library() {
   else
     EXECUTORCH_USE_TIKTOKEN=OFF
   fi
+  python_lib=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
 
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-23 \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
+    -DEXECUTORCH_LOG_LEVEL=Info \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
@@ -60,12 +63,30 @@ build_android_native_library() {
 
   cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}" --config Release
 
+  # Since the runner depends on torch, don't build it for now.
+  # cmake examples/models/llava \
+  #   -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+  #   -DANDROID_ABI="$ANDROID_ABI" \
+  #   -DANDROID_PLATFORM=android-23 \
+  #   -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
+  #   -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
+  #   -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+  #   -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
+  #   -DEXECUTORCH_BUILD_XNNPACK=ON \
+  #   -DCMAKE_BUILD_TYPE=Release \
+  #   -B"${CMAKE_OUT}"/examples/models/llava
+
+  # cmake --build "${CMAKE_OUT}"/examples/models/llava -j "${CMAKE_JOBS}" --config Release
+
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-23 \
     -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
+    -DEXECUTORCH_ENABLE_LOGGING=ON \
+    -DEXECUTORCH_LOG_LEVEL=Info \
     -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
+    -DEXECUTORCH_BUILD_MULTIMODAL_JNI=ON \
     -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
     -DCMAKE_BUILD_TYPE=Release \
     -B"${CMAKE_OUT}"/extension/android
@@ -89,6 +110,7 @@ build_aar() {
   # Zip all necessary files into the AAR file
   zip -r executorch.aar libs jni/*/libexecutorch.so AndroidManifest.xml
   zip -r executorch-llama.aar libs jni/*/libexecutorch_llama_jni.so AndroidManifest.xml
+  zip -r executorch-multimodal.aar libs jni/*/libexecutorch_multimodal_jni.so AndroidManifest.xml
   popd
 }
 
@@ -96,7 +118,7 @@ build_android_llm_demo_app() {
   mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
   cp ${BUILD_AAR_DIR}/executorch-llama.aar examples/demo-apps/android/LlamaDemo/app/libs
   pushd examples/demo-apps/android/LlamaDemo
-  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew -Dhttps.proxyHost=fwdproxy -Dhttps.proxyPort=8080 build assembleAndroidTest
   popd
 }
 

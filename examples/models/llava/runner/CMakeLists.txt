@@ -5,7 +5,11 @@
 # LICENSE file in the root directory of this source tree.
 
 #
+<<<<<<< HEAD
 # Simple CMake build system for LLaVa runner.
+=======
+# Simple CMake build system for selective build demo.
+>>>>>>> gh/larryliu0820/37/head
 #
 # ### Editing this file ###
 #
