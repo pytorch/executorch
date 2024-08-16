@@ -54,12 +54,11 @@ class ETPybindEvalWrapper(EagerEvalWrapper):
         # inps: Tensor of shape (1, max_seq_len - 1)
         # logits: Tensor of shape (1, max_seq_len - 1, vocab_size)
         if self._use_kv_cache:
-            result_logits = []
-            for pos in range(self._max_seq_length):
-                pos_tensor = torch.tensor([pos], dtype=torch.int64)
-                logits = self._et_model.forward((inps[:, pos : pos + 1], pos_tensor))
-                result_logits.append(logits[0])
-            return torch.cat(result_logits, dim=1)
+            pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
+            result = self._et_model.forward(
+                (inps[:, : self._max_seq_length], pos_tensor)
+            )
+            return result[0]
         else:
             result = self._et_model.forward((inps,))
             return result[0]
