@@ -72,6 +72,7 @@ class NodeVisitor:
         self,
         node: torch.fx.Node,
         mps_graph: MPSGraph,
+        mps_data_type: MPSDataType = None,
     ) -> int:
         """Defines a tensor value into the MPSGraph serialization schema
 
@@ -89,7 +90,7 @@ class NodeVisitor:
         # Get a unique id for the node.
         id = self.get_serialized_id(node, mps_graph)
         cb_size, constant_buffer, mps_data_type = self.get_serialized_buffer(
-            node, mps_graph, id
+            node, mps_graph, id, mps_data_type
         )
         dims = get_shape(node)
 
@@ -143,6 +144,9 @@ class NodeVisitor:
             mps_graph.mps_values.append(mps_tensor)
         return self.tensor_to_id[node]
 
+    def hash_tensor(self, tensor):
+        return hash(tuple(tensor.reshape(-1).tolist()))
+
     def define_constant(
         self,
         constant_tensor: torch.tensor,
@@ -155,9 +159,12 @@ class NodeVisitor:
             mps_graph (MPSGraph): MPSGraph object for serializing into flatbuffer
         """
         constant_tensor = constant_tensor.contiguous()
-        # MPS TODO: cache these values
-        id = len(mps_graph.mps_values)
-        self.tensor_to_id[constant_tensor] = id
+        hash = self.hash_tensor(constant_tensor)
+        if hash in self.tensor_to_id:
+            return self.tensor_to_id[hash]
+
+        id = self.get_serialized_id(constant_tensor, mps_graph, hash)
+
         mps_data_type = edge_dtype_to_mps_dtype(constant_tensor.dtype)
         constant_buffer_size, constant_buffer, mps_data_type = self.get_serialized_data(
             constant_tensor, mps_graph, mps_data_type, id
@@ -189,9 +196,10 @@ class NodeVisitor:
         """
         assert isinstance(val, int) or isinstance(val, float)
 
-        # MPS TODO: cache these values
-        id = len(mps_graph.mps_values)
-        self.tensor_to_id[val] = id
+        if val in self.tensor_to_id:
+            return self.tensor_to_id[val]
+
+        id = self.get_serialized_id(val, mps_graph, val)
 
         tensor = torch.tensor(val)
         constant_buffer_size, constant_buffer, mps_data_type = self.get_serialized_data(
@@ -214,6 +222,7 @@ class NodeVisitor:
         node: torch.fx.Node,
         mps_graph: MPSGraph,
         node_id: int,
+        mps_data_type: MPSDataType = None,
     ) -> Tuple[int, Buffer, MPSDataType]:
         """
         If tensor holds some constant data, serialize it and return the
@@ -226,7 +235,9 @@ class NodeVisitor:
         Returns:
             _type_: _description_
         """
-        mps_data_type = self.get_serialized_dtype(node)
+        mps_data_type = (
+            self.get_serialized_dtype(node) if mps_data_type is None else mps_data_type
+        )
 
         # Check if this node is a lifted parameter
         if not is_parameter(self.exported_program, node):
@@ -255,6 +266,22 @@ class NodeVisitor:
         if id not in mps_graph.constant_ids:
             mps_graph.constant_ids.append(id)
 
+        if (
+            mps_data_type is MPSDataType.mps_data_type_int4
+            and tensor.dtype is torch.int8
+        ):
+            if tensor.dim() != 2:
+                raise RuntimeError(f"Unexpected tensor shape {tensor.shape}")
+
+            tensor = tensor.to(dtype=torch.int32)
+            tensor = (((tensor[::, ::2] & 0x0F) << 4) | (tensor[::, 1::2] & 0x0F)).to(
+                torch.uint8
+            )
+            tensor = (
+                torch._convert_weight_to_int4pack(tensor.to("mps"), 2)
+                .cpu()
+                .view(dtype=torch.uint8)
+            )
         array_type = ctypes.c_char * tensor.untyped_storage().nbytes()
         array = ctypes.cast(
             tensor.untyped_storage().data_ptr(),
@@ -265,7 +292,7 @@ class NodeVisitor:
         return tensor.untyped_storage().nbytes(), buffer, mps_data_type
 
     def get_serialized_id(
-        self, node: Union[torch.fx.Node, float, int], mps_graph: MPSGraph
+        self, node: Union[torch.fx.Node, float, int], mps_graph: MPSGraph, hash=None
     ) -> int:
         """
         Map a tensor to a unique id. If the tensor was already mapped, return
@@ -278,19 +305,27 @@ class NodeVisitor:
         Returns:
             int: _description_
         """
-        if node in self.tensor_to_id:
+        if hash is not None and hash in self.tensor_to_id:
+            return self.tensor_to_id[hash]
+        elif node in self.tensor_to_id:
             return self.tensor_to_id[node]
 
         id = len(mps_graph.mps_values)
-        self.tensor_to_id[node] = id
+        if hash is not None:
+            self.tensor_to_id[hash] = id
+        else:
+            self.tensor_to_id[node] = id
 
         return id
+
+    def torch_dtype_to_mps_dtype(self, torch_dtype: torch.dtype) -> MPSDataType:
+        return edge_dtype_to_mps_dtype(torch_dtype)
 
     def get_serialized_dtype(
         self,
         node: torch.fx.Node,
     ) -> MPSDataType:
-        return edge_dtype_to_mps_dtype(node.meta["val"].dtype)
+        return self.torch_dtype_to_mps_dtype(node.meta["val"].dtype)
 
     def create_tertiary_node(
         self, node: torch.fx.Node, mps_graph: MPSGraph, tertiary_op: MPSNodeUnion

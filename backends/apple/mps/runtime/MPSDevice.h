@@ -32,6 +32,7 @@ enum class MacOSVersion : uint32_t {
   MACOS_VER_13_2_PLUS,
   MACOS_VER_13_3_PLUS,
   MACOS_VER_14_0_PLUS,
+  MACOS_VER_15_0_PLUS,
 };
 
 enum class LibraryType : uint32_t {
@@ -82,7 +83,8 @@ class MPSDevice {
   MPSDevice();
 };
 
-bool isMacOS13OrNewer(MacOSVersion version = MacOSVersion::MACOS_VER_13_0_PLUS);
+bool is_macos_13_or_newer(
+    MacOSVersion version = MacOSVersion::MACOS_VER_13_0_PLUS);
 
 } // namespace delegate
 } // namespace mps

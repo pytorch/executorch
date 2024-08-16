@@ -72,6 +72,25 @@ fi
 
 echo "COREML option ${COREML}"
 
+if [[ "${MODE}" =~ .*qnn.* ]]; then
+  QNN=ON
+  export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+  export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
+  export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
+  export PYTHONPATH=".."
+  cp schema/program.fbs exir/_serialize/program.fbs
+  cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
+  cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
+  cp -f build-x86/backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
+
+else
+  QNN=OFF
+  QNN_SDK_ROOT=""
+fi
+
+echo "QNN option ${QNN}"
+echo "QNN_SDK_ROOT: ${QNN_SDK_ROOT}"
+
 if [[ -z "${BUCK:-}" ]]; then
   BUCK=buck2
 fi
@@ -96,6 +115,8 @@ cmake_install_executorch_libraries() {
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DEXECUTORCH_BUILD_MPS="$MPS" \
         -DEXECUTORCH_BUILD_COREML="$COREML" \
+        -DEXECUTORCH_BUILD_QNN="$QNN" \
+        -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Debug
@@ -175,6 +196,9 @@ if [[ "${MPS}" == "ON" ]]; then
 fi
 if [[ "${COREML}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -kv -v --coreml --disable_dynamic_shape"
+fi
+if [[ "${QNN}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} -kv -v --qnn --disable_dynamic_shape"
 fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
