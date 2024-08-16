@@ -22,6 +22,7 @@ public class LlamaModule {
   }
 
   private final HybridData mHybridData;
+  private static final int DEFAULT_SEQ_LEN = 128;
 
   @DoNotStrip
   private static native HybridData initHybrid(
@@ -42,8 +43,19 @@ public class LlamaModule {
    * @param prompt Input prompt
    * @param llamaCallback callback object to receive results.
    */
+  public int generate(String prompt, LlamaCallback llamaCallback) {
+    return generate(prompt, DEFAULT_SEQ_LEN, llamaCallback);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param prompt Input prompt
+   * @param seqLen sequence length
+   * @param llamaCallback callback object to receive results.
+   */
   @DoNotStrip
-  public native int generate(String prompt, LlamaCallback llamaCallback);
+  public native int generate(String prompt, int seqLen, LlamaCallback llamaCallback);
 
   /** Stop current generate() before it finishes. */
   @DoNotStrip
