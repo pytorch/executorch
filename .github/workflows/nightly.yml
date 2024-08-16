@@ -22,5 +22,5 @@ jobs:
       - name: update-install-requirements-pytorch-nightly-version
         run: |
           set -eux
-          sed -i '/dev20240716/dev20240717/' install_requirements.sh
+          sed -i 's/dev20240716/dev20240717/' install_requirements.sh
           cat install_requirements.sh
