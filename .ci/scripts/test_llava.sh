@@ -7,7 +7,6 @@
 
 set -exu
 # shellcheck source=/dev/null
-source "$(dirname "${BASH_SOURCE[0]}")/../../examples/models/llava/build.sh"
 
 if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
   PYTHON_EXECUTABLE=python3
