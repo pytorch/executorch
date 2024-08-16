@@ -433,3 +433,13 @@ python_unittest(
         "//executorch/exir/passes:lib",
     ],
 )
+
+python_unittest(
+    name = "warnings",
+    srcs = [
+        "test_warnings.py",
+    ],
+    deps = [
+        "//executorch/exir:_warnings",
+    ],
+)
