@@ -71,14 +71,14 @@ run_and_verify() {
     RUNTIME_ARGS="--model_path=llava.pte \
      --tokenizer_path=tokenizer.bin \
      --image_path=image.pt \
-     --prompt=\"What are the things I should be cautious about when I visit here? ASSISTANT: \" \
+     --prompt=ASSISTANT: \
      --temperature=0 \
      --seq_len=650"
     cmake-out/examples/models/llava/llava_main ${RUNTIME_ARGS} > result.txt
     # verify result.txt
     RESULT=$(cat result.txt)
     # set the expected prefix to be the same as prompt because there's a bug in sdpa_with_kv_cache that causes <unk> tokens.
-    EXPECTED_PREFIX="What are the things I should be cautious about when I visit here? ASSISTANT: "
+    EXPECTED_PREFIX="ASSISTANT:"
     if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
         echo "Expected result prefix: ${EXPECTED_PREFIX}"
         echo "Actual result: ${RESULT}"
