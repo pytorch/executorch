@@ -33,7 +33,7 @@ MPSGraphBuilder::mpsBitwiseNotOp(NodePtr nodePtr) {
     _idToMPSGraphTensor[graphNode->output_id()] = [_mpsGraph notWithTensor:inputTensor name:nil];
   } else {
     ET_CHECK_OR_RETURN_ERROR(
-      isMacOS13OrNewer(), NotSupported,
+      is_macos_13_or_newer(), NotSupported,
       "mpsBitwiseNotOp supported by MPS on MacOS13.0+/iOS16.1+");
     _idToMPSGraphTensor[graphNode->output_id()] = [_mpsGraph bitwiseNOTWithTensor:inputTensor name:nil];
   }

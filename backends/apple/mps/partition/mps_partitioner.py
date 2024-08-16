@@ -26,8 +26,7 @@ from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.DEBUG, format=FORMAT)
-
+logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 # ops implemented as Metal kernels.
 METAL_KERNELS = [
