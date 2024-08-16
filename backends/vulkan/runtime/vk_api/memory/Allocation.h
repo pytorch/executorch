@@ -31,7 +31,23 @@ struct Allocation final {
       const VkMemoryRequirements&,
       const VmaAllocationCreateInfo&);
 
-  Allocation(const Allocation&) = delete;
+ protected:
+  /*
+   * The Copy constructor allows for creation of a class instance that are
+   * "aliases" of another class instance. The resulting class instance will not
+   * have ownership of the underlying VmaAllocation.
+   *
+   * This behaviour is analogous to creating a copy of a pointer, thus it is
+   * unsafe, as the original class instance may be destroyed before the copy.
+   * These constructors are therefore marked protected so that they may be used
+   * only in situations where the lifetime of the original class instance is
+   * guaranteed to exceed, or at least be the same as, the lifetime of the
+   * copied class instance.
+   */
+  Allocation(const Allocation&) noexcept;
+
+ public:
+  // To discourage creating copies, the assignment operator is still deleted.
   Allocation& operator=(const Allocation&) = delete;
 
   Allocation(Allocation&&) noexcept;
@@ -47,9 +63,21 @@ struct Allocation final {
   // Handles to the allocated memory
   VmaAllocation allocation;
 
+ private:
+  // Indicates whether this class instance is a copy of another class instance,
+  // in which case it does not have ownership of the underlying VmaAllocation
+  bool is_copy_;
+
+ public:
   operator bool() const {
     return (allocation != VK_NULL_HANDLE);
   }
+
+  inline bool is_copy() const {
+    return is_copy_;
+  }
+
+  friend class VulkanBuffer;
 };
 
 } // namespace vkapi
