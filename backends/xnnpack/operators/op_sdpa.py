@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import cast, Dict
+from typing import Dict
 
 import torch
 from executorch.backends.transforms import get_shape
@@ -66,9 +66,12 @@ class SDPAVisitor(NodeVisitor):
 
         # Hack to broadcast the scale
         q_shape = get_shape(get_input_node(node, 0))
-        scale = cast(float, node.kwargs["scale"])
+        C = q_shape[-1]
+        scale = 1 / (C**0.5)
+        if "scale" in node.kwargs and node.kwargs["scale"]:
+            scale = node.kwargs["scale"]
 
-        t = torch.full((q_shape[-1],), scale, dtype=mask_dtype)
+        t = torch.full((C,), scale, dtype=mask_dtype)
         scale_node = self.get_fake_attr("scale", t)
         self.define_tensor(
             scale_node,
