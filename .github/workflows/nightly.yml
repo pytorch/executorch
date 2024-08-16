@@ -23,3 +23,4 @@ jobs:
         run:
           set -eux
           sed -i '/dev20240716/dev20240717' install_requirements.sh
+          cat install_requirements.sh
