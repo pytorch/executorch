@@ -43,7 +43,6 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
-set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
