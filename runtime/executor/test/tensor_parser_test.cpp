@@ -120,3 +120,72 @@ TEST_F(TensorParserTest, TestModuleAddHalf) {
       torch::executor::ScalarType::Half,
       sizeof(torch::executor::Half));
 }
+
+TEST_F(TensorParserTest, TestMutableState) {
+  // Load the serialized ModuleSimpleTrain data.
+  const char* path = std::getenv("ET_MODULE_SIMPLE_TRAIN_PATH");
+  Result<FileDataLoader> train_loader = FileDataLoader::from(path);
+  ASSERT_EQ(train_loader.error(), Error::Ok);
+
+  Result<Program> program =
+      Program::load(&train_loader.get(), Program::Verification::Minimal);
+  EXPECT_EQ(program.error(), Error::Ok);
+
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  ManagedMemoryManager mmm_copy(
+      kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+
+  const executorch_flatbuffer::Program* internal_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+  executorch_flatbuffer::ExecutionPlan* execution_plan =
+      internal_program->execution_plan()->GetMutableObject(0);
+  auto flatbuffer_values = execution_plan->values();
+
+  size_t num_mutable_tensors = 0;
+  for (size_t i = 0; i < flatbuffer_values->size(); ++i) {
+    auto serialization_value = flatbuffer_values->Get(i);
+    if (serialization_value->val_type() ==
+            executorch_flatbuffer::KernelTypes::Tensor &&
+        serialization_value->val_as_Tensor()->allocation_info() != nullptr &&
+        serialization_value->val_as_Tensor()->data_buffer_idx() > 0) {
+      num_mutable_tensors++;
+      Result<torch::executor::Tensor> tensor = parseTensor(
+          &program.get(), &mmm.get(), serialization_value->val_as_Tensor());
+      torch::executor::Tensor t = tensor.get();
+      float loaded_value = t.const_data_ptr<float>()[0];
+      ASSERT_NE(nullptr, t.const_data_ptr());
+      ASSERT_NE(t.mutable_data_ptr<float>()[0], 0.5);
+      t.mutable_data_ptr<float>()[0] = 0.5;
+      ASSERT_EQ(
+          t.mutable_data_ptr<float>()[0],
+          0.5); // 0.5 can be represented perfectly by float so EQ and NE work
+                // fine here. Any power of 2 rational can be perfectly
+                // represented. See dyadic rationals for more info.
+
+      // Load the same tensor using the same mem manager and show the value is
+      // updated again.
+      Result<torch::executor::Tensor> tensor1_alias = parseTensor(
+          &program.get(), &mmm.get(), serialization_value->val_as_Tensor());
+      torch::executor::Tensor t2 = tensor.get();
+      ASSERT_NE(t2.mutable_data_ptr<float>()[0], 0.5);
+
+      // Show the tensors are equivalent
+      ASSERT_EQ(t.const_data_ptr(), t2.const_data_ptr());
+      // Set mutable tensor value back to 0.5 since it got overwritten by second
+      // parse.
+      t.mutable_data_ptr<float>()[0] = 0.5;
+
+      // Load the same tensor using a different mem manager and show the value
+      // is not the same as t.
+      Result<torch::executor::Tensor> tensor_new = parseTensor(
+          &program.get(),
+          &mmm_copy.get(),
+          serialization_value->val_as_Tensor());
+      torch::executor::Tensor t3 = tensor_new.get();
+      ASSERT_NE(t3.mutable_data_ptr<float>()[0], 0.5);
+      ASSERT_NE(t3.const_data_ptr(), t.const_data_ptr());
+      ASSERT_EQ(loaded_value, t3.const_data_ptr<float>()[0]);
+    }
+  }
+  ASSERT_EQ(num_mutable_tensors, 2);
+}

@@ -57,10 +57,20 @@
     - arg_meta: null
       kernel_name: torch::executor::embedding_out
 
+- op: expand_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::expand_copy_out
+
 - op: full.out
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::full_out
+
+- op: gelu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::gelu_out
 
 - op: mean.out
   kernels:

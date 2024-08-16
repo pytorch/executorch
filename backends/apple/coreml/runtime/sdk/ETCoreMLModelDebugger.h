@@ -9,6 +9,7 @@
 
 @class ETCoreMLAsset;
 @class ETCoreMLAssetManager;
+@class ETCoreMLModelDebugInfo;
 @class ETCoreMLModelStructurePath;
 
 typedef NSDictionary<ETCoreMLModelStructurePath*, MLMultiArray*> ETCoreMLModelOutputs;
@@ -25,11 +26,13 @@ __attribute__((objc_subclassing_restricted))
 /// Constructs an `ETCoreMLModelDebugger` instance.
 ///
 /// @param modelAsset The model asset (mlpackage).
+/// @param modelDebugInfo The model debug info.
 /// @param outputNames The model output names.
 /// @param configuration The model configuration.
 /// @param assetManager The asset manager used to manage storage of compiled models.
 /// @param error   On failure, error is filled with the failure information.
 - (nullable instancetype)initWithModelAsset:(ETCoreMLAsset*)modelAsset
+                             modelDebugInfo:(nullable ETCoreMLModelDebugInfo*)modelDebugInfo
                                 outputNames:(NSOrderedSet<NSString*>*)outputNames
                               configuration:(MLModelConfiguration*)configuration
                                assetManager:(ETCoreMLAssetManager*)assetManager
@@ -54,6 +57,10 @@ __attribute__((objc_subclassing_restricted))
 
 /// The paths to all the operations for which we can get the outputs.
 @property (readonly, copy, nonatomic) NSArray<ETCoreMLModelStructurePath*>* operationPaths;
+
+/// Operation path to debug symbol map.
+@property (readonly, copy, nonatomic)
+    NSDictionary<ETCoreMLModelStructurePath*, NSString*>* operationPathToDebugSymbolMap;
 
 @end
 
