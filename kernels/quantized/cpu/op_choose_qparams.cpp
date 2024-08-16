@@ -149,7 +149,7 @@ void choose_qparams(
 }
 } // namespace
 
-std::tuple<Tensor, Tensor> choose_qparams_tensor_out(
+std::tuple<Tensor&, Tensor&> choose_qparams_tensor_out(
     const Tensor& input,
     int64_t quant_min,
     int64_t quant_max,
@@ -164,7 +164,7 @@ std::tuple<Tensor, Tensor> choose_qparams_tensor_out(
   return {scale_out, zero_point_out};
 }
 
-::std::tuple<Tensor, Tensor> choose_qparams_tensor_out(
+::std::tuple<Tensor&, Tensor&> choose_qparams_tensor_out(
     RuntimeContext& context,
     const Tensor& input,
     int64_t quant_min,

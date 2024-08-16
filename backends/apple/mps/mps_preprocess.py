@@ -25,7 +25,6 @@ from executorch.backends.apple.mps.serialization.mps_graph_schema import (
 from executorch.backends.apple.mps.serialization.mps_graph_serialize import (
     convert_to_flatbuffer,
 )
-from executorch.backends.apple.mps.utils.mps_utils import is_parameter
 from executorch.exir._serialize._program import Cord
 
 from executorch.exir.backend.backend_details import (
@@ -127,6 +126,8 @@ class MPSBackend(BackendDetails):
                 op_handler[node.op](edge_program, node_visitors, node, mps_graph)
 
         segment_data, mps_graph = _extract_constant_segment(mps_graph)
+        if logging.DEBUG >= logging.root.level:
+            pretty_print(mps_graph)
 
         # Add to aggregate segments cord with padding.
         padding_length = _padding_required(len(segment_data), 16)
@@ -159,9 +160,6 @@ class MPSBackend(BackendDetails):
             combined.append(b"\x00" * graph_padding_length)
         # Append the segment data to the end of the mps graph
         combined.append(segment_data)
-
-        if logging.DEBUG >= logging.root.level:
-            pretty_print(mps_graph)
 
         return PreprocessResult(processed_bytes=bytes(combined))
 
@@ -198,10 +196,8 @@ class MPSBackend(BackendDetails):
         node: torch.fx.Node,
         mps_graph: MPSGraph,
     ) -> None:
-        # Handle only constants. Placeholders have already
-        # been visited in `process_input_placeholders`
-        if is_parameter(edge_program, node):
-            node_visitors[node.op].define_tensor(node, mps_graph)
+        # Constants are handled directly when visiting the nodes.
+        pass
 
     @staticmethod
     def handle_output(
@@ -257,7 +253,6 @@ def tensor_to_str(mps_tensor: MPSTensor):
     tensor_str += "datatype=" + str(mps_tensor.datatype) + ", "
     tensor_str += "num_dims=" + str(mps_tensor.num_dims) + ", "
     tensor_str += "dims=" + str(mps_tensor.dims) + ", "
-    tensor_str += "constant_buffer=" + str(mps_tensor.constant_buffer) + ", "
     tensor_str += "constant_buffer_size=" + str(mps_tensor.constant_buffer_size) + ", "
     tensor_str += "segment_offset=" + str(mps_tensor.segment_offset)
     tensor_str += ")"

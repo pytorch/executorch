@@ -20,7 +20,7 @@ mkdir "$COREML_DIR_PATH/runtime/test/models/"
 echo "Executorch: Generating test models"
 cd "$EXECUTORCH_ROOT_PATH"
 
-MODELS=("add" "mul" "mv3")
+MODELS=("add" "add_mul" "mul" "mv3")
 for MODEL in "${MODELS[@]}"
 do
   # TODO: Don't use the script in examples directory.
