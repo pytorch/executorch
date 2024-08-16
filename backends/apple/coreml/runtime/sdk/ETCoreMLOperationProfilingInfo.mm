@@ -5,9 +5,10 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <ETCoreMLOperationProfilingInfo.h>
-#import <hash_util.h>
-#import <model_event_logger_impl.h>
+#import "ETCoreMLOperationProfilingInfo.h"
+
+#import "hash_util.h"
+#import "model_event_logger_impl.h"
 
 namespace  {
 NSString *const kPreferredComputeUnitKey = @"preferredComputeUnit";
