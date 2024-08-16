@@ -1,3 +1,4 @@
+# @lint-ignore-every LICENSELINT
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -130,7 +131,9 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
-option(EXECUTORCH_DO_NOT_USE_CXX11_ABI "Define _GLIBCXX_USE_CXX11_ABI=0 if ON" OFF)
+option(EXECUTORCH_DO_NOT_USE_CXX11_ABI "Define _GLIBCXX_USE_CXX11_ABI=0 if ON"
+       OFF
+)
 if(EXECUTORCH_DO_NOT_USE_CXX11_ABI)
   add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
 endif()

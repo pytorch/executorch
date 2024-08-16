@@ -1,10 +1,20 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import sys
 
 import torch
 
 from executorch.examples.models.llava.model import LlavaModel
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
-from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
+
+# Custom ops has to be loaded after portable_lib.
+# I don't know how to stop UFMT so I'm just using if True: to avoid lint error
+if True:
+    from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
 
 
 def main():

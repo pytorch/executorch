@@ -25,6 +25,9 @@ class TextDecoderRunner {
       bool use_kv_cache,
       int32_t vocab_size,
       float temperature);
+
+  virtual ~TextDecoderRunner() = default;
+
   /**
    * Run LLM text decoder with inputs to generate next token.
    * @param input The input to the LLM Module.
