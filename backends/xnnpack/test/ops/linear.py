@@ -15,8 +15,6 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
 )
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
-)
-from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
     XnnpackPartitioner,
 )
 

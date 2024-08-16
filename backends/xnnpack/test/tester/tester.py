@@ -15,9 +15,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import torch
 import torch.export._trace as export_trace
-from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
-    XnnpackPartitioner,
-)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import (
