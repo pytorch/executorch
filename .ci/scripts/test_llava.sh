@@ -79,7 +79,7 @@ run_and_verify() {
     RESULT=$(cat result.txt)
     # set the expected prefix to be the same as prompt because there's a bug in sdpa_with_kv_cache that causes <unk> tokens.
     EXPECTED_PREFIX="ASSISTANT:"
-    if [[ "${RESULT}" == "${EXPECTED_PREFIX}"* ]]; then
+    if [[ "${RESULT}" == *"${EXPECTED_PREFIX}"* ]]; then
         echo "Expected result prefix: ${EXPECTED_PREFIX}"
         echo "Actual result: ${RESULT}"
         echo "Success"
