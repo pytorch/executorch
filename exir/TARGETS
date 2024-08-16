@@ -268,3 +268,11 @@ python_library(
         "//caffe2:torch",
     ],
 )
+
+python_library(
+    name = "_warnings",
+    srcs = ["_warnings.py"],
+    deps = [
+        "fbsource//third-party/pypi/typing-extensions:typing-extensions",
+    ],
+)
