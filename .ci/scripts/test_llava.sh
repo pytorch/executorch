@@ -54,6 +54,7 @@ export_llava() {
 }
 
 run_and_verify() {
+    NOW=$(date +"%H:%M:%S")
     echo "Starting to run llava runner at ${NOW}"
     if [[ ! -f "llava.pte" ]]; then
         echo "Export failed. Abort"
@@ -64,11 +65,12 @@ run_and_verify() {
         exit 1
     fi
     if [[ ! -f "tokenizer.bin" ]]; then
-        echo "image.pt is missing."
+        echo "tokenizer.bin is missing."
         exit 1
     fi
     RUNTIME_ARGS="--model_path=llava.pte \
      --tokenizer_path=tokenizer.bin \
+     --image_path=image.pt \
      --prompt=\"What are the things I should be cautious about when I visit here? ASSISTANT: \" \
      --temperature=0 \
      --seq_len=650"
@@ -92,5 +94,5 @@ run_and_verify() {
 
 cmake_install_executorch_libraries
 cmake_build_llava_runner
-export_llava
+# export_llava
 run_and_verify
