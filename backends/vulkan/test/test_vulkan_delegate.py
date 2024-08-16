@@ -25,7 +25,7 @@ from torch.export import Dim, export, ExportedProgram
 ctypes.CDLL("libvulkan.so.1")
 
 
-from executorch.exir.program._program import _to_edge_transform_and_lower
+from executorch.exir import to_edge_transform_and_lower
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
@@ -120,7 +120,7 @@ class TestBackends(unittest.TestCase):
                 model, sample_inputs, dynamic_shapes=dynamic_shapes
             )
 
-            edge_program = _to_edge_transform_and_lower(
+            edge_program = to_edge_transform_and_lower(
                 program,
                 transform_passes=[
                     I64toI32(self._edge_compile_config._skip_dim_order),

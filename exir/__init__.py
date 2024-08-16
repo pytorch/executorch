@@ -23,6 +23,7 @@ from executorch.exir.program import (
     ExecutorchProgramManager,
     ExirExportedProgram,
     to_edge,
+    to_edge_transform_and_lower,
 )
 from executorch.exir.serde.serialize import load, save
 from executorch.exir.tracer import ExirDynamoConfig
@@ -42,6 +43,7 @@ __all__ = [
     "ExportGraphSignature",
     "_to_edge",
     "to_edge",
+    "to_edge_transform_and_lower",
     "EdgeProgramManager",
     "ExecutorchProgramManager",
     "edge_to_executorch_passes",

@@ -926,7 +926,7 @@ def _gen_edge_manager_for_partitioners(
     return edge_manager
 
 
-def _to_edge_transform_and_lower(
+def to_edge_transform_and_lower(
     programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
     transform_passes: Optional[
         Union[Sequence[PassType], Dict[str, Sequence[PassType]]]
