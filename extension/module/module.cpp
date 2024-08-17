@@ -63,6 +63,22 @@ Module::Module(
   runtime_init();
 }
 
+Module::Module(
+    std::shared_ptr<Program> program,
+    std::unique_ptr<MemoryAllocator> memory_allocator,
+    std::unique_ptr<MemoryAllocator> temp_allocator,
+    std::unique_ptr<EventTracer> event_tracer)
+    : program_(std::move(program)),
+      memory_allocator_(
+          memory_allocator ? std::move(memory_allocator)
+                           : std::make_unique<util::MallocMemoryAllocator>()),
+      temp_allocator_(
+          temp_allocator ? std::move(temp_allocator)
+                         : std::make_unique<util::MallocMemoryAllocator>()),
+      event_tracer_(std::move(event_tracer)) {
+  runtime_init();
+}
+
 Error Module::load(const Program::Verification verification) {
   if (!is_loaded()) {
     if (!data_loader_) {
@@ -86,8 +102,13 @@ Error Module::load(const Program::Verification verification) {
           break;
       }
     };
-    program_ =
+    auto program =
         ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
+    program_ = std::shared_ptr<Program>(
+        program.release(),
+        [data_loader = std::move(data_loader_)](Program* pointer) {
+          delete pointer;
+        });
   }
   return Error::Ok;
 }
