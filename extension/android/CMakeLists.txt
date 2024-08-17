@@ -79,12 +79,9 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     TARGET llama_runner PROPERTY IMPORTED_LOCATION ${LLAMA_RUNNER_PATH}
   )
 
-  set(LLAVA_RUNNER_PATH
-      ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llava/runner/libllava_runner.a
-  )
-  add_library(llava_runner STATIC IMPORTED)
-  set_property(
-    TARGET llava_runner PROPERTY IMPORTED_LOCATION ${LLAVA_RUNNER_PATH}
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/examples/models/llava/runner
+    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llava/runner
   )
 
   set(CUSTOM_OPS_PATH

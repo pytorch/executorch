@@ -34,6 +34,7 @@ build_android_native_library() {
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
@@ -62,20 +63,6 @@ build_android_native_library() {
     -B"${CMAKE_OUT}"/examples/models/llama2
 
   cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}" --config Release
-
-  cmake examples/models/llava \
-    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-    -DANDROID_ABI="$ANDROID_ABI" \
-    -DANDROID_PLATFORM=android-23 \
-    -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
-    -DEXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN}" \
-    -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-    -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DCMAKE_BUILD_TYPE=Release \
-    -B"${CMAKE_OUT}"/examples/models/llava
-
-  cmake --build "${CMAKE_OUT}"/examples/models/llava -j "${CMAKE_JOBS}" --config Release
 
 
   cmake extension/android \
