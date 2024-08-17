@@ -1,70 +1,65 @@
+#!/usr/bin/env python3
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import os
 import platform
 import re
-import sys
 import subprocess
+import sys
 
 # Before doing anything, cd to the directory containing this script.
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-# Find the names of the python tools to use.
-PYTHON_EXECUTABLE = os.getenv('PYTHON_EXECUTABLE')
-
-if not PYTHON_EXECUTABLE:
-    CONDA_DEFAULT_ENV = os.getenv('CONDA_DEFAULT_ENV')
-    if not CONDA_DEFAULT_ENV or CONDA_DEFAULT_ENV == "base" or not subprocess.call(["which", "python"]):
-        PYTHON_EXECUTABLE = "python3"
-    else:
-        PYTHON_EXECUTABLE = "python"
-
-if PYTHON_EXECUTABLE == "python":
-    PIP_EXECUTABLE = "pip"
-else:
-    PIP_EXECUTABLE = "pip3"
-
-print(f"Using Python executable: {PYTHON_EXECUTABLE}")
-print(f"Using Pip executable: {PIP_EXECUTABLE}")
 
 def python_is_compatible():
     # Scrape the version range from pyproject.toml, which should be in the current directory.
     version_specifier = None
-    with open('pyproject.toml', 'r') as file:
+    with open("pyproject.toml", "r") as file:
         for line in file:
-            if line.startswith('requires-python'):
+            if line.startswith("requires-python"):
                 match = re.search(r'"([^"]*)"', line)
                 if match:
                     version_specifier = match.group(1)
                     break
 
     if not version_specifier:
-        print("WARNING: Skipping python version check: version range not found", file=sys.stderr)
+        print(
+            "WARNING: Skipping python version check: version range not found",
+            file=sys.stderr,
+        )
         return False
 
     # Install the packaging module if necessary.
     try:
         import packaging
     except ImportError:
-        subprocess.check_call([PIP_EXECUTABLE, 'install', 'packaging'])
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "packaging"], check=True
+        )
     # Compare the current python version to the range in version_specifier. Exits
     # with status 1 if the version is not compatible, or with status 0 if the
     # version is compatible or the logic itself fails.
     try:
-        import packaging.version
         import packaging.specifiers
+        import packaging.version
 
         python_version = packaging.version.parse(platform.python_version())
         version_range = packaging.specifiers.SpecifierSet(version_specifier)
         if python_version not in version_range:
             print(
-                f"ERROR: ExecuTorch does not support python version {python_version}: must satisfy \"{version_specifier}\"",
+                f'ERROR: ExecuTorch does not support python version {python_version}: must satisfy "{version_specifier}"',
                 file=sys.stderr,
             )
-            sys.exit(1)
+            return False
     except Exception as e:
         print(f"WARNING: Skipping python version check: {e}", file=sys.stderr)
-        sys.exit(0)
-        return False
     return True
+
 
 if not python_is_compatible():
     sys.exit(1)
@@ -88,10 +83,12 @@ for arg in sys.argv[1:]:
         print(f"Error: Unknown option {arg}")
         sys.exit(1)
 
-print(f"EXECUTORCH_BUILD_PYBIND: {EXECUTORCH_BUILD_PYBIND}")
-print(f"CMAKE_ARGS: {CMAKE_ARGS}")
-print(f"CMAKE_BUILD_ARGS: {CMAKE_BUILD_ARGS}")
-
+# Since ExecuTorch often uses main-branch features of pytorch, only the nightly
+# pip versions will have the required features.
+#
+# NOTE: If a newly-fetched version of the executorch repo changes the value of
+# NIGHTLY_VERSION, you should re-run this script to install the necessary
+# package versions.
 NIGHTLY_VERSION = "dev20240716"
 
 # The pip repository that hosts nightly torch packages.
@@ -100,7 +97,7 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 # pip packages needed by exir.
 EXIR_REQUIREMENTS = [
     f"torch==2.5.0.{NIGHTLY_VERSION}",
-    f"torchvision==0.20.0.{NIGHTLY_VERSION}"  # For testing.
+    f"torchvision==0.20.0.{NIGHTLY_VERSION}",  # For testing.
 ]
 
 # pip packages needed for development.
@@ -111,7 +108,7 @@ DEVEL_REQUIREMENTS = [
     "setuptools>=63",  # For building the pip package.
     "tomli",  # Imported by extract_sources.py when using python < 3.11.
     "wheel",  # For building the pip package archive.
-    "zstd"  # Imported by resolve_buck.py.
+    "zstd",  # Imported by resolve_buck.py.
 ]
 
 # pip packages needed to run examples.
@@ -120,20 +117,27 @@ EXAMPLES_REQUIREMENTS = [
     "timm==1.0.7",
     f"torchaudio==2.4.0.{NIGHTLY_VERSION}",
     "torchsr==1.0.4",
-    "transformers==4.42.4"
+    "transformers==4.42.4",
 ]
 
 # Assemble the list of requirements to actually install.
 # TODO: Add options for reducing the number of requirements.
 REQUIREMENTS_TO_INSTALL = EXIR_REQUIREMENTS + DEVEL_REQUIREMENTS + EXAMPLES_REQUIREMENTS
 
-print("Requirements to install:")
-for requirement in REQUIREMENTS_TO_INSTALL:
-    print(requirement)
-
 # Install the requirements. `--extra-index-url` tells pip to look for package
 # versions on the provided URL if they aren't available on the default URL.
-subprocess.check_call([PIP_EXECUTABLE, "install", *REQUIREMENTS_TO_INSTALL, "--extra-index-url", TORCH_NIGHTLY_URL])
+subprocess.run(
+    [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        *REQUIREMENTS_TO_INSTALL,
+        "--extra-index-url",
+        TORCH_NIGHTLY_URL,
+    ],
+    check=True,
+)
 
 #
 # Install executorch pip package. This also makes `flatc` available on the path.
@@ -147,7 +151,17 @@ os.environ["CMAKE_ARGS"] = CMAKE_ARGS
 os.environ["CMAKE_BUILD_ARGS"] = CMAKE_BUILD_ARGS
 
 # Run the pip install command
-subprocess.check_call([
-    PIP_EXECUTABLE, "install", ".", "--no-build-isolation", "-v",
-    "--extra-index-url", TORCH_NIGHTLY_URL
-])
+subprocess.run(
+    [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        ".",
+        "--no-build-isolation",
+        "-v",
+        "--extra-index-url",
+        TORCH_NIGHTLY_URL,
+    ],
+    check=True,
+)
