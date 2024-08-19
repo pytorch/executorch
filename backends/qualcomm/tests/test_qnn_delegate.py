@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import io
 import json
 import subprocess
 import sys
@@ -1824,6 +1825,96 @@ class TestExampleQaihubScript(TestQNN):
                 *conditions,
             ]
         )
+
+    def test_utils_export(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            module = ContextBinaryExample()  # noqa: F405
+            generate_context_binary(
+                module=module,
+                inputs=module.example_inputs(),
+                quantized=True,
+                artifact_dir=tmp_dir,
+            )
+            ctx_path = f"{tmp_dir}/model_ctx.bin"
+            fpath = f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/utils/export.py"
+
+            # do compilation
+            compile_cmds = [
+                "python",
+                fpath,
+                "compile",
+                "-a",
+                ctx_path,
+                "-m",
+                self.model,
+                "-l",
+                "False",
+                "-b",
+                self.build_folder,
+                "-o",
+                f"{tmp_dir}/output_pte",
+            ]
+            compile_process = subprocess.Popen(
+                compile_cmds, stdout=subprocess.DEVNULL, cwd=self.executorch_root
+            )
+            output_pte_dir = f"{tmp_dir}/output_pte/model_ctx"
+            compile_process.communicate()
+
+            # check artifacts are correctly generated
+            self.assertTrue(
+                all(
+                    [
+                        Path(output_pte_dir).exists(),
+                        Path(f"{output_pte_dir}/model_ctx.json").exists(),
+                        Path(f"{output_pte_dir}/model_ctx.svg").exists(),
+                    ]
+                )
+            )
+
+            # prepare input files
+            input_list, inputs = [], module.example_inputs()
+            for name, tensor in inputs.items():
+                tensor_path = f"{output_pte_dir}/{name}.pt"
+                torch.save(tensor, tensor_path)
+                input_list.append(tensor_path)
+
+            # do execution
+            output_data_dir = f"{tmp_dir}/output_data"
+            execute_cmds = [
+                "python",
+                fpath,
+                "execute",
+                "-p",
+                output_pte_dir,
+                "-i",
+                *input_list,
+                "-s",
+                self.device,
+                "-z",
+                "-b",
+                self.build_folder,
+                "-o",
+                output_data_dir,
+            ]
+            if self.host is not None:
+                execute_cmds.append(f"-H {self.host}")
+            execute_process = subprocess.Popen(execute_cmds, cwd=self.executorch_root)
+            execute_process.communicate()
+
+            # read outputs
+            with open(f"{output_pte_dir}/model_ctx.json", "r") as f:
+                graph_info = json.load(f)
+
+            device_output = []
+            for output in graph_info["outputs"]:
+                with open(f"{output_data_dir}/{output['name']}.pt", "rb") as f:
+                    buffer = io.BytesIO(f.read())
+                    device_output.append(torch.load(buffer, weights_only=False))
+
+            # validate outputs
+            golden_output = module.forward(inputs["x"], inputs["y"])
+            self.atol, self.rtol = 1e-1, 1
+            self._assert_outputs_equal(golden_output, device_output)
 
     def test_llama2_7b(self):
         if not self.required_envs():
