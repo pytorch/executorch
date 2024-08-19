@@ -17,6 +17,8 @@ from parameterized import parameterized
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+torch.manual_seed(0)
+
 
 class TestMM(unittest.TestCase):
     """Tests MatMul"""
@@ -124,10 +126,12 @@ class TestMM(unittest.TestCase):
         test_data = (operand1,)
         self._test_mm_tosa_BI_pipeline(self.MMSingleInput(), test_data)
 
+    # Expected to fail with error: CPU performance estimation for "MatMul" not implemented
     @parameterized.expand(MM.test_parameters)
+    @unittest.expectedFailure
     def test_mm_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
         test_data = (operand1, operand2)
-        self._test_mm_tosa_BI_pipeline(self.MM(), test_data)
+        self._test_mm_u55_BI_pipeline(self.MM(), test_data)
 
     # Expected to fail with error: Warning, unsupported fusing of TOSA Rescale previous operator is of type: Memcpy
     @parameterized.expand(MMSingleInput.test_parameters)
