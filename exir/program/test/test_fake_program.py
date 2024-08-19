@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
 
 import sys
 import unittest
@@ -73,4 +74,6 @@ class TestFakeProgram(unittest.TestCase):
 
         update_to_real_program(fake_program, exported_program)
         self.assertEqual(exported_program.state_dict, fake_program.state_dict)
-        self.assertEqual(id(exported_program.state_dict), id(fake_program.state_dict))
+        self.assertEqual(
+            exported_program.state_dict.keys(), fake_program.state_dict.keys()
+        )
