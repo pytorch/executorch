@@ -34,16 +34,31 @@ export NEURON_BUFFER_ALLOCATOR_LIB=<path_to_buffer_allocator>
 
 ## Setup
 
-Follow the steps below to set up your build environment:
+Follow the steps below to setup your build environment:
 
-1. **ExercuTorch Official Tutorial**: Refer to the [Setting up ExercuTorch](https://pytorch.org/executorch/stable/getting-started-setup) guide for detailed instructions on setting up the ExercuTorch environment.
+1. **Setup ExercuTorch Environment**: Refer to the [Setting up ExercuTorch](https://pytorch.org/executorch/stable/getting-started-setup) guide for detailed instructions on setting up the ExercuTorch environment.
 
-2. **Build Script**: Once the prerequisites are in place, run the `mtk_build.sh` script to start the build process.
+2. **Setup MediaTek Backend Environment**
+```bash
+// Ensure that you are inside executorch/examples/mediatek directory
+pip3 install -r requirements.txt
+
+// Download the two whl files from NeuroPilot Portal
+pip3 install mtk_neuron-8.2.2-py3-none-linux_x86_64.whl
+pip3 install mtk_converter-8.8.0.dev20240723+public.d1467db9-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+```
+
+## Build
+
+1. **Build MediaTek Backend**: Once the prerequisites are in place, run the `mtk_build.sh` script to start the build process.
 
    ```bash
    ./mtk_build.sh
    ```
-3. **Push MediaTek universal SDK to the device**: push libneuronusdk_adapter.mtk.so to the phone and export it to the `$LD_LIBRARY_PATH` environment variable before executing ExercuTorch with MediaTek backend.
+
+## Run
+
+1. **Push MediaTek universal SDK to the device**: push libneuronusdk_adapter.mtk.so to the phone and export it to the `$LD_LIBRARY_PATH` environment variable before executing ExercuTorch with MediaTek backend.
 
    ```bash
    export LD_LIBRARY_PATH=<path_to_usdk>:$LD_LIBRARY_PATH
