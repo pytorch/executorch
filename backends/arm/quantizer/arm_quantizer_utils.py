@@ -9,6 +9,7 @@
 # Utility functions for ArmQuantizer
 #
 
+import operator
 from typing import Callable, cast, List
 
 import torch
@@ -141,8 +142,11 @@ def is_share_obs_or_fq_op(op: Callable) -> bool:
         torch.ops.aten.view_copy.default,
         torch.ops.aten.view.default,
         torch.ops.aten.slice.Tensor,
+        torch.ops.aten.split.Tensor,
+        torch.ops.aten.split_with_sizes.default,
         torch.ops.aten.flatten.using_ints,
         torch.ops.aten.dropout.default,
+        operator.getitem,
     ]
 
 
