@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict
+from typing import cast, Dict
 
 import torch
 from executorch.backends.transforms import get_shape
@@ -69,7 +69,7 @@ class SDPAVisitor(NodeVisitor):
         embedding_dim = q_shape[-1]
         scale = 1 / (embedding_dim**0.5)
         if "scale" in node.kwargs and node.kwargs["scale"]:
-            scale = node.kwargs["scale"]
+            scale = cast(float, node.kwargs["scale"])
 
         t = torch.full((embedding_dim,), scale, dtype=mask_dtype)
         scale_node = self.get_fake_attr("scale", t)
