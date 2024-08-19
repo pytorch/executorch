@@ -188,7 +188,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
   test-llava-runner-linux:
-    name: test-export-llava-linux
+    name: test-llava-runner-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       fail-fast: false
