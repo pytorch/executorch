@@ -49,7 +49,8 @@ set(_aten_ops__srcs
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_to_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_where.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_expand_copy.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_gelu.cpp")
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_gelu.cpp"
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/op_empty.cpp")
 add_library(aten_ops_cadence ${_aten_ops__srcs})
 target_link_libraries(aten_ops_cadence PUBLIC executorch)
 target_link_libraries(aten_ops_cadence PRIVATE cadence_kernels)
