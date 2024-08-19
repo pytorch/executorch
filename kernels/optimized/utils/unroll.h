@@ -22,7 +22,7 @@ namespace utils {
 template <int n>
 struct ForcedUnroll {
   template <typename Func>
-  __ET_INLINE void operator()(const Func& f) const {
+  ET_INLINE void operator()(const Func& f) const {
     ForcedUnroll<n - 1>{}(f);
     f(n - 1);
   }
@@ -31,7 +31,7 @@ struct ForcedUnroll {
 template <>
 struct ForcedUnroll<1> {
   template <typename Func>
-  __ET_INLINE void operator()(const Func& f) const {
+  ET_INLINE void operator()(const Func& f) const {
     f(0);
   }
 };

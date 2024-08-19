@@ -179,7 +179,7 @@ class MethodMeta final {
   /**
    * DEPRECATED: Use num_memory_planned_buffers() instead.
    */
-  __ET_DEPRECATED size_t num_non_const_buffers() const {
+  ET_DEPRECATED size_t num_non_const_buffers() const {
     return num_memory_planned_buffers();
   }
 

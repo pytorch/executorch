@@ -153,7 +153,7 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
   // backend you can imagine how this function could be used to actually
   // dispatch the inputs to the relevant backend/device.
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     EXECUTORCH_SCOPE_PROF("BackendWithCompiler::execute");

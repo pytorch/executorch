@@ -58,7 +58,7 @@ void et_pal_init(void) ET_INTERNAL_PLATFORM_WEAKNESS;
  * Immediately abort execution, setting the device into an error state, if
  * available.
  */
-__ET_NORETURN void et_pal_abort(void) ET_INTERNAL_PLATFORM_WEAKNESS;
+ET_NORETURN void et_pal_abort(void) ET_INTERNAL_PLATFORM_WEAKNESS;
 
 /**
  * Return a monotonically non-decreasing timestamp in system ticks.

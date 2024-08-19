@@ -32,7 +32,7 @@ namespace util {
  * data and file_length is the correct length of file_data. Other values on
  * failure.
  */
-__ET_NODISCARD Error read_file_content(
+ET_NODISCARD Error read_file_content(
     const char* file_name,
     std::shared_ptr<char>* file_data,
     size_t* file_length);
@@ -49,7 +49,7 @@ __ET_NODISCARD Error read_file_content(
  *
  * @returns The pointer to file data, if read successfully. Otherwise null_ptr.
  */
-__ET_DEPRECATED std::shared_ptr<char> read_file_content(const char* name);
+ET_DEPRECATED std::shared_ptr<char> read_file_content(const char* name);
 
 } // namespace util
 } // namespace executor

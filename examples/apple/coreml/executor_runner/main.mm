@@ -160,7 +160,7 @@ public:
     :data_(read_data(filePath))
     {}
 
-    Result<FreeableBuffer> load(size_t offset, size_t size, __ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
+    Result<FreeableBuffer> load(size_t offset, size_t size, ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
         NSData *subdata = [data_ subdataWithRange:NSMakeRange(offset, size)];
         return FreeableBuffer(subdata.bytes, size, nullptr);
     }

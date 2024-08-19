@@ -112,7 +112,7 @@ namespace {
  * `context` is actually a ptrdiff_t value (not a pointer) that contains the
  * offset in bytes between `data` and the actual pointer to free.
  */
-void FreeSegment(void* context, void* data, __ET_UNUSED size_t size) {
+void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
   ptrdiff_t offset = reinterpret_cast<ptrdiff_t>(context);
   ET_DCHECK_MSG(offset >= 0, "Unexpected offset %ld", (long int)offset);
   std::free(static_cast<uint8_t*>(data) - offset);
@@ -122,7 +122,7 @@ void FreeSegment(void* context, void* data, __ET_UNUSED size_t size) {
 Result<FreeableBuffer> FileDataLoader::load(
     size_t offset,
     size_t size,
-    __ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
+    ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
@@ -205,10 +205,10 @@ Result<size_t> FileDataLoader::size() const {
   return file_size_;
 }
 
-__ET_NODISCARD Error FileDataLoader::load_into(
+ET_NODISCARD Error FileDataLoader::load_into(
     size_t offset,
     size_t size,
-    __ET_UNUSED const SegmentInfo& segment_info,
+    ET_UNUSED const SegmentInfo& segment_info,
     void* buffer) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.

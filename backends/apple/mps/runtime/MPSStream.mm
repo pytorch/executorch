@@ -55,7 +55,7 @@ id<MTLComputeCommandEncoder> MPSStream::commandEncoder() {
   return _commandEncoder;
 }
 
-__ET_NODISCARD
+ET_NODISCARD
 Error MPSStream::synchronize(SyncType syncType) {
   endKernelCoalescing();
   switch(syncType) {
@@ -157,7 +157,7 @@ void MPSStream::copy(id<MTLBuffer> srcBuffer,
       endKernelCoalescing();
       if (@available(iOS 13.0, *)) {
         id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer() blitCommandEncoder];
-        
+
         [blitEncoder copyFromBuffer:srcBuffer
                        sourceOffset:(NSUInteger)srcOffset
                            toBuffer:dstBuffer

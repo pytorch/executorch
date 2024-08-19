@@ -92,7 +92,7 @@ class Result final {
    * If true, it is guaranteed that `error()` will return `Error::Ok`.
    * If false, it is guaranteed that `error()` will not return `Error::Ok`.
    */
-  __ET_NODISCARD bool ok() const {
+  ET_NODISCARD bool ok() const {
     return hasValue_;
   }
 
@@ -103,7 +103,7 @@ class Result final {
    * If this does not return `Error:Ok`, it is guaranteed that `ok()` will
    * return false.
    */
-  __ET_NODISCARD Error error() const {
+  ET_NODISCARD Error error() const {
     if (hasValue_) {
       return Error::Ok;
     } else {

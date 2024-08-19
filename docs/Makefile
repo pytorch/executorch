@@ -2,7 +2,7 @@
 #
 
 # You can set these variables from the command line.
-# SPHINXOPTS    = -WT --keep-going TODO(T165752164) fix sphinx warnings around preprocess macros in cpp like __ET_DEPRECATED
+# SPHINXOPTS    = -WT --keep-going TODO(T165752164) fix sphinx warnings around preprocess macros in cpp like ET_DEPRECATED
 SPHINXBUILD   = sphinx-build
 SPHINXPROJ    = ExecuTorch
 SOURCEDIR     = source

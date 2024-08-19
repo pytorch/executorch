@@ -259,7 +259,7 @@ class TensorFactory {
       const std::vector<int32_t>& sizes,
       const std::vector<ctype>& data,
       const std::vector<int32_t> strides = {},
-      __ET_UNUSED TensorShapeDynamism dynamism =
+      ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto expected_numel = internal::sizes_to_numel(sizes);
     ET_CHECK_MSG(
@@ -301,7 +301,7 @@ class TensorFactory {
       const std::vector<int32_t>& sizes,
       const std::vector<ctype>& data,
       const std::vector<uint8_t> dim_order = {},
-      __ET_UNUSED TensorShapeDynamism dynamism =
+      ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto expected_numel = internal::sizes_to_numel(sizes);
     ET_CHECK_MSG(
@@ -338,7 +338,7 @@ class TensorFactory {
   at::Tensor make_channels_last(
       const std::vector<int32_t>& sizes,
       const std::vector<ctype>& data,
-      __ET_UNUSED TensorShapeDynamism dynamism =
+      ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     return make_with_dimorder(
         sizes, data, internal::channels_last_dim_order(sizes.size()), dynamism);
@@ -355,7 +355,7 @@ class TensorFactory {
   at::Tensor full(
       const std::vector<int32_t>& sizes,
       ctype value,
-      __ET_UNUSED TensorShapeDynamism dynamism =
+      ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto sizes64 = vec_32_to_64(sizes);
     return at::full(at::IntArrayRef(sizes64), value, at::dtype(DTYPE));
@@ -372,7 +372,7 @@ class TensorFactory {
   at::Tensor full_channels_last(
       const std::vector<int32_t>& sizes,
       ctype value,
-      __ET_UNUSED TensorShapeDynamism dynamism =
+      ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto sizes64 = vec_32_to_64(sizes);
     return at::full(at::IntArrayRef(sizes64), value, at::dtype(DTYPE))
@@ -388,7 +388,7 @@ class TensorFactory {
    */
   at::Tensor zeros(
       const std::vector<int32_t>& sizes,
-      __ET_UNUSED TensorShapeDynamism dynamism =
+      ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto sizes64 = vec_32_to_64(sizes);
     return at::zeros(at::IntArrayRef(sizes64), at::dtype(DTYPE));
@@ -403,7 +403,7 @@ class TensorFactory {
    */
   at::Tensor ones(
       const std::vector<int32_t>& sizes,
-      __ET_UNUSED TensorShapeDynamism dynamism =
+      ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto sizes64 = vec_32_to_64(sizes);
     return at::ones(at::IntArrayRef(sizes64), at::dtype(DTYPE));
@@ -418,7 +418,7 @@ class TensorFactory {
    */
   at::Tensor zeros_like(
       const Tensor& input,
-      __ET_UNUSED TensorShapeDynamism dynamism =
+      ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     std::vector<int64_t> sizes64 = {input.sizes().begin(), input.sizes().end()};
     return at::full(at::IntArrayRef(sizes64), 0, at::dtype(DTYPE));
@@ -433,7 +433,7 @@ class TensorFactory {
    */
   at::Tensor ones_like(
       const Tensor& input,
-      __ET_UNUSED TensorShapeDynamism dynamism =
+      ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     std::vector<int64_t> sizes64 = {input.sizes().begin(), input.sizes().end()};
     return at::full(at::IntArrayRef(sizes64), 1, at::dtype(DTYPE));
@@ -460,7 +460,7 @@ class TensorFactory {
   at::Tensor empty_strided(
       const std::vector<int32_t>& sizes,
       const std::vector<int32_t>& strides,
-      __ET_UNUSED TensorShapeDynamism dynamism =
+      ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto sizes64 = vec_32_to_64(sizes);
     auto strides64 = vec_32_to_64(strides);

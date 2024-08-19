@@ -207,7 +207,7 @@ Tensor broadcast_tensor(
   return out;
 }
 
-__ET_NODISCARD Error get_broadcast_target_size(
+ET_NODISCARD Error get_broadcast_target_size(
     const exec_aten::ArrayRef<Tensor::SizesType> a_size,
     const exec_aten::ArrayRef<Tensor::SizesType> b_size,
     Tensor::SizesType* out_sizes,
@@ -248,7 +248,7 @@ __ET_NODISCARD Error get_broadcast_target_size(
   return Error::Ok;
 }
 
-__ET_NODISCARD Error get_broadcast_target_size(
+ET_NODISCARD Error get_broadcast_target_size(
     const Tensor& a,
     const Tensor& b,
     Tensor::SizesType* out_sizes,

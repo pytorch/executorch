@@ -221,7 +221,7 @@ ArrayRef<Kernel> get_kernels();
  * object should be handled internally and the reason for keep returning is to
  * satisfy the requirement to run this in static initialization time.
  */
-__ET_NODISCARD Error register_kernels(const ArrayRef<Kernel>&);
+ET_NODISCARD Error register_kernels(const ArrayRef<Kernel>&);
 
 struct OperatorRegistry {
  public:
@@ -234,7 +234,7 @@ struct OperatorRegistry {
    * @param[in] kernels Kernel object
    * @retval Error code representing whether registration was successful.
    */
-  __ET_NODISCARD Error register_kernels(const ArrayRef<Kernel>&);
+  ET_NODISCARD Error register_kernels(const ArrayRef<Kernel>&);
 
   /**
    * Checks whether an operator with a given name and TensorMeta list.

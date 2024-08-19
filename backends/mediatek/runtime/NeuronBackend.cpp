@@ -67,7 +67,7 @@ Result<DelegateHandle*> NeuronBackend::init(
 }
 
 Error NeuronBackend::execute(
-    __ET_UNUSED BackendExecutionContext& context,
+    ET_UNUSED BackendExecutionContext& context,
     DelegateHandle* handle,
     EValue** args) const {
   NeuronExecuTorchDelegate* delegate =

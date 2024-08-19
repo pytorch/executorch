@@ -1040,21 +1040,21 @@ namespace internal {
 /**
  * Share t_src's data_ptr with t_dst.
  */
-__ET_NODISCARD Error share_tensor_data(
+ET_NODISCARD Error share_tensor_data(
     const exec_aten::Tensor& t_dst,
     const exec_aten::Tensor& t_src);
 
 /**
  * Copy t_src's data_ptr to t_dst.
  */
-__ET_NODISCARD Error copy_tensor_data(
+ET_NODISCARD Error copy_tensor_data(
     const exec_aten::Tensor& t_dst,
     const exec_aten::Tensor& t_src);
 
 /**
  * Set the data_ptr of t to buffer.
  */
-__ET_NODISCARD Error
+ET_NODISCARD Error
 set_tensor_data(const exec_aten::Tensor& t, void* buffer, size_t buffer_size);
 
 /**
@@ -1065,7 +1065,7 @@ void reset_data_ptr(const exec_aten::Tensor& tensor);
 /**
  * Resize tensor impl
  */
-__ET_NODISCARD Error resize_tensor_impl(
+ET_NODISCARD Error resize_tensor_impl(
     exec_aten::TensorImpl* impl,
     exec_aten::ArrayRef<exec_aten::SizesType> new_sizes);
 
@@ -1080,7 +1080,7 @@ __ET_NODISCARD Error resize_tensor_impl(
  * will likely move to be a class method on a TensorResizer object passed in
  * through runtimeContext.
  */
-__ET_NODISCARD inline Error resize_tensor(
+ET_NODISCARD inline Error resize_tensor(
     exec_aten::Tensor t,
     exec_aten::ArrayRef<exec_aten::SizesType> new_sizes) {
   return internal::resize_tensor_impl(t.unsafeGetTensorImpl(), new_sizes);
@@ -1099,7 +1099,7 @@ template <
     typename T,
     typename std::
         enable_if<!std::is_same<exec_aten::SizesType, T>::value, int>::type = 0>
-__ET_NODISCARD inline Error resize_tensor(
+ET_NODISCARD inline Error resize_tensor(
     exec_aten::Tensor t,
     exec_aten::ArrayRef<T> new_sizes) {
   // Need to cast the input array to an array of Tensor::SizesType
@@ -1114,7 +1114,7 @@ __ET_NODISCARD inline Error resize_tensor(
 }
 
 /// DEPRECATED: Use `resize_tensor()` instead, which can fail non-fatally.
-__ET_DEPRECATED inline void resize(
+ET_DEPRECATED inline void resize(
     exec_aten::Tensor t,
     exec_aten::ArrayRef<exec_aten::SizesType> new_sizes) {
   Error err = resize_tensor(t, new_sizes);
@@ -1128,7 +1128,7 @@ __ET_DEPRECATED inline void resize(
  * order into it.
  * @param out_dim_order_size Size of the DimOrderType array.
  */
-__ET_NODISCARD Error get_dim_order(
+ET_NODISCARD Error get_dim_order(
     const exec_aten::Tensor& tensor,
     exec_aten::DimOrderType* out_dim_order,
     size_t out_dim_order_size);

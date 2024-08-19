@@ -153,7 +153,7 @@ std::tuple<Tensor&, Tensor&> choose_qparams_tensor_out(
     const Tensor& input,
     int64_t quant_min,
     int64_t quant_max,
-    __ET_UNUSED double eps,
+    ET_UNUSED double eps,
     ScalarType dtype,
     Tensor& scale_out,
     Tensor& zero_point_out) {

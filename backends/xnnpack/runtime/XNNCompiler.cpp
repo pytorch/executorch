@@ -1608,7 +1608,7 @@ Builds the xnnpack runtime object using the buffer pointer. The buffer pointer
 must be a valid pointer to the serialized xnnpack object. It also fills the
 XNNExecutor object with the built xnn_runtime and the input/output ids.
 */
-__ET_NODISCARD Error XNNCompiler::compileModel(
+ET_NODISCARD Error XNNCompiler::compileModel(
     const void* buffer_pointer,
     size_t num_bytes,
     XNNExecutor* executor,

@@ -94,7 +94,7 @@ et_timestamp_t get_log_timestamp();
  * @param[in] format Format string.
  * @param[in] args Variable argument list.
  */
-__ET_PRINTFLIKE(6, 0)
+ET_PRINTFLIKE(6, 0)
 void vlogf(
     LogLevel level,
     et_timestamp_t timestamp,
@@ -116,7 +116,7 @@ void vlogf(
  * @param[in] line Source file line of the caller.
  * @param[in] format Format string.
  */
-__ET_PRINTFLIKE(6, 7)
+ET_PRINTFLIKE(6, 7)
 inline void logf(
     LogLevel level,
     et_timestamp_t timestamp,
@@ -165,9 +165,9 @@ using ::executorch::runtime::LogLevel;
       ::executorch::runtime::internal::logf(                         \
           _log_level,                                                \
           _timestamp,                                                \
-          __ET_SHORT_FILENAME,                                       \
-          __ET_FUNCTION,                                             \
-          __ET_LINE,                                                 \
+          ET_SHORT_FILENAME,                                         \
+          ET_FUNCTION,                                               \
+          ET_LINE,                                                   \
           _format,                                                   \
           ##__VA_ARGS__);                                            \
     }                                                                \

@@ -114,7 +114,7 @@ class BackendWithDelegateMapping final : public PyTorchBackendInterface {
   // This function doesn't actually execute the op but just prints out the op
   // name and the corresponding delegate debug identifier.
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     (void)args;

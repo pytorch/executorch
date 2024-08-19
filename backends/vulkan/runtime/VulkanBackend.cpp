@@ -421,7 +421,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
     return true;
   }
 
-  __ET_NODISCARD Error
+  ET_NODISCARD Error
   compileModel(const void* buffer_pointer, ComputeGraph* compute_graph) const {
     Result<VulkanDelegateHeader> header =
         VulkanDelegateHeader::parse(buffer_pointer);
@@ -485,7 +485,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
   }
 
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     EXECUTORCH_SCOPE_PROF("VulkanBackend::execute");

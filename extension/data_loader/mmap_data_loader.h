@@ -56,14 +56,14 @@ class MmapDataLoader final : public DataLoader {
       MlockConfig mlock_config = MlockConfig::UseMlock);
 
   /// DEPRECATED: Use the lowercase `from()` instead.
-  __ET_DEPRECATED static Result<MmapDataLoader> From(
+  ET_DEPRECATED static Result<MmapDataLoader> From(
       const char* file_name,
       MlockConfig mlock_config = MlockConfig::UseMlock) {
     return from(file_name, mlock_config);
   }
 
   /// DEPRECATED: Use the version of `from()` that takes an MlockConfig.
-  __ET_DEPRECATED
+  ET_DEPRECATED
   static Result<MmapDataLoader> From(const char* file_name, bool use_mlock) {
     MlockConfig mlock_config =
         use_mlock ? MlockConfig::UseMlock : MlockConfig::NoMlock;
@@ -86,12 +86,12 @@ class MmapDataLoader final : public DataLoader {
 
   ~MmapDataLoader() override;
 
-  __ET_NODISCARD Result<FreeableBuffer> load(
+  ET_NODISCARD Result<FreeableBuffer> load(
       size_t offset,
       size_t size,
       const DataLoader::SegmentInfo& segment_info) const override;
 
-  __ET_NODISCARD Result<size_t> size() const override;
+  ET_NODISCARD Result<size_t> size() const override;
 
  private:
   MmapDataLoader(

@@ -22,7 +22,7 @@ namespace deserialization {
 // Provides access to private Program methods.
 class TensorParser final {
  public:
-  __ET_NODISCARD static Error load_mutable_subsegment_into(
+  ET_NODISCARD static Error load_mutable_subsegment_into(
       const Program* program,
       size_t mutable_data_segments_index,
       size_t offset_index,
@@ -36,7 +36,7 @@ class TensorParser final {
 namespace {
 
 // Retrieve the buffer specified by the allocation_info
-__ET_NODISCARD Result<void*> getMemPlannedPtr(
+ET_NODISCARD Result<void*> getMemPlannedPtr(
     const executorch_flatbuffer::AllocationDetails* allocation_info,
     size_t nbytes,
     HierarchicalAllocator* allocator) {
@@ -68,7 +68,7 @@ __ET_NODISCARD Result<void*> getMemPlannedPtr(
 }
 } // namespace
 
-__ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
+ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
     EValue* values_,
     MemoryManager* memory_manager) {
@@ -97,7 +97,7 @@ __ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
       evalp_list, tensor_list, tensor_indices->size());
 }
 
-__ET_NODISCARD Result<void*> getTensorDataPtr(
+ET_NODISCARD Result<void*> getTensorDataPtr(
     const executorch_flatbuffer::Tensor* s_tensor,
     const Program* program,
     size_t nbytes,

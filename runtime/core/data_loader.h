@@ -87,7 +87,7 @@ class DataLoader {
    *
    * @returns a `FreeableBuffer` that owns the loaded data.
    */
-  __ET_NODISCARD virtual Result<FreeableBuffer>
+  ET_NODISCARD virtual Result<FreeableBuffer>
   load(size_t offset, size_t size, const SegmentInfo& segment_info) const = 0;
 
   /**
@@ -104,7 +104,7 @@ class DataLoader {
    *
    * @returns an Error indicating if the load was successful.
    */
-  __ET_NODISCARD virtual Error load_into(
+  ET_NODISCARD virtual Error load_into(
       size_t offset,
       size_t size,
       const SegmentInfo& segment_info,
@@ -122,7 +122,7 @@ class DataLoader {
   /**
    * Returns the length of the underlying data source, typically the file size.
    */
-  __ET_NODISCARD virtual Result<size_t> size() const = 0;
+  ET_NODISCARD virtual Result<size_t> size() const = 0;
 };
 
 } // namespace runtime

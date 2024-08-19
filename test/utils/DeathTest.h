@@ -15,7 +15,7 @@
 
 #include <gtest/gtest.h>
 
-#if __ET_BUILD_MODE_COV
+#if ET_BUILD_MODE_COV
 
 /**
  * TODO(T124640221): Work around a seg fault when running death tests in
@@ -25,7 +25,7 @@
  */
 #define ET_EXPECT_DEATH(_statement, _matcher) ((void)0)
 
-#else // __ET_BUILD_MODE_COV
+#else // ET_BUILD_MODE_COV
 
 /**
  * Ensure the executable will abort when `_statement` is executed.
@@ -37,4 +37,4 @@
 #define ET_EXPECT_DEATH(_statement, _matcher) \
   EXPECT_DEATH_IF_SUPPORTED(_statement, _matcher)
 
-#endif // __ET_BUILD_MODE_COV
+#endif // ET_BUILD_MODE_COV

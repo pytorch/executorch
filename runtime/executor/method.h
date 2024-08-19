@@ -103,7 +103,7 @@ class Method final {
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  __ET_NODISCARD Error set_input(const EValue& input_evalue, size_t input_idx);
+  ET_NODISCARD Error set_input(const EValue& input_evalue, size_t input_idx);
 
   /**
    * Sets the values of all method inputs.
@@ -117,7 +117,7 @@ class Method final {
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  __ET_NODISCARD Error
+  ET_NODISCARD Error
   set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues);
 
   /**
@@ -139,7 +139,7 @@ class Method final {
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  __ET_NODISCARD Error
+  ET_NODISCARD Error
   set_output_data_ptr(void* buffer, size_t size, size_t output_idx);
 
   /**
@@ -159,7 +159,7 @@ class Method final {
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  __ET_NODISCARD Error get_outputs(EValue* output_evalues, size_t length);
+  ET_NODISCARD Error get_outputs(EValue* output_evalues, size_t length);
 
   /**
    * Copies the method's inputs into the provided array.
@@ -175,7 +175,7 @@ class Method final {
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  __ET_NODISCARD Error get_inputs(EValue* input_evalues, size_t length);
+  ET_NODISCARD Error get_inputs(EValue* input_evalues, size_t length);
 
   /**
    * Execute the method.
@@ -185,7 +185,7 @@ class Method final {
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  __ET_NODISCARD Error execute();
+  ET_NODISCARD Error execute();
 
   /**
    * Advances/executes a single instruction in the method.
@@ -196,7 +196,7 @@ class Method final {
    * @retval non-Ok step failed
    * @retval Error::EndOfMethod method finished executing successfully
    */
-  __ET_NODISCARD Error experimental_step();
+  ET_NODISCARD Error experimental_step();
 
   /**
    * Resets execution state to the start of the Method. For use with the
@@ -209,7 +209,7 @@ class Method final {
    *     the end of the Method. This means it is not possible to recover a
    *     Method that failed mid-execution.
    */
-  __ET_NODISCARD Error experimental_reset_execution();
+  ET_NODISCARD Error experimental_reset_execution();
 
   /**
    * Returns the MethodMeta that corresponds to the calling Method.
@@ -235,13 +235,13 @@ class Method final {
 
   /// DEPRECATED: Use MethodMeta instead to access metadata, and set_input to
   /// update Method inputs.
-  __ET_DEPRECATED const EValue& get_input(size_t i) const;
+  ET_DEPRECATED const EValue& get_input(size_t i) const;
   /// DEPRECATED: Use MethodMeta instead to access metadata, and set_input to
   /// update Method inputs.
-  __ET_DEPRECATED EValue& mutable_input(size_t i);
+  ET_DEPRECATED EValue& mutable_input(size_t i);
   /// DEPRECATED: Use MethodMeta instead to access metadata, and get_output to
   /// retrieve Method outputs.
-  __ET_DEPRECATED EValue& mutable_output(size_t i);
+  ET_DEPRECATED EValue& mutable_output(size_t i);
 
   ~Method();
 
@@ -288,7 +288,7 @@ class Method final {
         pre_allocated_output_(false) {}
 
   /// Static factory used by Program.
-  __ET_NODISCARD static Result<Method> load(
+  ET_NODISCARD static Result<Method> load(
       executorch_flatbuffer::ExecutionPlan* s_plan,
       const Program* program,
       MemoryManager* memory_manager,
@@ -299,7 +299,7 @@ class Method final {
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
-  __ET_NODISCARD Error init(executorch_flatbuffer::ExecutionPlan* s_plan);
+  ET_NODISCARD Error init(executorch_flatbuffer::ExecutionPlan* s_plan);
 
   /// Returns true if the Method was successfully initialized.
   inline bool initialized() const {
@@ -312,7 +312,7 @@ class Method final {
   size_t get_output_index(size_t i) const;
 
   // Executes a single instruction using the state in step_state_
-  __ET_NODISCARD Error execute_instruction();
+  ET_NODISCARD Error execute_instruction();
 
   StepState step_state_;
   const Program* program_;
@@ -338,9 +338,9 @@ class Method final {
    * the number of successfully-initialized entries so that ~Method doesn't try
    * to clean up uninitialized entries.
    */
-  __ET_NODISCARD Error parse_values();
+  ET_NODISCARD Error parse_values();
 
-  __ET_NODISCARD Error resolve_operator(
+  ET_NODISCARD Error resolve_operator(
       int32_t op_index,
       OpFunction* kernels,
       size_t kernel_index,

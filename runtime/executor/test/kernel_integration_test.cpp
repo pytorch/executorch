@@ -110,7 +110,7 @@ struct KernelControl {
    */
   static void kernel_hook(
       KernelRuntimeContext& context,
-      __ET_UNUSED EValue** args) {
+      ET_UNUSED EValue** args) {
     auto* control = KernelControl::singleton();
     control->call_count++;
     if (control->call_context_fail) {

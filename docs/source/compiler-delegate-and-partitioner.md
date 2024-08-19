@@ -87,22 +87,22 @@ function which will be called when the program is out of its lifespan.
 
 ```cpp
 // Runtime check
-__ET_NODISCARD bool is_available();
+ET_NODISCARD bool is_available();
 
 // Runtime initialization
-__ET_NODISCARD virtual Result<DelegateHandle*> init(
+ET_NODISCARD virtual Result<DelegateHandle*> init(
     BackendInitContext& context,
     FreeableBuffer* processed,
     ArrayRef<CompileSpec> compile_specs);
 
 // Runtime execution
-__ET_NODISCARD virtual Error execute(
+ET_NODISCARD virtual Error execute(
     BackendExecutionContext& context,
     DelegateHandle* handle,
     EValue** args);
 
 // [optional] Runtime destroy. Destroy the resource held by the backend
-virtual void destroy(__ET_UNUSED DelegateHandle* handle);
+virtual void destroy(ET_UNUSED DelegateHandle* handle);
 ```
 
 The diagram looks like following
@@ -114,7 +114,7 @@ The diagram looks like following
 
 In order to make backend available to ExecuTorch runtime, it must be registered via the `register_backend` API:
 ```cpp
-__ET_NODISCARD Error register_backend(const Backend& backend);
+ET_NODISCARD Error register_backend(const Backend& backend);
 ```
 
 Static registeration, i.e., at libraray init or load time, of a backend can be achieved as follows:

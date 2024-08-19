@@ -96,8 +96,8 @@ Tensor& allclose_out(
     const Tensor& other,
     double rtol,
     double atol,
-    __ET_UNUSED bool equal_nan,
-    __ET_UNUSED bool dummy_param,
+    ET_UNUSED bool equal_nan,
+    ET_UNUSED bool dummy_param,
     Tensor& out) {
   ET_CHECK_SAME_SHAPE_AND_DTYPE2(self, other);
   ET_CHECK_MSG(
@@ -126,12 +126,12 @@ Tensor& allclose_out(
  * ExecuTorch runtime.
  */
 Tensor allclose_tensor(
-    __ET_UNUSED const Tensor& self,
-    __ET_UNUSED const Tensor& other,
-    __ET_UNUSED double rtol,
-    __ET_UNUSED double atol,
-    __ET_UNUSED bool equal_nan,
-    __ET_UNUSED bool dummy_param) {
+    ET_UNUSED const Tensor& self,
+    ET_UNUSED const Tensor& other,
+    ET_UNUSED double rtol,
+    ET_UNUSED double atol,
+    ET_UNUSED bool equal_nan,
+    ET_UNUSED bool dummy_param) {
 #ifdef USE_ATEN_LIB
   Tensor out =
       torch::tensor({false}, c10::TensorOptions(c10::ScalarType::Bool));
@@ -148,8 +148,8 @@ Tensor& allclose_out(
     const Tensor& other,
     double rtol,
     double atol,
-    __ET_UNUSED bool equal_nan,
-    __ET_UNUSED bool dummy_param,
+    ET_UNUSED bool equal_nan,
+    ET_UNUSED bool dummy_param,
     Tensor& out) {
   (void)ctx;
   // TODO(larryliu): Add a context arg to the real op function and remove this
@@ -158,13 +158,13 @@ Tensor& allclose_out(
 }
 
 Tensor allclose_tensor(
-    __ET_UNUSED RuntimeContext& ctx,
-    __ET_UNUSED const Tensor& self,
-    __ET_UNUSED const Tensor& other,
-    __ET_UNUSED double rtol,
-    __ET_UNUSED double atol,
-    __ET_UNUSED bool equal_nan,
-    __ET_UNUSED bool dummy_param) {
+    ET_UNUSED RuntimeContext& ctx,
+    ET_UNUSED const Tensor& self,
+    ET_UNUSED const Tensor& other,
+    ET_UNUSED double rtol,
+    ET_UNUSED double atol,
+    ET_UNUSED bool equal_nan,
+    ET_UNUSED bool dummy_param) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
   ET_ASSERT_UNREACHABLE();

@@ -75,9 +75,9 @@ class DummyEventTracer : public EventTracer {
   }
 
   void end_profiling_delegate(
-      __ET_UNUSED EventTracerEntry event_tracer_entry,
-      __ET_UNUSED const void* metadata,
-      __ET_UNUSED size_t metadata_len) override {
+      ET_UNUSED EventTracerEntry event_tracer_entry,
+      ET_UNUSED const void* metadata,
+      ET_UNUSED size_t metadata_len) override {
     (void)event_tracer_entry;
     (void)metadata;
     (void)metadata_len;

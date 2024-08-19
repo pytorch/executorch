@@ -22,7 +22,7 @@ using SizesType = exec_aten::SizesType;
  * inputs/outputs externals_ is resized to the total number of inputs and
  * outputs
  */
-__ET_NODISCARD Error XNNExecutor::initialize(
+ET_NODISCARD Error XNNExecutor::initialize(
     xnn_runtime_t runtime,
     std::vector<uint32_t>&& input_ids,
     std::vector<uint32_t>&& output_ids) {
@@ -62,7 +62,7 @@ __ET_NODISCARD Error XNNExecutor::initialize(
  * runtime correspond to their index in the list of arg passed into
  * delegate->execute()
  */
-__ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
+ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
   // Create xnn_externals_value from evalue args
   xnn_status status;
   for (uint32_t i = 0; i < externals_.size(); ++i) {
@@ -128,7 +128,7 @@ __ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
  * We first setup the runtime by feeding the externals_ to runtime setup.
  * After which we then execute the runtime through invoke_runtime.
  */
-__ET_NODISCARD Error XNNExecutor::forward(BackendExecutionContext& context) {
+ET_NODISCARD Error XNNExecutor::forward(BackendExecutionContext& context) {
   ET_CHECK_OR_RETURN_ERROR(
       runtime_ != nullptr,
       Internal,
@@ -180,7 +180,7 @@ __ET_NODISCARD Error XNNExecutor::forward(BackendExecutionContext& context) {
  * XNNPACK gives the index tensor to us as int32, we need to convert it
  * back to int64 for ExecuTorch.
  */
-__ET_NODISCARD Error XNNExecutor::resize_outputs(EValue** args) const {
+ET_NODISCARD Error XNNExecutor::resize_outputs(EValue** args) const {
   size_t output_idx_start = input_ids_.size();
   for (size_t i = output_idx_start; i < externals_.size(); ++i) {
     uint32_t ext_id = externals_[i].id;

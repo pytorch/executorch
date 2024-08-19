@@ -64,10 +64,10 @@ void et_pal_emit_log_message(
     et_timestamp_t timestamp,
     et_pal_log_level_t level,
     const char* filename,
-    __ET_UNUSED const char* function,
+    ET_UNUSED const char* function,
     size_t line,
     const char* message,
-    __ET_UNUSED size_t length) {
+    ET_UNUSED size_t length) {
   std::cerr << "[" << filename << ":" << line << "] " << message << std::endl;
 }
 
