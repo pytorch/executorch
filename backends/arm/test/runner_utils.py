@@ -230,7 +230,9 @@ class RunnerUtil:
                 os.path.join(self.intermediate_path, f"{name}.bin"),
             )
         elf_path = os.path.join(
-            "cmake-out", "arm_semihosting_executor_runner", "arm_executor_runner"
+            "cmake-out",
+            "arm_semihosting_executor_runner_corstone-300",
+            "arm_executor_runner",
         )
         assert os.path.exists(
             elf_path
