@@ -61,7 +61,7 @@ Result<uint64_t> TextPrefiller::prefill(
     uint64_t cur;
     for (int i = 0; i < prompt_tokens.size(); i++) {
       cur = prompt_tokens[i];
-      if (cur != tokenizer_->bos_tok()) {
+      if (token_callback && cur != tokenizer_->bos_tok()) {
         token_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
       }
       prev = cur;
