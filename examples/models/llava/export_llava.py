@@ -11,9 +11,7 @@ import torch
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
-from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
-    XnnpackPartitioner,
-)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.examples.models.llama2.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
