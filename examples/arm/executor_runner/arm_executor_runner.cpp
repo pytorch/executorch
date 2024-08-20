@@ -52,7 +52,7 @@ unsigned char __attribute__((
 
 void et_pal_init(void) {}
 
-__ET_NORETURN void et_pal_abort(void) {
+ET_NORETURN void et_pal_abort(void) {
 #ifndef SEMIHOSTING
   __builtin_trap();
 #else
@@ -64,13 +64,13 @@ __ET_NORETURN void et_pal_abort(void) {
  * Emit a log message via platform output (serial port, console, etc).
  */
 void et_pal_emit_log_message(
-    __ET_UNUSED et_timestamp_t timestamp,
+    ET_UNUSED et_timestamp_t timestamp,
     et_pal_log_level_t level,
     const char* filename,
-    __ET_UNUSED const char* function,
+    ET_UNUSED const char* function,
     size_t line,
     const char* message,
-    __ET_UNUSED size_t length) {
+    ET_UNUSED size_t length) {
   fprintf(stderr, "%c executorch:%s:%zu] %s\n", level, filename, line, message);
 }
 

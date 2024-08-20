@@ -63,20 +63,37 @@ class Module final {
       std::unique_ptr<MemoryAllocator> memory_allocator = nullptr,
       std::unique_ptr<MemoryAllocator> temp_allocator = nullptr,
       std::unique_ptr<EventTracer> event_tracer = nullptr);
+
+  /**
+   * Constructs an instance using an existing shared program.
+   *
+   * @param[in] program The shared program to use. It's required the data loader
+   * the program uses is valid for the lifetime of the program.
+   * @param[in] memory_allocator A MemoryAllocator used for memory management.
+   * @param[in] temp_allocator A MemoryAllocator to use when allocating
+   * temporary data.
+   * @param[in] event_tracer A EventTracer used for tracking and logging events.
+   */
+  explicit Module(
+      std::shared_ptr<Program> program,
+      std::unique_ptr<MemoryAllocator> memory_allocator = nullptr,
+      std::unique_ptr<MemoryAllocator> temp_allocator = nullptr,
+      std::unique_ptr<EventTracer> event_tracer = nullptr);
+
   Module(const Module&) = delete;
   Module& operator=(const Module&) = delete;
   Module(Module&&) = delete;
   Module& operator=(Module&&) = delete;
 
   /**
-   * Loads the program using the specified data loader and memory allocator.
+   * Loads the program if needed.
    *
    * @param[in] verification The type of verification to do before returning
    * success.
    *
    * @returns An Error to indicate success or failure of the loading process.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Error load(
       const Program::Verification verification =
           Program::Verification::Minimal);
@@ -87,6 +104,16 @@ class Module final {
    * @returns true if the program is loaded, false otherwise.
    */
   bool is_loaded() const;
+
+  /**
+   * Get the program. The data loader used by the program is guaranteed to be
+   * valid for the lifetime of the program.
+   *
+   * @returns Shared pointer to the program or nullptr if it's not yet loaded.
+   */
+  std::shared_ptr<Program> program() const {
+    return program_;
+  }
 
   /**
    * Get a list of method names available in the loaded program.
@@ -105,7 +132,7 @@ class Module final {
    *
    * @returns An Error to indicate success or failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Error load_method(const std::string& method_name);
 
   /**
@@ -139,7 +166,7 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<std::vector<EValue>> execute(
       const std::string& method_name,
       const std::vector<EValue>& input);
@@ -153,7 +180,7 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<std::vector<EValue>> execute(const std::string& method_name) {
     return execute(method_name, {});
   }
@@ -168,7 +195,7 @@ class Module final {
    * @returns A Result object containing either the first output value from the
    * method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<EValue> get(
       const std::string& method_name,
       const std::vector<EValue>& input) {
@@ -188,7 +215,7 @@ class Module final {
    * @returns A Result object containing either the first output value from the
    * method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<EValue> get(const std::string& method_name) {
     return get(method_name, {});
   }
@@ -202,7 +229,7 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the 'forward' method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<std::vector<EValue>> forward(const std::vector<EValue>& input) {
     return execute("forward", input);
   }
@@ -214,7 +241,7 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the 'forward' method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<std::vector<EValue>> forward() {
     return forward({});
   }
@@ -253,11 +280,11 @@ class Module final {
  private:
   std::string file_path_;
   LoadMode load_mode_{LoadMode::MmapUseMlock};
+  std::shared_ptr<Program> program_;
   std::unique_ptr<DataLoader> data_loader_;
   std::unique_ptr<MemoryAllocator> memory_allocator_;
   std::unique_ptr<MemoryAllocator> temp_allocator_;
   std::unique_ptr<EventTracer> event_tracer_;
-  std::unique_ptr<Program> program_;
   std::unordered_map<std::string, MethodHolder> methods_;
 };
 

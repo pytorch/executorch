@@ -117,7 +117,7 @@ ThreadPool* get_threadpool() {
   // @lint-ignore CLANGTIDY facebook-hte-std::call_once
   std::call_once(
       flag, []() { pthread_atfork(nullptr, nullptr, child_atfork); });
-  if __ET_UNLIKELY (leak_corrupted_threadpool) {
+  if ET_UNLIKELY (leak_corrupted_threadpool) {
     leak_corrupted_threadpool = false;
     if (auto leaked = threadpool.release()) {
       auto t = leaked->get_thread_count();

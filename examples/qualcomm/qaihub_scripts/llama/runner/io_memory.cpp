@@ -8,7 +8,7 @@
 
 #include <fstream>
 
-#include <executorch/examples/qualcomm/qaihub_scripts/llama2/runner/io_memory.h>
+#include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/io_memory.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace torch {
@@ -18,8 +18,8 @@ Memory::Memory(
     const std::vector<std::string>& pos_embs_path,
     std::vector<std::shared_ptr<Module>>& modules)
     : data_ptr_(nullptr, [](void*) {}),
-      input_tensors_(4),
-      output_tensors_(4),
+      input_tensors_(modules.size()),
+      output_tensors_(modules.size()),
       pos_embs_path_(pos_embs_path),
       modules_(modules) {}
 
@@ -49,8 +49,11 @@ std::vector<Tensor> Memory::get_output_tensors(int shard_index) {
 
 BertMemory::BertMemory(
     const std::vector<std::string>& pos_embs_path,
-    std::vector<std::shared_ptr<Module>>& modules)
-    : Memory(pos_embs_path, modules) {
+    std::vector<std::shared_ptr<Module>>& modules,
+    std::vector<int> shard_layers)
+    : Memory(pos_embs_path, modules),
+      shard_layers_(shard_layers),
+      num_heads_(QAIHUB_LLAMA_NUM_HEADS) {
   data_ptr_ = std::unique_ptr<void, void (*)(void*)>(
       new IO, [](void* ptr) { delete static_cast<IO*>(ptr); });
 }
@@ -60,7 +63,7 @@ void BertMemory::prepare_io(
   IO* ptr = static_cast<IO*>(data_ptr_.get());
   std::memset(ptr, 0, sizeof(IO));
 
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < modules_.size(); ++i) {
     ET_CHECK_MSG(
         methods_meta[i].ok(),
         "Failed to get method_meta 0x%x",
@@ -75,7 +78,7 @@ void BertMemory::prepare_io(
         1024 * 64 * 2);
     fin.close();
   }
-  // [I]: shard1,2,3,4
+  // [I]: all shards (4 shards for llama2, 5 shards for llama)
   {
     // [I]: input_ids
     Result<TensorInfo> input_ids = methods_meta[0]->input_tensor_meta(0);
@@ -114,7 +117,8 @@ void BertMemory::prepare_io(
         const_cast<TensorImpl::DimOrderType*>(pos_ids_sin->dim_order().data()));
     input_tensors_[0].push_back(position_ids_sin_.get());
     // [IO]: hidden_state => [I] shard2,3,4
-    int output_index = 8 * 2 * 32; // layres*(k + v caches)*heads
+    int output_index =
+        shard_layers_[0] * 2 * num_heads_; // layers*(k + v caches)*heads
     Result<TensorInfo> hidden_state =
         methods_meta[0]->output_tensor_meta(output_index);
     hidden_state_ = std::make_unique<TensorImpl>(
@@ -125,8 +129,8 @@ void BertMemory::prepare_io(
         const_cast<TensorImpl::DimOrderType*>(
             hidden_state->dim_order().data()));
     // reuse inputs for following tensors
-    for (int shard_index = 1; shard_index < 4; ++shard_index) {
-      // inputs of shard1,2,3: hidden_state, atten_mask, pos_ids_cos,
+    for (int shard_index = 1; shard_index < modules_.size(); ++shard_index) {
+      // inputs of shards 1 to n: hidden_state, atten_mask, pos_ids_cos,
       // pos_ids_sin
       input_tensors_[shard_index].push_back(hidden_state_.get());
       input_tensors_[shard_index].push_back(attention_mask_.get());
@@ -134,13 +138,13 @@ void BertMemory::prepare_io(
       input_tensors_[shard_index].push_back(position_ids_sin_.get());
     }
   }
-  // [O] kv_cache for shard1,2,3,4
-  for (int offset = 0, shard_index = 0; shard_index < 4;
-       offset += 8, shard_index++) {
-    for (int layer = 0; layer < 8; ++layer) {
+  // [O] kv_cache for all shards (4 shards for llama2 and 5 shards for llama3)
+  for (int offset = 0, shard_index = 0; shard_index < modules_.size();
+       offset += shard_layers_[shard_index], shard_index++) {
+    for (int layer = 0; layer < shard_layers_[shard_index]; ++layer) {
       for (int cache_group = 0; cache_group < 2; ++cache_group) {
-        for (int head = 0; head < 32; ++head) {
-          int index = 64 * layer + cache_group * 32 + head;
+        for (int head = 0; head < num_heads_; ++head) {
+          int index = num_heads_ * 2 * layer + cache_group * num_heads_ + head;
           Result<TensorInfo> kv_cache =
               methods_meta[shard_index]->output_tensor_meta(index);
           std::vector<std::unique_ptr<TensorImpl>>& cache =
@@ -158,22 +162,23 @@ void BertMemory::prepare_io(
       }
     }
   }
-  // [O]: hidden_state for shard1,2,3
-  for (int shard_index = 0; shard_index < 3; ++shard_index) {
+  // [O]: hidden_state for shard 0 to n-1
+  for (int shard_index = 0; shard_index < modules_.size() - 1; ++shard_index) {
     output_tensors_[shard_index].push_back(hidden_state_.get());
   }
   // [O]: logits
   {
-    int output_index = 8 * 2 * 32; // layers*(k + v caches)*heads
+    int output_index = shard_layers_[modules_.size() - 1] * 2 *
+        num_heads_; // layers*(k + v caches)*heads
     Result<TensorInfo> logits =
-        methods_meta[3]->output_tensor_meta(output_index);
+        methods_meta[modules_.size() - 1]->output_tensor_meta(output_index);
     logits_ = std::make_unique<TensorImpl>(
         logits->scalar_type(),
         logits->sizes().size(),
         const_cast<TensorImpl::SizesType*>(logits->sizes().data()),
         ptr->logits,
         const_cast<TensorImpl::DimOrderType*>(logits->dim_order().data()));
-    output_tensors_[3].push_back(logits_.get());
+    output_tensors_[modules_.size() - 1].push_back(logits_.get());
   }
 }
 
@@ -204,19 +209,23 @@ void BertMemory::update_io(
 
 KVCachedMemory::KVCachedMemory(
     const std::vector<std::string>& pos_embs_path,
-    std::vector<std::shared_ptr<Module>>& modules)
-    : Memory(pos_embs_path, modules) {
+    std::vector<std::shared_ptr<Module>>& modules,
+    std::vector<int> shard_layers)
+    : Memory(pos_embs_path, modules),
+      shard_layers_(shard_layers),
+      num_heads_(QAIHUB_LLAMA_NUM_HEADS) {
   data_ptr_ = std::unique_ptr<void, void (*)(void*)>(
       new IO, [](void* ptr) { delete static_cast<IO*>(ptr); });
-  futures_ = std::vector<std::future<void>>(thread_pool_.num_workers());
+  if (num_heads_ == 32) {
+    futures_ = std::vector<std::future<void>>(thread_pool_.num_workers());
+  }
 }
 
 void KVCachedMemory::prepare_io(
     const std::vector<Result<MethodMeta>>& methods_meta) {
   IO* ptr = static_cast<IO*>(data_ptr_.get());
   std::memset(ptr, 0, sizeof(IO));
-
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < modules_.size(); ++i) {
     ET_CHECK_MSG(
         methods_meta[i].ok(),
         "Failed to get method_meta 0x%x",
@@ -231,7 +240,7 @@ void KVCachedMemory::prepare_io(
         1024 * 64 * 2);
     fin.close();
   }
-  // [I]: shard1,2,3,4
+  // [I]: all shards (4 shards for llama2, 5 shards for llama)
   {
     // [I]: input_ids
     Result<TensorInfo> input_ids = methods_meta[0]->input_tensor_meta(0);
@@ -270,7 +279,8 @@ void KVCachedMemory::prepare_io(
         const_cast<TensorImpl::DimOrderType*>(pos_ids_sin->dim_order().data()));
     input_tensors_[0].push_back(position_ids_sin_.get());
     // [IO]: hidden_state => [I] shard2,3,4
-    int output_index = 8 * 2 * 32; // layers*(k + v caches)*heads
+    int output_index =
+        shard_layers_[0] * 2 * num_heads_; // layers*(k + v caches)*heads
     Result<TensorInfo> hidden_state =
         methods_meta[0]->output_tensor_meta(output_index);
     hidden_state_ = std::make_unique<TensorImpl>(
@@ -281,22 +291,25 @@ void KVCachedMemory::prepare_io(
         const_cast<TensorImpl::DimOrderType*>(
             hidden_state->dim_order().data()));
     // reuse inputs for following tensors
-    for (int shard_index = 1; shard_index < 4; ++shard_index) {
-      // inpus of shard1,2,3: hidden_state, atten_mask, pos_ids_cos, pos_ids_sin
+    for (int shard_index = 1; shard_index < modules_.size(); ++shard_index) {
+      // inputs of shards 1 to n: hidden_state, atten_mask, pos_ids_cos,
+      // pos_ids_sin
       input_tensors_[shard_index].push_back(hidden_state_.get());
       input_tensors_[shard_index].push_back(attention_mask_.get());
       input_tensors_[shard_index].push_back(position_ids_cos_.get());
       input_tensors_[shard_index].push_back(position_ids_sin_.get());
     }
   }
-  // [I] kv_cache for shard1,2,3,4
-  for (int offset = 0, shard_index = 0, v_stride = 1023 * 128; shard_index < 4;
-       offset += 8, shard_index++) {
-    for (int layer = 0; layer < 8; ++layer) {
+  // [I] kv_cache for all shards (4 shards for llama2 and 5 shards for llama3)
+  for (int offset = 0, shard_index = 0, v_stride = 1023 * 128;
+       shard_index < modules_.size();
+       offset += shard_layers_[shard_index], shard_index++) {
+    for (int layer = 0; layer < shard_layers_[shard_index]; ++layer) {
       for (int cache_group = 0; cache_group < 2; ++cache_group) {
-        for (int head = 0; head < 32; ++head) {
+        for (int head = 0; head < num_heads_; ++head) {
           // bypass hidden_state(input_ids), atten_mask, pos_cos, pos_sin
-          int index = 64 * layer + cache_group * 32 + head + 4;
+          int index =
+              num_heads_ * 2 * layer + cache_group * num_heads_ + head + 4;
           Result<TensorInfo> kv_cache =
               methods_meta[shard_index]->input_tensor_meta(index);
           std::vector<std::unique_ptr<TensorImpl>>& cache =
@@ -319,13 +332,14 @@ void KVCachedMemory::prepare_io(
       }
     }
   }
-  // [O] kv_cache for shard1,2,3,4
-  for (int offset = 0, shard_index = 0, v_stride = 1023 * 128; shard_index < 4;
-       offset += 8, shard_index++) {
-    for (int layer = 0; layer < 8; ++layer) {
+  // [O] kv_cache for all shards (4 shards for llama2 and 5 shards for llama3)
+  for (int offset = 0, shard_index = 0, v_stride = 1023 * 128;
+       shard_index < modules_.size();
+       offset += shard_layers_[shard_index], shard_index++) {
+    for (int layer = 0; layer < shard_layers_[shard_index]; ++layer) {
       for (int cache_group = 0; cache_group < 2; ++cache_group) {
-        for (int head = 0; head < 32; ++head) {
-          int index = 64 * layer + cache_group * 32 + head;
+        for (int head = 0; head < num_heads_; ++head) {
+          int index = num_heads_ * 2 * layer + cache_group * num_heads_ + head;
           Result<TensorInfo> kv_cache =
               methods_meta[shard_index]->output_tensor_meta(index);
           std::vector<std::unique_ptr<TensorImpl>>& cache =
@@ -348,29 +362,35 @@ void KVCachedMemory::prepare_io(
       }
     }
   }
-  // [O]: hidden_state for shard1,2,3
-  for (int shard_index = 0; shard_index < 3; ++shard_index) {
+  // [O]: hidden_state for shard 0 to n-1
+  for (int shard_index = 0; shard_index < modules_.size() - 1; ++shard_index) {
     output_tensors_[shard_index].push_back(hidden_state_.get());
   }
   // [O]: logits
   {
-    int output_index = 8 * 2 * 32; // layres*(k + v caches)*heads
+    int output_index = shard_layers_[modules_.size() - 1] * 2 *
+        num_heads_; // layers*(k + v caches)*heads
     Result<TensorInfo> logits =
-        methods_meta[3]->output_tensor_meta(output_index);
+        methods_meta[modules_.size() - 1]->output_tensor_meta(output_index);
     logits_ = std::make_unique<TensorImpl>(
         logits->scalar_type(),
         logits->sizes().size(),
         const_cast<TensorImpl::SizesType*>(logits->sizes().data()),
         ptr->logits,
         const_cast<TensorImpl::DimOrderType*>(logits->dim_order().data()));
-    output_tensors_[3].push_back(logits_.get());
+    output_tensors_[modules_.size() - 1].push_back(logits_.get());
   }
-  // thread pool jobs
-  for (int i = 0, range = 1024 / thread_pool_.num_workers();
-       i < thread_pool_.num_workers();
-       ++i) {
-    lr_update_kv_.push_back(
-        {.start = i * range, .end = (i + 1) * range, .step = 1});
+
+  // QAIHub Llama2 have 4* io compared to QAIHub Llama3,
+  // so we use multi-threading for Llama2 when updating io
+  if (num_heads_ == 32) {
+    // thread pool jobs
+    for (int i = 0, range = 1024 / thread_pool_.num_workers();
+         i < thread_pool_.num_workers();
+         ++i) {
+      lr_update_kv_.push_back(
+          {.start = i * range, .end = (i + 1) * range, .step = 1});
+    }
   }
 }
 
@@ -388,34 +408,56 @@ void KVCachedMemory::update_io(
   position_ids_cos_->set_data(position_ids_cos_->mutable_data<uint16_t>() + 64);
   position_ids_sin_->set_data(position_ids_sin_->mutable_data<uint16_t>() + 64);
 
-  auto update_kv = [&](void* arg) {
-    LoopRange* lr = static_cast<LoopRange*>(arg);
+  // use multithreading when we have a lot of ios, Llama2 in this case
+  if (num_heads_ == 32) {
+    auto update_kv = [&](void* arg) {
+      LoopRange* lr = static_cast<LoopRange*>(arg);
+      // update v_cache
+      for (int i = lr->start; i < lr->end; i += lr->step) {
+        v_cache_in_[i]->set_data(v_cache_in_[i]->mutable_data<uint8_t>() + 128);
+        v_cache_out_[i]->set_data(
+            v_cache_out_[i]->mutable_data<uint8_t>() + 128);
+      }
+      // update output tensors of v_cache, 256 is the number of kvs per shard
+      int shard = lr->start >> 8, offset = shard << 8;
+      int start = lr->start - offset, end = lr->end - offset;
+      for (int cache_stride = start; cache_stride < end; cache_stride += 32) {
+        for (int cache_group = 0; cache_group < 2; ++cache_group) {
+          for (int head = 0; head < 32; ++head) {
+            // k, v are placed interleaved
+            int index = (cache_stride << 1) + (cache_group << 5) + head;
+            ET_CHECK_MSG(
+                modules_[shard]->set_output_data_ptr(
+                    output_tensors[shard][index], index) == Error::Ok,
+                "failed to set output tensor for module %d's %d'th output "
+                "while updating kv_cache output tensors",
+                shard,
+                index);
+          }
+        }
+      }
+    };
+
+    for (int i = 0; i < lr_update_kv_.size(); ++i) {
+      futures_[i] = std::move(thread_pool_.issue(update_kv, &lr_update_kv_[i]));
+    }
+  } else {
     // update v_cache
-    for (int i = lr->start; i < lr->end; i += lr->step) {
+    for (int i = 0; i < v_cache_in_.size(); i++) {
       v_cache_in_[i]->set_data(v_cache_in_[i]->mutable_data<uint8_t>() + 128);
       v_cache_out_[i]->set_data(v_cache_out_[i]->mutable_data<uint8_t>() + 128);
     }
-    // update output tensors of v_cache, 256 is the number of kvs per shard
-    int shard = lr->start >> 8, offset = shard << 8;
-    int start = lr->start - offset, end = lr->end - offset;
-    for (int cache_stride = start; cache_stride < end; cache_stride += 32) {
-      for (int cache_group = 0; cache_group < 2; ++cache_group) {
-        for (int head = 0; head < 32; ++head) {
-          // k, v are placed interleaved
-          int index = (cache_stride << 1) + (cache_group << 5) + head;
-          ET_CHECK_MSG(
-              modules_[shard]->set_output_data_ptr(
-                  output_tensors[shard][index], index) == Error::Ok,
-              "failed to set output tensor for module %d's %d'th output "
-              "while updating kv_cache output tensors",
-              shard,
-              index);
-        }
+    for (int shard = 0; shard < output_tensors.size(); shard++) {
+      for (int index = 0; index < output_tensors[shard].size(); index++) {
+        ET_CHECK_MSG(
+            modules_[shard]->set_output_data_ptr(
+                output_tensors[shard][index], index) == Error::Ok,
+            "failed to set output tensor for module %d's %d'th output "
+            "while updating kv_cache output tensors",
+            shard,
+            index);
       }
     }
-  };
-  for (int i = 0; i < lr_update_kv_.size(); ++i) {
-    futures_[i] = std::move(thread_pool_.issue(update_kv, &lr_update_kv_[i]));
   }
   // update k_cache by single thread, this part is cpu cache sensitive
   for (int i = 0; i < k_cache_in_.size(); ++i) {

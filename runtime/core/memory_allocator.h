@@ -156,7 +156,7 @@ class MemoryAllocator {
     cur_ = begin_;
   }
 
-  void enable_profiling(__ET_UNUSED const char* name) {
+  void enable_profiling(ET_UNUSED const char* name) {
     prof_id_ = EXECUTORCH_TRACK_ALLOCATOR(name);
   }
 
@@ -198,7 +198,7 @@ class MemoryAllocator {
   int32_t prof_id_ = -1;
 };
 
-#if __ET_HAVE_GNU_STATEMENT_EXPRESSIONS
+#if ET_HAVE_GNU_STATEMENT_EXPRESSIONS
 /**
  * Tries allocating from the specified MemoryAllocator*.
  *
@@ -220,7 +220,7 @@ class MemoryAllocator {
     if (et_try_allocate_result == nullptr && nbytes__ > 0) {               \
       __VA_ARGS__                                                          \
       /* The args must return. */                                          \
-      __ET_UNREACHABLE();                                                  \
+      ET_UNREACHABLE();                                                    \
     }                                                                      \
     et_try_allocate_result;                                                \
   })
@@ -247,7 +247,7 @@ class MemoryAllocator {
     if (et_try_allocate_result == nullptr) {                         \
       __VA_ARGS__                                                    \
       /* The args must return. */                                    \
-      __ET_UNREACHABLE();                                            \
+      ET_UNREACHABLE();                                              \
     }                                                                \
     et_try_allocate_result;                                          \
   })
@@ -275,11 +275,11 @@ class MemoryAllocator {
     if (et_try_allocate_result == nullptr && nelem__ > 0) {               \
       __VA_ARGS__                                                         \
       /* The args must return. */                                         \
-      __ET_UNREACHABLE();                                                 \
+      ET_UNREACHABLE();                                                   \
     }                                                                     \
     et_try_allocate_result;                                               \
   })
-#else // !__ET_HAVE_GNU_STATEMENT_EXPRESSIONS
+#else // !ET_HAVE_GNU_STATEMENT_EXPRESSIONS
 /**
  * The recommended alternative for statement expression-incompatible compilers
  * is to directly allocate the memory.
@@ -312,7 +312,7 @@ class MemoryAllocator {
       false,                                                              \
       "ET_TRY_ALLOCATE_LIST_OR uses statement \
     expressions and thus is not available for use with this compiler.");
-#endif // !__ET_HAVE_GNU_STATEMENT_EXPRESSIONS
+#endif // !ET_HAVE_GNU_STATEMENT_EXPRESSIONS
 
 /**
  * Tries allocating from the specified MemoryAllocator*.

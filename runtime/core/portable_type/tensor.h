@@ -130,12 +130,12 @@ class Tensor {
 
   /// DEPRECATED: Use const_data_ptr or mutable_data_ptr instead.
   template <typename T>
-  __ET_DEPRECATED inline T* data_ptr() const {
+  ET_DEPRECATED inline T* data_ptr() const {
     return impl_->mutable_data<T>();
   }
 
   /// DEPRECATED: Use const_data_ptr or mutable_data_ptr instead.
-  __ET_DEPRECATED inline void* data_ptr() const {
+  ET_DEPRECATED inline void* data_ptr() const {
     return impl_->mutable_data();
   }
 
@@ -145,7 +145,7 @@ class Tensor {
    * ptr. This api does not exist in at::Tensor so kernel developers should
    * avoid it.
    */
-  __ET_DEPRECATED void set_data(void* ptr) const {
+  ET_DEPRECATED void set_data(void* ptr) const {
     impl_->set_data(ptr);
   }
 
