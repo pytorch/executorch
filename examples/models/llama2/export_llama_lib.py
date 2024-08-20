@@ -50,13 +50,13 @@ from .source_transformation.quantize import (
     get_quant_weight_transform,
 )
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
-from .source_transformation.sdpa import (
-    replace_causal_mask,
-    replace_kv_cache_with_simple_kv_cache,
-    replace_sdpa_with_custom_op,
-    replace_sdpa_with_flex_sdpa,
-    replace_sdpa_with_simple_sdpa,
-)
+# from .source_transformation.sdpa import (
+#     replace_causal_mask,
+#     replace_kv_cache_with_simple_kv_cache,
+#     replace_sdpa_with_custom_op,
+#     replace_sdpa_with_flex_sdpa,
+#     replace_sdpa_with_simple_sdpa,
+# )
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -192,6 +192,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="Whether or not to export a model using kv cache",
+    )
+    parser.add_argument(
+        "--num_sharding",
+        type=int,
+        default=None,
+        help="Specify the number of splits which is generated with custom op. Expect to be able to divide num layer.",
     )
     parser.add_argument(
         "--use_sdpa_with_kv_cache",
@@ -386,17 +392,17 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_sdpa_with_custom_op)
 
-    if args.use_kv_cache:
-        if args.qnn:
-            transforms.append(replace_kv_cache_with_simple_kv_cache)
-            transforms.append(replace_sdpa_with_flex_sdpa)
-            transforms.append(replace_causal_mask)
+    # if args.use_kv_cache:
+    #     if args.qnn:
+    #         transforms.append(replace_kv_cache_with_simple_kv_cache)
+    #         transforms.append(replace_sdpa_with_flex_sdpa)
+    #         transforms.append(replace_causal_mask)
 
-        elif args.coreml or args.mps:
-            # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
-            # to get free perf gain.
-            transforms.append(replace_sdpa_with_simple_sdpa)
-            transforms.append(replace_causal_mask)
+    #     elif args.coreml or args.mps:
+    #         # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
+    #         # to get free perf gain.
+    #         transforms.append(replace_sdpa_with_simple_sdpa)
+    #         transforms.append(replace_causal_mask)
     return (
         _load_llama_model(
             modelname=modelname,
@@ -493,11 +499,11 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
+        # from executorch.examples.models.llama2.custom_ops import model_sharding
+
         partitioners.append(
             get_qnn_partitioner(
-                quant_dtype,
-                args.use_kv_cache,
-                args.pt2e_quantize,
+                args.use_kv_cache, args.pt2e_quantize, args.num_sharding
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
@@ -505,6 +511,12 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`, Optional type has no attribute `exported_program`
         _transform(builder_exported_to_edge.edge_manager.exported_program())
+        if args.num_sharding is not None:
+            model_sharding.split_graph(
+                builder_exported_to_edge.edge_manager.exported_program(),
+                builder_exported_to_edge.metadata["get_n_layers"],
+                shares=args.num_sharding,
+            )
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
@@ -513,7 +525,12 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         logging.info("Generating etrecord")
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners)
+        if args.num_sharding is not None:
+            from executorch.backends.qualcomm.utils.utils import canonicalize_program
+
+            canonicalize_program(builder.edge_manager.exported_program())
+        builder = builder.to_executorch()
 
         # Generate ETRecord
         if edge_manager_copy:
@@ -524,7 +541,12 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
             )
             logging.info("Generated etrecord.bin")
     else:
-        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners)
+        if args.num_sharding is not None:
+            from executorch.backends.qualcomm.utils.utils import canonicalize_program
+
+            canonicalize_program(builder.edge_manager.exported_program())
+        builder = builder.to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
@@ -553,29 +575,27 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
 def _load_llama_model_metadata(
     weight_type: WeightType,
+    dtype: DType,
     use_kv_cache: bool,
     use_sdpa_with_kv_cache: bool,
     enable_dynamic_shape: bool,
-    model_args: ModelArgs,
+    modelArgs: ModelArgs,
     metadata_str: Optional[str] = None,
 ):
     is_fairseq2 = weight_type == WeightType.FAIRSEQ2
     metadata = {
         "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
-        "get_bos_id": (
-            model_args.bos_idx
-            if model_args.bos_idx is not None
-            else (3 if is_fairseq2 else 1)
-        ),
-        "get_eos_id": (
-            model_args.eos_idx
-            if model_args.eos_idx is not None
-            else (3 if is_fairseq2 else 2)
-        ),
-        "get_max_seq_len": model_args.max_seq_len,
+        "get_bos_id": 3 if is_fairseq2 else 1,
+        "get_dtype": 5 if dtype == DType.fp16 else 6,
+        "get_eos_id": 3 if is_fairseq2 else 2,
+        "get_head_dim": modelArgs.dim // modelArgs.n_heads,
+        "get_max_batch_size": modelArgs.max_batch_size,
+        "get_max_seq_len": modelArgs.max_seq_len,
         "get_n_bos": 1,
         "get_n_eos": 2 if is_fairseq2 else 1,
-        "get_vocab_size": model_args.vocab_size,
+        # "get_n_kv_heads": modelArgs.n_kv_heads,
+        "get_n_layers": modelArgs.n_layers,
+        "get_vocab_size": modelArgs.vocab_size,
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
         "enable_dynamic_shape": enable_dynamic_shape,
@@ -628,6 +648,8 @@ def _load_llama_model(
         max_seq_len=max_seq_len,
         enable_dynamic_shape=enable_dynamic_shape,
     )
+    out = model(*example_inputs)
+    
     state_dict = model.state_dict()
     dtype = state_dict[next(iter(state_dict))].dtype
     assert dtype in [
@@ -657,6 +679,7 @@ def _load_llama_model(
         verbose=verbose,
         metadata=_load_llama_model_metadata(
             weight_type,
+            dtype,
             use_kv_cache,
             use_sdpa_with_kv_cache,
             enable_dynamic_shape,
