@@ -558,29 +558,29 @@ then be called to execute the handle produced by <code class="docutils literal n
 destroying is required for some backend, backends can implement a <code class="docutils literal notranslate"><span class="pre">destroy</span></code>
 function which will be called when the program is out of its lifespan.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// Runtime check</span>
-<span class="n">__ET_NODISCARD</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">is_available</span><span class="p">();</span>
+<span class="n">ET_NODISCARD</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">is_available</span><span class="p">();</span>
 
 <span class="c1">// Runtime initialization</span>
-<span class="n">__ET_NODISCARD</span><span class="w"> </span><span class="k">virtual</span><span class="w"> </span><span class="n">Result</span><span class="o">&lt;</span><span class="n">DelegateHandle</span><span class="o">*&gt;</span><span class="w"> </span><span class="n">init</span><span class="p">(</span>
+<span class="n">ET_NODISCARD</span><span class="w"> </span><span class="k">virtual</span><span class="w"> </span><span class="n">Result</span><span class="o">&lt;</span><span class="n">DelegateHandle</span><span class="o">*&gt;</span><span class="w"> </span><span class="n">init</span><span class="p">(</span>
 <span class="w">    </span><span class="n">BackendInitContext</span><span class="o">&amp;</span><span class="w"> </span><span class="n">context</span><span class="p">,</span>
 <span class="w">    </span><span class="n">FreeableBuffer</span><span class="o">*</span><span class="w"> </span><span class="n">processed</span><span class="p">,</span>
 <span class="w">    </span><span class="n">ArrayRef</span><span class="o">&lt;</span><span class="n">CompileSpec</span><span class="o">&gt;</span><span class="w"> </span><span class="n">compile_specs</span><span class="p">);</span>
 
 <span class="c1">// Runtime execution</span>
-<span class="n">__ET_NODISCARD</span><span class="w"> </span><span class="k">virtual</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">execute</span><span class="p">(</span>
+<span class="n">ET_NODISCARD</span><span class="w"> </span><span class="k">virtual</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">execute</span><span class="p">(</span>
 <span class="w">    </span><span class="n">BackendExecutionContext</span><span class="o">&amp;</span><span class="w"> </span><span class="n">context</span><span class="p">,</span>
 <span class="w">    </span><span class="n">DelegateHandle</span><span class="o">*</span><span class="w"> </span><span class="n">handle</span><span class="p">,</span>
 <span class="w">    </span><span class="n">EValue</span><span class="o">**</span><span class="w"> </span><span class="n">args</span><span class="p">);</span>
 
 <span class="c1">// [optional] Runtime destroy. Destroy the resource held by the backend</span>
-<span class="k">virtual</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">destroy</span><span class="p">(</span><span class="n">__ET_UNUSED</span><span class="w"> </span><span class="n">DelegateHandle</span><span class="o">*</span><span class="w"> </span><span class="n">handle</span><span class="p">);</span>
+<span class="k">virtual</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">destroy</span><span class="p">(</span><span class="n">ET_UNUSED</span><span class="w"> </span><span class="n">DelegateHandle</span><span class="o">*</span><span class="w"> </span><span class="n">handle</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>The diagram looks like following</p>
 <img src="./_static/img/backend_interface_runtime.png" alt="drawing" style="width:600px;"/>
 <p><strong>Figure 3.</strong> The relationship between standard ExecuTorch Runtime and backend entry point.</p>
 <p>In order to make backend available to ExecuTorch runtime, it must be registered via the <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> API:</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">__ET_NODISCARD</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">register_backend</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">Backend</span><span class="o">&amp;</span><span class="w"> </span><span class="n">backend</span><span class="p">);</span>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">ET_NODISCARD</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">register_backend</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">Backend</span><span class="o">&amp;</span><span class="w"> </span><span class="n">backend</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Static registeration, i.e., at libraray init or load time, of a backend can be achieved as follows:</p>
