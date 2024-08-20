@@ -195,7 +195,7 @@ TEST_F(MemoryAllocatorTest, AllocateListFailure) {
   EXPECT_EQ(p, nullptr);
 }
 
-#if __ET_HAVE_GNU_STATEMENT_EXPRESSIONS
+#if ET_HAVE_GNU_STATEMENT_EXPRESSIONS
 class HelperMacrosTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -403,4 +403,4 @@ TEST_F(HelperMacrosTest, AllocateListOrReturnFailure) {
       &allocator, allocator.size() * 2, &p);
   EXPECT_EQ(err, Error::MemoryAllocationFailed);
 }
-#endif // __ET_HAVE_GNU_STATEMENT_EXPRESSIONS
+#endif // ET_HAVE_GNU_STATEMENT_EXPRESSIONS
