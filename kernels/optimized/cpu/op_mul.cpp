@@ -135,15 +135,6 @@ template <
     typename CTYPE_OUT>
 struct MulInner<false, CTYPE_A, CTYPE_B, CTYPE_IN, CTYPE_OUT>
     : public ReportCanCastBug {};
-
-Scalar tensor_to_scalar(RuntimeContext& ctx, const Tensor& t) {
-  ET_DCHECK(t.numel() == 1);
-  Scalar result;
-  ET_SWITCH_REALHB_TYPES(t.scalar_type(), ctx, "mul.out", CTYPE, [&]() {
-    result = Scalar(*t.const_data_ptr<CTYPE>());
-  });
-  return result;
-}
 } // namespace
 
 Tensor& opt_mul_out(
