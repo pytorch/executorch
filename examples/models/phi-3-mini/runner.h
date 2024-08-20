@@ -23,10 +23,7 @@ namespace torch::executor {
 
 class Runner {
  public:
-  explicit Runner(
-      const std::string& model_path,
-      const std::string& tokenizer_path,
-      const float temperature = 0.8f);
+  explicit Runner(const std::string& model_path);
 
   /**
    * Generates response for a given prompt.
@@ -35,16 +32,12 @@ class Runner {
    * @param[in] max_seq_len The maximum length of the sequence to generate,
    * including prompt.
    */
-  void generate(const std::string& prompt, std::size_t max_seq_len);
+  void generate();
+
+  void test_example();
 
  private:
-  uint64_t logits_to_token(const exec_aten::Tensor& logits_tensor);
-  uint64_t prefill(std::vector<uint64_t>& tokens);
-  uint64_t run_model_step(uint64_t token);
-
   std::unique_ptr<Module> module_;
-  std::unique_ptr<Tokenizer> tokenizer_;
-  std::unique_ptr<Sampler> sampler_;
 };
 
 } // namespace torch::executor
