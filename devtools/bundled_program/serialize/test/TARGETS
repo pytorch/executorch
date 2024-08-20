@@ -1,0 +1,17 @@
+# @noautodeps
+
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "serialize",
+    srcs = [
+        "test_serialize.py",
+    ],
+    deps = [
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/bundled_program/serialize:lib",
+        "//executorch/devtools/bundled_program/util:test_util",
+    ],
+)
