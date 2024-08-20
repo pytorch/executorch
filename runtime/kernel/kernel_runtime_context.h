@@ -58,7 +58,7 @@ class KernelRuntimeContext {
   }
 
   /// Returns the current failure state.
-  __ET_NODISCARD Error failure_state() const {
+  ET_NODISCARD Error failure_state() const {
     return failure_state_;
   }
 

@@ -95,7 +95,7 @@ class StubBackend final : public PyTorchBackendInterface {
   }
 
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     if (execute_fn_) {
@@ -350,8 +350,8 @@ TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
   const void* processed_data = nullptr;
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
-          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED MemoryAllocator* runtime_allocator)
           -> Result<DelegateHandle*> {
         init_called = true;
         processed_data = processed->data();
@@ -394,8 +394,8 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   FreeableBuffer* init_processed = nullptr;
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
-          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED MemoryAllocator* runtime_allocator)
           -> Result<DelegateHandle*> {
         init_processed = processed;
         return processed;
@@ -405,7 +405,7 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   // FreeableBuffer.
   DelegateHandle* execute_handle = nullptr;
   StubBackend::singleton().install_execute(
-      [&](DelegateHandle* handle, __ET_UNUSED EValue** args) -> Error {
+      [&](DelegateHandle* handle, ET_UNUSED EValue** args) -> Error {
         execute_handle = handle;
         auto* processed = reinterpret_cast<FreeableBuffer*>(handle);
 
@@ -492,8 +492,8 @@ TEST_P(BackendIntegrationTest, SegmentInfoIsPassedIntoDataLoader) {
   const void* processed_data = nullptr;
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
-          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED MemoryAllocator* runtime_allocator)
           -> Result<DelegateHandle*> {
         processed_data = processed->data();
         processed->Free();
@@ -606,8 +606,8 @@ TEST_P(DelegateDataAlignmentTest, ExpectedDataAlignment) {
   const void* processed_data = nullptr;
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
-          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED MemoryAllocator* runtime_allocator)
           -> Result<DelegateHandle*> {
         processed_data = processed->data();
         return nullptr;

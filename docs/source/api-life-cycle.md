@@ -113,11 +113,11 @@ usage</a>
    </td>
    <td>
 
-Use <code>__ET_DEPRECATED</code> macros. See <a href="https://github.com/pytorch/executorch/blob/8e0f856ee269b319ac4195509cf31e3f548aa0e8/runtime/executor/program.h#L81">example usage</a>
+Use <code>ET_DEPRECATED</code> macros. See <a href="https://github.com/pytorch/executorch/blob/8e0f856ee269b319ac4195509cf31e3f548aa0e8/runtime/executor/program.h#L81">example usage</a>
 
 <p>
 <p>
-Use <code>__ET_EXPERIMENTAL</code> macros (TODO not yet implemented)
+Use <code>ET_EXPERIMENTAL</code> macros (TODO not yet implemented)
 </ul>
    </td>
    <td>

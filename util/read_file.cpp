@@ -17,7 +17,7 @@ namespace torch {
 namespace executor {
 namespace util {
 
-__ET_NODISCARD Error read_file_content(
+ET_NODISCARD Error read_file_content(
     const char* file_name,
     std::shared_ptr<char>* file_data,
     size_t* file_length) {
@@ -54,7 +54,7 @@ __ET_NODISCARD Error read_file_content(
   return Error::Ok;
 }
 
-__ET_DEPRECATED std::shared_ptr<char> read_file_content(const char* name) {
+ET_DEPRECATED std::shared_ptr<char> read_file_content(const char* name) {
   std::shared_ptr<char> file_data;
   size_t file_length;
   Error status = read_file_content(name, &file_data, &file_length);
