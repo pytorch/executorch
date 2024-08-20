@@ -13,6 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 #include <cassert>
+#include <random>
 
 //
 // Operator Recording Functions
@@ -282,6 +283,34 @@ void record_scalar_add_buffer(
       v_ten.numel_ubo());
 }
 
+void record_reference_matmul(
+    api::Context* context,
+    api::vTensor& out,
+    api::vTensor& mat1,
+    api::vTensor& mat2) {
+  vkapi::PipelineBarrier pipeline_barrier{};
+  api::context()->submit_compute_job(
+      VK_KERNEL(reference_matmul),
+      pipeline_barrier,
+      {uint32_t(out.size(1)), uint32_t(out.size(0)), 1},
+      {64, 1, 1},
+      {},
+      VK_NULL_HANDLE,
+      0,
+      out.buffer(
+          pipeline_barrier,
+          vkapi::PipelineStage::COMPUTE,
+          vkapi::MemoryAccessType::WRITE),
+      mat1.buffer(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      mat2.buffer(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
+      out.sizes_ubo(),
+      out.strides_ubo(),
+      mat1.sizes_ubo(),
+      mat1.strides_ubo(),
+      mat2.sizes_ubo(),
+      mat2.strides_ubo());
+}
+
 //
 // Input & Output Utilities
 //
@@ -332,6 +361,20 @@ void fill_vtensor(api::vTensor& vten, float val, bool iota) {
   }
 
   fill_vtensor(vten, vten_data);
+}
+
+std::vector<float> create_random_float_buffer(
+    const size_t numel,
+    const float min,
+    const float max) {
+  std::vector<float> data(numel);
+  std::default_random_engine rng;
+  std::uniform_real_distribution<float> dist(min, max);
+
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i] = dist(rng);
+  }
+  return data;
 }
 
 void fill_vtensor(

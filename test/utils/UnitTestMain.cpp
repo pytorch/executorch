@@ -16,7 +16,7 @@
 #include <gtest/gtest.h>
 
 // Define main as a weak symbol to allow trivial overriding.
-int main(int argc, char** argv) __ET_WEAK;
+int main(int argc, char** argv) ET_WEAK;
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);

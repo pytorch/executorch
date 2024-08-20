@@ -147,6 +147,9 @@ jobs:
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   test-llama-app:
+    # Only PR from ExecuTorch itself has permission to access AWS, forked PRs will fail to
+    # authenticate with the cloud service
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     needs: upload-artifacts
     permissions:
       id-token: write

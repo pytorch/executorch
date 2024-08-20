@@ -73,10 +73,10 @@ static_assert(
  * @param[in] args Variable argument list.
  */
 void vlogf(
-    __ET_UNUSED LogLevel level,
+    ET_UNUSED LogLevel level,
     et_timestamp_t timestamp,
     const char* filename,
-    __ET_UNUSED const char* function,
+    ET_UNUSED const char* function,
     size_t line,
     const char* format,
     va_list args) {

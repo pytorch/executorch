@@ -22,9 +22,12 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
+
+namespace executorch {
+namespace extension {
 
 namespace {
 
@@ -149,7 +152,7 @@ void MunmapSegment(void* context, void* data, size_t size) {
 Result<FreeableBuffer> MmapDataLoader::load(
     size_t offset,
     size_t size,
-    __ET_UNUSED const DataLoader::SegmentInfo& segment_info) {
+    ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
@@ -254,6 +257,5 @@ Result<size_t> MmapDataLoader::size() const {
   return file_size_;
 }
 
-} // namespace util
-} // namespace executor
-} // namespace torch
+} // namespace extension
+} // namespace executorch

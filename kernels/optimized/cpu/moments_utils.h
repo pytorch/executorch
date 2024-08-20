@@ -45,7 +45,7 @@ void AddMoments(
 }
 
 template <typename T>
-__ET_INLINE void AddMomentsVec(
+ET_INLINE void AddMomentsVec(
     int64_t m0_add,
     const executorch::vec::Vectorized<T>& m1_add,
     const executorch::vec::Vectorized<T>& m2_add,

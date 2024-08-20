@@ -78,6 +78,22 @@ def generate_node_to_external_map(
     return node_to_external_map
 
 
+def assert_default_dim_order(edge_graph_module: torch.fx.GraphModule) -> None:
+    for node in edge_graph_module.graph.nodes:
+        if node.op != "placeholder":
+            continue
+
+        # We expect the default dim order for all tensor-like inputs i.e. inputs, buffers, and params
+        t = node.meta.get("val", None)
+        if t is not None and getattr(t, "dim_order", None) is not None:
+            default_dim_order = tuple(range(t.dim()))
+            if t.dim_order() != default_dim_order:
+                raise RuntimeError(
+                    f"XNNPACK backend only supports contiguous memory format for inputs."
+                    f"Expecting dim_order: {default_dim_order}, but got {node.meta['val'].dim_order()} for a placeholder node {node}."
+                )
+
+
 @final
 class XnnpackBackend(BackendDetails):
     @staticmethod
@@ -125,6 +141,9 @@ class XnnpackBackend(BackendDetails):
         graph_module = ep.graph_module
 
         node_to_external_map = generate_node_to_external_map(ep, graph_module)
+
+        # Make sure all inputs are contiguous_format or NCHW or default dim order
+        assert_default_dim_order(graph_module)
 
         # TODO retrace the graph module to lift the new params may have
         # been added to the graph in passes

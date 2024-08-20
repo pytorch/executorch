@@ -11,9 +11,7 @@ import torch
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
-from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
-    XnnpackPartitioner,
-)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.examples.models.llama2.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
@@ -25,10 +23,11 @@ from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
 from executorch.examples.models.llava.model import LlavaModel
-from executorch.exir import EdgeCompileConfig
-from executorch.exir.program._program import _to_edge_transform_and_lower
+from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
+from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
+from torch import nn
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
@@ -182,7 +181,7 @@ def export_all(llava_model: LlavaModel):
 
     token_embedding_ep = export_token_embedding(llava, prompt_before_image)
 
-    lowered_and_edge = _to_edge_transform_and_lower(
+    lowered_and_edge = to_edge_transform_and_lower(
         {
             "image_encoder": image_encoder_ep,
             "token_embedding": token_embedding_ep,
@@ -204,6 +203,27 @@ def export_all(llava_model: LlavaModel):
     return executorch_program
 
 
+def get_image_tensor_for_llava_runner(llava_model):
+    # llava runner doesn't have image reader so an image tensor is needed.
+    (resized,) = llava_model.get_example_inputs()
+
+    copy = torch.tensor(resized)
+    m = nn.Module()
+    par = nn.Parameter(copy, requires_grad=False)
+    m.register_parameter("0", par)
+    tensors = torch.jit.script(m)
+    tensors.save("image.pt")
+
+    logging.info("Saved image tensor to image.pt")
+
+
+def get_tokenizer_for_llava_runner(llava_model):
+    # serialize tokenizer into tokenizer.bin
+    llava_model.tokenizer.save_vocabulary("./")
+    t = Tokenizer("tokenizer.model")
+    t.export("tokenizer.bin")
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument(
@@ -217,6 +237,12 @@ def main():
         default="llava_combined_xnnpack.pte",
         help="Name of the exported ExecuTorch program.",
     )
+    parser.add_argument(
+        "--with-artifacts",
+        default=False,
+        action=BooleanOptionalAction,
+        help="Generate artifacts for llava runner.",
+    )
     args = parser.parse_args()
     logging.info(
         f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}"
@@ -228,6 +254,11 @@ def main():
     with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)
     logging.info(f"Exported ExecuTorch program to {args.pte_name}")
+
+    # artifacts
+    if args.with_artifacts:
+        get_image_tensor_for_llava_runner(llava_model)
+        get_tokenizer_for_llava_runner(llava_model)
 
 
 if __name__ == "__main__":

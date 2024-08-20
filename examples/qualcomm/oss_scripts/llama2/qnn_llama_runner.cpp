@@ -9,10 +9,9 @@
 /**
  * @file
  *
- * This tool can run ExecuTorch model files with Qualcomm AI Engine Direct
- * and the portable kernels.
+ * This tool can run ExecuTorch model files with Qualcomm AI Engine Direct.
  *
- * User could specify arguments like desired input data, iterations, etc.
+ * User could specify arguments like desired prompt, temperature, etc.
  */
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
