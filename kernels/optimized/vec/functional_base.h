@@ -325,5 +325,40 @@ inline void map4(
   }
 }
 
+
+// Map vec_fun across input_data and input_data2, where input_data is
+// a two-dimensional array of size (size, size2), input_data2 is a
+// one-dimensional array of size size2, and input_data2 is broadcast
+// to be of size (size, size2).
+template <typename scalar_t, typename Op>
+inline void broadcasting_map_2d_by_1d(
+    const Op& vec_fun,
+    scalar_t* output_data,
+    const scalar_t* input_data,
+    const scalar_t* input_data2,
+    int64_t size,
+    int64_t size2) {
+  using Vec = vec::Vectorized<scalar_t>;
+  for (int64_t outer_idx = 0; outer_idx < size; ++outer_idx) {
+    const scalar_t* input_data_row = input_data + outer_idx * size2;
+    scalar_t* output_data_row = output_data + outer_idx * size2;
+    int64_t inner_idx = 0;
+    for (; inner_idx < size2 - (size2 % Vec::size()); inner_idx += Vec::size()) {
+      Vec data_vec = Vec::loadu(input_data_row + inner_idx);
+      Vec data_vec2 = Vec::loadu(input_data2 + inner_idx);
+      Vec output_vec = vec_fun(data_vec, data_vec2);
+      output_vec.store(output_data_row + inner_idx);
+    }
+    if (size2 - inner_idx > 0) {
+      Vec data_vec = Vec::loadu(input_data_row + inner_idx, size2 - inner_idx);
+      Vec data_vec2 = Vec::loadu(input_data2 + inner_idx, size2 - inner_idx);
+      Vec output_vec = vec_fun(data_vec, data_vec2);
+      output_vec.store(output_data_row + inner_idx, size2 - inner_idx);
+    }
+  }
+}
+
+
+
 } // namespace vec
 } // namespace executorch

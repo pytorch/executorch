@@ -181,7 +181,7 @@ TEST_F(OpMulOutTest, OptimizedPathIgnoresLeading1Dimensions) {
 }
 
 // Mismatched shape tests.
-TEST_F(OpMulOutTest, MismatchedInputShapesDies) {
+TEST_F(OpMulOutTest, MismatchedNonBroadcastableInputShapesDies) {
   if (SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen currently supports mismatched shapes";
   }
@@ -189,11 +189,11 @@ TEST_F(OpMulOutTest, MismatchedInputShapesDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Input tensors with different shapes.
-  Tensor a = tf.ones(/*sizes=*/{1, 2});
+  Tensor a = tf.ones(/*sizes=*/{4, 2});
   Tensor b = tf.ones(/*sizes=*/{2, 2});
 
   // Output tensor; matches the shape of one of the inputs.
-  Tensor out = tf.zeros(/*sizes=*/{4});
+  Tensor out = tf.zeros(/*sizes=*/{8});
 
   // Multiplying the two mismatched tensors should cause an assertion and kill
   // the test process.
@@ -204,16 +204,22 @@ TEST_F(OpMulOutTest, MismatchedInputShapesDies) {
 TEST_F(OpMulOutTest, BroadcastA2BTest) {
   TensorFactory<ScalarType::Int> tf_a;
 
-  // a and b of different shapes
-  Tensor a = tf_a.make({2, 2}, /*data=*/{1, 2, 3, 4});
-  Tensor b = tf_a.make({2}, /*data=*/{2, 2});
+  std::vector<std::vector<int32_t>> b_sizeses = {
+      {2},
+      {1, 2},
+  };
+  for (const auto& b_sizes : b_sizeses) {
+    // a and b of different shapes
+    Tensor a = tf_a.make({2, 2}, /*data=*/{1, 2, 3, 4});
+    Tensor b = tf_a.make(b_sizes, /*data=*/{2, 2});
 
-  // Destination for output of mul.
-  Tensor out = tf_a.zeros({2, 2});
+    // Destination for output of mul.
+    Tensor out = tf_a.zeros({2, 2});
 
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_CLOSE(
-      op_mul_out(a, b, out), tf_a.make({2, 2}, /*data=*/{2, 4, 6, 8}));
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(
+        op_mul_out(a, b, out), tf_a.make({2, 2}, /*data=*/{2, 4, 6, 8}));
+  }
 }
 
 // Broadcast tensor a's size to tensor b's size
