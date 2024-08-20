@@ -15,15 +15,19 @@
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/core/tensor_shape_dynamism.h>
 
-namespace torch {
-namespace executor {
-
 // Forward declaration of a helper that provides access to internal resizing
 // methods of TensorImpl. Real definition is in
 // executorch/runtime/core/exec_aten/tensor_util.h.
+namespace executorch {
+namespace runtime {
 namespace internal {
 class TensorResizerFriend;
 } // namespace internal
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
 
 /**
  * Manages the storage behind an ETensor (torch::executor::Tensor).
@@ -204,7 +208,7 @@ class TensorImpl {
 
  private:
   // For access to internal_resize_contiguous().
-  friend class internal::TensorResizerFriend;
+  friend class ::executorch::runtime::internal::TensorResizerFriend;
 
   /**
    * Set the sizes and strides of a tensor assuming contiguous strides.

@@ -47,8 +47,8 @@ using string_view = torch::executor::string_view;
 } // namespace exec_aten
 #endif
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 #if !defined(USE_ATEN_LIB)
 // Util to figure out if the scalar type if one of the
@@ -147,7 +147,7 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(int16_t, Short)                                 \
   _(int32_t, Int)                                   \
   _(int64_t, Long)                                  \
-  _(::torch::executor::ScalarTypeToCppType<         \
+  _(::executorch::runtime::ScalarTypeToCppType<     \
         ::exec_aten::ScalarType::SCALARTYPE>::type, \
     SCALARTYPE)
 
@@ -160,7 +160,7 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
 #define ET_FORALL_FLOAT_TYPES_AND(SCALARTYPE, _)    \
   _(float, Float)                                   \
   _(double, Double)                                 \
-  _(::torch::executor::ScalarTypeToCppType<         \
+  _(::executorch::runtime::ScalarTypeToCppType<     \
         ::exec_aten::ScalarType::SCALARTYPE>::type, \
     SCALARTYPE)
 
@@ -219,7 +219,7 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(int64_t, Long)                                  \
   _(float, Float)                                   \
   _(double, Double)                                 \
-  _(::torch::executor::ScalarTypeToCppType<         \
+  _(::executorch::runtime::ScalarTypeToCppType<     \
         ::exec_aten::ScalarType::SCALARTYPE>::type, \
     SCALARTYPE)
 
@@ -234,7 +234,7 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(ANOTHER_INPUT, float, Float)                                    \
   _(ANOTHER_INPUT, double, Double)                                  \
   _(ANOTHER_INPUT,                                                  \
-    ::torch::executor::ScalarTypeToCppType<                         \
+    ::executorch::runtime::ScalarTypeToCppType<                     \
         ::exec_aten::ScalarType::SCALARTYPE>::type,                 \
     SCALARTYPE)
 
@@ -246,10 +246,10 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(int64_t, Long)                                             \
   _(float, Float)                                              \
   _(double, Double)                                            \
-  _(::torch::executor::ScalarTypeToCppType<                    \
+  _(::executorch::runtime::ScalarTypeToCppType<                \
         ::exec_aten::ScalarType::SCALARTYPE1>::type,           \
     SCALARTYPE1)                                               \
-  _(::torch::executor::ScalarTypeToCppType<                    \
+  _(::executorch::runtime::ScalarTypeToCppType<                \
         ::exec_aten::ScalarType::SCALARTYPE2>::type,           \
     SCALARTYPE2)
 
@@ -261,13 +261,13 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(int64_t, Long)                                                          \
   _(float, Float)                                                           \
   _(double, Double)                                                         \
-  _(::torch::executor::ScalarTypeToCppType<                                 \
+  _(::executorch::runtime::ScalarTypeToCppType<                             \
         ::exec_aten::ScalarType::SCALARTYPE1>::type,                        \
     SCALARTYPE1)                                                            \
-  _(::torch::executor::ScalarTypeToCppType<                                 \
+  _(::executorch::runtime::ScalarTypeToCppType<                             \
         ::exec_aten::ScalarType::SCALARTYPE2>::type,                        \
     SCALARTYPE2)                                                            \
-  _(::torch::executor::ScalarTypeToCppType<                                 \
+  _(::executorch::runtime::ScalarTypeToCppType<                             \
         ::exec_aten::ScalarType::SCALARTYPE3>::type,                        \
     SCALARTYPE3)
 
@@ -451,7 +451,7 @@ inline exec_aten::ScalarType toUnderlying(exec_aten::ScalarType t) {
 
 inline bool isSignedType(exec_aten::ScalarType t) {
   ET_CHECK_MSG(
-      !torch::executor::isQIntType(t),
+      !executorch::runtime::isQIntType(t),
       "isSignedType not supported for quantized types like %" PRId8,
       static_cast<int8_t>(t));
 #define CASE_SIGNED(ctype, name)    \
@@ -473,7 +473,7 @@ inline bool isSignedType(exec_aten::ScalarType t) {
 inline bool isUnderlying(
     exec_aten::ScalarType type,
     exec_aten::ScalarType qtype) {
-  return type == torch::executor::toUnderlying(qtype);
+  return type == executorch::runtime::toUnderlying(qtype);
 }
 
 inline exec_aten::ScalarType toRealValueType(exec_aten::ScalarType t) {
@@ -522,11 +522,11 @@ inline constexpr bool canCast(
     const exec_aten::ScalarType from,
     const exec_aten::ScalarType to) {
   // Disallow complex -> non-complex
-  return !(torch::executor::isComplexType(from) &&
-           !torch::executor::isComplexType(to)) &&
+  return !(executorch::runtime::isComplexType(from) &&
+           !executorch::runtime::isComplexType(to)) &&
       // Disallow float -> integral
-      !(torch::executor::isFloatingType(from) &&
-        torch::executor::isIntegralType(to, /*includeBool*/ false)) &&
+      !(executorch::runtime::isFloatingType(from) &&
+        executorch::runtime::isIntegralType(to, /*includeBool=*/false)) &&
       // Treat bool as a special category. Disallow non-bool -> bool
       !(from != exec_aten::ScalarType::Bool &&
         to == exec_aten::ScalarType::Bool);
@@ -808,18 +808,20 @@ inline exec_aten::ScalarType promoteTypes(
   constexpr auto b1 = exec_aten::ScalarType::Bool;
 
   // For QInt types, only allow exact match
-  if (torch::executor::isQIntType(a) && a == b) {
+  if (executorch::runtime::isQIntType(a) && a == b) {
     return a;
   }
-  if (torch::executor::isQIntType(a) || torch::executor::isQIntType(b)) {
+  if (executorch::runtime::isQIntType(a) ||
+      executorch::runtime::isQIntType(b)) {
     ET_CHECK_MSG(false, "promoteTypes not valid for quantized dtypes");
   }
 
   // For Bits types, only allow exact match
-  if (torch::executor::isBitsType(a) && a == b) {
+  if (executorch::runtime::isBitsType(a) && a == b) {
     return a;
   }
-  if (torch::executor::isBitsType(a) || torch::executor::isBitsType(b)) {
+  if (executorch::runtime::isBitsType(a) ||
+      executorch::runtime::isBitsType(b)) {
     ET_CHECK_MSG(false, "promoteTypes not valid for bits dtypes");
   }
 
@@ -890,7 +892,7 @@ inline exec_aten::ScalarType promoteTypes(
         ET_CHECK_MSG(                                \
             false,                                   \
             "Unhandled dtype %s for %s",             \
-            torch::executor::toString(_st),          \
+            ::executorch::runtime::toString(_st),    \
             et_switch_name);                         \
     }                                                \
   }()
@@ -1209,5 +1211,52 @@ inline exec_aten::ScalarType promoteTypes(
           ET_INTERNAL_SWITCH_CASE(                                         \
               exec_aten::ScalarType::T2, CTYPE_ALIAS, __VA_ARGS__))
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::can_cast;
+using ::executorch::runtime::canCast;
+using ::executorch::runtime::convert;
+using ::executorch::runtime::CppTypeToScalarType;
+using ::executorch::runtime::elementSize;
+using ::executorch::runtime::is_bits_type;
+using ::executorch::runtime::is_complex_type;
+using ::executorch::runtime::is_integral_type;
+using ::executorch::runtime::is_qint_type;
+using ::executorch::runtime::isBitsType;
+using ::executorch::runtime::isComplexType;
+using ::executorch::runtime::isFloatingType;
+using ::executorch::runtime::isIntegralType;
+using ::executorch::runtime::isQIntType;
+using ::executorch::runtime::isRealHBType;
+using ::executorch::runtime::isRealHType;
+using ::executorch::runtime::isRealType;
+using ::executorch::runtime::isValid;
+using ::executorch::runtime::promote_types;
+using ::executorch::runtime::promoteTypes;
+using ::executorch::runtime::ScalarTypeToCppType;
+using ::executorch::runtime::toString;
+#if !defined(USE_ATEN_LIB)
+using ::executorch::runtime::is_floating_point;
+using ::executorch::runtime::is_reduced_floating_point;
+#endif
+namespace internal {
+using ::executorch::runtime::internal::B1;
+using ::executorch::runtime::internal::C2;
+using ::executorch::runtime::internal::C4;
+using ::executorch::runtime::internal::C8;
+using ::executorch::runtime::internal::F2;
+using ::executorch::runtime::internal::F4;
+using ::executorch::runtime::internal::F8;
+using ::executorch::runtime::internal::I1;
+using ::executorch::runtime::internal::I2;
+using ::executorch::runtime::internal::I4;
+using ::executorch::runtime::internal::I8;
+using ::executorch::runtime::internal::U1;
+} // namespace internal
 } // namespace executor
 } // namespace torch
