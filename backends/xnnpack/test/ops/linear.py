@@ -13,9 +13,7 @@ import torch
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
-from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
-    XnnpackPartitioner,
-)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 
 from executorch.backends.xnnpack.test.tester import Quantize, Tester
 from executorch.backends.xnnpack.test.tester.tester import (

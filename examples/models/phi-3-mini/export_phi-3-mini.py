@@ -83,7 +83,7 @@ def main(args) -> None:
 
     edge_config = get_xnnpack_edge_compile_config()
     edge_manager = to_edge(model, compile_config=edge_config)
-    edge_manager = edge_manager.to_backend(XnnpackPartitioner(has_dynamic_shapes=True))
+    edge_manager = edge_manager.to_backend(XnnpackPartitioner())
     et_program = edge_manager.to_executorch()
 
     with open(args.output_name, "wb") as file:
