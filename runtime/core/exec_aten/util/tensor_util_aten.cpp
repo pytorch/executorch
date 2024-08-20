@@ -11,8 +11,8 @@
 #include <ATen/Tensor.h> // @manual
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 /**
  * Implementation for ATen tensor util, should only be included in
  * `<target>_aten` target and only be used in ATen mode. Explicitly taking
@@ -95,7 +95,8 @@ Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
       InvalidArgument,
       "Source tensor should have data_ptr not being nullptr.");
   // Assign the dataptr as the input tensor dataptr
-  storage->set_data_ptr(at::DataPtr(t_src.mutable_data_ptr(), DeviceType::CPU));
+  storage->set_data_ptr(
+      at::DataPtr(t_src.mutable_data_ptr(), at::DeviceType::CPU));
   storage->set_nbytes(t_src.nbytes());
 
   return Error::Ok;
@@ -142,7 +143,7 @@ set_tensor_data(const at::Tensor& t, void* buffer, size_t buffer_size) {
       buffer_size,
       t.nbytes());
   t.unsafeGetTensorImpl()->unsafe_storage().set_data_ptr(
-      at::DataPtr(buffer, DeviceType::CPU));
+      at::DataPtr(buffer, at::DeviceType::CPU));
   return Error::Ok;
 }
 
@@ -174,5 +175,5 @@ Error resize_tensor_impl(
 
 } // namespace internal
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

@@ -24,8 +24,8 @@ struct ExecutionPlan;
 struct EValue;
 } // namespace executorch_flatbuffer
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 // Forward declare Program to avoid a circular reference.
 class Program;
@@ -350,5 +350,13 @@ class Method final {
   void log_outputs();
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::Method;
 } // namespace executor
 } // namespace torch
