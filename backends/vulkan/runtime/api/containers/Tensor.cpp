@@ -13,6 +13,44 @@
 namespace vkcompute {
 namespace api {
 
+/*
+ * Given the strides of a buffer-backed tensor, find the index of the "fastest
+ * moving" dimension in WHCN dimension order. If multiple dims have the lowest
+ * stride, then the "earlier" dim is assumed to be the fastest moving (width is
+ * "earlier" than height).
+ */
+int32_t find_fastest_whcn_dim(const std::vector<int64_t>& strides) {
+  if (strides.size() == 0) {
+    return 0;
+  }
+  int32_t fastest_dim = 0;
+  int64_t min_stride = strides.at(0);
+  for (int d = strides.size() - 1; d >= 0; --d) {
+    if (strides.at(d) < min_stride) {
+      fastest_dim = d;
+      min_stride = strides.at(d);
+    }
+  }
+  return (strides.size() - 1 - fastest_dim);
+}
+
+/*
+ * Given the strides of a buffer-backed tensor, estimate the equivalent memory
+ * layout enum value by identifying the fastest moving dimension.
+ */
+utils::GPUMemoryLayout estimate_memory_layout(
+    const std::vector<int64_t>& strides) {
+  int32_t fastest_dim = find_fastest_whcn_dim(strides);
+  if (fastest_dim <= 3) {
+    return utils::GPUMemoryLayout(fastest_dim);
+  }
+
+  // TODO(ssjia) find a way to gracefully recover from this case by i.e. adding
+  // a UNKOWN GPUMemoryLayout. This is not high priority though because we don't
+  // expect this to ever come up in practice.
+  VK_THROW("No compatible GPUMemoryLayout value");
+}
+
 std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
     const utils::GPUMemoryLayout memory_layout) {
@@ -164,6 +202,34 @@ vTensor::vTensor(
         "Half dtype is only available if the physical device supports float16 "
         "storage buffers!");
   }
+}
+
+vTensor::vTensor(
+    const vTensor& other,
+    const std::vector<int64_t>& sizes,
+    const std::vector<int64_t>& strides,
+    const size_t offset_numel)
+    : dtype_(other.dtype_),
+      memory_layout_(estimate_memory_layout(strides)),
+      // Copy tensor size metadata
+      sizes_(sizes.begin(), sizes.end()),
+      strides_(strides.begin(), strides.end()),
+      numel_(utils::multiply_integers(sizes_)),
+      padded_sizes_{calculate_padded_sizes(sizes, memory_layout_)},
+      unsqueezed_strides_{unsqueeze_strides(strides_, numel_)},
+      padded_numel_(utils::multiply_integers(padded_sizes_)),
+      texture_limits_{{0, 0, 0}},
+      // Empty initialize Utility Uniform Buffers
+      sizes_uniform_(),
+      strides_uniform_(),
+      numel_uniform_(),
+      texture_limits_uniform_(),
+      // Copy Tensor storage
+      storage_(other.storage_, vkapi::element_size(dtype_) * offset_numel) {
+  VK_CHECK_COND(
+      offset_numel + numel_ <= other.numel(),
+      "Tensor alias cannot access more elements than available in the original"
+      "tensor");
 }
 
 vkapi::VulkanImage& vTensor::image(
@@ -427,6 +493,21 @@ vTensorStorage::vTensorStorage(
           dtype,
           allocate_memory)),
       last_access_{} {}
+
+vTensorStorage::vTensorStorage(
+    const vTensorStorage& other,
+    const size_t buffer_offset)
+    : context_(other.context_),
+      storage_type_{other.storage_type_},
+      image_extents_(other.image_extents_),
+      buffer_length_{other.buffer_length_},
+      image_(),
+      buffer_(other.buffer_, buffer_offset),
+      last_access_{other.last_access_} {
+  if (other.storage_type_ != utils::kBuffer) {
+    VK_THROW("Tensors with texture storage cannot be copied!");
+  }
+}
 
 vTensorStorage::~vTensorStorage() {
   flush();
