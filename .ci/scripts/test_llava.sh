@@ -23,6 +23,7 @@ cmake_install_executorch_libraries() {
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON         \
         -DEXECUTORCH_BUILD_XNNPACK=ON                   \
         -DEXECUTORCH_DO_NOT_USE_CXX11_ABI=ON            \
+        -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON        \
         -Bcmake-out .
 
 

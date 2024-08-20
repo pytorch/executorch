@@ -771,7 +771,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   return Error::Ok;
 }
 
-__ET_NODISCARD Error
+ET_NODISCARD Error
 Method::set_input(const EValue& input_evalue, size_t input_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
@@ -900,7 +900,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
   return Error::Ok;
 }
 
-__ET_NODISCARD Error
+ET_NODISCARD Error
 Method::set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues) {
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
@@ -929,7 +929,7 @@ Method::set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues) {
   return Error::Ok;
 }
 
-__ET_NODISCARD Error
+ET_NODISCARD Error
 Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   // Check method state
   ET_CHECK_OR_RETURN_ERROR(
@@ -979,8 +979,7 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   return internal::set_tensor_data(t, buffer, size);
 }
 
-__ET_NODISCARD Error
-Method::get_outputs(EValue* output_evalues, size_t length) {
+ET_NODISCARD Error Method::get_outputs(EValue* output_evalues, size_t length) {
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
       InvalidState,
@@ -1002,7 +1001,7 @@ Method::get_outputs(EValue* output_evalues, size_t length) {
   return Error::Ok;
 }
 
-__ET_NODISCARD Error Method::get_inputs(EValue* input_evalues, size_t length) {
+ET_NODISCARD Error Method::get_inputs(EValue* input_evalues, size_t length) {
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
       InvalidState,

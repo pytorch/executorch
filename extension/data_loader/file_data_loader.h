@@ -45,7 +45,7 @@ class FileDataLoader final : public DataLoader {
       size_t alignment = alignof(std::max_align_t));
 
   /// DEPRECATED: Use the lowercase `from()` instead.
-  __ET_DEPRECATED static Result<FileDataLoader> From(
+  ET_DEPRECATED static Result<FileDataLoader> From(
       const char* file_name,
       size_t alignment = alignof(std::max_align_t)) {
     return from(file_name, alignment);
@@ -65,17 +65,17 @@ class FileDataLoader final : public DataLoader {
 
   ~FileDataLoader() override;
 
-  __ET_NODISCARD Result<FreeableBuffer> load(
+  ET_NODISCARD Result<FreeableBuffer> load(
       size_t offset,
       size_t size,
       const DataLoader::SegmentInfo& segment_info) const override;
 
-  __ET_NODISCARD Result<size_t> size() const override;
+  ET_NODISCARD Result<size_t> size() const override;
 
-  __ET_NODISCARD Error load_into(
+  ET_NODISCARD Error load_into(
       size_t offset,
       size_t size,
-      __ET_UNUSED const SegmentInfo& segment_info,
+      ET_UNUSED const SegmentInfo& segment_info,
       void* buffer) const override;
 
  private:

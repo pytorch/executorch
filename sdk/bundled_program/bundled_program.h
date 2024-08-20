@@ -31,7 +31,7 @@ using serialized_bundled_program = const void;
  * @returns Return Error::Ok if load successfully, or the error happens during
  * execution.
  */
-__ET_NODISCARD Error LoadBundledInput(
+ET_NODISCARD Error LoadBundledInput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
     size_t testset_idx);
@@ -49,7 +49,7 @@ __ET_NODISCARD Error LoadBundledInput(
  * @returns Return Error::Ok if two outputs match, or the error happens during
  * execution.
  */
-__ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
+ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
     size_t testset_idx,
@@ -73,7 +73,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
  * in it, and out_program_data/out_program_data_len point to the data. Other
  * values on failure.
  */
-__ET_NODISCARD Error GetProgramData(
+ET_NODISCARD Error GetProgramData(
     void* file_data,
     size_t file_data_len,
     const void** out_program_data,
