@@ -11,6 +11,7 @@ from executorch.backends.xnnpack.partition.config.gemm_configs import (
     AddmmConfig,
     ConvolutionConfig,
     LinearConfig,
+    MMConfig,
 )
 
 from executorch.backends.xnnpack.partition.config.generic_node_configs import (
@@ -79,6 +80,7 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     MaxPool2dConfig,
     MeanDimConfig,
     MinimumConfig,
+    MMConfig,
     MulConfig,
     NegConfig,
     PermuteConfig,
