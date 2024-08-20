@@ -98,6 +98,7 @@ TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"
 EXIR_REQUIREMENTS = [
     f"torch==2.5.0.{NIGHTLY_VERSION}",
     f"torchvision==0.20.0.{NIGHTLY_VERSION}",  # For testing.
+    "typing-extensions",
 ]
 
 # pip packages needed for development.
