@@ -16,20 +16,23 @@
 #include <executorch/test/utils/DeathTest.h>
 
 using namespace ::testing;
-
-namespace torch {
-namespace executor {
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::hasOpsFn;
+using executorch::runtime::Kernel;
+using executorch::runtime::KernelRuntimeContext;
 
 class OperatorRegistryMaxKernelNumTest : public ::testing::Test {
  public:
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
 // Register one kernel when max_kernel_num=1; success
 TEST_F(OperatorRegistryMaxKernelNumTest, RegisterOneOp) {
-  Kernel kernels[] = {Kernel("foo", [](RuntimeContext&, EValue**) {})};
+  Kernel kernels[] = {Kernel("foo", [](KernelRuntimeContext&, EValue**) {})};
   ArrayRef<Kernel> kernels_array = ArrayRef<Kernel>(kernels);
   auto s1 = register_kernels(kernels_array);
   EXPECT_EQ(s1, Error::Ok);
@@ -40,13 +43,10 @@ TEST_F(OperatorRegistryMaxKernelNumTest, RegisterOneOp) {
 // Register two kernels when max_kernel_num=1; fail
 TEST_F(OperatorRegistryMaxKernelNumTest, RegisterTwoOpsFail) {
   Kernel kernels[] = {
-      Kernel("foo1", [](RuntimeContext&, EValue**) {}),
-      Kernel("foo2", [](RuntimeContext&, EValue**) {})};
+      Kernel("foo1", [](KernelRuntimeContext&, EValue**) {}),
+      Kernel("foo2", [](KernelRuntimeContext&, EValue**) {})};
   ArrayRef<Kernel> kernels_array = ArrayRef<Kernel>(kernels);
   ET_EXPECT_DEATH(
-      { register_kernels(kernels_array); },
+      { (void)register_kernels(kernels_array); },
       "The total number of kernels to be registered is larger than the limit 1");
 }
-
-} // namespace executor
-} // namespace torch
