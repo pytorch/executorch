@@ -33,7 +33,7 @@ public class LlamaModule {
       int modelType, String modulePath, String tokenizerPath, float temperature);
 
   /** Constructs a LLAMA Module for a model with given path, tokenizer, and temperature. */
-    public LlamaModule(String modulePath, String tokenizerPath, float temperature) {
+  public LlamaModule(String modulePath, String tokenizerPath, float temperature) {
     mHybridData = initHybrid(MODEL_TYPE_TEXT, modulePath, tokenizerPath, temperature);
   }
 
@@ -67,7 +67,9 @@ public class LlamaModule {
     return generate(null, 0, 0, 0, prompt, seqLen, llamaCallback);
   }
 
-  /** Start generating tokens from the module.
+  /**
+   * Start generating tokens from the module.
+   *
    * @param image Input image as a byte array
    * @param width Input image width
    * @param height Input image height
@@ -77,7 +79,14 @@ public class LlamaModule {
    * @param llamaCallback callback object to receive results.
    */
   @DoNotStrip
-  public native int generate(int[] image, int width, int height, int channels, String prompt, int seqLen, LlamaCallback llamaCallback);
+  public native int generate(
+      int[] image,
+      int width,
+      int height,
+      int channels,
+      String prompt,
+      int seqLen,
+      LlamaCallback llamaCallback);
 
   /** Stop current generate() before it finishes. */
   @DoNotStrip
