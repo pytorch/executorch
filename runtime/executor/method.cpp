@@ -1176,13 +1176,17 @@ Error Method::execute_instruction() {
   return err;
 }
 
-Error Method::experimental_reset_execution() {
+Error Method::reset_execution() {
   ET_CHECK_OR_RETURN_ERROR(
       step_state_.chain_idx == n_chains_,
       InvalidState,
       "Cannot reset until EndOfMethod has been reached.");
   step_state_ = StepState{0, 0};
   return Error::Ok;
+}
+
+Error Method::experimental_reset_execution() {
+  return reset_execution(); // @lint-ignore CLANGTIDY facebook-hte-Deprecated
 }
 
 // Log all the outputs of this method to the event tracer.
@@ -1199,7 +1203,7 @@ void Method::log_outputs() {
 #endif
 }
 
-Error Method::experimental_step() {
+Error Method::step() {
   EXECUTORCH_PROFILE_INSTRUCTION_SCOPE(
       static_cast<int32_t>(step_state_.chain_idx),
       static_cast<uint32_t>(step_state_.instr_idx));
@@ -1243,6 +1247,10 @@ Error Method::experimental_step() {
     log_outputs();
   }
   return Error::Ok;
+}
+
+Error Method::experimental_step() {
+  return step();
 }
 
 Error Method::execute() {
@@ -1289,7 +1297,7 @@ Error Method::execute() {
 
   // TODO(jakeszwe, dbort): Decide on calling execute back to back without
   // going through the reset api first.
-  return experimental_reset_execution();
+  return reset_execution(); // @lint-ignore CLANGTIDY facebook-hte-Deprecated
 }
 
 MethodMeta Method::method_meta() const {

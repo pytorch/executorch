@@ -181,35 +181,37 @@ class Method final {
    * Execute the method.
    *
    * NOTE: Will fail if the method has been partially executed using the
-   * `experimental_step()` api.
+   * `step()` api.
    *
    * @returns Error::Ok on success, non-Ok on failure.
    */
   ET_NODISCARD Error execute();
 
   /**
-   * Advances/executes a single instruction in the method.
-   *
-   * NOTE: Prototype API; subject to change.
+   * EXPERIMENTAL: Advances/executes a single instruction in the method.
    *
    * @retval Error::Ok step succeeded
    * @retval non-Ok step failed
    * @retval Error::EndOfMethod method finished executing successfully
    */
-  ET_NODISCARD Error experimental_step();
+  ET_EXPERIMENTAL ET_NODISCARD Error step();
+
+  /// DEPRECATED: Use `step()` instead.
+  ET_DEPRECATED ET_NODISCARD Error experimental_step();
 
   /**
-   * Resets execution state to the start of the Method. For use with the
-   * `experimental_step()` API.
-   *
-   * NOTE: Prototype API; subject to change.
+   * EXPERIMENTAL: Resets execution state to the start of the Method. For use
+   * with the `step()` API.
    *
    * @retval Error:Ok on success
    * @retval Error::InvalidState if called before step-based execution reached
    *     the end of the Method. This means it is not possible to recover a
    *     Method that failed mid-execution.
    */
-  ET_NODISCARD Error experimental_reset_execution();
+  ET_EXPERIMENTAL ET_NODISCARD Error reset_execution();
+
+  /// DEPRECATED: Use `reset_execution()` instead.
+  ET_DEPRECATED ET_NODISCARD Error experimental_reset_execution();
 
   /**
    * Returns the MethodMeta that corresponds to the calling Method.
