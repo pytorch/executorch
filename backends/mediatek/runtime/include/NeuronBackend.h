@@ -34,7 +34,7 @@ class NeuronBackend final : public PyTorchBackendInterface {
       ArrayRef<CompileSpec> compile_specs) const override;
 
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override;
 
@@ -111,7 +111,7 @@ class NeuronExecuTorchDelegate {
     return NEURON_NO_ERROR;
   }
 
-  Error execute(__ET_UNUSED BackendExecutionContext& context, EValue** args)
+  Error execute(ET_UNUSED BackendExecutionContext& context, EValue** args)
       const;
 
  private:

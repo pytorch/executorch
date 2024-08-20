@@ -9,15 +9,13 @@
 /**
  * @file
  *
- * This tool can run ExecuTorch model files with Qualcomm AI Engine Direct
- * and the portable kernels.
+ * This tool can run Llama2 7b with Qualcomm AI Engine Direct.
  *
- * User could specify arguments like desired input data, iterations, etc.
- * Currently we assume that the outputs are all fp32 tensors.
+ * User could specify arguments like desired prompt, eval_mode, etc.
  */
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
-#include <executorch/examples/qualcomm/qaihub_scripts/llama2/runner/runner.h>
+#include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/runner.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -68,6 +66,7 @@ int main(int argc, char** argv) {
   Runner runner(
       models_path,
       pos_embs_path,
+      {8, 8, 8, 8},
       FLAGS_tokenizer_path.c_str(),
       FLAGS_eval_mode,
       FLAGS_temperature,

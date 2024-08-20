@@ -19,6 +19,12 @@
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Allocation.h>
 
 namespace vkcompute {
+
+// Forward declare vTensor classes such that they can be set as friend classes
+namespace api {
+class vTensorStorage;
+} // namespace api
+
 namespace vkapi {
 
 using MemoryAccessFlags = uint8_t;
@@ -47,8 +53,27 @@ class VulkanBuffer final {
       const VkBufferUsageFlags,
       const bool allocate_memory = true);
 
-  VulkanBuffer(const VulkanBuffer&) = delete;
-  VulkanBuffer& operator=(const VulkanBuffer&) = delete;
+ protected:
+  /*
+   * The Copy constructor and allows for creation of a class instance that are
+   * "aliases" of another class instance. The resulting class instance will not
+   * have ownership of the underlying VkBuffer.
+   *
+   * This behaviour is analogous to creating a copy of a pointer, thus it is
+   * unsafe, as the original class instance may be destroyed before the copy.
+   * These constructors are therefore marked protected so that they may be used
+   * only in situations where the lifetime of the original class instance is
+   * guaranteed to exceed, or at least be the same as, the lifetime of the
+   * copied class instance.
+   */
+  VulkanBuffer(
+      const VulkanBuffer& other,
+      const VkDeviceSize offset = 0u,
+      const VkDeviceSize range = VK_WHOLE_SIZE) noexcept;
+
+ public:
+  // To discourage creating copies, the assignment operator is still deleted.
+  VulkanBuffer& operator=(const VulkanBuffer& other) = delete;
 
   VulkanBuffer(VulkanBuffer&&) noexcept;
   VulkanBuffer& operator=(VulkanBuffer&&) noexcept;
@@ -69,6 +94,9 @@ class VulkanBuffer final {
   Allocation memory_;
   // Indicates whether the underlying memory is owned by this resource
   bool owns_memory_;
+  // Indicates whether this VulkanBuffer was copied from another VulkanBuffer,
+  // thus it does not have ownership of the underlying VKBuffer
+  bool is_copy_;
   VkBuffer handle_;
 
  public:
@@ -114,6 +142,10 @@ class VulkanBuffer final {
     return owns_memory_;
   }
 
+  inline bool is_copy() const {
+    return is_copy_;
+  }
+
   operator bool() const {
     return (handle_ != VK_NULL_HANDLE);
   }
@@ -125,6 +157,8 @@ class VulkanBuffer final {
   }
 
   VkMemoryRequirements get_memory_requirements() const;
+
+  friend class api::vTensorStorage;
 };
 
 class MemoryMap final {
