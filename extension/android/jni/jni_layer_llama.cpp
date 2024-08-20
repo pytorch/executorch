@@ -109,7 +109,8 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature) {
-    return makeCxxInstance(model_type_category, model_path, tokenizer_path, temperature);
+    return makeCxxInstance(
+        model_type_category, model_path, tokenizer_path, temperature);
   }
 
   ExecuTorchLlamaJni(
