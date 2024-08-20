@@ -28,9 +28,25 @@ if [[ -z "${BACKEND:-}" ]]; then
   exit 1
 fi
 
+UPLOAD_DIR=${4:-}
+
+if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
 which "${PYTHON_EXECUTABLE}"
+
 # Just set this variable here, it's cheap even if we use buck2
 CMAKE_OUTPUT_DIR=cmake-out
+EXPORTED_MODEL=${MODEL_NAME}
+
+prepare_artifacts_upload() {
+  if [ -n "$UPLOAD_DIR" ]; then
+    echo "Preparing for uploading generated artifacs"
+    zip -j model.zip "${EXPORTED_MODEL}"
+    mkdir -p "${UPLOAD_DIR}"
+    mv model.zip "${UPLOAD_DIR}"
+  fi
+}
 
 build_cmake_executor_runner() {
   echo "Building executor_runner"
@@ -114,6 +130,7 @@ test_model_with_xnnpack() {
   fi
 
   OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_${SUFFIX}.pte"
+  EXPORTED_MODEL=${OUTPUT_MODEL_PATH}
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
@@ -129,9 +146,36 @@ test_model_with_xnnpack() {
   fi
 }
 
+test_model_with_qnn() {
+  source "$(dirname "${BASH_SOURCE[0]}")/build-qnn-sdk.sh"
+  echo "ANDROID_NDK_ROOT: $ANDROID_NDK_ROOT"
+  echo "QNN_SDK_ROOT: $QNN_SDK_ROOT"
+  echo "EXECUTORCH_ROOT: $EXECUTORCH_ROOT"
+
+  export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/
+  export PYTHONPATH=$EXECUTORCH_ROOT/..
+
+  if [[ "${MODEL_NAME}" == "dl3" ]]; then
+    "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.deeplab_v3 -b ${CMAKE_OUTPUT_DIR} -m SM8550 --compile_only --download
+    EXPORTED_MODEL=./deeplab_v3/dlv3_qnn.pte
+  fi
+}
+
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
+elif [[ "${BACKEND}" == "qnn" ]]; then
+  echo "Testing ${MODEL_NAME} with qnn..."
+  test_model_with_qnn
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == "xnnpack" ]]; then
+  echo "Testing ${MODEL_NAME} with xnnpack..."
+  test_model_with_xnnpack true true
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
 else
   set +e
   if [[ "${BACKEND}" == *"quantization"* ]]; then
@@ -153,5 +197,7 @@ else
   if [[ -n "${Q_ERROR:-}" ]] || [[ -n "${D_ERROR:-}" ]] || [[ -n "${Q_D_ERROR:-}" ]]; then
     echo "Portable q8 ${Q_ERROR:-ok}," "Delegation fp32 ${D_ERROR:-ok}," "Delegation q8 ${Q_D_ERROR:-ok}"
     exit 1
+  else
+    prepare_artifacts_upload
   fi
 fi
