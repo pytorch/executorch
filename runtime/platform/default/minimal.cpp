@@ -15,14 +15,14 @@
 // This cpp file will provide weak implementations of the symbols declared in
 // Platform.h. Client users can strongly define any or all of the functions to
 // override them.
-#define ET_INTERNAL_PLATFORM_WEAKNESS __ET_WEAK
+#define ET_INTERNAL_PLATFORM_WEAKNESS ET_WEAK
 #include <executorch/runtime/platform/platform.h>
 
 #include <executorch/runtime/platform/compiler.h>
 
 void et_pal_init(void) {}
 
-__ET_NORETURN void et_pal_abort(void) {
+ET_NORETURN void et_pal_abort(void) {
   __builtin_trap();
 }
 
@@ -40,10 +40,10 @@ et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
 }
 
 void et_pal_emit_log_message(
-    __ET_UNUSED et_timestamp_t timestamp,
-    __ET_UNUSED et_pal_log_level_t level,
-    __ET_UNUSED const char* filename,
-    __ET_UNUSED const char* function,
-    __ET_UNUSED size_t line,
-    __ET_UNUSED const char* message,
-    __ET_UNUSED size_t length) {}
+    ET_UNUSED et_timestamp_t timestamp,
+    ET_UNUSED et_pal_log_level_t level,
+    ET_UNUSED const char* filename,
+    ET_UNUSED const char* function,
+    ET_UNUSED size_t line,
+    ET_UNUSED const char* message,
+    ET_UNUSED size_t length) {}

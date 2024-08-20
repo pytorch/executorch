@@ -46,7 +46,7 @@ class PyTorchBackendInterface {
   /**
    * Returns true if the backend is available to process delegation calls.
    */
-  __ET_NODISCARD virtual bool is_available() const = 0;
+  ET_NODISCARD virtual bool is_available() const = 0;
 
   /**
    * Responsible to further process (compile/transform/optimize) the compiled
@@ -78,7 +78,7 @@ class PyTorchBackendInterface {
    *     Error::DelegateInvalidCompatibility. Other backend delegate
    *     specific error codes can be found in error.h.
    */
-  __ET_NODISCARD virtual Result<DelegateHandle*> init(
+  ET_NODISCARD virtual Result<DelegateHandle*> init(
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const = 0;
@@ -93,7 +93,7 @@ class PyTorchBackendInterface {
    * @param[in] args The method’s inputs and outputs.
    * @retval Error::Ok if successful.
    */
-  __ET_NODISCARD virtual Error execute(
+  ET_NODISCARD virtual Error execute(
       BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const = 0;
@@ -107,7 +107,7 @@ class PyTorchBackendInterface {
    * @param[in] handle The handle to be destroyed. An opaque handle returned by
    *     `init()`.
    */
-  virtual void destroy(__ET_UNUSED DelegateHandle* handle) const {}
+  virtual void destroy(ET_UNUSED DelegateHandle* handle) const {}
 };
 
 struct Backend {
@@ -132,7 +132,7 @@ class BackendRegistry {
    * @param[in] backend Backend object of the user-defined backend delegate.
    * @retval Error code representing whether registration was successful.
    */
-  __ET_NODISCARD Error register_backend(const Backend& backend);
+  ET_NODISCARD Error register_backend(const Backend& backend);
 
   /**
    * Returns the corresponding object pointer for a given string name.
@@ -168,7 +168,7 @@ PyTorchBackendInterface* get_backend_class(const char* name);
  * @param[in] backend Backend object
  * @retval Error code representing whether registration was successful.
  */
-__ET_NODISCARD Error register_backend(const Backend& backend);
+ET_NODISCARD Error register_backend(const Backend& backend);
 
 } // namespace executor
 } // namespace torch

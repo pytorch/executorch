@@ -116,7 +116,7 @@ Error copy_tensor_data(
   return Error::Ok;
 }
 
-__ET_NODISCARD Error set_tensor_data(
+ET_NODISCARD Error set_tensor_data(
     const torch::executor::Tensor& t,
     void* buffer,
     size_t buffer_size) {
@@ -137,7 +137,7 @@ void reset_data_ptr(const torch::executor::Tensor& tensor) {
 
 class TensorResizerFriend final {
  public:
-  __ET_NODISCARD static Error resize_tensor_impl(
+  ET_NODISCARD static Error resize_tensor_impl(
       exec_aten::TensorImpl* impl,
       exec_aten::ArrayRef<exec_aten::SizesType> new_sizes) {
     return impl->internal_resize_contiguous(new_sizes);

@@ -18,12 +18,12 @@ namespace torch {
 namespace executor {
 namespace deserialization {
 
-__ET_NODISCARD Result<exec_aten::Tensor> parseTensor(
+ET_NODISCARD Result<exec_aten::Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
     const executorch_flatbuffer::Tensor* s_tensor);
 
-__ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
+ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
     EValue* values_,
     MemoryManager* memory_manager);
@@ -32,7 +32,7 @@ __ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
 // list of optionals: list of optional Tensor, list of optional float etc, so we
 // just use a template to avoid boilerplate.
 template <typename T>
-__ET_NODISCARD Result<BoxedEvalueList<exec_aten::optional<T>>>
+ET_NODISCARD Result<BoxedEvalueList<exec_aten::optional<T>>>
 parseListOptionalType(
     const flatbuffers::Vector<int32_t>* value_indices,
     EValue* values_,
@@ -92,7 +92,7 @@ parseListOptionalType(
  * @returns On success, the data pointer to use for the tensor. On failure, a
  *     non-Ok Error.
  */
-__ET_NODISCARD Result<void*> getTensorDataPtr(
+ET_NODISCARD Result<void*> getTensorDataPtr(
     const executorch_flatbuffer::Tensor* s_tensor,
     const Program* program,
     size_t nbytes,

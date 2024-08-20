@@ -6,13 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// A simple llama2 runner that includes preprocessing and post processing logic.
-// The module takes in a string as input and emits a string as output.
+// A simple llama2/3 runner that includes preprocessing and post processing
+// logic. The module takes in a string as input and emits a string as output.
 
-#include <executorch/examples/qualcomm/qaihub_scripts/llama2/runner/runner.h>
+#if defined(QAIHUB_LLAMA3_RUNNER)
+#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
+#else
+#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
+#endif
+#include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -38,6 +42,7 @@ std::string statsToJsonString(const Runner::Stats& stats);
 Runner::Runner(
     const std::vector<std::string>& models_path,
     const std::vector<std::string>& pos_embs_path,
+    const std::vector<int>& shard_layers,
     const std::string& tokenizer_path,
     const int eval_mode,
     const float temperature,
@@ -49,7 +54,7 @@ Runner::Runner(
       eos_id_(2),
       n_bos_(1),
       n_eos_(1),
-      vocab_size_(32000),
+      vocab_size_(QAIHUB_LLAMA_LOGITS),
       max_seq_len_(1024),
       eval_mode_(eval_mode),
       stats_({}),
@@ -61,12 +66,15 @@ Runner::Runner(
     ET_LOG(Info, "creating module: model_path=%s", models_path[i].c_str());
   }
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
+
   switch (eval_mode_) {
     case EvalMode::kBert:
-      io_mem_ = std::make_unique<BertMemory>(pos_embs_path, modules_);
+      io_mem_ =
+          std::make_unique<BertMemory>(pos_embs_path, modules_, shard_layers);
       break;
     case EvalMode::kKVCached:
-      io_mem_ = std::make_unique<KVCachedMemory>(pos_embs_path, modules_);
+      io_mem_ = std::make_unique<KVCachedMemory>(
+          pos_embs_path, modules_, shard_layers);
       break;
     default:
       ET_CHECK_MSG(false, "unsupported evaluation mode");
@@ -90,8 +98,12 @@ Error Runner::load() {
     ET_CHECK_OK_OR_RETURN_ERROR(module->load_method("forward"));
   }
 
-  // load tokenizer
+// load tokenizer
+#if defined(QAIHUB_LLAMA3_RUNNER)
+  tokenizer_ = get_tiktoken_for_llama();
+#else
   tokenizer_ = std::make_unique<BPETokenizer>();
+#endif
   tokenizer_->load(tokenizer_path_);
 
   // create sampler
@@ -155,7 +167,7 @@ Error Runner::generate(
   if (!is_loaded()) {
     stats_.model_load_start_ms = util::time_in_ms();
     ET_CHECK_OK_OR_RETURN_ERROR(load());
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < modules_.size(); ++i) {
       input_tensors.emplace_back(io_mem_->get_input_tensors(i));
       output_tensors.emplace_back(io_mem_->get_output_tensors(i));
       for (size_t j = 0; j < output_tensors[i].size(); ++j) {
@@ -192,6 +204,7 @@ Error Runner::generate(
   if (eval_mode_ == EvalMode::kBert) {
     BertMemory::IO* ptr =
         static_cast<BertMemory::IO*>(io_mem_->get_mutable_ptr());
+
     int start_index = max_seq_len_ - num_prompt_tokens;
     // indices are filled from behind, take 3 tokens as an example:
     // > tokens : [...tok_pad, tok_bos, tok1, tok2]
@@ -223,6 +236,7 @@ Error Runner::generate(
   }
 
   while (pos < seq_len - 1) {
+    // inference
     run_model_step(inputs);
     Tensor& logits_tensor = output_tensors.back().back();
 
