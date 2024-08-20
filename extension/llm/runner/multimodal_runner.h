@@ -65,6 +65,8 @@ class MultimodalRunner {
     text_token_generator_->stop();
   }
 
+  virtual ~MultimodalRunner() = default;
+
  protected:
   // metadata
   int32_t vocab_size_;
