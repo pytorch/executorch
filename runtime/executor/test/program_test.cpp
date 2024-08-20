@@ -92,13 +92,13 @@ namespace testing {
 // Provides access to private Program methods.
 class ProgramTestFriend final {
  public:
-  __ET_NODISCARD static Result<FreeableBuffer> LoadSegment(
+  ET_NODISCARD static Result<FreeableBuffer> LoadSegment(
       const Program* program,
       const DataLoader::SegmentInfo& segment_info) {
     return program->LoadSegment(segment_info);
   }
 
-  __ET_NODISCARD static Error load_mutable_subsegment_into(
+  ET_NODISCARD static Error load_mutable_subsegment_into(
       const Program* program,
       size_t mutable_data_segments_index,
       size_t offset_index,

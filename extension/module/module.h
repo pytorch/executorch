@@ -93,7 +93,7 @@ class Module final {
    *
    * @returns An Error to indicate success or failure of the loading process.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Error load(
       const Program::Verification verification =
           Program::Verification::Minimal);
@@ -132,7 +132,7 @@ class Module final {
    *
    * @returns An Error to indicate success or failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Error load_method(const std::string& method_name);
 
   /**
@@ -166,7 +166,7 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<std::vector<EValue>> execute(
       const std::string& method_name,
       const std::vector<EValue>& input);
@@ -180,7 +180,7 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<std::vector<EValue>> execute(const std::string& method_name) {
     return execute(method_name, {});
   }
@@ -195,7 +195,7 @@ class Module final {
    * @returns A Result object containing either the first output value from the
    * method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<EValue> get(
       const std::string& method_name,
       const std::vector<EValue>& input) {
@@ -215,7 +215,7 @@ class Module final {
    * @returns A Result object containing either the first output value from the
    * method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<EValue> get(const std::string& method_name) {
     return get(method_name, {});
   }
@@ -229,7 +229,7 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the 'forward' method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<std::vector<EValue>> forward(const std::vector<EValue>& input) {
     return execute("forward", input);
   }
@@ -241,7 +241,7 @@ class Module final {
    * @returns A Result object containing either a vector of output values
    *          from the 'forward' method or an error to indicate failure.
    */
-  __ET_NODISCARD
+  ET_NODISCARD
   Result<std::vector<EValue>> forward() {
     return forward({});
   }

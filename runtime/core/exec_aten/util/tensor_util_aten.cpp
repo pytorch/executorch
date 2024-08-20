@@ -133,7 +133,7 @@ Error copy_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
   return Error::Ok;
 }
 
-__ET_NODISCARD Error
+ET_NODISCARD Error
 set_tensor_data(const at::Tensor& t, void* buffer, size_t buffer_size) {
   ET_CHECK_OR_RETURN_ERROR(
       buffer_size >= t.nbytes(),

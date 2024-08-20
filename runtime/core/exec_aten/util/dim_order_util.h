@@ -133,7 +133,7 @@ inline void dim_order_to_stride_nocheck(
 }
 
 template <typename SizesType, typename DimOrderType, typename StridesType>
-__ET_NODISCARD inline Error dim_order_to_stride(
+ET_NODISCARD inline Error dim_order_to_stride(
     const SizesType* sizes,
     const DimOrderType* dim_order,
     const size_t dims,
@@ -221,7 +221,7 @@ struct Sorter {
  * TODO(T148342910)
  */
 template <typename DimOrderType, typename StridesType>
-__ET_NODISCARD inline Error stride_to_dim_order(
+ET_NODISCARD inline Error stride_to_dim_order(
     const StridesType* strides,
     const size_t dims,
     DimOrderType* dim_order) {
