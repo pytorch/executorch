@@ -700,10 +700,23 @@ void update_cache(
     const Tensor& cache,
     int64_t start_pos,
     int64_t seq_length) { // NOLINT: unused parameter 'seq_length'
+  // 1) Cache shape should be [bs, max_seq_len, num heads, head dim]
+  // 2) projected_value shape should be [bs, seq_len, num heads, head dim]
+  // 3) We're updating the cache with projected_value, at position start_pos
+
   ET_CHECK_MSG(
-      projected_value.size(0) == 1,
-      "projected_value must have batch size of 1");
-  ET_CHECK_MSG(cache.size(0) == 1, "cache must have batch size of 1");
+      projected_value.size(0) == cache.size(0),
+      "projected_value batch size should be equal to the cache batch size.");
+  ET_CHECK_MSG(
+      projected_value.size(2) == cache.size(2),
+      "projected_value number of heads should be equal to the cache number of heads.");
+  ET_CHECK_MSG(
+      projected_value.size(3) == cache.size(3),
+      "projected_value embedding dimension should be equal to the cache embedding dimension.");
+  ET_CHECK_MSG(
+      projected_value.element_size() == cache.element_size(),
+      "projected_value data type size should be equal to the cache data type size.");
+
   ET_CHECK_MSG(
       is_contiguous_dim_order(
           projected_value.dim_order().data(), projected_value.dim()),
@@ -714,16 +727,30 @@ void update_cache(
   ET_CHECK_MSG(projected_value_data != nullptr, "projected_value data is null");
   ET_CHECK_MSG(cache_data, "cache data is null");
 
-  auto strides = cache.strides();
-  exec_aten::StridesType seq_dim_stride = strides[1];
-  exec_aten::SizesType pos_offset = start_pos * seq_dim_stride;
-  exec_aten::SizesType pos_offset_bytes =
-      pos_offset * projected_value.element_size();
-  exec_aten::SizesType num_bytes =
-      projected_value.numel() * projected_value.element_size();
-  // NOLINTNEXTLINE
-  std::memcpy(
-      (uint8_t*)cache_data + pos_offset_bytes, projected_value_data, num_bytes);
+  auto cache_strides = cache.strides();
+  exec_aten::StridesType cache_batch_dim_stride = cache_strides[0];
+  exec_aten::StridesType cache_seq_dim_stride = cache_strides[1];
+
+  auto value_strides = projected_value.strides();
+  exec_aten::StridesType value_batch_dim_stride = value_strides[0];
+
+  exec_aten::SizesType num_bytes_to_copy = projected_value.numel() /
+      projected_value.size(0) * projected_value.element_size();
+
+  for (int64_t batch_line = 0; batch_line < projected_value.size(0);
+       ++batch_line) {
+    exec_aten::SizesType cache_pos_offset =
+        (batch_line * cache_batch_dim_stride +
+         start_pos * cache_seq_dim_stride) *
+        cache.element_size();
+    exec_aten::SizesType value_pos_offset =
+        (batch_line * value_batch_dim_stride) * cache.element_size();
+
+    std::memcpy(
+        (uint8_t*)cache_data + cache_pos_offset,
+        (uint8_t*)projected_value_data + value_pos_offset,
+        num_bytes_to_copy);
+  }
 }
 
 } // anonymous namespace
