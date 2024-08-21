@@ -156,14 +156,14 @@ jobs:
         BUILD_MODE="cmake"
         DTYPE="fp32"
 
-        if [[ ${{ matrix.model }} == "llama*" ]]; then
+        if [[ ${{ matrix.model }} == "stories*"" ]]; then
             # Install requirements for export_llama
             PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
             # Test llama2
             if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
                 DELEGATE_CONFIG="xnnpack+custom+qe"
             fi
-            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}.pt" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
         else
             PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
         fi
