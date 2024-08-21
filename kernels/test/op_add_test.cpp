@@ -355,15 +355,15 @@ TEST_F(OpAddOutKernelTest, BoolOutputWithIntegralInput) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_add_out(a, b, /*alpha=*/1, out));
 }
 
-TEST_F(OpAddOutKernelTest, MismatchedInputShapesDies) {
+TEST_F(OpAddOutKernelTest, MismatchedNonBroadcastableInputShapesDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Addends with different shapes.
-  Tensor a = tf.ones(/*sizes=*/{4});
+  Tensor a = tf.ones(/*sizes=*/{4, 2});
   Tensor b = tf.ones(/*sizes=*/{2, 2});
 
   // Destination for the sum; matches the shape of one of the inputs.
-  Tensor out = tf.zeros(/*sizes=*/{4});
+  Tensor out = tf.zeros(/*sizes=*/{8});
 
   // Adding the two mismatched tensors should cause an assertion and kill the
   // test process.
