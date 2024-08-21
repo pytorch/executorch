@@ -11,6 +11,7 @@ from torch.export import export, ExportedProgram
 from torch.export.experimental import _export_forward_backward
 from torch.nn.attention import sdpa_kernel, SDPBackend
 from torchtune.models.phi3._model_builders import lora_phi3_mini
+from torchtune.modules.peft import get_adapter_params, set_trainable_params
 
 vocab_size = 32064
 
@@ -70,6 +71,12 @@ def export_phi3_mini_lora_training(model) -> None:
     """
     Export the example phi3-mini with LoRA model to executorch for training, only.
     """
+
+    # 0. Mark the LoRA layers as trainable (requires_grad = True) in order
+    # to just export the backwards pass for these layers later in the
+    # export process.
+    set_trainable_params(model, get_adapter_params(model))
+
     print("Exporting phi3-mini with LoRA for training")
     # 1. torch.export: Defines the program with the ATen operator set.
     print("Exporting to aten dialect")
