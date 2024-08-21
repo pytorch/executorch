@@ -12,9 +12,8 @@
 
 #include <cstring>
 
-#include <executorch/runtime/core/error.h>
-
-#include <executorch/backends/arm/runtime/VelaBinStream.h>
+#include "executorch/backends/arm/runtime/VelaBinStream.h"
+#include "executorch/runtime/core/error.h"
 
 // get next mul of 16 ptr, return n if already aligned
 static uintptr_t next_mul_16(uintptr_t n) {
@@ -25,17 +24,26 @@ bool vela_bin_validate(const char* data, int size) {
   const char* foot = data + size - sizeof(VelaBinBlock);
 
   // Check 16 byte alignment
-  if ((uintptr_t)data != next_mul_16((uintptr_t)data))
-    return false;
-  if ((uintptr_t)foot != next_mul_16((uintptr_t)foot))
-    return false;
+  bool valid = true;
+  if ((uintptr_t)data != next_mul_16((uintptr_t)data)) {
+    ET_LOG(Error, "Vela bin ptr not aligned to 16 bytes: %p", (void*)data);
+    valid = false;
+  }
+  if ((uintptr_t)foot != next_mul_16((uintptr_t)foot)) {
+    ET_LOG(Error, "End of vela bin not aligned to 16 bytes: %p", (void*)foot);
+    valid = false;
+  }
   // Check header and footer blocks are the right format
-  if (strncmp(data, "vela_bin_stream", strlen("vela_bin_stream")) != 0)
-    return false;
-  if (strncmp(foot, "vela_end_stream", strlen("vela_end_stream")) != 0)
-    return false;
+  if (strncmp(data, "vela_bin_stream", strlen("vela_bin_stream")) != 0) {
+    ET_LOG(Error, "Incorrect header in vela_bin_stream");
+    valid = false;
+  }
+  if (strncmp(foot, "vela_end_stream", strlen("vela_end_stream")) != 0) {
+    ET_LOG(Error, "Incorrect footer in vela_bin_stream");
+    valid = false;
+  }
 
-  return true;
+  return valid;
 }
 
 bool vela_bin_read(const char* data, VelaHandles* handles, int size) {
