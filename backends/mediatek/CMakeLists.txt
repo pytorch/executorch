@@ -29,6 +29,7 @@ add_library(neuron_backend SHARED)
 target_link_libraries(neuron_backend
     PRIVATE
     executorch_no_prim_ops
+    portable_ops_lib
     android
     log
     ${NEURON_BUFFER_ALLOCATOR_LIB}
