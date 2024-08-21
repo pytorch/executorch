@@ -14,7 +14,7 @@ namespace vkcompute {
 namespace vkapi {
 
 inline VkExtent3D create_extent3d(const utils::uvec3& extents) {
-  return VkExtent3D{extents.data[0u], extents.data[1u], extents.data[2u]};
+  return VkExtent3D{extents[0u], extents[1u], extents[2u]};
 }
 
 } // namespace vkapi

@@ -32,15 +32,33 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
+# NB: Enabling this will serialize execution of delegate instances
+# Keeping this OFF by default to maintain existing behavior, to be revisited.
+option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE "Enable workspace sharing across different delegate instances" OFF)
+if(EXECUTORCH_XNNPACK_SHARED_WORKSPACE)
+  add_definitions(-DENABLE_XNNPACK_SHARED_WORKSPACE)
+endif()
+
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 set(_xnnpack_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 # Paths to headers generated from the .fbs files.
+set(_xnnpack_flatbuffer__outputs)
+foreach(fbs_file ${_xnnpack_schema__srcs})
+  string(REGEX REPLACE "([^/]+)[.]fbs$" "\\1_generated.h" generated
+                       "${fbs_file}"
+  )
+  list(APPEND _xnnpack_flatbuffer__outputs
+       "${_xnnpack_schema__include_dir}/executorch/${generated}"
+  )
+endforeach()
+
 set(_xnnpack_schema__outputs)
 foreach(fbs_file ${_xnnpack_schema__srcs})
-  string(REGEX REPLACE "([^/]+)[.]fbs$" "\\1_generated.h"
-                       generated "${fbs_file}")
+  string(REGEX REPLACE "runtime_([^/]+)[.]fbs$" "\\1_generated.h" generated
+                       "${fbs_file}"
+  )
   list(APPEND _xnnpack_schema__outputs
        "${_xnnpack_schema__include_dir}/executorch/${generated}"
   )
@@ -53,6 +71,7 @@ add_custom_command(
     ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
     "${_xnnpack_schema__include_dir}/executorch/backends/xnnpack/serialization"
     ${_xnnpack_schema__srcs}
+  COMMAND mv ${_xnnpack_flatbuffer__outputs} ${_xnnpack_schema__outputs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   COMMENT "Generating xnnpack_schema headers"
   VERBATIM

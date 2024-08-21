@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/cadence/reference/kernels/kernels.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include "kernels.h"
 
 namespace impl {
 namespace HiFi {
@@ -35,8 +35,8 @@ void dequantize_per_tensor_out(
         out_data, input_data, scale, zero_point, numel);
   } else if (input.scalar_type() == ScalarType::Char) {
     const int8_t* input_data = input.const_data_ptr<int8_t>();
-    impl::HiFi::kernels::dequantize<int8_t>(
-        out_data, input_data, scale, zero_point, numel);
+    xa_nn_elm_dequantize_asym8s_f32(
+        out_data, input_data, zero_point, scale, numel);
   } else if (input.scalar_type() == ScalarType::Int) {
     const int32_t* input_data = input.const_data_ptr<int32_t>();
     impl::HiFi::kernels::dequantize<int32_t>(

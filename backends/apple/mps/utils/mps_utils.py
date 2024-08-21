@@ -24,6 +24,7 @@ def edge_dtype_to_mps_dtype(dtype: torch.dtype):
         edge_dtype_to_mps_dtype.map = {
             torch.float16: MPSDataType.mps_data_type_float16,
             torch.float32: MPSDataType.mps_data_type_float32,
+            torch.float64: MPSDataType.mps_data_type_float32,
             torch.bfloat16: MPSDataType.mps_data_type_bfloat16,
             torch.int8: MPSDataType.mps_data_type_int8,
             torch.int16: MPSDataType.mps_data_type_int16,

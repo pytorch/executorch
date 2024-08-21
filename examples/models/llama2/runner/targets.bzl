@@ -22,7 +22,6 @@ def define_common_targets():
             ],
             exported_headers = [
                 "runner.h",
-                "util.h",
             ],
             preprocessor_flags = [
                 "-DUSE_ATEN_LIB",
@@ -31,10 +30,13 @@ def define_common_targets():
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
+            # qnn_executorch_backend can be added below //executorch/backends/qualcomm:qnn_executorch_backend
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
                 "//executorch/extension/llm/runner:stats",
-                "//executorch/extension/llm/sampler:sampler" + aten_suffix,
+                "//executorch/extension/llm/runner:text_decoder_runner" + aten_suffix,
+                "//executorch/extension/llm/runner:text_prefiller" + aten_suffix,
+                "//executorch/extension/llm/runner:text_token_generator" + aten_suffix,
                 "//executorch/extension/evalue_util:print_evalue" + aten_suffix,
                 "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,

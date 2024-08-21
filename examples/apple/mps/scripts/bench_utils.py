@@ -5,34 +5,11 @@
 
 import logging
 import time
+from typing import Tuple
 
 import torch
+from executorch.backends.apple.mps.test.test_mps_utils import TestMPS
 from torch.export.exported_program import ExportedProgram
-
-
-def assert_outputs_equal(model_output, ref_output):
-    """
-    Helper testing function that asserts that the model output and the reference output
-    are equal with some tolerance. Due to numerical differences between eager mode and
-    the MPS's backend, we relax the detal such that absolute tolerance is 1e-3. and
-    relative tolerance is 1e-3.
-    """
-
-    # Compare the result from executor and eager mode direclty
-    if isinstance(ref_output, tuple) or isinstance(ref_output, list):
-        # Multiple outputs executor always returns tuple, even if there is one output
-        assert len(ref_output) == len(
-            model_output
-        ), "Length of outputs is not matching!"
-        for i in range(len(ref_output)):
-            assert torch.allclose(
-                model_output[i], ref_output[i], atol=1e-03, rtol=1e-03
-            )
-    else:
-        # If one output, eager returns tensor while executor tuple of size 1
-        assert torch.allclose(
-            model_output[0], ref_output, atol=1e-03, rtol=1e-03
-        ), "Outputs are not matching!"
 
 
 def bench_forward(func, *args):
@@ -101,17 +78,31 @@ def bench_torch(executorch_program: ExportedProgram, model, inputs, model_name):
         )
 
 
-def compare_outputs(executorch_program: ExportedProgram, model, inputs, model_name):
+def compare_outputs(
+    executorch_program: ExportedProgram,
+    model: torch.nn.Module,
+    inputs: Tuple[torch.tensor],
+    model_name: str,
+    use_fp16: bool,
+):
+    test_module = TestMPS()
     inputs_copy = []
+    if use_fp16:
+        model = model.to(torch.float16)
+    model = model
     for t in inputs:
-        inputs_copy.append(t.detach().clone())
+        tensor = t.detach().clone()
+        if use_fp16 and tensor.dtype == torch.float32:
+            tensor = tensor.to(torch.float16)
+        inputs_copy.append(tensor)
     inputs_copy = tuple(inputs_copy)
 
-    pytorch_results = model(*inputs)
+    pytorch_results = model(*inputs_copy)
+
     executorch_model = get_executorch_model(executorch_program)
     if executorch_model is not None:
-        executorch_results = executorch_model.forward(inputs_copy)
-        assert_outputs_equal(executorch_results, pytorch_results)
+        executorch_results = executorch_model.forward(inputs)
+        test_module.assert_outputs_equal(executorch_results, pytorch_results, use_fp16)
         logging.info(
             f"Results between ExecuTorch forward pass with MPS backend and PyTorch forward pass for {model_name} are matching!"
         )

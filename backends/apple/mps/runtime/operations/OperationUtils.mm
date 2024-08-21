@@ -27,9 +27,12 @@ MPSGraphBuilder::getMPSDataType(DataType serializedDataType) {
     case DataType::mps_data_type_float16:
       return MPSDataTypeFloat16;
     case DataType::mps_data_type_float32:
+    case DataType::mps_data_type_float64:
       return MPSDataTypeFloat32;
     case DataType::mps_data_type_int8:
       return MPSDataTypeInt8;
+    case DataType::mps_data_type_int4:
+      return MPSDataTypeInt4;
     case DataType::mps_data_type_int16:
       return MPSDataTypeInt16;
     case DataType::mps_data_type_int32:
@@ -88,10 +91,11 @@ MPSGraphBuilder::numel(const flatbuffers::Vector<int32_t>* shape) {
 NSData*
 MPSGraphBuilder::getConstantData(int32_t id) {
   TensorPtr mpsTensor = _flatBufferGraph->mps_values()->Get(id);
-  int32_t constantBufferSize = mpsTensor->constant_buffer_size();
-  const unsigned char* constantBuffer = mpsTensor->constant_buffer()->storage()->data();
+  uint64_t constantBufferSize = mpsTensor->constant_buffer_size();
+  uint64_t segmentOffset = mpsTensor->segment_offset();
+  const unsigned char* constantBuffer = _constant_data_ptr + segmentOffset;
   ET_CHECK_MSG(constantBufferSize > 0 && constantBuffer != nullptr, "[ERROR] Invalid constant buffer");
-  return [[NSData alloc] initWithBytes:constantBuffer
+  return [[NSData alloc] initWithBytesNoCopy:(void*)constantBuffer
                                 length:constantBufferSize];
 }
 
@@ -216,6 +220,8 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
     _DEFINE_MPS_NODE(ConstantPadND);
     // Range ops
     _DEFINE_MPS_NODE(Arange);
+    // Quant-Dequant ops
+    _DEFINE_MPS_NODE(DequantizePerChannelGroup);
 
     case mpsgraph::MPSNodeUnion::NONE:
     default:
@@ -313,32 +319,26 @@ void* pageAlignedBlockPtr(const void* ptr, NSUInteger size, NSUInteger* alignedB
 
 
 MPSGraphTensor* permuteTensor(MPSGraph* graph, MPSGraphTensor* inputTensor, NSArray* permuteOrder) {
-  if (isMacOS13OrNewer()) {
-   return [graph transposeTensor:inputTensor
-                     permutation:permuteOrder
-                            name:nil];
-  } else {
-    NSUInteger srcRank = [[inputTensor shape] count];
-    if (srcRank != [permuteOrder count]) {
-      return nil;
-    }
-
-    MPSGraphTensor* outputTensor = inputTensor;
-    std::vector<NSUInteger> dimensionOrder(srcRank);
-    std::iota(std::begin(dimensionOrder), std::end(dimensionOrder), 0);
-
-    for (int32_t i = 0; i < srcRank; i++) {
-      NSUInteger axis = [permuteOrder[i] integerValue];
-      auto axisIter = std::find(dimensionOrder.begin(), dimensionOrder.end(), axis);
-      NSUInteger axis1 = i;
-      NSUInteger axis2 = axisIter - dimensionOrder.begin();
-      iter_swap(dimensionOrder.begin() + i, axisIter);
-
-      outputTensor = [graph transposeTensor:outputTensor dimension:axis1 withDimension:axis2 name:nil];
-    }
-
-    return outputTensor;
+  NSUInteger srcRank = [[inputTensor shape] count];
+  if (srcRank != [permuteOrder count]) {
+    return nil;
   }
+
+  MPSGraphTensor* outputTensor = inputTensor;
+  std::vector<NSUInteger> dimensionOrder(srcRank);
+  std::iota(std::begin(dimensionOrder), std::end(dimensionOrder), 0);
+
+  for (int32_t i = 0; i < srcRank; i++) {
+    NSUInteger axis = [permuteOrder[i] integerValue];
+    auto axisIter = std::find(dimensionOrder.begin(), dimensionOrder.end(), axis);
+    NSUInteger axis1 = i;
+    NSUInteger axis2 = axisIter - dimensionOrder.begin();
+    iter_swap(dimensionOrder.begin() + i, axisIter);
+
+    outputTensor = [graph transposeTensor:outputTensor dimension:axis1 withDimension:axis2 name:nil];
+  }
+
+  return outputTensor;
 }
 
 

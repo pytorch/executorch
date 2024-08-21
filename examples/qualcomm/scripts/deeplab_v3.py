@@ -15,7 +15,7 @@ import numpy as np
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
-from executorch.examples.qualcomm.scripts.utils import (
+from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     make_output_dir,
     parse_skip_delegation_node,

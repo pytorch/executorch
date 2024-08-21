@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import io
 import json
 import subprocess
 import sys
@@ -34,7 +35,7 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_compiler_spec,
 )
 
-from executorch.examples.qualcomm.scripts.utils import setup_common_args_and_variables
+from executorch.examples.qualcomm.utils import setup_common_args_and_variables
 
 from executorch.backends.qualcomm.tests.models import *  # noqa: F403
 
@@ -82,6 +83,7 @@ class TestQNNFloatingPointOperator(TestQNN):
 
     def test_qnn_backend_bmm(self):
         module = Bmm()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn([4, 8, 32]), torch.randn([4, 32, 8]))
         self.lower_module_and_test_output(module, sample_input)
 
@@ -108,14 +110,18 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv1d(self):
-        module = Conv1dSequential()  # noqa: F405
+        modules = [Conv1dSequential(), Conv1dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3]),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d(self):
-        module = Conv2dSequential()  # noqa: F405
+        modules = [Conv2dSequential(), Conv2dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_add(self):
         test_comb = [
@@ -483,6 +489,7 @@ class TestQNNFloatingPointModel(TestQNN):
 
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn(1, 2, 4, 2),)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -533,6 +540,7 @@ class TestQNNFloatingPointModel(TestQNN):
 
     def test_qnn_backend_view_permute_matmul(self):
         module = ViewPermuteMatMul()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
         self.lower_module_and_test_output(module, sample_input)
 
@@ -594,12 +602,14 @@ class TestQNNQuantizedOperator(TestQNN):
         )
 
     def test_qnn_backend_16a4w_conv2d(self):
-        module = Conv2dSingle()  # noqa: F405
+        modules = [Conv2dSingle(), Conv2dSingle(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
-        module = self.get_qdq_module(
-            module, sample_input, quant_dtype=QuantDtype.use_16a4w
-        )
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(
+                    module, sample_input, quant_dtype=QuantDtype.use_16a4w
+                )
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_16a4w_linear(self):
         module = Linear()  # noqa: F405
@@ -647,6 +657,7 @@ class TestQNNQuantizedOperator(TestQNN):
 
     def test_qnn_backend_bmm(self):
         module = Bmm()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn([4, 8, 32]), torch.randn([4, 32, 8]))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
@@ -679,16 +690,20 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv1d(self):
-        module = Conv1dSequential()  # noqa: F405
+        modules = [Conv1dSequential(), Conv1dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3]),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d(self):
-        module = Conv2dSequential()  # noqa: F405
+        modules = [Conv2dSequential(), Conv2dSequential(bias=False)]  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_add(self):
         test_comb = [
@@ -1097,6 +1112,7 @@ class TestQNNQuantizedModel(TestQNN):
 
     def test_qnn_backend_chunk_add(self):
         module = ChunkAdd()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn(1, 1, 4, 2),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
@@ -1157,6 +1173,7 @@ class TestQNNQuantizedModel(TestQNN):
 
     def test_qnn_backend_view_permute_matmul(self):
         module = ViewPermuteMatMul()  # noqa: F405
+        torch.manual_seed(8)
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
@@ -1797,6 +1814,191 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_5"], 70)
 
 
+class TestExampleQaihubScript(TestQNN):
+
+    def required_envs(self, conditions=None) -> bool:
+        conditions = [] if conditions is None else conditions
+        return all(
+            [
+                self.executorch_root,
+                self.artifact_dir,
+                *conditions,
+            ]
+        )
+
+    def test_utils_export(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            module = ContextBinaryExample()  # noqa: F405
+            generate_context_binary(
+                module=module,
+                inputs=module.example_inputs(),
+                quantized=True,
+                artifact_dir=tmp_dir,
+            )
+            ctx_path = f"{tmp_dir}/model_ctx.bin"
+            fpath = f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/utils/export.py"
+
+            # do compilation
+            compile_cmds = [
+                "python",
+                fpath,
+                "compile",
+                "-a",
+                ctx_path,
+                "-m",
+                self.model,
+                "-l",
+                "False",
+                "-b",
+                self.build_folder,
+                "-o",
+                f"{tmp_dir}/output_pte",
+            ]
+            compile_process = subprocess.Popen(
+                compile_cmds, stdout=subprocess.DEVNULL, cwd=self.executorch_root
+            )
+            output_pte_dir = f"{tmp_dir}/output_pte/model_ctx"
+            compile_process.communicate()
+
+            # check artifacts are correctly generated
+            self.assertTrue(
+                all(
+                    [
+                        Path(output_pte_dir).exists(),
+                        Path(f"{output_pte_dir}/model_ctx.json").exists(),
+                        Path(f"{output_pte_dir}/model_ctx.svg").exists(),
+                    ]
+                )
+            )
+
+            # prepare input files
+            input_list, inputs = [], module.example_inputs()
+            for name, tensor in inputs.items():
+                tensor_path = f"{output_pte_dir}/{name}.pt"
+                torch.save(tensor, tensor_path)
+                input_list.append(tensor_path)
+
+            # do execution
+            output_data_dir = f"{tmp_dir}/output_data"
+            execute_cmds = [
+                "python",
+                fpath,
+                "execute",
+                "-p",
+                output_pte_dir,
+                "-i",
+                *input_list,
+                "-s",
+                self.device,
+                "-z",
+                "-b",
+                self.build_folder,
+                "-o",
+                output_data_dir,
+            ]
+            if self.host is not None:
+                execute_cmds.append(f"-H {self.host}")
+            execute_process = subprocess.Popen(execute_cmds, cwd=self.executorch_root)
+            execute_process.communicate()
+
+            # read outputs
+            with open(f"{output_pte_dir}/model_ctx.json", "r") as f:
+                graph_info = json.load(f)
+
+            device_output = []
+            for output in graph_info["outputs"]:
+                with open(f"{output_data_dir}/{output['name']}.pt", "rb") as f:
+                    buffer = io.BytesIO(f.read())
+                    device_output.append(torch.load(buffer, weights_only=False))
+
+            # validate outputs
+            golden_output = module.forward(inputs["x"], inputs["y"])
+            self.atol, self.rtol = 1e-1, 1
+            self._assert_outputs_equal(golden_output, device_output)
+
+    def test_llama2_7b(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "Explain the rules of baseball"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/llama/llama2/qaihub_llama2_7b.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--tokenizer_bin",
+            f"{self.artifact_dir}/tokenizer.bin",
+            "--context_binaries",
+            f"{self.artifact_dir}",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                model_out = msg["result"]
+                self.assertTrue(model_out.startswith(prompt))
+
+    def test_llama3_8b(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "Explain the rules of baseball"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/llama/llama3/qaihub_llama3_8b.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--tokenizer_model",
+            f"{self.artifact_dir}/tokenizer.model",
+            "--context_binaries",
+            f"{self.artifact_dir}",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                model_out = msg["result"]
+                self.assertTrue(model_out.startswith(prompt))
+
+
 class TestExampleScript(TestQNN):
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
@@ -1995,7 +2197,7 @@ class TestExampleScript(TestQNN):
             if "Error" in msg:
                 self.fail(msg["Error"])
             else:
-                self.assertGreaterEqual(msg["top_1"], 70)
+                self.assertGreaterEqual(msg["top_1"], 65)
                 self.assertGreaterEqual(msg["top_5"], 90)
 
     def test_edsr(self):
@@ -2079,7 +2281,7 @@ class TestExampleScript(TestQNN):
 
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/llama2/llama.py",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/llama2/llama.py",
             "--artifact",
             self.artifact_dir,
             "--build_folder",

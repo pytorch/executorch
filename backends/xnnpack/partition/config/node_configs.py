@@ -15,6 +15,10 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
 from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
+from executorch.backends.xnnpack.utils.utils import is_param_node
+from executorch.exir.backend.canonical_partitioners.config_partitioner import (
+    format_target_name,
+)
 from torch.export import ExportedProgram
 
 
@@ -27,6 +31,14 @@ class BatchNormConfig(XNNPartitionerConfig):
 
         bn = node
         conv = node.all_input_nodes[0]
+
+        if conv.op != "call_function":
+            return False
+
+        conv_name = format_target_name(conv.target.__name__)  # pyre-ignore
+
+        if conv_name not in ["convolution.default"]:
+            return False
 
         return FuseBatchNormWithConvPass.can_fuse(conv, bn, ep)
 
@@ -86,6 +98,30 @@ class MaxDimConfig(XNNPartitionerConfig):
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return None
+
+    def supported_precision_types(self) -> List[ConfigPrecisionType]:
+        return [ConfigPrecisionType.FP32]
+
+
+class PreluConfig(XNNPartitionerConfig):
+    target_name = "prelu.default"
+
+    def check_constraints(self, node: torch.fx.Node, ep: ExportedProgram) -> bool:
+        if not self.check_common_constraints(node, ep):
+            return False
+
+        weight = node.all_input_nodes[1]
+        return is_param_node(ep, weight)
+
+    def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
+        return torch.ops.aten.prelu.default
+
+    def get_node_and_deps(
+        self, node: torch.fx.Node, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
+        weight = node.all_input_nodes[1]
+
+        return [node, weight]
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]

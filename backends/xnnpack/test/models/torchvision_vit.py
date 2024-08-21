@@ -73,9 +73,7 @@ class TestViT(unittest.TestCase):
         }
         (
             tester.export()
-            .to_edge()
-            .check(list(self.all_operators))
-            .partition()
+            .to_edge_transform_and_lower()
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .check_not(list(lowerable_xnn_operators))
             .check_not(check_nots)

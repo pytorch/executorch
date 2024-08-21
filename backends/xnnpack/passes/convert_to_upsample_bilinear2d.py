@@ -36,7 +36,7 @@ class ConvertToUpsampleBilinear2d(XNNPACKPass):
         with graph_module.graph.inserting_before(output):
             upsample_node = graph_module.graph.create_node(
                 "call_function",
-                exir_ops.edge.aten.upsample_bilinear2d.default,
+                exir_ops.edge.aten.upsample_bilinear2d.vec,
                 # TODO(T166527012): Using output_h and output_w here only works with static shapes
                 args=(input_node, [output_h, output_w], align_corners, None),
             )

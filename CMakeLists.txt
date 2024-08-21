@@ -130,6 +130,12 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
+option(EXECUTORCH_DO_NOT_USE_CXX11_ABI "Define _GLIBCXX_USE_CXX11_ABI=0 if ON"
+       OFF
+)
+if(EXECUTORCH_DO_NOT_USE_CXX11_ABI)
+  add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
+endif()
 # -ffunction-sections -fdata-sections: breaks function and data into sections so
 # they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
 # disables exceptions and runtime type.
@@ -178,6 +184,8 @@ option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
 option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
 
 option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
+
+option(EXECUTORCH_BUILD_NEURON "Build the backends/mediatek directory" OFF)
 
 option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
@@ -624,6 +632,10 @@ if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
 endif()
 
+if(EXECUTORCH_BUILD_NEURON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/mediatek)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
 endif()
@@ -680,7 +692,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       executorch
       extension_data_loader
       portable_ops_lib
-      quantized_ops_aot_lib
       util
       torch
   )
@@ -701,7 +712,6 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     target_link_options_shared_lib(quantized_ops_lib)
-    list(APPEND _dep_libs quantized_kernels quantized_ops_lib)
   endif()
 
   # compile options for pybind
@@ -755,6 +765,25 @@ if(EXECUTORCH_BUILD_PYBIND)
                  # the torch libs are in `site-packages/torch/lib`.
                  BUILD_RPATH "@loader_path/../../../torch/lib"
                  INSTALL_RPATH "@loader_path/../../../torch/lib"
+                 # Assume <executorch> is the root `site-packages/executorch`
+                 # Need to add <executorch>/extension/llm/custom_ops for
+                 # libcustom_ops_aot_lib.dylib
+                 BUILD_RPATH "@loader_path/../../extension/llm/custom_ops"
+                 INSTALL_RPATH "@loader_path/../../extension/llm/custom_ops"
+                 # Need to add <executorch>/kernels/quantized for
+                 # libquantized_ops_aot_lib.dylib
+                 BUILD_RPATH "@loader_path/../../kernels/quantized"
+                 INSTALL_RPATH "@loader_path/../../kernels/quantized"
+    )
+  else()
+    set_target_properties(
+      portable_lib
+      PROPERTIES # Assume <executorch> is the root `site-packages/executorch`
+                 # Need to add <executorch>/extension/llm/custom_ops for
+                 # libcustom_ops_aot_lib
+                 # Need to add <executorch>/kernels/quantized for
+                 # libquantized_ops_aot_lib
+                 BUILD_RPATH "$ORIGIN:$ORIGIN/../../extension/llm/custom_ops:$ORIGIN/../../kernels/quantized"
     )
   endif()
 

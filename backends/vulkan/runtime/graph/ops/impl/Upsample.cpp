@@ -69,8 +69,8 @@ void add_upsample_nearest2d_node(
   utils::uvec3 input_sizes = t_in->image_extents();
 
   utils::ivec2 input_size = {
-      utils::safe_downcast<int32_t>(input_sizes.data[0]),
-      utils::safe_downcast<int32_t>(input_sizes.data[1])};
+      utils::safe_downcast<int32_t>(input_sizes[0]),
+      utils::safe_downcast<int32_t>(input_sizes[1])};
   utils::vec2 rev_scales = {
       utils::safe_downcast<float>(1.0), utils::safe_downcast<float>(1.0)};
 
@@ -79,9 +79,9 @@ void add_upsample_nearest2d_node(
     auto output_size_ref = graph.get_int_list(output_sizes);
     rev_scales = {
         utils::safe_downcast<float>(
-            (float)input_size.data[0] / output_size_ref->at(1)),
+            (float)input_size[0] / output_size_ref->at(1)),
         utils::safe_downcast<float>(
-            (float)input_size.data[1] / output_size_ref->at(0))};
+            (float)input_size[1] / output_size_ref->at(0))};
 
   } else {
     auto scales = graph.get_double_list(scale_factors);

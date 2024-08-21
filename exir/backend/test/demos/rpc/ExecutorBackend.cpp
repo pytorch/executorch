@@ -47,7 +47,7 @@ class ExecutorBackend final : public PyTorchBackendInterface {
   Result<DelegateHandle*> init(
       BackendInitContext& context,
       FreeableBuffer* processed,
-      __ET_UNUSED ArrayRef<CompileSpec> compile_specs) const override {
+      ET_UNUSED ArrayRef<CompileSpec> compile_specs) const override {
     // `processed` contains an executorch program. Wrap it in a DataLoader that
     // will return the data directly without copying it.
     MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
@@ -129,7 +129,7 @@ class ExecutorBackend final : public PyTorchBackendInterface {
   }
 
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     Method* client_method = static_cast<Method*>(handle);

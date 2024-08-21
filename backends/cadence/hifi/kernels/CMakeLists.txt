@@ -14,9 +14,10 @@ add_library(
 target_include_directories(
   cadence_kernels
   PUBLIC .
-         ${NN_LIB_BASE_DIR}/xa_nnlib/algo/common/include/
-         ${NN_LIB_BASE_DIR}/xa_nnlib/include/nnlib
-         ${NN_LIB_BASE_DIR}/xa_nnlib/include
-         ${NN_LIB_BASE_DIR}/xa_nnlib/algo/ndsp/hifi4/include/
-         ${NXP_SDK_ROOT_DIR}/middleware/dsp/naturedsp/hifi4/include/
+         ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/algo/common/include/
+         ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/include/nnlib
+         ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/include
+         ${EXECUTORCH_ROOT}/backends/cadence/hifi/third-party/nnlib/nnlib-hifi4/xa_nnlib/algo/ndsp/hifi4/include/
 )
+
+target_link_libraries(cadence_kernels PRIVATE xa_nnlib)

@@ -32,7 +32,6 @@ class Tiktoken : public Tokenizer {
       std::unique_ptr<std::vector<std::string>> special_tokens,
       size_t bos_token_index,
       size_t eos_token_index);
-  ~Tiktoken() {}
 
   Error load(const std::string& tokenizer_path) override;
 

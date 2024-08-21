@@ -242,10 +242,8 @@ Conv2dParams create_conv2d_params(
     const Kernel2dParams& p,
     const bool transposed) {
   const auto& overlay_region = utils::make_ivec2({
-      p.kernel_size.data[0] +
-          (p.kernel_size.data[0] - 1) * (p.dilation.data[0] - 1),
-      p.kernel_size.data[1] +
-          (p.kernel_size.data[1] - 1) * (p.dilation.data[1] - 1),
+      p.kernel_size[0] + (p.kernel_size[0] - 1) * (p.dilation[0] - 1),
+      p.kernel_size[1] + (p.kernel_size[1] - 1) * (p.dilation[1] - 1),
   });
   const auto weight_sizes = graph.sizes_of(weight);
   const int32_t in_group_size = utils::safe_downcast<int32_t>(
@@ -255,15 +253,13 @@ Conv2dParams create_conv2d_params(
 
 void check_conv2d_params(const Kernel2dParams& p, const bool transposed) {
   if (transposed) {
-    if (p.dilation.data[0] > 1 || p.dilation.data[1] > 1) {
+    if (p.dilation[0] > 1 || p.dilation[1] > 1) {
       VK_THROW(
           "aten.convolution.default: transposed = true, dilation > 1 is not supported yet!");
     }
   }
-  if ((p.padding.data[0] > 0 && p.kernel_size.data[0] > 1 &&
-       p.dilation.data[0] > 1) ||
-      (p.padding.data[1] > 0 && p.kernel_size.data[1] > 1 &&
-       p.dilation.data[1] > 1)) {
+  if ((p.padding[0] > 0 && p.kernel_size[0] > 1 && p.dilation[0] > 1) ||
+      (p.padding[1] > 0 && p.kernel_size[1] > 1 && p.dilation[1] > 1)) {
     VK_THROW(
         "aten.convolution.default: padding > 0 while dilation, kernel_size > 1 is not supported yet!");
   }
@@ -297,9 +293,9 @@ utils::uvec3 create_conv2d_global_wg_size(
   if (method == Conv2dMethod::Pointwise) {
     const utils::uvec3 image_extents = graph.image_extents_of(out);
     return {
-        utils::div_up(image_extents.data[0u], 2u),
-        utils::div_up(image_extents.data[1u], 2u),
-        image_extents.data[2u]};
+        utils::div_up(image_extents[0u], 2u),
+        utils::div_up(image_extents[1u], 2u),
+        image_extents[2u]};
   } else {
     return graph.create_global_wg_size(out);
   }

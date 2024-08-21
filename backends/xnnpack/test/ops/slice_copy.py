@@ -7,8 +7,7 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.backends.xnnpack.test.tester import Partition, Tester
+from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestSliceCopy(unittest.TestCase):
@@ -82,11 +81,7 @@ class TestSliceCopy(unittest.TestCase):
             Tester(module, inputs)
             .export()
             .check_count({"torch.ops.aten.slice.Tensor": 3})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )
 
@@ -105,11 +100,7 @@ class TestSliceCopy(unittest.TestCase):
             Tester(module, inputs)
             .export()
             .check_count({"torch.ops.aten.slice.Tensor": 3})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 3}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )
 
@@ -124,12 +115,13 @@ class TestSliceCopy(unittest.TestCase):
 
         inputs = (torch.randn(5, 5, 5),)
         (
-            Tester(SliceCopy(), inputs)
-            .export()
-            .to_edge()
-            .partition(
-                Partition(partitioner=XnnpackPartitioner(has_dynamic_shapes=True))
+            Tester(
+                SliceCopy(),
+                inputs,
+                dynamic_shapes=({2: torch.export.Dim("dim_2", min=4, max=100)},),
             )
+            .export()
+            .to_edge_transform_and_lower()
             .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )
 
@@ -154,11 +146,7 @@ class TestSliceCopy(unittest.TestCase):
                     "quantized_decomposed::quantize_per_tensor": 3,
                 }
             )
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor": 3}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"])
             .to_executorch()

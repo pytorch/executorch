@@ -87,12 +87,12 @@ void add_q_8w_linear_node(
   if (graph.is_buffer_storage(out)) {
     ubos.append(
         {graph.sizes_ubo(out),
-         graph.ntexels_ubo(out),
+         graph.strides_ubo(out),
+         graph.numel_ubo(out),
          graph.sizes_ubo(mat1),
-         graph.texel_strides_ubo(out),
-         graph.texel_strides_ubo(mat1),
-         graph.texel_strides_ubo(q_mat2),
-         graph.texel_strides_ubo(scales)});
+         graph.strides_ubo(mat1),
+         graph.strides_ubo(q_mat2),
+         graph.strides_ubo(scales)});
   } else {
     ubos.append({graph.texture_limits_ubo(out), graph.sizes_ubo(mat1)});
   }

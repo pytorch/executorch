@@ -13,8 +13,8 @@
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/platform.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace internal {
 
 /**
@@ -22,7 +22,7 @@ namespace internal {
  *
  * @retval Monotonically non-decreasing timestamp in system ticks.
  */
-et_timestamp_t getLogTimestamp() {
+et_timestamp_t get_log_timestamp() {
   return et_pal_current_ticks();
 }
 
@@ -73,10 +73,10 @@ static_assert(
  * @param[in] args Variable argument list.
  */
 void vlogf(
-    __ET_UNUSED LogLevel level,
+    ET_UNUSED LogLevel level,
     et_timestamp_t timestamp,
     const char* filename,
-    __ET_UNUSED const char* function,
+    ET_UNUSED const char* function,
     size_t line,
     const char* format,
     va_list args) {
@@ -104,5 +104,5 @@ void vlogf(
 }
 
 } // namespace internal
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

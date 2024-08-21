@@ -62,7 +62,7 @@ void add_permute_node(
         !seen[permute_dim], "Argument dim ", permute_dim, "  is repeated");
     seen[permute_dim] = true;
 
-    out_dims.data[(4u - out_ndim) + i] = permute_dim + (4 - out_ndim);
+    out_dims[(4u - out_ndim) + i] = permute_dim + (4 - out_ndim);
   }
 
   std::string kernel_name = "permute";

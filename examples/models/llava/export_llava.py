@@ -8,10 +8,10 @@ import logging
 from argparse import ArgumentParser, BooleanOptionalAction
 
 import torch
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackDynamicallyQuantizedPartitioner,
-    # XnnpackFloatingPointPartitioner,
+from executorch.backends.xnnpack.partition.config.xnnpack_config import (
+    ConfigPrecisionType,
 )
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.examples.models.llama2.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
@@ -22,10 +22,12 @@ from executorch.examples.models.llama2.source_transformation.quantize import (
 from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
-from executorch.exir import EdgeCompileConfig, to_edge
+from executorch.examples.models.llava.model import LlavaModel
+from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
-from model import LlavaModel
+from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
+from torch import nn
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
@@ -82,7 +84,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
         ["-X", "-qmode", "8da4w", "--group_size", "128", "--embedding-quantize", "4,32"]
     )
     quant_transform = get_quant_weight_transform(args, dtype_override, False)
-    pt2e_quant_params, quantizers, quant_dtype = get_quantizer_and_quant_params(args)
+    _, quantizers, _ = get_quantizer_and_quant_params(args)
     source_transforms = []
     if llava.use_sdpa_with_kv_cache_op:
         source_transforms.append(replace_sdpa_with_custom_op)
@@ -118,21 +120,22 @@ def export_image_encoder(llava, resized, dynamic_shapes):
     llava_image_encode = LlavaImageEncoder(llava)
 
     # quantizer
-    linear_quantizer = XNNPACKQuantizer()
-    operator_config_dynamic = get_symmetric_quantization_config(
-        is_per_channel=True, is_dynamic=True
-    )
-    linear_quantizer.set_global(operator_config_dynamic)
+    quantizer = XNNPACKQuantizer()
+    quantizer.set_global(get_symmetric_quantization_config())
 
-    manager = LlavaEdgeManager(
-        model=llava_image_encode,
-        modelname="llava_image_encoder",
-        max_seq_len=llava.text_model_args.max_seq_len,  # This may not be right
-        dtype=DType.fp32,
-        use_kv_cache=True,
-        example_inputs=(resized,),
-        dynamic_shapes=dynamic_shapes,
-    ).capture_pre_autograd_graph()
+    manager = (
+        LlavaEdgeManager(
+            model=llava_image_encode,
+            modelname="llava_image_encoder",
+            max_seq_len=llava.text_model_args.max_seq_len,  # This may not be right
+            dtype=DType.fp32,
+            use_kv_cache=True,
+            example_inputs=(resized,),
+            dynamic_shapes=dynamic_shapes,
+        )
+        .capture_pre_autograd_graph()
+        .pt2e_quantize([quantizer])
+    )
 
     # lower to executorch
     with torch.no_grad():
@@ -145,15 +148,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
 
 
 def export_token_embedding(llava, prompt):
-    embed = torch.nn.Embedding(
-        llava.model_.config.vocab_size,
-        llava.model_.config.hidden_size,
-        llava.model_.config.pad_token_id,
-    )
-    embed.load_state_dict(
-        llava.model_.get_model().embed_tokens.state_dict(), strict=True, assign=True
-    )
-    embed = embed.to(torch.float32)
+    embed = llava.embed_tokens
     token_dim_1 = Dim("token_dim_1", min=2, max=3518)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
@@ -163,29 +158,14 @@ def export_token_embedding(llava, prompt):
     return token_embedding_ep
 
 
-def main():
-    parser = ArgumentParser()
-    parser.add_argument(
-        "--use-sdpa-with-kv-cache",
-        default=True,
-        action=BooleanOptionalAction,
-        help="Use sdpa_with_kv_cache custom op in LLava text model.",
-    )
-    parser.add_argument(
-        "--pte-name",
-        default="llava_combined_xnnpack.pte",
-        help="Name of the exported ExecuTorch program.",
-    )
-    args = parser.parse_args()
-    logging.info(
-        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}"
-    )
-    llava_model = LlavaModel(use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache)
+def export_all(llava_model: LlavaModel):
     llava = llava_model.get_eager_model()
 
-    prompt_before_image, resized, prompt_after_image = (
-        llava_model.get_inputs_for_prefill()
-    )
+    (
+        prompt_before_image,
+        resized,
+        prompt_after_image,
+    ) = llava_model.get_inputs_for_prefill()
 
     image_encoder_ep = export_image_encoder(
         llava, resized, llava_model._get_image_dynamic_shapes()
@@ -201,26 +181,84 @@ def main():
 
     token_embedding_ep = export_token_embedding(llava, prompt_before_image)
 
-    edge_ep = to_edge(
+    lowered_and_edge = to_edge_transform_and_lower(
         {
             "image_encoder": image_encoder_ep,
             "token_embedding": token_embedding_ep,
             "text_model": text_model_ep,
         },
+        partitioner={
+            "image_encoder": [XnnpackPartitioner()],
+            "text_model": [
+                XnnpackPartitioner(
+                    config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
+                    per_op_mode=True,
+                )
+            ],
+        },
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
 
-    executorch_program = edge_ep.to_backend(
-        {
-            # TODO: Fix Xnnpack partitioner issue on image encoder.
-            # "image_encoder": XnnpackFloatingPointPartitioner(),
-            "text_model": XnnpackDynamicallyQuantizedPartitioner(),
-        }
-    ).to_executorch()
+    executorch_program = lowered_and_edge.to_executorch()
+    return executorch_program
+
+
+def get_image_tensor_for_llava_runner(llava_model):
+    # llava runner doesn't have image reader so an image tensor is needed.
+    (resized,) = llava_model.get_example_inputs()
+
+    copy = torch.tensor(resized)
+    m = nn.Module()
+    par = nn.Parameter(copy, requires_grad=False)
+    m.register_parameter("0", par)
+    tensors = torch.jit.script(m)
+    tensors.save("image.pt")
+
+    logging.info("Saved image tensor to image.pt")
+
+
+def get_tokenizer_for_llava_runner(llava_model):
+    # serialize tokenizer into tokenizer.bin
+    llava_model.tokenizer.save_vocabulary("./")
+    t = Tokenizer("tokenizer.model")
+    t.export("tokenizer.bin")
+
+
+def main():
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--use-sdpa-with-kv-cache",
+        default=True,
+        action=BooleanOptionalAction,
+        help="Use sdpa_with_kv_cache custom op in LLava text model.",
+    )
+    parser.add_argument(
+        "--pte-name",
+        default="llava_combined_xnnpack.pte",
+        help="Name of the exported ExecuTorch program.",
+    )
+    parser.add_argument(
+        "--with-artifacts",
+        default=False,
+        action=BooleanOptionalAction,
+        help="Generate artifacts for llava runner.",
+    )
+    args = parser.parse_args()
+    logging.info(
+        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}"
+    )
+    llava_model = LlavaModel(use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache)
+
+    executorch_program = export_all(llava_model)
 
     with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)
     logging.info(f"Exported ExecuTorch program to {args.pte_name}")
+
+    # artifacts
+    if args.with_artifacts:
+        get_image_tensor_for_llava_runner(llava_model)
+        get_tokenizer_for_llava_runner(llava_model)
 
 
 if __name__ == "__main__":

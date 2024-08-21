@@ -155,6 +155,8 @@ if __name__ == "__main__":
     model, example_inputs, _ = EagerModelFactory.create_model(**model_config)
 
     model = model.eval()
+
+    # Deep copy the model inputs to check against PyTorch forward pass
     if args.check_correctness or args.bench_pytorch:
         model_copy = copy.deepcopy(model)
         inputs_copy = []
@@ -228,4 +230,6 @@ if __name__ == "__main__":
         bench_torch(executorch_program, model_copy, example_inputs, model_name)
 
     if args.check_correctness:
-        compare_outputs(executorch_program, model_copy, inputs_copy, model_name)
+        compare_outputs(
+            executorch_program, model_copy, inputs_copy, model_name, args.use_fp16
+        )

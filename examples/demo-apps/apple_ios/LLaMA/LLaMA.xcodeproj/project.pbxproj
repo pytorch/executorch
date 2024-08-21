@@ -650,7 +650,7 @@
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-simulator-debug.a",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama;
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -712,7 +712,7 @@
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-simulator-release.a",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama;
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -765,7 +765,7 @@
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libexecutorch-simulator-debug.a",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama.LLaMARunner;
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama.LLaMARunner;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -817,7 +817,7 @@
 					"-force_load",
 					"$(BUILT_PRODUCTS_DIR)/libexecutorch-simulator-debug.a",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama.LLaMARunner;
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama.LLaMARunner;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

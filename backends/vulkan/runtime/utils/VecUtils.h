@@ -237,6 +237,16 @@ template <typename Type, uint32_t N>
 struct vec final {
   // NOLINTNEXTLINE
   Type data[N];
+
+  const Type& operator[](const uint32_t& i) const {
+    VK_CHECK_COND(i >= 0 && i < N, "Index out of bounds!");
+    return data[i];
+  }
+
+  Type& operator[](const uint32_t& i) {
+    VK_CHECK_COND(i >= 0 && i < N, "Index out of bounds!");
+    return data[i];
+  }
 };
 
 } // namespace detail
@@ -261,24 +271,22 @@ using vec4 = vec<4u>;
 
 // uvec3 is the type representing tensor extents. Useful for debugging.
 inline std::ostream& operator<<(std::ostream& os, const uvec3& v) {
-  os << "(" << v.data[0u] << ", " << v.data[1u] << ", " << v.data[2u] << ")";
+  os << "(" << v[0u] << ", " << v[1u] << ", " << v[2u] << ")";
   return os;
 }
 
 inline std::ostream& operator<<(std::ostream& os, const ivec3& v) {
-  os << "(" << v.data[0u] << ", " << v.data[1u] << ", " << v.data[2u] << ")";
+  os << "(" << v[0u] << ", " << v[1u] << ", " << v[2u] << ")";
   return os;
 }
 
 inline std::ostream& operator<<(std::ostream& os, const uvec4& v) {
-  os << "(" << v.data[0u] << ", " << v.data[1u] << ", " << v.data[2u] << ", "
-     << v.data[3u] << ")";
+  os << "(" << v[0u] << ", " << v[1u] << ", " << v[2u] << ", " << v[3u] << ")";
   return os;
 }
 
 inline std::ostream& operator<<(std::ostream& os, const ivec4& v) {
-  os << "(" << v.data[0u] << ", " << v.data[1u] << ", " << v.data[2u] << ", "
-     << v.data[3u] << ")";
+  os << "(" << v[0u] << ", " << v[1u] << ", " << v[2u] << ", " << v[3u] << ")";
   return os;
 }
 
@@ -288,7 +296,7 @@ inline detail::vec<T, N> divup_vec(
     const detail::vec<T, N>& b) {
   detail::vec<T, N> result;
   for (uint32_t i = 0; i < N; ++i) {
-    result.data[i] = utils::div_up(a.data[i], b.data[i]);
+    result[i] = utils::div_up(a[i], b[i]);
   }
   return result;
 }
@@ -369,7 +377,7 @@ inline ivec4 make_ivec4_prepadded1(const std::vector<int64_t>& ints) {
   ivec4 result = {1, 1, 1, 1};
   size_t base = 4 - ints.size();
   for (size_t i = 0; i < ints.size(); ++i) {
-    result.data[i + base] = safe_downcast<int32_t>(ints[i]);
+    result[i + base] = safe_downcast<int32_t>(ints[i]);
   }
 
   return result;
@@ -377,16 +385,16 @@ inline ivec4 make_ivec4_prepadded1(const std::vector<int64_t>& ints) {
 
 inline ivec3 make_ivec3(uvec3 ints) {
   return {
-      safe_downcast<int32_t>(ints.data[0u]),
-      safe_downcast<int32_t>(ints.data[1u]),
-      safe_downcast<int32_t>(ints.data[2u])};
+      safe_downcast<int32_t>(ints[0u]),
+      safe_downcast<int32_t>(ints[1u]),
+      safe_downcast<int32_t>(ints[2u])};
 }
 
 inline uvec3 make_uvec3(ivec3 ints) {
   return {
-      safe_downcast<uint32_t>(ints.data[0u]),
-      safe_downcast<uint32_t>(ints.data[1u]),
-      safe_downcast<uint32_t>(ints.data[2u])};
+      safe_downcast<uint32_t>(ints[0u]),
+      safe_downcast<uint32_t>(ints[1u]),
+      safe_downcast<uint32_t>(ints[2u])};
 }
 
 /*

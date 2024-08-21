@@ -8,8 +8,8 @@
 
 #include <executorch/runtime/core/evalue.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 template <>
 exec_aten::ArrayRef<exec_aten::optional<exec_aten::Tensor>>
 BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>>::get() const {
@@ -27,5 +27,5 @@ BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>>::get() const {
   return exec_aten::ArrayRef<exec_aten::optional<exec_aten::Tensor>>{
       unwrapped_vals_, wrapped_vals_.size()};
 }
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

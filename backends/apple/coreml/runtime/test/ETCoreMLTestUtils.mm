@@ -8,16 +8,17 @@
 
 #import "ETCoreMLTestUtils.h"
 
-#import <ETCoreMLAsset.h>
-#import <ETCoreMLLogging.h>
-#import <ETCoreMLModelAnalyzer.h>
-#import <ETCoreMLModelCompiler.h>
-#import <ETCoreMLStrings.h>
+#import "ETCoreMLAsset.h"
+#import "ETCoreMLLogging.h"
+#import "ETCoreMLModelDebugInfo.h"
+#import "ETCoreMLModelAnalyzer.h"
+#import "ETCoreMLModelCompiler.h"
+#import "ETCoreMLStrings.h"
 #import <filesystem>
-#import <inmemory_filesystem_utils.hpp>
+#import "inmemory_filesystem_utils.hpp"
 #import <iostream>
 #import <memory>
-#import <model_metadata.h>
+#import "model_metadata.h"
 
 namespace {
 NSURL * _Nullable create_directory_if_needed(NSURL *url,
@@ -239,6 +240,7 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
 
 + (BOOL)extractModelAssetAndMetadataFromAOTData:(NSData *)data
                                      modelAsset:(ETCoreMLAsset *_Nullable __autoreleasing *_Nonnull)modelAsset
+                                 modelDebugInfo:(ETCoreMLModelDebugInfo *_Nullable __autoreleasing *_Nonnull)modelDebugInfo
                                        metadata:(executorchcoreml::ModelMetadata&)metadata
                                          dstURL:(NSURL *)dstURL
                                     fileManager:(NSFileManager *)fileManager
@@ -295,18 +297,35 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     if (modelAsset) {
         *modelAsset = localAsset;
     }
-    
+
+    __block auto debugInfoBuffer = inMemoryFS->get_file_content({ETCoreMLStrings.debugInfoFileRelativePath.UTF8String}, ec);
+    if (debugInfoBuffer && debugInfoBuffer->size() > 0) {
+
+        NSData *data = [[NSData alloc] initWithBytesNoCopy:debugInfoBuffer->data()
+                                                    length:debugInfoBuffer->size()
+                                               deallocator:^(void * _Nonnull __unused bytes, NSUInteger __unused length) {
+            debugInfoBuffer.reset();
+        }];
+
+        ETCoreMLModelDebugInfo *lModelDebugInfo = [ETCoreMLModelDebugInfo modelDebugInfoFromData:data error:nil];
+        if (modelDebugInfo) {
+            *modelDebugInfo = lModelDebugInfo;
+        }
+    }
+
     return YES;
 }
 
 + (ETCoreMLModelAnalyzer *)createAnalyzerWithAOTData:(NSData *)data
-                                             dstURL:(NSURL *)dstURL
-                                              error:(NSError * __autoreleasing *)error {
+                                              dstURL:(NSURL *)dstURL
+                                               error:(NSError * __autoreleasing *)error {
     ETCoreMLAsset *modelAsset = nil;
+    ETCoreMLModelDebugInfo *modelDebugInfo = nil;
     executorchcoreml::ModelMetadata metadata;
     NSFileManager *fileManager = [[NSFileManager alloc] init];
     if (![self extractModelAssetAndMetadataFromAOTData:data
                                             modelAsset:&modelAsset
+                                        modelDebugInfo:&modelDebugInfo
                                               metadata:metadata
                                                 dstURL:dstURL
                                            fileManager:fileManager
@@ -343,12 +362,12 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     MLModelConfiguration *configuration = [[MLModelConfiguration alloc] init];
     ETCoreMLModelAnalyzer *analyzer = [[ETCoreMLModelAnalyzer alloc] initWithCompiledModelAsset:compiledModelAsset
                                                                                      modelAsset:modelAsset
+                                                                                 modelDebugInfo:modelDebugInfo
                                                                                        metadata:metadata
-                                                                  operationPathToDebugSymbolMap:nil
                                                                                   configuration:configuration
                                                                                    assetManager:assetManager
                                                                                           error:error];
-    
+
     return analyzer;
 }
 

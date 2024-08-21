@@ -203,14 +203,14 @@ class ContextBinaryExample(torch.nn.Module):
 
 
 class Conv1dSequential(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, bias=True):
         super().__init__()
         self.first = torch.nn.Conv1d(
             in_channels=1,
             out_channels=3,
             kernel_size=(3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
 
         self.second = torch.nn.Conv1d(
@@ -218,7 +218,7 @@ class Conv1dSequential(torch.nn.Module):
             out_channels=2,
             kernel_size=(3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
 
     def forward(self, x):
@@ -315,21 +315,21 @@ class Conv2dMaxPool2d(torch.nn.Module):
 
 
 class Conv2dSequential(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, bias=True):
         super().__init__()
         self.first = torch.nn.Conv2d(
             in_channels=1,
             out_channels=3,
             kernel_size=(3, 3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
         self.second = torch.nn.Conv2d(
             in_channels=3,
             out_channels=2,
             kernel_size=(3, 3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
 
     def forward(self, x):
@@ -337,14 +337,14 @@ class Conv2dSequential(torch.nn.Module):
 
 
 class Conv2dSingle(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, bias=True):
         super().__init__()
         self.conv = torch.nn.Conv2d(
             in_channels=1,
             out_channels=3,
             kernel_size=(3, 3),
             padding=1,
-            bias=True,
+            bias=bias,
         )
 
     def forward(self, x):

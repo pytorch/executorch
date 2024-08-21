@@ -9,7 +9,7 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-MODEL_NAME=$1 # stories110M.pt
+MODEL_NAME=$1 # stories110M
 BUILD_TOOL=$2 # buck2 or cmake
 DTYPE=$3 # fp16 or fp32
 MODE=${4:-"xnnpack+custom"} # portable or xnnpack+custom or xnnpack+custom+qe
@@ -72,6 +72,25 @@ fi
 
 echo "COREML option ${COREML}"
 
+if [[ "${MODE}" =~ .*qnn.* ]]; then
+  QNN=ON
+  export EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+  export QNN_SDK_ROOT=/tmp/qnn/2.23.0.240531
+  export LD_LIBRARY_PATH="${QNN_SDK_ROOT}/lib/x86_64-linux-clang"
+  export PYTHONPATH=".."
+  cp schema/program.fbs exir/_serialize/program.fbs
+  cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
+  cp -f build-x86/backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
+  cp -f build-x86/backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so backends/qualcomm/python
+
+else
+  QNN=OFF
+  QNN_SDK_ROOT=""
+fi
+
+echo "QNN option ${QNN}"
+echo "QNN_SDK_ROOT: ${QNN_SDK_ROOT}"
+
 if [[ -z "${BUCK:-}" ]]; then
   BUCK=buck2
 fi
@@ -96,6 +115,8 @@ cmake_install_executorch_libraries() {
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DEXECUTORCH_BUILD_MPS="$MPS" \
         -DEXECUTORCH_BUILD_COREML="$COREML" \
+        -DEXECUTORCH_BUILD_QNN="$QNN" \
+        -DQNN_SDK_ROOT="$QNN_SDK_ROOT" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Debug
@@ -119,7 +140,7 @@ cmake_build_llama_runner() {
 
 cleanup_files() {
   echo "Deleting downloaded and generated files"
-  rm "${MODEL_NAME}"
+  rm "${CHECKPOINT_FILE_NAME}"
   rm tokenizer.model
   rm tokenizer.bin
   rm "${EXPORTED_MODEL_NAME}"
@@ -130,16 +151,18 @@ cleanup_files() {
 prepare_artifacts_upload() {
   if [ -n "$UPLOAD_DIR" ]; then
     echo "Preparing for uploading generated artifacs"
+    zip -j model.zip "${EXPORTED_MODEL_NAME}" tokenizer.bin
     mkdir -p "${UPLOAD_DIR}"
-    zip -j "model.zip" "${MODEL_NAME}" tokenizer.bin
-    cp "model.zip" "${UPLOAD_DIR}"
+    mv model.zip "${UPLOAD_DIR}"
   fi
 }
 
 # Download and create artifacts.
 PARAMS="params.json"
+CHECKPOINT_FILE_NAME=""
 touch "${PARAMS}"
-if [[ "${MODEL_NAME}" == "stories110M.pt" ]]; then
+if [[ "${MODEL_NAME}" == "stories110M" ]]; then
+  CHECKPOINT_FILE_NAME="stories110M.pt"
   download_stories_model_artifacts
 else
   echo "Unsupported model name ${MODEL_NAME}"
@@ -160,7 +183,7 @@ fi
 # Export model.
 EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
-EXPORT_ARGS="-c stories110M.pt -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME} -kv"
+EXPORT_ARGS="-c ${CHECKPOINT_FILE_NAME} -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME} -kv"
 if [[ "${XNNPACK}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -X -qmode 8da4w -G 128"
 fi
@@ -175,6 +198,9 @@ if [[ "${MPS}" == "ON" ]]; then
 fi
 if [[ "${COREML}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -kv -v --coreml --disable_dynamic_shape"
+fi
+if [[ "${QNN}" == "ON" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} -kv -v --qnn --disable_dynamic_shape"
 fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}

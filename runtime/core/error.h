@@ -17,8 +17,8 @@
 
 #include <executorch/runtime/platform/log.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 // Alias error code integral type to minimal platform width (32-bits for now).
 typedef uint32_t error_code_t;
@@ -92,13 +92,22 @@ enum class Error : error_code_t {
 
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::Error;
+using ::executorch::runtime::error_code_t;
 } // namespace executor
 } // namespace torch
 
 /**
  * If cond__ is false, log the specified message and return the specified Error
  * from the current function, which must be of return type
- * torch::executor::Error.
+ * executorch::runtime::Error.
  *
  * @param[in] cond__ The condition to be checked, asserted as true.
  * @param[in] error__ Error enum value to return without the `Error::` prefix,
@@ -110,14 +119,14 @@ enum class Error : error_code_t {
   {                                                               \
     if (!(cond__)) {                                              \
       ET_LOG(Error, message__, ##__VA_ARGS__);                    \
-      return ::torch::executor::Error::error__;                   \
+      return ::executorch::runtime::Error::error__;               \
     }                                                             \
   }
 
 /**
  * If error__ is not Error::Ok, optionally log a message and return the error
  * from the current function, which must be of return type
- * torch::executor::Error.
+ * executorch::runtime::Error.
  *
  * @param[in] error__ Error enum value asserted to be Error::Ok.
  * @param[in] ... Optional format string for the log error message and its
@@ -161,19 +170,19 @@ enum class Error : error_code_t {
   ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_##N
 
 // Internal only: Use ET_CHECK_OK_OR_RETURN_ERROR() instead.
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_1(error__) \
-  do {                                                  \
-    const auto et_error__ = (error__);                  \
-    if (et_error__ != ::torch::executor::Error::Ok) {   \
-      return et_error__;                                \
-    }                                                   \
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_1(error__)   \
+  do {                                                    \
+    const auto et_error__ = (error__);                    \
+    if (et_error__ != ::executorch::runtime::Error::Ok) { \
+      return et_error__;                                  \
+    }                                                     \
   } while (0)
 
 // Internal only: Use ET_CHECK_OK_OR_RETURN_ERROR() instead.
 #define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2(error__, message__, ...) \
   do {                                                                  \
     const auto et_error__ = (error__);                                  \
-    if (et_error__ != ::torch::executor::Error::Ok) {                   \
+    if (et_error__ != ::executorch::runtime::Error::Ok) {               \
       ET_LOG(Error, message__, ##__VA_ARGS__);                          \
       return et_error__;                                                \
     }                                                                   \

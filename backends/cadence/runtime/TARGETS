@@ -1,0 +1,21 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("odai_jarvis")
+
+python_library(
+    name = "runtime",
+    srcs = [
+        "__init__.py",
+        "executor.py",
+    ] + glob([
+        "xtsc-cfg/**/*",
+    ]),
+    typing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/sdk/bundled_program:config",
+        "//executorch/sdk/bundled_program:core",
+        "//executorch/sdk/bundled_program/serialize:lib",
+    ],
+)

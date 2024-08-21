@@ -83,8 +83,7 @@ class TestUpsampleBilinear2d(unittest.TestCase):
         (
             Tester(self.StaticResizeBilinear2dModule(), example_inputs)
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(self.ops)
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -97,8 +96,7 @@ class TestUpsampleBilinear2d(unittest.TestCase):
         (
             Tester(self.StaticResizeBilinear2dModuleWithAlignCorners(), example_inputs)
             .export()
-            .to_edge()
-            .partition()
+            .to_edge_transform_and_lower()
             .check_not(self.ops)
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -112,13 +110,7 @@ class TestUpsampleBilinear2d(unittest.TestCase):
         (
             Tester(self.Bilinear2dAntiAlias(), example_inputs)
             .export()
-            .to_edge()
-            .check_count(
-                {
-                    "executorch_exir_dialects_edge__ops_aten__upsample_bilinear2d_aa_default": 2
-                }
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count(
                 {
                     "executorch_exir_dialects_edge__ops_aten__upsample_bilinear2d_aa_default": 2

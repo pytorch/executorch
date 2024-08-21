@@ -107,6 +107,10 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
     set(FLATCC_LIB flatccrt)
   endif()
 
+  if(CMAKE_BUILD_TYPE MATCHES "Debug")
+    target_link_options(mps_executor_runner PUBLIC -fsanitize=undefined)
+  endif()
+
   target_link_libraries(
     mps_executor_runner
     bundled_program

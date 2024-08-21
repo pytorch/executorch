@@ -58,6 +58,7 @@ add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
 # which can be ignored by GNU. So we make it a warning, not an error in GNU.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   add_compile_options("-Wno-error=attributes")
+  add_link_options("-flto=auto")
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -67,7 +68,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
   # --gc-sections is added by torch.
   add_compile_options(
     "-O3" "-ffunction-sections" "-fdata-sections" "-frtti"
-    "-Wno-unused-command-line-argument"
   )
 endif()
 
@@ -257,6 +257,22 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     # Strip unnecessary sections of the binary
     pybind11_strip(PyQnnManagerAdaptor)
     pybind11_strip(PyQnnWrapperAdaptor)
+  endif()
+
+  if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    # need to allow exceptions in pybind
+    set(_pybind_compile_options
+      -Wno-deprecated-declarations
+      -fPIC
+      -frtti
+      -fexceptions
+    )
+    target_compile_options(
+      PyQnnManagerAdaptor PUBLIC ${_pybind_compile_options}
+    )
+    target_compile_options(
+      PyQnnWrapperAdaptor PUBLIC ${_pybind_compile_options}
+    )
   endif()
 
   add_subdirectory(

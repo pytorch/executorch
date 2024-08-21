@@ -52,7 +52,7 @@ build_gtest() {
 }
 
 export_test_model() {
-  python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry" --outdir "cmake-out" 2> /dev/null
+  python3 -m test.models.export_program --modules "ModuleAdd,ModuleAddHalf,ModuleDynamicCatUnallocatedIO,ModuleIndex,ModuleLinear,ModuleMultipleEntry,ModuleSimpleTrain" --outdir "cmake-out" 2> /dev/null
   python3 -m test.models.export_delegated_program --modules "ModuleAddMul" --backend_id "StubBackend" --outdir "cmake-out" || true
 
   ET_MODULE_ADD_HALF_PATH="$(realpath cmake-out/ModuleAddHalf.pte)"
@@ -65,6 +65,7 @@ export_test_model() {
   ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH="$(realpath cmake-out/ModuleAddMul-nosegments-da1024.pte)"
   ET_MODULE_ADD_MUL_NOSEGMENTS_PATH="$(realpath cmake-out/ModuleAddMul-nosegments.pte)"
   ET_MODULE_ADD_MUL_PATH="$(realpath cmake-out/ModuleAddMul.pte)"
+  ET_MODULE_SIMPLE_TRAIN_PATH="$(realpath cmake-out/ModuleSimpleTrain.pte)"
   export ET_MODULE_ADD_HALF_PATH
   export ET_MODULE_ADD_PATH
   export ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH
@@ -75,6 +76,7 @@ export_test_model() {
   export ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH
   export ET_MODULE_ADD_MUL_NOSEGMENTS_PATH
   export ET_MODULE_ADD_MUL_PATH
+  export ET_MODULE_SIMPLE_TRAIN_PATH
 }
 
 build_and_run_test() {

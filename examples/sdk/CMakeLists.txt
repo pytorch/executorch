@@ -9,6 +9,8 @@
 cmake_minimum_required(VERSION 3.19)
 project(sdk_example)
 
+option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -61,3 +63,28 @@ target_link_libraries(
   portable_ops_lib
   portable_kernels
 )
+
+if(EXECUTORCH_BUILD_COREML)
+find_library(ACCELERATE_FRAMEWORK Accelerate)
+find_library(COREML_FRAMEWORK CoreML)
+find_library(FOUNDATION_FRAMEWORK Foundation)
+find_library(SQLITE_LIBRARY sqlite3)
+
+set(PROTOBUF_LIB_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../backends/apple/coreml/third-party/coremltools/deps/protobuf/cmake)
+find_library(PROTOBUF_LITE REQUIRED NAMES libprotobuf-lite.a PATHS ${PROTOBUF_LIB_DIR} NO_DEFAULT_PATH)
+  
+target_link_libraries(
+  sdk_example_runner
+  "-Wl,-force_load"
+  coremldelegate
+)
+
+target_link_libraries(
+  sdk_example_runner
+  ${PROTOBUF_LITE}
+  ${ACCELERATE_FRAMEWORK}
+  ${COREML_FRAMEWORK}
+  ${FOUNDATION_FRAMEWORK}
+  ${SQLITE_LIBRARY}
+)
+endif()

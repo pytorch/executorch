@@ -231,7 +231,7 @@ def layout_declare_tensor(
     var_name: str,
     dtype: str,
     storage_type: str,
-    is_scalar_array: bool = False,
+    is_scalar_array: bool = True,
     precision: str = "PRECISION",
 ) -> str:
     assert storage_type.lower() in ["buffer", "texture3d", "texture2d"]

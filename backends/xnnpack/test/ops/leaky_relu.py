@@ -30,11 +30,7 @@ class TestLeakyRelu(unittest.TestCase):
             Tester(module, inputs)
             .export()
             .check_count({"torch.ops.aten.leaky_relu.default": 1})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_leaky_relu_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -62,11 +58,7 @@ class TestLeakyRelu(unittest.TestCase):
             Tester(self.LeakyReLUFunctional(), inputs)
             .export()
             .check_count({"torch.ops.aten.leaky_relu.default": 1})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_leaky_relu_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -79,7 +71,7 @@ class TestLeakyRelu(unittest.TestCase):
         )
 
     @unittest.skip("T172863987 - Missing quantizer support.")
-    def test_qs8_leaky_relu(self):
+    def _test_qs8_leaky_relu(self):
         inputs = (torch.randn(1, 3, 3),)
         (
             Tester(self.LeakyReLU(negative_slope=0.2), inputs)
@@ -91,11 +83,7 @@ class TestLeakyRelu(unittest.TestCase):
                     "quantized_decomposed::quantize_per_tensor": 3,
                 }
             )
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_leaky_relu_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -109,7 +97,7 @@ class TestLeakyRelu(unittest.TestCase):
         )
 
     @unittest.skip("T172863987 - Missing quantizer support.")
-    def test_qs8_leaky_relu_default_slope(self):
+    def _test_qs8_leaky_relu_default_slope(self):
         """
         The leaky_relu visitor has logic to handle the default slope, since it's apparently not
         passed through on export. This test ensures that this matches the eager mode behavior.
@@ -126,11 +114,7 @@ class TestLeakyRelu(unittest.TestCase):
                     "quantized_decomposed::quantize_per_tensor": 3,
                 }
             )
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_leaky_relu_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [

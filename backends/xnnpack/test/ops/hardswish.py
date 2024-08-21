@@ -28,11 +28,7 @@ class TestHardswish(unittest.TestCase):
             Tester(self.Hardswish(), inputs)
             .export()
             .check_count({"torch.ops.aten.hardswish.default": 1})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_hardswish_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [
@@ -44,28 +40,21 @@ class TestHardswish(unittest.TestCase):
             .run_method_and_compare_outputs()
         )
 
-    @unittest.skip("T158969708 - Missing recomposition pass for hardswish")
-    def _test_fp16_hardswish(self):
+    def test_fp16_hardswish(self):
         inputs = (torch.randn(1, 3, 3).to(torch.float16),)
         self._test_hardswish(inputs)
 
-    @unittest.skip("T158969708 - Missing recomposition pass for hardswish")
-    def _test_fp32_hardswish(self):
+    def test_fp32_hardswish(self):
         inputs = (torch.randn(1, 3, 3),)
         self._test_hardswish(inputs)
 
-    @unittest.skip("T158969708 - Missing recomposition pass for hardswish")
-    def _test_fp32_hardswish_functional(self):
+    def test_fp32_hardswish_functional(self):
         inputs = (torch.randn(1, 3, 3),)
         (
             Tester(self.HardswishFunctional(), inputs)
             .export()
             .check_count({"torch.ops.aten.hardswish.default": 1})
-            .to_edge()
-            .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_hardswish_default": 1}
-            )
-            .partition()
+            .to_edge_transform_and_lower()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 [

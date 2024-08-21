@@ -28,9 +28,6 @@
 [submodule "backends/xnnpack/third-party/pthreadpool"]
 	path = backends/xnnpack/third-party/pthreadpool
 	url = https://github.com/Maratyszcza/pthreadpool.git
-[submodule "examples/third-party/LLaVA"]
-	path = examples/third-party/LLaVA
-	url = https://github.com/haotian-liu/LLaVA.git
 [submodule "examples/third-party/fbjni"]
 	path = examples/third-party/fbjni
 	url = https://github.com/facebookincubator/fbjni.git
@@ -61,6 +58,9 @@
 [submodule "third-party/ios-cmake"]
 	path = third-party/ios-cmake
 	url = https://github.com/leetal/ios-cmake
+[submodule "backends/cadence/hifi/third-party/nnlib/nnlib-hifi4"]
+	path = backends/cadence/hifi/third-party/nnlib/nnlib-hifi4
+	url = https://github.com/foss-xtensa/nnlib-hifi4.git
 [submodule "third-party/prelude"]
 	path = third-party/prelude
 	url = https://github.com/facebook/buck2-prelude.git

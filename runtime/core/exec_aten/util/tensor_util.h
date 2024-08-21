@@ -397,12 +397,8 @@
       extract_scalar_tensor(scalar_tensor, &out_val),    \
       #scalar_tensor " could not be extracted: wrong type or out of range");
 
-namespace torch {
-namespace executor {
-
-using Tensor = exec_aten::Tensor;
-using Scalar = exec_aten::Scalar;
-using ScalarType = exec_aten::ScalarType;
+namespace executorch {
+namespace runtime {
 
 //
 // Utility functions for checking tensor attributes
@@ -432,7 +428,7 @@ inline bool dim_is_valid(int64_t dim, int64_t upper_bound) {
  * the zero dimensional tensors in some kernels, that treat them as 1D tensors
  * with a single element.
  */
-inline ssize_t nonzero_dim(const Tensor& tensor) {
+inline ssize_t nonzero_dim(const exec_aten::Tensor& tensor) {
   return tensor.dim() == 0 ? 1 : tensor.dim();
 }
 
@@ -442,7 +438,7 @@ inline ssize_t nonzero_dim(const Tensor& tensor) {
  * the zero dimensional tensors in some kernels, that treat them as 1D tensors
  * with a single element.
  */
-inline ssize_t nonempty_size(const Tensor& tensor, ssize_t dim) {
+inline ssize_t nonempty_size(const exec_aten::Tensor& tensor, ssize_t dim) {
   return tensor.dim() == 0 ? 1 : tensor.size(dim);
 }
 
@@ -861,7 +857,7 @@ inline bool tensor_is_scalar(exec_aten::Tensor t) {
 constexpr size_t kTensorDimensionLimit = 16;
 
 /// Returns the product of dim[0:dim), not including dim.
-inline size_t getLeadingDims(const Tensor& tensor, int64_t dim) {
+inline size_t getLeadingDims(const exec_aten::Tensor& tensor, int64_t dim) {
   ET_CHECK_MSG(
       dim >= 0 && dim <= tensor.dim(),
       "Ending dimension %" PRId64
@@ -876,7 +872,7 @@ inline size_t getLeadingDims(const Tensor& tensor, int64_t dim) {
 }
 
 /// Returns the product of dim[dim+1:].
-inline size_t getTrailingDims(const Tensor& tensor, int64_t dim) {
+inline size_t getTrailingDims(const exec_aten::Tensor& tensor, int64_t dim) {
   ET_CHECK_MSG(
       dim >= -1 && dim < tensor.dim(),
       "Starting dimension %" PRId64
@@ -901,7 +897,7 @@ inline size_t getTrailingDims(const Tensor& tensor, int64_t dim) {
  * the tensor.
  */
 inline size_t coordinateToIndex(
-    const Tensor& tensor,
+    const exec_aten::Tensor& tensor,
     const size_t* const coordinate) {
   size_t index = 0;
   for (int d = 0; d < tensor.dim(); ++d) {
@@ -921,8 +917,10 @@ inline size_t coordinateToIndex(
  * index. It is assumed that the array has kTensorDimensionLimit elements.
  * @returns void
  */
-inline void
-indexToCoordinate(const Tensor& tensor, size_t index, size_t* coordinate) {
+inline void indexToCoordinate(
+    const exec_aten::Tensor& tensor,
+    size_t index,
+    size_t* coordinate) {
   ET_CHECK(index < tensor.numel());
   for (auto i = 0; i < tensor.dim(); ++i) {
     auto dim = tensor.dim() - 1 - i;
@@ -947,12 +945,12 @@ template <
     typename std::enable_if<
         std::is_integral<INT_T>::value && !std::is_same<INT_T, bool>::value,
         bool>::type = true>
-bool extract_scalar_tensor(Tensor tensor, INT_T* out_val) {
+bool extract_scalar_tensor(exec_aten::Tensor tensor, INT_T* out_val) {
   if (tensor.numel() != 1) {
     return false;
   }
 #define CASE_INT_DTYPE(TENSOR_CTYPE, TENSOR_DTYPE)                     \
-  case ScalarType::TENSOR_DTYPE: {                                     \
+  case exec_aten::ScalarType::TENSOR_DTYPE: {                          \
     const TENSOR_CTYPE val = tensor.const_data_ptr<TENSOR_CTYPE>()[0]; \
     if (val < std::numeric_limits<INT_T>::lowest() ||                  \
         val > std::numeric_limits<INT_T>::max()) {                     \
@@ -984,12 +982,12 @@ template <
     typename FLOAT_T,
     typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
         type = true>
-bool extract_scalar_tensor(Tensor tensor, FLOAT_T* out_val) {
+bool extract_scalar_tensor(exec_aten::Tensor tensor, FLOAT_T* out_val) {
   if (tensor.numel() != 1) {
     return false;
   }
 #define CASE_REAL_DTYPE(TENSOR_CTYPE, TENSOR_DTYPE)                    \
-  case ScalarType::TENSOR_DTYPE: {                                     \
+  case exec_aten::ScalarType::TENSOR_DTYPE: {                          \
     /* ET_FORALL_REAL_TYPES guarantees TENSOR_CTYPE is a real type. */ \
     double val =                                                       \
         static_cast<double>(tensor.const_data_ptr<TENSOR_CTYPE>()[0]); \
@@ -1022,7 +1020,7 @@ template <
     typename BOOL_T,
     typename std::enable_if<std::is_same<BOOL_T, bool>::value, bool>::type =
         true>
-bool extract_scalar_tensor(Tensor tensor, BOOL_T* out_val) {
+bool extract_scalar_tensor(exec_aten::Tensor tensor, BOOL_T* out_val) {
   if (tensor.scalar_type() != exec_aten::ScalarType::Bool) {
     return false;
   }
@@ -1042,21 +1040,21 @@ namespace internal {
 /**
  * Share t_src's data_ptr with t_dst.
  */
-__ET_NODISCARD Error share_tensor_data(
+ET_NODISCARD Error share_tensor_data(
     const exec_aten::Tensor& t_dst,
     const exec_aten::Tensor& t_src);
 
 /**
  * Copy t_src's data_ptr to t_dst.
  */
-__ET_NODISCARD Error copy_tensor_data(
+ET_NODISCARD Error copy_tensor_data(
     const exec_aten::Tensor& t_dst,
     const exec_aten::Tensor& t_src);
 
 /**
  * Set the data_ptr of t to buffer.
  */
-__ET_NODISCARD Error
+ET_NODISCARD Error
 set_tensor_data(const exec_aten::Tensor& t, void* buffer, size_t buffer_size);
 
 /**
@@ -1067,7 +1065,7 @@ void reset_data_ptr(const exec_aten::Tensor& tensor);
 /**
  * Resize tensor impl
  */
-__ET_NODISCARD Error resize_tensor_impl(
+ET_NODISCARD Error resize_tensor_impl(
     exec_aten::TensorImpl* impl,
     exec_aten::ArrayRef<exec_aten::SizesType> new_sizes);
 
@@ -1082,7 +1080,7 @@ __ET_NODISCARD Error resize_tensor_impl(
  * will likely move to be a class method on a TensorResizer object passed in
  * through runtimeContext.
  */
-__ET_NODISCARD inline Error resize_tensor(
+ET_NODISCARD inline Error resize_tensor(
     exec_aten::Tensor t,
     exec_aten::ArrayRef<exec_aten::SizesType> new_sizes) {
   return internal::resize_tensor_impl(t.unsafeGetTensorImpl(), new_sizes);
@@ -1101,7 +1099,7 @@ template <
     typename T,
     typename std::
         enable_if<!std::is_same<exec_aten::SizesType, T>::value, int>::type = 0>
-__ET_NODISCARD inline Error resize_tensor(
+ET_NODISCARD inline Error resize_tensor(
     exec_aten::Tensor t,
     exec_aten::ArrayRef<T> new_sizes) {
   // Need to cast the input array to an array of Tensor::SizesType
@@ -1116,7 +1114,7 @@ __ET_NODISCARD inline Error resize_tensor(
 }
 
 /// DEPRECATED: Use `resize_tensor()` instead, which can fail non-fatally.
-__ET_DEPRECATED inline void resize(
+ET_DEPRECATED inline void resize(
     exec_aten::Tensor t,
     exec_aten::ArrayRef<exec_aten::SizesType> new_sizes) {
   Error err = resize_tensor(t, new_sizes);
@@ -1130,7 +1128,7 @@ __ET_DEPRECATED inline void resize(
  * order into it.
  * @param out_dim_order_size Size of the DimOrderType array.
  */
-__ET_NODISCARD Error get_dim_order(
+ET_NODISCARD Error get_dim_order(
     const exec_aten::Tensor& tensor,
     exec_aten::DimOrderType* out_dim_order,
     size_t out_dim_order_size);
@@ -1167,5 +1165,58 @@ inline size_t calculate_linear_index(
   return index;
 }
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::calculate_linear_index;
+using ::executorch::runtime::coordinateToIndex;
+using ::executorch::runtime::dim_is_valid;
+using ::executorch::runtime::extract_scalar_tensor;
+using ::executorch::runtime::get_dim_order;
+using ::executorch::runtime::getLeadingDims;
+using ::executorch::runtime::getTrailingDims;
+using ::executorch::runtime::indexToCoordinate;
+using ::executorch::runtime::kTensorDimensionLimit;
+using ::executorch::runtime::nonempty_size;
+using ::executorch::runtime::nonzero_dim;
+using ::executorch::runtime::resize;
+using ::executorch::runtime::resize_tensor;
+using ::executorch::runtime::tensor_can_cast_to;
+using ::executorch::runtime::tensor_dim_has_index;
+using ::executorch::runtime::tensor_has_dim;
+using ::executorch::runtime::tensor_has_expected_size;
+using ::executorch::runtime::tensor_has_non_empty_dim;
+using ::executorch::runtime::tensor_has_rank_greater_or_equal_to;
+using ::executorch::runtime::tensor_has_rank_smaller_or_equal_to;
+using ::executorch::runtime::tensor_has_valid_dim_order;
+using ::executorch::runtime::tensor_is_bits_type;
+using ::executorch::runtime::tensor_is_bool_type;
+using ::executorch::runtime::tensor_is_complex_type;
+using ::executorch::runtime::tensor_is_contiguous;
+using ::executorch::runtime::tensor_is_default_or_channels_last_dim_order;
+using ::executorch::runtime::tensor_is_floating_type;
+using ::executorch::runtime::tensor_is_integral_type;
+using ::executorch::runtime::tensor_is_rank;
+using ::executorch::runtime::tensor_is_real_type;
+using ::executorch::runtime::tensor_is_realh_type;
+using ::executorch::runtime::tensor_is_realhb_type;
+using ::executorch::runtime::tensor_is_scalar;
+using ::executorch::runtime::tensors_have_same_dtype;
+using ::executorch::runtime::tensors_have_same_rank;
+using ::executorch::runtime::tensors_have_same_shape;
+using ::executorch::runtime::tensors_have_same_shape_and_dtype;
+using ::executorch::runtime::tensors_have_same_size_at_dims;
+using ::executorch::runtime::tensors_have_same_strides;
+namespace internal {
+using ::executorch::runtime::internal::copy_tensor_data;
+using ::executorch::runtime::internal::reset_data_ptr;
+using ::executorch::runtime::internal::resize_tensor_impl;
+using ::executorch::runtime::internal::set_tensor_data;
+using ::executorch::runtime::internal::share_tensor_data;
+} // namespace internal
 } // namespace executor
 } // namespace torch

@@ -30,28 +30,21 @@ class ManagedTensor {
   using DimOrderType = exec_aten::DimOrderType;
   /// The type used for elements of `strides()`.
   using StridesType = exec_aten::StridesType;
+
   ManagedTensor() = delete;
 
   explicit ManagedTensor(
       void* data,
       const std::vector<SizesType>& sizes,
       ScalarType dtype)
-      : dtype_(dtype), sizes_(sizes), data_ptr_(data) {
-    ssize_t dim = sizes.size();
-    dim_order_.resize(dim);
-    strides_.resize(dim);
-    for (size_t i = 0; i < dim; ++i) {
-      dim_order_[i] = i;
-    }
-    dim_order_to_stride_nocheck(
-        sizes.data(), dim_order_.data(), dim, strides_.data());
+      : sizes_(sizes) {
     tensor_impl_ = std::make_unique<TensorImpl>(
-        dtype_,
-        dim,
+        dtype,
+        sizes_.size(),
         sizes_.data(),
-        data_ptr_,
-        dim_order_.data(),
-        strides_.data(),
+        data,
+        nullptr,
+        nullptr,
         TensorShapeDynamism::DYNAMIC_BOUND);
   }
 
@@ -63,12 +56,9 @@ class ManagedTensor {
   }
 
  private:
-  void* data_ptr_ = nullptr;
   std::unique_ptr<TensorImpl> tensor_impl_;
   std::vector<SizesType> sizes_;
-  std::vector<StridesType> strides_;
-  std::vector<DimOrderType> dim_order_;
-  ScalarType dtype_;
 };
+
 } // namespace executor
 } // namespace torch

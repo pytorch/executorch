@@ -30,7 +30,7 @@ namespace util {
  * @returns An array of pointers that must be passed to `FreeInputs()` after
  *     the Method is no longer needed.
  */
-__ET_DEPRECATED
+ET_DEPRECATED
 inline exec_aten::ArrayRef<void*> PrepareInputTensors(Method& method) {
   Result<BufferCleanup> inputs = prepare_input_tensors(method);
   ET_CHECK(inputs.ok());
@@ -45,7 +45,7 @@ inline exec_aten::ArrayRef<void*> PrepareInputTensors(Method& method) {
  *
  * Frees memory that was allocated by `PrepareInputTensors()`.
  */
-__ET_DEPRECATED
+ET_DEPRECATED
 inline void FreeInputs(exec_aten::ArrayRef<void*> inputs) {
   ET_CHECK(inputs.size() == 1);
   // A hack to work with the deprecated signature. The ArrayRef points to a

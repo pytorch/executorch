@@ -37,39 +37,39 @@ class ManagedTensor {
   using DimOrderType = exec_aten::DimOrderType;
   /// The type used for elements of `strides()`.
   using StridesType = exec_aten::StridesType;
+
   ManagedTensor() = delete;
 
   explicit ManagedTensor(
       void* data,
       const std::vector<SizesType>& sizes,
       ScalarType dtype)
-      : dtype_(dtype), sizes_(sizes), data_ptr_(data) {
+      : sizes_(sizes) {
 #ifdef USE_ATEN_LIB
-    tensor_ = torch::from_blob(data, sizes, dtype_);
+    tensor_ = torch::from_blob(data, sizes, dtype);
 #else
-    ssize_t dim = sizes.size();
-    dim_order_.resize(dim);
-    strides_.resize(dim);
-    for (size_t i = 0; i < dim; ++i) {
-      dim_order_[i] = i;
+    // Calculate strides.
+    strides_ = std::vector<StridesType>(sizes_.size());
+    if (sizes_.size() > 0) {
+      strides_.back() = 1;
+      for (size_t i = strides_.size() - 1; i > 0; --i) {
+        strides_[i - 1] = strides_[i] * sizes_[i];
+      }
     }
-    dim_order_to_stride_nocheck(
-        sizes.data(), dim_order_.data(), dim, strides_.data());
+
+    // Allocate TensorImpl.
     tensor_impl_ = std::make_unique<TensorImpl>(
-        dtype_,
-        dim,
+        dtype,
+        sizes_.size(),
         sizes_.data(),
-        data_ptr_,
-        dim_order_.data(),
+        data,
+        /*dim_order=*/nullptr,
         strides_.data(),
         TensorShapeDynamism::DYNAMIC_BOUND);
 #endif
   }
 
   void resize(const std::vector<SizesType>& new_sizes) {
-    ET_CHECK_MSG(
-        new_sizes.size() == sizes_.size(),
-        "Cannot change rank of a managed tensor");
     auto err = resize_tensor(
         this->get_aliasing_tensor(),
         exec_aten::ArrayRef<SizesType>(new_sizes.data(), new_sizes.size()));
@@ -88,15 +88,13 @@ class ManagedTensor {
   }
 
  private:
-  ScalarType dtype_;
   std::unique_ptr<TensorImpl> tensor_impl_;
   std::vector<SizesType> sizes_;
   std::vector<StridesType> strides_;
-  std::vector<DimOrderType> dim_order_;
-  void* data_ptr_ = nullptr;
 #ifdef USE_ATEN_LIB
   Tensor tensor_;
 #endif
 };
+
 } // namespace executor
 } // namespace torch

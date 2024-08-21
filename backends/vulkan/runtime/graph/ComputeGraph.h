@@ -192,8 +192,8 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().image_extents();
   }
 
-  inline int32_t texel_numel_of(const ValueRef idx) const {
-    return values_.at(idx).toConstTensor().texel_numel();
+  inline int32_t numel_of(const ValueRef idx) const {
+    return values_.at(idx).toConstTensor().numel();
   }
 
   inline utils::StorageType storage_type_of(const ValueRef idx) const {
@@ -216,16 +216,16 @@ class ComputeGraph final {
     return values_.at(idx).toTensor().sizes_ubo();
   }
 
+  inline vkapi::BufferBindInfo strides_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().strides_ubo();
+  }
+
+  inline vkapi::BufferBindInfo numel_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().numel_ubo();
+  }
+
   inline vkapi::BufferBindInfo texture_limits_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().texture_limits_ubo();
-  }
-
-  inline vkapi::BufferBindInfo texel_strides_ubo(const ValueRef idx) {
-    return values_.at(idx).toTensor().texel_strides_ubo();
-  }
-
-  inline vkapi::BufferBindInfo ntexels_ubo(const ValueRef idx) {
-    return values_.at(idx).toTensor().ntexels_ubo();
   }
 
   //
@@ -350,6 +350,17 @@ class ComputeGraph final {
   ValueRef add_tensor_like(
       const ValueRef vref,
       const utils::GPUMemoryLayout memory_layout);
+
+  /*
+   * Use the copy constructor of `api::vTensor` to create a "view" of the
+   * `vTensor` value at `vref`. See the copy constructor of `api::vTensor` for
+   * more details.
+   */
+  ValueRef add_tensor_view(
+      const ValueRef vref,
+      const std::vector<int64_t>& sizes,
+      const std::vector<int64_t>& strides,
+      const size_t offset_numel = 0);
 
   /*
    * Add a `TensorRef` value to the graph with the specific properties. A

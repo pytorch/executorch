@@ -47,6 +47,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".LlmBenchmarkRunner"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.executorchllamademo.BENCHMARK" />
+            </intent-filter>
+        </activity>
+
     </application>
 
 </manifest>

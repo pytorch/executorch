@@ -23,6 +23,8 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import com.google.gson.Gson;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -30,15 +32,14 @@ public class SettingsActivity extends AppCompatActivity {
   private String mTokenizerFilePath = "";
   private TextView mModelTextView;
   private TextView mTokenizerTextView;
-  private ImageButton mModelImageButton;
-  private ImageButton mTokenizerImageButton;
+  private TextView mModelTypeTextView;
   private EditText mSystemPromptEditText;
   private EditText mUserPromptEditText;
   private Button mLoadModelButton;
   private double mSetTemperature;
   private String mSystemPrompt;
   private String mUserPrompt;
-
+  private ModelType mModelType;
   public SettingsFields mSettingsFields;
 
   private DemoSharedPreferences mDemoSharedPreferences;
@@ -63,20 +64,26 @@ public class SettingsActivity extends AppCompatActivity {
   private void setupSettings() {
     mModelTextView = requireViewById(R.id.modelTextView);
     mTokenizerTextView = requireViewById(R.id.tokenizerTextView);
-    mModelImageButton = requireViewById(R.id.modelImageButton);
-    mTokenizerImageButton = requireViewById(R.id.tokenizerImageButton);
+    mModelTypeTextView = requireViewById(R.id.modelTypeTextView);
+    ImageButton modelImageButton = requireViewById(R.id.modelImageButton);
+    ImageButton tokenizerImageButton = requireViewById(R.id.tokenizerImageButton);
+    ImageButton modelTypeImageButton = requireViewById(R.id.modelTypeImageButton);
     mSystemPromptEditText = requireViewById(R.id.systemPromptText);
     mUserPromptEditText = requireViewById(R.id.userPromptText);
     loadSettings();
 
     // TODO: The two setOnClickListeners will be removed after file path issue is resolved
-    mModelImageButton.setOnClickListener(
+    modelImageButton.setOnClickListener(
         view -> {
           setupModelSelectorDialog();
         });
-    mTokenizerImageButton.setOnClickListener(
+    tokenizerImageButton.setOnClickListener(
         view -> {
           setupTokenizerSelectorDialog();
+        });
+    modelTypeImageButton.setOnClickListener(
+        view -> {
+          setupModelTypeSelectorDialog();
         });
     mModelFilePath = mSettingsFields.getModelFilePath();
     if (!mModelFilePath.isEmpty()) {
@@ -85,6 +92,11 @@ public class SettingsActivity extends AppCompatActivity {
     mTokenizerFilePath = mSettingsFields.getTokenizerFilePath();
     if (!mTokenizerFilePath.isEmpty()) {
       mTokenizerTextView.setText(getFilenameFromPath(mTokenizerFilePath));
+    }
+    mModelType = mSettingsFields.getModelType();
+    ETLogging.getInstance().log("mModelType from settings " + mModelType);
+    if (mModelType != null) {
+      mModelTypeTextView.setText(mModelType.toString());
     }
 
     setupParameterSettings();
@@ -196,7 +208,8 @@ public class SettingsActivity extends AppCompatActivity {
                   new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int whichButton) {
                       // Clear the messageAdapter and sharedPreference
-                      mSystemPromptEditText.setText(mSettingsFields.getSystemPromptTemplate());
+                      mSystemPromptEditText.setText(
+                          PromptFormat.getSystemPromptTemplate(mModelType));
                     }
                   })
               .setNegativeButton(android.R.string.no, null)
@@ -217,7 +230,11 @@ public class SettingsActivity extends AppCompatActivity {
 
           @Override
           public void afterTextChanged(Editable s) {
-            mUserPrompt = s.toString();
+            if (isValidUserPrompt(s.toString())) {
+              mUserPrompt = s.toString();
+            } else {
+              showInvalidPromptDialog();
+            }
           }
         });
 
@@ -233,12 +250,33 @@ public class SettingsActivity extends AppCompatActivity {
                   new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int whichButton) {
                       // Clear the messageAdapter and sharedPreference
-                      mUserPromptEditText.setText(mSettingsFields.getUserPromptTemplate());
+                      mUserPromptEditText.setText(PromptFormat.getUserPromptTemplate(mModelType));
                     }
                   })
               .setNegativeButton(android.R.string.no, null)
               .show();
         });
+  }
+
+  private boolean isValidUserPrompt(String userPrompt) {
+    return userPrompt.contains(PromptFormat.USER_PLACEHOLDER);
+  }
+
+  private void showInvalidPromptDialog() {
+    new AlertDialog.Builder(this)
+        .setTitle("Invalid Prompt Format")
+        .setMessage(
+            "Prompt format must contain "
+                + PromptFormat.USER_PLACEHOLDER
+                + ". Do you want to reset prompt format?")
+        .setIcon(android.R.drawable.ic_dialog_alert)
+        .setPositiveButton(
+            android.R.string.yes,
+            (dialog, whichButton) -> {
+              mUserPromptEditText.setText(PromptFormat.getUserPromptTemplate(mModelType));
+            })
+        .setNegativeButton(android.R.string.no, null)
+        .show();
   }
 
   private void setupModelSelectorDialog() {
@@ -272,6 +310,29 @@ public class SettingsActivity extends AppCompatActivity {
       return result;
     }
     return null;
+  }
+
+  private void setupModelTypeSelectorDialog() {
+    // Convert enum to list
+    List<String> modelTypesList = new ArrayList<>();
+    for (ModelType modelType : ModelType.values()) {
+      modelTypesList.add(modelType.toString());
+    }
+    // Alert dialog builder takes in arr of string instead of list
+    String[] modelTypes = modelTypesList.toArray(new String[0]);
+    AlertDialog.Builder modelTypeBuilder = new AlertDialog.Builder(this);
+    modelTypeBuilder.setTitle("Select model type");
+    modelTypeBuilder.setSingleChoiceItems(
+        modelTypes,
+        -1,
+        (dialog, item) -> {
+          mModelTypeTextView.setText(modelTypes[item]);
+          mModelType = ModelType.valueOf(modelTypes[item]);
+          mUserPromptEditText.setText(PromptFormat.getUserPromptTemplate(mModelType));
+          dialog.dismiss();
+        });
+
+    modelTypeBuilder.create().show();
   }
 
   private void setupTokenizerSelectorDialog() {
@@ -314,6 +375,7 @@ public class SettingsActivity extends AppCompatActivity {
     mSettingsFields.saveTokenizerPath(mTokenizerFilePath);
     mSettingsFields.saveParameters(mSetTemperature);
     mSettingsFields.savePrompts(mSystemPrompt, mUserPrompt);
+    mSettingsFields.saveModelType(mModelType);
     mDemoSharedPreferences.addSettings(mSettingsFields);
   }
 

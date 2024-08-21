@@ -108,6 +108,7 @@ python_library(
     name = "delegate",
     srcs = [
         "delegate.py",
+        "delegate.pyi",
     ],
     deps = [
         "//caffe2:torch",
@@ -265,5 +266,13 @@ python_library(
     srcs = ["dim_order_utils.py"],
     deps = [
         "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "_warnings",
+    srcs = ["_warnings.py"],
+    deps = [
+        "fbsource//third-party/pypi/typing-extensions:typing-extensions",
     ],
 )

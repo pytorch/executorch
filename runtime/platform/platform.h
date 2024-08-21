@@ -58,7 +58,7 @@ void et_pal_init(void) ET_INTERNAL_PLATFORM_WEAKNESS;
  * Immediately abort execution, setting the device into an error state, if
  * available.
  */
-__ET_NORETURN void et_pal_abort(void) ET_INTERNAL_PLATFORM_WEAKNESS;
+ET_NORETURN void et_pal_abort(void) ET_INTERNAL_PLATFORM_WEAKNESS;
 
 /**
  * Return a monotonically non-decreasing timestamp in system ticks.
@@ -73,9 +73,9 @@ et_timestamp_t et_pal_current_ticks(void) ET_INTERNAL_PLATFORM_WEAKNESS;
  * numerator and then divide by the denominator:
  *   nanoseconds = ticks * numerator / denominator
  *
- * The utility method torch::executor::ticks_to_ns(et_timestamp_t) can also
- * be used to perform the conversion for a given tick count.
- * It is defined in torch/executor/runtime/platform/clock.h.
+ * The utility method executorch::runtime::ticks_to_ns(et_timestamp_t) can also
+ * be used to perform the conversion for a given tick count. It is defined in
+ * torch/executor/runtime/platform/clock.h.
  *
  * @retval The ratio of nanoseconds to system ticks.
  */

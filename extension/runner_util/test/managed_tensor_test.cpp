@@ -25,8 +25,9 @@ class ManagedTensorTest : public ::testing::Test {
   void SetUp() override {
     torch::executor::runtime_init();
 
-    data_ = {1, 2, 3, 4, 5, 6};
-    sizes_ = {2, 3};
+    data_ = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+    sizes_ = {2, 3, 4};
+    expected_strides_ = {12, 4, 1};
     managed_tensor_ =
         std::make_unique<ManagedTensor>(data_.data(), sizes_, ScalarType::Long);
   }
@@ -34,6 +35,7 @@ class ManagedTensorTest : public ::testing::Test {
  protected:
   std::vector<int64_t> data_;
   std::vector<SizesType> sizes_;
+  std::vector<int> expected_strides_;
   std::unique_ptr<ManagedTensor> managed_tensor_;
 };
 
@@ -42,16 +44,10 @@ TEST_F(ManagedTensorTest, Smoke) {
 
   EXPECT_EQ(tensor.sizes(), ArrayRef<SizesType>(sizes_.data(), sizes_.size()));
   EXPECT_EQ(tensor.scalar_type(), ScalarType::Long);
-  std::vector<DimOrderType> expected_dim_order = {0, 1};
-  EXPECT_EQ(
-      tensor.dim_order(),
-      ArrayRef<DimOrderType>(
-          expected_dim_order.data(), expected_dim_order.size()));
-  std::vector<StridesType> expected_strides = {3, 1};
-  EXPECT_EQ(
-      tensor.strides(),
-      ArrayRef<StridesType>(expected_strides.data(), expected_strides.size()));
   EXPECT_EQ(tensor.const_data_ptr(), data_.data());
+  for (size_t i = 0; i < expected_strides_.size(); ++i) {
+    EXPECT_EQ(tensor.strides()[i], expected_strides_[i]);
+  }
 }
 
 TEST_F(ManagedTensorTest, ResizeWithUpdatedRank) {
@@ -59,50 +55,32 @@ TEST_F(ManagedTensorTest, ResizeWithUpdatedRank) {
   // https://github.com/google/googletest/issues/2834
 #if !GTEST_OS_IOS
   EXPECT_EXIT(
-      managed_tensor_->resize(std::vector<SizesType>{2, 3, 4}),
+      managed_tensor_->resize(std::vector<SizesType>{2, 3, 4, 5}),
       ::testing::KilledBySignal(SIGABRT),
       "");
 #endif
 }
 
 TEST_F(ManagedTensorTest, ResizeShrink) {
-  managed_tensor_->resize(std::vector<SizesType>{2, 2});
+  managed_tensor_->resize(std::vector<SizesType>{2, 2, 2});
   const auto tensor = managed_tensor_->get_aliasing_tensor();
 
-  std::vector<SizesType> expected_sizes = {2, 2};
+  std::vector<SizesType> expected_sizes = {2, 2, 2};
   EXPECT_EQ(
       tensor.sizes(),
       ArrayRef<SizesType>(expected_sizes.data(), expected_sizes.size()));
   EXPECT_EQ(tensor.scalar_type(), ScalarType::Long);
-  std::vector<DimOrderType> expected_dim_order = {0, 1};
-  EXPECT_EQ(
-      tensor.dim_order(),
-      ArrayRef<DimOrderType>(
-          expected_dim_order.data(), expected_dim_order.size()));
-  std::vector<StridesType> expected_strides = {2, 1};
-  EXPECT_EQ(
-      tensor.strides(),
-      ArrayRef<StridesType>(expected_strides.data(), expected_strides.size()));
   EXPECT_EQ(tensor.const_data_ptr(), data_.data());
 }
 
 TEST_F(ManagedTensorTest, Resize) {
-  managed_tensor_->resize(std::vector<SizesType>{3, 2});
+  managed_tensor_->resize(std::vector<SizesType>{4, 3, 2});
   const auto tensor = managed_tensor_->get_aliasing_tensor();
 
-  std::vector<SizesType> expected_sizes = {3, 2};
+  std::vector<SizesType> expected_sizes = {4, 3, 2};
   EXPECT_EQ(
       tensor.sizes(),
       ArrayRef<SizesType>(expected_sizes.data(), expected_sizes.size()));
   EXPECT_EQ(tensor.scalar_type(), ScalarType::Long);
-  std::vector<DimOrderType> expected_dim_order = {0, 1};
-  EXPECT_EQ(
-      tensor.dim_order(),
-      ArrayRef<DimOrderType>(
-          expected_dim_order.data(), expected_dim_order.size()));
-  std::vector<StridesType> expected_strides = {2, 1};
-  EXPECT_EQ(
-      tensor.strides(),
-      ArrayRef<StridesType>(expected_strides.data(), expected_strides.size()));
   EXPECT_EQ(tensor.const_data_ptr(), data_.data());
 }

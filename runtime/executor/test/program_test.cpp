@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/executor/program.h>
+
 #include <cctype>
 #include <filesystem>
 
@@ -16,7 +18,6 @@
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
-#include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/program_generated.h>
 #include <executorch/test/utils/DeathTest.h>
@@ -24,11 +25,11 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::DataLoader;
-using torch::executor::Error;
-using torch::executor::FreeableBuffer;
-using torch::executor::Program;
-using torch::executor::Result;
+using executorch::runtime::DataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
 using torch::executor::util::BufferDataLoader;
 using torch::executor::util::FileDataLoader;
 
@@ -42,7 +43,7 @@ class ProgramTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Load the serialized ModuleAdd data.
     const char* path = std::getenv("ET_MODULE_ADD_PATH");
@@ -62,7 +63,7 @@ class ProgramTest : public ::testing::Test {
 
     add_loader_ = std::make_unique<FileDataLoader>(std::move(loader.get()));
 
-    // Load the serialized ModuleAdd data.
+    // Load the serialized ModuleMultiEntry data.
     path = std::getenv("ET_MODULE_MULTI_ENTRY_PATH");
     Result<FileDataLoader> multi_loader = FileDataLoader::from(path);
     ASSERT_EQ(multi_loader.error(), Error::Ok);
@@ -86,16 +87,26 @@ class ProgramTest : public ::testing::Test {
   std::unique_ptr<FileDataLoader> multi_loader_;
 };
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace testing {
 // Provides access to private Program methods.
 class ProgramTestFriend final {
  public:
-  __ET_NODISCARD static Result<FreeableBuffer> LoadSegment(
+  ET_NODISCARD static Result<FreeableBuffer> LoadSegment(
       const Program* program,
       const DataLoader::SegmentInfo& segment_info) {
     return program->LoadSegment(segment_info);
+  }
+
+  ET_NODISCARD static Error load_mutable_subsegment_into(
+      const Program* program,
+      size_t mutable_data_segments_index,
+      size_t offset_index,
+      size_t size,
+      void* buffer) {
+    return program->load_mutable_subsegment_into(
+        mutable_data_segments_index, offset_index, size, buffer);
   }
 
   const static executorch_flatbuffer::Program* GetInternalProgram(
@@ -104,10 +115,10 @@ class ProgramTestFriend final {
   }
 };
 } // namespace testing
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch
 
-using torch::executor::testing::ProgramTestFriend;
+using executorch::runtime::testing::ProgramTestFriend;
 
 TEST_F(ProgramTest, DataParsesWithMinimalVerification) {
   // Parse the Program from the data.
@@ -443,4 +454,90 @@ TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
 
   // The constant buffer should exist.
   EXPECT_GE(flatbuffer_program->constant_buffer()->size(), 1);
+}
+
+TEST_F(ProgramTest, LoadFromMutableSegment) {
+  // Load the serialized ModuleSimpleTrain data.
+  auto path = std::getenv("ET_MODULE_SIMPLE_TRAIN_PATH");
+  Result<FileDataLoader> training_loader = FileDataLoader::from(path);
+  ASSERT_EQ(training_loader.error(), Error::Ok);
+
+  // This file should always be compatible.
+  Result<FreeableBuffer> training_header = training_loader->load(
+      /*offset=*/0,
+      Program::kMinHeadBytes,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  ASSERT_EQ(training_header.error(), Error::Ok);
+  EXPECT_EQ(
+      Program::check_header(training_header->data(), training_header->size()),
+      Program::HeaderStatus::CompatibleVersion);
+
+  Result<Program> program = Program::load(&training_loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // dummy buffers to load into
+  uint8_t buffer[1] = {0};
+  uint8_t buffer2[1] = {0};
+
+  // Load some mutable segment data
+  Error err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 1, 1, buffer);
+  EXPECT_EQ(err, Error::Ok);
+
+  // Check that the data loaded correctly, and then mutate it
+  EXPECT_EQ(buffer[0], 232); // 232 comes from inspecting the file itself. The
+                             // file is seeded so this value should be stable.
+  buffer[0] = 0;
+
+  // Load the same mutable segment data from file into a different buffer.
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(),
+      0, // mutable_data_segments_index
+      1, // offset_index
+      1, // size
+      buffer2);
+  EXPECT_EQ(err, Error::Ok);
+
+  // Check that new data loaded from the file does not reflect the change to
+  // buffer.
+  EXPECT_EQ(buffer2[0], 232);
+
+  const executorch_flatbuffer::Program* flatbuffer_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+
+  // Expect 1 segment. 1 mutable segment and no constant segment.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 1);
+
+  // Expect a mutable data segment.
+  EXPECT_EQ(flatbuffer_program->mutable_data_segments()->size(), 1);
+
+  // Expect the 0 index to be reserved and the offsets for weight and bias of
+  // linear to be indices 1 and 2.
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->size(),
+      3);
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->Get(0),
+      0);
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->Get(1),
+      0);
+  EXPECT_EQ(
+      flatbuffer_program->mutable_data_segments()->Get(0)->offsets()->Get(2),
+      36);
+
+  // Loading beyond file should fail
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 1, 500, buffer);
+  EXPECT_NE(err, Error::Ok);
+
+  // Loading beyond offsets should fail
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 0, 500, 1, buffer);
+  EXPECT_NE(err, Error::Ok);
+
+  // Loading beyond segments should fail
+  err = ProgramTestFriend::load_mutable_subsegment_into(
+      &program.get(), 500, 1, 1, buffer);
+  EXPECT_NE(err, Error::Ok);
 }

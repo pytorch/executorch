@@ -85,18 +85,18 @@ std::vector<int64_t> calc_out_sizes_hw(
   // Height
   out_sizes.at(0) = calc_out_size(
       in_sizes.at(ndim - 2),
-      kernel_size.data[1],
-      stride.data[1],
-      padding.data[1],
-      dilation.data[1],
+      kernel_size[1],
+      stride[1],
+      padding[1],
+      dilation[1],
       ceil_mode);
   // Width
   out_sizes.at(1) = calc_out_size(
       in_sizes.at(ndim - 1),
-      kernel_size.data[0],
-      stride.data[0],
-      padding.data[0],
-      dilation.data[0],
+      kernel_size[0],
+      stride[0],
+      padding[0],
+      dilation[0],
       ceil_mode);
 
   return out_sizes;
@@ -128,19 +128,19 @@ std::vector<int64_t> calc_transpose_out_sizes_hw(
   // Height
   out_sizes.at(0) = calc_transpose_out_size(
       in_sizes.at(ndim - 2),
-      kernel_size.data[1],
-      stride.data[1],
-      padding.data[1],
-      dilation.data[1],
-      output_padding.data[1]);
+      kernel_size[1],
+      stride[1],
+      padding[1],
+      dilation[1],
+      output_padding[1]);
   // Width
   out_sizes.at(1) = calc_transpose_out_size(
       in_sizes.at(ndim - 1),
-      kernel_size.data[0],
-      stride.data[0],
-      padding.data[0],
-      dilation.data[0],
-      output_padding.data[0]);
+      kernel_size[0],
+      stride[0],
+      padding[0],
+      dilation[0],
+      output_padding[0]);
 
   return out_sizes;
 }

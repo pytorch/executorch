@@ -53,7 +53,7 @@ For delegating to Qualcomm Hexagon NPU, please follow the tutorial [here](build-
 After generating the model, copy the model to `assets` directory.
 
 ```bash
-python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8450 -s <adb_connected_device_serial>
+python -m examples.qualcomm.scripts.deeplab_v3 -b cmake-out-android -m SM8450 -s <adb_connected_device_serial>
 cp deeplab_v3/dlv3_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 

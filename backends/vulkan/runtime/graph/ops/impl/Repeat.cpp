@@ -83,8 +83,7 @@ void add_repeat_channel_node(
   utils::ivec4 in_whcn_sizes{in_width, in_height, in_channel, in_batch};
 
   // Channel packed global work ids
-  running_range.data[2] =
-      out_whcn_sizes.data[3] * utils::div_up_4(out_whcn_sizes.data[2]);
+  running_range[2] = out_whcn_sizes[3] * utils::div_up_4(out_whcn_sizes[2]);
   utils::uvec3 global_size = utils::make_uvec3(running_range);
   utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
@@ -165,7 +164,7 @@ void add_repeat_node(
           graph, out, running_range, src_offset, dst_offset, out);
     }
 
-    running_range.data[0] = running_range.data[0] * width_repeat;
+    running_range[0] = running_range[0] * width_repeat;
   }
 
   // Height
@@ -179,7 +178,7 @@ void add_repeat_node(
           graph, out, running_range, src_offset, dst_offset, out);
     }
 
-    running_range.data[1] = running_range.data[1] * height_repeat;
+    running_range[1] = running_range[1] * height_repeat;
   }
 
   // Batch
@@ -187,13 +186,13 @@ void add_repeat_node(
     utils::ivec3 src_offset{0, 0, 0};
 
     for (int i = 1; i < batch_repeat; ++i) {
-      utils::ivec3 dst_offset = {0, 0, i * running_range.data[2]};
+      utils::ivec3 dst_offset = {0, 0, i * running_range[2]};
 
       add_copy_offset_node(
           graph, out, running_range, src_offset, dst_offset, out);
     }
 
-    running_range.data[2] = running_range.data[2] * batch_repeat;
+    running_range[2] = running_range[2] * batch_repeat;
   }
 }
 

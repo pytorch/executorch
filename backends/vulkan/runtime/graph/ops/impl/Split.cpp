@@ -53,7 +53,7 @@ void add_split_with_sizes_default_node(
       utils::ivec3 range = t_out->texture_limits();
       add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
 
-      src_offset.data[0] += range.data[0];
+      src_offset[0] += range[0];
     }
   } else if (dim_index == kHeight4D) {
     utils::ivec3 src_offset = utils::make_ivec3({0, 0, 0}, false);
@@ -64,7 +64,7 @@ void add_split_with_sizes_default_node(
       utils::ivec3 range = t_out->texture_limits();
       add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
 
-      src_offset.data[1] += range.data[1];
+      src_offset[1] += range[1];
     }
   } else if (dim_index == kBatch4D) {
     utils::ivec3 src_offset = utils::make_ivec3({0, 0, 0}, false);
@@ -75,7 +75,7 @@ void add_split_with_sizes_default_node(
       utils::ivec3 range = t_out->texture_limits();
       add_copy_offset_node(graph, in, range, src_offset, dst_offset, out_ref);
 
-      src_offset.data[2] += range.data[2];
+      src_offset[2] += range[2];
     }
   } else if (dim_index == kChannel4D) {
     int32_t src_offset = 0;

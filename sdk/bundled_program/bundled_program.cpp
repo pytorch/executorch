@@ -234,7 +234,7 @@ get_method_test_suite(
 } // namespace
 
 // Load testset_idx-th bundled data into the Method
-__ET_NODISCARD Error LoadBundledInput(
+ET_NODISCARD Error LoadBundledInput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
     size_t testset_idx) {
@@ -329,7 +329,7 @@ __ET_NODISCARD Error LoadBundledInput(
   return Error::Ok;
 }
 
-__ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
+ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
     size_t testset_idx,
@@ -390,7 +390,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
   return Error::Ok;
 }
 
-__ET_NODISCARD Error GetProgramData(
+ET_NODISCARD Error GetProgramData(
     void* file_data,
     size_t file_data_len,
     const void** out_program_data,

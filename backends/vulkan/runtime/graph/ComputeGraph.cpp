@@ -203,6 +203,17 @@ ValueRef ComputeGraph::add_tensor(
       sizes, dtype, suggested_memory_layout(sizes), shared_object_idx);
 }
 
+ValueRef ComputeGraph::add_tensor_view(
+    const ValueRef vref,
+    const std::vector<int64_t>& sizes,
+    const std::vector<int64_t>& strides,
+    const size_t offset_numel) {
+  const vTensorPtr t = get_tensor(vref);
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(api::vTensor(*t, sizes, strides, offset_numel));
+  return idx;
+}
+
 ValueRef ComputeGraph::add_tensorref(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
@@ -248,8 +259,10 @@ ValueRef ComputeGraph::set_input_tensor(
     const bool use_staging) {
   if (use_staging) {
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
-    size_t gpu_numel = get_tensor(idx)->gpu_numel();
-    ValueRef staging_idx = add_staging(dtype, gpu_numel);
+    // For texture storage, the buffer size needs to account for the zero
+    // padding applied by unused texel elements.
+    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+    ValueRef staging_idx = add_staging(dtype, buf_numel);
     add_staging_to_tensor_node(*this, staging_idx, idx);
     inputs_.push_back({idx, staging_idx});
     return staging_idx;
@@ -263,12 +276,14 @@ ValueRef ComputeGraph::set_output_tensor(
     const bool use_staging) {
   if (use_staging) {
     vkapi::ScalarType dtype = get_tensor(idx)->dtype();
-    size_t gpu_numel = get_tensor(idx)->gpu_numel();
-    ValueRef staging_idx = add_staging(dtype, gpu_numel);
+    // For texture storage, the buffer size needs to account for the zero
+    // padding applied by unused texel elements.
+    size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
+    ValueRef staging_idx = add_staging(dtype, buf_numel);
     // We only run this when the tensor is non-empty.  When the underlying
-    // tensor is empty (e.g. gpu_numel == 0), we do not allocate a VkImage to
+    // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to
     // tensor, we will not be able to bind the node for execution.
-    if (gpu_numel > 0) {
+    if (buf_numel > 0) {
       add_tensor_to_staging_node(*this, idx, staging_idx);
     }
     outputs_.push_back({idx, staging_idx});
@@ -314,7 +329,7 @@ void ComputeGraph::update_descriptor_counts(
 
 utils::uvec3 ComputeGraph::create_global_wg_size(const ValueRef idx) {
   if (is_buffer_storage(idx)) {
-    return {uint32_t(texel_numel_of(idx)), 1u, 1u};
+    return {uint32_t(numel_of(idx)), 1u, 1u};
   }
   return image_extents_of(idx);
 }
@@ -327,19 +342,19 @@ utils::uvec3 ComputeGraph::create_local_wg_size(
 
   utils::uvec3 local_group_size = {4, 4, 4};
 
-  if (global_wg_size.data[2u] == 1) {
-    if (global_wg_size.data[1u] == 1) {
-      local_group_size.data[0u] = 64;
-      local_group_size.data[1u] = 1;
-      local_group_size.data[2u] = 1;
-    } else if (global_wg_size.data[1u] < 8) {
-      local_group_size.data[0u] = 16;
-      local_group_size.data[1u] = 4;
-      local_group_size.data[2u] = 1;
+  if (global_wg_size[2u] == 1) {
+    if (global_wg_size[1u] == 1) {
+      local_group_size[0u] = 64;
+      local_group_size[1u] = 1;
+      local_group_size[2u] = 1;
+    } else if (global_wg_size[1u] < 8) {
+      local_group_size[0u] = 16;
+      local_group_size[1u] = 4;
+      local_group_size[2u] = 1;
     } else {
-      local_group_size.data[0u] = 8;
-      local_group_size.data[1u] = 8;
-      local_group_size.data[2u] = 1;
+      local_group_size[0u] = 8;
+      local_group_size[1u] = 8;
+      local_group_size[2u] = 1;
     }
   }
   return local_group_size;

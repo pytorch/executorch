@@ -15,28 +15,54 @@ import java.util.Map;
 /** Java wrapper for ExecuTorch Module. */
 public class Module {
 
+  /** Load mode for the module. Load the whole file as a buffer. */
+  public static final int LOAD_MODE_FILE = 0;
+
+  /** Load mode for the module. Use mmap to load pages into memory. */
+  public static final int LOAD_MODE_MMAP = 1;
+
+  /** Load mode for the module. Use memory locking and handle errors. */
+  public static final int LOAD_MODE_MMAP_USE_MLOCK = 2;
+
+  /** Load mode for the module. Use memory locking and ignore errors. */
+  public static final int LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS = 3;
+
   /** Reference to the INativePeer object of this module. */
   private INativePeer mNativePeer;
+
+  /**
+   * Loads a serialized ExecuTorch module from the specified path on the disk. Uses default load
+   * FILE.
+   *
+   * @param modelPath path to file that contains the serialized ExecuTorch module.
+   * @param extraFiles map with extra files names as keys, content of them will be loaded to values.
+   * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
+   */
+  public static Module load(final String modelPath, final Map<String, String> extraFiles) {
+    return load(modelPath, extraFiles, LOAD_MODE_FILE);
+  }
 
   /**
    * Loads a serialized ExecuTorch module from the specified path on the disk.
    *
    * @param modelPath path to file that contains the serialized ExecuTorch module.
    * @param extraFiles map with extra files names as keys, content of them will be loaded to values.
-   * @return new {@link org.pytorch.executorch.Module} object which owns torch::jit::Module.
+   * @param loadMode load mode for the module. See constants in {@link Module}.
+   * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
-  public static Module load(final String modelPath, final Map<String, String> extraFiles) {
+  public static Module load(
+      final String modelPath, final Map<String, String> extraFiles, int loadMode) {
     if (!NativeLoader.isInitialized()) {
       NativeLoader.init(new SystemDelegate());
     }
-    return new Module(new NativePeer(modelPath, extraFiles));
+    return new Module(new NativePeer(modelPath, extraFiles, loadMode));
   }
 
   /**
    * Loads a serialized ExecuTorch module from the specified path on the disk to run on CPU.
    *
    * @param modelPath path to file that contains the serialized ExecuTorch module.
-   * @return new {@link org.pytorch.executorch.Module} object which owns torch::jit::Module.
+   * @return new {@link org.pytorch.executorch.Module} object which owns the model module.
    */
   public static Module load(final String modelPath) {
     return load(modelPath, null);

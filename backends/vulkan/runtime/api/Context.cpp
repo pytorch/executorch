@@ -95,9 +95,9 @@ vkapi::DescriptorSet Context::get_descriptor_set(
       pipeline_layout_cache().retrieve(shader_layout);
 
   vkapi::SpecVarList spec_constants = {
-      SV(local_workgroup_size.data[0u]),
-      SV(local_workgroup_size.data[1u]),
-      SV(local_workgroup_size.data[2u])};
+      SV(local_workgroup_size[0u]),
+      SV(local_workgroup_size[1u]),
+      SV(local_workgroup_size[2u])};
 
   spec_constants.append(additional_constants);
 
@@ -119,11 +119,11 @@ void Context::register_shader_dispatch(
     const utils::uvec3& global_workgroup_size) {
   // Adjust the global workgroup size based on the output tile size
   uint32_t global_wg_w = utils::div_up(
-      global_workgroup_size.data[0u], shader_descriptor.out_tile_size.data[0u]);
+      global_workgroup_size[0u], shader_descriptor.out_tile_size[0u]);
   uint32_t global_wg_h = utils::div_up(
-      global_workgroup_size.data[1u], shader_descriptor.out_tile_size.data[1u]);
+      global_workgroup_size[1u], shader_descriptor.out_tile_size[1u]);
   uint32_t global_wg_d = utils::div_up(
-      global_workgroup_size.data[2u], shader_descriptor.out_tile_size.data[2u]);
+      global_workgroup_size[2u], shader_descriptor.out_tile_size[2u]);
 
   // Submitting a global work group size of 0 is undefined behaviour. If this is
   // detected then submit a single workgroup instead.
