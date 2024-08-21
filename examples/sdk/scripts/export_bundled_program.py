@@ -37,7 +37,7 @@ def save_bundled_program(
     Generates a bundled program from the given ET program and saves it to the specified path.
 
     Args:
-        program: The ExecuTorch program to bundle.
+        executorch_program: The ExecuTorch program to bundle.
         method_test_suites: The MethodTestSuites which contains test cases to include in the bundled program.
         output_path: Path to save the bundled program.
     """
