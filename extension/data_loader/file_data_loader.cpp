@@ -59,12 +59,10 @@ FileDataLoader::~FileDataLoader() {
   // file_name_ can be nullptr if this instance was moved from, but freeing a
   // null pointer is safe.
   std::free(const_cast<char*>(file_name_));
-  // fd_ can be -1 if this instance was moved from, but closing a negative fd is
-  // safe (though it will return an error).
-#ifdef _WIN32
-  if (fd_ == -1)
+  // fd_ can be -1 if this instance was moved from.
+  if (fd_ == -1) {
     return;
-#endif
+  }
   ::close(fd_);
 }
 

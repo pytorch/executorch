@@ -15,11 +15,6 @@
 #include <cstddef> // size_t
 #include <limits>
 
-#ifdef _WIN32
-#include <stddef.h>
-using ssize_t = ptrdiff_t;
-#endif
-
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>

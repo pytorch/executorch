@@ -83,6 +83,10 @@ for arg in sys.argv[1:]:
         print(f"Error: Unknown option {arg}")
         sys.exit(1)
 
+# Use ClangCL on Windows.
+if os.name == "nt":
+    CMAKE_ARGS += " -T ClangCL"
+
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features.
 #

@@ -48,6 +48,7 @@
 
 import contextlib
 import os
+import platform
 import re
 import sys
 
@@ -162,6 +163,31 @@ class Version:
             fp.write("\n".join(lines) + "\n")
 
 
+# The build type is determined by the DEBUG environment variable. If DEBUG is
+# set to a non-empty value, the build type is Debug. Otherwise, the build type
+# is Release.
+def get_build_type(is_debug=None) -> str:
+    debug = int(os.environ.get("DEBUG", 0)) if is_debug is None else is_debug
+    cfg = "Debug" if debug else "Release"
+    return cfg
+
+
+def get_dynamic_lib_name(name: str) -> str:
+    if platform.system() == "Windows":
+        return name + ".dll"
+    elif platform.system() == "Darwin":
+        return "lib" + name + ".dylib"
+    else:
+        return "lib" + name + ".so"
+
+
+def get_executable_name(name: str) -> str:
+    if platform.system() == "Windows":
+        return name + ".exe"
+    else:
+        return name
+
+
 class _BaseExtension(Extension):
     """A base class that maps an abstract source to an abstract destination."""
 
@@ -189,9 +215,17 @@ class _BaseExtension(Extension):
             installer: The InstallerBuildExt instance that is installing the
                 file.
         """
-        # share the cmake-out location with CustomBuild.
-        # Get a handle with installer.get_finalized_command('build')
+        # Share the cmake-out location with CustomBuild.
         cmake_cache_dir = Path(installer.get_finalized_command("build").cmake_cache_dir)
+
+        cfg = get_build_type(installer.debug)
+
+        if os.name == "nt":
+            # Replace %BUILD_TYPE% with the current build type.
+            self.src = self.src.replace("%BUILD_TYPE%", cfg)
+        else:
+            # Remove %BUILD_TYPE% from the path.
+            self.src = self.src.replace("/%BUILD_TYPE%", "")
 
         # Construct the full source path, resolving globs. If there are no glob
         # pattern characters, this will just ensure that the source file exists.
@@ -212,17 +246,35 @@ class BuiltFile(_BaseExtension):
     `ext_modules`.
     """
 
-    def __init__(self, src: str, dst: str):
+    def __init__(
+        self,
+        src_path: str,
+        src_name: str,
+        dst: str,
+        is_executable: bool = False,
+        is_dynamic_lib: bool = False,
+    ):
         """Initializes a BuiltFile.
 
         Args:
-            src: The path to the file to install, relative to the cmake-out
-                directory. May be an fnmatch-style glob that matches exactly one
-                file.
+            src_path: The path to the file to install without name, relative to the cmake-out
+                directory.
+            src_name: The name of the file to install
             dst: The path to install to, relative to the root of the pip
                 package. If dst ends in "/", it is treated as a directory.
                 Otherwise it is treated as a filename.
+            is_executable: If True, the file is an executable. This is used to
+                determine the destination filename for executable.
+            is_dynamic_lib: If True, the file is a dynamic library. This is used
+                to determine the destination filename for dynamic library.
         """
+        if is_executable and is_dynamic_lib:
+            raise ValueError("is_executable and is_dynamic_lib cannot be both True.")
+        if is_executable:
+            src_name = get_executable_name(src_name)
+        elif is_dynamic_lib:
+            src_name = get_dynamic_lib_name(src_name)
+        src = os.path.join(src_path, src_name)
         # This is not a real extension, so use a unique name that doesn't look
         # like a module path. Some of setuptools's autodiscovery will look for
         # extension names with prefixes that match certain module paths.
@@ -432,8 +484,7 @@ class CustomBuild(build):
     def run(self):
         self.dump_options()
 
-        debug = int(os.environ.get("DEBUG", 0)) if self.debug is None else self.debug
-        cfg = "Debug" if debug else "Release"
+        cfg = get_build_type(self.debug)
 
         # get_python_lib() typically returns the path to site-packages, where
         # all pip packages in the environment are installed.
@@ -508,8 +559,7 @@ class CustomBuild(build):
                 item for item in os.environ["CMAKE_BUILD_ARGS"].split(" ") if item
             ]
 
-        if os.name == "nt":
-            build_args += ["--config", cfg]
+        build_args += ["--config", cfg]
 
         # Put the cmake cache under the temp directory, like
         # "pip-out/temp.<plat>/cmake-out".
@@ -548,7 +598,7 @@ class CustomBuild(build):
             "build/pip_data_bin_init.py.in",
             os.path.join(bin_dir, "__init__.py"),
         )
-        # share the cmake-out location with _BaseExtension.
+        # Share the cmake-out location with _BaseExtension.
         self.cmake_cache_dir = cmake_cache_dir
 
         # Finally, run the underlying subcommands like build_py, build_ext.
@@ -557,22 +607,16 @@ class CustomBuild(build):
 
 def get_ext_modules() -> List[Extension]:
     """Returns the set of extension modules to build."""
-
-    debug = os.environ.get("DEBUG", 0)
-    cfg = "Debug" if debug else "Release"
-
     ext_modules = []
     if ShouldBuild.flatc():
-        if os.name == "nt":
-            ext_modules.append(
-                BuiltFile(
-                    f"third-party/flatbuffers/{cfg}/flatc.exe", "executorch/data/bin/"
-                )
+        ext_modules.append(
+            BuiltFile(
+                "third-party/flatbuffers/%BUILD_TYPE%/",
+                "flatc",
+                "executorch/data/bin/",
+                is_executable=True,
             )
-        else:
-            ext_modules.append(
-                BuiltFile("third-party/flatbuffers/flatc", "executorch/data/bin/")
-            )
+        )
 
     if ShouldBuild.pybindings():
         ext_modules.append(
@@ -584,35 +628,23 @@ def get_ext_modules() -> List[Extension]:
             )
         )
     if ShouldBuild.llama_custom_ops():
-        if os.name == "nt":
-            ext_modules.append(
-                BuiltFile(
-                    f"extension/llm/custom_ops/{cfg}/custom_ops_aot_lib.dll",
-                    "executorch/extension/llm/custom_ops",
-                )
+        ext_modules.append(
+            BuiltFile(
+                "extension/llm/custom_ops/%BUILD_TYPE%/",
+                "custom_ops_aot_lib",
+                "executorch/extension/llm/custom_ops",
+                is_dynamic_lib=True,
             )
-            ext_modules.append(
-                # Install the prebuilt library for quantized ops required by custom ops.
-                BuiltFile(
-                    f"kernels/quantized/{cfg}/quantized_ops_aot_lib.dll",
-                    "executorch/kernels/quantized/",
-                )
+        )
+        ext_modules.append(
+            # Install the prebuilt library for quantized ops required by custom ops.
+            BuiltFile(
+                "kernels/quantized/%BUILD_TYPE%/",
+                "quantized_ops_aot_lib",
+                "executorch/kernels/quantized/",
+                is_dynamic_lib=True,
             )
-        else:
-            ext_modules.append(
-                # Install the prebuilt library for custom ops used in llama.
-                BuiltFile(
-                    "extension/llm/custom_ops/libcustom_ops_aot_lib.*",
-                    "executorch/extension/llm/custom_ops/",
-                )
-            )
-            ext_modules.append(
-                # Install the prebuilt library for quantized ops required by custom ops.
-                BuiltFile(
-                    "kernels/quantized/libquantized_ops_aot_lib.*",
-                    "executorch/kernels/quantized/",
-                )
-            )
+        )
 
     # Note that setuptools uses the presence of ext_modules as the main signal
     # that a wheel is platform-specific. If we install any platform-specific
