@@ -565,16 +565,18 @@ communicate state to developers.</p>
    </td>
    <td>
 <p>Use the
-<a href="https://typing-extensions.readthedocs.io/en/latest/#typing_extensions.deprecated">typing_extensions.deprecated</a>
-decorator</p>
+<a href="https://github.com/pytorch/executorch/blob/main/exir/_warnings.py">executorch.exir._warnings.deprecated</a>
+decorator.</p>
 <p>
-Use ExecuTorch's native experimental decorator (TODO not yet implemented)
+Use the
+<a href="https://github.com/pytorch/executorch/blob/main/exir/_warnings.py">executorch.exir._warnings.experimental</a>
+decorator.
    </td>
    <td>
 <p>Use <code>.. warning::</code> in the docstrings of deprecated and experimental
 APIs. See
 <a href="https://github.com/pytorch/pytorch/blob/cd8bbdc71a0258292381a7d54c8b353988d02ff4/torch/nn/utils/stateless.py#L170">example
-usage</a></p>
+usage</a>.</p>
 </ul>
    </td>
   </tr>
@@ -582,29 +584,29 @@ usage</a></p>
    <td>C++
    </td>
    <td>
-<p>Use <code>ET_DEPRECATED</code> macros. See <a href="https://github.com/pytorch/executorch/blob/8e0f856ee269b319ac4195509cf31e3f548aa0e8/runtime/executor/program.h#L81">example usage</a></p>
+<p>Use the <code>ET_DEPRECATED</code> annotation macro. See <a href="https://github.com/pytorch/executorch/blob/8e0f856ee269b319ac4195509cf31e3f548aa0e8/runtime/executor/program.h#L81">example usage</a>.</p>
 <p>
 <p>
-Use <code>ET_EXPERIMENTAL</code> macros (TODO not yet implemented)
+Use the <code>ET_EXPERIMENTAL</code> annotation macro.
 </ul>
    </td>
    <td>
 <p>Start Doxygen comments with <code>DEPRECATED:</code> See
 <a href="https://github.com/pytorch/executorch/blob/9d859653ae916d0a72f6b2b5c5925bed38832140/runtime/executor/program.h#L139">example
-usage</a></p>
+usage</a>.</p>
 <p>
 <p>
-Start Doxygen comments with <code>EXPERIMENTAL:</code>
+Start Doxygen comments with <code>EXPERIMENTAL:</code>.
    </td>
   </tr>
   <tr>
    <td>Java
    </td>
    <td>
-<p>Use <a href="https://docs.oracle.com/javase/9/docs/api/java/lang/Deprecated.html">java.lang.Deprecated</a></p>
+<p>Use <a href="https://docs.oracle.com/javase/9/docs/api/java/lang/Deprecated.html">java.lang.Deprecated</a>.</p>
 <p>
 <p>
-<p>Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:docs/api_guidelines/annotations.md">androidx.annotation.RequiresOptIn</a></p>
+<p>Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:docs/api_guidelines/annotations.md">androidx.annotation.RequiresOptIn</a>.</p>
    </td>
    <td>
 <p>
@@ -626,7 +628,7 @@ Start Doxygen comments with <code>EXPERIMENTAL:</code>
 <code>__attribute__((deprecated("Use newMethod instead")));</code>
 <p>
 <p>
-<code>__attribute__((experimental("Use newMethod instead")));</code> (TODO not yet implemented)
+<code>__attribute__((deprecated("This API is experimental and may change without notice.")));</code>
    </td>
    <td>
 <p>
