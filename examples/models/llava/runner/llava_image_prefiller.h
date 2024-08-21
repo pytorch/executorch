@@ -24,9 +24,8 @@ class LlavaImagePrefiller : public ImagePrefiller {
    * @param start_pos The starting position in KV cache of the input in the LLM
    * @return logits of the image prefill.
    */
-  inline Result<exec_aten::Tensor> prefill(
-      Image& image,
-      int64_t start_pos = 0) {
+  inline Result<exec_aten::Tensor> prefill(Image& image, int64_t start_pos = 0)
+      override {
     ManagedTensor managed_images(
         image.data.data(), {3, image.height, image.width}, ScalarType::Byte);
     // Run image encoder

@@ -79,6 +79,11 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     TARGET llama_runner PROPERTY IMPORTED_LOCATION ${LLAMA_RUNNER_PATH}
   )
 
+  add_subdirectory(
+    ${EXECUTORCH_ROOT}/examples/models/llava/runner
+    ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llava/runner
+  )
+
   set(CUSTOM_OPS_PATH
       ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/custom_ops/libcustom_ops.a
   )
@@ -116,6 +121,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     executorch_llama_jni
     ${link_libraries}
     llama_runner
+    llava_runner
     custom_ops
     cpublas
     eigen_blas

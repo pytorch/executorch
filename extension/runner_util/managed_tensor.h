@@ -47,13 +47,23 @@ class ManagedTensor {
 #ifdef USE_ATEN_LIB
     tensor_ = torch::from_blob(data, sizes, dtype);
 #else
+    // Calculate strides.
+    strides_ = std::vector<StridesType>(sizes_.size());
+    if (sizes_.size() > 0) {
+      strides_.back() = 1;
+      for (size_t i = strides_.size() - 1; i > 0; --i) {
+        strides_[i - 1] = strides_[i] * sizes_[i];
+      }
+    }
+
+    // Allocate TensorImpl.
     tensor_impl_ = std::make_unique<exec_aten::TensorImpl>(
         dtype,
         sizes_.size(),
         sizes_.data(),
         data,
-        nullptr,
-        nullptr,
+        /*dim_order=*/nullptr,
+        strides_.data(),
         executorch::runtime::TensorShapeDynamism::DYNAMIC_BOUND);
 #endif
   }
@@ -79,6 +89,7 @@ class ManagedTensor {
  private:
   std::unique_ptr<exec_aten::TensorImpl> tensor_impl_;
   std::vector<SizesType> sizes_;
+  std::vector<StridesType> strides_;
 #ifdef USE_ATEN_LIB
   exec_aten::Tensor tensor_;
 #endif
