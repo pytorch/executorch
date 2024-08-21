@@ -32,6 +32,8 @@ class ImagePrefiller {
   virtual Error load() = 0;
   virtual bool is_method_loaded() = 0;
 
+  virtual ~ImagePrefiller() = default;
+
  protected:
   Module* module_;
 };
