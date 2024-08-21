@@ -22,11 +22,11 @@ class TextTokenGenerator {
       Tokenizer* tokenizer,
       TextDecoderRunner* text_decoder_runner,
       bool use_kv_cache,
-      uint64_t eos_id,
+      std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
       Stats* stats)
       : tokenizer_(tokenizer),
         text_decoder_runner_(text_decoder_runner),
-        eos_id_(eos_id),
+        eos_ids_(std::move(eos_ids)),
         use_kv_cache_(use_kv_cache),
         stats_(stats) {}
 
@@ -108,7 +108,7 @@ class TextTokenGenerator {
       }
 
       // data-dependent terminating condition: we have n_eos_ number of EOS
-      if (cur_token == eos_id_) {
+      if (eos_ids_->find(cur_token) != eos_ids_->end()) {
         printf("\n");
         ET_LOG(Info, "\nReached to the end of generation");
         break;
@@ -127,7 +127,7 @@ class TextTokenGenerator {
  private:
   Tokenizer* tokenizer_;
   TextDecoderRunner* text_decoder_runner_;
-  uint64_t eos_id_;
+  std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
   bool use_kv_cache_;
 
   // state machine
