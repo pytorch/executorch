@@ -38,7 +38,7 @@ class HierarchicalAllocator final {
   /**
    * DEPRECATED: Use spans instead.
    */
-  __ET_DEPRECATED HierarchicalAllocator(
+  ET_DEPRECATED HierarchicalAllocator(
       uint32_t n_allocators,
       MemoryAllocator* allocators)
       : buffers_(to_spans(n_allocators, allocators)) {}
@@ -55,7 +55,7 @@ class HierarchicalAllocator final {
    * @returns On success, the address of the requested byte offset into the
    *     specified buffer. On failure, a non-Ok Error.
    */
-  __ET_NODISCARD Result<void*> get_offset_address(
+  ET_NODISCARD Result<void*> get_offset_address(
       uint32_t memory_id,
       size_t offset_bytes,
       size_t size_bytes) {

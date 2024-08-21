@@ -10,6 +10,7 @@ import os
 from multiprocessing.connection import Client
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
+
 import torch
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (  # noqa: F401
     QcomChipset,
@@ -34,13 +35,13 @@ def main(args):
 
     target_names = (
         [
-            f"llama_v2_7b_chat_quantized_PromptProcessor_{i}_Quantized.bin"
-            for i in range(1, 5)
+            f"llama_v3_8b_chat_quantized_PromptProcessor_{i}_Quantized.bin"
+            for i in range(1, 6)
         ]
         if args.use_prompt_processor
         else [
-            f"llama_v2_7b_chat_quantized_TokenGenerator_{i}_Quantized.bin"
-            for i in range(1, 5)
+            f"llama_v3_8b_chat_quantized_TokenGenerator_{i}_Quantized.bin"
+            for i in range(1, 6)
         ]
     )
 
@@ -55,6 +56,11 @@ def main(args):
         is_from_context_binary=True,
     )
 
+    pte_name = (
+        "qaihub_llama3_8b_prompt"
+        if args.use_prompt_processor
+        else "qaihub_llama3_8b_token"
+    )
     if args.pre_gen_pte is None:
         # create custom operators as context loader
         bundle_programs = [
@@ -66,10 +72,13 @@ def main(args):
             to_backend("QnnBackend", prog["edge_program"], compiler_specs)
             for prog in bundle_programs
         ]
+        # TODO: QNN seems to have an expected spill fill size that can be found through log.
+        # Find a way to set this value instead of manually go through the log to retrieve the value.
+        custom_spill_fill = 128974848 if args.use_prompt_processor else 3932160
         # setup spill-fill buffer for relieving runtime memory usage
-        canonicalize_program(lowered_modules)
+        canonicalize_program(lowered_modules, custom_buffer_size=custom_spill_fill)
         # export pte files
-        pte_name, pte_files = "qaihub_llama7b", []
+        pte_files = []
         for i in range(len(target_names)):
             print(f"pte {i} generating...")
             memory_planning_pass = MemoryPlanningPass(
@@ -90,8 +99,7 @@ def main(args):
             lowered_modules.pop(0)
             gc.collect()
     else:
-        pte_name = "qaihub_llama7b"
-        pte_files = [f"{args.pre_gen_pte}/{pte_name}_{i}.pte" for i in range(4)]
+        pte_files = [f"{args.pre_gen_pte}/{pte_name}_{i}.pte" for i in range(5)]
 
     if args.compile_only:
         return
@@ -109,12 +117,6 @@ def main(args):
             qnn_mgr.Destroy()
             return encoding.data["scale"].item(), encoding.data["offset"].item()
 
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # artifact_path : path where artifacts were built
-    # pte_path      : path where executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         build_path=args.build_folder,
@@ -123,7 +125,7 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
-        runner="examples/qualcomm/qaihub_scripts/llama2/qaihub_llama2_7b_runner",
+        runner="examples/qualcomm/qaihub_scripts/llama/qaihub_llama3_8b_runner",
     )
     output_file = "result.txt"
     pos_embs_file = ["freq_cos", "freq_sin"]
@@ -136,7 +138,7 @@ def main(args):
         ],
         *[f"--{fname}_path {fname}.raw" for fname in pos_embs_file],
         f"--output_path {adb.output_folder}/{output_file}",
-        f"--tokenizer_path {os.path.basename(args.tokenizer_bin)}",
+        f"--tokenizer_path {os.path.basename(args.tokenizer_model)}",
         f"--prompt '{args.prompt}'",
         f"--temperature {args.temperature}",
         f"--seq_len {args.seq_len}",
@@ -149,7 +151,7 @@ def main(args):
             f"cd {adb.workspace} &&",
             "export ADSP_LIBRARY_PATH=. &&",
             "export LD_LIBRARY_PATH=. &&",
-            f"./qaihub_llama2_7b_runner {' '.join(runner_args)}",
+            f"./qaihub_llama3_8b_runner {' '.join(runner_args)}",
         ]
     )
 
@@ -168,7 +170,7 @@ def main(args):
         with open(f"{args.artifact}/outputs/{output_file}", "r") as f:
             outputs.append(f.read())
 
-    custom_files = [args.tokenizer_bin]
+    custom_files = [args.tokenizer_model]
     for var_name, freq in zip(pos_embs_file, compute_pos_embedding()):
         custom_files.append(f"{adb.working_dir}/{var_name}.raw")
         scale, offset = (freq.max() - freq.min()) / 65535, 32768
@@ -197,8 +199,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-a",
         "--artifact",
-        help="path for storing generated artifacts by this example. Default ./llama2_qai_hub",
-        default="./llama2_qai_hub",
+        help="path for storing generated artifacts by this example. Default ./llama3_qai_hub",
+        default="./llama3_qai_hub",
         type=str,
     )
 
@@ -216,29 +218,29 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--tokenizer_bin",
-        help="llama2 tokenizer binary",
+        "--tokenizer_model",
+        help="llama3 tokenizer model",
         required=True,
         type=str,
     )
 
     parser.add_argument(
         "--seq_len",
-        help="ouput sequence length for llama2",
+        help="ouput sequence length for llama3",
         default=128,
         type=int,
     )
 
     parser.add_argument(
         "--temperature",
-        help="sampling temperature for llama2",
+        help="sampling temperature for llama3",
         default=0.8,
         type=float,
     )
 
     parser.add_argument(
         "--prompt",
-        help="user prompts for llama2",
+        help="user prompts for llama3",
         required=True,
         type=str,
     )

@@ -91,11 +91,13 @@ communicate state to developers.
    <td>
 
 Use the
-<a href="https://typing-extensions.readthedocs.io/en/latest/#typing_extensions.deprecated">typing_extensions.deprecated</a>
-decorator
+<a href="https://github.com/pytorch/executorch/blob/main/exir/_warnings.py">executorch.exir._warnings.deprecated</a>
+decorator.
 
 <p>
-Use ExecuTorch's native experimental decorator (TODO not yet implemented)
+Use the
+<a href="https://github.com/pytorch/executorch/blob/main/exir/_warnings.py">executorch.exir._warnings.experimental</a>
+decorator.
 
    </td>
    <td>
@@ -103,7 +105,7 @@ Use ExecuTorch's native experimental decorator (TODO not yet implemented)
 Use <code>.. warning::</code> in the docstrings of deprecated and experimental
 APIs. See
 <a href="https://github.com/pytorch/pytorch/blob/cd8bbdc71a0258292381a7d54c8b353988d02ff4/torch/nn/utils/stateless.py#L170">example
-usage</a>
+usage</a>.
 
 </ul>
    </td>
@@ -113,22 +115,22 @@ usage</a>
    </td>
    <td>
 
-Use <code>__ET_DEPRECATED</code> macros. See <a href="https://github.com/pytorch/executorch/blob/8e0f856ee269b319ac4195509cf31e3f548aa0e8/runtime/executor/program.h#L81">example usage</a>
+Use the <code>ET_DEPRECATED</code> annotation macro. See <a href="https://github.com/pytorch/executorch/blob/8e0f856ee269b319ac4195509cf31e3f548aa0e8/runtime/executor/program.h#L81">example usage</a>.
 
 <p>
 <p>
-Use <code>__ET_EXPERIMENTAL</code> macros (TODO not yet implemented)
+Use the <code>ET_EXPERIMENTAL</code> annotation macro.
 </ul>
    </td>
    <td>
 
 Start Doxygen comments with <code>DEPRECATED:</code> See
 <a href="https://github.com/pytorch/executorch/blob/9d859653ae916d0a72f6b2b5c5925bed38832140/runtime/executor/program.h#L139">example
-usage</a>
+usage</a>.
 
 <p>
 <p>
-Start Doxygen comments with <code>EXPERIMENTAL:</code>
+Start Doxygen comments with <code>EXPERIMENTAL:</code>.
    </td>
   </tr>
   <tr>
@@ -136,12 +138,12 @@ Start Doxygen comments with <code>EXPERIMENTAL:</code>
    </td>
    <td>
 
-Use <a href="https://docs.oracle.com/javase/9/docs/api/java/lang/Deprecated.html">java.lang.Deprecated</a>
+Use <a href="https://docs.oracle.com/javase/9/docs/api/java/lang/Deprecated.html">java.lang.Deprecated</a>.
 
 <p>
 <p>
 
-Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:docs/api_guidelines/annotations.md">androidx.annotation.RequiresOptIn</a>
+Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:docs/api_guidelines/annotations.md">androidx.annotation.RequiresOptIn</a>.
 
    </td>
    <td>
@@ -164,7 +166,7 @@ Use <a href="https://cs.android.com/androidx/platform/frameworks/support/+/andro
 <code>__attribute__((deprecated("Use newMethod instead")));</code>
 <p>
 <p>
-<code>__attribute__((experimental("Use newMethod instead")));</code> (TODO not yet implemented)
+<code>__attribute__((deprecated("This API is experimental and may change without notice.")));</code>
    </td>
    <td>
 <p>

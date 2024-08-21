@@ -22,7 +22,7 @@
   ET_LOG(                                        \
       Fatal,                                     \
       "In function %s(), assert failed" _format, \
-      __ET_FUNCTION,                             \
+      ET_FUNCTION,                               \
       ##__VA_ARGS__)
 
 /**
@@ -35,7 +35,7 @@
  */
 #define ET_CHECK_MSG(_cond, _format, ...)                               \
   ({                                                                    \
-    if __ET_UNLIKELY (!(_cond)) {                                       \
+    if ET_UNLIKELY (!(_cond)) {                                         \
       ET_ASSERT_MESSAGE_EMIT(" (%s): " _format, #_cond, ##__VA_ARGS__); \
       ::executorch::runtime::runtime_abort();                           \
     }                                                                   \
@@ -49,7 +49,7 @@
  */
 #define ET_CHECK(_cond)                       \
   ({                                          \
-    if __ET_UNLIKELY (!(_cond)) {             \
+    if ET_UNLIKELY (!(_cond)) {               \
       ET_ASSERT_MESSAGE_EMIT(": %s", #_cond); \
       ::executorch::runtime::runtime_abort(); \
     }                                         \
@@ -104,7 +104,7 @@
 #define ET_ASSERT_UNREACHABLE()                                   \
   ({                                                              \
     ET_CHECK_MSG(false, "Execution should not reach this point"); \
-    __ET_UNREACHABLE();                                           \
+    ET_UNREACHABLE();                                             \
   })
 
 /**
@@ -116,5 +116,5 @@
   ({                                                                   \
     ET_CHECK_MSG(                                                      \
         false, "Execution should not reach this point. %s", _message); \
-    __ET_UNREACHABLE();                                                \
+    ET_UNREACHABLE();                                                  \
   })

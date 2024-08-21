@@ -23,10 +23,20 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
 
+// Some platforms (e.g. Xtensa) do not support pread() that we use to read the
+// file at different offsets simultaneously from multiple threads not affecting
+// each other. We list them below and use a workaround for them.
+#if defined(__xtensa__)
+#define ET_HAVE_PREAD 0
+#endif // defined(__xtensa__)
+
+#ifndef ET_HAVE_PREAD
+#define ET_HAVE_PREAD 1
+#endif // !ET_HAVE_PREAD
+
 namespace torch {
 namespace executor {
 namespace util {
-
 namespace {
 
 /**
@@ -112,7 +122,7 @@ namespace {
  * `context` is actually a ptrdiff_t value (not a pointer) that contains the
  * offset in bytes between `data` and the actual pointer to free.
  */
-void FreeSegment(void* context, void* data, __ET_UNUSED size_t size) {
+void FreeSegment(void* context, void* data, ET_UNUSED size_t size) {
   ptrdiff_t offset = reinterpret_cast<ptrdiff_t>(context);
   ET_DCHECK_MSG(offset >= 0, "Unexpected offset %ld", (long int)offset);
   std::free(static_cast<uint8_t*>(data) - offset);
@@ -122,7 +132,7 @@ void FreeSegment(void* context, void* data, __ET_UNUSED size_t size) {
 Result<FreeableBuffer> FileDataLoader::load(
     size_t offset,
     size_t size,
-    __ET_UNUSED const DataLoader::SegmentInfo& segment_info) {
+    ET_UNUSED const DataLoader::SegmentInfo& segment_info) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
@@ -205,11 +215,11 @@ Result<size_t> FileDataLoader::size() const {
   return file_size_;
 }
 
-__ET_NODISCARD Error FileDataLoader::load_into(
+ET_NODISCARD Error FileDataLoader::load_into(
     size_t offset,
     size_t size,
-    __ET_UNUSED const SegmentInfo& segment_info,
-    void* buffer) {
+    ET_UNUSED const SegmentInfo& segment_info,
+    void* buffer) const {
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
@@ -226,29 +236,28 @@ __ET_NODISCARD Error FileDataLoader::load_into(
   ET_CHECK_OR_RETURN_ERROR(
       buffer != nullptr, InvalidArgument, "Provided buffer cannot be null");
 
-  // Seek to the right place in the file.
-  off_t seek_offset = ::lseek(fd_, offset, SEEK_SET);
-  if (seek_offset != offset) {
-    ET_LOG(
-        Error,
-        "Seeking %s to offset %zu returned %zd: %s",
-        file_name_,
-        offset,
-        (ssize_t)seek_offset,
-        strerror(errno));
-    return Error::AccessFailed;
-  }
-
   // Read the data into the aligned address.
   size_t needed = size;
   uint8_t* buf = reinterpret_cast<uint8_t*>(buffer);
+
+  // Make a duplicate fd if pread() is not available and we have to seek().
+  // Cannot use the standard dup() or fcntl() calls because the returned
+  // duplicate will share the underlying file record and affect the original fd
+  // when seeking on multiple threads simultaneously.
+  const auto dup_fd = ET_HAVE_PREAD ? fd_ : ::open(file_name_, O_RDONLY);
+
   while (needed > 0) {
-    // Reads on macos will fail with EINVAL if size > INT32_MAX.
-    ssize_t nread = ::read(
-        fd_,
-        buf,
-        std::min<size_t>(
-            needed, static_cast<size_t>(std::numeric_limits<int32_t>::max())));
+    // Reads on macOS will fail with EINVAL if size > INT32_MAX.
+    const auto chunk_size = std::min<size_t>(
+        needed, static_cast<size_t>(std::numeric_limits<int32_t>::max()));
+    const auto nread =
+#if ET_HAVE_PREAD
+        ::pread(dup_fd, buf, chunk_size, offset);
+#else
+        (::lseek(dup_fd, offset, SEEK_SET) == (off_t)-1)
+        ? -1
+        : ::read(dup_fd, buf, chunk_size);
+#endif
     if (nread < 0 && errno == EINTR) {
       // Interrupted by a signal; zero bytes read.
       continue;
@@ -263,10 +272,17 @@ __ET_NODISCARD Error FileDataLoader::load_into(
           size,
           offset,
           nread == 0 ? "EOF" : strerror(errno));
+      if (!ET_HAVE_PREAD) {
+        ::close(dup_fd);
+      }
       return Error::AccessFailed;
     }
     needed -= nread;
     buf += nread;
+    offset += nread;
+  }
+  if (!ET_HAVE_PREAD) {
+    ::close(dup_fd);
   }
   return Error::Ok;
 }

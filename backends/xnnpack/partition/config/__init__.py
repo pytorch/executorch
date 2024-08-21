@@ -11,6 +11,7 @@ from executorch.backends.xnnpack.partition.config.gemm_configs import (
     AddmmConfig,
     ConvolutionConfig,
     LinearConfig,
+    MMConfig,
 )
 
 from executorch.backends.xnnpack.partition.config.generic_node_configs import (
@@ -39,6 +40,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     PowConfig,
     QuantizedPerTensorConfig,
     ReLUConfig,
+    # SDPAConfig, TODO: D60553559: preserving SDPA for fairseq fails
     SigmoidConfig,
     SliceCopyConfig,
     SoftmaxConfig,
@@ -79,12 +81,14 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     MaxPool2dConfig,
     MeanDimConfig,
     MinimumConfig,
+    MMConfig,
     MulConfig,
     NegConfig,
     PermuteConfig,
     PowConfig,
     PreluConfig,
     ReLUConfig,
+    # SDPAConfig, TODO: D60553559: preserving SDPA for fairseq fails
     SigmoidConfig,
     SliceCopyConfig,
     SoftmaxConfig,
