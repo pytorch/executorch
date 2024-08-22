@@ -242,3 +242,9 @@ void print_vector(
   }
   std::cout << std::endl;
 }
+
+//
+// Misc. Utilities
+//
+
+bool check_close(float a, float b, float atol = 1e-4, float rtol = 1e-5);
