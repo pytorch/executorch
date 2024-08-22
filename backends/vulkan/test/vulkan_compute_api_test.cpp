@@ -168,6 +168,13 @@ std::vector<int64_t> get_reference_strides(
   return {};
 }
 
+TEST_F(VulkanComputeAPITest, empty_init_shader_info_test) {
+  vkapi::ShaderInfo empty_shader_info;
+  EXPECT_FALSE(empty_shader_info);
+  EXPECT_TRUE(empty_shader_info.src_code.bin == nullptr);
+  EXPECT_TRUE(empty_shader_info.src_code.size == 0u);
+}
+
 TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
   for (const auto& sizes : standard_sizes_to_test) {
     if (sizes.size() < 3) {
