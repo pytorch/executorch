@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>executorch.sdk.bundled_program.config &mdash; ExecuTorch main documentation</title>
+  <title>executorch.devtools.bundled_program.serialize &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -434,7 +434,7 @@
         
           <li><a href="../../../index.html">Module code</a> &gt;</li>
         
-      <li>executorch.sdk.bundled_program.config</li>
+      <li>executorch.devtools.bundled_program.serialize</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -468,7 +468,7 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <h1>Source code for executorch.sdk.bundled_program.config</h1><div class="highlight"><pre>
+  <h1>Source code for executorch.devtools.bundled_program.serialize</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) Meta Platforms, Inc. and affiliates.</span>
 <span class="c1"># All rights reserved.</span>
 <span class="c1">#</span>
@@ -477,118 +477,120 @@
 
 <span class="c1"># pyre-strict</span>
 
-<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">get_args</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Union</span>
+<span class="c1"># TODO(T138924864): Refactor to unify the serialization for bundled program and executorch program.</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">tempfile</span>
 
-<span class="kn">from</span> <span class="nn">torch.utils._pytree</span> <span class="kn">import</span> <span class="n">tree_flatten</span>
+<span class="kn">import</span> <span class="nn">executorch.devtools.bundled_program.schema</span> <span class="k">as</span> <span class="nn">bp_schema</span>
 
-<span class="kn">from</span> <span class="nn">typing_extensions</span> <span class="kn">import</span> <span class="n">TypeAlias</span>
+<span class="c1"># @manual=fbsource//third-party/pypi/setuptools:setuptools</span>
+<span class="kn">import</span> <span class="nn">pkg_resources</span>
+<span class="kn">from</span> <span class="nn">executorch.devtools.bundled_program.core</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
 
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">The data types currently supported for element to be bundled. It should be</span>
-<span class="sd">consistent with the types in bundled_program.schema.Value.</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="n">ConfigValue</span><span class="p">:</span> <span class="n">TypeAlias</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span>
-    <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-    <span class="nb">int</span><span class="p">,</span>
-    <span class="nb">bool</span><span class="p">,</span>
-    <span class="nb">float</span><span class="p">,</span>
-<span class="p">]</span>
+<span class="kn">from</span> <span class="nn">executorch.exir._serialize._dataclass</span> <span class="kn">import</span> <span class="n">_DataclassEncoder</span><span class="p">,</span> <span class="n">_json_to_dataclass</span>
+<span class="kn">from</span> <span class="nn">executorch.exir._serialize._flatbuffer</span> <span class="kn">import</span> <span class="n">_flatc_compile</span><span class="p">,</span> <span class="n">_flatc_decompile</span>
 
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">The data type of the input for method single execution.</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="n">MethodInputType</span><span class="p">:</span> <span class="n">TypeAlias</span> <span class="o">=</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">ConfigValue</span><span class="p">]</span>
-
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">The data type of the output for method single execution.</span>
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="n">MethodOutputType</span><span class="p">:</span> <span class="n">TypeAlias</span> <span class="o">=</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span>
-
-<span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">All supported types for input/expected output of MethodTestCase.</span>
-
-<span class="sd">Namedtuple is also supported and listed implicitly since it is a subclass of tuple.</span>
-<span class="sd">&quot;&quot;&quot;</span>
-
-<span class="c1"># pyre-ignore</span>
-<span class="n">DataContainer</span><span class="p">:</span> <span class="n">TypeAlias</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span>
+<span class="c1"># The prefix of schema files used for bundled program</span>
+<span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span> <span class="o">=</span> <span class="s2">&quot;bundled_program_schema&quot;</span>
+<span class="n">SCALAR_TYPE_SCHEMA_NAME</span> <span class="o">=</span> <span class="s2">&quot;scalar_type&quot;</span>
 
 
-<span class="k">class</span> <span class="nc">MethodTestCase</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test case with inputs and expected outputs</span>
-<span class="sd">    The expected_outputs are optional and only required if the user wants to verify model outputs after execution.</span>
+<span class="k">def</span> <span class="nf">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">schema_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">schema_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.fbs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">schema_name</span><span class="p">))</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">schema_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">schema_file</span><span class="p">:</span>
+        <span class="n">schema_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+            <span class="n">pkg_resources</span><span class="o">.</span><span class="n">resource_string</span><span class="p">(</span><span class="vm">__name__</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.fbs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">schema_name</span><span class="p">))</span>
+        <span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">serialize_from_bundled_program_to_json</span><span class="p">(</span>
+    <span class="n">bundled_program</span><span class="p">:</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">bundled_program</span><span class="p">,</span> <span class="bp">cls</span><span class="o">=</span><span class="n">_DataclassEncoder</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">deserialize_from_json_to_bundled_program</span><span class="p">(</span>
+    <span class="n">program_json</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">:</span>
+    <span class="n">program_json</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">program_json</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_json_to_dataclass</span><span class="p">(</span><span class="n">program_json</span><span class="p">,</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">convert_to_flatbuffer</span><span class="p">(</span><span class="n">program_json</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+    <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryDirectory</span><span class="p">()</span> <span class="k">as</span> <span class="n">d</span><span class="p">:</span>
+        <span class="c1"># load given and common schema</span>
+        <span class="n">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">)</span>
+        <span class="n">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">SCALAR_TYPE_SCHEMA_NAME</span><span class="p">)</span>
+
+        <span class="n">schema_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.fbs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
+        <span class="n">json_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.json&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">json_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">json_file</span><span class="p">:</span>
+            <span class="n">json_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">program_json</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">&quot;ascii&quot;</span><span class="p">))</span>
+        <span class="n">_flatc_compile</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">schema_path</span><span class="p">,</span> <span class="n">json_path</span><span class="p">)</span>
+        <span class="n">output_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.bpte&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">output_file</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">output_file</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">convert_from_flatbuffer</span><span class="p">(</span><span class="n">program_flatbuffer</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+    <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryDirectory</span><span class="p">()</span> <span class="k">as</span> <span class="n">d</span><span class="p">:</span>
+        <span class="n">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">)</span>
+        <span class="n">write_schema</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">SCALAR_TYPE_SCHEMA_NAME</span><span class="p">)</span>
+
+        <span class="n">schema_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.fbs&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">BUNDLED_PROGRAM_SCHEMA_NAME</span><span class="p">))</span>
+        <span class="n">bin_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;schema.bin&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">bin_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">bin_file</span><span class="p">:</span>
+            <span class="n">bin_file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">program_flatbuffer</span><span class="p">)</span>
+        <span class="n">_flatc_decompile</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">schema_path</span><span class="p">,</span> <span class="n">bin_path</span><span class="p">)</span>
+        <span class="n">output_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">&quot;schema.json&quot;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">output_file</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">output_file</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+
+<span class="c1"># from bundled program to flatbuffer</span>
+<div class="viewcode-block" id="serialize_from_bundled_program_to_flatbuffer"><a class="viewcode-back" href="../../../../sdk-bundled-io.html#executorch.devtools.bundled_program.serialize.serialize_from_bundled_program_to_flatbuffer">[docs]</a><span class="k">def</span> <span class="nf">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
+    <span class="n">bundled_program</span><span class="p">:</span> <span class="n">BundledProgram</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Serialize a BundledProgram into FlatBuffer binary format.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        bundled_program (BundledProgram): The `BundledProgram` variable to be serialized.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        The serialized FlatBuffer binary data in bytes.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">inputs</span><span class="p">:</span> <span class="n">MethodInputType</span><span class="p">,</span>
-        <span class="n">expected_outputs</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MethodOutputType</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Single test case for verifying specific method</span>
+    <span class="n">bundled_program_in_schema</span> <span class="o">=</span> <span class="n">bundled_program</span><span class="o">.</span><span class="n">serialize_to_schema</span><span class="p">()</span>
 
-<span class="sd">        Args:</span>
-<span class="sd">            inputs: All inputs required by eager_model with specific inference method for one-time execution.</span>
-
-<span class="sd">                    It is worth mentioning that, although both bundled program and ET runtime apis support setting input</span>
-<span class="sd">                    other than `torch.tensor` type, only the input in `torch.tensor` type will be actually updated in</span>
-<span class="sd">                    the method, and the rest of the inputs will just do a sanity check if they match the default value in method.</span>
-
-<span class="sd">            expected_outputs: Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            self</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># TODO(gasoonjia): Update type check logic.</span>
-        <span class="c1"># pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sanity check.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ConfigValue</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_flatten_and_sanity_check</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">expected_outputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ConfigValue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">if</span> <span class="n">expected_outputs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sanity check.</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">expected_outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_flatten_and_sanity_check</span><span class="p">(</span><span class="n">expected_outputs</span><span class="p">)</span>
-
-    <span class="k">def</span> <span class="nf">_flatten_and_sanity_check</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">unflatten_data</span><span class="p">:</span> <span class="n">DataContainer</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">ConfigValue</span><span class="p">]:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Flat the given data and check its legality</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            unflatten_data: Data needs to be flatten.</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            flatten_data: Flatten data with legal type.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-
-        <span class="n">flatten_data</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">tree_flatten</span><span class="p">(</span><span class="n">unflatten_data</span><span class="p">)</span>
-
-        <span class="k">for</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">flatten_data</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span>
-                <span class="n">data</span><span class="p">,</span>
-                <span class="n">get_args</span><span class="p">(</span><span class="n">ConfigValue</span><span class="p">),</span>
-            <span class="p">),</span> <span class="s2">&quot;The type of input </span><span class="si">{}</span><span class="s2"> with type </span><span class="si">{}</span><span class="s2"> is not supported.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
-                <span class="n">data</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
-            <span class="p">)</span>
-            <span class="k">assert</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
-                <span class="n">data</span><span class="p">,</span>
-                <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
-            <span class="p">),</span> <span class="s2">&quot;The input </span><span class="si">{}</span><span class="s2"> should not be in null type.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
-
-        <span class="k">return</span> <span class="n">flatten_data</span>
+    <span class="k">return</span> <span class="n">convert_to_flatbuffer</span><span class="p">(</span>
+        <span class="n">serialize_from_bundled_program_to_json</span><span class="p">(</span><span class="n">bundled_program_in_schema</span><span class="p">)</span>
+    <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="MethodTestSuite"><a class="viewcode-back" href="../../../../sdk-bundled-io.html#executorch.sdk.bundled_program.config.MethodTestSuite">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">MethodTestSuite</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;All test info related to verify method</span>
+<span class="c1"># From flatbuffer to bundled program in schema.</span>
+<span class="c1"># Please notice here the bundled program is the one in our schema (bp_schema.BundledProgram),</span>
+<span class="c1"># not the bundled program user interact with (core.bundled_program).</span>
+<span class="c1"># However there&#39;re two concerns for current design:</span>
+<span class="c1"># 1. the misalignment of serialization input and deserialization out, which may confuse our user.</span>
+<span class="c1"># 2. the mis-exposion of schema.bundled_program. all classes in schema should not directly</span>
+<span class="c1">#    interact with user, but the deserialization api returns one.</span>
+<span class="c1"># TODO(T170042248): Solve the above issues.</span>
+<div class="viewcode-block" id="deserialize_from_flatbuffer_to_bundled_program"><a class="viewcode-back" href="../../../../sdk-bundled-io.html#executorch.devtools.bundled_program.serialize.deserialize_from_flatbuffer_to_bundled_program">[docs]</a><span class="k">def</span> <span class="nf">deserialize_from_flatbuffer_to_bundled_program</span><span class="p">(</span>
+    <span class="n">flatbuffer</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Deserialize a FlatBuffer binary format into a BundledProgram.</span>
 
-<span class="sd">    Attributes:</span>
-<span class="sd">        method_name: Name of the method to be verified.</span>
-<span class="sd">        test_cases: All test cases for verifying the method.</span>
+<span class="sd">    Args:</span>
+<span class="sd">        flatbuffer (bytes): The FlatBuffer binary data in bytes.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A `BundledProgram` instance.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span>
-    <span class="n">test_cases</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">MethodTestCase</span><span class="p">]</span></div>
+    <span class="k">return</span> <span class="n">deserialize_from_json_to_bundled_program</span><span class="p">(</span><span class="n">convert_from_flatbuffer</span><span class="p">(</span><span class="n">flatbuffer</span><span class="p">))</span></div>
 </pre></div>
 
              </article>

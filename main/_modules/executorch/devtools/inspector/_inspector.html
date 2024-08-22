@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>executorch.sdk.inspector._inspector &mdash; ExecuTorch main documentation</title>
+  <title>executorch.devtools.inspector._inspector &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -434,7 +434,7 @@
         
           <li><a href="../../../index.html">Module code</a> &gt;</li>
         
-      <li>executorch.sdk.inspector._inspector</li>
+      <li>executorch.devtools.inspector._inspector</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -468,7 +468,7 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <h1>Source code for executorch.sdk.inspector._inspector</h1><div class="highlight"><pre>
+  <h1>Source code for executorch.devtools.inspector._inspector</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright (c) Meta Platforms, Inc. and affiliates.</span>
 <span class="c1"># All rights reserved.</span>
 <span class="c1">#</span>
@@ -497,16 +497,19 @@
     <span class="n">Union</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="kn">import</span> <span class="nn">executorch.sdk.etdump.schema_flatcc</span> <span class="k">as</span> <span class="nn">flatcc</span>
+<span class="kn">import</span> <span class="nn">executorch.devtools.etdump.schema_flatcc</span> <span class="k">as</span> <span class="nn">flatcc</span>
 
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
 <span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
 
-<span class="kn">from</span> <span class="nn">executorch.sdk.debug_format.et_schema</span> <span class="kn">import</span> <span class="n">OperatorGraph</span><span class="p">,</span> <span class="n">OperatorNode</span>
-<span class="kn">from</span> <span class="nn">executorch.sdk.etdump.schema_flatcc</span> <span class="kn">import</span> <span class="n">DebugEvent</span><span class="p">,</span> <span class="n">ETDumpFlatCC</span><span class="p">,</span> <span class="n">ProfileEvent</span>
-<span class="kn">from</span> <span class="nn">executorch.sdk.etrecord</span> <span class="kn">import</span> <span class="n">ETRecord</span><span class="p">,</span> <span class="n">parse_etrecord</span>
-<span class="kn">from</span> <span class="nn">executorch.sdk.inspector._inspector_utils</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span> <span class="nn">executorch.devtools.debug_format.et_schema</span> <span class="kn">import</span> <span class="n">OperatorGraph</span><span class="p">,</span> <span class="n">OperatorNode</span>
+<span class="kn">from</span> <span class="nn">executorch.devtools.etdump.schema_flatcc</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DebugEvent</span><span class="p">,</span>
+    <span class="n">ETDumpFlatCC</span><span class="p">,</span>
+    <span class="n">ProfileEvent</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">executorch.devtools.etrecord</span> <span class="kn">import</span> <span class="n">ETRecord</span><span class="p">,</span> <span class="n">parse_etrecord</span>
+<span class="kn">from</span> <span class="nn">executorch.devtools.inspector._inspector_utils</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">create_debug_handle_to_op_node_mapping</span><span class="p">,</span>
     <span class="n">EDGE_DIALECT_GRAPH_KEY</span><span class="p">,</span>
     <span class="n">EXCLUDED_COLUMNS_WHEN_PRINTING</span><span class="p">,</span>
@@ -524,6 +527,7 @@
     <span class="n">TimeScale</span><span class="p">,</span>
     <span class="n">verify_debug_data_equivalence</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
 
 <span class="kn">from</span> <span class="nn">tabulate</span> <span class="kn">import</span> <span class="n">tabulate</span>
 
@@ -754,7 +758,7 @@
         <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="Event"><a class="viewcode-back" href="../../../../sdk-inspector.html#executorch.sdk.inspector.Event">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="Event"><a class="viewcode-back" href="../../../../sdk-inspector.html#executorch.devtools.inspector.Event">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">Event</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    An Event corresponds to an operator instance with perf data retrieved from the runtime and other metadata from `ETRecord`.</span>
@@ -1099,7 +1103,7 @@
                     <span class="bp">self</span><span class="o">.</span><span class="n">op_types</span> <span class="o">+=</span> <span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">op</span><span class="p">]</span></div>
 
 
-<div class="viewcode-block" id="EventBlock"><a class="viewcode-back" href="../../../../sdk-inspector.html#executorch.sdk.inspector.EventBlock">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="EventBlock"><a class="viewcode-back" href="../../../../sdk-inspector.html#executorch.devtools.inspector.EventBlock">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">EventBlock</span><span class="p">:</span>
 <span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    An `EventBlock` contains a collection of events associated with a particular profiling/debugging block retrieved from the runtime.</span>

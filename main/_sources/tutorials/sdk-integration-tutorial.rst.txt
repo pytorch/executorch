@@ -52,9 +52,9 @@ Generate ETRecord (Optional)
 
 The first step is to generate an ``ETRecord``. ``ETRecord`` contains model
 graphs and metadata for linking runtime results (such as profiling) to
-the eager model. This is generated via ``executorch.sdk.generate_etrecord``.
+the eager model. This is generated via ``executorch.devtools.generate_etrecord``.
 
-``executorch.sdk.generate_etrecord`` takes in an output file path (str), the
+``executorch.devtools.generate_etrecord`` takes in an output file path (str), the
 edge dialect model (``EdgeProgramManager``), the ExecuTorch dialect model
 (``ExecutorchProgramManager``), and an optional dictionary of additional models.
 
@@ -70,6 +70,7 @@ In this tutorial, an example model (shown below) is used to demonstrate.
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
+    from executorch.devtools import generate_etrecord
 
     from executorch.exir import (
         EdgeCompileConfig,
@@ -77,7 +78,6 @@ In this tutorial, an example model (shown below) is used to demonstrate.
         ExecutorchProgramManager,
         to_edge,
     )
-    from executorch.sdk import generate_etrecord
     from torch.export import export, ExportedProgram
 
 
@@ -157,14 +157,14 @@ In this tutorial, a `Bundled Program` is created from the example model above.
 
 
     import torch
+    from executorch.devtools import BundledProgram
 
-    from executorch.exir import to_edge
-    from executorch.sdk import BundledProgram
-
-    from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-    from executorch.sdk.bundled_program.serialize import (
+    from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+    from executorch.devtools.bundled_program.serialize import (
         serialize_from_bundled_program_to_flatbuffer,
     )
+
+    from executorch.exir import to_edge
     from torch.export import export
 
     # Step 1: ExecuTorch Program Export
@@ -230,7 +230,7 @@ To visualize all runtime events, call Inspector's ``print_data_tabular``.
 .. code-block:: default
 
 
-    from executorch.sdk import Inspector
+    from executorch.devtools import Inspector
 
     etdump_path = "etdump.etdp"
     inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
@@ -405,7 +405,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.557 seconds)
+   **Total running time of the script:** (0 minutes 1.930 seconds)
 
 
 .. _sphx_glr_download_tutorials_sdk-integration-tutorial.py:

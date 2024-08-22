@@ -521,8 +521,8 @@ Specifically, it will:</p>
 <h2>Generate ETRecord (Optional)<a class="headerlink" href="#generate-etrecord-optional" title="Permalink to this heading">¶</a></h2>
 <p>The first step is to generate an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code>. <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> contains model
 graphs and metadata for linking runtime results (such as profiling) to
-the eager model. This is generated via <code class="docutils literal notranslate"><span class="pre">executorch.sdk.generate_etrecord</span></code>.</p>
-<p><code class="docutils literal notranslate"><span class="pre">executorch.sdk.generate_etrecord</span></code> takes in an output file path (str), the
+the eager model. This is generated via <code class="docutils literal notranslate"><span class="pre">executorch.devtools.generate_etrecord</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">executorch.devtools.generate_etrecord</span></code> takes in an output file path (str), the
 edge dialect model (<code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>), the ExecuTorch dialect model
 (<code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager</span></code>), and an optional dictionary of additional models.</p>
 <p>In this tutorial, an example model (shown below) is used to demonstrate.</p>
@@ -531,6 +531,7 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
 <span class="kn">import</span> <span class="nn">torch.nn.functional</span> <span class="k">as</span> <span class="nn">F</span>
+<span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">generate_etrecord</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">EdgeCompileConfig</span><span class="p">,</span>
@@ -538,7 +539,6 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
     <span class="n">ExecutorchProgramManager</span><span class="p">,</span>
     <span class="n">to_edge</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">generate_etrecord</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.export" title="torch.export.export" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-function"><span class="n">export</span></a><span class="p">,</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a>
 
 
@@ -600,14 +600,14 @@ lose debug data in the process.</p>
 from executing a <a class="reference external" href="../sdk-bundled-io.html">Bundled Program Model</a>.</p>
 <p>In this tutorial, a <cite>Bundled Program</cite> is created from the example model above.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
-<span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
-
-<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.serialize</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span> <span class="nn">executorch.devtools.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
+<span class="kn">from</span> <span class="nn">executorch.devtools.bundled_program.serialize</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">,</span>
 <span class="p">)</span>
+
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.export" title="torch.export.export" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-function"><span class="n">export</span></a>
 
 <span class="c1"># Step 1: ExecuTorch Program Export</span>
@@ -655,7 +655,7 @@ the operators of the Edge Dialect Graph.</p>
 <p>Recall: An <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> is not required. If an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> is not provided,
 the Inspector will show runtime results without operator correlation.</p>
 <p>To visualize all runtime events, call Inspector’s <code class="docutils literal notranslate"><span class="pre">print_data_tabular</span></code>.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">Inspector</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.devtools</span> <span class="kn">import</span> <span class="n">Inspector</span>
 
 <a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etdump_path</span></a> <span class="o">=</span> <span class="s2">&quot;etdump.etdp&quot;</span>
 <span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etdump_path</span></a><span class="o">=</span><a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etdump_path</span></a><span class="p">,</span> <span class="n">etrecord</span><span class="o">=</span><a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etrecord_path</span></a><span class="p">)</span>
@@ -751,7 +751,7 @@ to analyze the model run results.</p>
 <li><p><a class="reference external" href="../sdk-etdump.html">ETDump</a></p></li>
 <li><p><a class="reference external" href="../sdk-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.557 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.930 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-sdk-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/00f28feeccb75cde665e2acd0ca1eb2e/sdk-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">sdk-integration-tutorial.py</span></code></a></p>
