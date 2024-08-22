@@ -8,9 +8,9 @@
 
 import operator
 
-from executorch.backends.vulkan.passes.custom_ops_defs import (
-    conv_with_clamp_op,  # noqa
-    grid_priors_op,  # noqa
+from executorch.backends.vulkan.passes.custom_ops_defs import (  # noqa
+    conv_with_clamp_op,
+    grid_priors_op,
 )
 
 from executorch.exir.dialects._ops import ops as exir_ops
