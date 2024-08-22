@@ -280,6 +280,48 @@ TEST_F(RegisterPrimOpsTest, LocalScalarDenseReturnsCorrectValue) {
   EXPECT_EQ(stack[1]->toInt(), expected);
 }
 
+TEST_F(RegisterPrimOpsTest, NegScalarReturnsCorrectValue) {
+  EValue values[2];
+
+  // Test with float
+  values[0] = EValue(5.0f);
+  values[1] = EValue(0.0f);
+
+  EValue* stack[2];
+  for (size_t i = 0; i < 2; i++) {
+    stack[i] = &values[i];
+  }
+
+  getOpsFn("executorch_prim::neg.Scalar")(context, stack);
+
+  int64_t expected = -5.0f;
+  EXPECT_EQ(stack[1]->toDouble(), expected);
+
+  // Test with int
+  values[0] = EValue(5l);
+  values[1] = EValue(0l);
+
+  getOpsFn("executorch_prim::neg.Scalar")(context, stack);
+
+  int64_t expected = -5l;
+  EXPECT_EQ(stack[1]->toInt(), expected);
+}
+
+TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorDies) {
+  testing::TensorFactory<ScalarType::Int> tf;
+
+  EValue values[2];
+
+  auto tensor = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
+
+  values[0] = EValue(tensor);
+  values[1] = EValue(0l);
+
+  // Try to negate a tensor, which should cause a runtime error.
+  ET_EXPECT_DEATH(
+      getOpsFn("executorch_prim::neg.Scalar")(context, stack), "");
+}
+
 TEST_F(RegisterPrimOpsTest, TestETView) {
   EXPECT_TRUE(hasOpsFn("executorch_prim::et_view.default"));
 
