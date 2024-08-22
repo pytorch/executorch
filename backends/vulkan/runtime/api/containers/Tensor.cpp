@@ -685,6 +685,16 @@ void vTensorStorage::transition(
   last_access_.access = cur_access;
 }
 
+bool vTensorStorage::is_copy_of(const vTensorStorage& other) const {
+  if (storage_type_ != other.storage_type_) {
+    return false;
+  }
+  if (storage_type_ == utils::kBuffer) {
+    return buffer_.is_copy_of(other.buffer_);
+  }
+  return false;
+}
+
 void vTensorStorage::discard_and_reallocate(
     const std::vector<int64_t>& padded_sizes,
     const utils::GPUMemoryLayout gpu_memory_layout,

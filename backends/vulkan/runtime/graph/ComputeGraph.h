@@ -219,6 +219,13 @@ class ComputeGraph final {
     return values_.at(idx).toConstTensor().has_buffer_storage();
   }
 
+  inline bool val_is_view_of(const ValueRef maybe_view, const ValueRef base)
+      const {
+    return values_.at(maybe_view)
+        .toConstTensor()
+        .is_view_of(values_.at(base).toConstTensor());
+  }
+
   inline utils::GPUMemoryLayout memory_layout_of(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().gpu_memory_layout();
   }
