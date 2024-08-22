@@ -465,8 +465,8 @@ def get_view_inputs():
     return test_suite
 
 
-@register_test_suite(["aten.slice.Tensor", "aten.slice_copy.Tensor"])
-def get_slice_inputs():
+@register_test_suite("aten.slice_copy.Tensor")
+def get_slice_out_inputs():
     Test = namedtuple("VkSliceTest", ["self", "dim", "start", "end", "step"])
     Test.__new__.__defaults__ = (None, 0, None, None, 1)
 
@@ -546,6 +546,40 @@ def get_slice_inputs():
     test_suite.layouts = ["utils::kChannelsPacked"]
     test_suite.data_gen = "make_seq_tensor"
     return test_suite
+
+
+def get_slice_view_inputs():
+    Test = namedtuple("VkSliceTest", ["self", "dim", "start", "end", "step"])
+    Test.__new__.__defaults__ = (None, 0, None, None, 1)
+
+    # Slice by channel
+    test_cases = [
+        Test(self=[1, 5, 1, 10], dim=1, start=0, end=3),
+        Test(self=[1, 5, 1, 10], dim=1, start=0, end=4),
+        Test(self=[1, 5, 3, 7], dim=1, start=0, end=2),
+        Test(self=[1, 5, 8, 7], dim=1, start=0, end=3),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.storage_types = ["utils::kBuffer"]
+    test_suite.layouts = ["utils::kWidthPacked"]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.is_view_op = True
+
+    return test_suite
+
+
+@register_test_suite(["aten.slice.Tensor"])
+def get_slice_inputs():
+    texture_test_suite = get_slice_out_inputs()
+    texture_test_suite.test_name_suffix = "no_view"
+
+    view_test_suite = get_slice_view_inputs()
+    view_test_suite.test_name_suffix = "view"
+
+    return [view_test_suite, texture_test_suite]
 
 
 @register_test_suite(["aten.transpose.int"])

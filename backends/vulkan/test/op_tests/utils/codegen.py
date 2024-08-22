@@ -606,6 +606,9 @@ for (int i=0; i<out.size(); i++) {{
 
     def gen_op_check_fn(self) -> str:
         op_name = self.f.func.name.unambiguous_name()
+        if self.suite_def.test_name_suffix is not None:
+            op_name += "_" + self.suite_def.test_name_suffix
+
         op_check_fn = self.gen_decl(f"check_{op_name}") + " {\n"
         if self.should_prepack:
             op_check_fn = self.gen_decl(f"prepacked_check_{op_name}") + " {\n"

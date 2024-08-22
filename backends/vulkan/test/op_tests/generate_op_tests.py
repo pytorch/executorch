@@ -41,9 +41,13 @@ def process_test_suites(
     f_map: Dict[str, NativeFunction],
     test_suites: Dict[str, TestSuite],
 ) -> None:
-    for registry_name, op_test_suite in test_suites.items():
+    for registry_name, op_test_suites in test_suites.items():
         f = f_map[registry_name]
-        cpp_generator.add_suite(registry_name, f, op_test_suite)
+        if isinstance(op_test_suites, list):
+            for suite in op_test_suites:
+                cpp_generator.add_suite(registry_name, f, suite)
+        else:
+            cpp_generator.add_suite(registry_name, f, op_test_suites)
 
 
 @local.parametrize(
