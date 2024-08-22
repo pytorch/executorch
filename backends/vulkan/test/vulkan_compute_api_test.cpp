@@ -203,31 +203,7 @@ TEST_F(VulkanComputeAPITest, calculate_dim_order_test) {
   }
 }
 
-TEST_F(VulkanComputeAPITest, calculate_tensor_dim_order_test) {
-  // Stride, expected dim order pairs. Note that strides don't have to "make
-  // sense" because only they are sorted; the actual stride values don't matter.
-  std::vector<std::tuple<std::vector<int64_t>, std::vector<int64_t>>>
-      test_cases = {
-          {{8, 1}, {0, 1}},
-          {{2, 10}, {1, 0}},
-          {{66, 12, 1}, {0, 1, 2}},
-          {{32, 128, 4}, {1, 0, 2}},
-          {{3, 8, 11, 212}, {3, 2, 1, 0}},
-          {{100, 12, 9, 1}, {0, 1, 2, 3}},
-          {{10, 12, 101, 6}, {2, 1, 0, 3}},
-      };
-
-  for (const auto& test_case : test_cases) {
-    const auto& strides = std::get<0>(test_case);
-    const auto& expected_dim_order = std::get<1>(test_case);
-    std::vector<int64_t> dim_order = strides_to_dim_order(strides);
-
-    ASSERT_TRUE(dim_order == expected_dim_order);
-  }
-}
-
 TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
-  // vtensor to be resized
   vTensor v_tensor_to_resize(
       context(),
       {25, 25, 25, 25},

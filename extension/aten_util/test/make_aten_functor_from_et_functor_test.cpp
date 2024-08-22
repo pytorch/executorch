@@ -14,10 +14,11 @@
 #include <gtest/gtest.h>
 #include <torch/library.h>
 
-namespace torch {
-namespace executor {
-
 using namespace ::testing;
+using ::executorch::extension::internal::type_convert;
+using ::executorch::extension::internal::type_map;
+using ::torch::executor::ScalarType;
+using ::torch::executor::Tensor;
 
 Tensor& my_op_out(const Tensor& a, Tensor& out) {
   (void)a;
@@ -420,6 +421,3 @@ TEST_F(MakeATenFunctorFromETFunctorTest, TestWrap_ArrayRefOptional) {
   EXPECT_EQ(stack.size(), 1);
   EXPECT_EQ(stack[0].toTensor().const_data_ptr<int64_t>()[0], 4);
 }
-
-} // namespace executor
-} // namespace torch

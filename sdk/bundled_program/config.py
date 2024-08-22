@@ -39,7 +39,7 @@ MethodOutputType: TypeAlias = Sequence[torch.Tensor]
 """
 All supported types for input/expected output of MethodTestCase.
 
-Namedtuple is also supported and listed implicity since it is a subclass of tuple.
+Namedtuple is also supported and listed implicitly since it is a subclass of tuple.
 """
 
 # pyre-ignore
@@ -59,23 +59,23 @@ class MethodTestCase:
         """Single test case for verifying specific method
 
         Args:
-            input: All inputs required by eager_model with specific inference method for one-time execution.
+            inputs: All inputs required by eager_model with specific inference method for one-time execution.
 
                     It is worth mentioning that, although both bundled program and ET runtime apis support setting input
                     other than `torch.tensor` type, only the input in `torch.tensor` type will be actually updated in
                     the method, and the rest of the inputs will just do a sanity check if they match the default value in method.
 
-            expected_output: Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.
+            expected_outputs: Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.
 
         Returns:
             self
         """
         # TODO(gasoonjia): Update type check logic.
-        # pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sannity check.
+        # pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sanity check.
         self.inputs: List[ConfigValue] = self._flatten_and_sanity_check(inputs)
         self.expected_outputs: List[ConfigValue] = []
         if expected_outputs is not None:
-            # pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sannity check.
+            # pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sanity check.
             self.expected_outputs = self._flatten_and_sanity_check(expected_outputs)
 
     def _flatten_and_sanity_check(
