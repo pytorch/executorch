@@ -19,20 +19,19 @@
 
 #include <executorch/extension/pytree/pytree.h>
 
-namespace torch {
-namespace executor {
-namespace util {
-
-using Empty = torch::executor::pytree::Empty;
+namespace executorch {
+namespace extension {
 
 std::pair<
     std::vector<at::Tensor>,
-    std::unique_ptr<torch::executor::pytree::TreeSpec<Empty>>>
+    std::unique_ptr<::executorch::extension::pytree::TreeSpec<
+        ::executorch::extension::pytree::Empty>>>
 flatten(const c10::IValue& data);
 
 c10::IValue unflatten(
     const std::vector<at::Tensor>& tensors,
-    const std::unique_ptr<torch::executor::pytree::TreeSpec<Empty>>& tree_spec);
+    const std::unique_ptr<::executorch::extension::pytree::TreeSpec<
+        ::executorch::extension::pytree::Empty>>& tree_spec);
 
 bool is_same(
     const std::vector<at::Tensor>& a,
@@ -40,6 +39,17 @@ bool is_same(
 
 bool is_same(const c10::IValue& lhs, const c10::IValue& rhs);
 
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace util {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::flatten;
+using ::executorch::extension::is_same;
+using ::executorch::extension::unflatten;
 } // namespace util
 } // namespace executor
 } // namespace torch
