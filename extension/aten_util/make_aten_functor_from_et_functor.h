@@ -24,8 +24,9 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <torch/torch.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
+namespace internal {
 
 // Map types from ETen to ATen.
 // This is used to convert ETen arguments into ATen.
@@ -105,17 +106,22 @@ struct type_convert<
             torch::executor::Tensor>>>
     final {
   explicit type_convert(ATensor value) : value_(value) {
-    auto sizes = std::make_shared<std::vector<Tensor::SizesType>>(
-        value_.sizes().begin(), value_.sizes().end());
+    auto sizes =
+        std::make_shared<std::vector<torch::executor::Tensor::SizesType>>(
+            value_.sizes().begin(), value_.sizes().end());
     const ssize_t dim = sizes->size();
-    auto dim_order = std::make_shared<std::vector<Tensor::DimOrderType>>(dim);
-    auto strides = std::make_shared<std::vector<Tensor::StridesType>>(dim);
+    auto dim_order =
+        std::make_shared<std::vector<torch::executor::Tensor::DimOrderType>>(
+            dim);
+    auto strides =
+        std::make_shared<std::vector<torch::executor::Tensor::StridesType>>(
+            dim);
 
     std::iota(dim_order->begin(), dim_order->end(), 0);
-    dim_order_to_stride_nocheck(
+    ::executorch::runtime::dim_order_to_stride_nocheck(
         sizes->data(), dim_order->data(), dim, strides->data());
 
-    auto tensor_impl = std::make_shared<TensorImpl>(
+    auto tensor_impl = std::make_shared<torch::executor::TensorImpl>(
         static_cast<torch::executor::ScalarType>(value_.scalar_type()),
         sizes->size(),
         sizes->data(),
@@ -123,11 +129,12 @@ struct type_convert<
         dim_order->data(),
         strides->data());
 
-    converted_ = std::unique_ptr<Tensor, std::function<void(Tensor*)>>(
-        new Tensor(tensor_impl.get()),
-        [sizes, dim_order, strides, tensor_impl](Tensor* pointer) {
-          delete pointer;
-        });
+    converted_ = std::unique_ptr<
+        torch::executor::Tensor,
+        std::function<void(torch::executor::Tensor*)>>(
+        new torch::executor::Tensor(tensor_impl.get()),
+        [sizes, dim_order, strides, tensor_impl](
+            torch::executor::Tensor* pointer) { delete pointer; });
   }
 
   ETensor call() {
@@ -136,7 +143,10 @@ struct type_convert<
 
  private:
   ATensor value_;
-  std::unique_ptr<Tensor, std::function<void(Tensor*)>> converted_;
+  std::unique_ptr<
+      torch::executor::Tensor,
+      std::function<void(torch::executor::Tensor*)>>
+      converted_;
 };
 
 // Tensors: ETen to ATen.
@@ -258,7 +268,12 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
   using TupleArgsType = std::tuple<typename type_map<Args>::type...>;
   static constexpr size_t num_args = sizeof...(Args);
   static_assert(
-      (N < num_args && std::is_same_v<element_t<N, typelist<Args...>>, R>) ||
+      (N < num_args &&
+       std::is_same_v<
+           executorch::extension::kernel_util_internal::element_t<
+               N,
+               executorch::extension::kernel_util_internal::typelist<Args...>>,
+           R>) ||
           N == -1,
       "The index of the out tensor can't be greater or equal to num_args and "
       "the Nth argument type has to be the same as the return type.");
@@ -298,16 +313,18 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
   }
 };
 
-} // namespace executor
-} // namespace torch
+} // namespace internal
+} // namespace extension
+} // namespace executorch
 
 // Wrapper macro for out variant function. N is the index of the out tensor.
 // We need N to know how to preserve the semantics of modifying out tensor and
 // return the reference without allocating a new memory buffer for out tensor.
-#define _WRAP_2(func, N) \
-  ::torch::executor::wrapper_impl<decltype(&func), func, decltype(N), N>::wrap
+#define _WRAP_2(func, N)              \
+  ::executorch::extension::internal:: \
+      wrapper_impl<decltype(&func), func, decltype(N), N>::wrap
 #define _WRAP_1(func) \
-  ::torch::executor::wrapper_impl<decltype(&func), func>::wrap
+  ::executorch::extension::internal::wrapper_impl<decltype(&func), func>::wrap
 
-#define GET_MACRO(_1, _2, NAME, ...) NAME
-#define WRAP_TO_ATEN(...) GET_MACRO(__VA_ARGS__, _WRAP_2, _WRAP_1)(__VA_ARGS__)
+#define _GET_MACRO(_1, _2, NAME, ...) NAME
+#define WRAP_TO_ATEN(...) _GET_MACRO(__VA_ARGS__, _WRAP_2, _WRAP_1)(__VA_ARGS__)

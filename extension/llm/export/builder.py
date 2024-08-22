@@ -227,7 +227,7 @@ class LLMEdgeManager:
         Partition the model and lower to different backends. The signature is
         aligned with the signature of `to_backend` method of EdgeManager.
         Args:
-            partitioner (Optional[Partitioner]): One or more
+            partitioners (Optional[List[Partitioner]]): One or more
                 partitioner to be sent to EdgeManager.to_backend().
         """
         if partitioners is None:
