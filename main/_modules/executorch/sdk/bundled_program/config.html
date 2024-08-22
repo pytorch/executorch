@@ -510,7 +510,7 @@
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">All supported types for input/expected output of MethodTestCase.</span>
 
-<span class="sd">Namedtuple is also supported and listed implicity since it is a subclass of tuple.</span>
+<span class="sd">Namedtuple is also supported and listed implicitly since it is a subclass of tuple.</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
 <span class="c1"># pyre-ignore</span>
@@ -530,23 +530,23 @@
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Single test case for verifying specific method</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            input: All inputs required by eager_model with specific inference method for one-time execution.</span>
+<span class="sd">            inputs: All inputs required by eager_model with specific inference method for one-time execution.</span>
 
 <span class="sd">                    It is worth mentioning that, although both bundled program and ET runtime apis support setting input</span>
 <span class="sd">                    other than `torch.tensor` type, only the input in `torch.tensor` type will be actually updated in</span>
 <span class="sd">                    the method, and the rest of the inputs will just do a sanity check if they match the default value in method.</span>
 
-<span class="sd">            expected_output: Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.</span>
+<span class="sd">            expected_outputs: Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            self</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># TODO(gasoonjia): Update type check logic.</span>
-        <span class="c1"># pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sannity check.</span>
+        <span class="c1"># pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sanity check.</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ConfigValue</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_flatten_and_sanity_check</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">expected_outputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ConfigValue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="k">if</span> <span class="n">expected_outputs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sannity check.</span>
+            <span class="c1"># pyre-ignore [6]: Misalign data type for between MethodTestCase attribute and sanity check.</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">expected_outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_flatten_and_sanity_check</span><span class="p">(</span><span class="n">expected_outputs</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_flatten_and_sanity_check</span><span class="p">(</span>

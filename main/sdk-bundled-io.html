@@ -514,12 +514,12 @@
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p class="sd-card-text"><strong>input</strong> – <p class="sd-card-text">All inputs required by eager_model with specific inference method for one-time execution.</p>
+<li><p class="sd-card-text"><strong>inputs</strong> – <p class="sd-card-text">All inputs required by eager_model with specific inference method for one-time execution.</p>
 <p class="sd-card-text">It is worth mentioning that, although both bundled program and ET runtime apis support setting input
 other than <cite>torch.tensor</cite> type, only the input in <cite>torch.tensor</cite> type will be actually updated in
 the method, and the rest of the inputs will just do a sanity check if they match the default value in method.</p>
 </p></li>
-<li><p class="sd-card-text"><strong>expected_output</strong> – Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.</p></li>
+<li><p class="sd-card-text"><strong>expected_outputs</strong> – Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>

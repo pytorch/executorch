@@ -656,10 +656,10 @@
 <span class="sd">    for SDK tooling usage.</span>
 
 <span class="sd">    Args:</span>
-<span class="sd">        etrecord_path: Path to where the `ETRecord` file will be saved to.</span>
+<span class="sd">        et_record: Path to where the `ETRecord` file will be saved to.</span>
 <span class="sd">        edge_dialect_program: `EdgeProgramManager` for this model returned by the call to to_edge()</span>
 <span class="sd">        executorch_program: The ExecuTorch program for this model returned by the call to `to_executorch()` or the `BundledProgram` of this model</span>
-<span class="sd">        export_modules[Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the</span>
+<span class="sd">        export_modules [Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the</span>
 <span class="sd">            value being the corresponding exported module. The exported graph modules can be either the</span>
 <span class="sd">            output of `torch.export()` or `exir.to_edge()`.</span>
 
