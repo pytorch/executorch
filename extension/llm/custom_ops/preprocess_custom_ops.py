@@ -7,60 +7,11 @@
 # pyre-unsafe
 
 
-from typing import List
-
 import torch
 
 from torch.library import impl, Library
 
 preprocess_op_lib = Library("preprocess", "DEF")
-
-# Register and define pad and out variant.
-# Note: pad doesn't require an explicit meta kernel because
-# CompositeExplicitAutograd automatically registers the implementation to meta,
-# and meta kernels do not go through functionalization. The implementation
-# does not export due to issues during functionalization.
-# See: https://github.com/pytorch/pytorch/issues/120288
-preprocess_op_lib.define("pad(Tensor image, SymInt[] padding) -> Tensor")
-
-
-@impl(preprocess_op_lib, "pad", dispatch_key="CompositeExplicitAutograd")
-def pad_impl(
-    image: torch.Tensor,
-    padding: List[int],
-) -> torch.Tensor:
-    output = torch.empty(
-        [image.shape[0], image.shape[1] + padding[3], image.shape[2] + padding[1]],
-        dtype=image.dtype,
-        device=image.device,
-        requires_grad=False,
-    )
-    output = torch.fill(output, 0)
-    output.narrow(1, 0, image.shape[1]).narrow(2, 0, image.shape[2]).copy_(image)
-    return output
-
-
-preprocess_op_lib.define(
-    "pad.out(Tensor image, SymInt[] padding, *, Tensor(a!) out) -> Tensor(a!)"
-)
-
-
-@impl(preprocess_op_lib, "pad.out", dispatch_key="CompositeExplicitAutograd")
-def pad_out_impl(
-    image: torch.Tensor,
-    padding: List[int],
-    out: torch.Tensor,
-) -> torch.Tensor:
-    out = torch.empty(
-        [image.shape[0], image.shape[1] + padding[3], image.shape[2] + padding[1]],
-        dtype=image.dtype,
-        device=image.device,
-        requires_grad=False,
-    )
-    out = torch.fill(out, 0)
-    out.narrow(1, 0, image.shape[1]).narrow(2, 0, image.shape[2]).copy_(image)
-    return out
-
 
 # Register and define tile_crop and out variant.
 preprocess_op_lib.define("tile_crop(Tensor input, int tile_size) -> Tensor")
