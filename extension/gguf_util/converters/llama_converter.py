@@ -99,8 +99,8 @@ def convert_to_pte(gguf_model_args: GGUFModelArgs, gguf_weights: GGUFWeights) ->
     """Convert a GGUF model into an ExecuTorch program.
 
     Args:
-        model_args: The arguments for the GGUF model.
-        weights: The weights of the GGUF model.
+        gguf_model_args: The arguments for the GGUF model.
+        gguf_weights: The weights of the GGUF model.
     """
 
     assert (

@@ -11,9 +11,9 @@
 #include <time.h>
 #include <cctype>
 
-namespace torch {
-namespace executor {
-namespace util {
+namespace executorch {
+namespace extension {
+namespace llm {
 
 void inline safe_printf(const char* piece) {
   // piece might be a raw byte token, and we only want to print printable chars
@@ -44,6 +44,17 @@ long inline time_in_ms() {
   return time.tv_sec * 1000 + time.tv_nsec / 1000000;
 }
 
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace util {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::safe_printf;
+using ::executorch::extension::llm::time_in_ms;
 } // namespace util
 } // namespace executor
 } // namespace torch

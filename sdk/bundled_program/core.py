@@ -230,7 +230,7 @@ class BundledProgram:
         Other checks not related to correspondence are done in config.py
 
         Args:
-            program: The program to be bundled.
+            executorch_program: The program to be bundled.
             method_test_suites: The testcases for specific methods to be bundled.
         """
 

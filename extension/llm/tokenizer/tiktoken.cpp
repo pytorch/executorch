@@ -30,8 +30,12 @@
 #include <fstream>
 #include <limits>
 
-namespace torch {
-namespace executor {
+using ::executorch::runtime::Error;
+using ::executorch::runtime::Result;
+
+namespace executorch {
+namespace extension {
+namespace llm {
 
 // ------------------------------Util start------------------------------------
 
@@ -415,5 +419,6 @@ Result<std::string> Tiktoken::decode(uint64_t prev, uint64_t cur) const {
 }
 // -------------------------public method end-------------------------------
 
-} // namespace executor
-} // namespace torch
+} // namespace llm
+} // namespace extension
+} // namespace executorch

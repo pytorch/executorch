@@ -6,28 +6,27 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#pragma once
+
+#include <memory>
+// @nolint PATTERNLINT Ok to use stdlib for this optional library
+#include <vector>
+
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/assert.h>
-#include <memory>
-// NOTE: required by torchchat install_et.sh script.
-// @nolint PATTERNLINT Ok to use stdlib for this optional library
-#include <vector>
 
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
-#else
-#include <executorch/runtime/core/portable_type/tensor.h>
 #endif
-#pragma once
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
 
 /**
  * A tensor wrapper takes ownership of all the memory of the necessary metadata
- * for torch::executor::Tensor. Note that it doesn't own the data memory.
+ * for exec_aten::Tensor. Note that it doesn't own the data memory.
  */
 class ManagedTensor {
  public:
@@ -43,7 +42,7 @@ class ManagedTensor {
   explicit ManagedTensor(
       void* data,
       const std::vector<SizesType>& sizes,
-      ScalarType dtype)
+      exec_aten::ScalarType dtype)
       : sizes_(sizes) {
 #ifdef USE_ATEN_LIB
     tensor_ = torch::from_blob(data, sizes, dtype);
@@ -58,43 +57,51 @@ class ManagedTensor {
     }
 
     // Allocate TensorImpl.
-    tensor_impl_ = std::make_unique<TensorImpl>(
+    tensor_impl_ = std::make_unique<exec_aten::TensorImpl>(
         dtype,
         sizes_.size(),
         sizes_.data(),
         data,
         /*dim_order=*/nullptr,
         strides_.data(),
-        TensorShapeDynamism::DYNAMIC_BOUND);
+        executorch::runtime::TensorShapeDynamism::DYNAMIC_BOUND);
 #endif
   }
 
   void resize(const std::vector<SizesType>& new_sizes) {
-    auto err = resize_tensor(
+    auto err = executorch::runtime::resize_tensor(
         this->get_aliasing_tensor(),
         exec_aten::ArrayRef<SizesType>(new_sizes.data(), new_sizes.size()));
-    ET_CHECK(err == Error::Ok);
+    ET_CHECK(err == executorch::runtime::Error::Ok);
   }
 
   /**
    * Get the underlying Tensor object. This is assuming the copying is cheap.
    */
-  Tensor get_aliasing_tensor() {
+  exec_aten::Tensor get_aliasing_tensor() {
 #ifdef USE_ATEN_LIB
     return tensor_;
 #else
-    return Tensor(tensor_impl_.get());
+    return exec_aten::Tensor(tensor_impl_.get());
 #endif
   }
 
  private:
-  std::unique_ptr<TensorImpl> tensor_impl_;
+  std::unique_ptr<exec_aten::TensorImpl> tensor_impl_;
   std::vector<SizesType> sizes_;
   std::vector<StridesType> strides_;
 #ifdef USE_ATEN_LIB
-  Tensor tensor_;
+  exec_aten::Tensor tensor_;
 #endif
 };
 
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::ManagedTensor;
 } // namespace executor
 } // namespace torch
