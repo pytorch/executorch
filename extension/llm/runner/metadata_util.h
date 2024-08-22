@@ -14,7 +14,10 @@
 
 #include <executorch/extension/module/module.h>
 
-namespace torch::executor {
+namespace executorch {
+namespace extension {
+namespace llm {
+
 template <typename T>
 T get_module_metadata(
     Module* module,
@@ -26,9 +29,10 @@ T get_module_metadata(
 
   T res = default_val;
   if (model_methods.count(method_name)) {
-    Result<std::vector<EValue>> outputs = module->execute(method_name);
+    ::executorch::runtime::Result<std::vector<::executorch::runtime::EValue>>
+        outputs = module->execute(method_name);
     if (outputs.ok()) {
-      std::vector<EValue> outs = outputs.get();
+      std::vector<::executorch::runtime::EValue> outs = outputs.get();
       if (outs.size() > 0) {
         res = outs[0].to<T>();
       }
@@ -43,4 +47,7 @@ T get_module_metadata(
   ET_LOG(Info, "%s: %lld", method_name.c_str(), (long long)res);
   return res;
 }
-} // namespace torch::executor
+
+} // namespace llm
+} // namespace extension
+} // namespace executorch
