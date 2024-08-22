@@ -48,6 +48,43 @@ lib.impl(name, conv_with_clamp_impl, "CompositeExplicitAutograd")
 conv_with_clamp_op = getattr(getattr(torch.ops, namespace), name)
 
 
+def conv_with_clamp_out_impl(
+    input,
+    weight,
+    bias=None,
+    stride=1,
+    padding=0,
+    dilation=1,
+    transposed=False,
+    output_padding=0,
+    groups=1,
+    output_min=-float("inf"),
+    output_max=float("inf"),
+    out=None,
+):
+    out = conv_with_clamp_impl(
+        input,
+        weight,
+        bias,
+        stride,
+        padding,
+        dilation,
+        transposed,
+        output_padding,
+        groups,
+        output_min,
+        output_max,
+    )
+    return out
+
+
+name = "conv_with_clamp.out"
+lib.define(
+    f"{name}(Tensor input, Tensor weight, Tensor? bias, SymInt[] stride, SymInt[] padding, SymInt[] dilation, bool transposed, SymInt[] output_padding, SymInt groups, Scalar? output_min, Scalar? output_max, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.impl(name, conv_with_clamp_out_impl, "CompositeExplicitAutograd")
+
+
 # The dimension of x should be larger than 1
 def grid_priors_impl(
     x,

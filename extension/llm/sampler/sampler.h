@@ -20,8 +20,9 @@
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
+namespace llm {
 // A simple llama2 sampler.
 
 template <typename T>
@@ -57,5 +58,15 @@ class Sampler {
   unsigned long long rng_state_;
 };
 
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::ProbIndex;
+using ::executorch::extension::llm::Sampler;
 } // namespace executor
 } // namespace torch

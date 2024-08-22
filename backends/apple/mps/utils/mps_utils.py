@@ -73,7 +73,7 @@ def is_parameter(exp_prog: torch.export.ExportedProgram, node: torch.fx.Node) ->
     are supplied as inputs to the graph.
 
     Args:
-        edge_program (torch.export.ExportedProgram): _description_
+        exp_prog (torch.export.ExportedProgram): _description_
         node (torch.fx.Node): _description_
 
     Returns:
