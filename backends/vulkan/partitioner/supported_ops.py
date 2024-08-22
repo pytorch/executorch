@@ -8,7 +8,10 @@
 
 import operator
 
-from executorch.backends.vulkan.passes.custom_ops_defs import grid_priors_op  # noqa
+from executorch.backends.vulkan.passes.custom_ops_defs import (
+    conv_with_clamp_op,  # noqa
+    grid_priors_op,  # noqa
+)
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -84,6 +87,7 @@ POOLING_OPS = [
 
 CONVOLUTION_OPS = [
     exir_ops.edge.aten.convolution.default,
+    exir_ops.edge.et_vk.conv_with_clamp.default,
 ]
 
 REDUCTION_OPS = [
