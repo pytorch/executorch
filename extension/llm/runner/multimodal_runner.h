@@ -33,8 +33,9 @@
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
-namespace torch::executor {
-using Stats = ::executorch::llm::Stats;
+namespace executorch {
+namespace extension {
+namespace llm {
 
 class MultimodalRunner {
  public:
@@ -53,8 +54,8 @@ class MultimodalRunner {
   }
 
   virtual bool is_loaded() = 0;
-  virtual Error load() = 0;
-  virtual Error generate(
+  virtual ::executorch::runtime::Error load() = 0;
+  virtual ::executorch::runtime::Error generate(
       std::vector<Image>& images,
       const std::string& prompt,
       int32_t seq_len = 1024,
@@ -91,4 +92,14 @@ class MultimodalRunner {
   Stats stats_;
 };
 
-} // namespace torch::executor
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::MultimodalRunner;
+} // namespace executor
+} // namespace torch

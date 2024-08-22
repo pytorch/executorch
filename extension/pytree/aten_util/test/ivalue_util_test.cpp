@@ -9,9 +9,9 @@
 #include <executorch/extension/pytree/aten_util/ivalue_util.h>
 #include <gtest/gtest.h>
 
-using namespace c10;
-using namespace torch::executor::pytree;
-using namespace torch::executor::util;
+using executorch::extension::flatten;
+using executorch::extension::is_same;
+using executorch::extension::unflatten;
 
 std::vector<at::Tensor> makeExampleTensors(size_t N) {
   std::vector<at::Tensor> tensors;
@@ -22,7 +22,7 @@ std::vector<at::Tensor> makeExampleTensors(size_t N) {
 }
 
 struct TestCase {
-  IValue ivalue;
+  c10::IValue ivalue;
   std::vector<at::Tensor> tensors;
 };
 
@@ -54,7 +54,7 @@ TestCase makeExampleDictOfTensors() {
 TestCase makeExampleComposite() {
   auto tensors = makeExampleTensors(8);
 
-  IValue list = c10::List<at::Tensor>{
+  c10::IValue list = c10::List<at::Tensor>{
       tensors[1],
       tensors[2],
   };
@@ -100,7 +100,7 @@ void testUnflatten(const TestCase& testcase) {
   auto ret = flatten(testcase.ivalue);
 
   // then we unflatten it
-  IValue unflattened = unflatten(ret.first, ret.second);
+  c10::IValue unflattened = unflatten(ret.first, ret.second);
 
   // and see if we got the same IValue back
   ASSERT_TRUE(is_same(unflattened, testcase.ivalue));
