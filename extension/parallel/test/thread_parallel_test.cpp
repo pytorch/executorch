@@ -15,8 +15,7 @@
 #include <executorch/runtime/platform/platform.h>
 
 using namespace ::testing;
-
-namespace torch::executor {
+using ::executorch::extension::parallel_for;
 
 class ParallelTest : public ::testing::Test {
  protected:
@@ -192,5 +191,3 @@ TEST_F(ParallelTest, TestChunkSizeTooLarge) {
     EXPECT_EQ(data_[i], i);
   }
 }
-
-} // namespace torch::executor

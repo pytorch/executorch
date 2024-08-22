@@ -63,7 +63,8 @@ Error LlavaRunner::load() {
       tokenizer_.get(),
       text_decoder_runner_.get(),
       /*use_kv_cache=*/true,
-      tokenizer_->eos_tok(),
+      std::make_unique<std::unordered_set<uint64_t>>(
+          std::unordered_set<uint64_t>{tokenizer_->eos_tok()}),
       &stats_);
 
   stats_.model_load_end_ms = util::time_in_ms();

@@ -6,19 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/pytree/pytree.h>
+
 #include <gtest/gtest.h>
 #include <string>
 
-#include <executorch/extension/pytree/pytree.h>
-
-int main(int argc, char* argv[]) {
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
-
-namespace torch {
-namespace executor {
-namespace pytree {
+using ::executorch::extension::pytree::ContainerHandle;
+using ::executorch::extension::pytree::Key;
+using ::executorch::extension::pytree::Kind;
+using ::executorch::extension::pytree::unflatten;
 
 using Leaf = int32_t;
 
@@ -187,7 +183,3 @@ TEST(pytree, FlattenNestedDict) {
     ASSERT_EQ(*leaves[i], items[i]);
   }
 }
-
-} // namespace pytree
-} // namespace executor
-} // namespace torch

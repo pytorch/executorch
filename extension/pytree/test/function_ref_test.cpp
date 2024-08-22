@@ -6,15 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <gtest/gtest.h>
-
 #include <executorch/extension/pytree/function_ref.h>
+
+#include <gtest/gtest.h>
 
 using namespace ::testing;
 
-namespace torch {
-namespace executor {
-namespace pytree {
+using ::executorch::extension::pytree::FunctionRef;
 
 namespace {
 class Item {
@@ -84,7 +82,3 @@ TEST(FunctionRefTest, FunctionPointer) {
   Item item1(0, &one);
   EXPECT_EQ(item1.get(), 1);
 }
-
-} // namespace pytree
-} // namespace executor
-} // namespace torch
