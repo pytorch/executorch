@@ -982,6 +982,19 @@ TEST(VulkanComputeGraphTest, test_values_string) {
   EXPECT_TRUE(stored == "hello, world");
 }
 
+TEST(VulkanComputeGraphTest, empty_init_executenode_test) {
+  ExecuteNode node(nullptr, {});
+  EXPECT_FALSE(node);
+
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  // Encode an empty ExecuteNode and check that command buffer encoding does not
+  // crash.
+  graph.execute_nodes().emplace_back(new ExecuteNode(nullptr, {}));
+  EXPECT_NO_FATAL_FAILURE(graph.encode_execute());
+}
+
 TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
   GraphConfig config;
   ComputeGraph graph(config);
