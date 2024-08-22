@@ -250,7 +250,7 @@ static Kernel prim_ops[] = {
         }),
     // executorch_prim::neg.Scalar(Scalar) -> Scalar
     Kernel(
-        "executorch_prim:neg.Scalar",
+        "executorch_prim::neg.Scalar",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& a = *stack[0];
