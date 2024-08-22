@@ -57,6 +57,8 @@ class TestSuite:
         self.atol: str = "1e-5"
         self.rtol: str = "1e-5"
 
+        self.is_view_op: bool = False
+
     def supports_prepack(self):
         return len(self.prepacked_args) > 0
 

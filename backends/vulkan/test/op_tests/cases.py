@@ -548,6 +548,32 @@ def get_slice_inputs():
     return test_suite
 
 
+@register_test_suite(["aten.transpose.int"])
+def get_transpose_inputs():
+    Test = namedtuple("VkTransposeViewTest", ["self", "dim0", "dim1"])
+    Test.__new__.__defaults__ = (None, 0, 1)
+
+    test_cases = [
+        Test(self=[M1, M2], dim0=0, dim1=1),
+        Test(self=[M1, S2, M], dim0=0, dim1=1),
+        Test(self=[M1, S2, M], dim0=0, dim1=2),
+        Test(self=[M1, S2, M], dim0=2, dim1=1),
+        Test(self=[S, M, S2, M2], dim0=0, dim1=2),
+        Test(self=[S, M, S2, M2], dim0=3, dim1=2),
+        Test(self=[S, M, S2, M2], dim0=1, dim1=2),
+        Test(self=[S, M, S2, M2], dim0=3, dim1=1),
+    ]
+
+    test_suite = VkTestSuite([tuple(tc) for tc in test_cases])
+
+    test_suite.dtypes = ["at::kFloat"]
+    test_suite.storage_types = ["utils::kBuffer"]
+    test_suite.layouts = ["utils::kWidthPacked", "utils::kChannelsPacked"]
+    test_suite.data_gen = "make_seq_tensor"
+    test_suite.is_view_op = True
+    return test_suite
+
+
 @register_test_suite("aten.index_select.default")
 def get_index_select_inputs():
     Test = namedtuple("VkIndexSelectTest", ["self", "dim", "index"])
