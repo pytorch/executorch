@@ -13,7 +13,8 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch::executor {
+namespace executorch {
+namespace extension {
 
 namespace {
 thread_local int64_t thread_num_ = 0;
@@ -74,4 +75,5 @@ bool parallel_for(
   return true;
 }
 
-} // namespace torch::executor
+} // namespace extension
+} // namespace executorch

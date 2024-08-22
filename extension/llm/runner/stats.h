@@ -14,7 +14,10 @@
 #include <sstream>
 // patternlint-disable-next-line executorch-cpp-nostdinc
 #include <string>
-namespace executorch::llm {
+
+namespace executorch {
+namespace extension {
+namespace llm {
 
 struct Stats {
   // Scaling factor for timestamps - in this case, we use ms.
@@ -41,12 +44,11 @@ struct Stats {
   // Token count from generated (total - prompt)
   int64_t num_generated_tokens;
   inline void on_sampling_begin() {
-    aggregate_sampling_timer_start_timestamp =
-        ::torch::executor::util::time_in_ms();
+    aggregate_sampling_timer_start_timestamp = time_in_ms();
   }
   inline void on_sampling_end() {
-    aggregate_sampling_time_ms += ::torch::executor::util::time_in_ms() -
-        aggregate_sampling_timer_start_timestamp;
+    aggregate_sampling_time_ms +=
+        time_in_ms() - aggregate_sampling_timer_start_timestamp;
     aggregate_sampling_timer_start_timestamp = 0;
   }
 
@@ -132,4 +134,16 @@ inline void print_report(const Stats& stats) {
           stats.SCALING_FACTOR_UNITS_PER_SECOND);
 }
 
-} // namespace executorch::llm
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace executorch {
+namespace llm {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::kTopp;
+using ::executorch::extension::llm::print_report;
+using ::executorch::extension::llm::Stats;
+} // namespace llm
+} // namespace executorch
