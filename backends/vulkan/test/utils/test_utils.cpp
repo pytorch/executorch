@@ -482,3 +482,9 @@ void execute_graph_and_check_output(
     }
   }
 }
+
+bool check_close(float a, float b, float atol, float rtol) {
+  float max = std::max(std::abs(a), std::abs(b));
+  float diff = std::abs(a - b);
+  return diff <= (atol + rtol * max);
+}

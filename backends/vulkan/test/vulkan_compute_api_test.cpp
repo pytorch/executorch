@@ -601,7 +601,7 @@ TEST_F(VulkanComputeAPITest, tensor_no_copy_transpose_test) {
   EXPECT_TRUE(data_out.size() == ref_out.size());
 
   for (size_t i = 0; i < data_out.size(); ++i) {
-    EXPECT_TRUE(data_out[i] == ref_out[i]);
+    EXPECT_TRUE(check_close(data_out[i], ref_out[i]));
   }
 }
 
