@@ -248,6 +248,22 @@ static Kernel prim_ops[] = {
         [](RuntimeContext& context, EValue** stack) {
           BOOLEAN_ET_PRIM_OP(<=, stack, context);
         }),
+    // executorch_prim::neg.Scalar(Scalar) -> Scalar
+    Kernel(
+        "executorch_prim:neg.Scalar",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& out = *stack[1];
+          if (a.isInt()) {
+            out = EValue(-a.toInt());
+          } else if (a.isDouble()) {
+            out = EValue(-a.toDouble());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK_MSG(false, "%zu", (size_t)a.tag);
+          }
+        }),
 
     // executorch_prim::floordiv.int(int, int) -> int
     Kernel(
