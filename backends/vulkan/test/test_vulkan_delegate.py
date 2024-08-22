@@ -1633,6 +1633,42 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_conv_with_clamp(self):
+        class ConvWithClampModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.randn(6, 8, 3, 3)
+                self.bias = torch.randn(8)
+                self.stride = (1, 2)
+                self.padding = (2, 3)
+                self.dilation = (1, 1)
+                self.transposed = True
+                self.output_padding = (0, 1)
+                self.groups = 1
+                self.output_min = 0
+                self.output_max = 10
+
+            def forward(self, x):
+                return torch.ops.et_vk.conv_with_clamp(
+                    x,
+                    self.weight,
+                    self.bias,
+                    self.stride,
+                    self.padding,
+                    self.dilation,
+                    self.transposed,
+                    self.output_padding,
+                    self.groups,
+                    self.output_min,
+                    self.output_max,
+                )
+
+        self.lower_module_and_test_output(
+            ConvWithClampModule(),
+            (torch.randn(size=(1, 6, 40, 50), dtype=torch.float32),),
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_grid_priors(self):
         class GridPriorsModule(torch.nn.Module):
             def __init__(self):
