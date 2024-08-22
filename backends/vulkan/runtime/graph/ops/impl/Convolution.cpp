@@ -561,6 +561,7 @@ void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.convolution.default, conv);
+  VK_REGISTER_OP(conv_with_clamp.default, conv);
   VK_REGISTER_OP(et_vk.conv_with_clamp.default, conv);
 }
 
