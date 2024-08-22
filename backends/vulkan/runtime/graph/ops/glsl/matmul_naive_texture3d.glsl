@@ -16,17 +16,11 @@ $if MAT2_IS_TRANSPOSED:
 #include "indexing_utils.h"
 #include "matmul.h"
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly image3D im_out;
-layout(set = 0, binding = 1) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_mat1;
-layout(set = 0, binding = 2) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_mat2;
-
-layout(set = 0, binding = 3) uniform PRECISION restrict OutLimits {
-  ivec3 out_limits;
-};
-
-layout(set = 0, binding = 4) uniform PRECISION restrict InSizes {
-  ivec4 in_sizes;
-};
+${layout_declare_tensor(0, "w", "im_out", DTYPE, "texture3d")}
+${layout_declare_tensor(1, "r", "im_mat1", DTYPE, "texture3d")}
+${layout_declare_tensor(2, "r", "im_mat2", DTYPE, "texture3d")}
+${layout_declare_ubo(3, "ivec3", "out_limits")}
+${layout_declare_ubo(4, "ivec4", "in_sizes")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 

@@ -368,7 +368,7 @@ utils::uvec3 ComputeGraph::create_local_wg_size(
 }
 
 utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
-  return create_local_wg_size(image_extents_of(idx));
+  return create_local_wg_size(create_global_wg_size(idx));
 }
 
 void ComputeGraph::copy_into_staging(
