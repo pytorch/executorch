@@ -16,7 +16,9 @@
 // patternlint-disable-next-line executorch-cpp-nostdinc
 #include <functional>
 
-namespace torch::executor {
+namespace executorch {
+namespace extension {
+namespace llm {
 
 class TextDecoderRunner {
  public:
@@ -35,7 +37,7 @@ class TextDecoderRunner {
    * Module.
    * @return The output of the LLM Module. This will be a tensor of logits.
    */
-  virtual Result<exec_aten::Tensor> step(
+  virtual ::executorch::runtime::Result<exec_aten::Tensor> step(
       ManagedTensor& input,
       ManagedTensor& start_pos);
 
@@ -43,7 +45,7 @@ class TextDecoderRunner {
    * Load the Module for text decode purpose.
    * @return The error code.
    */
-  virtual Error load() {
+  virtual ::executorch::runtime::Error load() {
     return module_->load_method("forward");
   }
 
@@ -70,13 +72,13 @@ class TextDecoderRunner {
     auto vocab_size = logits_tensor.size(2);
 
     switch (logits_tensor.scalar_type()) {
-      case ScalarType::Float: {
+      case exec_aten::ScalarType::Float: {
         float* logits = logits_tensor.mutable_data_ptr<float>();
         float* logits_last = logits;
         logits_last += (num_tokens - 1) * vocab_size;
         return sampler_->sample(logits_last);
       }
-      case ScalarType::Half: {
+      case exec_aten::ScalarType::Half: {
         exec_aten::Half* logits =
             logits_tensor.mutable_data_ptr<exec_aten::Half>();
         exec_aten::Half* logits_last = logits;
@@ -99,4 +101,14 @@ class TextDecoderRunner {
   bool should_stop_{false};
 };
 
-} // namespace torch::executor
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::TextDecoderRunner;
+} // namespace executor
+} // namespace torch

@@ -11,8 +11,8 @@
 #include <executorch/runtime/platform/assert.h>
 #include <cstring>
 
-namespace torch {
-namespace util {
+namespace executorch {
+namespace extension {
 
 namespace {
 void check_tensor_meta(const at::Tensor& a, const exec_aten::Tensor& b) {
@@ -55,14 +55,15 @@ ET_CHECK_MSG(
   }
   // check dtype
   ET_CHECK_MSG(
-      b.scalar_type() == torchToExecuTorchScalarType(a.options().dtype()),
+      b.scalar_type() == torch_to_executorch_scalar_type(a.options().dtype()),
       "dtypes dont match a %hhd vs. b %hhd",
-      torchToExecuTorchScalarType(a.options().dtype()),
+      torch_to_executorch_scalar_type(a.options().dtype()),
       b.scalar_type());
 }
 } // namespace
 
-torch::executor::ScalarType torchToExecuTorchScalarType(caffe2::TypeMeta type) {
+torch::executor::ScalarType torch_to_executorch_scalar_type(
+    caffe2::TypeMeta type) {
   switch (c10::typeMetaToScalarType(type)) {
     case c10::ScalarType::Byte:
       return torch::executor::ScalarType::Byte;
@@ -91,7 +92,8 @@ torch::executor::ScalarType torchToExecuTorchScalarType(caffe2::TypeMeta type) {
   }
 }
 
-c10::ScalarType execuTorchtoTorchScalarType(torch::executor::ScalarType type) {
+c10::ScalarType executorch_to_torch_scalar_type(
+    torch::executor::ScalarType type) {
   switch (type) {
     case torch::executor::ScalarType::Byte:
       return c10::ScalarType::Byte;
@@ -147,7 +149,8 @@ void alias_etensor_to_attensor(
 }
 
 at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
-  c10::ScalarType dtype = execuTorchtoTorchScalarType(etensor.scalar_type());
+  c10::ScalarType dtype =
+      executorch_to_torch_scalar_type(etensor.scalar_type());
   std::vector<int64_t> at_tensor_sizes(
       etensor.sizes().begin(), etensor.sizes().end());
   std::vector<int64_t> at_tensor_strides(
@@ -162,5 +165,6 @@ at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
   check_tensor_meta(t, etensor);
   return t;
 }
-} // namespace util
-} // namespace torch
+
+} // namespace extension
+} // namespace executorch

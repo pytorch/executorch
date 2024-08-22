@@ -20,7 +20,7 @@ namespace api {
 utils::GPUMemoryLayout estimate_memory_layout(
     const std::vector<int64_t>& dim_order) {
   int64_t fastest_dim_whcn = dim_order.size() - 1 - dim_order.back();
-  if (fastest_dim_whcn >= 0 && fastest_dim_whcn <= 3) {
+  if (fastest_dim_whcn >= 0 && fastest_dim_whcn < 3) {
     return utils::GPUMemoryLayout(fastest_dim_whcn);
   }
 
@@ -44,53 +44,15 @@ std::vector<int64_t> calculate_dim_order(
   int64_t cur_dim = 0;
   for (int d = 0; d < ndim; ++d) {
     if (d == last_dim) {
-      cur_dim += 1;
+      cur_dim++;
     }
     dim_order[d] = cur_dim;
-    cur_dim += 1;
+    cur_dim++;
   }
   if (last_dim >= 0) {
     dim_order[ndim - 1] = last_dim;
   }
 
-  return dim_order;
-}
-
-namespace {
-
-struct StrideDimIndexPair {
-  int64_t stride;
-  int64_t dim_i;
-
-  StrideDimIndexPair() : stride(0), dim_i(0) {}
-
-  explicit StrideDimIndexPair(int64_t stride, int64_t dim_i)
-      : stride(stride), dim_i(dim_i) {}
-
-  bool operator>(const StrideDimIndexPair& other) const {
-    // Descending order
-    return stride < other.stride;
-  }
-
-  bool operator<(const StrideDimIndexPair& other) const {
-    // Descending order
-    return stride > other.stride;
-  }
-};
-
-} // namespace
-
-std::vector<int64_t> strides_to_dim_order(const std::vector<int64_t>& strides) {
-  std::vector<StrideDimIndexPair> stride_dim_pairs(strides.size());
-  for (size_t i = 0; i < strides.size(); ++i) {
-    stride_dim_pairs[i] = StrideDimIndexPair(strides[i], i);
-  }
-  std::stable_sort(stride_dim_pairs.begin(), stride_dim_pairs.end());
-
-  std::vector<int64_t> dim_order(strides.size());
-  for (int i = 0; i < strides.size(); ++i) {
-    dim_order.at(i) = stride_dim_pairs.at(i).dim_i;
-  }
   return dim_order;
 }
 
@@ -456,11 +418,6 @@ void vTensor::update_metadata(
   }
 }
 
-void vTensor::update_size_metadata(const std::vector<int64_t>& new_sizes) {
-  // Dim order does not change on resize
-  update_metadata(new_sizes, dim_order_);
-}
-
 void vTensor::check_sizes(const std::vector<int64_t>& sizes) const {
   if (storage_type() != utils::kBuffer) {
     // For texture storage check that the current texture is large enough for
@@ -476,6 +433,8 @@ void vTensor::check_sizes(const std::vector<int64_t>& sizes) const {
         valid_resize,
         "tensor sizes requires a larger texture than the current one.");
   } else {
+    // For buffer storage check that the current buffer is large enough for the
+    // new sizes of the tensor.
     int64_t numel = utils::multiply_integers(sizes);
     bool valid_resize =
         numel + storage_.buffer_offset_ <= storage_.buffer_length_;
@@ -489,18 +448,26 @@ void vTensor::virtual_reconfigure(
     const std::vector<int64_t>& new_sizes,
     const std::vector<int64_t>& new_dim_order) {
   VK_CHECK_COND(
-      dim_order_is_valid(new_dim_order), "new dim order provided is invalid");
+      storage_type() == utils::kBuffer,
+      "virtual_reconfigure is only applicable for buffer backed tensors");
+  VK_CHECK_COND(new_sizes.size() == new_dim_order.size());
+  VK_CHECK_COND(dim_order_is_valid(new_dim_order));
+
   check_sizes(new_sizes);
   update_metadata(new_sizes, new_dim_order);
 }
 
 void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
+  VK_CHECK_COND(
+      new_sizes.size() == dim_order_.size(),
+      "new sizes cannot modify the dimensionality of the tensor ");
+
   check_sizes(new_sizes);
-  update_size_metadata(new_sizes);
+  update_metadata(new_sizes, dim_order_);
 }
 
 void vTensor::reallocate(const std::vector<int64_t>& new_sizes) {
-  update_size_metadata(new_sizes);
+  update_metadata(new_sizes, dim_order_);
   storage_.discard_and_reallocate(
       calculate_padded_sizes(new_sizes, memory_layout_),
       memory_layout_,

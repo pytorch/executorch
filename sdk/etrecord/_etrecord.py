@@ -185,10 +185,10 @@ def generate_etrecord(
     for SDK tooling usage.
 
     Args:
-        etrecord_path: Path to where the `ETRecord` file will be saved to.
+        et_record: Path to where the `ETRecord` file will be saved to.
         edge_dialect_program: `EdgeProgramManager` for this model returned by the call to to_edge()
         executorch_program: The ExecuTorch program for this model returned by the call to `to_executorch()` or the `BundledProgram` of this model
-        export_modules[Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the
+        export_modules [Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the
             value being the corresponding exported module. The exported graph modules can be either the
             output of `torch.export()` or `exir.to_edge()`.
 
