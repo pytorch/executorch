@@ -10,13 +10,12 @@
 
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+namespace executorch {
+namespace extension {
 
 using namespace c10;
 using namespace at;
-using namespace torch::executor::pytree;
+using namespace executorch::extension::pytree;
 
 ContainerHandle<IValue> getContainerHandle(const IValue& data) {
   if (data.isList()) {
@@ -214,6 +213,5 @@ bool is_same(const IValue& lhs, const IValue& rhs) {
   return at::all(l == r).item<bool>();
 }
 
-} // namespace util
-} // namespace executor
-} // namespace torch
+} // namespace extension
+} // namespace executorch

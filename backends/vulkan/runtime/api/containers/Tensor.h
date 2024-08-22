@@ -20,15 +20,6 @@ namespace vkcompute {
 namespace api {
 
 /*
- * Given the strides of a tensor in NCHW dimension order, calculate the dim
- * order of the tensor by computing an index sort of the strides. Note that
- * there is some ambiguity when multiple dimensions have the same stride;
- * stable_sort is used to preserve the ordering of "outer" dimensions with
- * respect to "inner" dimensions.
- */
-std::vector<int64_t> strides_to_dim_order(const std::vector<int64_t>& strides);
-
-/*
  * Given a GPUMemoryLayout value, produce a dim order vector that matches the
  * given memory layout. The produced dim order vector will be in the NCHW
  * dimension order
@@ -227,7 +218,10 @@ class vTensor final {
 
   // sizes of the tensor in NCHW dimension order
   std::vector<int64_t> sizes_;
-  // dim order of the tensor in NCHW dimension order
+  // dim order of the tensor; dimension indices are in NCHW dimension order
+  // i.e. 0 is N, 1 is C, 2 is H, 3 is W for a 4D tensor. The dims with larger
+  // strides precede the dims with smaller strides in the dim order. The last
+  // dim is always the fastest moving dim with a stride of 1.
   std::vector<int64_t> dim_order_;
   // strides of the tensor in NCHW dimension order
   std::vector<int64_t> strides_;
@@ -424,26 +418,13 @@ class vTensor final {
 
  private:
   /*
-   * Update the sizes, dim order, and strides metadata of the vTensor.
-   *
-   * The dim order is used as the "source of truth" for the strides and the
-   * strides are calculated from the dim order, therefore only the dim order is
-   * accepted as an argument to this function. Within the function, the new
-   * strides are computed from the new sizes and new dim order.
-   *
-   * Should not be used directly, reallocate() or virtual_resize() should be
-   * used instead.
+   * Given new sizes and new strides of the dim order, update the sizes and dim
+   * order metadata of the vTensor. New strides are computed using the new sizes
+   * and new dim order.
    */
   void update_metadata(
       const std::vector<int64_t>& new_sizes,
       const std::vector<int64_t>& new_dim_order);
-
-  /*
-   * Convenience overload of update_metadata. Given the new sizes, the new
-   * strides will be re-calculated based on the current memory layout of the
-   * tensor. Update_metadata will be called with the new sizes and strides.
-   */
-  void update_size_metadata(const std::vector<int64_t>& new_sizes);
 
   /*
    * Check that tensor sizes are valid given the current storage resource's
@@ -453,13 +434,12 @@ class vTensor final {
 
  public:
   /*
-   * Virtually resize and "re-stride" the tensor by modifying the size and
-   * stride metadata that gets used in compute shaders. This allows the shader
-   * to interpret the underlying resource with the updated metadata.
+   * Change how the tensor should be interpreted by compute shaders via updating
+   * the size and dim order of the tensor. The new sizes and dim order may have
+   * different dimensionality than the current dimensionality of the tensor.
    *
-   * Note that the dim order is used as the source of truth for the strides; the
-   * strides are computed using the new sizes and new dim order, thus only the
-   * dim order is accepted as an argument to this function.
+   * This function can only be used for buffer-backed tensors, since texture
+   * backed buffers cannot change dimensionality or memory layout.
    */
   void virtual_reconfigure(
       const std::vector<int64_t>& new_sizes,
@@ -468,9 +448,8 @@ class vTensor final {
   /*
    * Perform a virtual resize of the vTensor by modifying the size metadata that
    * gets used in compute shaders. This allows the shader to treat the
-   * underlying resource as if it were a different size. This function is a
-   * convenience overload of virtual_reconfigure; new strides will be computed
-   * based on the new sizes that preserves the memory layout of the tensor.
+   * underlying resource as if it were a different size. The new sizes cannot
+   * modify the dimensionality of the tensor.
    */
   void virtual_resize(const std::vector<int64_t>& new_sizes);
 

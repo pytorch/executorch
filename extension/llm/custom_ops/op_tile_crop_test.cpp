@@ -15,7 +15,7 @@
 using namespace ::testing;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::testing::TensorFactory;
+using executorch::runtime::testing::TensorFactory;
 
 class OpTileCropOutTest : public OperatorTest {
  protected:

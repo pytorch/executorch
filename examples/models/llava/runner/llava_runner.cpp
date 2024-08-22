@@ -20,6 +20,8 @@
 #include <sstream>
 #include <vector>
 
+using ::executorch::extension::llm::Stats;
+
 namespace torch::executor {
 
 bool LlavaRunner::is_loaded() {

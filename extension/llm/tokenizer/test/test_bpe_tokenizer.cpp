@@ -13,13 +13,15 @@
 
 using namespace ::testing;
 
-namespace torch {
-namespace executor {
+using ::executorch::extension::llm::BPETokenizer;
+using ::executorch::extension::llm::Tokenizer;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::Result;
 
 class TokenizerExtensionTest : public Test {
  public:
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
     tokenizer_ = std::make_unique<BPETokenizer>();
     modelPath_ =
         std::getenv("RESOURCES_PATH") + std::string("/test_bpe_tokenizer.bin");
@@ -65,6 +67,3 @@ TEST_F(TokenizerExtensionTest, SafeToDestruct) {
   tokenizer_ = std::make_unique<BPETokenizer>();
   tokenizer_.reset();
 }
-
-} // namespace executor
-} // namespace torch

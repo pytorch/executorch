@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
+using executorch::runtime::testing::TensorFactory;
 
 exec_aten::Tensor op_sdpa_with_kv_cache(
     const exec_aten::Tensor& query,
@@ -79,7 +80,7 @@ Missing tests:
 5. Different dtypes, fp16, bf16, double (or expect throw)
 */
 TEST(OpScaledDotProductAttentionTest, BasicTest) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor query = tfFloat.make(
       {1, 1, 4, 4},
@@ -360,7 +361,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
 }
 
 TEST(OpScaledDotProductAttentionTest, LargerTest) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor query = tfFloat.make(
       {1, 1, 7, 4}, {0.8823, 0.9150, 0.3829, 0.9593, 0.3904, 0.6009, 0.2566,
@@ -524,7 +525,7 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
 }
 
 TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor query = tfFloat.make(
       {1, 1, 4, 4},
@@ -807,7 +808,7 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
 }
 
 TEST(OpScaledDotProductAttentionTest, SequenceTest) {
-  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor query = tfFloat.make(
       {1, 1, 8, 4},
