@@ -319,7 +319,7 @@ TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorDies) {
   for (size_t i = 0; i < 2; i++) {
     stack[i] = &values[i];
   }
-  
+
   // Try to negate a tensor, which should cause a runtime error.
   ET_EXPECT_DEATH(getOpsFn("executorch_prim::neg.Scalar")(context, stack), "");
 }
