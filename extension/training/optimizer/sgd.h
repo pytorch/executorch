@@ -23,14 +23,10 @@
 #include <unordered_map>
 #include <vector>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
 namespace training {
 namespace optimizer {
-
-using Tensor = exec_aten::Tensor;
-using TensorImpl = exec_aten::TensorImpl;
-using ScalarType = exec_aten::ScalarType;
 
 /**
  * SGD optimizer state. This keeps track of the state of a given parameter to
@@ -44,15 +40,15 @@ class SGDParamState {
    * @param[in] momentum_buffer A tensor that stores the momentum at the last
    * epoch.
    */
-  explicit SGDParamState(Tensor& momentum_buffer)
+  explicit SGDParamState(exec_aten::Tensor& momentum_buffer)
       : momentum_buffer_(momentum_buffer) {}
 
-  Tensor& momentum_buffer() {
+  exec_aten::Tensor& momentum_buffer() {
     return momentum_buffer_;
   }
 
  private:
-  Tensor momentum_buffer_;
+  exec_aten::Tensor momentum_buffer_;
 };
 
 /**
@@ -159,13 +155,13 @@ class SGDParamGroup {
    * @param[in] param_data The tensors representing the param data.
    */
   /* implicit */ SGDParamGroup(
-      Span<const char*> param_names,
-      Span<Tensor> param_data)
+      ::executorch::runtime::Span<const char*> param_names,
+      ::executorch::runtime::Span<exec_aten::Tensor> param_data)
       : param_data_(std::move(param_data)),
         param_names_(std::move(param_names)) {}
   SGDParamGroup(
-      Span<const char*> param_names,
-      Span<Tensor> param_data,
+      ::executorch::runtime::Span<const char*> param_names,
+      ::executorch::runtime::Span<exec_aten::Tensor> param_data,
       std::unique_ptr<SGDOptions> options)
       : param_data_(std::move(param_data)),
         param_names_(std::move(param_names)),
@@ -175,14 +171,14 @@ class SGDParamGroup {
   SGDOptions& options();
   const SGDOptions& options() const;
   void set_options(std::unique_ptr<SGDOptions> options);
-  Span<const char*> param_names();
-  const Span<const char*> param_names() const;
-  Span<Tensor> param_data();
-  const Span<Tensor> param_data() const;
+  ::executorch::runtime::Span<const char*> param_names();
+  const ::executorch::runtime::Span<const char*> param_names() const;
+  ::executorch::runtime::Span<exec_aten::Tensor> param_data();
+  const ::executorch::runtime::Span<exec_aten::Tensor> param_data() const;
 
  private:
-  Span<Tensor> param_data_;
-  Span<const char*> param_names_;
+  ::executorch::runtime::Span<exec_aten::Tensor> param_data_;
+  ::executorch::runtime::Span<const char*> param_names_;
   std::unique_ptr<SGDOptions> options_;
 };
 
@@ -202,8 +198,8 @@ class SGD {
   }
 
   explicit SGD(
-      Span<const char*> param_names,
-      Span<Tensor> param_data,
+      ::executorch::runtime::Span<const char*> param_names,
+      ::executorch::runtime::Span<exec_aten::Tensor> param_data,
       SGDOptions defaults)
       : SGD({SGDParamGroup(std::move(param_names), std::move(param_data))},
             defaults) {}
@@ -225,7 +221,9 @@ class SGD {
    * @param[in] gradient_data The gradient tensors to be used for optimization
    *   step.
    */
-  Error step(Span<const char*> gradient_names, Span<Tensor> gradient_data);
+  ::executorch::runtime::Error step(
+      ::executorch::runtime::Span<const char*> gradient_names,
+      ::executorch::runtime::Span<exec_aten::Tensor> gradient_data);
 
  private:
   std::vector<SGDParamGroup> param_groups_;
@@ -235,5 +233,5 @@ class SGD {
 
 } // namespace optimizer
 } // namespace training
-} // namespace executor
-} // namespace torch
+} // namespace extension
+} // namespace executorch
