@@ -33,24 +33,11 @@
         std::move(*et_result__));                                      \
   })
 
-using ::exec_aten::Tensor;
-using ::executorch::extension::FileDataLoader;
-using ::executorch::extension::MallocMemoryAllocator;
-using ::executorch::extension::MmapDataLoader;
-using ::executorch::runtime::DataLoader;
-using ::executorch::runtime::Error;
-using ::executorch::runtime::EValue;
-using ::executorch::runtime::EventTracer;
-using ::executorch::runtime::HierarchicalAllocator;
-using ::executorch::runtime::MemoryAllocator;
-using ::executorch::runtime::MemoryManager;
-using ::executorch::runtime::MethodMeta;
-using ::executorch::runtime::Program;
-using ::executorch::runtime::Result;
-using ::executorch::runtime::Span;
-
-namespace executorch {
-namespace extension {
+namespace executorch::extension {
+namespace {
+using namespace exec_aten;
+using namespace runtime;
+} // namespace
 
 Module::Module(
     const std::string& file_path,
@@ -216,5 +203,4 @@ Error Module::set_output_data_ptr(Tensor& output_tensor, size_t output_index) {
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
-} // namespace extension
-} // namespace executorch
+} // namespace executorch::extension
