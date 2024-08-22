@@ -23,7 +23,7 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-CArray
 
 using namespace ::testing;
-using namespace torch::executor::training::optimizer;
+using namespace executorch::extension::training::optimizer;
 using namespace torch::executor::testing;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
