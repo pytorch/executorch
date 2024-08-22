@@ -203,6 +203,13 @@ ValueRef ComputeGraph::add_tensor(
       sizes, dtype, suggested_memory_layout(sizes), shared_object_idx);
 }
 
+ValueRef ComputeGraph::add_tensor_view(const ValueRef vref) {
+  const vTensorPtr t = get_tensor(vref);
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(api::vTensor(*t));
+  return idx;
+}
+
 ValueRef ComputeGraph::add_tensor_view(
     const ValueRef vref,
     const std::vector<int64_t>& sizes,
