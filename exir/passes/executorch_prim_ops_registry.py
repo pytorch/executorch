@@ -90,6 +90,7 @@ def mod(a: SymInt, b: SymInt) -> SymInt:
 def neg(a: _SymScalar) -> _SymScalar:
     return -a
 
+
 _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[OpOverload, OpOverload] = {
     operator.sub: ops.backend.executorch_prim.sub.Scalar,
     operator.mul: ops.backend.executorch_prim.mul.Scalar,
