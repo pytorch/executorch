@@ -294,8 +294,7 @@ TEST_F(RegisterPrimOpsTest, NegScalarReturnsCorrectValue) {
 
   getOpsFn("executorch_prim::neg.Scalar")(context, stack);
 
-  int64_t expected = -5.0f;
-  EXPECT_EQ(stack[1]->toDouble(), expected);
+  EXPECT_EQ(stack[1]->toDouble(), -5.0f);
 
   // Test with int
   values[0] = EValue(5l);
@@ -303,8 +302,7 @@ TEST_F(RegisterPrimOpsTest, NegScalarReturnsCorrectValue) {
 
   getOpsFn("executorch_prim::neg.Scalar")(context, stack);
 
-  int64_t expected = -5l;
-  EXPECT_EQ(stack[1]->toInt(), expected);
+  EXPECT_EQ(stack[1]->toInt(), -5l);
 }
 
 TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorDies) {
@@ -317,6 +315,11 @@ TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorDies) {
   values[0] = EValue(tensor);
   values[1] = EValue(0l);
 
+  EValue* stack[2];
+  for (size_t i = 0; i < 2; i++) {
+    stack[i] = &values[i];
+  }
+  
   // Try to negate a tensor, which should cause a runtime error.
   ET_EXPECT_DEATH(getOpsFn("executorch_prim::neg.Scalar")(context, stack), "");
 }
