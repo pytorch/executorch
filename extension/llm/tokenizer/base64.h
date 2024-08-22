@@ -29,8 +29,10 @@
 #include <string>
 #include <string_view>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
+namespace llm {
+
 namespace base64 {
 
 std::string decode(const std::string_view& input);
@@ -176,5 +178,16 @@ inline std::string decode(const std::string_view& input) {
 
 } // namespace base64
 
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace base64 {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::base64::decode;
+} // namespace base64
 } // namespace executor
 } // namespace torch
