@@ -108,3 +108,23 @@ class TestJointGraph(unittest.TestCase):
         self.assertTrue(torch.allclose(m.linear.bias.grad, et_outputs[2]))
         self.assertTrue(torch.allclose(m.linear.weight, et_outputs[3]))
         self.assertTrue(torch.allclose(m.linear.bias, et_outputs[4]))
+
+        self.assertEqual(
+            len(et.executorch_program.execution_plan), 3
+        )  # forward + 2 training metadata functions
+
+        # gradient outputs start at index 1
+        self.assertEqual(
+            et.executorch_program.execution_plan[1]  # pyre-ignore
+            .values[0]
+            .val.int_val,
+            1,
+        )
+
+        # parameter outputs start at index 3
+        self.assertEqual(
+            et.executorch_program.execution_plan[2]  # pyre-ignore
+            .values[0]
+            .val.int_val,
+            3,
+        )

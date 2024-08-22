@@ -22,6 +22,8 @@ def main() -> None:
     modelname = "llama2"
     parser = build_args_parser()
     args = parser.parse_args()
+    # Overrides this arg, because evaluation requires full logits.
+    args.generate_full_logits = True
     eval_llama(modelname, args)
 
 

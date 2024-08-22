@@ -13,23 +13,27 @@
 #include <executorch/extension/llm/runner/image.h>
 #include <executorch/extension/module/module.h>
 
-namespace torch::executor {
+namespace executorch {
+namespace extension {
+namespace llm {
 
 // Assuming kv cache and parallel prefill are enabled.
 class ImagePrefiller {
  public:
-  explicit ImagePrefiller(Module* module) : module_(module) {}
+  explicit ImagePrefiller(::executorch::extension::Module* module)
+      : module_(module) {}
+
   /**
    * Prefill an LLM Module with the given image input.
    * @param image The image input to the multimodal LLM.
    * @param start_pos The starting position in KV cache of the input in the LLM
    * @return The next token of the LLM Module after prefill.
    */
-  virtual Result<exec_aten::Tensor> prefill(
+  virtual ::executorch::runtime::Result<exec_aten::Tensor> prefill(
       Image& image,
       int64_t start_pos = 0) = 0;
 
-  virtual Error load() = 0;
+  virtual ::executorch::runtime::Error load() = 0;
   virtual bool is_method_loaded() = 0;
 
   virtual ~ImagePrefiller() = default;
@@ -38,4 +42,14 @@ class ImagePrefiller {
   Module* module_;
 };
 
-} // namespace torch::executor
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::ImagePrefiller;
+} // namespace executor
+} // namespace torch
