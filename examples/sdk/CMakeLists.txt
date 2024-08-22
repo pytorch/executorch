@@ -49,7 +49,7 @@ add_executable(sdk_example_runner sdk_example_runner/sdk_example_runner.cpp)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 
 target_include_directories(
-  etdump INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../sdk/include
+  etdump INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/../../devtools/include
                    ${EXECUTORCH_ROOT}/third-party/flatcc/include
 )
 target_link_libraries(
