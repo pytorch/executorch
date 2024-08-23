@@ -266,3 +266,29 @@ class InitializePipeline(ExportPass):
         result = SpecPropPass()(graph_module)
         assert result is not None
         return result
+
+
+class ReplaceSafeSoftmaxWithSoftmax(ExportPass):
+    """
+    Replace _safe_softmax with _softmax
+    """
+
+    def call_operator(
+        self,
+        op,  # pyre-ignore
+        args: tuple[Argument, ...],
+        kwargs: dict[str, Argument],
+        meta: NodeMetadata,
+    ) -> ProxyValue:
+        if op != torch.ops.aten._safe_softmax.default:
+            return super().call_operator(op, args, kwargs, meta)
+
+        # Add False for the half_to_float argument of softmax
+        softmax_args = list(args) + [False]
+
+        return super().call_operator(
+            torch.ops.aten._softmax.default,
+            tuple(softmax_args),
+            kwargs,
+            meta,
+        )
