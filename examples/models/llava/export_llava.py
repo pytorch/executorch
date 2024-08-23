@@ -23,7 +23,15 @@ from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
 from executorch.examples.models.llava.model import LlavaModel
-from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    to_edge_transform_and_lower,
+)
+
+from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
@@ -199,7 +207,23 @@ def export_all(llava_model: LlavaModel):
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
 
-    executorch_program = lowered_and_edge.to_executorch()
+    executorch_program = lowered_and_edge.to_executorch(
+        ExecutorchBackendConfig(
+            extract_constant_segment=True,
+            extract_delegate_segments=True,
+            passes=[
+                QuantFusionPass(),
+            ],
+            memory_planning_pass=MemoryPlanningPass("greedy", alloc_graph_input=False),
+            sym_shape_eval_pass={
+                "image_encoder": ConstraintBasedSymShapeEvalPass(),
+            },
+        )
+    )
+    for execution_plan in executorch_program._emitter_output.program.execution_plan:
+        logging.info(
+            f"Required memory for activation in bytes: {execution_plan.non_const_buffer_sizes}"
+        )
     return executorch_program
 
 
@@ -253,13 +277,6 @@ def main():
 
     with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)
-    logging.info(
-        "Required memory for activation in bytes: {}".format(
-            executorch_program._emitter_output.program.execution_plan[
-                0
-            ].non_const_buffer_sizes
-        ),
-    )
     logging.info(f"Exported ExecuTorch program to {args.pte_name}")
 
     # artifacts

@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional, Sequence, Set, TextIO, Union
 
 import torch
 import torch._export
-
 from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir._serialize._cord import Cord
 from executorch.exir.backend.backend_api import to_backend
@@ -23,6 +22,7 @@ from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
 from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.pass_base import PassBase
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     base_post_op_replace_passes,
@@ -641,25 +641,48 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     return new_ep
 
 
-def pre_memory_planning_passes(config: ExecutorchBackendConfig) -> List[PassType]:
+def pre_memory_planning_passes(
+    config: ExecutorchBackendConfig, name: Optional[str] = None
+) -> List[PassType]:
+    """
+    Returns a list of passes to run before memory planning.
+    Get the sym shape eval pass based on the method name, if the pass is not in the dict, use the default pass.
+    """
+    # Handle symbolic shape eval pass
+    if isinstance(config.sym_shape_eval_pass, dict):
+        sym_shape_eval_pass = config.sym_shape_eval_pass.get(
+            name, ExecutorchBackendConfig().sym_shape_eval_pass
+        )
+    elif isinstance(config.sym_shape_eval_pass, PassBase):
+        sym_shape_eval_pass = config.sym_shape_eval_pass
+    else:
+        raise RuntimeError(
+            f"sym_shape_eval_pass must be a dict or a PassBase, got {config.sym_shape_eval_pass}"
+        )
     if config.remove_view_copy:
         # pyre-ignore
         return [
             NormalizeViewCopyBasePass(),
             dead_code_elimination_pass,
             ReplaceViewCopyWithViewPass(),
-            config.sym_shape_eval_pass,
+            sym_shape_eval_pass,
             config.to_out_var_pass,
         ]
     else:
         # pyre-ignore
         return [
-            config.sym_shape_eval_pass,
+            sym_shape_eval_pass,
             config.to_out_var_pass,
         ]
 
 
-def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]:
+def edge_to_executorch_passes(
+    config: ExecutorchBackendConfig, name: Optional[str] = None
+) -> List[PassType]:
+    """
+    Returns a list of passes to lower from edge to executorch.
+    Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.
+    """
     passes: List[PassType] = [
         *config.passes,
         SpecPropPass(),
@@ -668,7 +691,7 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
         # there exists an unbacked symint operation.
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
-    ] + pre_memory_planning_passes(config)
+    ] + pre_memory_planning_passes(config, name)
 
     return passes
 
@@ -1234,7 +1257,7 @@ class EdgeProgramManager:
             program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
-            for p in edge_to_executorch_passes(config):
+            for p in edge_to_executorch_passes(config, name):
                 new_gm_res = p(new_gm)
                 assert new_gm_res is not None
                 new_gm = new_gm_res.graph_module
