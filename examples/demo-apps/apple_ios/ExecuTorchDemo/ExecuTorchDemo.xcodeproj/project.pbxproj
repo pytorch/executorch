@@ -59,6 +59,13 @@
 			remoteGlobalIDString = 03C818302AC79FCD0084CC29;
 			remoteInfo = ImageClassification;
 		};
+		84EF1FE92C7850B6005922B4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 032C01672AC228E5002955E1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 032C016E2AC228E6002955E1;
+			remoteInfo = App;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -330,6 +337,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				84EF1FEA2C7850B6005922B4 /* PBXTargetDependency */,
 			);
 			name = MobileNetClassifierTest;
 			packageProductDependencies = (
@@ -488,6 +496,11 @@
 			isa = PBXTargetDependency;
 			target = 03C818302AC79FCD0084CC29 /* ImageClassification */;
 			targetProxy = 03C818452AC7A0DB0084CC29 /* PBXContainerItemProxy */;
+		};
+		84EF1FEA2C7850B6005922B4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 032C016E2AC228E6002955E1 /* App */;
+			targetProxy = 84EF1FE92C7850B6005922B4 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -694,6 +707,7 @@
 		03C818112AC66FC30084CC29 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -703,12 +717,14 @@
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ExecuTorchDemo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ExecuTorchDemo";
 			};
 			name = Debug;
 		};
 		03C818122AC66FC30084CC29 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -717,6 +733,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ExecuTorchDemo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ExecuTorchDemo";
 			};
 			name = Release;
 		};

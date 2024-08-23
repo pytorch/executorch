@@ -91,6 +91,7 @@ pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
 rm -rf Payload && mkdir Payload
 MOCK_APP_NAME=ExecuTorchDemo
 cp -r "${MOCK_APP_NAME}.app" Payload && zip -vr "${MOCK_APP_NAME}.ipa" Payload
+zip -vr "MobileNetClassifierTest.xctest.zip" MobileNetClassifierTest.xctest
 
 # DEBUG
 ls -lah
@@ -100,7 +101,8 @@ popd
 if [[ -n "${ARTIFACTS_DIR_NAME}" ]]; then
   mkdir -p "${ARTIFACTS_DIR_NAME}"
   # Prepare all the artifacts to upload
-  cp "${BUILD_DIR}/${MODE}-${PLATFORM}/${MOCK_APP_NAME}.ipa" "${ARTIFACTS_DIR_NAME}"
+  cp "${BUILD_DIR}/${MODE}-${PLATFORM}/${MOCK_APP_NAME}.ipa" "${ARTIFACTS_DIR_NAME}/"
+  cp "${BUILD_DIR}/${MODE}-${PLATFORM}/MobileNetClassifierTest.xctest.zip" "${ARTIFACTS_DIR_NAME}/"
 
   # DEBUG
   ls -lah "${ARTIFACTS_DIR_NAME}/"
