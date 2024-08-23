@@ -14,8 +14,8 @@ let url = "https://ossci-ios.s3.amazonaws.com/executorch/"
 let debug = "_debug"
 let deliverables = [
   "backend_coreml": [
-    "sha256": "24f89f8234d54f5d195340941837c6d90def64458e0c20b8edba7b920a795724",
-    "sha256" + debug: "48d38278af4d169c409d5605d87867fdc8dd29ea1dc40e66f126c356faaa55d2",
+    "sha256": "6383ded41b4e631b6b2a3ede67acedaed7106a5216a2ef9240e75ca97f3127ac",
+    "sha256" + debug: "9c8100e23fd75df12c344b0cb22b8acfc84fcb697a1814a6778bcd1bce4d47da",
     "frameworks": [
       "Accelerate",
       "CoreML",
@@ -25,8 +25,8 @@ let deliverables = [
     ],
   ],
   "backend_mps": [
-    "sha256": "4694b03a71ca679710792f09cdf988884c6801d3da91dfe07b39ff4d0da46efb",
-    "sha256" + debug: "104e9f431b2566f6ca3c0ed2cb2c3b68da74d3892d6dcb0ce140b113f6770a81",
+    "sha256": "21a229fcde9f831dfabb32be8d2cc4a626cc9b5ba68a7f2b34a6e0d13c608d21",
+    "sha256" + debug: "0160975fa22220cf46c9d36a880280394dae085188a259188ad70adb4df79a84",
     "frameworks": [
       "Metal",
       "MetalPerformanceShaders",
@@ -34,28 +34,28 @@ let deliverables = [
     ],
   ],
   "backend_xnnpack": [
-    "sha256": "7938e73af6964c5c55b1829e01fcf9eac5c4c226b5d45e603cbd045ad620c94d",
-    "sha256" + debug: "382c1b8c1cd7f550fa88928db5d7467bc2bc5313c3e7cd87b1509c82096d6388",
+    "sha256": "17af715e8f5bb5dfc244d17b68f9ae450719058f72ebbad9fff91eed52a74918",
+    "sha256" + debug: "3827e3e1cb678171c3471e0ef59fa245506aaa892962c38993a69337ad27314c",
   ],
   "executorch": [
-    "sha256": "fa9cee8333f41ef14666b8876157fb91144b57482dac44f5ec3b7079b5b5e07f",
-    "sha256" + debug: "e4a037c9aa1a647fd7501b6bbc96a5b65689d1e86a4c518d24519a7307040ca5",
+    "sha256": "b7db803ae6c4c904a713aaba5e3afce728e70d1107477560abca5ef89efe9304",
+    "sha256" + debug: "45c0ce0d75417bfe0932a409d96c12e95541873018ee0b856e8d920649cfe2df",
   ],
   "kernels_custom": [
-    "sha256": "7c9f3636edd823b85050e4e9f8b920ec04c3b944c03b592db169326ed9bebe71",
-    "sha256" + debug: "209781f9fbbc3752ec9b86727c97c675bcd6b1ca269d2740db5d672d1a29e968",
+    "sha256": "1b5f278dfbc549dfc91ceb713061185a59e824bafec3a8c7727921af46472a4d",
+    "sha256" + debug: "04d6a5ea3c5fbaab24186f39f8a258cc431a3114776e091345b9b91e89fd6653",
   ],
   "kernels_optimized": [
-    "sha256": "bd690460de3c321b5692b3ec77f4d9c32ade45c02f461d6af37006a5804a1ba9",
-    "sha256" + debug: "63a46b7e7c1db1c8fe7638592eb385507244f0cf8edfa968f5acee4364ed994f",
+    "sha256": "15d5900d8bc17bf6cead8d1471c85f8e0bcf921ce389245b990e4eca15bbe350",
+    "sha256" + debug: "43ef322b7bb42f917ba3133952fa358fe8638039a25e9528533ff59b2010873f",
   ],
   "kernels_portable": [
-    "sha256": "24e2db5d1ff1e51bfac5f58b605c67c2d2ab991d9c79a2368ae852928de506c1",
-    "sha256" + debug: "8a24e4afbb08d981c6a658330b446a8f7dd8a900f5f90a790b7139a858298dbe",
+    "sha256": "6b3e714d28916206d7800c63eeffc20fb38a95a9e36bfb9174b58fbb975ac75b",
+    "sha256" + debug: "b6343dc7b729e8b05925c3584a6078e98b706c47c66a45e2ffb0f722419814b5",
   ],
   "kernels_quantized": [
-    "sha256": "86c002c5cc647ee9b9dd73c13466adac18f2ab1372278505ce9a03c4344919fe",
-    "sha256" + debug: "48f06f220102edb30e098a3a6611a99cb42e3bc963c73b87405117b2e0ca057a",
+    "sha256": "3bb26944442413d193e5ccbf444f876193be57f2d672af928d2fb001c4ed2876",
+    "sha256" + debug: "e4922ac6b050e98f3f67f959b67b0a5333597180e70928ad8908170107190662",
   ],
 ].reduce(into: [String: [String: Any]]()) {
   $0[$1.key] = $1.value
