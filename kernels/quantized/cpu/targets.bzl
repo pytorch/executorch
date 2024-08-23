@@ -58,7 +58,10 @@ def define_common_targets():
     runtime.cxx_library(
         name = "quantized_cpu",
         srcs = [],
-        visibility = ["//executorch/kernels/quantized/..."],
+        visibility = [
+            "//executorch/kernels/quantized/...",
+            "//executorch/extension/pybindings/test/...",
+        ],
         exported_deps = quant_op_targets,
     )
 
