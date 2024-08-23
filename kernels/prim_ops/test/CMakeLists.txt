@@ -22,6 +22,8 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
+target_link_options_shared_lib(executorch)
+
 set(_test_srcs prim_ops_test.cpp)
 
 et_cxx_test(
