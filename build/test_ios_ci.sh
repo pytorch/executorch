@@ -11,6 +11,9 @@ APP_PATH="examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo"
 MODEL_NAME="mv3"
 SIMULATOR_NAME="executorch"
 
+# If this is set, copy the build artifacts to this directory
+ARTIFACTS_DIR_NAME="$1"
+
 finish() {
   EXIT_STATUS=$?
   if xcrun simctl list | grep -q "$SIMULATOR_NAME"; then
@@ -86,10 +89,19 @@ PLATFORM="iphoneos"
 pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
 
 rm -rf Payload && mkdir Payload
-MOCK_APP_NAME=DeviceFarm
+MOCK_APP_NAME=ExecuTorchDemo
 cp -r "${MOCK_APP_NAME}.app" Payload && zip -vr "${MOCK_APP_NAME}.ipa" Payload
 
 # DEBUG
 ls -lah
 
 popd
+
+if [[ -n "${ARTIFACTS_DIR_NAME}" ]]; then
+  mkdir -p "${ARTIFACTS_DIR_NAME}"
+  # Prepare all the artifacts to upload
+  cp "${BUILD_DIR}/${MODE}-${PLATFORM}/${MOCK_APP_NAME}.ipa" "${ARTIFACTS_DIR_NAME}"
+
+  # DEBUG
+  ls -lah "${ARTIFACTS_DIR_NAME}/"
+fi
