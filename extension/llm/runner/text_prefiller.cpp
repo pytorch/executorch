@@ -55,11 +55,6 @@ TextPrefiller::TextPrefiller(
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_LOG(
         Info, "Prefill token result numel(): %zu", outputs_res.get().numel());
-    ET_CHECK_MSG(
-        outputs_res.get().size(1) == num_prompt_tokens,
-        "Expected number of output tokens %d does not match returned value %zu.",
-        num_prompt_tokens,
-        outputs_res.get().size(1));
     // insert new token into prompt_tokens
     // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
     uint64_t prev = prompt_tokens[0];

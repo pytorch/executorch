@@ -18,6 +18,7 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
+#include <executorch/devtools/etdump/etdump_flatcc.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/memory_allocator.h>
@@ -26,7 +27,6 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/sdk/etdump/etdump_flatcc.h>
 #include <executorch/util/util.h>
 
 #include <gflags/gflags.h>
