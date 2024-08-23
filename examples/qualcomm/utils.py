@@ -353,7 +353,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-b",
         "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/cmake-out-android",
+        help="path to cmake binary directory for android, e.g., /path/to/build-android",
         type=str,
         required=True,
     )
@@ -416,6 +416,13 @@ def setup_common_args_and_variables():
         "--shared_buffer",
         help="Enables usage of shared buffer between application and backend for graph I/O.",
         action="store_true",
+    )
+
+    parser.add_argument(
+        "--skip_push",
+        help="If specified, skip pushing files to device.",
+        action="store_true",
+        default=False,
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.

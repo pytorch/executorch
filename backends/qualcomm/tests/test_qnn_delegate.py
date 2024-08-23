@@ -1996,7 +1996,12 @@ class TestExampleQaihubScript(TestQNN):
                 self.fail(msg["Error"])
             else:
                 model_out = msg["result"]
-                self.assertTrue(model_out.startswith(prompt))
+                expected_result = (
+                    "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
+                    + prompt
+                    + "<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+                )
+                self.assertTrue(model_out.startswith(expected_result))
 
     def test_stable_diffusion(self):
         if not self.required_envs():
