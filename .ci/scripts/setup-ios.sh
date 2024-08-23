@@ -18,9 +18,6 @@ KEYCHAIN_PATH="${RUNNER_TEMP}"/app-signing.keychain-db
 echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
 echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
 
-ls -lah $CERTIFICATE_PATH
-ls -lah $PP_PATH
-
 # Create a temporary keychain
 security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
 security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
