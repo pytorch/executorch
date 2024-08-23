@@ -611,6 +611,7 @@ TEST_F(VulkanComputeAPITest, tensor_copy_test) {
   vTensor original = CREATE_FLOAT_BUFFER(sizes, /*allocate_memory=*/true);
   vTensor copy = vTensor(original, sizes, dim_order);
   EXPECT_TRUE(get_vma_allocation_count() == 1);
+  EXPECT_TRUE(copy.is_view_of(original));
 
   // Fill original tensor with some data
   fill_vtensor(original, 2.5f, true);
@@ -1165,6 +1166,8 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_view) {
   IOValueRef orig = graph.add_input_tensor(orig_sizes, vkapi::kFloat);
   ValueRef slice =
       graph.add_tensor_view(orig.value, slice_sizes, dim_order, offset);
+
+  EXPECT_TRUE(graph.val_is_view_of(slice, orig.value));
 
   IOValueRef out = {};
 
