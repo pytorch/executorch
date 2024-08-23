@@ -297,8 +297,10 @@ TEST_F(RegisterPrimOpsTest, NegScalarReturnsCorrectValue) {
   EXPECT_EQ(stack[1]->toDouble(), -5.0f);
 
   // Test with int
-  values[0] = EValue(5l);
-  values[1] = EValue(0l);
+  int64_t a = 5;
+  int64_t b = 0;
+  values[0] = EValue(a);
+  values[1] = EValue(b);
 
   getOpsFn("executorch_prim::neg.Scalar")(context, stack);
 
@@ -312,8 +314,9 @@ TEST_F(RegisterPrimOpsTest, TestNegScalarWithTensorDies) {
 
   auto tensor = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
 
+  int64_t zero = 0;
   values[0] = EValue(tensor);
-  values[1] = EValue(0l);
+  values[1] = EValue(zero);
 
   EValue* stack[2];
   for (size_t i = 0; i < 2; i++) {
