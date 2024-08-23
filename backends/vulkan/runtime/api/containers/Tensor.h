@@ -20,14 +20,21 @@ namespace vkcompute {
 namespace api {
 
 /*
- * Given the sizes of a tensor and the GPU memory layout, calculate the strides
- * of the tensor in NCHW dimension order. The GPU memory layout will be used to
- * determine which dimension is packed along a texel; that dimension will be
- * used as the "fasted moving" dimension with a stride of 1.
+ * Given a GPUMemoryLayout value, produce a dim order vector that matches the
+ * given memory layout. The produced dim order vector will be in the NCHW
+ * dimension order
+ */
+std::vector<int64_t> calculate_dim_order(
+    const size_t ndim,
+    const utils::GPUMemoryLayout memory_layout);
+
+/*
+ * Given the sizes of a tensor and the dim order of the tensor (both in NCHW)
+ * dimension order, calculate the strides of the tensor.
  */
 std::vector<int64_t> calculate_strides(
     const std::vector<int64_t>& sizes,
-    const utils::GPUMemoryLayout memory_layout);
+    const std::vector<int64_t>& dim_order);
 
 std::vector<int64_t> unsqueeze_strides(
     const std::vector<int64_t>& strides,
@@ -96,7 +103,7 @@ class vTensorStorage final {
    * because this behaviour is unsafe, since the original tensor may be
    * destroyed before the copy is destroyed.
    */
-  vTensorStorage(const vTensorStorage& other, const size_t buffer_offset = 0);
+  vTensorStorage(const vTensorStorage& other, const int64_t buffer_offset = 0);
 
  public:
   // To discourage creating copies, the assignment operator is still deleted.
@@ -118,6 +125,7 @@ class vTensorStorage final {
   // Resource sizings
   utils::uvec3 image_extents_{};
   int64_t buffer_length_{};
+  int64_t buffer_offset_{};
 
   // GPU Storage
   mutable vkapi::VulkanImage image_;
@@ -167,14 +175,26 @@ class vTensor final {
       const utils::GPUMemoryLayout memory_layout = utils::kChannelsPacked,
       const bool allocate_memory = true);
 
-  vTensor(const vTensor& other) = delete;
-  vTensor& operator=(const vTensor& other) = delete;
+  /*
+   * This constructor allows for the creation of a vTensor that references the
+   * same buffer resource of another vTensor, with the same sizes and strides
+   * metadata. The created vTensor will not own the underlying resource. This is
+   * only applicable for buffer backed tensors at the moment.
+   *
+   * Once created, the sizes and strides of the aliased vTensor can be changed
+   * using the `virtual_reconfigure` member function.
+   */
+  vTensor(const vTensor& other);
 
   /*
    * This constructor allows for the creation of a vTensor that references the
    * same buffer resource of another vTensor, but with different sizes and
    * strides metatdata. The created vTensor will not own the underlying
    * resource. This is only applicable for buffer backed tensors at the moment.
+   *
+   * Note that dim order is used as the source of truth regarding the strides,
+   * and the new strides are computed from the new sizes and new dim order.
+   * Thus only the dim order is provided as an argument to this function.
    *
    * The offset_numel argument allows the aliased tensor's memory region to
    * begin at an offset of N elements from the start of the original tensor's
@@ -183,8 +203,11 @@ class vTensor final {
   vTensor(
       const vTensor& other,
       const std::vector<int64_t>& sizes,
-      const std::vector<int64_t>& strides,
-      const size_t offset_numel = 0);
+      const std::vector<int64_t>& dim_order,
+      const int64_t offset_numel = 0);
+
+  // To discourage making copies, the copy assignment operator is still deleted
+  vTensor& operator=(const vTensor& other) = delete;
 
   vTensor(vTensor&& other) = default;
   vTensor& operator=(vTensor&& other) = default;
@@ -195,6 +218,11 @@ class vTensor final {
 
   // sizes of the tensor in NCHW dimension order
   std::vector<int64_t> sizes_;
+  // dim order of the tensor; dimension indices are in NCHW dimension order
+  // i.e. 0 is N, 1 is C, 2 is H, 3 is W for a 4D tensor. The dims with larger
+  // strides precede the dims with smaller strides in the dim order. The last
+  // dim is always the fastest moving dim with a stride of 1.
+  std::vector<int64_t> dim_order_;
   // strides of the tensor in NCHW dimension order
   std::vector<int64_t> strides_;
   // Contains the number of elements in the tensor according to the canonical
@@ -305,6 +333,10 @@ class vTensor final {
     return sizes_.size();
   }
 
+  inline const std::vector<int64_t>& dim_order() const {
+    return dim_order_;
+  }
+
   inline const std::vector<int64_t>& strides() const {
     return strides_;
   }
@@ -386,24 +418,46 @@ class vTensor final {
 
  private:
   /*
-   * Update the size metadata of the vTensor to be new sizes. Should not be used
-   * directly, reallocate() or virtual_resize() should be used instead.
+   * Given new sizes and new strides of the dim order, update the sizes and dim
+   * order metadata of the vTensor. New strides are computed using the new sizes
+   * and new dim order.
    */
-  void update_size_metadata(const std::vector<int64_t>& new_sizes);
+  void update_metadata(
+      const std::vector<int64_t>& new_sizes,
+      const std::vector<int64_t>& new_dim_order);
+
+  /*
+   * Check that tensor sizes are valid given the current storage resource's
+   * limits.
+   */
+  void check_sizes(const std::vector<int64_t>& sizes) const;
 
  public:
+  /*
+   * Change how the tensor should be interpreted by compute shaders via updating
+   * the size and dim order of the tensor. The new sizes and dim order may have
+   * different dimensionality than the current dimensionality of the tensor.
+   *
+   * This function can only be used for buffer-backed tensors, since texture
+   * backed buffers cannot change dimensionality or memory layout.
+   */
+  void virtual_reconfigure(
+      const std::vector<int64_t>& new_sizes,
+      const std::vector<int64_t>& new_dim_order);
+
+  /*
+   * Perform a virtual resize of the vTensor by modifying the size metadata that
+   * gets used in compute shaders. This allows the shader to treat the
+   * underlying resource as if it were a different size. The new sizes cannot
+   * modify the dimensionality of the tensor.
+   */
+  void virtual_resize(const std::vector<int64_t>& new_sizes);
+
   /*
    * Discard the underlying VkImage or VkBuffer and re-allocate based on new
    * tensor sizes
    */
   void reallocate(const std::vector<int64_t>& new_sizes);
-
-  /*
-   * Perform a virtual resize of the vTensor by modifying the size metadata that
-   * gets used in compute shaders. This allows the shader to treat the
-   * underlying resource as if it were a different size.
-   */
-  void virtual_resize(const std::vector<int64_t>& new_sizes);
 };
 
 } // namespace api

@@ -360,12 +360,12 @@ class CustomBuildPy(build_py):
             ("schema/scalar_type.fbs", "exir/_serialize/scalar_type.fbs"),
             ("schema/program.fbs", "exir/_serialize/program.fbs"),
             (
-                "sdk/bundled_program/schema/bundled_program_schema.fbs",
-                "sdk/bundled_program/serialize/bundled_program_schema.fbs",
+                "devtools/bundled_program/schema/bundled_program_schema.fbs",
+                "devtools/bundled_program/serialize/bundled_program_schema.fbs",
             ),
             (
-                "sdk/bundled_program/schema/scalar_type.fbs",
-                "sdk/bundled_program/serialize/scalar_type.fbs",
+                "devtools/bundled_program/schema/scalar_type.fbs",
+                "devtools/bundled_program/serialize/scalar_type.fbs",
             ),
         ]
         for src, dst in src_to_dst:
@@ -606,8 +606,8 @@ setup(
         "executorch/extension": "extension",
         "executorch/kernels/quantized": "kernels/quantized",
         "executorch/schema": "schema",
-        "executorch/sdk": "sdk",
-        "executorch/sdk/bundled_program": "sdk/bundled_program",
+        "executorch/devtools": "devtools",
+        "executorch/devtools/bundled_program": "devtools/bundled_program",
         "executorch/util": "util",
         # Note: This will install a top-level module called "serializer",
         # which seems too generic and might conflict with other pip packages.
