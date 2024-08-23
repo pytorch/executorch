@@ -84,17 +84,24 @@ xcodebuild build-for-testing \
 # The hack to figure out where the xctest package locates
 BUILD_DIR=$(xcodebuild -showBuildSettings -project "$APP_PATH.xcodeproj" -json | jq -r ".[0].buildSettings.BUILD_DIR")
 
+# Prepare the demo app
 MODE="Debug"
 PLATFORM="iphoneos"
 pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
 
 rm -rf Payload && mkdir Payload
 MOCK_APP_NAME=ExecuTorchDemo
-cp -r "${MOCK_APP_NAME}.app" Payload && zip -vr "${MOCK_APP_NAME}.ipa" Payload
-zip -vr "MobileNetClassifierTest.xctest.zip" MobileNetClassifierTest.xctest
 
-# DEBUG
 ls -lah
+cp -r "${MOCK_APP_NAME}.app" Payload && zip -vr "${MOCK_APP_NAME}.ipa" Payload
+
+popd
+
+# Prepare the test suite
+pushd "${BUILD_DIR}"
+
+ls -lah
+zip -vr "${MOCK_APP_NAME}.xctestrun.zip" *.xctestrun
 
 popd
 
@@ -102,8 +109,7 @@ if [[ -n "${ARTIFACTS_DIR_NAME}" ]]; then
   mkdir -p "${ARTIFACTS_DIR_NAME}"
   # Prepare all the artifacts to upload
   cp "${BUILD_DIR}/${MODE}-${PLATFORM}/${MOCK_APP_NAME}.ipa" "${ARTIFACTS_DIR_NAME}/"
-  cp "${BUILD_DIR}/${MODE}-${PLATFORM}/MobileNetClassifierTest.xctest.zip" "${ARTIFACTS_DIR_NAME}/"
+  cp "${BUILD_DIR}/${MOCK_APP_NAME}.xctestrun.zip" "${ARTIFACTS_DIR_NAME}/"
 
-  # DEBUG
   ls -lah "${ARTIFACTS_DIR_NAME}/"
 fi
