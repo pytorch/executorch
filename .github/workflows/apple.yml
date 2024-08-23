@@ -35,7 +35,7 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
-      secrets-env: BUILD_CERTIFICATE_BASE64 BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
+      secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
       script: |
         BUILD_TOOL=cmake
 
@@ -46,6 +46,9 @@ jobs:
         .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
         # Setup Apple certificate for iOS development
+        BUILD_PROVISION_PROFILE_BASE64=SECRET_EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64 \
+        BUILD_CERTIFICATE_BASE64=SECRET_BUILD_CERTIFICATE_BASE64 \
+        KEYCHAIN_PASSWORD=SECRET_KEYCHAIN_PASSWORD \
         .ci/scripts/setup-ios.sh
 
         # Build and test iOS Demo App

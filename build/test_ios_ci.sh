@@ -71,7 +71,12 @@ say "Package The Test Suite"
 xcodebuild build-for-testing \
   -project "$APP_PATH.xcodeproj" \
   -scheme MobileNetClassifierTest \
-  -destination platform="iOS"
+  -destination platform="iOS" \
+  -allowProvisioningUpdates \
+  DEVELOPMENT_TEAM=78E7V7QP35 \
+  CODE_SIGN_STYLE=Manual \
+  PROVISIONING_PROFILE_SPECIFIER=ExecuTorchDemo \
+  CODE_SIGN_IDENTITY="iPhone Distribution"
 
 # The hack to figure out where the xctest package locates
 BUILD_DIR=$(xcodebuild -showBuildSettings -project "$APP_PATH.xcodeproj" -json | jq -r ".[0].buildSettings.BUILD_DIR")
