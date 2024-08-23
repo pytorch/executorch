@@ -11,7 +11,6 @@ import os
 import platform
 import stat
 import sys
-import tempfile
 import urllib.request
 
 from dataclasses import dataclass
@@ -85,6 +84,12 @@ BUCK_PLATFORM_MAP = {
         archive_name="buck2-x86_64-apple-darwin.zst",
         target_versions=["3eb1ae97ea963086866b4d2d9ffa966d"],
     ),
+    ("windows", "x86_64"): BuckInfo(
+        archive_name="buck2-x86_64-pc-windows-msvc.exe.zst",
+        target_versions=[
+            "bf1685c4c4ddd9de4592b5a955cb7326fd01e6c4d5f561643422bed961a17401"
+        ],
+    ),
 }
 
 
@@ -135,6 +140,8 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
         os_family = "linux"
     elif sys.platform.startswith("darwin"):
         os_family = "darwin"
+    elif sys.platform.startswith("win"):
+        os_family = "windows"
 
     platform_key = (os_family, arch)
     if platform_key not in BUCK_PLATFORM_MAP:
@@ -193,12 +200,12 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
 
             buck2_archive_url = f"https://github.com/facebook/buck2/releases/download/{target_buck_version}/{buck_info.archive_name}"
 
-            with tempfile.NamedTemporaryFile() as archive_file:
+            try:
                 print(f"Downloading buck2 from {buck2_archive_url}...", file=sys.stderr)
-                urllib.request.urlretrieve(buck2_archive_url, archive_file.name)
+                archive_file, _ = urllib.request.urlretrieve(buck2_archive_url)
 
                 # Extract and chmod.
-                with open(archive_file.name, "rb") as f:
+                with open(archive_file, "rb") as f:
                     data = f.read()
                     decompressed_bytes = zstd.decompress(data)
 
@@ -207,6 +214,8 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
 
                 file_stat = os.stat(buck2_local_path)
                 os.chmod(buck2_local_path, file_stat.st_mode | stat.S_IEXEC)
+            finally:
+                os.remove(archive_file)
 
             return buck2_local_path
 

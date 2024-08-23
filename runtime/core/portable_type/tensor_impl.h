@@ -8,8 +8,6 @@
 
 #pragma once
 
-#include <sys/types.h> // TODO(T126923429): Include size_t, ssize_t
-
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>

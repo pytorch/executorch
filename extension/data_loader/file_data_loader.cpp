@@ -17,7 +17,11 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifndef _WIN32
 #include <unistd.h>
+#else
+#include <io.h>
+#endif
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -69,8 +73,10 @@ FileDataLoader::~FileDataLoader() {
   // file_name_ can be nullptr if this instance was moved from, but freeing a
   // null pointer is safe.
   std::free(const_cast<char*>(file_name_));
-  // fd_ can be -1 if this instance was moved from, but closing a negative fd is
-  // safe (though it will return an error).
+  // fd_ can be -1 if this instance was moved from.
+  if (fd_ == -1) {
+    return;
+  }
   ::close(fd_);
 }
 
