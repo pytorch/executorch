@@ -31,8 +31,8 @@
 
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Represents a constant reference to an array (0 or more elements
@@ -236,5 +236,15 @@ bool operator!=(ArrayRef<T> a1, ArrayRef<T> a2) {
 
 using IntArrayRef = ArrayRef<int64_t>;
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::ArrayRef;
+using ::executorch::runtime::IntArrayRef;
+using ::executorch::runtime::makeArrayRef;
 } // namespace executor
 } // namespace torch

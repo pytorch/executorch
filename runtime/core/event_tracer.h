@@ -14,8 +14,8 @@
 
 #pragma once
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /// Represents an allocator id returned by track_allocator.
 typedef uint32_t AllocatorID;
@@ -275,7 +275,7 @@ class EventTracer {
   virtual void log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
-      const Tensor& output) = 0;
+      const exec_aten::Tensor& output) = 0;
 
   /**
    * Log an intermediate tensor array output from a delegate.
@@ -295,7 +295,7 @@ class EventTracer {
   virtual void log_intermediate_output_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
-      const ArrayRef<Tensor> output) = 0;
+      const ArrayRef<exec_aten::Tensor> output) = 0;
 
   /**
    * Log an intermediate int output from a delegate.
@@ -460,5 +460,23 @@ class EventTracer {
       EventTracerDebugLogLevel::kNoLogging;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::AllocatorID;
+using ::executorch::runtime::ChainID;
+using ::executorch::runtime::DebugHandle;
+using ::executorch::runtime::DelegateDebugIdType;
+using ::executorch::runtime::EventTracer;
+using ::executorch::runtime::EventTracerDebugLogLevel;
+using ::executorch::runtime::EventTracerEntry;
+using ::executorch::runtime::kUnsetBundledInputIndex;
+using ::executorch::runtime::kUnsetChainId;
+using ::executorch::runtime::kUnsetDebugHandle;
+using ::executorch::runtime::LoggedEValueType;
 } // namespace executor
 } // namespace torch

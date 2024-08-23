@@ -11,9 +11,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-
-namespace torch {
-namespace executor {
+using executorch::runtime::ArrayRef;
 
 TEST(TestArrayRef, ImplicitTypeConversion) {
   ArrayRef<int64_t> oneElement_1 = {1};
@@ -22,6 +20,3 @@ TEST(TestArrayRef, ImplicitTypeConversion) {
   ArrayRef<int64_t> oneElement_2 = 1;
   EXPECT_EQ(oneElement_2.size(), 1);
 }
-
-} // namespace executor
-} // namespace torch

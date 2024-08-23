@@ -8,7 +8,10 @@ import unittest
 from typing import Optional
 
 import torch
+from executorch.backends.xnnpack.partition.config.generic_node_configs import SDPAConfig
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.test.tester.tester import ToEdgeTransformAndLower
 
 
 class TestSDPA(unittest.TestCase):
@@ -61,9 +64,9 @@ class TestSDPA(unittest.TestCase):
         (
             Tester(module, inputs)
             .export()
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_bmm_default": 2})
-            .partition()
+            .to_edge_transform_and_lower(
+                ToEdgeTransformAndLower([XnnpackPartitioner(configs=[SDPAConfig])])
+            )
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 ["executorch_exir_dialects_edge__ops_aten_bmm_default"],

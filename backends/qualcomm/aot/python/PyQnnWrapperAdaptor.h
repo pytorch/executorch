@@ -86,7 +86,7 @@ class PyQnnOpWrapper {
         break;
       default:
         QNN_EXECUTORCH_LOG_ERROR(
-            "%s has invalid data type: %d", name, data_type);
+            "%s has invalid data type: %d", name.c_str(), data_type);
         break;
     }
   }
@@ -171,7 +171,7 @@ class PyQnnTensorWrapper {
         return {enc_data, data.axis};
       }
       default:
-        QNN_EXECUTORCH_LOG_ERROR(
+        QNN_EXECUTORCH_LOG_WARN(
             "%s QNN_QUANTIZATION_ENCODING_UNDEFINED detected",
             GetName().c_str());
         break;

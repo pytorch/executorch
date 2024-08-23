@@ -13,8 +13,8 @@
 #include <executorch/runtime/core/portable_type/tensor.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 /**
  * Implementation for ExecuTorch tensor util, should only be included in
  * an target with ATen mode turned off. Explicitly taking
@@ -116,7 +116,7 @@ Error copy_tensor_data(
   return Error::Ok;
 }
 
-__ET_NODISCARD Error set_tensor_data(
+ET_NODISCARD Error set_tensor_data(
     const torch::executor::Tensor& t,
     void* buffer,
     size_t buffer_size) {
@@ -137,7 +137,7 @@ void reset_data_ptr(const torch::executor::Tensor& tensor) {
 
 class TensorResizerFriend final {
  public:
-  __ET_NODISCARD static Error resize_tensor_impl(
+  ET_NODISCARD static Error resize_tensor_impl(
       exec_aten::TensorImpl* impl,
       exec_aten::ArrayRef<exec_aten::SizesType> new_sizes) {
     return impl->internal_resize_contiguous(new_sizes);
@@ -151,5 +151,5 @@ Error resize_tensor_impl(
 }
 } // namespace internal
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

@@ -7,6 +7,7 @@ def _operator_registry_preprocessor_flags():
     elif not runtime.is_oss:
         return select({
             "DEFAULT": [],
+            "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-256": ["-DMAX_KERNEL_NUM=256"],
             "fbsource//xplat/executorch/build/constraints:executorch-max-kernel-num-64": ["-DMAX_KERNEL_NUM=64"],
         })
     else:

@@ -13,8 +13,18 @@
 #include <cstdio>
 #include <cstdlib> /* strtol */
 
-namespace torch {
-namespace executor {
+using executorch::runtime::ArrayRef;
+using executorch::runtime::Backend;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::PyTorchBackendInterface;
+using executorch::runtime::Result;
 
 struct DemoOp {
   const char* name;
@@ -153,7 +163,7 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
   // backend you can imagine how this function could be used to actually
   // dispatch the inputs to the relevant backend/device.
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     EXECUTORCH_SCOPE_PROF("BackendWithCompiler::execute");
@@ -218,6 +228,3 @@ auto cls = BackendWithCompiler();
 Backend backend{"BackendWithCompilerDemo", &cls};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
-
-} // namespace executor
-} // namespace torch

@@ -34,8 +34,8 @@ public:
     ///
     /// @param op_path_to_value_map A dictionary with the operation path as the key and the operation's value as the
     /// value.
-    /// @param op_path_to_debug_symbol_name_map A dictionary with the operation path as the key and the symbol name as
-    /// the value. The symbol name is the delegate handle.
+    /// @param op_path_to_debug_symbol_name_map A dictionary with the operation path as the key and the debug symbol
+    /// name as the value.
     virtual void log_intermediate_tensors(
         NSDictionary<ETCoreMLModelStructurePath*, MLMultiArray*>* op_path_to_value_map,
         NSDictionary<ETCoreMLModelStructurePath*, NSString*>* op_path_to_debug_symbol_name_map) const noexcept = 0;

@@ -28,9 +28,6 @@
 [submodule "backends/xnnpack/third-party/pthreadpool"]
 	path = backends/xnnpack/third-party/pthreadpool
 	url = https://github.com/Maratyszcza/pthreadpool.git
-[submodule "examples/third-party/LLaVA"]
-	path = examples/third-party/LLaVA
-	url = https://github.com/haotian-liu/LLaVA.git
 [submodule "examples/third-party/fbjni"]
 	path = examples/third-party/fbjni
 	url = https://github.com/facebookincubator/fbjni.git

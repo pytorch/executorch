@@ -25,11 +25,12 @@ class XNNCompiler {
   // Takes Flatbuffer Serialized XNNPACK Model and rebuilds the xnn-subgraph
   // returns an executor object that holds the xnn runtime object which we
   // can then use to set inputs and run inference using the xnn graph.
-  __ET_NODISCARD static Error compileModel(
+  ET_NODISCARD static Error compileModel(
       const void* buffer_pointer,
       size_t num_bytes,
       XNNExecutor* executor,
-      MemoryAllocator* runtime_allocator);
+      MemoryAllocator* runtime_allocator,
+      xnn_workspace_t workspace);
 };
 
 } // namespace delegate

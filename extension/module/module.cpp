@@ -33,7 +33,24 @@
         std::move(*et_result__));                                      \
   })
 
-namespace torch::executor {
+using ::exec_aten::Tensor;
+using ::executorch::extension::FileDataLoader;
+using ::executorch::extension::MallocMemoryAllocator;
+using ::executorch::extension::MmapDataLoader;
+using ::executorch::runtime::DataLoader;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::EValue;
+using ::executorch::runtime::EventTracer;
+using ::executorch::runtime::HierarchicalAllocator;
+using ::executorch::runtime::MemoryAllocator;
+using ::executorch::runtime::MemoryManager;
+using ::executorch::runtime::MethodMeta;
+using ::executorch::runtime::Program;
+using ::executorch::runtime::Result;
+using ::executorch::runtime::Span;
+
+namespace executorch {
+namespace extension {
 
 Module::Module(
     const std::string& file_path,
@@ -41,10 +58,10 @@ Module::Module(
     std::unique_ptr<EventTracer> event_tracer)
     : file_path_(file_path),
       load_mode_(load_mode),
-      memory_allocator_(std::make_unique<util::MallocMemoryAllocator>()),
-      temp_allocator_(std::make_unique<util::MallocMemoryAllocator>()),
+      memory_allocator_(std::make_unique<MallocMemoryAllocator>()),
+      temp_allocator_(std::make_unique<MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
-  runtime_init();
+  ::executorch::runtime::runtime_init();
 }
 
 Module::Module(
@@ -55,12 +72,28 @@ Module::Module(
     : data_loader_(std::move(data_loader)),
       memory_allocator_(
           memory_allocator ? std::move(memory_allocator)
-                           : std::make_unique<util::MallocMemoryAllocator>()),
+                           : std::make_unique<MallocMemoryAllocator>()),
       temp_allocator_(
           temp_allocator ? std::move(temp_allocator)
-                         : std::make_unique<util::MallocMemoryAllocator>()),
+                         : std::make_unique<MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
-  runtime_init();
+  ::executorch::runtime::runtime_init();
+}
+
+Module::Module(
+    std::shared_ptr<Program> program,
+    std::unique_ptr<MemoryAllocator> memory_allocator,
+    std::unique_ptr<MemoryAllocator> temp_allocator,
+    std::unique_ptr<EventTracer> event_tracer)
+    : program_(std::move(program)),
+      memory_allocator_(
+          memory_allocator ? std::move(memory_allocator)
+                           : std::make_unique<MallocMemoryAllocator>()),
+      temp_allocator_(
+          temp_allocator ? std::move(temp_allocator)
+                         : std::make_unique<MallocMemoryAllocator>()),
+      event_tracer_(std::move(event_tracer)) {
+  ::executorch::runtime::runtime_init();
 }
 
 Error Module::load(const Program::Verification verification) {
@@ -69,25 +102,30 @@ Error Module::load(const Program::Verification verification) {
       switch (load_mode_) {
         case LoadMode::File:
           data_loader_ =
-              ET_UNWRAP_UNIQUE(util::FileDataLoader::from(file_path_.c_str()));
+              ET_UNWRAP_UNIQUE(FileDataLoader::from(file_path_.c_str()));
           break;
         case LoadMode::Mmap:
-          data_loader_ =
-              ET_UNWRAP_UNIQUE(util::MmapDataLoader::from(file_path_.c_str()));
+          data_loader_ = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
+              file_path_.c_str(), MmapDataLoader::MlockConfig::NoMlock));
           break;
         case LoadMode::MmapUseMlock:
-          data_loader_ = ET_UNWRAP_UNIQUE(util::MmapDataLoader::from(
-              file_path_.c_str(), util::MmapDataLoader::MlockConfig::NoMlock));
+          data_loader_ =
+              ET_UNWRAP_UNIQUE(MmapDataLoader::from(file_path_.c_str()));
           break;
         case LoadMode::MmapUseMlockIgnoreErrors:
-          data_loader_ = ET_UNWRAP_UNIQUE(util::MmapDataLoader::from(
+          data_loader_ = ET_UNWRAP_UNIQUE(MmapDataLoader::from(
               file_path_.c_str(),
-              util::MmapDataLoader::MlockConfig::UseMlockIgnoreErrors));
+              MmapDataLoader::MlockConfig::UseMlockIgnoreErrors));
           break;
       }
     };
-    program_ =
+    auto program =
         ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
+    program_ = std::shared_ptr<Program>(
+        program.release(),
+        [data_loader = std::move(data_loader_)](Program* pointer) {
+          delete pointer;
+        });
   }
   return Error::Ok;
 }
@@ -178,4 +216,5 @@ Error Module::set_output_data_ptr(Tensor& output_tensor, size_t output_index) {
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);
 }
 
-} // namespace torch::executor
+} // namespace extension
+} // namespace executorch

@@ -15,13 +15,21 @@
 
 #include <executorch/runtime/platform/compiler.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Initialize the ExecuTorch global runtime.
  */
 void runtime_init();
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::runtime_init;
 } // namespace executor
 } // namespace torch

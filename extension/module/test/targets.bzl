@@ -14,6 +14,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/kernels/portable:generated_lib",
+            "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/module:module",
         ],
         env = {

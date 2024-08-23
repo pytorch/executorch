@@ -7,9 +7,9 @@
 
 #import "model_package_info.h"
 
-#import <ETCoreMLLogging.h>
-#import <objc_json_serde.h>
-#import <serde_json.h>
+#import "ETCoreMLLogging.h"
+#import "objc_json_serde.h"
+#import "serde_json.h"
 
 namespace  {
 struct ModelPackageInfoKeys {

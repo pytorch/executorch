@@ -88,7 +88,7 @@ To execute the program on the bundled input, we need to load the bundled input i
  * @returns Return Error::Ok if load successfully, or the error happens during
  * execution.
  */
-__ET_NODISCARD Error LoadBundledInput(
+ET_NODISCARD Error LoadBundledInput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
     size_t testset_idx);
@@ -111,7 +111,7 @@ We call `torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput
  * @returns Return Error::Ok if two outputs match, or the error happens during
  * execution.
  */
-__ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
+ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
     size_t testset_idx,
@@ -122,7 +122,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
 
 ### Example
 
-Here we provide an example about how to run the bundled program step by step. Most of the code are borrowed from "fbcode/executorch/sdk/fb/runners/executor_runner.cpp" and please review that file if you need more info and context:
+Here we provide an example about how to run the bundled program step by step. Most of the code are borrowed from "fbcode/executorch/devtools/fb/runners/executor_runner.cpp" and please review that file if you need more info and context:
 
 ```c++
     // method_name is the name for the method we want to test

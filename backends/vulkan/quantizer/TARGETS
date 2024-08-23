@@ -1,0 +1,13 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "vulkan_quantizer",
+    srcs = [
+        "vulkan_quantizer.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)

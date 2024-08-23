@@ -115,6 +115,12 @@ void record_scalar_add_buffer(
     api::vTensor& v_ten,
     float offset);
 
+void record_reference_matmul(
+    api::Context* context,
+    api::vTensor& out,
+    api::vTensor& mat1,
+    api::vTensor& mat2);
+
 //
 // Input & Output Utilities
 //
@@ -132,6 +138,11 @@ fill_staging(api::StorageBuffer& staging, float val, int numel = -1) {
 void fill_vtensor(api::vTensor& vten, std::vector<float>& data);
 
 void fill_vtensor(api::vTensor& vten, float val, bool iota = false);
+
+std::vector<float> create_random_float_buffer(
+    const size_t numel,
+    const float min = 0,
+    const float max = 1);
 
 void fill_vtensor(
     ComputeGraph& graph,
@@ -231,3 +242,9 @@ void print_vector(
   }
   std::cout << std::endl;
 }
+
+//
+// Misc. Utilities
+//
+
+bool check_close(float a, float b, float atol = 1e-4, float rtol = 1e-5);

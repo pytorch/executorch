@@ -14,8 +14,9 @@
 #include <optional>
 #include <unordered_map>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
+namespace llm {
 
 using Encoder = std::unordered_map<std::string, uint64_t>;
 using Decoder = std::unordered_map<uint64_t, std::string>;
@@ -32,15 +33,15 @@ class Tiktoken : public Tokenizer {
       std::unique_ptr<std::vector<std::string>> special_tokens,
       size_t bos_token_index,
       size_t eos_token_index);
-  ~Tiktoken() {}
 
-  Error load(const std::string& tokenizer_path) override;
+  ::executorch::runtime::Error load(const std::string& tokenizer_path) override;
 
-  Result<std::vector<uint64_t>>
+  ::executorch::runtime::Result<std::vector<uint64_t>>
   encode(const std::string& input, int8_t bos, int8_t eos) const override;
 
-  Result<std::string> decode(uint64_t prev_token, uint64_t token)
-      const override;
+  ::executorch::runtime::Result<std::string> decode(
+      uint64_t prev_token,
+      uint64_t token) const override;
 
  private:
   template <typename T>
@@ -75,5 +76,18 @@ class Tiktoken : public Tokenizer {
   Re2UPtr _regex;
   Re2UPtr _special_token_regex;
 };
+
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::Decoder;
+using ::executorch::extension::llm::Encoder;
+using ::executorch::extension::llm::Re2UPtr;
+using ::executorch::extension::llm::Tiktoken;
 } // namespace executor
 } // namespace torch

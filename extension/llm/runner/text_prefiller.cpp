@@ -11,7 +11,9 @@
 
 #include <executorch/extension/llm/runner/text_prefiller.h>
 
-namespace torch::executor {
+namespace executorch {
+namespace extension {
+namespace llm {
 
 TextPrefiller::TextPrefiller(
     Tokenizer* tokenizer,
@@ -23,7 +25,7 @@ TextPrefiller::TextPrefiller(
       use_kv_cache_(use_kv_cache),
       enable_parallel_prefill_(enable_parallel_prefill) {}
 
-Result<uint64_t> TextPrefiller::prefill(
+::executorch::runtime::Result<uint64_t> TextPrefiller::prefill(
     std::vector<uint64_t>& prompt_tokens,
     int64_t start_pos,
     std::function<void(const std::string&)> token_callback) {
@@ -40,11 +42,14 @@ Result<uint64_t> TextPrefiller::prefill(
   if (enable_parallel_prefill_ || !use_kv_cache_) {
     // initialize tensor wrappers
     ManagedTensor managed_tokens(
-        prompt_tokens.data(), {1, num_prompt_tokens}, ScalarType::Long);
+        prompt_tokens.data(),
+        {1, num_prompt_tokens},
+        exec_aten::ScalarType::Long);
 
-    ManagedTensor managed_start_pos(&start_pos, {1}, ScalarType::Long);
+    ManagedTensor managed_start_pos(
+        &start_pos, {1}, exec_aten::ScalarType::Long);
 
-    Result<exec_aten::Tensor> outputs_res =
+    ::executorch::runtime::Result<exec_aten::Tensor> outputs_res =
         text_decoder_runner_->step(managed_tokens, managed_start_pos);
 
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
@@ -59,9 +64,11 @@ Result<uint64_t> TextPrefiller::prefill(
     // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
     uint64_t prev = prompt_tokens[0];
     uint64_t cur;
-    for (int i = 1; i < prompt_tokens.size(); i++) {
+    for (int i = 0; i < prompt_tokens.size(); i++) {
       cur = prompt_tokens[i];
-      token_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
+      if (token_callback && cur != tokenizer_->bos_tok()) {
+        token_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
+      }
       prev = cur;
     }
     cur_token = text_decoder_runner_->logits_to_token(outputs_res.get());
@@ -74,14 +81,21 @@ Result<uint64_t> TextPrefiller::prefill(
     cur_token = prompt_tokens[0];
 
     // initialize tensor wrappers
-    ManagedTensor managed_tokens(&cur_token, {1, 1}, ScalarType::Long);
+    ManagedTensor managed_tokens(
+        &cur_token, {1, 1}, exec_aten::ScalarType::Long);
 
-    ManagedTensor managed_start_pos(&pos_data, {1}, ScalarType::Long);
+    ManagedTensor managed_start_pos(
+        &pos_data, {1}, exec_aten::ScalarType::Long);
 
     // run the first token and get back logits tensor. Assuming the first token
     // is bos so don't callback.
     exec_aten::Tensor logits_tensor = ET_UNWRAP(
         text_decoder_runner_->step(managed_tokens, managed_start_pos));
+
+    // if first token is not bos, we need to callback
+    if (cur_token != tokenizer_->bos_tok()) {
+      token_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
+    }
     pos = 1; // start from index 1
 
     while (pos < num_prompt_tokens) {
@@ -107,4 +121,6 @@ Result<uint64_t> TextPrefiller::prefill(
   return cur_token;
 }
 
-} // namespace torch::executor
+} // namespace llm
+} // namespace extension
+} // namespace executorch

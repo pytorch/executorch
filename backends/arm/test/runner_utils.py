@@ -202,7 +202,7 @@ class RunnerUtil:
     def run_corstone300(
         self,
         inputs: Tuple[torch.Tensor],
-    ) -> torch.Tensor:
+    ) -> list[torch.Tensor]:
 
         assert (
             self._has_init_run
@@ -268,17 +268,17 @@ class RunnerUtil:
 
         tosa_ref_output = np.fromfile(out_path_with_suffix, dtype=np.float32)
         tosa_ref_output = torch.from_numpy(tosa_ref_output).reshape(inputs[0].shape)
-        return tosa_ref_output
+        return [tosa_ref_output]
 
     def run_tosa_ref_model(
         self,
         inputs: Tuple[torch.Tensor],
-    ) -> torch.Tensor:
+    ) -> list[torch.Tensor]:
         """
-        Run TOSA reference model using the tosa_refence_model program.
+        Run TOSA reference model using the tosa_reference_model program.
 
         In order to do that we need:
-        1. desc.json, which points to files needed by tosa_refence_model.
+        1. desc.json, which points to files needed by tosa_reference_model.
         2. output.tosa, which is the TOSA buffer that describes the model we're
            trying to run.
 
@@ -287,12 +287,6 @@ class RunnerUtil:
         All these files are saved on disk in self.intermediate_path.
 
         Args:
-            params_input (Tuple[List[str], List[QuantizationParams]]): A tuple
-                containing a list of input node names and a list of their
-                quantization parameters (if model is quantized).
-            param_output (Tuple[str, QuantizationParams]): A tuple containing
-                the output node name and its quantization parameters (if
-                model is quantized).
             inputs (Tuple[torch.Tensor]): The input data to run the TOSA
 
         Returns:
@@ -369,23 +363,26 @@ class RunnerUtil:
         # Load desc.json, just to get the name of the output file above
         with open(desc_file_path) as f:
             desc_json = json.load(f)
-        ofm_file_npy = os.path.join(self.intermediate_path, desc_json["ofm_file"][0])
 
-        # Load the output file (OFM) and return it as a numpy array
-        tosa_ref_output = np.load(ofm_file_npy)
+        tosa_ref_outputs = []
+        for ofm_file in desc_json["ofm_file"]:
+            ofm_file_npy = os.path.join(self.intermediate_path, ofm_file)
 
-        if self.is_quantized:
-            # Need to dequant back to FP32 for comparison with torch output
-            quant_param = self.qp_output
-            assert (
-                quant_param is not None
-            ), "There are no quantization parameters, check output parameters"
-            tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
+            # Load the output file (OFM) and return it as a numpy array
+            tosa_ref_output = np.load(ofm_file_npy)
 
-        # tosa_output is a numpy array, convert to torch tensor for comparison
-        tosa_ref_output = torch.from_numpy(tosa_ref_output.astype("float32"))
+            if self.is_quantized:
+                # Need to dequant back to FP32 for comparison with torch output
+                quant_param = self.qp_output
+                assert (
+                    quant_param is not None
+                ), "There are no quantization parameters, check output parameters"
+                tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
 
-        return tosa_ref_output
+            # tosa_output is a numpy array, convert to torch tensor for comparison
+            tosa_ref_outputs.append(torch.from_numpy(tosa_ref_output.astype("float32")))
+
+        return tosa_ref_outputs
 
 
 def prep_data_for_save(
@@ -420,7 +417,7 @@ def save_npy(
     Parameters:
         path: the directory where to save the data.
         data: the data to save.
-        is_quantize: whether to quantize the data before saving it.
+        is_quantized: whether to quantize the data before saving it.
         input_name: the name of the file, without file-ending.
         quant_param: the parameters to use for quantization.
     Returns:
@@ -445,7 +442,7 @@ def save_bytes(
     Parameters:
         path: the directory where to save the data.
         data: the data to save.
-        is_quantize: whether to quantize the data before saving it.
+        is_quantized: whether to quantize the data before saving it.
         input_name: the name of the file, without file-ending.
         quant_param: the parameters to use for quantization.
     Returns:

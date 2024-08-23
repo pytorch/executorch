@@ -119,7 +119,7 @@ auto graphNode = nodePtr->mpsnode_union_as_MPS##aot_name();                     
     graphNode->output_id()                                                         \
   );                                                                               \
   ET_CHECK_OR_RETURN_ERROR(                                                        \
-    isMacOS13OrNewer(), NotSupported,                                              \
+    is_macos_13_or_newer(), NotSupported,                                              \
     "%s supported by MPS on MacOS13.0+/iOS16.1+", #aot_name);                       \
                                                                                    \
   _idToMPSGraphTensor[graphNode->output_id()] = binaryOpTensor(                    \
@@ -176,7 +176,7 @@ MPSGraphTensor* mpsTruncTensor(MPSGraphTensor* inputTensor, MPSGraph* mpsGraph) 
     return inputTensor;
   }
 
-  if (!isMacOS13OrNewer(MacOSVersion::MACOS_VER_13_0_PLUS)) {
+  if (!is_macos_13_or_newer(MacOSVersion::MACOS_VER_13_0_PLUS)) {
     MPSGraphTensor* zeroTensor = [mpsGraph constantWithScalar:0.0 dataType:inputTensor.dataType];
     MPSGraphTensor* predicateTensor = [mpsGraph lessThanWithPrimaryTensor:inputTensor
                                                           secondaryTensor:zeroTensor

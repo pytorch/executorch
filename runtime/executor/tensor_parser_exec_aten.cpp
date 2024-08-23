@@ -15,14 +15,28 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace deserialization {
+
+// Provides access to private Program methods.
+class TensorParser final {
+ public:
+  ET_NODISCARD static Error load_mutable_subsegment_into(
+      const Program* program,
+      size_t mutable_data_segments_index,
+      size_t offset_index,
+      size_t size,
+      void* buffer) {
+    return program->load_mutable_subsegment_into(
+        mutable_data_segments_index, offset_index, size, buffer);
+  }
+};
 
 namespace {
 
 // Retrieve the buffer specified by the allocation_info
-__ET_NODISCARD Result<void*> getMemPlannedPtr(
+ET_NODISCARD Result<void*> getMemPlannedPtr(
     const executorch_flatbuffer::AllocationDetails* allocation_info,
     size_t nbytes,
     HierarchicalAllocator* allocator) {
@@ -54,7 +68,7 @@ __ET_NODISCARD Result<void*> getMemPlannedPtr(
 }
 } // namespace
 
-__ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
+ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
     EValue* values_,
     MemoryManager* memory_manager) {
@@ -83,7 +97,7 @@ __ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
       evalp_list, tensor_list, tensor_indices->size());
 }
 
-__ET_NODISCARD Result<void*> getTensorDataPtr(
+ET_NODISCARD Result<void*> getTensorDataPtr(
     const executorch_flatbuffer::Tensor* s_tensor,
     const Program* program,
     size_t nbytes,
@@ -94,14 +108,17 @@ __ET_NODISCARD Result<void*> getTensorDataPtr(
 
   // Memory Planned, with initial state
   if (data_buffer_idx > 0 && allocation_info != nullptr) {
-    // Stub case for now.
+    auto planned_ptr = getMemPlannedPtr(allocation_info, nbytes, allocator);
+    if (!planned_ptr.ok()) {
+      return planned_ptr.error();
+    }
+    auto err = TensorParser::load_mutable_subsegment_into(
+        program, 0, s_tensor->data_buffer_idx(), nbytes, planned_ptr.get());
 
-    // Get memory planned data pointer
-
-    // Call something like program.load_into_buffer(s_tensor->segment_idx,
-    // s_tensor->data_buffer_idx, mem_planned_buffer, nbytes)
-
-    return Error::NotImplemented;
+    if (err != Error::Ok) {
+      return err;
+    }
+    return planned_ptr;
 
     // Constant
   } else if (data_buffer_idx > 0 && allocation_info == nullptr) {
@@ -126,5 +143,5 @@ __ET_NODISCARD Result<void*> getTensorDataPtr(
 }
 
 } // namespace deserialization
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

@@ -18,6 +18,8 @@ template <> inline size_t to_value(NSNumber* value) { return value.unsignedLongV
 
 template <> inline ssize_t to_value(NSNumber* value) { return value.longLongValue; }
 
+template <> inline int to_value(NSNumber* value) { return value.intValue; }
+
 template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value, T>::type>
 inline NSArray<NSNumber*>* to_array(const std::vector<T>& array) {
     NSMutableArray<NSNumber*>* result = [NSMutableArray arrayWithCapacity:array.size()];

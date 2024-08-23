@@ -14,7 +14,7 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::LogLevel;
+using executorch::runtime::LogLevel;
 
 class PalSpy : public PlatformIntercept {
  public:
@@ -75,7 +75,8 @@ class PalSpy : public PlatformIntercept {
 // Demonstrate what would happen if we didn't intercept the PAL calls.
 TEST(ExecutorPalOverrideTest, DiesIfNotIntercepted) {
   ET_EXPECT_DEATH(
-      torch::executor::runtime_init(), "et_pal_init call was not intercepted");
+      executorch::runtime::runtime_init(),
+      "et_pal_init call was not intercepted");
 }
 
 TEST(ExecutorPalOverrideTest, InitIsRegistered) {
@@ -83,7 +84,7 @@ TEST(ExecutorPalOverrideTest, InitIsRegistered) {
   InterceptWith iw(spy);
 
   EXPECT_EQ(spy.init_call_count, 0);
-  torch::executor::runtime_init();
+  executorch::runtime::runtime_init();
   EXPECT_EQ(spy.init_call_count, 1);
 }
 

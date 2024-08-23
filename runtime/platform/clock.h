@@ -15,8 +15,8 @@
 
 #include <executorch/runtime/platform/platform.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Convert an interval from units of system ticks to nanoseconds.
@@ -31,5 +31,13 @@ inline uint64_t ticks_to_ns(et_timestamp_t ticks) {
   return static_cast<uint64_t>(ticks) * ratio.numerator / ratio.denominator;
 }
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::ticks_to_ns;
 } // namespace executor
 } // namespace torch

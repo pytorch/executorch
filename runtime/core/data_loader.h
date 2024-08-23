@@ -14,8 +14,8 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Loads from a data source.
@@ -87,8 +87,8 @@ class DataLoader {
    *
    * @returns a `FreeableBuffer` that owns the loaded data.
    */
-  __ET_NODISCARD virtual Result<FreeableBuffer>
-  load(size_t offset, size_t size, const SegmentInfo& segment_info) = 0;
+  ET_NODISCARD virtual Result<FreeableBuffer>
+  load(size_t offset, size_t size, const SegmentInfo& segment_info) const = 0;
 
   /**
    * Loads data from the underlying data source into the provided buffer.
@@ -104,11 +104,11 @@ class DataLoader {
    *
    * @returns an Error indicating if the load was successful.
    */
-  __ET_NODISCARD virtual Error load_into(
+  ET_NODISCARD virtual Error load_into(
       size_t offset,
       size_t size,
       const SegmentInfo& segment_info,
-      void* buffer) {
+      void* buffer) const {
     // Using a stub implementation here instead of pure virtual to expand the
     // data_loader interface in a backwards compatible way.
     (void)buffer;
@@ -122,8 +122,16 @@ class DataLoader {
   /**
    * Returns the length of the underlying data source, typically the file size.
    */
-  __ET_NODISCARD virtual Result<size_t> size() const = 0;
+  ET_NODISCARD virtual Result<size_t> size() const = 0;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::DataLoader;
 } // namespace executor
 } // namespace torch

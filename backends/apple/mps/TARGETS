@@ -94,8 +94,9 @@ runtime.python_test(
         "//caffe2:torch",
         "//executorch/examples/models:models",
         "//executorch/exir/tests:models",
-        "//executorch/sdk:lib",
-        "//executorch/sdk/bundled_program/serialize:lib",
+        "//executorch/extension/export_util:export_util",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/bundled_program/serialize:lib",
         "fbsource//third-party/pypi/pytest:pytest",
     ],
 )
