@@ -68,9 +68,9 @@
 #include "llama_runner/Utils.h"
 #include "llama_runner/llm_helper/include/llm_types.h"
 
+#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
 #include <executorch/extension/llm/tokenizer/tiktoken.h>
-#include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 
 // Llama model options
 DEFINE_uint64(
