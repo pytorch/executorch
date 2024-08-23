@@ -88,7 +88,7 @@ def mod(a: SymInt, b: SymInt) -> SymInt:
 
 @bind_pattern_to_op(executorch_prims_lib, "neg.Scalar(Scalar a) -> Scalar")
 def neg(a: _SymScalar) -> _SymScalar:
-    return -a
+    return -a  # pyre-ignore
 
 
 _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[OpOverload, OpOverload] = {
