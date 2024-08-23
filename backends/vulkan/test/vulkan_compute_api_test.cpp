@@ -2427,6 +2427,7 @@ TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
       prepack);
 
   CALL_TEST_FN_FOR_W_PACKED(RUN_TESTS);
+  CALL_TEST_FN_FOR_C_PACKED(RUN_TESTS);
 
 #undef RUN_TESTS
 }

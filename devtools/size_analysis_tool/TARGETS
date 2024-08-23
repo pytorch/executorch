@@ -1,0 +1,51 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_library(
+    name = "size_analysis_tool_lib",
+    srcs = [
+        "size_analysis_tool.py",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools:lib",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
+    ],
+)
+
+python_binary(
+    name = "size_analysis_tool",
+    srcs = [
+        "size_analysis_tool.py",
+    ],
+    main_function = "executorch.devtools.size_analysis_tool.size_analysis_tool.main",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools:lib",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
+    ],
+)
+
+python_unittest(
+    name = "size_analysis_tool_test",
+    srcs = [
+        "size_analysis_tool.py",
+        "size_analysis_tool_test.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/devtools:lib",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/passes:spec_prop_pass",
+    ],
+)

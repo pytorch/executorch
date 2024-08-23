@@ -656,10 +656,11 @@ bool vTensorStorage::is_copy_of(const vTensorStorage& other) const {
   if (storage_type_ != other.storage_type_) {
     return false;
   }
-  if (storage_type_ == utils::kBuffer) {
-    return buffer_.is_copy_of(other.buffer_);
+  // Copies are only enabled for buffer storage at the moment
+  if (storage_type_ != utils::kBuffer) {
+    return false;
   }
-  return false;
+  return buffer_.is_copy_of(other.buffer_);
 }
 
 void vTensorStorage::discard_and_reallocate(

@@ -225,7 +225,7 @@ void add_matmul_node(
     add_matmul_naive_texture3d_node(
         graph, mat1, mat2_data, out, mat2_is_transposed);
   } else {
-    VK_THROW("Input should be channel packed or width packed.");
+    VK_THROW("Input texture should be channel packed or width packed.");
   }
 }
 
