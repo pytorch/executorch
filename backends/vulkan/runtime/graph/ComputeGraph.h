@@ -356,10 +356,17 @@ class ComputeGraph final {
    * `vTensor` value at `vref`. See the copy constructor of `api::vTensor` for
    * more details.
    */
+  ValueRef add_tensor_view(const ValueRef vref);
+
+  /*
+   * Use the copy constructor of `api::vTensor` to create a "view" of the
+   * `vTensor` value at `vref` with different sizes and dim order. See the copy
+   * constructor of `api::vTensor` for more details.
+   */
   ValueRef add_tensor_view(
       const ValueRef vref,
       const std::vector<int64_t>& sizes,
-      const std::vector<int64_t>& strides,
+      const std::vector<int64_t>& dim_order,
       const size_t offset_numel = 0);
 
   /*

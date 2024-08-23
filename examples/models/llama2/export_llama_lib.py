@@ -300,7 +300,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--generate_full_logits",
         action="store_true",
         required=False,
-        default=True,
+        default=False,
         help="Generate logits for all inputs.",
     )
     return parser
@@ -598,7 +598,7 @@ def _load_llama_model(
     params_path: str,
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
-    generate_full_logits: bool = True,
+    generate_full_logits: bool = False,
     weight_type: WeightType = WeightType.LLAMA,
     enable_dynamic_shape: bool = False,
     verbose: bool = False,
