@@ -47,12 +47,6 @@ void main() {
   int mat2_id = to_buffer_id(
       ivec4(out_idx.x, 0, out_idx.z, out_idx.w), mat2_strides);
 
-  int orig_mat1_id = to_buffer_id(
-      ivec4(0, out_idx.y, out_idx.z, out_idx.w), mat1_strides);
-
-  int orig_mat2_id = to_buffer_id(
-      ivec4(out_idx.x, 0, 0, 0), mat2_strides);
-
   T sum = T(0.0);
   for (int i = 0; i < mat1_sizes.x; ++i) {
     sum += t_mat1[mat1_id] * t_mat2[mat2_id];

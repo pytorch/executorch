@@ -22,6 +22,8 @@ import pkg_resources
 
 import torch
 
+from executorch.devtools.etrecord import generate_etrecord
+
 from executorch.examples.models.llama2.llama_transformer import ModelArgs
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
@@ -40,8 +42,6 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_pt2e_quantizers,
     get_qnn_quantizer,
 )
-
-from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
@@ -300,7 +300,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--generate_full_logits",
         action="store_true",
         required=False,
-        default=True,
+        default=False,
         help="Generate logits for all inputs.",
     )
     return parser
@@ -598,7 +598,7 @@ def _load_llama_model(
     params_path: str,
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
-    generate_full_logits: bool = True,
+    generate_full_logits: bool = False,
     weight_type: WeightType = WeightType.LLAMA,
     enable_dynamic_shape: bool = False,
     verbose: bool = False,

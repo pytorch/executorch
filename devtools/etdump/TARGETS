@@ -1,0 +1,38 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+runtime.python_library(
+    name = "schema_flatcc",
+    srcs = [
+        "schema_flatcc.py",
+    ],
+    visibility = [
+        "//executorch/devtools/...",
+    ],
+    deps = [
+        "//executorch/exir:scalar_type",
+    ],
+)
+
+runtime.python_library(
+    name = "serialize",
+    srcs = [
+        "serialize.py",
+    ],
+    resources = {
+        "//executorch/devtools/etdump:etdump_schema_flatcc.fbs": "etdump_schema_flatcc.fbs",
+        "//executorch/schema:scalar_type.fbs": "scalar_type.fbs",
+    },
+    visibility = [
+        "//executorch/devtools/...",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/setuptools:setuptools",
+        ":schema_flatcc",
+        "//executorch/exir/_serialize:lib",
+    ],
+)
