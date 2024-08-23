@@ -45,7 +45,7 @@ jobs:
         # Setup Apple certificate for iOS development
         BUILD_PROVISION_PROFILE_BASE64="${SECRET_EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64}" \
         BUILD_CERTIFICATE_BASE64="${SECRET_BUILD_CERTIFICATE_BASE64}" \
-        KEYCHAIN_PASSWORD="$SECRET_KEYCHAIN_PASSWORD}" \
+        KEYCHAIN_PASSWORD="${SECRET_KEYCHAIN_PASSWORD}" \
         .ci/scripts/setup-ios.sh
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
