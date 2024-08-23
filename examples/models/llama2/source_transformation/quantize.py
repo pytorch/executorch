@@ -131,6 +131,15 @@ def quantize(
         )
         model = gptq_quantizer.quantize(model, inputs)
         return model
+    elif qmode == "coreml_g4w":
+        from torchao.quantization.quant_api import Int4WeightOnlyQuantizer
+
+        quantizer = Int4WeightOnlyQuantizer(
+            precision=torch.float32, groupsize=32, inner_k_tiles=2, device=torch.device("cpu")
+        )
+        model = quantizer.quantize(model)
+
+        return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
 

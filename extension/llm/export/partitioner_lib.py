@@ -56,7 +56,7 @@ def get_mps_partitioner(use_kv_cache: bool = False):
 
 
 def get_coreml_partitioner(
-    use_kv_cache: bool = False, pt2e_quantize: Optional[str] = None
+    use_kv_cache: bool = False, pt2e_quantize: Optional[str] = None, quantization_mode: Optional[str] = None
 ):
     assert (
         use_kv_cache is True
@@ -82,7 +82,10 @@ def get_coreml_partitioner(
     if pt2e_quantize in ("coreml_8a_c8w", "coreml_baseline_8a_c8w"):
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS17)
     # In Core ML, 4-bit weight compression is introduced in iOS 18
-    if pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w"):
+    if (
+        pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w")
+        or quantization_mode == "coreml_g4w"
+    ):
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
     # In Core ML, stateful execution is introduced in iOS 18
     # TODO (https://github.com/pytorch/executorch/issues/4209)

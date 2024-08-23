@@ -144,7 +144,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--quantization_mode",
         type=str,
         default=None,
-        choices=["int8", "8da4w", "8da4w-gptq"],
+        choices=["int8", "8da4w", "8da4w-gptq", "coreml_g4w"],
         help="type of quantization",
     )
 
@@ -487,7 +487,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     if args.coreml:
         coreml_partitioner = get_coreml_partitioner(
-            args.use_kv_cache, args.pt2e_quantize
+            args.use_kv_cache, args.pt2e_quantize, args.quantization_mode
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
