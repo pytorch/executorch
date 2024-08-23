@@ -9,7 +9,6 @@
 #pragma once
 
 #include <executorch/runtime/platform/compiler.h>
-#include <sys/types.h> // TODO(T126923429): Include size_t, ssize_t
 
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 

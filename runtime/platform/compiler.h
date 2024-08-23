@@ -138,6 +138,14 @@
 #endif
 #endif // ifndef
 
+// Define size_t and ssize_t.
+#ifndef _WIN32
+#include <sys/types.h>
+#else
+#include <stddef.h>
+using ssize_t = ptrdiff_t;
+#endif
+
 // DEPRECATED: Use the non-underscore-prefixed versions instead.
 // TODO(T199005537): Remove these once all users have stopped using them.
 #define __ET_DEPRECATED ET_DEPRECATED
