@@ -1,0 +1,24 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+runtime.python_library(
+    name = "bundled_program_schema_py",
+    srcs = [
+        "__init__.py",
+        "bundled_program_schema.py",
+    ],
+    visibility = [
+        "//executorch/devtools/bundled_program/...",
+        "//executorch/devtools/etrecord/...",
+    ],
+    deps = [
+        "//executorch/exir:scalar_type",
+    ],
+)

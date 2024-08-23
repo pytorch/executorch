@@ -253,6 +253,13 @@ def main():
 
     with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)
+    logging.info(
+        "Required memory for activation in bytes: {}".format(
+            executorch_program._emitter_output.program.execution_plan[
+                0
+            ].non_const_buffer_sizes
+        ),
+    )
     logging.info(f"Exported ExecuTorch program to {args.pte_name}")
 
     # artifacts

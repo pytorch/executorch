@@ -99,7 +99,7 @@ class ModelArgs:
     # Generate logits for all inputs. When it's True, it would take big memory usage
     # at runtime. Enable it only necessary (e.g., use perplexity tools that requires
     # logits for all input tokens.)
-    generate_full_logits: bool = True
+    generate_full_logits: bool = False
     enable_dynamic_shape: bool = False  # export model with dynamic shape support
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     rope_theta: Optional[float] = (

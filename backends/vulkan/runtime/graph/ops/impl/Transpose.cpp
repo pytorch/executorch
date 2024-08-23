@@ -15,8 +15,6 @@
 
 #include <algorithm>
 
-#include <iostream>
-
 namespace vkcompute {
 
 /*
@@ -94,6 +92,8 @@ void add_transpose_view_node(
     ValueRef out_ref) {
   const int64_t dim0 = graph.extract_scalar<int64_t>(dim0_ref);
   const int64_t dim1 = graph.extract_scalar<int64_t>(dim1_ref);
+
+  check_transpose_view_args(graph, input_ref, dim0, dim1, out_ref);
 
   std::vector<int64_t> new_sizes = graph.sizes_of(input_ref);
   std::vector<int64_t> new_dim_order = graph.dim_order_of(input_ref);

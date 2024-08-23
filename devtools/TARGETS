@@ -1,0 +1,13 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "lib",
+    srcs = ["__init__.py"],
+    deps = [
+        "//executorch/devtools/bundled_program:core",
+        "//executorch/devtools/etrecord:etrecord",
+        "//executorch/devtools/inspector:lib",
+    ],
+)
