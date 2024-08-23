@@ -186,6 +186,21 @@ class ComputeGraph final {
 
   std::vector<int64_t> sizes_of(const ValueRef idx) const;
 
+  /*
+   * Returns the size of the tensor at `idx` along the specified dimension.
+   * Negative indexing is allowed.
+   */
+  template <typename T>
+  T size_at(const int64_t dim, const ValueRef idx) const {
+    const Value& val = values_.at(idx);
+    if (val.isTensor()) {
+      return static_cast<T>(utils::val_at(dim, val.toConstTensor().sizes()));
+    } else if (val.isTensorRef()) {
+      return static_cast<T>(utils::val_at(dim, val.toConstTensorRef().sizes));
+    }
+    VK_THROW("Could not get sizes of value with type ", val.type());
+  }
+
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
   inline utils::uvec3 image_extents_of(const ValueRef idx) const {
