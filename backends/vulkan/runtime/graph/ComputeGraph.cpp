@@ -146,7 +146,7 @@ std::vector<int64_t> ComputeGraph::dim_order_of(const ValueRef idx) const {
   if (val.isTensor()) {
     return val.toConstTensor().dim_order();
   }
-  VK_THROW("Could not get strides of value with type ", val.type());
+  VK_THROW("Could not get dim order of value with type ", val.type());
 }
 
 std::vector<int64_t> ComputeGraph::strides_of(const ValueRef idx) const {
