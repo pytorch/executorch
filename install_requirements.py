@@ -82,6 +82,12 @@ for arg in sys.argv[1:]:
         print(f"Error: Unknown option {arg}")
         sys.exit(1)
 
+# Use ClangCL on Windows.
+# ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
+# mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
+if os.name == "nt":
+    CMAKE_ARGS += " -T ClangCL"
+
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features.
 #
