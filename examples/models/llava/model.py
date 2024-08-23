@@ -216,16 +216,19 @@ class Llava(torch.nn.Module):
         result = torch.cat((embeds_before_img, image_embeds, embeds_after_img), dim=1)
         return result
 
+    # prefill using the in house text_model of llama transformer
     def prefill(
         self,
         prompt_before_image: torch.Tensor,
         images: torch.Tensor,
         prompt_after_image: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> (int, torch.Tensor):
         """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
         embeds = self.prefill_embedding(prompt_before_image, images, prompt_after_image)
-        return self.text_model.forward(None, torch.tensor([0]), embeds)
+        # returns the prefilled token length too, because the text model generates one logits in each forward call.
+        return embeds.shape[1], self.text_model.forward(None, torch.tensor([0]), embeds)
 
+    # reference prefill using the text model in HF
     def prefill_ref(
         self,
         prompt_before_image: torch.Tensor,

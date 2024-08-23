@@ -617,7 +617,7 @@ if(EXECUTORCH_BUILD_SDK)
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
   )
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
@@ -676,7 +676,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(NOT EXECUTORCH_BUILD_SDK)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output

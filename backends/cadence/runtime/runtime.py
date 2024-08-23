@@ -18,10 +18,10 @@ import torch
 
 from executorch.backends.cadence.runtime import utils
 from executorch.backends.cadence.runtime.executor import Executor
+from executorch.devtools import Inspector
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.schema import DataLocation
-from executorch.sdk import Inspector
 
 from numpy import ndarray
 
