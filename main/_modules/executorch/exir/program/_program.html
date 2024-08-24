@@ -484,7 +484,6 @@
 
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch._export</span>
-
 <span class="kn">from</span> <span class="nn">executorch.exir._serialize</span> <span class="kn">import</span> <span class="n">_serialize_pte_binary</span>
 <span class="kn">from</span> <span class="nn">executorch.exir._serialize._cord</span> <span class="kn">import</span> <span class="n">Cord</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
@@ -494,6 +493,7 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.emit._emitter</span> <span class="kn">import</span> <span class="n">_DelegateDebugIdentifierMap</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.error</span> <span class="kn">import</span> <span class="n">ExportError</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.graph_module</span> <span class="kn">import</span> <span class="n">get_control_flow_submodules</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.pass_base</span> <span class="kn">import</span> <span class="n">PassBase</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.pass_manager</span> <span class="kn">import</span> <span class="n">PassType</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">base_post_op_replace_passes</span><span class="p">,</span>
@@ -1112,25 +1112,48 @@
     <span class="k">return</span> <span class="n">new_ep</span>
 
 
-<span class="k">def</span> <span class="nf">pre_memory_planning_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">ExecutorchBackendConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
+<span class="k">def</span> <span class="nf">pre_memory_planning_passes</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">ExecutorchBackendConfig</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a list of passes to run before memory planning.</span>
+<span class="sd">    Get the sym shape eval pass based on the method name, if the pass is not in the dict, use the default pass.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Handle symbolic shape eval pass</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">default_pass</span> <span class="o">=</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span><span class="p">:</span>
+            <span class="n">sym_shape_eval_pass</span> <span class="o">=</span> <span class="n">default_pass</span>
+        <span class="c1"># pyre-ignore: Undefined attribute [16]</span>
+        <span class="n">sym_shape_eval_pass</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">default_pass</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span> <span class="n">PassBase</span><span class="p">):</span>
+        <span class="n">sym_shape_eval_pass</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;sym_shape_eval_pass must be a dict or a PassBase, got </span><span class="si">{</span><span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
     <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">remove_view_copy</span><span class="p">:</span>
-        <span class="c1"># pyre-ignore</span>
         <span class="k">return</span> <span class="p">[</span>
             <span class="n">NormalizeViewCopyBasePass</span><span class="p">(),</span>
             <span class="n">dead_code_elimination_pass</span><span class="p">,</span>
             <span class="n">ReplaceViewCopyWithViewPass</span><span class="p">(),</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span>
+            <span class="n">sym_shape_eval_pass</span><span class="p">,</span>
             <span class="n">config</span><span class="o">.</span><span class="n">to_out_var_pass</span><span class="p">,</span>
         <span class="p">]</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="c1"># pyre-ignore</span>
         <span class="k">return</span> <span class="p">[</span>
-            <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span>
+            <span class="n">sym_shape_eval_pass</span><span class="p">,</span>
             <span class="n">config</span><span class="o">.</span><span class="n">to_out_var_pass</span><span class="p">,</span>
         <span class="p">]</span>
 
 
-<span class="k">def</span> <span class="nf">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">ExecutorchBackendConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
+<span class="k">def</span> <span class="nf">edge_to_executorch_passes</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">ExecutorchBackendConfig</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns a list of passes to lower from edge to executorch.</span>
+<span class="sd">    Get the pre memory planning passes based on the method name, if the pass is not in the dict, use the default pass.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">passes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
         <span class="o">*</span><span class="n">config</span><span class="o">.</span><span class="n">passes</span><span class="p">,</span>
         <span class="n">SpecPropPass</span><span class="p">(),</span>
@@ -1139,7 +1162,7 @@
         <span class="c1"># there exists an unbacked symint operation.</span>
         <span class="n">EdgeToBackendOpsPass</span><span class="p">(),</span>
         <span class="n">RemoveGraphAssertsPass</span><span class="p">(),</span>
-    <span class="p">]</span> <span class="o">+</span> <span class="n">pre_memory_planning_passes</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+    <span class="p">]</span> <span class="o">+</span> <span class="n">pre_memory_planning_passes</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">passes</span>
 
@@ -1705,7 +1728,7 @@
             <span class="n">program</span> <span class="o">=</span> <span class="n">unsafe_remove_auto_functionalized_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">gm</span><span class="p">,</span> <span class="n">new_signature</span> <span class="o">=</span> <span class="n">insert_write_back_for_buffers_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">new_gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
-            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
                 <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
                 <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                 <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
