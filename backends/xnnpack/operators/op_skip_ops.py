@@ -98,6 +98,15 @@ class OpSymSizeInt(OpSkipOps):
 
 
 @register_node_visitor
+class OpChooseQparamsAffine(OpSkipOps):
+    """
+    do nothing if node is choose_qparams_affine.default
+    """
+
+    target = "quant.choose_qparams_affine.default"
+
+
+@register_node_visitor
 class OpChooseQparamsToken(OpSkipOps):
     """
     do nothing if node is choose_qparams_per_token_asymmetric.tensor

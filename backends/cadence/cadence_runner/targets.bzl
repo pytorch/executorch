@@ -19,12 +19,12 @@ def define_common_targets():
         visibility = ["PUBLIC"],
         deps = [
             "fbsource//arvr/third-party/gflags:gflags",
-            "fbsource//xplat/executorch/kernels/portable:generated_lib",
-            "fbsource//xplat/executorch/runtime/executor:program",
+            "fbsource//xplat/executorch/devtools/etdump:etdump_flatcc",
+            "fbsource//xplat/executorch/devtools/bundled_program:runtime",
             "fbsource//xplat/executorch/extension/data_loader:file_data_loader",
             "fbsource//xplat/executorch/extension/data_loader:buffer_data_loader",
+            "fbsource//xplat/executorch/kernels/portable:generated_lib",
+            "fbsource//xplat/executorch/runtime/executor:program",
             "fbsource//xplat/executorch/util:util",
-            "fbsource//xplat/executorch/sdk/etdump:etdump_flatcc",
-            "fbsource//xplat/executorch/sdk/bundled_program:runtime",
         ],
     )

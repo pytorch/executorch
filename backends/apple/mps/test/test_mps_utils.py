@@ -12,16 +12,16 @@ import executorch.exir as exir
 import torch
 from executorch.backends.apple.mps import MPSBackend
 from executorch.backends.apple.mps.partition import MPSPartitioner
+from executorch.devtools import BundledProgram
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
 from executorch.exir import EdgeCompileConfig, ExirExportedProgram, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import export_to_edge
-from executorch.sdk import BundledProgram
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
-)
 from torch.export import export
 
 # Config for Capturing the weights, will be moved in the future

@@ -61,7 +61,7 @@ class Llama2Model(EagerModelBase):
 
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
         self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
-        self.generate_full_logits = kwargs.get("generate_full_logits", True)
+        self.generate_full_logits = kwargs.get("generate_full_logits", False)
         self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
 
         self.max_seq_len = kwargs.get("max_seq_len", 128)

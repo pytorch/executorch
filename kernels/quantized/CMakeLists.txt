@@ -87,6 +87,37 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode"
     gen_custom_ops_aot_lib(
       LIB_NAME "quantized_ops_aot_lib" KERNEL_SOURCES "${_quantized_sources}"
     )
+
+    # Register quantized ops to portable_lib, so that they're available
+    # via pybindings.
+    if(TARGET portable_lib)
+      add_library(quantized_pybind_kernels_lib ${_quantized_kernels__srcs})
+      target_link_libraries(quantized_pybind_kernels_lib PRIVATE portable_lib)
+      target_compile_options(
+        quantized_pybind_kernels_lib PUBLIC ${_common_compile_options})
+      target_include_directories(
+        quantized_pybind_kernels_lib PUBLIC "${_common_include_directories}"
+      )
+      gen_selected_ops(
+        LIB_NAME "quantized_ops_pybind_lib" OPS_SCHEMA_YAML "${_yaml_file}"
+      )
+      generate_bindings_for_kernels(
+        LIB_NAME "quantized_ops_pybind_lib" CUSTOM_OPS_YAML "${_yaml_file}"
+      )
+      # Build a library for pybind usage.
+      # quantized_ops_pybind_lib: Register quantized ops kernels into
+      # Executorch runtime for pybind.
+      gen_operators_lib(
+        LIB_NAME "quantized_ops_pybind_lib"
+        KERNEL_LIBS quantized_pybind_kernels_lib
+        DEPS portable_lib
+      )
+      target_link_libraries(
+        quantized_ops_aot_lib
+        PUBLIC
+        quantized_ops_pybind_lib
+      )
+    endif()
   endif()
 endif()
 

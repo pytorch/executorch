@@ -53,8 +53,8 @@ class ShaderLayout final {
 
 struct ShaderInfo final {
   struct {
-    const uint32_t* bin;
-    uint32_t size;
+    const uint32_t* bin = nullptr;
+    uint32_t size = 0u;
   } src_code;
 
   std::string kernel_name{""};
@@ -71,6 +71,10 @@ struct ShaderInfo final {
       const uint32_t,
       std::vector<VkDescriptorType>,
       const utils::uvec3 tile_size);
+
+  operator bool() const {
+    return src_code.bin != nullptr;
+  };
 };
 
 bool operator==(const ShaderInfo& _1, const ShaderInfo& _2);

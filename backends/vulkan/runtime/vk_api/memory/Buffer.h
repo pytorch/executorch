@@ -150,6 +150,10 @@ class VulkanBuffer final {
     return (handle_ != VK_NULL_HANDLE);
   }
 
+  inline bool is_copy_of(const VulkanBuffer& other) const {
+    return (handle_ == other.handle_) && is_copy_;
+  }
+
   inline void bind_allocation(const Allocation& memory) {
     VK_CHECK_COND(!memory_, "Cannot bind an already bound allocation!");
     VK_CHECK(vmaBindBufferMemory(allocator_, memory.allocation, handle_));
