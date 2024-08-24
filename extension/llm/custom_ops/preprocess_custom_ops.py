@@ -16,6 +16,9 @@ preprocess_op_lib = Library("preprocess", "DEF")
 # Register and define tile_crop and out variant.
 preprocess_op_lib.define("tile_crop(Tensor input, int tile_size) -> Tensor")
 
+# Keep this in sync with model config.
+MAX_NUM_TILES = 4
+
 
 @impl(preprocess_op_lib, "tile_crop", dispatch_key="CompositeExplicitAutograd")
 def tile_crop_impl(input: torch.Tensor, tile_size: int) -> torch.Tensor:
@@ -56,6 +59,11 @@ def tile_crop_out_impl(
 # Register meta kernel to prevent export tracing into the tile_crop impl.
 @torch.library.register_fake("preprocess::tile_crop")
 def tile_crop(output: torch.Tensor, tile_size: int) -> torch.Tensor:
-    # Returned tensor is of size [n, 3, 224, 224], where n is the number of tiles.
-    # We should export with n = max_num_tiles. Set 50 for now.
-    return torch.empty([50, output.size(0), 224, 224])
+    # Returned tensor is of size [n, 3, 224, 224], where n = number of tiles.
+    # Use an unbacked symint to create an upper-bounded dynamic shape output.
+    # Otherwise, output is set to a static shape, and we can only output
+    # tensors of shape [MAX_NUM_TILES, 3, 224, 224].
+    ctx = torch._custom_ops.get_ctx()
+    s0 = ctx.create_unbacked_symint()
+    torch._constrain_as_size(s0, 0, MAX_NUM_TILES)
+    return torch.empty([s0, output.size(0), tile_size, tile_size])
