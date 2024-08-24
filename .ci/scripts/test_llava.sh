@@ -8,6 +8,10 @@
 set -exu
 # shellcheck source=/dev/null
 
+BUILD_TYPE=${1:-Debug}
+
+echo "Building with BUILD_TYPE: $BUILD_TYPE"
+
 if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
   PYTHON_EXECUTABLE=python3
 fi
@@ -15,7 +19,7 @@ fi
 cmake_install_executorch_libraries() {
     cmake                                               \
         -DCMAKE_INSTALL_PREFIX=cmake-out                \
-        -DCMAKE_BUILD_TYPE=Debug                        \
+        -DCMAKE_BUILD_TYPE=${BUILD_TYPE}                \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON          \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON     \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON            \
@@ -27,7 +31,7 @@ cmake_install_executorch_libraries() {
         -Bcmake-out .
 
 
-    cmake --build cmake-out -j9 --target install --config Debug
+    cmake --build cmake-out -j9 --target install --config ${BUILD_TYPE}
 }
 
 cmake_build_llava_runner() {
@@ -36,7 +40,7 @@ cmake_build_llava_runner() {
 
     cmake                                       \
         -DCMAKE_INSTALL_PREFIX=cmake-out        \
-        -DCMAKE_BUILD_TYPE=Debug                \
+        -DCMAKE_BUILD_TYPE=${BUILD_TYPE}         \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON    \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON           \
@@ -45,7 +49,7 @@ cmake_build_llava_runner() {
         ${dir}
 
 
-    cmake --build cmake-out/${dir} -j9 --config Debug
+    cmake --build cmake-out/${dir} -j9 --config ${BUILD_TYPE}
 }
 
 # only export the one without custom op for now since it's
