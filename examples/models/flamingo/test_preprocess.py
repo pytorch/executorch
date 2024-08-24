@@ -13,6 +13,12 @@ import numpy as np
 import PIL
 import torch
 
+from executorch.extension.pybindings import portable_lib  # noqa # usort: skip
+from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
+from executorch.extension.pybindings.portable_lib import (
+    _load_for_executorch_from_buffer,
+)
+
 from parameterized import parameterized
 from PIL import Image
 
@@ -21,14 +27,17 @@ from torchtune.models.clip.inference._transforms import (
     CLIPImageTransform,
 )
 
-from torchtune.modules.transforms import (
+from torchtune.modules.transforms.vision_utils.get_canvas_best_fit import (
     find_supported_resolutions,
     get_canvas_best_fit,
+)
+
+from torchtune.modules.transforms.vision_utils.get_inscribed_size import (
     get_inscribed_size,
 )
 from torchvision.transforms.v2 import functional as F
 
-from .export_preprocess_lib import export_preprocess
+from .export_preprocess_lib import export_preprocess, lower_to_executorch_preprocess
 
 
 @dataclass
@@ -73,6 +82,13 @@ class TestImageTransform(unittest.TestCase):
         image_tensor = F.to_dtype(
             F.grayscale_to_rgb_image(F.to_image(image)), scale=True
         )
+
+        # The above converts the PIL image into a torchvision tv_tensor.
+        # Convert the tv_tensor into a torch.Tensor.
+        image_tensor = image_tensor + 0
+
+        # Ensure tensor is contiguous for executorch.
+        image_tensor = image_tensor.contiguous()
 
         # Calculate possible resolutions.
         possible_resolutions = config.possible_resolutions
@@ -187,6 +203,9 @@ class TestImageTransform(unittest.TestCase):
             max_num_tiles=config.max_num_tiles,
         )
 
+        executorch_model = lower_to_executorch_preprocess(exported_model)
+        executorch_module = _load_for_executorch_from_buffer(executorch_model.buffer)
+
         # Prepare image input.
         image = (
             np.random.randint(0, 256, np.prod(image_size))
@@ -225,20 +244,25 @@ class TestImageTransform(unittest.TestCase):
             image=image, config=config
         )
 
-        # Run eager and exported models.
+        # Run eager model and check it matches reference model.
         eager_image, eager_ar = eager_model(
             image_tensor, inscribed_size, best_resolution
         )
         eager_ar = eager_ar.tolist()
+        self.assertTrue(torch.allclose(reference_image, eager_image))
+        self.assertTrue(reference_ar, eager_ar)
 
+        # Run exported model and check it matches reference model.
         exported_image, exported_ar = exported_model.module()(
             image_tensor, inscribed_size, best_resolution
         )
         exported_ar = exported_ar.tolist()
-
-        # Check eager and exported models match reference model.
-        self.assertTrue(torch.allclose(reference_image, eager_image))
         self.assertTrue(torch.allclose(reference_image, exported_image))
-
-        self.assertTrue(reference_ar, eager_ar)
         self.assertTrue(reference_ar, exported_ar)
+
+        # Run executorch model and check it matches reference model.
+        et_image, et_ar = executorch_module.forward(
+            (image_tensor, inscribed_size, best_resolution)
+        )
+        self.assertTrue(torch.allclose(reference_image, et_image))
+        self.assertTrue(reference_ar, et_ar)
