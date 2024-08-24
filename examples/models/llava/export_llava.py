@@ -127,7 +127,7 @@ def export_image_encoder(llava, resized, dynamic_shapes):
         LlavaEdgeManager(
             model=llava_image_encode,
             modelname="llava_image_encoder",
-            max_seq_len=llava.text_model_args.max_seq_len,  # This may not be right
+            max_seq_len=llava.llava_args.text_args.max_seq_len,  # This may not be right
             dtype=DType.fp32,
             use_kv_cache=True,
             example_inputs=(resized,),

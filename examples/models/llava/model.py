@@ -9,8 +9,9 @@
 import math
 
 import re
+from dataclasses import dataclass, field
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import requests
 import torch
@@ -25,6 +26,8 @@ from PIL import Image
 
 from torch import nn
 from torch.export import Dim
+
+from torchtune.models.clip import clip_vision_encoder
 from torchvision.transforms.v2 import functional as F
 
 from transformers import (
@@ -35,39 +38,106 @@ from transformers import (
 )
 
 
+class QuickGELUActivation(nn.Module):
+    """
+    Applies GELU approximation that is fast but somewhat inaccurate. See: https://github.com/hendrycks/GELUs
+    """
+
+    def forward(self, input):
+        return input * torch.sigmoid(1.702 * input)
+
+
+@dataclass
+class VisionArgs:
+    tile_size: int = 336
+    patch_size: int = 14
+    embed_dim: int = 1024
+    num_layers: int = 24
+    num_heads: int = 16
+    out_indices: List[int] = field(default_factory=list)
+    output_cls_projection: bool = False
+    max_num_tiles: int = 1
+    in_channels: int = 3
+    intermediate_act: nn.Module = QuickGELUActivation()
+
+    def __post_init__(self):
+        if not self.out_indices:
+            self.out_indices = [self.num_layers - 1]
+
+
+@dataclass
+class ProjectorArgs:
+    in_channels: int = 1024
+    out_channels: int = 4096
+    activation: nn.Module = nn.GELU()
+
+@dataclass
+class LlavaArgs:
+    vision_args: VisionArgs = VisionArgs()
+    text_args: ModelArgs = ModelArgs()
+    projector_args: ProjectorArgs = ProjectorArgs()
+    vision_feature_select_strategy: str = "default"
+    pad_token_id: int = 32001
+    device: torch.device = torch.device("cpu")
+    dtype: torch.dtype = torch.float32
+
+
+
+@dataclass
+class PreprocessorArgs:
+    image_mean: List[float] = field(
+        default_factory=lambda: [0.48145466, 0.4578275, 0.40821073]
+    )
+    image_std: List[float] = field(
+        default_factory=lambda: [0.26862954, 0.26130258, 0.27577711]
+    )
+    rescale_factor: float = 0.00392156862745098
+
+
+class LlavaMultiModalProjector(nn.Module):
+    def __init__(self, args: ProjectorArgs):
+        super().__init__()
+
+        self.linear_1 = nn.Linear(args.in_channels, args.out_channels, bias=True)
+        self.act = args.activation
+        self.linear_2 = nn.Linear(args.out_channels, args.out_channels, bias=True)
+
+    def forward(self, image_features):
+        hidden_states = self.linear_1(image_features)
+        hidden_states = self.act(hidden_states)
+        hidden_states = self.linear_2(hidden_states)
+        return hidden_states
+
+
 class Llava(torch.nn.Module):
     def __init__(
         self,
         llava_model: LlavaForConditionalGeneration,
-        image_processor: CLIPImageProcessor,
-        use_sdpa_with_kv_cache_op: bool = True,
+        preprocessor_args: PreprocessorArgs,
+        llava_args: LlavaArgs,
     ):
         super().__init__()
-        self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
         self.model_ = llava_model
-        self.image_processor = image_processor
-        self.vision_feature_layer = self.model_.config.vision_feature_layer
+        self.preprocessor_args = preprocessor_args
+        self.llava_args = llava_args
+
+        self.use_sdpa_with_kv_cache_op = self.llava_args.text_args.use_sdpa_with_kv_cache_op
+
         self.vision_feature_select_strategy = (
-            self.model_.config.vision_feature_select_strategy
+            self.llava_args.vision_feature_select_strategy
         )
-        self.text_model_args = ModelArgs(
-            use_kv_cache=True,
-            vocab_size=self.model_.config.text_config.vocab_size,
-            hidden_dim=self.model_.config.text_config.intermediate_size,
-            max_batch_size=1,  # doesn't work with default batch size 32
-            ffn_dim_multiplier=1,  # TODO: a hack to make rotary embedding happy
-            enable_dynamic_shape=True,  # allow parallel prefill
-            use_sdpa_with_kv_cache_op=use_sdpa_with_kv_cache_op,  # use sdpa_with_kv_cache op
-            use_hf_rope=True,
-        )
+        self.vision_tower = clip_vision_encoder(**self.llava_args.vision_args.__dict__)
+        self.mm_projector = LlavaMultiModalProjector(llava_args.projector_args)
+
         self.embed_tokens = nn.Embedding(
-            self.model_.config.text_config.vocab_size,
-            self.model_.config.text_config.hidden_size,
-            self.model_.config.pad_token_id,
+            self.llava_args.text_args.vocab_size,
+            self.llava_args.text_args.dim, # this may not right 
+            self.llava_args.pad_token_id,
         )
-        self.text_model = Transformer(self.text_model_args)
+ 
+        self.text_model = Transformer(self.llava_args.text_args)
         # use custom op for SDPA.
-        if use_sdpa_with_kv_cache_op:
+        if self.use_sdpa_with_kv_cache_op:
             self.text_model = replace_sdpa_with_custom_op(self.text_model)
         # load state dict
         self.text_model.load_state_dict(
@@ -77,6 +147,17 @@ class Llava(torch.nn.Module):
         )
         self.embed_tokens.load_state_dict(
             state_dict=self.model_.language_model.model.embed_tokens.state_dict(),
+            strict=True,
+            assign=True,
+        )
+        self.vision_tower.load_state_dict(
+            state_dict=self._translate_state_dict_for_vision_model(),
+            strict=True,
+            assign=True,
+        )
+
+        self.mm_projector.load_state_dict(
+            state_dict=self.model_.multi_modal_projector.state_dict(),
             strict=True,
             assign=True,
         )
@@ -117,8 +198,80 @@ class Llava(torch.nn.Module):
 
         return new_state_dict
 
+    def _translate_state_dict_for_vision_model(self) -> Dict[str, Any]:
+        state_dict = self.model_.vision_tower.state_dict()
+
+        model2_state_dict = {}
+
+        # Define the mapping from old names to new names
+        model1_prefix = "vision_model."
+        name_mapping = {
+            f"{model1_prefix}embeddings.class_embedding": "cls_token_embedding.cls_embedding",
+            f"{model1_prefix}embeddings.position_embedding.weight": "token_pos_embedding.positional_embedding",
+            f"{model1_prefix}embeddings.patch_embedding.weight": "conv.weight",
+            f"{model1_prefix}pre_layrnorm.weight": "ln_pre.weight",
+            f"{model1_prefix}pre_layrnorm.bias": "ln_pre.bias",
+            f"{model1_prefix}post_layernorm.weight": "ln_post.weight",
+            f"{model1_prefix}post_layernorm.bias": "ln_post.bias",
+        }
+
+        # Use regular expressions to define the mapping for each layer
+        patterns = [
+            (
+                rf"{model1_prefix}encoder\.layers\.([0-9]+)\.self_attn\.(k|q|v)_proj\.(weight|bias)",
+                lambda match: f"transformer_layers.{match.group(1)}.self_attn.in_proj_{match.group(3)}",
+            ),
+            (
+                rf"{model1_prefix}encoder\.layers\.([0-9]+)\.self_attn\.out_proj\.(weight|bias)",
+                lambda match: f"transformer_layers.{match.group(1)}.self_attn.out_proj.{match.group(2)}",
+            ),
+            (
+                rf"{model1_prefix}encoder\.layers\.([0-9]+)\.mlp\.fc(1|2)\.(weight|bias)",
+                lambda match: f"transformer_layers.{match.group(1)}.linear{match.group(2)}.{match.group(3)}",
+            ),
+            (
+                rf"{model1_prefix}encoder\.layers\.([0-9]+)\.layer_norm(1|2)\.(weight|bias)",
+                lambda match: f"transformer_layers.{match.group(1)}.norm{match.group(2)}.{match.group(3)}",
+            ),
+        ]
+
+        # Apply the patterns to update the name mapping
+        for pattern, replacement in patterns:
+            for key in list(state_dict.keys()):
+                if re.match(pattern, key):
+                    new_key = re.sub(pattern, replacement, key)
+                    name_mapping[key] = new_key
+
+        # Process the combined self-attention weights and biases
+        temp_state_dict = {}
+        for k, v in state_dict.items():
+            if k in name_mapping:
+                new_k = name_mapping[k]
+                if "in_proj_weight" in new_k or "in_proj_bias" in new_k:
+                    if new_k not in temp_state_dict:
+                        temp_state_dict[new_k] = {"q": None, "k": None, "v": None}
+                    if "q_proj" in k:
+                        temp_state_dict[new_k]["q"] = v
+                    elif "k_proj" in k:
+                        temp_state_dict[new_k]["k"] = v
+                    elif "v_proj" in k:
+                        temp_state_dict[new_k]["v"] = v
+                else:
+                    temp_state_dict[new_k] = v
+
+        # Final processing of the combined self-attention weights and biases
+        for k, v in temp_state_dict.items():
+            if isinstance(v, dict):
+                model2_state_dict[k] = torch.cat([v["q"], v["k"], v["v"]], dim=0)
+            else:
+                model2_state_dict[k] = v
+
+        return model2_state_dict
+
     def _feature_select(self, image_outputs):
-        selected_image_feature = image_outputs.hidden_states[self.vision_feature_layer]
+        selected_image_feature = image_outputs[1][0].view(
+            *image_outputs[1][0].shape[2:]
+        )
 
         if self.vision_feature_select_strategy == "default":
             selected_image_feature = selected_image_feature[:, 1:]
@@ -138,21 +291,20 @@ class Llava(torch.nn.Module):
         if type(images) is list:
             image_features = []
             for image in images:
-                image_forward_out = self.model_.vision_tower(
+                image_forward_out = self.vision_tower(
                     image.to(
                         device=self.model_.device, dtype=self.model_.dtype
                     ).unsqueeze(0),
-                    output_hidden_states=True,
                 )
                 image_feature = self._feature_select(image_forward_out).to(image.dtype)
                 image_features.append(image_feature)
         else:
-            image_forward_outs = self.model_.vision_tower(
+            image_forward_outs = self.vision_tower(
                 images.to(device=self.model_.device, dtype=self.model_.dtype),
-                output_hidden_states=True,
             )
             image_features = self._feature_select(image_forward_outs).to(images.dtype)
-        image_features = self.model_.multi_modal_projector(image_features)
+        image_features = self.mm_projector(image_features)
+
         return image_features
 
     def image_preprocess(self, img: torch.Tensor) -> torch.Tensor:
@@ -167,7 +319,7 @@ class Llava(torch.nn.Module):
         resized = F.pad(
             img,
             padding=(l_pad, t_pad, r_pad, b_pad),
-            fill=tuple(int(x * 255) for x in self.image_processor.image_mean),
+            fill=tuple(int(x * 255) for x in self.preprocessor_args.image_mean),
         )
         # TODO: implement _upsample_bicubic_aa.out in portable kernel library.
         # here padded shape should be max(h, w) x max(h, w)
@@ -185,10 +337,10 @@ class Llava(torch.nn.Module):
         # print(resized.shape)
         # cropped = F.center_crop(img, output_size=[w, w])
         # print(cropped.shape)
-        scaled = resized * self.image_processor.rescale_factor
+        scaled = resized * self.preprocessor_args.rescale_factor
         # print(scaled)
         normed = F.normalize(
-            scaled, self.image_processor.image_mean, self.image_processor.image_std
+            scaled, self.preprocessor_args.image_mean, self.preprocessor_args.image_std
         )
         # print(normed)
         return normed.unsqueeze(0)
@@ -202,6 +354,7 @@ class Llava(torch.nn.Module):
 
     def image_embedding(self, images: torch.Tensor) -> torch.Tensor:
         preprocessed_img = self.image_preprocess(images)
+        preprocessed_img = preprocessed_img.view(1, 1, *preprocessed_img.shape)
         return self.encode_images(preprocessed_img)
 
     def prefill_embedding(
@@ -265,17 +418,42 @@ class LlavaModel(EagerModelBase):
             ).raw
         )
         self.prompt = """A chat between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions. USER: <image>
-What are the things I should be cautious about when I visit here? ASSISTANT:"""
+                            What are the things I should be cautious about when I visit here? ASSISTANT:"""
         self.model_name = "llava-1.5-7b-hf"
         # set input to None and initialize them lazily
         self.input = None
         self.resized_image = None
 
+    def get_preprocessor_args(self):
+        return PreprocessorArgs(
+            image_mean=self.image_processor.image_mean,
+            image_std=self.image_processor.image_std,
+            rescale_factor=self.image_processor.rescale_factor,
+        )
+
+    def get_llava_args(self):
+        return LlavaArgs(
+            text_args=ModelArgs(
+                use_kv_cache=True,
+                vocab_size=self.model.config.text_config.vocab_size,
+                hidden_dim=self.model.config.text_config.intermediate_size,
+                max_batch_size=1,  # doesn't work with default batch size 32
+                ffn_dim_multiplier=1,  # TODO: a hack to make rotary embedding happy
+                enable_dynamic_shape=True,  # allow parallel prefill
+                use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,  # use sdpa_with_kv_cache op
+                use_hf_rope=True,
+            ),
+            vision_feature_select_strategy="default",
+            pad_token_id=self.model.config.pad_token_id,
+            device=self.model.device,
+            dtype=self.model.dtype,
+        )
+
     def get_eager_model(self):
         model = Llava(
             self.model,
-            self.image_processor,
-            self.use_sdpa_with_kv_cache_op,
+            self.get_preprocessor_args(),
+            self.get_llava_args(),
         )
         model.to(dtype=torch.float32)
         return model
