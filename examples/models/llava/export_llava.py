@@ -79,7 +79,7 @@ def export_text_model(llava, embeddings, dynamic_shapes):
     text_model_em = LLMEdgeManager(
         model=llava_text_model,
         modelname="llava_text_model",
-        max_seq_len=llava.text_model_args.max_seq_len,
+        max_seq_len=llava.llava_args.text_args.max_seq_len,
         dtype=DType.fp32,
         use_kv_cache=True,
         example_inputs=(torch.tensor([0], dtype=torch.int64), embeddings),

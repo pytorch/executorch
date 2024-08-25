@@ -71,6 +71,7 @@ class ProjectorArgs:
     out_channels: int = 4096
     activation: nn.Module = nn.GELU()
 
+
 @dataclass
 class LlavaArgs:
     vision_args: VisionArgs = VisionArgs()
@@ -80,7 +81,6 @@ class LlavaArgs:
     pad_token_id: int = 32001
     device: torch.device = torch.device("cpu")
     dtype: torch.dtype = torch.float32
-
 
 
 @dataclass
@@ -121,7 +121,9 @@ class Llava(torch.nn.Module):
         self.preprocessor_args = preprocessor_args
         self.llava_args = llava_args
 
-        self.use_sdpa_with_kv_cache_op = self.llava_args.text_args.use_sdpa_with_kv_cache_op
+        self.use_sdpa_with_kv_cache_op = (
+            self.llava_args.text_args.use_sdpa_with_kv_cache_op
+        )
 
         self.vision_feature_select_strategy = (
             self.llava_args.vision_feature_select_strategy
@@ -131,10 +133,10 @@ class Llava(torch.nn.Module):
 
         self.embed_tokens = nn.Embedding(
             self.llava_args.text_args.vocab_size,
-            self.llava_args.text_args.dim, # this may not right 
+            self.llava_args.text_args.dim,  # this may not right
             self.llava_args.pad_token_id,
         )
- 
+
         self.text_model = Transformer(self.llava_args.text_args)
         # use custom op for SDPA.
         if self.use_sdpa_with_kv_cache_op:
