@@ -13,9 +13,12 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
 )
 from executorch.backends.xnnpack.utils.quant_utils import (
+    extract_qdq_affine_op_args_for_decomposed_ops,
+    is_affine_qdq,
     is_dequant,
     is_dynamic_qdq,
     is_per_channel,
+    is_per_channel_group,
     is_qparam,
     is_quant,
 )
@@ -131,7 +134,7 @@ class GEMMConfig(XNNPartitionerConfig):
                 return False, []
             gemm_deps.append(weight)
 
-            if is_per_channel(dequant_node):
+            if is_per_channel(dequant_node) or is_per_channel_group(dequant_node):
                 if len(dequant_node.all_input_nodes) < 2:
                     # Expected channel quantized to have scale/zp nodes
                     return False, []
@@ -214,12 +217,15 @@ class GEMMConfig(XNNPartitionerConfig):
                 return (False, [])
 
             gemm_deps.append(q_input)
-            if not (is_node(q_input.args[1]) and is_node(q_input.args[2])):
+            q_input_args = q_input.args
+            if is_affine_qdq(q_input):
+                q_input_args = extract_qdq_affine_op_args_for_decomposed_ops(q_input)
+            if not (is_node(q_input_args[1]) and is_node(q_input_args[2])):
                 # expected to find getitem node from choose qparam
                 return (False, [])
 
-            getitem1 = get_input_node(q_input, 1)
-            getitem2 = get_input_node(q_input, 2)
+            getitem1 = q_input_args[1]
+            getitem2 = q_input_args[2]
 
             if not (is_getitem(getitem1) and is_getitem(getitem2)):
                 # expected getitem node from choose qparam

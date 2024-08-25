@@ -152,6 +152,11 @@ class vTensorStorage final {
     return image_.format();
   }
 
+  /*
+   * Used for checking if this vTensorStorage is a copy of another instance
+   */
+  bool is_copy_of(const vTensorStorage& other) const;
+
   void discard_and_reallocate(
       const std::vector<int64_t>& padded_sizes,
       const utils::GPUMemoryLayout gpu_memory_layout,
@@ -458,6 +463,13 @@ class vTensor final {
    * tensor sizes
    */
   void reallocate(const std::vector<int64_t>& new_sizes);
+
+  /*
+   * Check if this vTensor instance is a view of another vTensor instance
+   */
+  inline bool is_view_of(const vTensor& other) const {
+    return storage_.is_copy_of(other.storage_);
+  }
 };
 
 } // namespace api

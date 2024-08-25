@@ -611,6 +611,7 @@ TEST_F(VulkanComputeAPITest, tensor_copy_test) {
   vTensor original = CREATE_FLOAT_BUFFER(sizes, /*allocate_memory=*/true);
   vTensor copy = vTensor(original, sizes, dim_order);
   EXPECT_TRUE(get_vma_allocation_count() == 1);
+  EXPECT_TRUE(copy.is_view_of(original));
 
   // Fill original tensor with some data
   fill_vtensor(original, 2.5f, true);
@@ -1165,6 +1166,8 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_view) {
   IOValueRef orig = graph.add_input_tensor(orig_sizes, vkapi::kFloat);
   ValueRef slice =
       graph.add_tensor_view(orig.value, slice_sizes, dim_order, offset);
+
+  EXPECT_TRUE(graph.val_is_view_of(slice, orig.value));
 
   IOValueRef out = {};
 
@@ -2282,24 +2285,28 @@ void test_binary_op(
   }
 }
 
-#define CALL_TEST_FN_FORALL_CONDITIONS(_)                                 \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false)    \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, false)   \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)     \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, true)    \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
+#define CALL_TEST_FN_FORALL_CONDITIONS(_)                            \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, false)    \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kHeightPacked, false)   \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, false) \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, true)     \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kHeightPacked, true)    \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, true)
 
-#define CALL_TEST_FN_FOR_W_PACKED(_)                                   \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false) \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)
+#define CALL_TEST_FN_FOR_W_PACKED(_)                              \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, false) \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, true)  \
+  _(vkapi::kFloat, utils::kBuffer, utils::kWidthPacked, false)    \
+  _(vkapi::kFloat, utils::kBuffer, utils::kWidthPacked, true)
 
-#define CALL_TEST_FN_FOR_C_PACKED(_)                                      \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
+#define CALL_TEST_FN_FOR_C_PACKED(_)                                 \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, false) \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, true)  \
+  _(vkapi::kFloat, utils::kBuffer, utils::kChannelsPacked, false)    \
+  _(vkapi::kFloat, utils::kBuffer, utils::kChannelsPacked, true)
 
 TEST(VulkanComputeGraphOpsTest, add_smoke_test) {
-#define RUN_TESTS(dtype, layout, prepack)                                  \
+#define RUN_TESTS(dtype, storage, layout, prepack)                         \
   test_binary_op("add", {17, 21}, {17, 21}, dtype, layout, prepack);       \
   test_binary_op("add", {17, 21}, {1, 1}, dtype, layout, prepack);         \
   test_binary_op("sub", {11, 22}, {11, 22}, dtype, layout, prepack);       \
@@ -2320,9 +2327,11 @@ void test_mm(
     int K,
     int N,
     vkapi::ScalarType dtype,
+    utils::StorageType storage_type,
     utils::GPUMemoryLayout memory_layout,
     bool prepack = true) {
   GraphConfig config;
+  config.set_storage_type_override(storage_type);
   ComputeGraph graph(config);
 
   std::vector<int64_t> mat1_size = {M, K};
@@ -2379,38 +2388,42 @@ void test_mm(
 }
 
 TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
-#define RUN_TESTS(dtype, layout, prepack) \
-  test_mm(                                \
-      /*B = */ 1,                         \
-      /*M = */ 31,                        \
-      /*K = */ 127,                       \
-      /*N = */ 23,                        \
-      dtype,                              \
-      layout,                             \
-      prepack);                           \
-  test_mm(                                \
-      /*B = */ 5,                         \
-      /*M = */ 31,                        \
-      /*K = */ 127,                       \
-      /*N = */ 23,                        \
-      dtype,                              \
-      layout,                             \
-      prepack);                           \
-  test_mm(                                \
-      /*B = */ 7,                         \
-      /*M = */ 13,                        \
-      /*K = */ 89,                        \
-      /*N = */ 17,                        \
-      dtype,                              \
-      layout,                             \
-      prepack);                           \
-  test_mm(                                \
-      /*B = */ 1,                         \
-      /*M = */ 13,                        \
-      /*K = */ 89,                        \
-      /*N = */ 17,                        \
-      dtype,                              \
-      layout,                             \
+#define RUN_TESTS(dtype, storage_type, layout, prepack) \
+  test_mm(                                              \
+      /*B = */ 1,                                       \
+      /*M = */ 31,                                      \
+      /*K = */ 127,                                     \
+      /*N = */ 23,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
+      prepack);                                         \
+  test_mm(                                              \
+      /*B = */ 5,                                       \
+      /*M = */ 31,                                      \
+      /*K = */ 127,                                     \
+      /*N = */ 23,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
+      prepack);                                         \
+  test_mm(                                              \
+      /*B = */ 7,                                       \
+      /*M = */ 13,                                      \
+      /*K = */ 89,                                      \
+      /*N = */ 17,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
+      prepack);                                         \
+  test_mm(                                              \
+      /*B = */ 1,                                       \
+      /*M = */ 13,                                      \
+      /*K = */ 89,                                      \
+      /*N = */ 17,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
       prepack);
 
   CALL_TEST_FN_FOR_W_PACKED(RUN_TESTS);
