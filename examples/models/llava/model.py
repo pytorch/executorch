@@ -11,7 +11,7 @@ import math
 import re
 from dataclasses import dataclass, field
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 
 import requests
 import torch
@@ -30,12 +30,7 @@ from torch.export import Dim
 from torchtune.models.clip import clip_vision_encoder
 from torchvision.transforms.v2 import functional as F
 
-from transformers import (
-    AutoProcessor,
-    CLIPImageProcessor,
-    LlamaForCausalLM,
-    LlavaForConditionalGeneration,
-)
+from transformers import AutoProcessor, LlamaForCausalLM, LlavaForConditionalGeneration
 
 
 class QuickGELUActivation(nn.Module):
@@ -201,74 +196,73 @@ class Llava(torch.nn.Module):
         return new_state_dict
 
     def _translate_state_dict_for_vision_model(self) -> Dict[str, Any]:
-        state_dict = self.model_.vision_tower.state_dict()
+        hf_state_dict = self.model_.vision_tower.state_dict()
 
-        model2_state_dict = {}
+        translated_state_dict = {}
 
         # Define the mapping from old names to new names
-        model1_prefix = "vision_model."
+        hf_weight_prefix = "vision_model."
         name_mapping = {
-            f"{model1_prefix}embeddings.class_embedding": "cls_token_embedding.cls_embedding",
-            f"{model1_prefix}embeddings.position_embedding.weight": "token_pos_embedding.positional_embedding",
-            f"{model1_prefix}embeddings.patch_embedding.weight": "conv.weight",
-            f"{model1_prefix}pre_layrnorm.weight": "ln_pre.weight",
-            f"{model1_prefix}pre_layrnorm.bias": "ln_pre.bias",
-            f"{model1_prefix}post_layernorm.weight": "ln_post.weight",
-            f"{model1_prefix}post_layernorm.bias": "ln_post.bias",
+            f"{hf_weight_prefix}embeddings.class_embedding": "cls_token_embedding.cls_embedding",
+            f"{hf_weight_prefix}embeddings.position_embedding.weight": "token_pos_embedding.positional_embedding",
+            f"{hf_weight_prefix}embeddings.patch_embedding.weight": "conv.weight",
+            f"{hf_weight_prefix}pre_layrnorm.weight": "ln_pre.weight",
+            f"{hf_weight_prefix}pre_layrnorm.bias": "ln_pre.bias",
+            f"{hf_weight_prefix}post_layernorm.weight": "ln_post.weight",
+            f"{hf_weight_prefix}post_layernorm.bias": "ln_post.bias",
         }
 
         # Use regular expressions to define the mapping for each layer
         patterns = [
             (
-                rf"{model1_prefix}encoder\.layers\.([0-9]+)\.self_attn\.(k|q|v)_proj\.(weight|bias)",
+                rf"{hf_weight_prefix}encoder\.layers\.([0-9]+)\.self_attn\.(k|q|v)_proj\.(weight|bias)",
                 lambda match: f"transformer_layers.{match.group(1)}.self_attn.in_proj_{match.group(3)}",
             ),
             (
-                rf"{model1_prefix}encoder\.layers\.([0-9]+)\.self_attn\.out_proj\.(weight|bias)",
+                rf"{hf_weight_prefix}encoder\.layers\.([0-9]+)\.self_attn\.out_proj\.(weight|bias)",
                 lambda match: f"transformer_layers.{match.group(1)}.self_attn.out_proj.{match.group(2)}",
             ),
             (
-                rf"{model1_prefix}encoder\.layers\.([0-9]+)\.mlp\.fc(1|2)\.(weight|bias)",
+                rf"{hf_weight_prefix}encoder\.layers\.([0-9]+)\.mlp\.fc(1|2)\.(weight|bias)",
                 lambda match: f"transformer_layers.{match.group(1)}.linear{match.group(2)}.{match.group(3)}",
             ),
             (
-                rf"{model1_prefix}encoder\.layers\.([0-9]+)\.layer_norm(1|2)\.(weight|bias)",
+                rf"{hf_weight_prefix}encoder\.layers\.([0-9]+)\.layer_norm(1|2)\.(weight|bias)",
                 lambda match: f"transformer_layers.{match.group(1)}.norm{match.group(2)}.{match.group(3)}",
             ),
         ]
 
         # Apply the patterns to update the name mapping
         for pattern, replacement in patterns:
-            for key in list(state_dict.keys()):
+            for key in list(hf_state_dict.keys()):
                 if re.match(pattern, key):
                     new_key = re.sub(pattern, replacement, key)
                     name_mapping[key] = new_key
 
         # Process the combined self-attention weights and biases
         temp_state_dict = {}
-        for k, v in state_dict.items():
-            if k in name_mapping:
-                new_k = name_mapping[k]
-                if "in_proj_weight" in new_k or "in_proj_bias" in new_k:
-                    if new_k not in temp_state_dict:
-                        temp_state_dict[new_k] = {"q": None, "k": None, "v": None}
-                    if "q_proj" in k:
-                        temp_state_dict[new_k]["q"] = v
-                    elif "k_proj" in k:
-                        temp_state_dict[new_k]["k"] = v
-                    elif "v_proj" in k:
-                        temp_state_dict[new_k]["v"] = v
-                else:
-                    temp_state_dict[new_k] = v
+        for k, v in hf_state_dict.items():
+            new_k = name_mapping[k]
+            if "in_proj_weight" in new_k or "in_proj_bias" in new_k:
+                if new_k not in temp_state_dict:
+                    temp_state_dict[new_k] = {"q": None, "k": None, "v": None}
+                if "q_proj" in k:
+                    temp_state_dict[new_k]["q"] = v
+                elif "k_proj" in k:
+                    temp_state_dict[new_k]["k"] = v
+                elif "v_proj" in k:
+                    temp_state_dict[new_k]["v"] = v
+            else:
+                temp_state_dict[new_k] = v
 
         # Final processing of the combined self-attention weights and biases
         for k, v in temp_state_dict.items():
             if isinstance(v, dict):
-                model2_state_dict[k] = torch.cat([v["q"], v["k"], v["v"]], dim=0)
+                translated_state_dict[k] = torch.cat([v["q"], v["k"], v["v"]], dim=0)
             else:
-                model2_state_dict[k] = v
+                translated_state_dict[k] = v
 
-        return model2_state_dict
+        return translated_state_dict
 
     def _feature_select(self, image_outputs):
         selected_image_feature = image_outputs[1][0].view(
