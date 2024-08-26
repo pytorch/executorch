@@ -1998,6 +1998,55 @@ class TestExampleQaihubScript(TestQNN):
                 model_out = msg["result"]
                 self.assertTrue(model_out.startswith(prompt))
 
+    def test_stable_diffusion(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "a photo of an astronaut riding a horse on mars"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/stable_diffusion/qaihub_stable_diffusion.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--text_encoder_bin",
+            f"{self.artifact_dir}/text_encoder.serialized.bin",
+            "--unet_bin",
+            f"{self.artifact_dir}/unet.serialized.bin",
+            "--vae_bin",
+            f"{self.artifact_dir}/vae.serialized.bin",
+            "--vocab_json",
+            f"{self.artifact_dir}/vocab.json",
+            "--num_time_steps",
+            "20",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--fix_latents",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                # For the default settings and prompt, the expected results will be {PSNR: 23.258, SSIM: 0.852}
+                self.assertGreaterEqual(msg["PSNR"], 20)
+                self.assertGreaterEqual(msg["SSIM"], 0.8)
+
 
 class TestExampleScript(TestQNN):
     def required_envs(self, conditions=None) -> bool:

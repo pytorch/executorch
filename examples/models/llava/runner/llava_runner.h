@@ -35,7 +35,8 @@ class LlavaRunner : public MultimodalRunner {
       const std::string& prompt,
       int32_t seq_len = 1024,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {});
+      std::function<void(const ::executorch::extension::llm::Stats&)>
+          stats_callback = {});
 
  private:
   inline static const std::string kPresetPrompt =

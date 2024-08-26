@@ -561,7 +561,8 @@ class Tester:
         if not to_edge_stage:
             to_edge_stage = ToEdge()
         to_edge_stage.edge_compile_conf._skip_dim_order = True
-        return self._run_stage(to_edge_stage)
+        res = self._run_stage(to_edge_stage)
+        return res
 
     def to_edge_transform_and_lower(
         self, to_edge_and_transform_stage: Optional[ToEdgeTransformAndLower] = None

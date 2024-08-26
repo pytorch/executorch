@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 
 import os
 import platform
@@ -83,13 +82,19 @@ for arg in sys.argv[1:]:
         print(f"Error: Unknown option {arg}")
         sys.exit(1)
 
+# Use ClangCL on Windows.
+# ClangCL is an alias to Clang that configures it to work in an MSVC-compatible
+# mode. Using it on Windows to avoid compiler compatibility issues for MSVC.
+if os.name == "nt":
+    CMAKE_ARGS += " -T ClangCL"
+
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features.
 #
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION = "dev20240716"
+NIGHTLY_VERSION = "dev20240821"
 
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL = "https://download.pytorch.org/whl/nightly/cpu"

@@ -70,6 +70,7 @@ def get_mm_inputs():
     test_suite.prepacked_args = ["mat2"]
     # ATen matmul doesn't support half
     test_suite.dtypes = ["at::kFloat"]
+    test_suite.storage_types = ["utils::kTexture3D", "utils::kBuffer"]
     test_suite.layouts = [
         "utils::kWidthPacked",
         "utils::kChannelsPacked",
