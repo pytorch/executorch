@@ -1,23 +1,23 @@
-name: Upload AWS Device Farm test specs
+name: Upload AWS Device Farm Apple iOS test specs
 
 on:
   pull_request:
     paths:
-      - .github/workflows/upload-test-specs.yml
-      - examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
+      - .github/workflows/upload-apple-test-specs.yml
+      - examples/demo-apps/apple_ios/ExecuTorchDemo/default-ios-device-farm-appium-test-spec.yml
   push:
     branches:
       - main
     paths:
-      - .github/workflows/upload-test-specs.yml
-      - examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
+      - .github/workflows/upload-apple-test-specs.yml
+      - examples/demo-apps/apple_ios/ExecuTorchDemo/default-ios-device-farm-appium-test-spec.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
 jobs:
-  upload-android-test-spec-for-validation:
+  upload-apple-test-spec-for-validation:
     runs-on: linux.2xlarge
     steps:
       - uses: actions/checkout@v3
@@ -30,23 +30,22 @@ jobs:
             ${{ github.repository }}/${{ github.run_id }}/artifact
           retention-days: 1
           if-no-files-found: error
-          path: examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
+          path: examples/demo-apps/apple_ios/ExecuTorchDemo/default-ios-device-farm-appium-test-spec.yml
 
-  validate-android-test-spec:
-    needs: upload-android-test-spec-for-validation
-    uses: ./.github/workflows/android-perf.yml
+  # TODO (huydhn): An example on how to validate the test spec using the iOS demo app, but we need a proper
+  # perf benchmark workflow like android-perf
+  validate-apple-test-spec:
+    needs: upload-apple-test-spec-for-validation
+    uses: ./.github/workflows/apple.yml
     permissions:
       id-token: write
       contents: read
     with:
-      # Just use a small model here with a minimal amount of configuration to test the spec
-      models: stories110M
-      devices: samsung_galaxy_s2x
-      delegates: xnnpack
-      test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/android-llm-device-farm-test-spec.yml
+      devices: apple_iphone_15
+      test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/default-ios-device-farm-appium-test-spec.yml
 
-  upload-android-test-spec:
-    needs: validate-android-test-spec
+  upload-apple-test-spec:
+    needs: validate-apple-test-spec
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
@@ -63,7 +62,7 @@ jobs:
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@v1.7.0
         with:
-          role-to-assume: arn:aws:iam::308535385114:role/gha_executorch_upload-frameworks-android
+          role-to-assume: arn:aws:iam::308535385114:role/gha_executorch_upload-frameworks-ios
           aws-region: us-east-1
 
       - name: Only push to S3 when running the workflow manually from main branch
@@ -73,11 +72,11 @@ jobs:
           set -eux
           echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
 
-      - name: Upload the spec to S3 ossci-android bucket
+      - name: Upload the spec to S3 ossci-ios bucket
         shell: bash
-        working-directory: examples/demo-apps/android/LlamaDemo/
+        working-directory:examples/demo-apps/apple_ios/ExecuTorchDemo
         env:
-          SPEC_FILE: android-llm-device-farm-test-spec.yml
+          SPEC_FILE: default-ios-device-farm-appium-test-spec.yml
         run: |
           set -eux
 
@@ -89,4 +88,4 @@ jobs:
           fi
 
           shasum -a 256 "${SPEC_FILE}"
-          ${AWS_CMD} "${SPEC_FILE}" s3://ossci-android/executorch/ --acl public-read
+          ${AWS_CMD} "${SPEC_FILE}" s3://ossci-ios/executorch/ --acl public-read
