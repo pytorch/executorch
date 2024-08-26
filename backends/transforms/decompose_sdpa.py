@@ -34,7 +34,7 @@ class DecomposeScaledDotProductAttention(ExportPass):
                 # refer to pytorch/test/test_decomp.py
                 decomposed_module = make_fx(
                     node.target,
-                    decomposition_table=get_decompositions(
+                    decomposition_table=get_decompositions(  # pyre-fixme[6]
                         [
                             torch.ops.aten._scaled_dot_product_flash_attention_for_cpu.default,
                         ]

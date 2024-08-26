@@ -18,12 +18,13 @@ from executorch.backends.cadence.aot.passes import (
     ReplaceLogicalNotBooleanWhereWithWherePass,
     ReplacePT2DequantWithCadenceDequantPass,
     ReplacePT2QuantWithCadenceQuantPass,
+    ReplaceSafeSoftmaxWithSoftmax,
     ReplaceScalarTensorWithFullPass,
     ReplaceSqueezeAndUnsqueezeWithViewPass,
 )
 from executorch.backends.cadence.aot.quantizer.fusion_pass import QuantFusion
 from executorch.backends.cadence.aot.quantizer.quantizer import CadenceQuantizer
-from executorch.backends.cadence.aot.utils import model_is_quantized
+from executorch.backends.cadence.aot.utils import model_gm_has_SDPA, model_is_quantized
 from executorch.backends.transforms.decompose_sdpa import (
     DecomposeScaledDotProductAttention,
 )
@@ -57,13 +58,20 @@ def convert_pt2(
     """
 
     # Export with dynamo
-    model_exp = capture_pre_autograd_graph(model, inputs)
+    model_gm = capture_pre_autograd_graph(model, inputs)
 
-    # Decompose SDPA
-    DecomposeScaledDotProductAttention(False)(model_exp)
+    if model_gm_has_SDPA(model_gm):  # pyre-fixme[6]
+        # Decompose SDPA
+        DecomposeScaledDotProductAttention(False)(model_gm)  # pyre-fixme[6]
+
+        # Swap _safe_softmax with _softmax (see https://github.com/pytorch/pytorch/pull/133882
+        # for details).
+        result = ReplaceSafeSoftmaxWithSoftmax()(model_gm)  # pyre-fixme[6]
+        assert result is not None
+        model_gm = result.graph_module
 
     # Prepare
-    prepared_model = prepare_pt2e(model_exp, quantizer)
+    prepared_model = prepare_pt2e(model_gm, quantizer)
 
     # Calibrate
     prepared_model(*inputs)

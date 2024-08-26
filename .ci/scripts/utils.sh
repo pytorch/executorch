@@ -19,11 +19,9 @@ retry () {
 install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
-  # current directory. The --extra-index-url options tell pip to look on the
-  # pytorch servers for nightly and pre-release versions of torch packages.
-  pip install . --no-build-isolation -v \
-      --extra-index-url https://download.pytorch.org/whl/test/cpu \
-      --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+  # current directory.
+  # TODO(T199538337): clean up install scripts to use install_requirements.sh
+  ./install_requirements.sh --pybind xnnpack
   # Just print out the list of packages for debugging
   pip list
 }
@@ -33,42 +31,6 @@ install_pip_dependencies() {
   # Install all Python dependencies, including PyTorch
   pip install --progress-bar off -r requirements-ci.txt
   popd || return
-}
-
-install_domains() {
-  echo "Install torchvision and torchaudio"
-  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
-  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
-}
-
-install_pytorch_and_domains() {
-  pushd .ci/docker || return
-  TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
-  popd || return
-
-  git clone https://github.com/pytorch/pytorch.git
-
-  # Fetch the target commit
-  pushd pytorch || return
-  git checkout "${TORCH_VERSION}"
-  git submodule update --init --recursive
-
-  export _GLIBCXX_USE_CXX11_ABI=0
-  # Then build and install PyTorch
-  python setup.py bdist_wheel
-  pip install "$(echo dist/*.whl)"
-
-  # Grab the pinned audio and vision commits from PyTorch
-  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
-  export TORCHAUDIO_VERSION
-  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
-  export TORCHVISION_VERSION
-
-  install_domains
-
-  popd || return
-  # Print sccache stats for debugging
-  sccache --show-stats || true
 }
 
 install_flatc_from_source() {

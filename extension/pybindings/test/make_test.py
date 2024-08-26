@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import unittest
 from typing import Any, Callable, Tuple
 
@@ -211,11 +213,50 @@ def make_test(  # noqa: C901
                 except Exception:
                     tester.assertTrue(str(out).find("The length of given input array"))
 
+        def test_quantized_ops(tester):
+            eager_module = ModuleAdd()
+
+            from executorch.exir import EdgeCompileConfig
+            from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
+            from torch.ao.quantization import get_default_qconfig_mapping
+            from torch.ao.quantization.backend_config.executorch import (
+                get_executorch_backend_config,
+            )
+            from torch.ao.quantization.quantize_fx import (
+                _convert_to_reference_decomposed_fx,
+                prepare_fx,
+            )
+
+            qconfig_mapping = get_default_qconfig_mapping("qnnpack")
+            example_inputs = (
+                torch.ones(1, 5, dtype=torch.float32),
+                torch.ones(1, 5, dtype=torch.float32),
+            )
+            m = prepare_fx(
+                eager_module,
+                qconfig_mapping,
+                example_inputs,
+                backend_config=get_executorch_backend_config(),
+            )
+            m = _convert_to_reference_decomposed_fx(m)
+            config = EdgeCompileConfig(_check_ir_validity=False)
+            m = to_edge(export(m, example_inputs), compile_config=config)
+            m = m.transform([QuantFusionPass(_fix_node_meta_val=True)])
+
+            exec_prog = m.to_executorch()
+
+            executorch_module = load_fn(exec_prog.buffer)
+            executorch_output = executorch_module.forward(example_inputs)[0]
+
+            expected = example_inputs[0] + example_inputs[1]
+            tester.assertEqual(str(expected), str(executorch_output))
+
         test_e2e(tester)
         test_multiple_entry(tester)
         test_output_lifespan(tester)
         test_module_callable(tester)
         test_module_single_input(tester)
         test_stderr_redirect(tester)
+        test_quantized_ops(tester)
 
     return wrapper

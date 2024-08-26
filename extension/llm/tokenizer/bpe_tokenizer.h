@@ -11,8 +11,9 @@
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <memory>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
+namespace llm {
 
 struct TokenIndex {
   const char* str;
@@ -26,13 +27,14 @@ class BPETokenizer : public Tokenizer {
   explicit BPETokenizer();
   ~BPETokenizer() override;
 
-  Error load(const std::string& tokenizer_path) override;
+  ::executorch::runtime::Error load(const std::string& tokenizer_path) override;
 
-  Result<std::vector<uint64_t>>
+  ::executorch::runtime::Result<std::vector<uint64_t>>
   encode(const std::string& input, int8_t bos, int8_t eos) const override;
 
-  Result<std::string> decode(uint64_t prev_token, uint64_t token)
-      const override;
+  ::executorch::runtime::Result<std::string> decode(
+      uint64_t prev_token,
+      uint64_t token) const override;
 
  private:
   std::unique_ptr<char*[]> vocab_ = nullptr;
@@ -41,5 +43,16 @@ class BPETokenizer : public Tokenizer {
   unsigned int max_token_length_ = 0;
   unsigned char byte_pieces_[512]; // stores all single-byte strings
 };
+
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::BPETokenizer;
+using ::executorch::extension::llm::TokenIndex;
 } // namespace executor
 } // namespace torch

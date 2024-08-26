@@ -95,8 +95,8 @@ runtime.python_test(
         "//executorch/examples/models:models",
         "//executorch/exir/tests:models",
         "//executorch/extension/export_util:export_util",
-        "//executorch/sdk:lib",
-        "//executorch/sdk/bundled_program/serialize:lib",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/bundled_program/serialize:lib",
         "fbsource//third-party/pypi/pytest:pytest",
     ],
 )
