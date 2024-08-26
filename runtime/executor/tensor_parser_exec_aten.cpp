@@ -15,8 +15,8 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace deserialization {
 
 // Provides access to private Program methods.
@@ -143,5 +143,5 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
 }
 
 } // namespace deserialization
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

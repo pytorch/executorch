@@ -13,8 +13,9 @@
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 
-namespace torch::executor {
-using Stats = ::executorch::llm::Stats;
+namespace executorch {
+namespace extension {
+namespace llm {
 
 class TextTokenGenerator {
  public:
@@ -22,11 +23,11 @@ class TextTokenGenerator {
       Tokenizer* tokenizer,
       TextDecoderRunner* text_decoder_runner,
       bool use_kv_cache,
-      uint64_t eos_id,
+      std::unique_ptr<std::unordered_set<uint64_t>>&& eos_ids,
       Stats* stats)
       : tokenizer_(tokenizer),
         text_decoder_runner_(text_decoder_runner),
-        eos_id_(eos_id),
+        eos_ids_(std::move(eos_ids)),
         use_kv_cache_(use_kv_cache),
         stats_(stats) {}
 
@@ -41,7 +42,7 @@ class TextTokenGenerator {
    * @param token_callback what to do after a token is generated.
    * @return how many tokens are generated.
    */
-  inline Result<int64_t> generate(
+  inline ::executorch::runtime::Result<int64_t> generate(
       std::vector<uint64_t> tokens,
       int64_t start_pos,
       int32_t seq_len,
@@ -69,14 +70,14 @@ class TextTokenGenerator {
 
     // initialize tensor wrappers
     ManagedTensor tokens_managed(
-        token_data.data(), token_shape, ScalarType::Long);
+        token_data.data(), token_shape, exec_aten::ScalarType::Long);
 
-    ManagedTensor start_pos_managed(&pos, {1}, ScalarType::Long);
+    ManagedTensor start_pos_managed(&pos, {1}, exec_aten::ScalarType::Long);
 
     // Generate our tokens
     while (pos < seq_len - 1) {
       // Run the model
-      Result<exec_aten::Tensor> logits_res =
+      ::executorch::runtime::Result<exec_aten::Tensor> logits_res =
           text_decoder_runner_->step(tokens_managed, start_pos_managed);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
@@ -108,7 +109,7 @@ class TextTokenGenerator {
       }
 
       // data-dependent terminating condition: we have n_eos_ number of EOS
-      if (cur_token == eos_id_) {
+      if (eos_ids_->find(cur_token) != eos_ids_->end()) {
         printf("\n");
         ET_LOG(Info, "\nReached to the end of generation");
         break;
@@ -127,7 +128,7 @@ class TextTokenGenerator {
  private:
   Tokenizer* tokenizer_;
   TextDecoderRunner* text_decoder_runner_;
-  uint64_t eos_id_;
+  std::unique_ptr<std::unordered_set<uint64_t>> eos_ids_;
   bool use_kv_cache_;
 
   // state machine
@@ -136,4 +137,15 @@ class TextTokenGenerator {
   // stats
   Stats* stats_;
 };
-} // namespace torch::executor
+
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::TextTokenGenerator;
+} // namespace executor
+} // namespace torch

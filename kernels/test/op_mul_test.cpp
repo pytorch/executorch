@@ -268,6 +268,7 @@ TEST_F(OpMulOutTest, ScalarInputBroadcastTest) {
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
 }
 
 TEST_F(OpMulOutTest, MismatchedOutputShapesDies) {

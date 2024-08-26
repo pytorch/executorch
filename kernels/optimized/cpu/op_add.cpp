@@ -109,8 +109,8 @@ Tensor& opt_add_out(
               out.numel());
         });
       });
+      return out;
     }
-    return out;
   } else if (a.numel() == 1) {
     return opt_add_out(ctx, b, a, alpha, out);
   }

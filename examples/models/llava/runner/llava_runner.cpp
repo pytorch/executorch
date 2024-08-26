@@ -20,6 +20,8 @@
 #include <sstream>
 #include <vector>
 
+using ::executorch::extension::llm::Stats;
+
 namespace torch::executor {
 
 bool LlavaRunner::is_loaded() {
@@ -63,7 +65,8 @@ Error LlavaRunner::load() {
       tokenizer_.get(),
       text_decoder_runner_.get(),
       /*use_kv_cache=*/true,
-      tokenizer_->eos_tok(),
+      std::make_unique<std::unordered_set<uint64_t>>(
+          std::unordered_set<uint64_t>{tokenizer_->eos_tok()}),
       &stats_);
 
   stats_.model_load_end_ms = util::time_in_ms();
@@ -103,8 +106,8 @@ Error LlavaRunner::generate(
 
   // prefill images
   for (auto& image : images) {
-    auto logits = ET_UNWRAP(image_prefiller_->prefill(image, pos));
-    pos += logits.size(1);
+    // pos is updated inside image prefill.
+    ET_UNWRAP(image_prefiller_->prefill(image, pos));
   }
 
   // prefill user prompt. No BOS because preset prompt already has it.

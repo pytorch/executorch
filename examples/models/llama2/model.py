@@ -61,6 +61,7 @@ class Llama2Model(EagerModelBase):
 
         self.use_kv_cache = kwargs.get("use_kv_cache", False)
         self.use_sdpa_with_kv_cache_op = kwargs.get("use_sdpa_with_kv_cache", False)
+        self.generate_full_logits = kwargs.get("generate_full_logits", False)
         self.enable_dynamic_shape = kwargs.get("enable_dynamic_shape", False)
 
         self.max_seq_len = kwargs.get("max_seq_len", 128)
@@ -145,6 +146,7 @@ the checkpoint format to avoid generating faulty models.
             max_batch_size=max_batch_size,
             use_kv_cache=self.use_kv_cache,
             use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
+            generate_full_logits=self.generate_full_logits,
             enable_dynamic_shape=self.enable_dynamic_shape,
             **params,
         )

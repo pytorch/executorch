@@ -177,7 +177,7 @@ class _ExportPassBase(PassBase):
             self.fake_tensor_mode: Optional[FakeTensorMode] = None
             self.submodules: Dict[torch.nn.Module, str] = {}
 
-        def trace(self) -> None:
+        def trace(self) -> None:  # pyre-fixme[14,15]
             raise ExportPassBaseError("ExportTracer doesn't support trace().")
 
         def create_arg(self, a: Argument) -> torch.fx.Node:
@@ -290,7 +290,7 @@ class _ExportPassBase(PassBase):
             self.callback = callback
             self.node: torch.fx.Node = next(iter(gm.graph.nodes))
 
-        def placeholder(
+        def placeholder(  # pyre-fixme[14]
             self,
             target: str,
             args: Tuple[Argument, ...],
@@ -351,7 +351,7 @@ class _ExportPassBase(PassBase):
             else:
                 raise ExportPassBaseError(f"Unsupported target type: {target}")
 
-        def get_attr(
+        def get_attr(  # pyre-fixme[14]
             self, target: str, args: Tuple[Argument, ...], kwargs: Dict[str, Argument]
         ) -> Argument:
             return super().get_attr(target, args, kwargs)
@@ -364,7 +364,7 @@ class _ExportPassBase(PassBase):
         ) -> None:
             raise ExportPassBaseError("call_module is not supported.")
 
-        def call_method(
+        def call_method(  # pyre-fixme[14]
             self, target: str, args: Tuple[Argument, ...], kwargs: Dict[str, Argument]
         ) -> None:
             raise ExportPassBaseError("call_method is not supported.")

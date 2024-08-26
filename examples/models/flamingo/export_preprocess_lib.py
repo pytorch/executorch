@@ -15,10 +15,6 @@ from executorch.extension.llm.custom_ops import preprocess_custom_ops  # noqa
 from torch.export import Dim, ExportedProgram
 from torchtune.models.clip.inference._transforms import _CLIPImageTransform
 
-from .passes.replace_custom_ops_with_aten_ops_pass import (
-    ReplaceCustomOpsWithAtenOpsPass,
-)
-
 
 def get_example_inputs() -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     image = torch.ones(3, 800, 600)
@@ -59,7 +55,6 @@ def export_preprocess(
     )
 
     # Replace non-exportable ops with custom ops.
-    image_transform_model.pad = torch.ops.preprocess.pad.default
     image_transform_model.tile_crop = torch.ops.preprocess.tile_crop.default
 
     # Export.
@@ -80,8 +75,6 @@ def lower_to_executorch_preprocess(
     edge_program = to_edge(
         exported_program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
     )
-    # Replace custom ops with aten ops.
-    edge_program = edge_program.transform([ReplaceCustomOpsWithAtenOpsPass()])
 
     et_program = edge_program.to_executorch(ExecutorchBackendConfig())
     return et_program

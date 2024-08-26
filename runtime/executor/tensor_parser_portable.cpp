@@ -16,11 +16,15 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace deserialization {
 
-Result<torch::executor::Tensor> parseTensor(
+using torch::executor::ScalarType;
+using torch::executor::Tensor;
+using torch::executor::TensorImpl;
+
+Result<Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
     const executorch_flatbuffer::Tensor* s_tensor) {
@@ -103,18 +107,17 @@ Result<torch::executor::Tensor> parseTensor(
   // will introduce incompatible APIs between ATen Tensor and ETensor.
   exec_aten::StridesType* strides = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
       method_allocator, exec_aten::StridesType, dim);
-  auto status =
-      torch::executor::dim_order_to_stride(sizes, dim_order, dim, strides);
+  auto status = dim_order_to_stride(sizes, dim_order, dim, strides);
   ET_CHECK_OR_RETURN_ERROR(
       status == Error::Ok,
       Internal,
       "dim_order_to_stride returned invalid status");
 
-  auto* tensor_impl = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-      method_allocator, torch::executor::TensorImpl);
+  auto* tensor_impl =
+      ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(method_allocator, TensorImpl);
   // Placement new on the allocated memory space. Note that we create this first
   // with null data so we can find its expected size before getting its memory.
-  new (tensor_impl) torch::executor::TensorImpl(
+  new (tensor_impl) TensorImpl(
       scalar_type,
       dim,
       sizes,
@@ -138,9 +141,9 @@ Result<torch::executor::Tensor> parseTensor(
   }
   tensor_impl->set_data(data_ptr.get());
 
-  return torch::executor::Tensor(tensor_impl);
+  return Tensor(tensor_impl);
 }
 
 } // namespace deserialization
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

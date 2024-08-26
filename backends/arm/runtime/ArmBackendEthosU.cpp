@@ -12,14 +12,14 @@
 
 #include <cstring>
 
-#include <executorch/runtime/backend/interface.h>
-#include <executorch/runtime/core/error.h>
-#include <executorch/runtime/core/evalue.h>
-
-#include <executorch/backends/arm/runtime/VelaBinStream.h>
-
 #include <ethosu_driver.h>
 #include <pmu_ethosu.h>
+
+#include "executorch/backends/arm/runtime/VelaBinStream.h"
+#include "executorch/runtime/backend/interface.h"
+#include "executorch/runtime/core/error.h"
+#include "executorch/runtime/core/evalue.h"
+#include "executorch/runtime/core/exec_aten/util/scalar_type_util.h"
 
 using namespace std;
 
@@ -50,7 +50,6 @@ class ArmBackend final : public PyTorchBackendInterface {
 
     char* data = (char*)processed->data();
     size_t size = processed->size();
-    char* foot = data + size - sizeof(VelaBinBlock);
 
     // Verify format of vela_bin
     if (vela_bin_validate(data, size) == false) {
@@ -63,6 +62,7 @@ class ArmBackend final : public PyTorchBackendInterface {
         ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(allocator, ExecutionHandle);
     handle->processed = processed;
 
+    handle->permuted_io_flag = false;
     for (auto& compile_spec : compile_specs) {
       if (0 == std::strcmp(compile_spec.key, "permute_memory_format") &&
           0 == std::memcmp(compile_spec.value.buffer, "nhwc", 4)) {
@@ -95,7 +95,7 @@ class ArmBackend final : public PyTorchBackendInterface {
 
     ET_LOG(
         Debug,
-        "ArmBackend::execute: Running program data:\n  cmd %p %d\n  weight %p %d\n  scratch %p %d\n",
+        "ArmBackend::execute: Running program data:\n  cmd %p %zu\n  weight %p %zu\n  scratch %p %zu\n",
         handles.cmd_data,
         handles.cmd_data_size,
         handles.weight_data,
@@ -108,7 +108,6 @@ class ArmBackend final : public PyTorchBackendInterface {
     //                     or DRAM output for compatible data layouts.
     for (int i = 0; i < handles.inputs->count; i++) {
       auto tensor_in = args[i]->toTensor();
-      VelaIO* scratch_in = &handles.inputs->io[i];
       char* scratch_addr = handles.scratch_data + handles.inputs->io[i].offset;
 
       // We accept:
@@ -124,9 +123,9 @@ class ArmBackend final : public PyTorchBackendInterface {
       if (!supported) {
         ET_LOG(
             Error,
-            "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs, got ScalarType id %d",
+            "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs, got ScalarType id %s",
             i,
-            tensor_in.scalar_type());
+            toString(tensor_in.scalar_type()));
         return Error::InvalidProgram;
       }
 
@@ -251,7 +250,7 @@ class ArmBackend final : public PyTorchBackendInterface {
           ET_LOG(Error, "Tensor input %d mismatched shape", index);
           ET_LOG(
               Error,
-              "dimension %d mismatch, %d != %d",
+              "dimension %d mismatch, %zd != %d",
               index,
               tensor_in.size(i),
               input->shape[i]);
