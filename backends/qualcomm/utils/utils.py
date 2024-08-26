@@ -121,6 +121,7 @@ def convert_linear_to_conv2d(module: torch.nn.Module):
 
 def canonicalize_program(
     exported_program: ExportedProgram | List[LoweredBackendModule],
+    custom_buffer_size=None,
 ):
     # check if user specifies to use multi_contexts
     # this is a generic approach in case there exists multiple backends
@@ -140,7 +141,12 @@ def canonicalize_program(
             return max_sf_buf_size, module_map
 
         def process_lowered_module(module):
-            return len(module.processed_bytes), {
+            spill_fill_size = (
+                len(module.processed_bytes)
+                if custom_buffer_size is None
+                else custom_buffer_size
+            )
+            return spill_fill_size, {
                 module: convert_to_option(module.compile_specs[0].value)
             }
 

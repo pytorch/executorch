@@ -1,0 +1,41 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "inspector_test",
+    srcs = ["inspector_test.py"],
+    deps = [
+        "//executorch/devtools:lib",
+        "//executorch/devtools/debug_format:et_schema",
+        "//executorch/devtools/etdump:schema_flatcc",
+        "//executorch/devtools/etrecord/tests:etrecord_test_library",
+        "//executorch/devtools/inspector:inspector",
+        "//executorch/devtools/inspector:lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_unittest(
+    name = "event_blocks_test",
+    srcs = ["event_blocks_test.py"],
+    deps = [
+        "//executorch/devtools/etdump:schema_flatcc",
+        "//executorch/devtools/inspector:inspector",
+        "//executorch/devtools/inspector:lib",
+    ],
+)
+
+python_unittest(
+    name = "inspector_utils_test",
+    srcs = ["inspector_utils_test.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/debug_format:base_schema",
+        "//executorch/devtools/debug_format:et_schema",
+        "//executorch/devtools/etdump:schema_flatcc",
+        "//executorch/devtools/etrecord/tests:etrecord_test_library",
+        "//executorch/devtools/inspector:inspector_utils",
+    ],
+)

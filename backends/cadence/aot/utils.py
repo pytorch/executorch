@@ -177,3 +177,11 @@ def print_ops_info(
                 tablefmt="outline",
             )
         )
+
+
+def model_gm_has_SDPA(model_gm: torch.fx.GraphModule) -> bool:
+    for node in model_gm.graph.nodes:
+        if node.op == "call_function":
+            if node.target == torch.ops.aten.scaled_dot_product_attention.default:
+                return True
+    return False

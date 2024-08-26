@@ -62,7 +62,7 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
 
         return kernel_arg
 
-    def call_function(  # noqa: C901
+    def call_function(  # noqa: C901  # pyre-fixme[14]
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> Any:
         """
@@ -73,7 +73,7 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
         ):
             if isinstance(target, HigherOrderOperator):
                 raise RunHigherOrderOperatorError("Can't run delegate")
-            return super().call_function(target, args, kwargs)
+            return super().call_function(target, args, kwargs)  # pyre-fixme[6]
 
         # TODO(gasoonjia): Update Optional[torch.dtype] to a concrete class to support mixed dtypes in tensorlist.
         tensor_arg_types: Dict[str, Optional[torch.dtype]] = {}
@@ -126,4 +126,4 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
         valid = target._schema.dtype_constraint.validate(tensor_arg_types)
         if not valid:
             self.violating_ops[target] = tensor_arg_types
-        return super().call_function(target, args, kwargs)
+        return super().call_function(target, args, kwargs)  # pyre-fixme[6]

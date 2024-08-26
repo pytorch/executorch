@@ -25,7 +25,7 @@ from torch.export import Dim, export, ExportedProgram
 ctypes.CDLL("libvulkan.so.1")
 
 
-from executorch.exir.program._program import _to_edge_transform_and_lower
+from executorch.exir import to_edge_transform_and_lower
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
@@ -120,7 +120,7 @@ class TestBackends(unittest.TestCase):
                 model, sample_inputs, dynamic_shapes=dynamic_shapes
             )
 
-            edge_program = _to_edge_transform_and_lower(
+            edge_program = to_edge_transform_and_lower(
                 program,
                 transform_passes=[
                     I64toI32(self._edge_compile_config._skip_dim_order),
@@ -1630,6 +1630,42 @@ class TestBackends(unittest.TestCase):
         self.lower_module_and_test_output(
             EmbeddingModule(torch.nn.Embedding(5, 4)),
             (torch.tensor([[[0, 1], [0, 1]], [[4, 2], [3, 3]]]),),
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_conv_with_clamp(self):
+        class ConvWithClampModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.randn(6, 8, 3, 3)
+                self.bias = torch.randn(8)
+                self.stride = (1, 2)
+                self.padding = (2, 3)
+                self.dilation = (1, 1)
+                self.transposed = True
+                self.output_padding = (0, 1)
+                self.groups = 1
+                self.output_min = 0
+                self.output_max = 10
+
+            def forward(self, x):
+                return torch.ops.et_vk.conv_with_clamp(
+                    x,
+                    self.weight,
+                    self.bias,
+                    self.stride,
+                    self.padding,
+                    self.dilation,
+                    self.transposed,
+                    self.output_padding,
+                    self.groups,
+                    self.output_min,
+                    self.output_max,
+                )
+
+        self.lower_module_and_test_output(
+            ConvWithClampModule(),
+            (torch.randn(size=(1, 6, 40, 50), dtype=torch.float32),),
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 

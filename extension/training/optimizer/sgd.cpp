@@ -12,8 +12,14 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 
-namespace torch {
-namespace executor {
+using exec_aten::Tensor;
+using exec_aten::TensorImpl;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::KernelRuntimeContext;
+using ::executorch::runtime::Span;
+
+namespace executorch {
+namespace extension {
 namespace training {
 namespace optimizer {
 
@@ -67,7 +73,7 @@ Error SGD::step(Span<const char*> gradient_names, Span<Tensor> gradient_data) {
       InvalidState,
       "Gradient names and gradients must have the same length.");
 
-  RuntimeContext context;
+  KernelRuntimeContext context;
   for (auto& group : param_groups_) {
     auto& options = static_cast<SGDOptions&>(group.options());
     auto weight_decay = options.weight_decay();
@@ -170,7 +176,8 @@ SGD::~SGD() {
 #endif
   }
 }
+
 } // namespace optimizer
 } // namespace training
-} // namespace executor
-} // namespace torch
+} // namespace extension
+} // namespace executorch

@@ -6,7 +6,6 @@ runtime.python_library(
     name = "xnnpack_partitioner",
     srcs = [
         "xnnpack_partitioner.py",
-        "xnnpack_partitioner2.py",
     ],
     visibility = [
         "//executorch/...",
