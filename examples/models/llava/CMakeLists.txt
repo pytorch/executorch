@@ -203,7 +203,7 @@ endif()
 
 add_executable(llava_main ${_srcs})
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_link_options(llava_main PRIVATE "LINKER:-dead_strip,-s")
   else()
     target_link_options(llava_main PRIVATE "LINKER:--gc-sections,-s")

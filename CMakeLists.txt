@@ -787,7 +787,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
 
   add_executable(executor_runner ${_executor_runner__srcs})
   if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       target_link_options(executor_runner PRIVATE "LINKER:-dead_strip")
     else()
       target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
