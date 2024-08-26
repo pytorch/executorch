@@ -145,6 +145,7 @@ def get_qnn_quantizer(
     pt2e_quantize: str,
     quantization_mode: Optional[str] = None,
 ):
+    # Unused comment
     try:
         from executorch.backends.qualcomm.quantizer.custom_annotation import (
             custom_annotate_llama_matmul_16a8w,
