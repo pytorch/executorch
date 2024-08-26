@@ -328,10 +328,12 @@ What are the things I should be cautious about when I visit here? ASSISTANT:"""
 
     def _get_image_dynamic_shapes(self):
         # only support even number of height and width for now
-        _height = Dim('_height', min=1, max=self.image_processor.crop_size["height"]//2)
-        _width = Dim('_width', min=1, max=self.image_processor.crop_size["width"]//2)
-        height = 2*_height
-        width = 2*_width
+        _height = Dim(
+            "_height", min=1, max=self.image_processor.crop_size["height"] // 2
+        )
+        _width = Dim("_width", min=1, max=self.image_processor.crop_size["width"] // 2)
+        height = 2 * _height
+        width = 2 * _width
         dynamic_shapes = [{1: height, 2: width}]
         return dynamic_shapes
 
