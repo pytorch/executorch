@@ -14,9 +14,8 @@
 #include <executorch/runtime/platform/log.h>
 #include <cstring>
 
-namespace torch {
-namespace executor {
-namespace util {
+namespace executorch {
+namespace extension {
 
 /**
  * A DataLoader that wraps a pre-allocated buffer. The FreeableBuffers
@@ -25,12 +24,13 @@ namespace util {
  * This can be used to wrap data that is directly embedded into the firmware
  * image, or to wrap data that was allocated elsewhere.
  */
-class BufferDataLoader final : public DataLoader {
+class BufferDataLoader final : public executorch::runtime::DataLoader {
  public:
   BufferDataLoader(const void* data, size_t size)
       : data_(reinterpret_cast<const uint8_t*>(data)), size_(size) {}
 
-  ET_NODISCARD Result<FreeableBuffer> load(
+  ET_NODISCARD
+  executorch::runtime::Result<executorch::runtime::FreeableBuffer> load(
       size_t offset,
       size_t size,
       ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
@@ -41,14 +41,15 @@ class BufferDataLoader final : public DataLoader {
         offset,
         size,
         size_);
-    return FreeableBuffer(data_ + offset, size, /*free_fn=*/nullptr);
+    return executorch::runtime::FreeableBuffer(
+        data_ + offset, size, /*free_fn=*/nullptr);
   }
 
-  ET_NODISCARD Result<size_t> size() const override {
+  ET_NODISCARD executorch::runtime::Result<size_t> size() const override {
     return size_;
   }
 
-  ET_NODISCARD Error load_into(
+  ET_NODISCARD executorch::runtime::Error load_into(
       size_t offset,
       size_t size,
       ET_UNUSED const SegmentInfo& segment_info,
@@ -63,7 +64,7 @@ class BufferDataLoader final : public DataLoader {
       return result.error();
     }
     std::memcpy(buffer, result->data(), size);
-    return Error::Ok;
+    return executorch::runtime::Error::Ok;
   }
 
  private:
@@ -71,6 +72,15 @@ class BufferDataLoader final : public DataLoader {
   const size_t size_;
 };
 
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace util {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::BufferDataLoader;
 } // namespace util
 } // namespace executor
 } // namespace torch

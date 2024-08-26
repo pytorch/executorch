@@ -186,6 +186,21 @@ class ComputeGraph final {
 
   std::vector<int64_t> sizes_of(const ValueRef idx) const;
 
+  /*
+   * Returns the size of the tensor at `idx` along the specified dimension.
+   * Negative indexing is allowed.
+   */
+  template <typename T>
+  T size_at(const int64_t dim, const ValueRef idx) const {
+    const Value& val = values_.at(idx);
+    if (val.isTensor()) {
+      return static_cast<T>(utils::val_at(dim, val.toConstTensor().sizes()));
+    } else if (val.isTensorRef()) {
+      return static_cast<T>(utils::val_at(dim, val.toConstTensorRef().sizes));
+    }
+    VK_THROW("Could not get sizes of value with type ", val.type());
+  }
+
   vkapi::ScalarType dtype_of(const ValueRef idx) const;
 
   inline utils::uvec3 image_extents_of(const ValueRef idx) const {
@@ -202,6 +217,13 @@ class ComputeGraph final {
 
   inline bool is_buffer_storage(const ValueRef idx) const {
     return values_.at(idx).toConstTensor().has_buffer_storage();
+  }
+
+  inline bool val_is_view_of(const ValueRef maybe_view, const ValueRef base)
+      const {
+    return values_.at(maybe_view)
+        .toConstTensor()
+        .is_view_of(values_.at(base).toConstTensor());
   }
 
   inline utils::GPUMemoryLayout memory_layout_of(const ValueRef idx) const {
@@ -350,6 +372,24 @@ class ComputeGraph final {
   ValueRef add_tensor_like(
       const ValueRef vref,
       const utils::GPUMemoryLayout memory_layout);
+
+  /*
+   * Use the copy constructor of `api::vTensor` to create a "view" of the
+   * `vTensor` value at `vref`. See the copy constructor of `api::vTensor` for
+   * more details.
+   */
+  ValueRef add_tensor_view(const ValueRef vref);
+
+  /*
+   * Use the copy constructor of `api::vTensor` to create a "view" of the
+   * `vTensor` value at `vref` with different sizes and dim order. See the copy
+   * constructor of `api::vTensor` for more details.
+   */
+  ValueRef add_tensor_view(
+      const ValueRef vref,
+      const std::vector<int64_t>& sizes,
+      const std::vector<int64_t>& dim_order,
+      const size_t offset_numel = 0);
 
   /*
    * Add a `TensorRef` value to the graph with the specific properties. A

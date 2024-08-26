@@ -27,7 +27,7 @@ namespace {
 static constexpr auto kAppendEosToPrompt = "append_eos_to_prompt";
 static constexpr auto kEnableDynamicShape = "enable_dynamic_shape";
 static constexpr auto kBosId = "get_bos_id";
-static constexpr auto kEosId = "get_eos_id";
+static constexpr auto kEosIds = "get_eos_ids";
 static constexpr auto kMaxSeqLen = "get_max_seq_len";
 static constexpr auto kNBos = "get_n_bos";
 static constexpr auto kNEos = "get_n_eos";
@@ -85,7 +85,8 @@ Error Runner::load() {
   ET_LOG(Info, "Reading metadata from model");
 
   metadata_[kBosId] = tokenizer_->bos_tok();
-  metadata_[kEosId] = tokenizer_->eos_tok();
+  auto eos_ids = std::make_unique<std::unordered_set<uint64_t>>(
+      std::unordered_set<uint64_t>{tokenizer_->eos_tok()});
   metadata_[kVocabSize] = tokenizer_->vocab_size();
 
   const auto method_names =
@@ -106,6 +107,15 @@ Error Runner::load() {
           method_name.c_str(),
           value);
     }
+    ET_LOG(Info, "Metadata: %s = %" PRId64, method_name.c_str(), value);
+  }
+  if (method_names.count(kEosIds)) {
+    eos_ids->clear();
+    for (const auto& eos_id : ET_UNWRAP(module_->execute(kEosIds))) {
+      auto value = eos_id.toScalar().to<int64_t>();
+      eos_ids->emplace(value);
+      ET_LOG(Info, "eos_id = %" PRId64, value);
+    }
   }
   text_decoder_runner_ = std::make_unique<TextDecoderRunner>(
       module_.get(),
@@ -122,7 +132,7 @@ Error Runner::load() {
       tokenizer_.get(),
       text_decoder_runner_.get(),
       metadata_.at(kUseKVCache),
-      metadata_.at(kEosId),
+      std::move(eos_ids),
       &stats_);
 
   return Error::Ok;

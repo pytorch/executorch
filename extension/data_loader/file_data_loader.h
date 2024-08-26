@@ -14,9 +14,8 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
-namespace torch {
-namespace executor {
-namespace util {
+namespace executorch {
+namespace extension {
 
 /**
  * A DataLoader that loads segments from a file, allocating the memory
@@ -25,7 +24,7 @@ namespace util {
  * Note that this will keep the file open for the duration of its lifetime, to
  * avoid the overhead of opening it again for every load() call.
  */
-class FileDataLoader final : public DataLoader {
+class FileDataLoader final : public executorch::runtime::DataLoader {
  public:
   /**
    * Creates a new FileDataLoader that wraps the named file.
@@ -40,12 +39,12 @@ class FileDataLoader final : public DataLoader {
    *     could not be found.
    * @retval Error::MemoryAllocationFailed Internal memory allocation failure.
    */
-  static Result<FileDataLoader> from(
+  static executorch::runtime::Result<FileDataLoader> from(
       const char* file_name,
       size_t alignment = alignof(std::max_align_t));
 
   /// DEPRECATED: Use the lowercase `from()` instead.
-  ET_DEPRECATED static Result<FileDataLoader> From(
+  ET_DEPRECATED static executorch::runtime::Result<FileDataLoader> From(
       const char* file_name,
       size_t alignment = alignof(std::max_align_t)) {
     return from(file_name, alignment);
@@ -65,14 +64,15 @@ class FileDataLoader final : public DataLoader {
 
   ~FileDataLoader() override;
 
-  ET_NODISCARD Result<FreeableBuffer> load(
+  ET_NODISCARD
+  executorch::runtime::Result<executorch::runtime::FreeableBuffer> load(
       size_t offset,
       size_t size,
       const DataLoader::SegmentInfo& segment_info) const override;
 
-  ET_NODISCARD Result<size_t> size() const override;
+  ET_NODISCARD executorch::runtime::Result<size_t> size() const override;
 
-  ET_NODISCARD Error load_into(
+  ET_NODISCARD executorch::runtime::Error load_into(
       size_t offset,
       size_t size,
       ET_UNUSED const SegmentInfo& segment_info,
@@ -100,6 +100,15 @@ class FileDataLoader final : public DataLoader {
   const int fd_; // Owned by the instance.
 };
 
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+namespace util {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::FileDataLoader;
 } // namespace util
 } // namespace executor
 } // namespace torch

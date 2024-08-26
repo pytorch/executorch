@@ -66,9 +66,12 @@ class SDPAVisitor(NodeVisitor):
 
         # Hack to broadcast the scale
         q_shape = get_shape(get_input_node(node, 0))
-        scale = cast(float, node.kwargs["scale"])
+        embedding_dim = q_shape[-1]
+        scale = 1 / (embedding_dim**0.5)
+        if "scale" in node.kwargs and node.kwargs["scale"]:
+            scale = cast(float, node.kwargs["scale"])
 
-        t = torch.full((q_shape[-1],), scale, dtype=mask_dtype)
+        t = torch.full((embedding_dim,), scale, dtype=mask_dtype)
         scale_node = self.get_fake_attr("scale", t)
         self.define_tensor(
             scale_node,

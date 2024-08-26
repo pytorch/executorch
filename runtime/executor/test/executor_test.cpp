@@ -22,19 +22,21 @@ using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::SizesType;
 using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::getOpsFn;
-using torch::executor::hasOpsFn;
-using torch::executor::Kernel;
-using torch::executor::KernelRuntimeContext;
-using torch::executor::register_kernels;
-using torch::executor::testing::TensorFactory;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::getOpsFn;
+using executorch::runtime::hasOpsFn;
+using executorch::runtime::Kernel;
+using executorch::runtime::KernelRuntimeContext;
+using executorch::runtime::register_kernels;
+using executorch::runtime::testing::TensorFactory;
+
+namespace pytree = ::executorch::extension::pytree;
 
 class ExecutorTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -210,7 +212,7 @@ TEST(PyTreeEValue, List) {
   Scalar d((double)3.0);
   EValue items[2] = {i, d};
 
-  auto c = torch::executor::pytree::unflatten(spec, items);
+  auto c = pytree::unflatten(spec, items);
   ASSERT_TRUE(c.isList());
   ASSERT_EQ(c.size(), 2);
 
@@ -232,7 +234,7 @@ TEST(PyTreeEValue, List) {
 
 auto unflatten(EValue* items) {
   std::string spec = "D4#1#1#1#1('key0':$,1:$,23:$,123:$)";
-  return torch::executor::pytree::unflatten(spec, items);
+  return pytree::unflatten(spec, items);
 }
 
 TEST(PyTreeEValue, DestructedSpec) {
@@ -249,8 +251,8 @@ TEST(PyTreeEValue, DestructedSpec) {
   auto& key0 = c.key(0);
   auto& key1 = c.key(1);
 
-  ASSERT_TRUE(key0 == torch::executor::pytree::Key("key0"));
-  ASSERT_TRUE(key1 == torch::executor::pytree::Key(1));
+  ASSERT_TRUE(key0 == pytree::Key("key0"));
+  ASSERT_TRUE(key1 == pytree::Key(1));
 
   const auto& child0 = c[0];
   const auto& child1 = c[1];

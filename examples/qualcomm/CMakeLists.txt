@@ -69,15 +69,20 @@ target_include_directories(
 
 # build qnn_executor_runner
 add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/executor_runner
+  ${CMAKE_CURRENT_SOURCE_DIR}/executor_runner
 )
 
 # build qnn_llama_runner
 add_subdirectory(
-    ${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama2
+  ${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama2
 )
 
-# build qaihub_llama2_7b_runner
+# build qaihub_llama2_7b_runner and qaihub_llama3_8b_runner
 add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama2
+  ${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama
+)
+
+# build qaihub_stable_diffusion_runner
+add_subdirectory(
+  ${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/stable_diffusion
 )

@@ -18,14 +18,13 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import torch
 
-from executorch.exir import ExecutorchProgram, ExecutorchProgramManager
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.core import BundledProgram
 
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.core import BundledProgram
-
-from executorch.sdk.bundled_program.serialize import (
+from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+from executorch.exir import ExecutorchProgram, ExecutorchProgramManager
 
 # If quiet is true, suppress the printing of stdout and stderr output.
 quiet = False
