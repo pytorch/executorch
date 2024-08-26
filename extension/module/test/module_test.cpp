@@ -129,7 +129,7 @@ TEST_F(ModuleTest, TestExecute) {
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  const auto result = module.execute("forward", {EValue(Tensor(&tensor))});
+  const auto result = module.execute("forward", Tensor(&tensor));
   EXPECT_TRUE(result.ok());
   EXPECT_TRUE(module.is_loaded());
   EXPECT_TRUE(module.is_method_loaded("forward"));
@@ -150,7 +150,7 @@ TEST_F(ModuleTest, TestExecutePreload) {
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  const auto result = module.execute("forward", {EValue(Tensor(&tensor))});
+  const auto result = module.execute("forward", Tensor(&tensor));
   EXPECT_TRUE(result.ok());
 
   const auto data = result->at(0).toTensor().const_data_ptr<float>();
@@ -169,7 +169,7 @@ TEST_F(ModuleTest, TestExecutePreload_method) {
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  const auto result = module.execute("forward", {EValue(Tensor(&tensor))});
+  const auto result = module.execute("forward", Tensor(&tensor));
   EXPECT_TRUE(result.ok());
 
   const auto data = result->at(0).toTensor().const_data_ptr<float>();
@@ -191,7 +191,7 @@ TEST_F(ModuleTest, TestExecutePreloadProgramAndMethod) {
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  const auto result = module.execute("forward", {EValue(Tensor(&tensor))});
+  const auto result = module.execute("forward", Tensor(&tensor));
   EXPECT_TRUE(result.ok());
 
   const auto data = result->at(0).toTensor().const_data_ptr<float>();
@@ -223,7 +223,7 @@ TEST_F(ModuleTest, TestGet) {
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  const auto result = module.get("forward", {EValue(Tensor(&tensor))});
+  const auto result = module.get("forward", Tensor(&tensor));
 
   EXPECT_TRUE(result.ok());
   const auto data = result->toTensor().const_data_ptr<float>();
@@ -237,7 +237,7 @@ TEST_F(ModuleTest, TestForward) {
   std::array<int32_t, 2> sizes{1, 2};
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
-  const auto result = module->forward({EValue(Tensor(&tensor))});
+  const auto result = module->forward(Tensor(&tensor));
   EXPECT_TRUE(result.ok());
 
   const auto data = result->at(0).toTensor().const_data_ptr<float>();
@@ -247,7 +247,7 @@ TEST_F(ModuleTest, TestForward) {
   std::array<float, 2> input2{2, 3};
   TensorImpl tensor2(
       ScalarType::Float, sizes.size(), sizes.data(), input2.data());
-  const auto result2 = module->forward({EValue(Tensor(&tensor2))});
+  const auto result2 = module->forward(Tensor(&tensor2));
   EXPECT_TRUE(result2.ok());
 
   const auto data2 = result->at(0).toTensor().const_data_ptr<float>();
@@ -258,7 +258,7 @@ TEST_F(ModuleTest, TestForward) {
 TEST_F(ModuleTest, TestForwardWithInvalidInputs) {
   Module module(model_path_);
 
-  const auto result = module.forward({EValue()});
+  const auto result = module.forward(EValue());
 
   EXPECT_FALSE(result.ok());
 }
@@ -308,18 +308,18 @@ TEST_F(ModuleTest, TestProgramSharingAndDataLoaderManagement) {
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  auto result1 = module1->execute("forward", {EValue(Tensor(&tensor))});
+  auto result1 = module1->execute("forward", Tensor(&tensor));
   EXPECT_TRUE(result1.ok());
 
   auto module2 = std::make_unique<Module>(module1->program());
 
-  auto result2 = module2->execute("forward", {EValue(Tensor(&tensor))});
+  auto result2 = module2->execute("forward", Tensor(&tensor));
   EXPECT_TRUE(result2.ok());
 
   module1 = std::make_unique<Module>("/path/to/nonexistent/file.pte");
   EXPECT_FALSE(module1->is_loaded());
 
-  auto result3 = module2->execute("forward", {EValue(Tensor(&tensor))});
+  auto result3 = module2->execute("forward", Tensor(&tensor));
   EXPECT_TRUE(result3.ok());
 }
 
@@ -356,7 +356,7 @@ TEST_F(ModuleTest, TestProgramPersistenceAndReuseAfterModuleDestruction) {
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  auto result = module.execute("forward", {EValue(Tensor(&tensor))});
+  auto result = module.execute("forward", Tensor(&tensor));
   EXPECT_TRUE(result.ok());
 
   auto data = result->at(0).toTensor().const_data_ptr<float>();
@@ -385,7 +385,7 @@ TEST_F(ModuleTest, TestConcurrentExecutionWithSharedProgram) {
     TensorImpl tensor(
         ScalarType::Float, sizes.size(), sizes.data(), (void*)input.data());
 
-    const auto result = module.forward({EValue(Tensor(&tensor))});
+    const auto result = module.forward(Tensor(&tensor));
     EXPECT_TRUE(result.ok());
 
     const auto data = result->at(0).toTensor().const_data_ptr<float>();
