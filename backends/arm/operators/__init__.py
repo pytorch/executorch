@@ -27,5 +27,6 @@ from . import (  # noqa
     op_slice,
     op_softmax,
     op_sub,
+    op_unsqueeze,
     op_view,
 )
