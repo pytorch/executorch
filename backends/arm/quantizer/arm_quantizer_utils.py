@@ -138,6 +138,7 @@ def is_share_obs_or_fq_op(op: Callable) -> bool:
     return op in [
         torch.ops.aten.hardtanh.default,
         torch.ops.aten.hardtanh_.default,
+        torch.ops.aten.relu.default,
         torch.ops.aten.mean.default,
         torch.ops.aten.mean.dim,
         torch.ops.aten.permute.default,
