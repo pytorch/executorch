@@ -13,7 +13,9 @@
 // patternlint-disable-next-line executorch-cpp-nostdinc
 #include <vector>
 
-namespace torch::executor {
+namespace executorch {
+namespace extension {
+namespace llm {
 
 struct Image {
   // Assuming NCHW format
@@ -23,4 +25,14 @@ struct Image {
   int32_t channels;
 };
 
-} // namespace torch::executor
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::Image;
+} // namespace executor
+} // namespace torch

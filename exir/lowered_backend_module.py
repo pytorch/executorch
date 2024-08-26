@@ -139,7 +139,7 @@ class LoweredBackendModule(torch.nn.Module):
         segment_alignment: int = 4096,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
-        memory_planning: MemoryPlanningPass = None,
+        memory_planning: MemoryPlanningPass = None,  # pyre-fixme[9]
     ) -> bytes:
         """
         Returns a buffer containing the serialized ExecuTorch binary.
@@ -161,7 +161,7 @@ class LoweredBackendModule(torch.nn.Module):
     def program(
         self,
         emit_stacktrace: bool = False,
-        memory_planning: MemoryPlanningPass = None,
+        memory_planning: MemoryPlanningPass = None,  # pyre-fixme[9]
     ) -> Program:
         # Fix autodpes introuces cyclic dependencies:
         # program -> verifier -> lowered_backend_module -> program

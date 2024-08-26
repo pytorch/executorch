@@ -24,16 +24,16 @@ using namespace ::testing;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using exec_aten::TensorList;
-using torch::executor::testing::IsCloseTo;
-using torch::executor::testing::IsDataCloseTo;
-using torch::executor::testing::IsDataEqualTo;
-using torch::executor::testing::IsEqualTo;
-using torch::executor::testing::IsListCloseTo;
-using torch::executor::testing::IsListEqualTo;
-using torch::executor::testing::tensor_data_is_close;
-using torch::executor::testing::tensor_lists_are_close;
-using torch::executor::testing::TensorFactory;
-using torch::executor::testing::tensors_are_close;
+using executorch::runtime::testing::IsCloseTo;
+using executorch::runtime::testing::IsDataCloseTo;
+using executorch::runtime::testing::IsDataEqualTo;
+using executorch::runtime::testing::IsEqualTo;
+using executorch::runtime::testing::IsListCloseTo;
+using executorch::runtime::testing::IsListEqualTo;
+using executorch::runtime::testing::tensor_data_is_close;
+using executorch::runtime::testing::tensor_lists_are_close;
+using executorch::runtime::testing::TensorFactory;
+using executorch::runtime::testing::tensors_are_close;
 
 // Exhaustively test all of our comparison functions every time. Also flip the
 // params around to demonstrate that the underlying checks are commutative.

@@ -275,10 +275,10 @@ class RunnerUtil:
         inputs: Tuple[torch.Tensor],
     ) -> list[torch.Tensor]:
         """
-        Run TOSA reference model using the tosa_refence_model program.
+        Run TOSA reference model using the tosa_reference_model program.
 
         In order to do that we need:
-        1. desc.json, which points to files needed by tosa_refence_model.
+        1. desc.json, which points to files needed by tosa_reference_model.
         2. output.tosa, which is the TOSA buffer that describes the model we're
            trying to run.
 
@@ -287,12 +287,6 @@ class RunnerUtil:
         All these files are saved on disk in self.intermediate_path.
 
         Args:
-            params_input (Tuple[List[str], List[QuantizationParams]]): A tuple
-                containing a list of input node names and a list of their
-                quantization parameters (if model is quantized).
-            param_output (Tuple[str, QuantizationParams]): A tuple containing
-                the output node name and its quantization parameters (if
-                model is quantized).
             inputs (Tuple[torch.Tensor]): The input data to run the TOSA
 
         Returns:
@@ -423,7 +417,7 @@ def save_npy(
     Parameters:
         path: the directory where to save the data.
         data: the data to save.
-        is_quantize: whether to quantize the data before saving it.
+        is_quantized: whether to quantize the data before saving it.
         input_name: the name of the file, without file-ending.
         quant_param: the parameters to use for quantization.
     Returns:
@@ -448,7 +442,7 @@ def save_bytes(
     Parameters:
         path: the directory where to save the data.
         data: the data to save.
-        is_quantize: whether to quantize the data before saving it.
+        is_quantized: whether to quantize the data before saving it.
         input_name: the name of the file, without file-ending.
         quant_param: the parameters to use for quantization.
     Returns:

@@ -203,6 +203,24 @@ ValueRef ComputeGraph::add_tensor(
       sizes, dtype, suggested_memory_layout(sizes), shared_object_idx);
 }
 
+ValueRef ComputeGraph::add_tensor_view(const ValueRef vref) {
+  const vTensorPtr t = get_tensor(vref);
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(api::vTensor(*t));
+  return idx;
+}
+
+ValueRef ComputeGraph::add_tensor_view(
+    const ValueRef vref,
+    const std::vector<int64_t>& sizes,
+    const std::vector<int64_t>& strides,
+    const size_t offset_numel) {
+  const vTensorPtr t = get_tensor(vref);
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(api::vTensor(*t, sizes, strides, offset_numel));
+  return idx;
+}
+
 ValueRef ComputeGraph::add_tensorref(
     const std::vector<int64_t>& sizes,
     const vkapi::ScalarType dtype,
@@ -350,7 +368,7 @@ utils::uvec3 ComputeGraph::create_local_wg_size(
 }
 
 utils::uvec3 ComputeGraph::create_local_wg_size(const ValueRef idx) {
-  return create_local_wg_size(image_extents_of(idx));
+  return create_local_wg_size(create_global_wg_size(idx));
 }
 
 void ComputeGraph::copy_into_staging(

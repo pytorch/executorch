@@ -36,11 +36,10 @@
     ET_LOG(Error, "]");                                               \
   }
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 class KernelRuntimeContext; // Forward declaration
-using RuntimeContext = KernelRuntimeContext; // TODO(T147221312): Remove
 using OpFunction = void (*)(KernelRuntimeContext&, EValue**);
 
 /**
@@ -52,7 +51,9 @@ struct TensorMeta {
   ArrayRef<exec_aten::DimOrderType> dim_order_;
 
   TensorMeta() = default;
-  TensorMeta(ScalarType dtype, ArrayRef<exec_aten::DimOrderType> order)
+  TensorMeta(
+      exec_aten::ScalarType dtype,
+      ArrayRef<exec_aten::DimOrderType> order)
       : dtype_(dtype), dim_order_(order) {}
 
   bool operator==(const TensorMeta& other) const {
@@ -258,5 +259,23 @@ struct OperatorRegistry {
   uint32_t num_kernels_;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::get_kernels;
+using ::executorch::runtime::getOpsFn;
+using ::executorch::runtime::hasOpsFn;
+using ::executorch::runtime::Kernel;
+using ::executorch::runtime::KernelKey;
+using ::executorch::runtime::KernelRuntimeContext;
+using ::executorch::runtime::OperatorRegistry;
+using ::executorch::runtime::OpFunction;
+using ::executorch::runtime::register_kernels;
+using ::executorch::runtime::TensorMeta;
+using RuntimeContext = ::executorch::runtime::KernelRuntimeContext;
 } // namespace executor
 } // namespace torch

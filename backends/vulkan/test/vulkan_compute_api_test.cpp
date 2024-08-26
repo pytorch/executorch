@@ -25,6 +25,35 @@
 
 using namespace vkcompute::api;
 
+std::vector<float>
+transpose_matrix(std::vector<float>& mat, const int H, const int W) {
+  std::vector<float> out(W * H);
+  for (int out_y = 0; out_y < H; ++out_y) {
+    for (int out_x = 0; out_x < W; ++out_x) {
+      out[out_x * H + out_y] = mat[out_y * W + out_x];
+    }
+  }
+  return out;
+}
+
+std::vector<float> compute_reference_matmul(
+    std::vector<float>& mat1,
+    std::vector<float>& mat2,
+    const int M,
+    const int K,
+    const int N) {
+  std::vector<float> out(M * N);
+  for (int out_y = 0; out_y < M; ++out_y) {
+    for (int out_x = 0; out_x < N; ++out_x) {
+      out[out_y * N + out_x] = 0;
+      for (int k = 0; k < K; ++k) {
+        out[out_y * N + out_x] += mat1[out_y * K + k] * mat2[k * N + out_x];
+      }
+    }
+  }
+  return out;
+}
+
 std::vector<std::vector<int64_t>> standard_sizes_to_test = {
     // 2D
     {7, 11},
@@ -139,7 +168,50 @@ std::vector<int64_t> get_reference_strides(
   return {};
 }
 
+TEST_F(VulkanComputeAPITest, empty_init_shader_info_test) {
+  vkapi::ShaderInfo empty_shader_info;
+  EXPECT_FALSE(empty_shader_info);
+  EXPECT_TRUE(empty_shader_info.src_code.bin == nullptr);
+  EXPECT_TRUE(empty_shader_info.src_code.size == 0u);
+}
+
+TEST_F(VulkanComputeAPITest, calculate_dim_order_test) {
+  // ndim, GPUMemoryLayout, expected dim order pairs
+  std::vector<std::tuple<size_t, utils::GPUMemoryLayout, std::vector<int64_t>>>
+      test_cases = {
+          {1, utils::kWidthPacked, {0}},
+          {1, utils::kHeightPacked, {0}},
+          {1, utils::kChannelsPacked, {0}},
+          {2, utils::kWidthPacked, {0, 1}},
+          {2, utils::kHeightPacked, {1, 0}},
+          {2, utils::kChannelsPacked, {0, 1}},
+          {3, utils::kWidthPacked, {0, 1, 2}},
+          {3, utils::kHeightPacked, {0, 2, 1}},
+          {3, utils::kChannelsPacked, {1, 2, 0}},
+          {4, utils::kWidthPacked, {0, 1, 2, 3}},
+          {4, utils::kHeightPacked, {0, 1, 3, 2}},
+          {4, utils::kChannelsPacked, {0, 2, 3, 1}},
+      };
+
+  for (const auto& test_case : test_cases) {
+    const size_t& ndim = std::get<0>(test_case);
+    const utils::GPUMemoryLayout& layout = std::get<1>(test_case);
+    const auto& expected_dim_order = std::get<2>(test_case);
+    std::vector<int64_t> dim_order = calculate_dim_order(ndim, layout);
+
+    ASSERT_TRUE(dim_order == expected_dim_order);
+  }
+}
+
 TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
+  vTensor v_tensor_to_resize(
+      context(),
+      {25, 25, 25, 25},
+      vkapi::kFloat,
+      utils::kBuffer,
+      utils::kWidthPacked,
+      /*allocate_memory = */ false);
+
   for (const auto& sizes : standard_sizes_to_test) {
     if (sizes.size() < 3) {
       continue;
@@ -147,7 +219,9 @@ TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
     for (const auto& layout :
          {utils::kWidthPacked, utils::kHeightPacked, utils::kChannelsPacked}) {
       {
-        std::vector<int64_t> strides = calculate_strides(sizes, layout);
+        std::vector<int64_t> dim_order =
+            calculate_dim_order(sizes.size(), layout);
+        std::vector<int64_t> strides = calculate_strides(sizes, dim_order);
         std::vector<int64_t> ref_strides = get_reference_strides(sizes, layout);
         ASSERT_TRUE(strides == ref_strides);
 
@@ -158,6 +232,25 @@ TEST_F(VulkanComputeAPITest, calculate_tensor_strides_test) {
             get_reference_strides(sizes, layout, true);
 
         ASSERT_TRUE(unsqueezed_strides == ref_unsqueezed_strides);
+
+        // Create new vTensor and check that the strides are correct
+        vTensor new_v_tensor(
+            context(),
+            sizes,
+            vkapi::kFloat,
+            utils::kBuffer,
+            layout,
+            /*allocate_memory = */ false);
+
+        ASSERT_TRUE(new_v_tensor.strides() == ref_strides);
+        ASSERT_TRUE(
+            new_v_tensor.unsqueezed_strides() == ref_unsqueezed_strides);
+
+        // Resize vtensor and check that updated metadata is correct
+        v_tensor_to_resize.virtual_reconfigure(sizes, dim_order);
+        ASSERT_TRUE(v_tensor_to_resize.strides() == ref_strides);
+        ASSERT_TRUE(
+            v_tensor_to_resize.unsqueezed_strides() == ref_unsqueezed_strides);
       }
     }
   }
@@ -509,6 +602,130 @@ TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
   }
 }
 
+TEST_F(VulkanComputeAPITest, tensor_copy_test) {
+  std::vector<int64_t> sizes = {9, 9};
+  std::vector<int64_t> strides =
+      get_reference_strides(sizes, utils::kWidthPacked);
+  std::vector<int64_t> dim_order = {0, 1};
+
+  vTensor original = CREATE_FLOAT_BUFFER(sizes, /*allocate_memory=*/true);
+  vTensor copy = vTensor(original, sizes, dim_order);
+  EXPECT_TRUE(get_vma_allocation_count() == 1);
+  EXPECT_TRUE(copy.is_view_of(original));
+
+  // Fill original tensor with some data
+  fill_vtensor(original, 2.5f, true);
+
+  std::vector<float> data_out(copy.staging_buffer_numel());
+  // Extract the copy tensor; should contain the data of the original tensor
+  extract_vtensor(copy, data_out);
+
+  for (size_t i = 0; i < data_out.size(); ++i) {
+    CHECK_VALUE(data_out, i, 2.5f + i);
+  }
+}
+
+TEST_F(VulkanComputeAPITest, tensor_no_copy_transpose_test) {
+  constexpr int M = 11;
+  constexpr int K = 23;
+  constexpr int N = 17;
+  std::vector<int64_t> mat1_sizes = {M, K};
+  std::vector<int64_t> mat2_sizes = {N, K};
+  std::vector<int64_t> mat2_t_sizes = {K, N};
+  std::vector<int64_t> out_sizes = {M, N};
+
+  std::vector<int64_t> transposed_dim_order = {1, 0};
+
+  vTensor mat1 = CREATE_FLOAT_BUFFER(mat1_sizes, /*allocate_memory=*/true);
+  vTensor mat2 = CREATE_FLOAT_BUFFER(mat2_sizes, /*allocate_memory=*/true);
+  vTensor out = CREATE_FLOAT_BUFFER(out_sizes, /*allocate_memory=*/true);
+
+  // Generate data
+  std::vector<float> mat1_data =
+      create_random_float_buffer(mat1.staging_buffer_numel());
+  std::vector<float> mat2_data =
+      create_random_float_buffer(mat2.staging_buffer_numel());
+
+  // Create direct view and modify sizes and strides later
+  vTensor mat2_t = vTensor(mat2);
+
+  std::vector<float> mat2_t_data = transpose_matrix(mat2_data, N, K);
+  std::vector<float> ref_out =
+      compute_reference_matmul(mat1_data, mat2_t_data, M, K, N);
+
+  // Fill original tensor with some data
+  fill_vtensor(mat1, mat1_data);
+  fill_vtensor(mat2, mat2_data);
+
+  record_reference_matmul(api::context(), out, mat1, mat2_t);
+
+  // Update sizes and strides of mat2_t to be that of a transposed tensor
+  mat2_t.virtual_reconfigure(mat2_t_sizes, transposed_dim_order);
+  EXPECT_TRUE(mat2_t.gpu_memory_layout() == utils::kHeightPacked);
+
+  std::vector<float> data_out(out.staging_buffer_numel());
+  // Extract the copy tensor; should contain the data of the original tensor
+  extract_vtensor(out, data_out);
+
+  EXPECT_TRUE(data_out.size() == ref_out.size());
+
+  for (size_t i = 0; i < data_out.size(); ++i) {
+    EXPECT_TRUE(check_close(data_out[i], ref_out[i]));
+  }
+}
+
+TEST_F(VulkanComputeAPITest, tensor_no_copy_slice_test) {
+  constexpr int L = 31;
+
+  // S{N} refers to slice {N}
+  constexpr int L_S1 = 17;
+  constexpr int O_S1 = 5;
+
+  constexpr int L_S2 = 7;
+  constexpr int O_S2 = 3;
+
+  std::vector<int64_t> dim_order = {0};
+
+  std::vector<int64_t> t_sizes = {L};
+  std::vector<int64_t> s1_sizes = {L_S1};
+  std::vector<int64_t> s2_sizes = {L_S2};
+
+  vTensor orig = CREATE_FLOAT_BUFFER(t_sizes, /*allocate_memory=*/true);
+
+  fill_vtensor(orig, 0);
+
+  vTensor s1 = vTensor(orig, s1_sizes, dim_order, O_S1);
+  vTensor s2 = vTensor(s1, s2_sizes, dim_order, O_S2);
+
+  record_scalar_add_buffer(api::context(), s1, 4.5f);
+  record_scalar_add_buffer(api::context(), s2, 7.5f);
+
+  std::vector<float> orig_data(orig.staging_buffer_numel());
+  extract_vtensor(orig, orig_data);
+
+  int id = 0;
+  while (id < O_S1) {
+    EXPECT_TRUE(orig_data[id] == 0);
+    ++id;
+  }
+  while (id < O_S1 + O_S2) {
+    EXPECT_TRUE(orig_data[id] == 4.5);
+    ++id;
+  }
+  while (id < O_S1 + O_S2 + L_S2) {
+    EXPECT_TRUE(orig_data[id] == 12);
+    ++id;
+  }
+  while (id < O_S1 + L_S1) {
+    EXPECT_TRUE(orig_data[id] == 4.5);
+    ++id;
+  }
+  while (id < L) {
+    EXPECT_TRUE(orig_data[id] == 0);
+    ++id;
+  }
+}
+
 TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   // This test is the same as texture_add_sanity_check, except that the tensor
   // memory is allocated in a deferred fashion
@@ -827,6 +1044,19 @@ TEST(VulkanComputeGraphTest, test_values_string) {
   EXPECT_TRUE(stored == "hello, world");
 }
 
+TEST(VulkanComputeGraphTest, empty_init_executenode_test) {
+  ExecuteNode node(nullptr, {});
+  EXPECT_FALSE(node);
+
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  // Encode an empty ExecuteNode and check that command buffer encoding does not
+  // crash.
+  graph.execute_nodes().emplace_back(new ExecuteNode(nullptr, {}));
+  EXPECT_NO_FATAL_FAILURE(graph.encode_execute());
+}
+
 TEST(VulkanComputeGraphTest, test_zero_dim_tensor) {
   GraphConfig config;
   ComputeGraph graph(config);
@@ -908,6 +1138,62 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_buffer) {
 
     // Sanity check that the values are correct
     for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, expected_val);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_simple_graph_with_view) {
+  constexpr int W = 7;
+  constexpr int H = 7;
+  // slice height
+  constexpr int S_H = 2;
+  // slice offset
+  constexpr int S_O = 3;
+
+  GraphConfig config;
+  config.set_storage_type_override(utils::kBuffer);
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> dim_order = {0, 1};
+
+  std::vector<int64_t> orig_sizes = {H, W};
+  std::vector<int64_t> slice_sizes = {S_H, W};
+  const int offset = S_O * W;
+
+  // Build graph
+
+  IOValueRef orig = graph.add_input_tensor(orig_sizes, vkapi::kFloat);
+  ValueRef slice =
+      graph.add_tensor_view(orig.value, slice_sizes, dim_order, offset);
+
+  EXPECT_TRUE(graph.val_is_view_of(slice, orig.value));
+
+  IOValueRef out = {};
+
+  out.value = graph.add_tensor(slice_sizes, vkapi::kFloat);
+
+  auto opFn = VK_GET_OP_FN("aten.abs.default");
+  opFn(graph, {slice, out.value, kDummyValueRef, kDummyValueRef});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    float start_val = -130 + i;
+
+    fill_vtensor(graph, orig, start_val, true);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      const float expected_val = std::abs(start_val) - float(offset) - i;
       CHECK_VALUE(data_out, i, expected_val);
     }
   }
@@ -1999,24 +2285,28 @@ void test_binary_op(
   }
 }
 
-#define CALL_TEST_FN_FORALL_CONDITIONS(_)                                 \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false)    \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, false)   \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)     \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, true)    \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
+#define CALL_TEST_FN_FORALL_CONDITIONS(_)                            \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, false)    \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kHeightPacked, false)   \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, false) \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, true)     \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kHeightPacked, true)    \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, true)
 
-#define CALL_TEST_FN_FOR_W_PACKED(_)                                   \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false) \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)
+#define CALL_TEST_FN_FOR_W_PACKED(_)                              \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, false) \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kWidthPacked, true)  \
+  _(vkapi::kFloat, utils::kBuffer, utils::kWidthPacked, false)    \
+  _(vkapi::kFloat, utils::kBuffer, utils::kWidthPacked, true)
 
-#define CALL_TEST_FN_FOR_C_PACKED(_)                                      \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
-  _(vkapi::kFloat, utils::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
+#define CALL_TEST_FN_FOR_C_PACKED(_)                                 \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, false) \
+  _(vkapi::kFloat, utils::kTexture3D, utils::kChannelsPacked, true)  \
+  _(vkapi::kFloat, utils::kBuffer, utils::kChannelsPacked, false)    \
+  _(vkapi::kFloat, utils::kBuffer, utils::kChannelsPacked, true)
 
 TEST(VulkanComputeGraphOpsTest, add_smoke_test) {
-#define RUN_TESTS(dtype, layout, prepack)                                  \
+#define RUN_TESTS(dtype, storage, layout, prepack)                         \
   test_binary_op("add", {17, 21}, {17, 21}, dtype, layout, prepack);       \
   test_binary_op("add", {17, 21}, {1, 1}, dtype, layout, prepack);         \
   test_binary_op("sub", {11, 22}, {11, 22}, dtype, layout, prepack);       \
@@ -2037,9 +2327,11 @@ void test_mm(
     int K,
     int N,
     vkapi::ScalarType dtype,
+    utils::StorageType storage_type,
     utils::GPUMemoryLayout memory_layout,
     bool prepack = true) {
   GraphConfig config;
+  config.set_storage_type_override(storage_type);
   ComputeGraph graph(config);
 
   std::vector<int64_t> mat1_size = {M, K};
@@ -2096,38 +2388,42 @@ void test_mm(
 }
 
 TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
-#define RUN_TESTS(dtype, layout, prepack) \
-  test_mm(                                \
-      /*B = */ 1,                         \
-      /*M = */ 31,                        \
-      /*K = */ 127,                       \
-      /*N = */ 23,                        \
-      dtype,                              \
-      layout,                             \
-      prepack);                           \
-  test_mm(                                \
-      /*B = */ 5,                         \
-      /*M = */ 31,                        \
-      /*K = */ 127,                       \
-      /*N = */ 23,                        \
-      dtype,                              \
-      layout,                             \
-      prepack);                           \
-  test_mm(                                \
-      /*B = */ 7,                         \
-      /*M = */ 13,                        \
-      /*K = */ 89,                        \
-      /*N = */ 17,                        \
-      dtype,                              \
-      layout,                             \
-      prepack);                           \
-  test_mm(                                \
-      /*B = */ 1,                         \
-      /*M = */ 13,                        \
-      /*K = */ 89,                        \
-      /*N = */ 17,                        \
-      dtype,                              \
-      layout,                             \
+#define RUN_TESTS(dtype, storage_type, layout, prepack) \
+  test_mm(                                              \
+      /*B = */ 1,                                       \
+      /*M = */ 31,                                      \
+      /*K = */ 127,                                     \
+      /*N = */ 23,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
+      prepack);                                         \
+  test_mm(                                              \
+      /*B = */ 5,                                       \
+      /*M = */ 31,                                      \
+      /*K = */ 127,                                     \
+      /*N = */ 23,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
+      prepack);                                         \
+  test_mm(                                              \
+      /*B = */ 7,                                       \
+      /*M = */ 13,                                      \
+      /*K = */ 89,                                      \
+      /*N = */ 17,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
+      prepack);                                         \
+  test_mm(                                              \
+      /*B = */ 1,                                       \
+      /*M = */ 13,                                      \
+      /*K = */ 89,                                      \
+      /*N = */ 17,                                      \
+      dtype,                                            \
+      storage_type,                                     \
+      layout,                                           \
       prepack);
 
   CALL_TEST_FN_FOR_W_PACKED(RUN_TESTS);

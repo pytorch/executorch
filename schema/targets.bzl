@@ -57,7 +57,7 @@ def define_common_targets():
         name = INPUT_SCALAR_TYPE,
         visibility = [
             "//executorch/exir/_serialize/...",
-            "//executorch/sdk/etdump/...",
+            "//executorch/devtools/etdump/...",
         ],
     )
 
