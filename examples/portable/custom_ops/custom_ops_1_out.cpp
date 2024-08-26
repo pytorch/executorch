@@ -13,7 +13,7 @@ namespace native {
 
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::RuntimeContext;
+using executorch::runtime::KernelRuntimeContext;
 
 namespace {
 void check_preconditions(const Tensor& in, Tensor& out) {
@@ -35,10 +35,13 @@ void check_preconditions(const Tensor& in, Tensor& out) {
       ssize_t(in.numel()));
 }
 } // namespace
-// mul3.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)
-Tensor& mul3_out_impl(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  (void)ctx;
 
+// mul3.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)
+// ExecuTorch-compatible function signature, with a KernelRuntimeContext.
+Tensor& mul3_out_impl(
+    ET_UNUSED KernelRuntimeContext& ctx,
+    const Tensor& in,
+    Tensor& out) {
   check_preconditions(in, out);
   float* out_data = out.mutable_data_ptr<float>();
   const float* in_data = in.const_data_ptr<float>();
@@ -47,5 +50,6 @@ Tensor& mul3_out_impl(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   }
   return out;
 }
+
 } // namespace native
 } // namespace custom
