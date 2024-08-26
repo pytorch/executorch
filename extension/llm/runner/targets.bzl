@@ -60,6 +60,17 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
+            name = "image_prefiller" + aten_suffix,
+            exported_headers = ["image_prefiller.h", "image.h"],
+            visibility = [
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/extension/module:module" + aten_suffix,
+            ],
+        )
+
+        runtime.cxx_library(
             name = "metadata_util" + aten_suffix,
             exported_headers = ["metadata_util.h"],
             visibility = [
@@ -73,14 +84,13 @@ def define_common_targets():
         runtime.cxx_library(
             name = "runner_lib" + aten_suffix,
             exported_headers = [
-                "image_prefiller.h",
-                "image.h",
                 "multimodal_runner.h",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
+                ":image_prefiller" + aten_suffix,
                 ":text_decoder_runner" + aten_suffix,
                 ":text_prefiller" + aten_suffix,
                 ":text_token_generator" + aten_suffix,

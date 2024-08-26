@@ -17,12 +17,14 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-CArray
 
 using namespace ::testing;
-using namespace torch::executor::training::optimizer;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::Error;
-using torch::executor::Span;
-using torch::executor::testing::TensorFactory;
+using ::executorch::extension::training::optimizer::SGD;
+using ::executorch::extension::training::optimizer::SGDOptions;
+using ::executorch::extension::training::optimizer::SGDParamState;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::Span;
+using ::executorch::runtime::testing::TensorFactory;
 
 class SGDOptimizerTest : public ::testing::Test {
  protected:

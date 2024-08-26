@@ -27,6 +27,8 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
 from executorch.backends.qualcomm.utils.utils import capture_program
+from executorch.devtools import generate_etrecord
+from executorch.devtools.inspector import Inspector
 from executorch.examples.qualcomm.utils import (
     generate_inputs,
     make_output_dir,
@@ -40,8 +42,6 @@ from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program._program import ExecutorchProgram
-from executorch.sdk import generate_etrecord
-from executorch.sdk.inspector import Inspector
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 

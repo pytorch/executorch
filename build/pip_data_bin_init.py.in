@@ -21,7 +21,9 @@ def _find_executable_files_under(dir):
     for filename in os.listdir(dir):
         filepath = os.path.join(dir, filename)
         if os.path.isfile(filepath) and os.access(filepath, os.X_OK):
-            bin_names.append(filename)
+            # Remove .exe suffix on windows.
+            filename_without_ext = os.path.splitext(filename)[0]
+            bin_names.append(filename_without_ext)
     return bin_names
 
 # The list of binaries to create wrapper functions for.

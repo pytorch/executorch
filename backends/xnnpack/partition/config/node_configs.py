@@ -16,6 +16,9 @@ from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.xnnpack.utils.utils import is_param_node
+from executorch.exir.backend.canonical_partitioners.config_partitioner import (
+    format_target_name,
+)
 from torch.export import ExportedProgram
 
 
@@ -28,6 +31,14 @@ class BatchNormConfig(XNNPartitionerConfig):
 
         bn = node
         conv = node.all_input_nodes[0]
+
+        if conv.op != "call_function":
+            return False
+
+        conv_name = format_target_name(conv.target.__name__)  # pyre-ignore
+
+        if conv_name not in ["convolution.default"]:
+            return False
 
         return FuseBatchNormWithConvPass.can_fuse(conv, bn, ep)
 

@@ -35,12 +35,14 @@ class TestLlava(unittest.TestCase):
         )
 
     def test_prefill_logits(self):
-        prefill_logits = self.llava.prefill(
+        # For efficiency, the implemented prefill function only outputs the last logits.
+        _, prefill_logits = self.llava.prefill(
             self.prompt_before_image, self.resized, self.prompt_after_image
         )
+        # The reference implementation in HF genetates the full logits. Get the last one.
         prefill_logits_ref = self.llava.prefill_ref(
             self.prompt_before_image, self.resized, self.prompt_after_image
-        )[0]
+        )[0][:, -1, :]
         self.assertTrue(torch.allclose(prefill_logits, prefill_logits_ref, atol=3e-2))
 
     def test_generated_output(self):
@@ -62,11 +64,11 @@ class TestLlava(unittest.TestCase):
         )[0].strip()
 
         # being tested, using llama_transformer
-        prefill_logits = self.llava.prefill(
+        context_len, prefill_logits = self.llava.prefill(
             self.prompt_before_image, self.resized, self.prompt_after_image
         )
-        context_len = prefill_logits.shape[1]
-        new_tokens = [torch.argmax(prefill_logits[..., -1, :]).item()]
+        # Always generate one token at a time.
+        new_tokens = [torch.argmax(prefill_logits).item()]
         for i in range(4):
             logits = self.llava.step(
                 torch.tensor([new_tokens[i]]), torch.tensor([context_len + i])
@@ -93,24 +95,27 @@ class TestLlava(unittest.TestCase):
         pte_embeds_before_img = llava_module.run_method(
             "token_embedding", (prompt_before_image,)
         )[0]
-        pte_prefill_before_img = llava_module.run_method(
+        llava_module.run_method(
             "text_model",
             (torch.tensor([start_pos], dtype=torch.int64), pte_embeds_before_img),
-        )[0]
+        )
 
-        start_pos += pte_prefill_before_img.shape[1]
+        # Update the start_pos. start_pos is used in kv cache. The source of truth
+        # of the delta length is from the embeddings, not from the logits.
+        start_pos += pte_embeds_before_img.shape[1]
 
         # pte prefill image
         pte_embeds_img = llava_module.run_method("image_encoder", (resized,))[0]
-        pte_prefill_img = llava_module.run_method(
+        llava_module.run_method(
             "text_model",
             (
                 torch.tensor([start_pos], dtype=torch.int64),
                 pte_embeds_img,
             ),
-        )[0]
+        )
 
-        start_pos += pte_prefill_img.shape[1]
+        # Update the logits for each prefill (kv cache) step.
+        start_pos += pte_embeds_img.shape[1]
 
         # pte prefill prompt after img
         pte_embeds_after_img = llava_module.run_method(
@@ -121,8 +126,11 @@ class TestLlava(unittest.TestCase):
             (torch.tensor([start_pos], dtype=torch.int64), pte_embeds_after_img),
         )[0]
 
+        # Update the logits for each prefill (kv cache) step.
+        start_pos += pte_embeds_after_img.shape[1]
+
         # being tested, using llama_transformer
-        new_tokens = [torch.argmax(pte_prefill_after_img[..., -1, :]).item()]
+        new_tokens = [torch.argmax(pte_prefill_after_img).item()]
         # TODO: uncomment this line
         # self.assertEquals(new_tokens[0], 1932)  # When
         for i in range(4):
@@ -134,7 +142,7 @@ class TestLlava(unittest.TestCase):
                 "text_model",
                 (torch.tensor([start_pos + i], dtype=torch.int64), token_embeds),
             )[0]
-            new_tokens.append(torch.argmax(logits[..., -1, :]).item())
+            new_tokens.append(torch.argmax(logits).item())
 
         outputs = llava_model.tokenizer.batch_decode(
             torch.tensor([new_tokens]), skip_special_tokens=True
