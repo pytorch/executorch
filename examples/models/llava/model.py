@@ -6,20 +6,18 @@
 
 # An ExecuTorch friendly implementation of Llava-1.5.
 
-import math
-
 import re
 
 from typing import Any, Dict, Optional
 
 import requests
 import torch
-import torchvision
 from executorch.examples.models.llama2.llama_transformer import ModelArgs, Transformer
 
 from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
+from executorch.examples.models.llava.image_util import prepare_image
 from executorch.examples.models.model_base import EagerModelBase
 from PIL import Image
 
@@ -156,19 +154,32 @@ class Llava(torch.nn.Module):
         return image_features
 
     def image_preprocess(self, img: torch.Tensor) -> torch.Tensor:
-        w = max(img.shape[1], img.shape[2])
+        target_h = self.image_processor.crop_size["height"]
+        target_w = self.image_processor.crop_size["width"]
         # pad the image with median rgb value, to make a square
-        v_padding = (w - img.shape[1]) / 2
-        h_padding = (w - img.shape[2]) / 2
-        l_pad = int(math.ceil(h_padding))
-        t_pad = int(math.ceil(v_padding))
-        r_pad = int(math.floor(h_padding))
-        b_pad = int(math.floor(v_padding))
-        resized = F.pad(
+        l_pad = (target_w - img.shape[2]) // 2
+        t_pad = (target_h - img.shape[1]) // 2
+        # ceil division
+        r_pad = -((target_w - img.shape[2]) // -2)
+        b_pad = -((target_h - img.shape[1]) // -2)
+
+        torch._check(l_pad >= 0)
+        torch._check(t_pad >= 0)
+        torch._check(r_pad >= 0)
+        torch._check(b_pad >= 0)
+
+        # This is different from the original implementation, due to export limitations.
+        resized = torch.nn.functional.pad(
             img,
-            padding=(l_pad, t_pad, r_pad, b_pad),
-            fill=tuple(int(x * 255) for x in self.image_processor.image_mean),
+            (l_pad, r_pad, t_pad, b_pad),
         )
+        # originally:
+        # resized = F.pad(
+        #     img,
+        #     padding=(l_pad, t_pad, r_pad, b_pad),
+        #     fill=tuple(int(x * 255) for x in self.image_mean),
+        # )
+
         # TODO: implement _upsample_bicubic_aa.out in portable kernel library.
         # here padded shape should be max(h, w) x max(h, w)
         # skipping resize for now due to missing _upsample_bicubic_aa kernel in portable
@@ -287,13 +298,12 @@ What are the things I should be cautious about when I visit here? ASSISTANT:"""
         """Returns a resized image as input to model.forward()."""
         if self.resized_image:
             return self.resized_image
-        imagr = torchvision.transforms.functional.pil_to_tensor(self.image)
-        ratio = (
-            max(imagr.shape[1], imagr.shape[2])
-            / self.image_processor.crop_size["height"]
+        resized = prepare_image(
+            self.image,
+            self.image_processor.crop_size["height"],
+            self.image_processor.crop_size["width"],
         )
-        output_size = (int(imagr.shape[1] / ratio), int(imagr.shape[2] / ratio))
-        self.resized_image = (torchvision.transforms.Resize(size=output_size)(imagr),)
+        self.resized_image = (resized,)
         return self.resized_image
 
     def get_inputs_for_prefill(self):
@@ -317,8 +327,13 @@ What are the things I should be cautious about when I visit here? ASSISTANT:"""
         return self._get_image_dynamic_shapes()
 
     def _get_image_dynamic_shapes(self):
-        height = Dim("height", min=8, max=336)
-        width = Dim("width", min=28, max=336)
+        # only support even number of height and width for now
+        _height = Dim(
+            "_height", min=1, max=self.image_processor.crop_size["height"] // 2
+        )
+        _width = Dim("_width", min=1, max=self.image_processor.crop_size["width"] // 2)
+        height = 2 * _height
+        width = 2 * _width
         dynamic_shapes = [{1: height, 2: width}]
         return dynamic_shapes
 
