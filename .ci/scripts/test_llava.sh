@@ -54,6 +54,13 @@ export_llava() {
     $PYTHON_EXECUTABLE -m executorch.examples.models.llava.export_llava --pte-name llava.pte --with-artifacts
 }
 
+# Download a new image with different size, to test if the model can handle different image sizes
+prepare_image_tensor() {
+    echo "Downloading image"
+    curl -o basketball.jpg https://upload.wikimedia.org/wikipedia/commons/7/73/Chicago_Bulls_and_New_Jersey_Nets%2C_March_28%2C_1991.jpg 
+    $PYTHON_EXECUTABLE -m executorch.examples.models.llava.image_util --image-path basketball.jpg --output-path image.pt
+}
+
 run_and_verify() {
     NOW=$(date +"%H:%M:%S")
     echo "Starting to run llava runner at ${NOW}"
@@ -96,4 +103,5 @@ run_and_verify() {
 cmake_install_executorch_libraries
 cmake_build_llava_runner
 export_llava
+prepare_image_tensor
 run_and_verify
