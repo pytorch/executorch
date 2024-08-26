@@ -78,6 +78,29 @@ def _remove_non_user_outputs(exported_program: ExportedProgram) -> torch.fx.Grap
     return gm
 
 
+# For each entry point in the model, determine if its a joint graph,
+# and if it is return a map of the indices in the model output that the
+# gradient outputs start at and that the parameter outputs start at.
+def _get_training_metadata(methods: Dict[str, ExportedProgram]) -> Dict[str, int]:
+    gradients_method_prefix = "__et_training_gradients_index_"
+    parameters_method_prefix = "__et_training_parameters_index_"
+    training_metadata = {}
+    for name, method in methods.items():
+        found_grad = False
+        found_param = False
+        i = 0
+        for output_spec in method.graph_signature.output_specs:
+            if output_spec.kind == OutputKind.GRADIENT_TO_PARAMETER and not found_grad:
+                training_metadata[gradients_method_prefix + name] = i
+                found_grad = True
+            elif output_spec.kind == OutputKind.TOKEN and not found_param:
+                assert found_grad  # Params must come after gradients
+                training_metadata[parameters_method_prefix + name] = i
+                found_param = True
+            i += 1
+    return training_metadata
+
+
 def emit_program(
     methods: Union[ExportedProgram, Dict[str, ExportedProgram]],
     emit_stacktrace: bool = False,
@@ -142,6 +165,10 @@ def emit_program(
         method_to_delegate_debug_id_map[name] = (
             emitter.instr_id_to_delegate_debug_id_map
         )
+
+    training_metadata = _get_training_metadata(methods)
+    if len(training_metadata) > 0:
+        plans.extend(emitter._emit_prim_getters(training_metadata))
 
     # emit any primitive getters
     if prim_getters is not None:

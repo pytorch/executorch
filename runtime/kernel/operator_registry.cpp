@@ -14,8 +14,8 @@
 
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 OperatorRegistry& getOperatorRegistry();
 OperatorRegistry& getOperatorRegistry() {
@@ -187,5 +187,5 @@ ArrayRef<Kernel> OperatorRegistry::get_kernels() {
   return ArrayRef<Kernel>(this->kernels_, this->num_kernels_);
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

@@ -12,7 +12,11 @@ from executorch.backends.xnnpack.partition.configs import (
     SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET,
 )
 from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
-from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
+from executorch.backends.xnnpack.utils.quant_utils import (
+    is_dequant,
+    is_dynamic_qdq,
+    is_quant,
+)
 from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
@@ -76,18 +80,7 @@ class TagImplicitQDqPass(XNNPACKPass):
         return node.op == "output"
 
     def is_dynamically_quantized(self, node: torch.fx.Node) -> bool:
-        return any(
-            is_dequant(input_node)
-            and (
-                cast(
-                    torch._ops.OpOverload, input_node.target
-                )._schema.schema.overload_name
-                == "tensor"
-                or input_node.target
-                == exir_ops.edge.quantized_decomposed.dequantize_per_token.default
-            )
-            for input_node in node.all_input_nodes
-        )
+        return is_dynamic_qdq(node)
 
     def is_supported_quant_op(self, node: torch.fx.Node) -> bool:
         return (
@@ -191,7 +184,7 @@ class TagImplicitQDqPass(XNNPACKPass):
 
             ending_implicit_q_nodes = []
             for user in first_node.users:
-                if self.is_dynamically_quantized(user):
+                if self.is_dynamically_quantized(first_node):
                     # if the dq is a dynamic dq, then it is implicit
                     break
                 user_end_nodes = self.get_ending_implicit_q_nodes(user)

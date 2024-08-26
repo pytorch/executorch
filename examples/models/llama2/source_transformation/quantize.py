@@ -96,7 +96,7 @@ def quantize(
 
         try:
             # torchao 0.3+
-            from torchao._eval import InputRecorder
+            from torchao._eval import InputRecorder  # pyre-fixme[21]
         except ImportError:
             from torchao.quantization.GPTQ import InputRecorder  # pyre-ignore
 
@@ -110,7 +110,7 @@ def quantize(
         )
 
         inputs = (
-            InputRecorder(
+            InputRecorder(  # pyre-fixme[16]
                 tokenizer,
                 calibration_seq_length,
                 None,  # input_prep_func

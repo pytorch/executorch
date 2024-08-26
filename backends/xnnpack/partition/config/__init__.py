@@ -11,6 +11,7 @@ from executorch.backends.xnnpack.partition.config.gemm_configs import (
     AddmmConfig,
     ConvolutionConfig,
     LinearConfig,
+    MMConfig,
 )
 
 from executorch.backends.xnnpack.partition.config.generic_node_configs import (
@@ -39,6 +40,7 @@ from executorch.backends.xnnpack.partition.config.generic_node_configs import (
     PowConfig,
     QuantizedPerTensorConfig,
     ReLUConfig,
+    # SDPAConfig, TODO: D60553559: preserving SDPA for fairseq fails
     SigmoidConfig,
     SliceCopyConfig,
     SoftmaxConfig,
@@ -50,6 +52,11 @@ from executorch.backends.xnnpack.partition.config.node_configs import (
     BatchNormConfig,
     MaxDimConfig,
     PreluConfig,
+)
+from executorch.backends.xnnpack.partition.config.quant_affine_configs import (
+    ChooseQParamsAffineConfig,
+    DeQuantizeAffineConfig,
+    QuantizeAffineConfig,
 )
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
@@ -79,12 +86,14 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     MaxPool2dConfig,
     MeanDimConfig,
     MinimumConfig,
+    MMConfig,
     MulConfig,
     NegConfig,
     PermuteConfig,
     PowConfig,
     PreluConfig,
     ReLUConfig,
+    # SDPAConfig, TODO: D60553559: preserving SDPA for fairseq fails
     SigmoidConfig,
     SliceCopyConfig,
     SoftmaxConfig,
@@ -94,4 +103,8 @@ ALL_PARTITIONER_CONFIGS: List[Type[XNNPartitionerConfig]] = [
     # Quant/Dequant Op Configs
     QuantizedPerTensorConfig,
     DeQuantizedPerTensorConfig,
+    # Quant Affine Configs to preserve decomp
+    QuantizeAffineConfig,
+    DeQuantizeAffineConfig,
+    ChooseQParamsAffineConfig,
 ]

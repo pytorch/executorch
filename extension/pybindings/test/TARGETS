@@ -28,6 +28,7 @@ runtime.python_library(
 runtime.python_test(
     name = "test_pybindings_portable_lib",
     srcs = ["test_pybindings.py"],
+    preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",
         "//executorch/extension/pybindings:portable_lib",
@@ -37,8 +38,10 @@ runtime.python_test(
 runtime.python_test(
     name = "test_pybindings_aten_lib",
     srcs = ["test_pybindings.py"],
+    preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         ":make_test",
         "//executorch/extension/pybindings:aten_lib",
+        "//executorch/kernels/quantized:aot_lib",
     ],
 )

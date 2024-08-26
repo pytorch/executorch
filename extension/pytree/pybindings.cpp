@@ -15,8 +15,8 @@
 
 namespace py = pybind11;
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
 namespace pytree {
 
 namespace {
@@ -395,5 +395,5 @@ PYBIND11_MODULE(pybindings, m) {
 }
 
 } // namespace pytree
-} // namespace executor
-} // namespace torch
+} // namespace extension
+} // namespace executorch

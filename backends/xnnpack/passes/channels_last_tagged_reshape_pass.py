@@ -124,7 +124,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             "call_function",
             target=target,
             args=args,
-            kwargs=(
+            kwargs=(  # pyre-fixme[6]
                 {"memory_format": memory_format} if memory_format is not None else {}
             ),
         )

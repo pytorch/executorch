@@ -13,8 +13,8 @@
 #include <executorch/runtime/core/portable_type/tensor.h>
 #include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 /**
  * Implementation for ExecuTorch tensor util, should only be included in
  * an target with ATen mode turned off. Explicitly taking
@@ -151,5 +151,5 @@ Error resize_tensor_impl(
 }
 } // namespace internal
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

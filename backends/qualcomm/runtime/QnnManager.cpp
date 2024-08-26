@@ -332,7 +332,8 @@ Error QnnManager::AllocateTensor() {
     const std::string& tensor_name = tensor_wrapper->GetName();
     // this is required by identifying shared buffer mechanism
     // info might be missed if context binary came from qnn_converter
-    if (tensor_name.find("output_") == std::string::npos) {
+    if (options_->is_from_context_binary() &&
+        tensor_name.find("output_") == std::string::npos) {
       tensor_wrapper->SetName("output_" + tensor_name);
     }
     if (IsTensorDump()) {

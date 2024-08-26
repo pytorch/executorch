@@ -161,6 +161,7 @@ class LLMEdgeManager:
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+            # pyre-fixme[8]
             self.pre_autograd_graph_module = capture_pre_autograd_graph(
                 self.model, self.example_inputs, dynamic_shapes=dynamic_shape
             )
@@ -209,11 +210,12 @@ class LLMEdgeManager:
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             if self.pre_autograd_graph_module is None:
+                # pyre-fixme[8]
                 self.pre_autograd_graph_module = capture_pre_autograd_graph(
                     self.model, self.example_inputs, dynamic_shapes=dynamic_shape
                 )
             self.edge_manager = export_to_edge(
-                self.pre_autograd_graph_module,
+                self.pre_autograd_graph_module,  # pyre-fixme[6]
                 self.example_inputs,
                 dynamic_shapes=dynamic_shape,
                 edge_constant_methods=self.metadata,
@@ -227,7 +229,7 @@ class LLMEdgeManager:
         Partition the model and lower to different backends. The signature is
         aligned with the signature of `to_backend` method of EdgeManager.
         Args:
-            partitioner (Optional[Partitioner]): One or more
+            partitioners (Optional[List[Partitioner]]): One or more
                 partitioner to be sent to EdgeManager.to_backend().
         """
         if partitioners is None:
