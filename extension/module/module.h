@@ -182,6 +182,25 @@ class Module final {
       const std::vector<::executorch::runtime::EValue>& input);
 
   /**
+   * Execute a specific method with a single input value.
+   * Loads the program and method before executing if needed.
+   *
+   * @param[in] method_name The name of the method to execute.
+   * @param[in] input A value to be passed to the method.
+   *
+   * @returns A Result object containing either a vector of output values
+   *          from the method or an error to indicate failure.
+   */
+  ET_NODISCARD
+  ::executorch::runtime::Result<std::vector<::executorch::runtime::EValue>>
+  execute(
+      const std::string& method_name,
+      const ::executorch::runtime::EValue& input) {
+    return execute(
+        method_name, std::vector<::executorch::runtime::EValue>{input});
+  }
+
+  /**
    * Execute a specific method without any input values.
    * Loads the program and method before executing if needed.
    *
@@ -193,7 +212,7 @@ class Module final {
   ET_NODISCARD
   ::executorch::runtime::Result<std::vector<::executorch::runtime::EValue>>
   execute(const std::string& method_name) {
-    return execute(method_name, {});
+    return execute(method_name, std::vector<::executorch::runtime::EValue>{});
   }
 
   /**
@@ -218,6 +237,23 @@ class Module final {
   }
 
   /**
+   * Retrieve the output value of a specific method with a single input value.
+   * Loads the program and method before execution if needed.
+   *
+   * @param[in] method_name The name of the method to execute.
+   * @param[in] input A value to be passed to the method.
+   *
+   * @returns A Result object containing either the first output value from the
+   * method or an error to indicate failure.
+   */
+  ET_NODISCARD
+  ::executorch::runtime::Result<::executorch::runtime::EValue> get(
+      const std::string& method_name,
+      const ::executorch::runtime::EValue& input) {
+    return get(method_name, std::vector<::executorch::runtime::EValue>{input});
+  }
+
+  /**
    * Retrieve the output value of a specific method without any input values.
    * Loads the program and method before execution if needed.
    *
@@ -229,7 +265,7 @@ class Module final {
   ET_NODISCARD
   ::executorch::runtime::Result<::executorch::runtime::EValue> get(
       const std::string& method_name) {
-    return get(method_name, {});
+    return get(method_name, std::vector<::executorch::runtime::EValue>{});
   }
 
   /**
@@ -248,6 +284,21 @@ class Module final {
   }
 
   /**
+   * Execute the 'forward' method with a single value.
+   * Loads the program and method before executing if needed.
+   *
+   * @param[in] input A value for the 'forward' method.
+   *
+   * @returns A Result object containing either a vector of output values
+   *          from the 'forward' method or an error to indicate failure.
+   */
+  ET_NODISCARD
+  ::executorch::runtime::Result<std::vector<::executorch::runtime::EValue>>
+  forward(const ::executorch::runtime::EValue& input) {
+    return forward(std::vector<::executorch::runtime::EValue>{input});
+  }
+
+  /**
    * Execute the 'forward' method without any input values.
    * Loads the program and method before executing if needed.
    *
@@ -257,7 +308,7 @@ class Module final {
   ET_NODISCARD
   ::executorch::runtime::Result<std::vector<::executorch::runtime::EValue>>
   forward() {
-    return forward({});
+    return forward(std::vector<::executorch::runtime::EValue>{});
   }
 
   /**
