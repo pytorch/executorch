@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - .ci/docker/**
+      - .ci/scripts/setup-ios.sh
       - .github/workflows/apple.yml
       - install_requirements.sh
       - backends/apple/**
@@ -27,24 +28,35 @@ jobs:
   test-demo-ios:
     name: test-demo-ios
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      secrets-env: BUILD_CERTIFICATE_BASE64 EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
+      upload-artifact: ios-apps
       script: |
         BUILD_TOOL=cmake
 
         .ci/scripts/setup-conda.sh
 
+        # Setup Apple certificate for iOS development
+        BUILD_PROVISION_PROFILE_BASE64="${SECRET_EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64}" \
+        BUILD_CERTIFICATE_BASE64="${SECRET_BUILD_CERTIFICATE_BASE64}" \
+        KEYCHAIN_PASSWORD="${SECRET_KEYCHAIN_PASSWORD}" \
+        .ci/scripts/setup-ios.sh
+
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
+        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
+
         # Build and test iOS Demo App
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/test_ios_ci.sh
+        build/test_ios_ci.sh ${ARTIFACTS_DIR_NAME}
 
   build-frameworks-ios:
     name: build-frameworks-ios
