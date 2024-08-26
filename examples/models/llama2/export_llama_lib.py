@@ -569,12 +569,9 @@ def _load_llama_model_metadata(
 ):
     is_fairseq2 = weight_type == WeightType.FAIRSEQ2
     metadata = {
-        "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
         "get_bos_id": 3 if is_fairseq2 else 1,
         "get_eos_ids": [3] if is_fairseq2 else [2],
         "get_max_seq_len": model_args.max_seq_len,
-        "get_n_bos": 1,
-        "get_n_eos": 2 if is_fairseq2 else 1,
         "get_vocab_size": model_args.vocab_size,
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
