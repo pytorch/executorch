@@ -10,9 +10,7 @@ import torch
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
-from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
-    XnnpackPartitioner,
-)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
 
 from executorch.backends.xnnpack.test.tester import RunPasses, Tester

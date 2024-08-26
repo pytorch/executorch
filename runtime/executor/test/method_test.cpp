@@ -21,12 +21,12 @@
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::Method;
-using torch::executor::Program;
-using torch::executor::Result;
-using torch::executor::testing::ManagedMemoryManager;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::Method;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
@@ -52,7 +52,7 @@ class MethodTest : public ::testing::Test {
   }
 
   void SetUp() override {
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     load_program(std::getenv("ET_MODULE_ADD_PATH"), "add");
     load_program(std::getenv("ET_MODULE_INDEX_PATH"), "index");
@@ -220,10 +220,10 @@ TEST_F(MethodTest, AliasedIOTest) {
   int32_t sizes[2] = {2, 4};
   uint8_t dim_order[2] = {0, 1};
   int32_t strides[2] = {4, 1};
-  torch::executor::TensorImpl impl(
-      torch::executor::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
+  exec_aten::TensorImpl impl(
+      exec_aten::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
 
-  auto input_err = method->set_input(EValue(torch::executor::Tensor(&impl)), 0);
+  auto input_err = method->set_input(EValue(exec_aten::Tensor(&impl)), 0);
   ASSERT_EQ(input_err, Error::Ok);
 
   auto output_err = method->set_output_data_ptr(buffer, sizeof(buffer), 0);
@@ -250,9 +250,9 @@ TEST_F(MethodTest, AliasedIOTest) {
 
   // Set the input again to update the size.
   sizes[0] = output.toTensor().sizes()[0];
-  torch::executor::TensorImpl impl_2(
-      torch::executor::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
-  input_err = method->set_input(EValue(torch::executor::Tensor(&impl_2)), 0);
+  exec_aten::TensorImpl impl_2(
+      exec_aten::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
+  input_err = method->set_input(EValue(exec_aten::Tensor(&impl_2)), 0);
   ASSERT_EQ(input_err, Error::Ok);
 
   // Execute the method again. Cat a 1x4 to a 3x4.
@@ -308,7 +308,7 @@ TEST_F(MethodTest, ConstantBufferTest) {
 
 //   // Can execute the method.
 //   exec_aten::ArrayRef<void*> inputs =
-//       torch::executor::util::PrepareInputTensors(*method);
+//       executorch::runtime::util::PrepareInputTensors(*method);
 //   Error err = method->execute();
 //   ASSERT_EQ(err, Error::Ok);
 
@@ -320,5 +320,5 @@ TEST_F(MethodTest, ConstantBufferTest) {
 //   EXPECT_EQ(outputs.toTensor().size(1), 2);
 //   EXPECT_EQ(outputs.toTensor().size(2), 10);
 
-//   torch::executor::util::FreeInputs(inputs);
+//   executorch::runtime::util::FreeInputs(inputs);
 // }

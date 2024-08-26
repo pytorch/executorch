@@ -11,9 +11,7 @@ import torch
 from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     ConfigPrecisionType,
 )
-from executorch.backends.xnnpack.partition.xnnpack_partitioner2 import (
-    XnnpackPartitioner,
-)
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.examples.models.llama2.export_llama_lib import (
     build_args_parser,
     get_quantizer_and_quant_params,
@@ -25,8 +23,15 @@ from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
 from executorch.examples.models.llava.model import LlavaModel
-from executorch.exir import EdgeCompileConfig
-from executorch.exir.program._program import _to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    to_edge_transform_and_lower,
+)
+
+from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
@@ -184,7 +189,7 @@ def export_all(llava_model: LlavaModel):
 
     token_embedding_ep = export_token_embedding(llava, prompt_before_image)
 
-    lowered_and_edge = _to_edge_transform_and_lower(
+    lowered_and_edge = to_edge_transform_and_lower(
         {
             "image_encoder": image_encoder_ep,
             "token_embedding": token_embedding_ep,
@@ -202,7 +207,23 @@ def export_all(llava_model: LlavaModel):
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
 
-    executorch_program = lowered_and_edge.to_executorch()
+    executorch_program = lowered_and_edge.to_executorch(
+        ExecutorchBackendConfig(
+            extract_constant_segment=True,
+            extract_delegate_segments=True,
+            passes=[
+                QuantFusionPass(),
+            ],
+            memory_planning_pass=MemoryPlanningPass("greedy", alloc_graph_input=False),
+            sym_shape_eval_pass={
+                "image_encoder": ConstraintBasedSymShapeEvalPass(),
+            },
+        )
+    )
+    for execution_plan in executorch_program._emitter_output.program.execution_plan:
+        logging.info(
+            f"Required memory for activation in bytes: {execution_plan.non_const_buffer_sizes}"
+        )
     return executorch_program
 
 

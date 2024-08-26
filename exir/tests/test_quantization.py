@@ -58,7 +58,7 @@ class TestQuantization(unittest.TestCase):
             quantizer = XNNPACKQuantizer()
             operator_config = get_symmetric_quantization_config(is_per_channel=True)
             quantizer.set_global(operator_config)
-            m = prepare_pt2e(m, quantizer)
+            m = prepare_pt2e(m, quantizer)  # pyre-fixme[6]
             self.assertEqual(
                 id(m.activation_post_process_3), id(m.activation_post_process_2)
             )

@@ -11,18 +11,18 @@ import argparse
 from typing import List
 
 import torch
-
-from executorch.exir import ExecutorchProgramManager
-from executorch.extension.export_util.utils import export_to_exec_prog
-from executorch.sdk import BundledProgram
-from executorch.sdk.bundled_program.config import (
+from executorch.devtools import BundledProgram
+from executorch.devtools.bundled_program.config import (
     MethodInputType,
     MethodTestCase,
     MethodTestSuite,
 )
-from executorch.sdk.bundled_program.serialize import (
+from executorch.devtools.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+
+from executorch.exir import ExecutorchProgramManager
+from executorch.extension.export_util.utils import export_to_exec_prog
 
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
@@ -37,7 +37,7 @@ def save_bundled_program(
     Generates a bundled program from the given ET program and saves it to the specified path.
 
     Args:
-        program: The ExecuTorch program to bundle.
+        executorch_program: The ExecuTorch program to bundle.
         method_test_suites: The MethodTestSuites which contains test cases to include in the bundled program.
         output_path: Path to save the bundled program.
     """

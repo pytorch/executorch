@@ -35,7 +35,22 @@ ExecuteNode::ExecuteNode(
   graph.update_descriptor_counts(shader, /*execute = */ true);
 }
 
+ExecuteNode::ExecuteNode(
+    const ResizeFunction& resize_fn,
+    const std::vector<ValueRef>& resize_args)
+    : shader_(),
+      global_workgroup_size_({0u, 0u, 0u}),
+      local_workgroup_size_({0u, 0u, 0u}),
+      args_(),
+      params_(),
+      spec_vars_(),
+      resize_fn_(resize_fn),
+      resize_args_(resize_args) {}
+
 void ExecuteNode::encode(ComputeGraph* graph) {
+  if (!shader_) {
+    return;
+  }
   api::Context* const context = graph->context();
   vkapi::PipelineBarrier pipeline_barrier{};
 

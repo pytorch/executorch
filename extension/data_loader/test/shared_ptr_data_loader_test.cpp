@@ -17,18 +17,18 @@
 #include <executorch/runtime/platform/runtime.h>
 
 using namespace ::testing;
-using torch::executor::DataLoader;
-using torch::executor::Error;
-using torch::executor::FreeableBuffer;
-using torch::executor::Result;
-using torch::executor::util::SharedPtrDataLoader;
+using executorch::extension::SharedPtrDataLoader;
+using executorch::runtime::DataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Result;
 
 class SharedPtrDataLoaderTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
