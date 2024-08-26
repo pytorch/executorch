@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from typing import cast, List, Optional
 
 import torch
@@ -16,7 +17,11 @@ from executorch.backends.xnnpack.utils.utils import get_input_node
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
+from executorch.exir.backend.utils import WhyNoPartition
 from torch.export import ExportedProgram
+
+logger = logging.getLogger(__name__)
+why = WhyNoPartition(logger=logger)
 
 
 class GenericNodePartitionerConfig(XNNPartitionerConfig):
@@ -141,9 +146,22 @@ class AvgPoolingConfig(GenericNodePartitionerConfig):
         if len(args) >= 7:
             divisor_override = cast(int, args[6])
 
-        return (
-            not (ceil_mode or count_include_pad) and divisor_override == pooling_region
-        )
+        if ceil_mode:
+            why(node, reason="ceil mode is not supported")
+            return False
+
+        if count_include_pad:
+            why(
+                node,
+                reason="zero-padding in the averaging calculation is not supported",
+            )
+            return False
+
+        if divisor_override != pooling_region:
+            why(node, reason="divisor override is not supported")
+            return False
+
+        return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
@@ -160,7 +178,15 @@ class CatConfig(GenericNodePartitionerConfig):
             return False
 
         num_tensors = len(node.all_input_nodes)
-        return num_tensors >= 2 and num_tensors <= 4
+
+        if not (num_tensors >= 2 and num_tensors <= 4):
+            why(
+                node,
+                reason=f"only support concatenation of 2 - 4 tensors, got {num_tensors} tensors",
+            )
+            return False
+
+        return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
@@ -210,7 +236,14 @@ class SoftmaxConfig(GenericNodePartitionerConfig):
         dim = cast(int, node.args[1])
         node_input = node.all_input_nodes[0]
         tensor_dims = node_input.meta["val"].dim()
-        return dim == -1 or dim == tensor_dims - 1
+
+        if not (dim == -1 or dim == tensor_dims - 1):
+            why(
+                node,
+                reason=f"dim must be the last dim, got dim = {dim} for tensor of rank {tensor_dims}",
+            )
+            return False
+        return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
@@ -255,7 +288,10 @@ class MaxPool2dConfig(GenericNodePartitionerConfig):
             return False
 
         is_ceil_mode = len(node.args) >= 6 and cast(bool, node.args[5])
-        return not is_ceil_mode
+        if is_ceil_mode:
+            why(node, reason="ceil mode is not supported")
+            return False
+        return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
@@ -309,7 +345,20 @@ class MeanDimConfig(GenericNodePartitionerConfig):
         dims = node.args[1]
         output_dims = node.meta["val"].dim()
 
-        return dims in ([-2, -1], [-1, -2]) and output_dims == 4
+        if dims not in ([-2, -1], [-1, -2]):
+            why(
+                node,
+                reason="mean.dim only supports averaging 4D tensors across the innermost dimensions",
+            )
+            return False
+
+        if output_dims != 4:
+            why(
+                node,
+                reason=f"mean.dim only supports averaging 4D tensors, got tensor of rank {output_dims}",
+            )
+            return False
+        return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32, ConfigPrecisionType.STATIC_QUANT]
@@ -340,7 +389,15 @@ class PowConfig(GenericNodePartitionerConfig):
             return False
 
         power = node.args[1]
-        return isinstance(power, int) and power == 2
+
+        if not isinstance(power, int):
+            why(node, reason=f"only support int powers, got {power}")
+            return False
+
+        if power != 2:
+            why(node, reason=f"only support power == 2, got {power}")
+            return False
+        return True
 
     def supported_precision_types(self) -> List[ConfigPrecisionType]:
         return [ConfigPrecisionType.FP32]
@@ -372,10 +429,18 @@ class SliceCopyConfig(GenericNodePartitionerConfig):
 
         for dim in input_shape:
             if not isinstance(dim, int) or dim == 0:
+                why(
+                    node,
+                    reason=f"input tensor has invalid shape, dim: {dim} of type {type(dim)}. Expecting non-zero, int values.",
+                )
                 return False
 
         for dim in output_shape:
             if not isinstance(dim, int) or dim == 0:
+                why(
+                    node,
+                    reason=f"output tensor has invalid shape, dim: {dim} of type {type(dim)}. Expecting non-zero, int values.",
+                )
                 return False
 
         return True
@@ -431,7 +496,14 @@ class SDPAConfig(GenericNodePartitionerConfig):
             return False
         mask_node = node.all_input_nodes[3]
         mask_rank = mask_node.meta["val"].dim()
-        return mask_rank == 2
+        if mask_rank != 2:
+            why(
+                node,
+                reason=f"mask must have rank 2, got mask of rank {mask_rank}",
+            )
+            return False
+
+        return True
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.scaled_dot_product_attention.default
