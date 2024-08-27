@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload the spec to S3 ossci-ios bucket
         shell: bash
-        working-directory:examples/demo-apps/apple_ios
+        working-directory: examples/demo-apps/apple_ios
         env:
           SPEC_FILE: default-ios-device-farm-appium-test-spec.yml
         run: |
