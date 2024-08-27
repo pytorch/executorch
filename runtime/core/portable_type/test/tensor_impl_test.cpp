@@ -8,11 +8,12 @@
 
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
-#include <executorch/runtime/platform/runtime.h>
-
 #include <gtest/gtest.h>
 #include <random>
+
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/platform/runtime.h>
+#include <executorch/test/utils/DeathTest.h>
 
 using namespace ::testing;
 
@@ -29,7 +30,7 @@ class TensorImplTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    runtime_init();
   }
 };
 
@@ -368,6 +369,82 @@ TEST_F(TensorImplTest, TestWriteRead) {
   x[0] = 22.0;
 
   EXPECT_EQ(y[0], 22.0);
+}
+
+TEST_F(TensorImplTest, TestInvalidScalarType) {
+  SizesType sizes[2] = {3, 2};
+  ET_EXPECT_DEATH(TensorImpl t(static_cast<ScalarType>(-1), 2, sizes), "");
+}
+
+TEST_F(TensorImplTest, TestNegativeDimension) {
+  SizesType sizes[2] = {3, 2};
+  ET_EXPECT_DEATH(TensorImpl t(ScalarType::Float, -1, sizes), "");
+}
+
+TEST_F(TensorImplTest, TestNullSizesNonZeroDim) {
+  ET_EXPECT_DEATH(TensorImpl t(ScalarType::Float, 2, nullptr), "");
+}
+
+TEST_F(TensorImplTest, TestNonNegativeSizes) {
+  SizesType sizes[2] = {3, -2};
+  ET_EXPECT_DEATH(TensorImpl t(ScalarType::Float, 2, sizes), "");
+}
+
+TEST_F(TensorImplTest, TestEmptyTensor) {
+  SizesType sizes[2] = {0, 0};
+  TensorImpl t(ScalarType::Float, 2, sizes);
+  EXPECT_EQ(t.numel(), 0);
+  EXPECT_EQ(t.data(), nullptr);
+}
+
+TEST_F(TensorImplTest, TestTensorWithNoElementsButAllocatedMemory) {
+  SizesType sizes[2] = {0, 0};
+  float data[1] = {1.0};
+  TensorImpl t(ScalarType::Float, 2, sizes, data);
+  EXPECT_EQ(t.numel(), 0);
+  EXPECT_EQ(t.data(), data);
+}
+
+TEST_F(TensorImplTest, TestTensorWithShapeButNoMemory) {
+  SizesType sizes[2] = {3, 2};
+  TensorImpl t(ScalarType::Float, 2, sizes);
+  EXPECT_GT(t.numel(), 0);
+  EXPECT_EQ(t.data(), nullptr);
+}
+
+TEST_F(TensorImplTest, TestNormalTensor) {
+  SizesType sizes[2] = {3, 2};
+  float data[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  TensorImpl t(ScalarType::Float, 2, sizes, data);
+  EXPECT_GT(t.numel(), 0);
+  EXPECT_EQ(t.data(), data);
+}
+
+TEST_F(TensorImplTest, TestResizingTensorToZeroAndBack) {
+  SizesType sizes[2] = {3, 2};
+  TensorImpl t(
+      ScalarType::Float,
+      2,
+      sizes,
+      nullptr,
+      nullptr,
+      nullptr,
+      TensorShapeDynamism::DYNAMIC_BOUND);
+
+  float data[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  t.set_data(data);
+  EXPECT_GT(t.numel(), 0);
+  EXPECT_EQ(t.data(), data);
+
+  SizesType zero_sizes[2] = {0, 0};
+  t.set_sizes_contiguous({zero_sizes, 2});
+  EXPECT_EQ(t.numel(), 0);
+  EXPECT_EQ(t.data(), data);
+
+  SizesType new_sizes[2] = {3, 2};
+  t.set_sizes_contiguous({new_sizes, 2});
+  EXPECT_GT(t.numel(), 0);
+  EXPECT_EQ(t.data(), data);
 }
 
 } // namespace executor
