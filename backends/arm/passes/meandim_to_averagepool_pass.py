@@ -31,7 +31,7 @@ class ConvertMeanDimToAveragePool(ExportPass):
 
         input_value = cast(ProxyValue, args[0])
         dim = cast(list, args[1])
-        keep_dim = cast(bool, args[2])
+        keep_dim = cast(bool, args[2]) if len(args) > 2 else False
 
         # averagepool2d gets converted to a mean operation with dim = [-1, -2] and keep_dim = True
         # so check the dim argument for this case
