@@ -250,6 +250,11 @@ def main():
         help="Use sdpa_with_kv_cache custom op in LLava text model.",
     )
     parser.add_argument(
+        "--max-seq-len",
+        default=768,
+        help="Maximum sequence length for the text model.",
+    )
+    parser.add_argument(
         "--pte-name",
         default="llava_combined_xnnpack.pte",
         help="Name of the exported ExecuTorch program.",
@@ -262,9 +267,12 @@ def main():
     )
     args = parser.parse_args()
     logging.info(
-        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}"
+        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}, max_seq_len: {args.max_seq_len}"
     )
-    llava_model = LlavaModel(use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache)
+    llava_model = LlavaModel(
+        use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache,
+        max_seq_len=args.max_seq_len,
+    )
 
     executorch_program = export_all(llava_model)
 
