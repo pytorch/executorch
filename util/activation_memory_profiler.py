@@ -106,6 +106,7 @@ def generate_memory_trace(
     executorch_program_manager: ExecutorchProgramManager,
     chrome_trace_filename: str,
     enable_memory_offsets: bool = False,
+    method_name: str = "forward",
 ):
     """
     Generate the memory timeline from the given ExecuTorch program.

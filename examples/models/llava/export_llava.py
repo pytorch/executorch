@@ -36,11 +36,11 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
+from executorch.util.activation_memory_profiler import generate_memory_trace
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from executorch.util.activation_memory_profiler import generate_memory_trace
 from torch.export import Dim
 from torch.nn.attention import SDPBackend
 
@@ -285,7 +285,12 @@ def main():
 
     # memory profiling
     if args.profile_memory:
-        generate_memory_trace(executorch_program, f"{args.pte_name}.json")
+        for method_name in ["image_encoder", "token_embedding", "text_model"]:
+            generate_memory_trace(
+                executorch_program,
+                f"{args.pte_name}_{method_name}.json",
+                method_name=method_name,
+            )
 
     with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)
