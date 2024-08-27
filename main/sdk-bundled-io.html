@@ -760,21 +760,19 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 </div>
 </div>
 </details><p>Here’s an example of how to use the <code class="docutils literal notranslate"><span class="pre">GetProgramData</span></code> API:</p>
-<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="kt">char</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buff_ptr</span><span class="p">;</span>
-<span class="kt">size_t</span><span class="w"> </span><span class="n">buff_len</span><span class="p">;</span>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="c1">// Assume that the user has read the contents of the file into file_data using</span>
+<span class="c1">// whatever method works best for their application. The file could contain</span>
+<span class="c1">// either BundledProgram data or Program data.</span>
+<span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">file_data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...;</span>
+<span class="kt">size_t</span><span class="w"> </span><span class="n">file_data_len</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">...;</span>
 
-<span class="c1">// FILE_PATH here can be either BundledProgram or Program flatbuffer file.</span>
-<span class="n">Error</span><span class="w"> </span><span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">util</span><span class="o">::</span><span class="n">read_file_content</span><span class="p">(</span>
-<span class="w">    </span><span class="n">FILE_PATH</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">buff_ptr</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">buff_len</span><span class="p">);</span>
-<span class="n">ET_CHECK_MSG</span><span class="p">(</span>
-<span class="w">    </span><span class="n">status</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">Error</span><span class="o">::</span><span class="n">Ok</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;read_file_content() failed with status 0x%&quot;</span><span class="w"> </span><span class="n">PRIx32</span><span class="p">,</span>
-<span class="w">    </span><span class="n">status</span><span class="p">);</span>
-
+<span class="c1">// If file_data contains a BundledProgram, GetProgramData() will return a</span>
+<span class="c1">// pointer to the Program data embedded inside it. Otherwise it will return</span>
+<span class="c1">// file_data, which already pointed to Program data.</span>
 <span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">program_ptr</span><span class="p">;</span>
 <span class="kt">size_t</span><span class="w"> </span><span class="n">program_len</span><span class="p">;</span>
 <span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">GetProgramData</span><span class="p">(</span>
-<span class="w">    </span><span class="n">buff_ptr</span><span class="p">.</span><span class="n">get</span><span class="p">(),</span><span class="w"> </span><span class="n">buff_len</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">program_ptr</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">program_len</span><span class="p">);</span>
+<span class="w">    </span><span class="n">file_data</span><span class="p">,</span><span class="w"> </span><span class="n">file_data_len</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">program_ptr</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">program_len</span><span class="p">);</span>
 <span class="n">ET_CHECK_MSG</span><span class="p">(</span>
 <span class="w">    </span><span class="n">status</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">Error</span><span class="o">::</span><span class="n">Ok</span><span class="p">,</span>
 <span class="w">    </span><span class="s">&quot;GetProgramData() failed with status 0x%&quot;</span><span class="w"> </span><span class="n">PRIx32</span><span class="p">,</span>
