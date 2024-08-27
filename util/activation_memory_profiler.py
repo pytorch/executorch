@@ -123,7 +123,7 @@ def generate_memory_trace(
             f"generate_memory_trace expects ExecutorchProgramManager instance but got {type(executorch_program_manager)}"
         )
 
-    exported_program = executorch_program_manager.exported_program()
+    exported_program = executorch_program_manager.exported_program(method_name)
     if not _validate_memory_planning_is_done(exported_program):
         raise ValueError("Executorch program does not have memory planning.")
 
