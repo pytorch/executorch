@@ -285,7 +285,7 @@ def main():
 
     # memory profiling
     if args.profile_memory:
-        for method_name in ["image_encoder", "token_embedding", "text_model"]:
+        for method_name in executorch_program.methods():
             generate_memory_trace(
                 executorch_program,
                 f"{args.pte_name}_{method_name}.json",
