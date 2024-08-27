@@ -52,7 +52,7 @@ def get_mps_partitioner(use_kv_cache: bool = False):
         )
 
     compile_specs = [CompileSpec("use_fp16", bytes([True]))]
-    return MPSPartitioner(compile_specs)
+    return MPSPartitioner(compile_specs)  # pyre-fixme[16]
 
 
 def get_coreml_partitioner(
@@ -92,14 +92,14 @@ def get_coreml_partitioner(
     # if use_kv_cache:
     #     minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
 
-    compile_specs = CoreMLBackend.generate_compile_specs(
+    compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=minimum_deployment_target,
         compute_precision=ct.precision(ct.precision.FLOAT16.value),
         # using `ComputeUnit.ALL` can increase the model load time, default to `ComputeUnit.CPU_AND_GPU`
         compute_unit=ct.ComputeUnit[ct.ComputeUnit.CPU_AND_GPU.name.upper()],
-        model_type=CoreMLBackend.MODEL_TYPE.MODEL,
+        model_type=CoreMLBackend.MODEL_TYPE.MODEL,  # pyre-fixme[16]
     )
-    return CoreMLPartitioner(
+    return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
     )
 
@@ -136,9 +136,10 @@ def get_qnn_partitioner(
     if pt2e_quantize is not None:
         use_fp16 = False
 
-    return QnnPartitioner(
-        generate_qnn_executorch_compiler_spec(
-            soc_model=QcomChipset.SM8650,  # default to SM8650
+    return QnnPartitioner(  # pyre-fixme[16]
+        generate_qnn_executorch_compiler_spec(  # pyre-fixme[16]
+            soc_model=QcomChipset.SM8650,  # default to SM8650  # pyre-fixme[16]
+            # pyre-fixme[16]
             backend_options=generate_htp_compiler_spec(use_fp16=use_fp16),
             debug=False,
             saver=False,

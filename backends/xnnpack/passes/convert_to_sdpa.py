@@ -83,7 +83,7 @@ class ConvertToSDPAPass(XNNPACKPass):
                 kwargs={"scale": scale},
             )
 
-        sdpa_node.meta["val"] = sdpa_node.target(
+        sdpa_node.meta["val"] = sdpa_node.target(  # pyre-fixme[29]
             *[n.meta["val"] for n in match.placeholder_nodes],
             scale=scale,
         )
