@@ -12,7 +12,6 @@ def define_common_targets(is_xplat = False, platforms = []):
     TARGETS and BUCK files that call this function.
     """
     kwargs = {
-        "name": "mps",
         "compiler_flags": [
             "-DEXIR_MPS_DELEGATE=1",
             "-Wno-global-constructors",
@@ -37,6 +36,8 @@ def define_common_targets(is_xplat = False, platforms = []):
             "runtime/*.h",
             "runtime/operations/*.h",
         ]),
+        "link_whole": True,
+        "name": "mps",
         "srcs": native.glob([
             "runtime/*.mm",
             "runtime/operations/*.mm",
@@ -51,7 +52,6 @@ def define_common_targets(is_xplat = False, platforms = []):
             "//executorch/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        "link_whole": True,
     }
 
     if is_xplat:

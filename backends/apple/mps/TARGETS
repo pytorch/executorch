@@ -89,14 +89,14 @@ runtime.python_test(
         "test/*.py",
     ]),
     deps = [
+        "fbsource//third-party/pypi/pytest:pytest",
         ":backend",
         ":partitioner",
         "//caffe2:torch",
+        "//executorch/devtools:lib",
+        "//executorch/devtools/bundled_program/serialize:lib",
         "//executorch/examples/models:models",
         "//executorch/exir/tests:models",
         "//executorch/extension/export_util:export_util",
-        "//executorch/devtools:lib",
-        "//executorch/devtools/bundled_program/serialize:lib",
-        "fbsource//third-party/pypi/pytest:pytest",
     ],
 )

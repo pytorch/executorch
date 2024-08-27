@@ -2,8 +2,8 @@ load(
     "@fbsource//tools/build_defs:default_platform_defs.bzl",
     "ANDROID",
 )
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/backends/qualcomm:targets.bzl", "generate_schema_header")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 QCIR_NAME = "qcir"
 INPUT_QCIR = QCIR_NAME + ".fbs"
@@ -41,7 +41,6 @@ def define_common_targets():
         define_static_target = True,
         platforms = [ANDROID],
     )
-
 
     runtime.cxx_library(
         name = "qcir_utils",
