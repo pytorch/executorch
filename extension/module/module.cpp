@@ -130,10 +130,6 @@ Error Module::load(const Program::Verification verification) {
   return Error::Ok;
 }
 
-bool Module::is_loaded() const {
-  return program_ != nullptr;
-}
-
 Result<std::unordered_set<std::string>> Module::method_names() {
   ET_CHECK_OK_OR_RETURN_ERROR(load());
   const auto method_count = program_->num_methods();
@@ -179,10 +175,6 @@ Error Module::load_method(const std::string& method_name) {
     methods_.emplace(method_name, std::move(method_holder));
   }
   return Error::Ok;
-}
-
-bool Module::is_method_loaded(const std::string& method_name) const {
-  return methods_.count(method_name);
 }
 
 Result<MethodMeta> Module::method_meta(const std::string& method_name) {
