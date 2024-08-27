@@ -273,6 +273,8 @@ jobs:
   test-llava-runner-macos:
     name: test-llava-runner-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      python-version: "3.10"
     strategy:
       fail-fast: false
     with:
