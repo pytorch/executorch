@@ -693,7 +693,6 @@ if(EXECUTORCH_BUILD_PYBIND)
     util
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/util/read_file.cpp
   )
   target_include_directories(
     util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
