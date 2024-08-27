@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple
 
 import torch
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig, to_edge
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.program._program import ExecutorchProgramManager
 
 from executorch.extension.llm.custom_ops import preprocess_custom_ops  # noqa
@@ -76,5 +77,9 @@ def lower_to_executorch_preprocess(
         exported_program, compile_config=EdgeCompileConfig(_check_ir_validity=False)
     )
 
-    et_program = edge_program.to_executorch(ExecutorchBackendConfig())
+    et_program = edge_program.to_executorch(
+        ExecutorchBackendConfig(
+            sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+        )
+    )
     return et_program

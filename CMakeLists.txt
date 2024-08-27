@@ -693,7 +693,6 @@ if(EXECUTORCH_BUILD_PYBIND)
     util
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/util/read_file.cpp
   )
   target_include_directories(
     util PUBLIC ${_common_include_directories} ${TORCH_INCLUDE_DIRS}
@@ -786,8 +785,12 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})
-  if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT APPLE)
-    target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
+  if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    if(APPLE)
+      target_link_options(executor_runner PRIVATE "LINKER:-dead_strip")
+    else()
+      target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
+    endif()
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
