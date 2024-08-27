@@ -62,7 +62,48 @@ void resize_matmul_node(
   out->virtual_resize(new_out_sizes);
 }
 
-void add_matmul_naive_node(
+void add_matmul_naive_buffer_node(
+    ComputeGraph& graph,
+    const ValueRef mat1,
+    const ValueRef mat2_data,
+    const ValueRef out,
+    const ValueRef mat2_is_transposed) {
+  ValueRef mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kHeightPacked);
+
+  std::string kernel_name = "matmul_naive_buffer";
+  add_dtype_suffix(kernel_name, graph.dtype_of(out));
+
+  utils::uvec3 global_size = {
+      graph.size_at<uint32_t>(-1, out),
+      graph.size_at<uint32_t>(-2, out),
+      graph.size_at<uint32_t>(-3, out) * graph.size_at<uint32_t>(-4, out)};
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name),
+      global_size,
+      graph.create_local_wg_size(global_size),
+      // Inputs and Outputs
+      {{out, vkapi::MemoryAccessType::WRITE},
+       {{mat1, mat2}, vkapi::MemoryAccessType::READ}},
+      // Shader params buffers
+      {
+          graph.sizes_ubo(out),
+          graph.strides_ubo(out),
+          graph.sizes_ubo(mat1),
+          graph.strides_ubo(mat1),
+          graph.sizes_ubo(mat2),
+          graph.strides_ubo(mat2),
+          graph.numel_ubo(out),
+      },
+      // Specialization Constants
+      {},
+      // Resizing Logic
+      resize_matmul_node,
+      {mat2_is_transposed}));
+}
+
+void add_matmul_naive_texture3d_node(
     ComputeGraph& graph,
     const ValueRef mat1,
     const ValueRef mat2_data,
@@ -74,6 +115,7 @@ void add_matmul_naive_node(
       ? "matmul_transposed_naive"
       : "matmul_naive";
   kernel_name.reserve(kShaderNameReserve);
+  add_storage_type_suffix(kernel_name, graph.storage_type_of(out));
   add_memory_layout_suffix(kernel_name, graph.memory_layout_of(mat1));
   add_memory_layout_suffix(kernel_name, graph.memory_layout_of(mat2));
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
@@ -174,12 +216,16 @@ void add_matmul_node(
     const ValueRef mat2_data,
     const ValueRef out,
     const ValueRef mat2_is_transposed) {
-  if (graph.memory_layout_of(mat1) == utils::kChannelsPacked) {
+  if (graph.is_buffer_storage(out)) {
+    add_matmul_naive_buffer_node(
+        graph, mat1, mat2_data, out, mat2_is_transposed);
+  } else if (graph.memory_layout_of(mat1) == utils::kChannelsPacked) {
     add_matmul_optimized_node(graph, mat1, mat2_data, out, mat2_is_transposed);
   } else if (graph.memory_layout_of(mat1) == utils::kWidthPacked) {
-    add_matmul_naive_node(graph, mat1, mat2_data, out, mat2_is_transposed);
+    add_matmul_naive_texture3d_node(
+        graph, mat1, mat2_data, out, mat2_is_transposed);
   } else {
-    VK_THROW("Input should be channel packed or width packed.");
+    VK_THROW("Input texture should be channel packed or width packed.");
   }
 }
 

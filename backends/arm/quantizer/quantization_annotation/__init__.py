@@ -49,6 +49,7 @@ def register_annotator(op: str):
 from . import (  # noqa
     adaptive_ang_pool2d_annotator,
     add_annotator,
+    cat_annotator,
     conv_annotator,
     linear_annotator,
     max_pool2d_annotator,

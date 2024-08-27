@@ -548,10 +548,6 @@ if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
 
-if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
-endif()
-
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 
 #
@@ -582,30 +578,6 @@ cmake_dependent_option(
   EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" ON
   EXECUTORCH_BUILD_HOST_TARGETS OFF
 )
-if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
-  # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch gflags)
-
-  if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
-    list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
-  elseif(EXECUTORCH_BUILD_CADENCE)
-    list(APPEND _executor_runner_libs cadence_ops_lib)
-  else()
-    list(APPEND _executor_runner_libs portable_ops_lib)
-  endif()
-
-  # Generate lib to register quantized ops
-  if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
-    list(APPEND _executor_runner_libs quantized_ops_lib)
-  endif()
-
-  add_executable(executor_runner ${_executor_runner__srcs})
-  if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT APPLE)
-    target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
-  endif()
-  target_link_libraries(executor_runner ${_executor_runner_libs})
-  target_compile_options(executor_runner PUBLIC ${_common_compile_options})
-endif()
 
 # Add googletest if any test targets should be built
 if(EXECUTORCH_BUILD_GTESTS)
@@ -617,7 +589,7 @@ if(EXECUTORCH_BUILD_SDK)
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE
   )
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_APPLE)
@@ -642,10 +614,6 @@ endif()
 
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
-endif()
-
-if(EXECUTORCH_BUILD_VULKAN)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
 
 if(EXECUTORCH_BUILD_QNN)
@@ -676,7 +644,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(NOT EXECUTORCH_BUILD_SDK)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/devtools)
   endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
@@ -708,10 +676,6 @@ if(EXECUTORCH_BUILD_PYBIND)
     # need to explicitly specify XNNPACK here otherwise uses XNNPACK symbols
     # from libtorch_cpu
     list(APPEND _dep_libs xnnpack_backend XNNPACK)
-  endif()
-
-  if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
-    target_link_options_shared_lib(quantized_ops_lib)
   endif()
 
   # compile options for pybind
@@ -797,6 +761,44 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   add_subdirectory(
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/llm/custom_ops
   )
+endif()
+
+if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
+  target_link_options_shared_lib(quantized_ops_lib)
+endif()
+
+if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
+  # Baseline libraries that executor_runner will link against.
+  set(_executor_runner_libs executorch gflags)
+
+  if(EXECUTORCH_BUILD_KERNELS_OPTIMIZED)
+    list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
+  elseif(EXECUTORCH_BUILD_CADENCE)
+    list(APPEND _executor_runner_libs cadence_ops_lib)
+  else()
+    list(APPEND _executor_runner_libs portable_ops_lib)
+  endif()
+
+  # Generate lib to register quantized ops
+  if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
+    list(APPEND _executor_runner_libs quantized_ops_lib)
+  endif()
+
+  add_executable(executor_runner ${_executor_runner__srcs})
+  if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    if(APPLE)
+      target_link_options(executor_runner PRIVATE "LINKER:-dead_strip")
+    else()
+      target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
+    endif()
+  endif()
+  target_link_libraries(executor_runner ${_executor_runner_libs})
+  target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+endif()
+
+if(EXECUTORCH_BUILD_VULKAN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
 
 # Print all summary

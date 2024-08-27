@@ -22,12 +22,20 @@ from executorch.examples.models.llama2.source_transformation.quantize import (
 from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
+from executorch.examples.models.llava.image_util import serialize_image
 from executorch.examples.models.llava.model import LlavaModel
-from executorch.exir import EdgeCompileConfig, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    to_edge_transform_and_lower,
+)
+
+from executorch.exir.passes import MemoryPlanningPass
+from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
-from torch import nn
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
@@ -199,7 +207,23 @@ def export_all(llava_model: LlavaModel):
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
 
-    executorch_program = lowered_and_edge.to_executorch()
+    executorch_program = lowered_and_edge.to_executorch(
+        ExecutorchBackendConfig(
+            extract_constant_segment=True,
+            extract_delegate_segments=True,
+            passes=[
+                QuantFusionPass(),
+            ],
+            memory_planning_pass=MemoryPlanningPass("greedy", alloc_graph_input=False),
+            sym_shape_eval_pass={
+                "image_encoder": ConstraintBasedSymShapeEvalPass(),
+            },
+        )
+    )
+    for execution_plan in executorch_program._emitter_output.program.execution_plan:
+        logging.info(
+            f"Required memory for activation in bytes: {execution_plan.non_const_buffer_sizes}"
+        )
     return executorch_program
 
 
@@ -207,14 +231,7 @@ def get_image_tensor_for_llava_runner(llava_model):
     # llava runner doesn't have image reader so an image tensor is needed.
     (resized,) = llava_model.get_example_inputs()
 
-    copy = torch.tensor(resized)
-    m = nn.Module()
-    par = nn.Parameter(copy, requires_grad=False)
-    m.register_parameter("0", par)
-    tensors = torch.jit.script(m)
-    tensors.save("image.pt")
-
-    logging.info("Saved image tensor to image.pt")
+    serialize_image(resized, "image.pt")
 
 
 def get_tokenizer_for_llava_runner(llava_model):

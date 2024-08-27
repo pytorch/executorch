@@ -272,7 +272,7 @@ class PythonTensor(torch.Tensor):
             kwargs = {}
         if torch.is_inference_mode_enabled():
             if func is torch.nn.functional.layer_norm:
-                args, kwargs = normalize_function(func, args, kwargs)
+                args, kwargs = normalize_function(func, args, kwargs)  # pyre-fixme[23]
                 input, normalized_shape = args
                 normalized_shape = list(normalized_shape)
                 return cls.__torch_dispatch__(
@@ -470,13 +470,13 @@ class DispatchTracer(fx.Tracer):
                 self.submodules[a] = name_submodule
             return self.create_node("get_attr", self.submodules[a], (), {})
 
-        return super().create_arg(a)
+        return super().create_arg(a)  # pyre-fixme[7]
 
     @staticmethod
     def get() -> "DispatchTracer":
         return TRACER
 
-    def trace(
+    def trace(  # pyre-fixme[14,15]
         self,
         root: Callable[..., Value],
         concrete_args: Tuple[Value, ...] = (),

@@ -77,7 +77,7 @@ class NodeVisitor:
         """Defines a tensor value into the MPSGraph serialization schema
 
         Args:
-            tensor (torch.fx.Node): EdgeIR tensor to define into mps_graph
+            node (torch.fx.Node): EdgeIR tensor to define into mps_graph
             mps_graph (MPSGraph): MPSGraph object for serializing into flatbuffer
         """
 
@@ -155,7 +155,7 @@ class NodeVisitor:
         """Defines a scalar value into the MPSGraph serialization schema
 
         Args:
-            tensor (torch.fx.Node): EdgeIR tensor to define into mps_graph
+            constant_tensor (torch.fx.Node): EdgeIR tensor to define into mps_graph
             mps_graph (MPSGraph): MPSGraph object for serializing into flatbuffer
         """
         constant_tensor = constant_tensor.contiguous()
@@ -191,7 +191,6 @@ class NodeVisitor:
         """Defines a scalar value into the MPSGraph serialization schema
 
         Args:
-            tensor (torch.fx.Node): EdgeIR tensor to define into mps_graph
             mps_graph (MPSGraph): MPSGraph object for serializing into flatbuffer
         """
         assert isinstance(val, int) or isinstance(val, float)
@@ -229,7 +228,7 @@ class NodeVisitor:
         index of its placement in the constant buffer
 
         Args:
-            tensor (torch.fx.Node): _description_
+            node (torch.fx.Node): _description_
             mps_graph (MPSGraph): _description_
 
         Returns:
@@ -299,7 +298,7 @@ class NodeVisitor:
         the existent id.
 
         Args:
-            tensor (Union[torch.fx.Node, float]): _description_
+            node (Union[torch.fx.Node, float]): _description_
             mps_graph (MPSGraph): _description_
 
         Returns:

@@ -35,8 +35,9 @@
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <algorithm>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace extension {
+namespace llm {
 
 // sampler stuff
 template <typename T>
@@ -192,5 +193,6 @@ int32_t Sampler::sample(T* logits) {
 template int32_t Sampler::sample<float>(float* logits);
 template int32_t Sampler::sample<exec_aten::Half>(exec_aten::Half* logits);
 
-} // namespace executor
-} // namespace torch
+} // namespace llm
+} // namespace extension
+} // namespace executorch

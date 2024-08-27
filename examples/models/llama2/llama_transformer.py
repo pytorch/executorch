@@ -96,6 +96,10 @@ class ModelArgs:
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
     )
+    # Generate logits for all inputs. When it's True, it would take big memory usage
+    # at runtime. Enable it only necessary (e.g., use perplexity tools that requires
+    # logits for all input tokens.)
+    generate_full_logits: bool = False
     enable_dynamic_shape: bool = False  # export model with dynamic shape support
     use_hf_rope: bool = False  # Use HuggingFace's RoPE implementation
     rope_theta: Optional[float] = (
@@ -104,8 +108,8 @@ class ModelArgs:
     rope_freq_base: float = 10000.0  # The base frequency for RoPE. Keep it for BC.
     use_scaled_rope: bool = False  # Use scaled RoPE, introduced in llama3.1.
     # Additional Model Metadata needed at runtime
-    bos_idx: Optional[int] = None
-    eos_idx: Optional[int] = None
+    bos_idx: int = 1
+    eos_idx: int = 3
     bos_count: int = -1  # i.e., a single EOS is used as BOS
     eos_count: int = 2
 
@@ -442,6 +446,7 @@ class Transformer(nn.Module):
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
+        self.generate_full_logits = params.generate_full_logits
         self.max_seq_len = params.max_seq_len
         if params.use_hf_rope:
             self.precompute_freqs_cis = hf_precompute_freqs_cis
@@ -511,6 +516,10 @@ class Transformer(nn.Module):
                 freqs_sin,
                 input_pos,
             )
+
+        if not self.generate_full_logits:
+            # Only the last logit is used for the new generated token
+            h = h[:, -1, :]
 
         h = self.norm(h)
 

@@ -73,6 +73,7 @@ def _supported_symmetric_quantized_operators() -> Dict[str, List[OperatorPattern
             [torch.nn.AdaptiveAvgPool2d],
             [F.adaptive_avg_pool2d],
         ],
+        "mul": [torch.mul],
         "sub": [[torch.sub]],
     }
     return copy.deepcopy(supported_operators)
@@ -266,6 +267,7 @@ class ArmQuantizer(Quantizer):
         "mul",
         "sigmoid",
         "mm",
+        "cat",
     ]
 
     def __init__(self) -> None:

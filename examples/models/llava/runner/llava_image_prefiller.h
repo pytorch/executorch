@@ -24,13 +24,13 @@ class LlavaImagePrefiller : public ImagePrefiller {
    * @param start_pos The starting position in KV cache of the input in the LLM
    * @return logits of the image prefill.
    */
-  inline Result<exec_aten::Tensor> prefill(Image& image, int64_t start_pos = 0)
+  inline Result<exec_aten::Tensor> prefill(Image& image, int64_t& start_pos)
       override {
     ManagedTensor managed_images(
         image.data.data(), {3, image.height, image.width}, ScalarType::Byte);
     // Run image encoder
     std::vector<EValue> image_encoder_outputs = ET_UNWRAP(module_->execute(
-        kImageEncoderMethod, {managed_images.get_aliasing_tensor()}));
+        kImageEncoderMethod, managed_images.get_aliasing_tensor()));
 
     // inputs:[start_pos, embeds]
     ManagedTensor managed_start_pos(&start_pos, {1}, ScalarType::Long);
@@ -42,6 +42,10 @@ class LlavaImagePrefiller : public ImagePrefiller {
     ET_CHECK_MSG(
         outputs_res[0].isTensor(),
         "Non Tensor Output returned from executing image prefill");
+
+    // Update the start_pos, which is only available inside this function.
+    // outputs_res can have only one logits.
+    start_pos += image_encoder_outputs[0].toTensor().size(1);
 
     return outputs_res[0].toTensor();
   }

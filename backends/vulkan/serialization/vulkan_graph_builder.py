@@ -24,6 +24,9 @@ _Argument = Union[
     Node, NoneType, _ScalarType, TensorSpec, List[_ScalarType], List[Node], str
 ]
 
+logger: logging.Logger = logging.getLogger("")
+logger.setLevel(logging.INFO)
+
 
 class VkGraphBuilder:
     def __init__(
@@ -351,9 +354,9 @@ class VkGraphBuilder:
             self.process_node(node, call_node_debug_hdl)
             call_node_debug_hdl += 1
 
-        logging.info("Operators included in this Vulkan partition: ")
+        logger.info("Operators included in this Vulkan partition: ")
         for op in self.seen_ops:
-            logging.info(f"    {op.__name__}")
+            logger.info(f"    {op.__name__}")
 
         return vk_graph_schema.VkGraph(
             version="0",

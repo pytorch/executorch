@@ -40,7 +40,7 @@ def eliminate_dq_q(
                 qparams_q = list(user.args)[1:]
                 if qparams_dq != qparams_q:
                     continue
-                user.replace_all_uses_with(node.args[0])
+                user.replace_all_uses_with(node.args[0])  # pyre-fixme[6]
 
 
 class RemoveNoopPass(ExportPass):

@@ -28,7 +28,7 @@ from transformers import Phi3ForCausalLM
 from .phi_3_mini import Phi3Mini
 
 
-def main(args) -> None:
+def export(args) -> None:
     torch.manual_seed(0)
 
     if args.context_length == "4k":
@@ -67,7 +67,7 @@ def main(args) -> None:
         model = capture_pre_autograd_graph(
             model, example_inputs, dynamic_shapes=dynamic_shapes
         )
-        model = prepare_pt2e(model, xnnpack_quantizer)
+        model = prepare_pt2e(model, xnnpack_quantizer)  # pyre-fixme[6]
         model(*example_inputs)
         model = convert_pt2e(model, fold_quantize=False)
         DuplicateDynamicQuantChainPass()(model)
@@ -90,7 +90,7 @@ def main(args) -> None:
         file.write(et_program.buffer)
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c",
@@ -113,4 +113,8 @@ if __name__ == "__main__":
         default="phi-3-mini.pte",
         help="Override the output filename of the saved pte model file.",
     )
-    main(parser.parse_args())
+    export(parser.parse_args())
+
+
+if __name__ == "__main__":
+    main()

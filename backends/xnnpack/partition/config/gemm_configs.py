@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from itertools import chain
 from typing import cast, List, Optional, Tuple
 
@@ -13,9 +14,12 @@ from executorch.backends.xnnpack.partition.config.xnnpack_config import (
     XNNPartitionerConfig,
 )
 from executorch.backends.xnnpack.utils.quant_utils import (
+    extract_qdq_affine_op_args_for_decomposed_ops,
+    is_affine_qdq,
     is_dequant,
     is_dynamic_qdq,
     is_per_channel,
+    is_per_channel_group,
     is_qparam,
     is_quant,
 )
@@ -28,11 +32,15 @@ from executorch.backends.xnnpack.utils.utils import (
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
+from executorch.exir.backend.utils import WhyNoPartition
 from torch.export import ExportedProgram
 from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
     SourcePartition,
 )
+
+logger = logging.getLogger(__name__)
+why = WhyNoPartition(logger=logger)
 
 
 class GEMMConfig(XNNPartitionerConfig):
@@ -57,6 +65,8 @@ class GEMMConfig(XNNPartitionerConfig):
             return False
 
         is_valid, _ = self.get_deps(node, ep)
+        if not is_valid:
+            why(node, "Failed to get valid dependent nodes.")
         return is_valid
 
     def get_node_and_deps(
@@ -131,7 +141,7 @@ class GEMMConfig(XNNPartitionerConfig):
                 return False, []
             gemm_deps.append(weight)
 
-            if is_per_channel(dequant_node):
+            if is_per_channel(dequant_node) or is_per_channel_group(dequant_node):
                 if len(dequant_node.all_input_nodes) < 2:
                     # Expected channel quantized to have scale/zp nodes
                     return False, []
@@ -214,12 +224,15 @@ class GEMMConfig(XNNPartitionerConfig):
                 return (False, [])
 
             gemm_deps.append(q_input)
-            if not (is_node(q_input.args[1]) and is_node(q_input.args[2])):
+            q_input_args = q_input.args
+            if is_affine_qdq(q_input):
+                q_input_args = extract_qdq_affine_op_args_for_decomposed_ops(q_input)
+            if not (is_node(q_input_args[1]) and is_node(q_input_args[2])):
                 # expected to find getitem node from choose qparam
                 return (False, [])
 
-            getitem1 = get_input_node(q_input, 1)
-            getitem2 = get_input_node(q_input, 2)
+            getitem1 = q_input_args[1]
+            getitem2 = q_input_args[2]
 
             if not (is_getitem(getitem1) and is_getitem(getitem2)):
                 # expected getitem node from choose qparam
@@ -276,10 +289,12 @@ class ConvolutionConfig(GEMMConfig):
 
         conv_stride = cast(List[int], node.args[3])
         if len(conv_stride) > 2:
+            why(node, "Only support 1D + 2D Conv")
             return False  # Only support 1D + 2D Conv
 
         transposed = cast(bool, node.args[6])
         if transposed:
+            why(node, "Transposed Conv is not supported")
             return False  # Currently don't support transposed conv
 
         return True
