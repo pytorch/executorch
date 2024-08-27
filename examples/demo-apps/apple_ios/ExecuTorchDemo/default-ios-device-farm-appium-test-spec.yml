@@ -1,4 +1,4 @@
-examples/demo-apps/apple_ios/ExecuTorchDemo/default-ios-device-farm-appium-test-spec.ymlversion: 0.1
+version: 0.1
 
 # Phases are collection of commands that get executed on Device Farm.
 phases:
