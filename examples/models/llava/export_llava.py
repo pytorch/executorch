@@ -40,6 +40,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from executorch.util.activation_memory_profiler import generate_memory_trace
 from torch.export import Dim
 from torch.nn.attention import SDPBackend
 
@@ -265,6 +266,12 @@ def main():
         action=BooleanOptionalAction,
         help="Generate artifacts for llava runner.",
     )
+    parser.add_argument(
+        "--profile_memory",
+        required=False,
+        action="store_true",
+        help="Generate chrome trace of activation memory for intermediate tensors.",
+    )
     args = parser.parse_args()
     logging.info(
         f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}, max_seq_len: {args.max_seq_len}"
@@ -275,6 +282,10 @@ def main():
     )
 
     executorch_program = export_all(llava_model)
+
+    # memory profiling
+    if args.profile_memory:
+        generate_memory_trace(executorch_program, f"{args.pte_name}.json")
 
     with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)
