@@ -122,16 +122,9 @@ Error Module::load(const Program::Verification verification) {
     auto program =
         ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
     program_ = std::shared_ptr<Program>(
-        program.release(),
-        [data_loader = std::move(data_loader_)](Program* pointer) {
-          delete pointer;
-        });
+        program.release(), [](Program* pointer) { delete pointer; });
   }
   return Error::Ok;
-}
-
-bool Module::is_loaded() const {
-  return program_ != nullptr;
 }
 
 Result<std::unordered_set<std::string>> Module::method_names() {
@@ -179,10 +172,6 @@ Error Module::load_method(const std::string& method_name) {
     methods_.emplace(method_name, std::move(method_holder));
   }
   return Error::Ok;
-}
-
-bool Module::is_method_loaded(const std::string& method_name) const {
-  return methods_.count(method_name);
 }
 
 Result<MethodMeta> Module::method_meta(const std::string& method_name) {

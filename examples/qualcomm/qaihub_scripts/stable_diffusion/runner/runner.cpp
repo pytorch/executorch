@@ -377,11 +377,11 @@ Error Runner::generate(std::string prompt) {
   Tensor uncond_emb_tensor = managed_uncond_emb.get_aliasing_tensor();
   modules_[0]->set_output_data_ptr(cond_emb_tensor, 0);
   long encoder_start = util::time_in_ms();
-  auto cond_res = modules_[0]->forward({cond_tokens_tensor});
+  auto cond_res = modules_[0]->forward(cond_tokens_tensor);
   stats_.text_encoder_execution_time += (util::time_in_ms() - encoder_start);
   modules_[0]->set_output_data_ptr(uncond_emb_tensor, 0);
   encoder_start = util::time_in_ms();
-  auto uncond_res = modules_[0]->forward({uncond_tokens_tensor});
+  auto uncond_res = modules_[0]->forward(uncond_tokens_tensor);
   stats_.text_encoder_execution_time += (util::time_in_ms() - encoder_start);
 
   // Initialize unet parameters
@@ -533,7 +533,7 @@ Error Runner::generate(std::string prompt) {
 
   modules_[2]->set_output_data_ptr(output_tensor, 0);
   long start_vae_execution = util::time_in_ms();
-  auto vae_res = modules_[2]->forward({vae_input_tensor});
+  auto vae_res = modules_[2]->forward(vae_input_tensor);
   stats_.vae_execution_time = (util::time_in_ms() - start_vae_execution);
   stats_.generate_end_ms = util::time_in_ms();
 
