@@ -41,7 +41,6 @@ jobs:
       id-token: write
       contents: read
     with:
-      devices: apple_iphone_15
       test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/default-ios-device-farm-appium-test-spec.yml
 
   upload-apple-test-spec:
