@@ -17,7 +17,7 @@ phases:
   # The test phase includes commands that run your test suite execution.
   test:
     commands:
-      - xcodebuild test-without-building -destination id=$DEVICEFARM_DEVICE_UDID -xctestrun $DEVICEFARM_TEST_PACKAGE_PATH/*.xctestrun  -derivedDataPath $DEVICEFARM_LOG_DIR
+      - xcodebuild test-without-building -destination id=$DEVICEFARM_DEVICE_UDID -xctestrun $DEVICEFARM_TEST_PACKAGE_PATH/*.xctestrun -derivedDataPath $DEVICEFARM_LOG_DIR
 
   # The post test phase includes are commands that are run after your tests are executed.
   post_test:
