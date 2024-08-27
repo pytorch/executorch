@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - .github/workflows/upload-apple-test-specs.yml
-      - examples/demo-apps/apple_ios/ExecuTorchDemo/default-ios-device-farm-appium-test-spec.yml
+      - examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
   push:
     branches:
       - main
     paths:
       - .github/workflows/upload-apple-test-specs.yml
-      - examples/demo-apps/apple_ios/ExecuTorchDemo/default-ios-device-farm-appium-test-spec.yml
+      - examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
@@ -30,7 +30,7 @@ jobs:
             ${{ github.repository }}/${{ github.run_id }}/artifact
           retention-days: 1
           if-no-files-found: error
-          path: examples/demo-apps/apple_ios/ExecuTorchDemo/default-ios-device-farm-appium-test-spec.yml
+          path: examples/demo-apps/apple_ios/default-ios-device-farm-appium-test-spec.yml
 
   # TODO (huydhn): An example on how to validate the test spec using the iOS demo app, but we need a proper
   # perf benchmark workflow like android-perf
@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload the spec to S3 ossci-ios bucket
         shell: bash
-        working-directory:examples/demo-apps/apple_ios/ExecuTorchDemo
+        working-directory:examples/demo-apps/apple_ios
         env:
           SPEC_FILE: default-ios-device-farm-appium-test-spec.yml
         run: |
