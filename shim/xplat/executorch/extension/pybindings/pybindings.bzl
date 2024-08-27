@@ -29,7 +29,6 @@ ATEN_MODULE_DEPS = [
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
-    "//executorch/util:read_file",
     "//executorch/devtools/bundled_program:runtime_aten",
     "//executorch/runtime/executor/test:test_backend_compiler_lib_aten",
     "//executorch/devtools/etdump:etdump_flatcc",
@@ -55,7 +54,6 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         ],
         deps = [
             "//executorch/runtime/core:core",
-            "//executorch/util:read_file",
         ] + cppdeps,
         external_deps = [
             "pybind11",
