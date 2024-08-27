@@ -185,9 +185,8 @@ Result<std::vector<EValue>> Module::execute(
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   auto& method = methods_.at(method_name).method;
 
-  for (auto index = 0; index < input.size(); ++index) {
-    ET_CHECK_OK_OR_RETURN_ERROR(method->set_input(input[index], index));
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(method->set_inputs(
+      exec_aten::ArrayRef<EValue>(input.data(), input.size())));
   ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
 
   const auto outputs_size = method->outputs_size();
