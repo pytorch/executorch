@@ -122,10 +122,7 @@ Error Module::load(const Program::Verification verification) {
     auto program =
         ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
     program_ = std::shared_ptr<Program>(
-        program.release(),
-        [data_loader = std::move(data_loader_)](Program* pointer) {
-          delete pointer;
-        });
+        program.release(), [](Program* pointer) { delete pointer; });
   }
   return Error::Ok;
 }
