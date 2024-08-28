@@ -164,7 +164,7 @@ class LLMEdgeManager:
             # pyre-fixme[8]
             self.pre_autograd_graph_module = torch.export.export(
                 self.model, self.example_inputs, dynamic_shapes=dynamic_shape
-            )
+            ).module()
         return self
 
     def pt2e_quantize(self, quantizers: Optional[List[Quantizer]]) -> "LLMEdgeManager":
