@@ -276,7 +276,7 @@ jobs:
     strategy:
       fail-fast: false
     with:
-      runner: macos-13-xlarge
+      runner: macos-14-xlarge
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
