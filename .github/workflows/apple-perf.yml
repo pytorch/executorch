@@ -133,6 +133,7 @@ jobs:
       script: |
         set -eux
 
+        echo "::group::Setting up CI environment"
         .ci/scripts/setup-conda.sh
 
         BUILD_TOOL=cmake
@@ -158,6 +159,7 @@ jobs:
         fi
 
         ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}_${{ matrix.delegate }}
+        echo "::endgroup::"
 
         echo "::group::Exporting ${{ matrix.delegate }} model: ${{ matrix.model }}"
         BUILD_MODE="cmake"
@@ -165,14 +167,17 @@ jobs:
 
         if [[ ${{ matrix.model }} =~ ^stories* ]]; then
             # Install requirements for export_llama
-            PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
+            PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+              bash examples/models/llama2/install_requirements.sh
             # Test llama2
             if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
                 DELEGATE_CONFIG="xnnpack+custom+qe"
             fi
-            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
+            PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+              bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
         else
-            PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
+            PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+              bash .ci/scripts/test.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
         fi
         echo "::endgroup::"
 
@@ -223,12 +228,15 @@ jobs:
       script: |
         set -eux
 
+        echo "::group::Setting up CI environment"
         .ci/scripts/setup-conda.sh
 
         BUILD_TOOL=cmake
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
+        echo "::endgroup::"
 
         # Setup Apple certificate for iOS development
         BUILD_PROVISION_PROFILE_BASE64="${SECRET_EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64}" \
@@ -244,8 +252,8 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
           backends/apple/mps/install_requirements.sh
 
-        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
-        bash build/build_apple_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
+        ${CONDA_RUN} --no-capture-output \
+          build/build_apple_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
 
   upload-ios-apps:
     needs: build-llm-demo
