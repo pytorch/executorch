@@ -24,7 +24,7 @@ _Argument = Union[
     Node, NoneType, _ScalarType, TensorSpec, List[_ScalarType], List[Node], str
 ]
 
-logger: logging.Logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger("")
 logger.setLevel(logging.INFO)
 
 

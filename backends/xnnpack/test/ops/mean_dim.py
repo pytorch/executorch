@@ -56,6 +56,19 @@ class TestMeanDim(unittest.TestCase):
             .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
         )
 
+    def test_fp32_mean_dim_unsupported_3d(self):
+        """
+        XNNPack mean.dim implementation only supports 4D tensors.
+        """
+        inputs = (torch.randn(1, 5, 4),)
+        (
+            Tester(self.MeanDim((-1, -2)), inputs)
+            .export()
+            .check_count({"torch.ops.aten.mean.dim": 1})
+            .to_edge_transform_and_lower()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
+        )
+
     def test_qs8_mean_dim(self):
         inputs = (torch.randn(1, 5, 4, 4),)
         (

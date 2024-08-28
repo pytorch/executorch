@@ -110,7 +110,7 @@ class TestJointGraph(unittest.TestCase):
         self.assertTrue(torch.allclose(m.linear.bias, et_outputs[4]))
 
         self.assertEqual(
-            len(et.executorch_program.execution_plan), 3
+            len(et.executorch_program.execution_plan), 4
         )  # forward + 2 training metadata functions
 
         # gradient outputs start at index 1
@@ -121,9 +121,16 @@ class TestJointGraph(unittest.TestCase):
             1,
         )
 
-        # parameter outputs start at index 3
         self.assertEqual(
             et.executorch_program.execution_plan[2]  # pyre-ignore
+            .values[0]
+            .val.string_val,
+            "linear.weight",
+        )
+
+        # parameter outputs start at index 3
+        self.assertEqual(
+            et.executorch_program.execution_plan[3]  # pyre-ignore
             .values[0]
             .val.int_val,
             3,

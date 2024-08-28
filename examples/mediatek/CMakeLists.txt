@@ -105,11 +105,10 @@ if(${ANDROID})
         _mtk_llama_executor_runner__srcs
         ${CMAKE_CURRENT_LIST_DIR}/executor_runner/mtk_llama_executor_runner.cpp
     )
-
     # Build ABSL and RE2
-    set(LLAMA2_EXAMPLE_MODEL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../examples/models/llama2)
-    set(THIRD_PARTY_ABSL_DIR ${LLAMA2_EXAMPLE_MODEL_DIR}/third-party/abseil-cpp)
-    set(THIRD_PARTY_RE2_DIR ${LLAMA2_EXAMPLE_MODEL_DIR}/third-party/re2)
+    set(EXTENSIONS_LLM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm)
+    set(THIRD_PARTY_ABSL_DIR ${EXTENSIONS_LLM_DIR}/third-party/abseil-cpp)
+    set(THIRD_PARTY_RE2_DIR ${EXTENSIONS_LLM_DIR}/third-party/re2)
     set(ABSL_ENABLE_INSTALL ON)
     set(ABSL_PROPAGATE_CXX_STD ON)
     set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
@@ -119,7 +118,7 @@ if(${ANDROID})
     set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
     # Build tokenizers
-    set(LLAMA2_TOKENIZER_DIR ${LLAMA2_EXAMPLE_MODEL_DIR}/tokenizer)
+    set(LLAMA2_TOKENIZER_DIR ${EXTENSIONS_LLM_DIR}/tokenizer)
     add_library(tokenizer STATIC)
     target_include_directories(tokenizer
         PUBLIC
@@ -135,6 +134,7 @@ if(${ANDROID})
         PRIVATE
         ${LLAMA2_TOKENIZER_DIR}/tiktoken.cpp
         ${LLAMA2_TOKENIZER_DIR}/bpe_tokenizer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../models/llama2/tokenizer/llama_tiktoken.cpp
     )
 
     # Include directory for neuron headers

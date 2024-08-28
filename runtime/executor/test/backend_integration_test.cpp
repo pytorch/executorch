@@ -14,6 +14,7 @@
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -23,7 +24,6 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <executorch/test/utils/alignment.h>
-#include <executorch/util/util.h>
 
 #include <gtest/gtest.h>
 
@@ -454,10 +454,9 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
     EXPECT_FALSE(spy_loader.WasFreed(init_processed->data()));
     auto method(std::move(method_res.get()));
     // Execute the model.
-    exec_aten::ArrayRef<void*> inputs =
-        torch::executor::util::PrepareInputTensors(method);
+    auto input_cleanup = executorch::extension::prepare_input_tensors(method);
+    ASSERT_EQ(input_cleanup.error(), Error::Ok);
     auto err = method.execute();
-    torch::executor::util::FreeInputs(inputs);
     EXPECT_EQ(err, Error::Ok);
 
     // Check that the processed buffer was passed to execute() as the handle.

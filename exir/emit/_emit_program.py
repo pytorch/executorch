@@ -84,20 +84,26 @@ def _remove_non_user_outputs(exported_program: ExportedProgram) -> torch.fx.Grap
 def _get_training_metadata(methods: Dict[str, ExportedProgram]) -> Dict[str, int]:
     gradients_method_prefix = "__et_training_gradients_index_"
     parameters_method_prefix = "__et_training_parameters_index_"
+    fqn_method_prefix = "__et_training_fqn_"
     training_metadata = {}
     for name, method in methods.items():
         found_grad = False
         found_param = False
+        fqns = []
         i = 0
         for output_spec in method.graph_signature.output_specs:
-            if output_spec.kind == OutputKind.GRADIENT_TO_PARAMETER and not found_grad:
-                training_metadata[gradients_method_prefix + name] = i
-                found_grad = True
+            if output_spec.kind == OutputKind.GRADIENT_TO_PARAMETER:
+                if not found_grad:
+                    training_metadata[gradients_method_prefix + name] = i
+                    found_grad = True
+                fqns.append(output_spec.target)
             elif output_spec.kind == OutputKind.TOKEN and not found_param:
                 assert found_grad  # Params must come after gradients
                 training_metadata[parameters_method_prefix + name] = i
                 found_param = True
             i += 1
+            if len(fqns) > 0:
+                training_metadata[fqn_method_prefix + name] = fqns
     return training_metadata
 
 
