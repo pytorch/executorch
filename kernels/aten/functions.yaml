@@ -173,6 +173,8 @@
 
 - op: full.out
 
+- op: gather.out
+
 - op: ge.Scalar_out
 
 - op: ge.Tensor_out
