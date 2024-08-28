@@ -1,15 +1,15 @@
-name: Upload AWS Device Farm test specs
+name: Upload AWS Device Farm Android test specs
 
 on:
   pull_request:
     paths:
-      - .github/workflows/upload-test-specs.yml
+      - .github/workflows/upload-android-test-specs.yml
       - examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
   push:
     branches:
       - main
     paths:
-      - .github/workflows/upload-test-specs.yml
+      - .github/workflows/upload-android-test-specs.yml
       - examples/demo-apps/android/LlamaDemo/android-llm-device-farm-test-spec.yml
 
 concurrency:

@@ -27,7 +27,7 @@ class LlavaTextDecoderRunner : public TextDecoderRunner {
 
     // run token embedding
     std::vector<EValue> token_embedding_outputs =
-        ET_UNWRAP(module_->execute(kTokenEmbeddingMethod, {tokens}));
+        ET_UNWRAP(module_->execute(kTokenEmbeddingMethod, tokens));
 
     // run text model
     std::vector<EValue> outputs_res = ET_UNWRAP(module_->execute(

@@ -77,7 +77,7 @@
         "directory": "runtime/core/portable_type/test",
         "sources": [
             "optional_test.cpp",
-            "executor_tensor_test.cpp",
+            "tensor_test.cpp",
             "half_test.cpp",
             "scalar_test.cpp",
             "tensor_impl_test.cpp"

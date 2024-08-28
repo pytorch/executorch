@@ -11,6 +11,7 @@
  */
 
 #include <cstring>
+#include <memory>
 
 #include <ethosu_driver.h>
 #include <pmu_ethosu.h>
@@ -164,8 +165,10 @@ class ArmBackend final : public PyTorchBackendInterface {
     }
 
     // Allocate driver handle and synchronously invoke driver
-    ethosu_driver* drv = ethosu_reserve_driver();
-    if (drv == NULL) {
+    auto driver =
+        std::unique_ptr<ethosu_driver, decltype(&ethosu_release_driver)>(
+            ethosu_reserve_driver(), ethosu_release_driver);
+    if (driver == NULL) {
       ET_LOG(Error, "ArmBackend::execute: ethosu_reserve_driver failed");
       return Error::InvalidState;
     }
@@ -178,7 +181,7 @@ class ArmBackend final : public PyTorchBackendInterface {
     size_t bases_size[2] = {
         handles.weight_data_size, handles.scratch_data_size};
     int result = ethosu_invoke_v3(
-        drv,
+        driver.get(),
         (void*)handles.cmd_data,
         handles.cmd_data_size,
         bases,

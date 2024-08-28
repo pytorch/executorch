@@ -10,17 +10,18 @@
 #include <filesystem>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
-#include <executorch/util/util.h>
 #include <gtest/gtest.h>
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
+using executorch::extension::prepare_input_tensors;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::Method;
@@ -80,8 +81,8 @@ TEST_F(MethodTest, MoveTest) {
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Can execute the method.
-  exec_aten::ArrayRef<void*> inputs =
-      torch::executor::util::PrepareInputTensors(*method);
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
   Error err = method->execute();
   ASSERT_EQ(err, Error::Ok);
 
@@ -95,8 +96,6 @@ TEST_F(MethodTest, MoveTest) {
   // Can execute the new method.
   err = new_method.execute();
   ASSERT_EQ(err, Error::Ok);
-
-  torch::executor::util::FreeInputs(inputs);
 }
 
 TEST_F(MethodTest, GetInputTests) {
@@ -173,8 +172,8 @@ TEST_F(MethodTest, SetPrimInputTest) {
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Can execute the method.
-  exec_aten::ArrayRef<void*> inputs =
-      torch::executor::util::PrepareInputTensors(*method);
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
 
   // The args to the method are x, y, alpha. x and y are tensors handled above
   // alpha is a prim.
@@ -189,8 +188,6 @@ TEST_F(MethodTest, SetPrimInputTest) {
 
   Error err = method->execute();
   EXPECT_EQ(err, Error::Ok);
-
-  torch::executor::util::FreeInputs(inputs);
 }
 
 TEST_F(MethodTest, MethodMetaTest) {
@@ -297,28 +294,28 @@ TEST_F(MethodTest, ConstantBufferTest) {
   ASSERT_EQ(err, Error::Ok);
 }
 
-// TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of
-// the portable op lib
+/*
+ * TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of
+ * the portable op lib
 
-// TEST_F(MethodTest, OptionalTensorListDeserialization) {
-//   ManagedMemoryManager mmm(kDefaultNonConstMemBytes,
-//   kDefaultRuntimeMemBytes); Result<Method> method =
-//   index_program_->load_method("forward", &mmm.get());
-//   ASSERT_EQ(method.error(), Error::Ok);
+TEST_F(MethodTest, OptionalTensorListDeserialization) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes,
+  kDefaultRuntimeMemBytes); Result<Method> method =
+  index_program_->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
 
-//   // Can execute the method.
-//   exec_aten::ArrayRef<void*> inputs =
-//       executorch::runtime::util::PrepareInputTensors(*method);
-//   Error err = method->execute();
-//   ASSERT_EQ(err, Error::Ok);
+  // Can execute the method.
+  auto input_cleanup = prepare_input_tensors(*method);
+  ASSERT_EQ(input_cleanup.error(), Error::Ok);
+  Error err = method->execute();
+  ASSERT_EQ(err, Error::Ok);
 
-//   EXPECT_EQ(method->inputs_size(), 1);
+  EXPECT_EQ(method->inputs_size(), 1);
 
-//   auto outputs = method->get_output(0);
-//   EXPECT_EQ(outputs.toTensor().dim(), 3);
-//   EXPECT_EQ(outputs.toTensor().size(0), 5);
-//   EXPECT_EQ(outputs.toTensor().size(1), 2);
-//   EXPECT_EQ(outputs.toTensor().size(2), 10);
-
-//   executorch::runtime::util::FreeInputs(inputs);
-// }
+  auto outputs = method->get_output(0);
+  EXPECT_EQ(outputs.toTensor().dim(), 3);
+  EXPECT_EQ(outputs.toTensor().size(0), 5);
+  EXPECT_EQ(outputs.toTensor().size(1), 2);
+  EXPECT_EQ(outputs.toTensor().size(2), 10);
+}
+*/
