@@ -482,7 +482,7 @@
 <div class="section" id="design-principles">
 <h2>Design Principles<a class="headerlink" href="#design-principles" title="Permalink to this heading">¶</a></h2>
 <p><strong>What do we support?</strong> On the operator coverage side, the kernel registration APIs allow users to register kernels for all core ATen ops as well as custom ops, as long as the custom ops schemas are specified.</p>
-<p>Notice that we also support _partial kernels, _for example the kernel only supports a subset of tensor dtypes and/or dim orders.</p>
+<p>Notice that we also support partial kernels, for example the kernel only supports a subset of tensor dtypes and/or dim orders.</p>
 <p><strong>Kernel contract</strong>: kernels need to comply with the following requirements:</p>
 <ul class="simple">
 <li><p>Match the calling convention derived from operator schema. The kernel registration API will generate headers for the custom kernels as references.</p></li>

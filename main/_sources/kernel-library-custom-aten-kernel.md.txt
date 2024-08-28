@@ -10,7 +10,7 @@ Portable kernel library is the in-house default kernel library, it’s easy to u
 
 **What do we support?** On the operator coverage side, the kernel registration APIs allow users to register kernels for all core ATen ops as well as custom ops, as long as the custom ops schemas are specified.
 
-Notice that we also support _partial kernels, _for example the kernel only supports a subset of tensor dtypes and/or dim orders.
+Notice that we also support partial kernels, for example the kernel only supports a subset of tensor dtypes and/or dim orders.
 
 **Kernel contract**: kernels need to comply with the following requirements:
 
