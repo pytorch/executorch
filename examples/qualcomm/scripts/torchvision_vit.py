@@ -76,12 +76,7 @@ def main(args):
         quant_dtype=QuantDtype.use_8a8w,
         shared_buffer=args.shared_buffer,
     )
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # build_path : path where QNN delegate artifacts were built
-    # pte_path      : path where executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
+
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         build_path=f"{args.build_folder}",

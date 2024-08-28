@@ -41,6 +41,15 @@ bool data_is_close(
     size_t numel,
     double rtol,
     double atol) {
+  ET_CHECK_MSG(
+      numel == 0 || (a != nullptr && b != nullptr),
+      "Pointers must not be null when numel > 0: numel %zu, a 0x%p, b 0x%p",
+      numel,
+      a,
+      b);
+  if (a == b) {
+    return true;
+  }
   for (size_t i = 0; i < numel; i++) {
     const auto ai = a[i];
     const auto bi = b[i];
