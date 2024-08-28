@@ -862,6 +862,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_pixel_unshuffle",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_pow",
         deps = [
             ":scalar_utils",
