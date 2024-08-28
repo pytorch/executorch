@@ -416,8 +416,8 @@ class TransformerBlock(nn.Module):
             self.block_sparse_moe = MOEFeedForward(args)
         else:
             self.feed_forward = FeedForward(args)
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.attention_norm = torch.nn.RMSNorm(args.dim, eps=args.norm_eps)
+        self.ffn_norm = torch.nn.RMSNorm(args.dim, eps=args.norm_eps)
 
     def forward(self, x, freqs_cos, freqs_sin, input_pos=None):  # x: 1xN
         h = self.attention.forward(
@@ -443,7 +443,7 @@ class Transformer(nn.Module):
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params))
-        self.norm = RMSNorm(params.dim, eps=params.norm_eps)
+        self.norm = torch.nn.RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
         self.generate_full_logits = params.generate_full_logits

@@ -77,6 +77,7 @@ class LLMEdgeManager:
         verbose: bool = False,
         metadata: Optional[dict] = None,
         dynamic_shapes: Optional[Any] = None,
+        export_fn=capture_pre_autograd_graph,
     ):
         self.model = model
         # graph module returned from capture_pre_autograd_graph
