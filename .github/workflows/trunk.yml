@@ -282,18 +282,21 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
+        BUILD_TOOL=cmake
+
         bash .ci/scripts/setup-conda.sh
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "cmake"
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
         # install Llava requirements
-        bash examples/models/llama2/install_requirements.sh
-        bash examples/models/llava/install_requirements.sh
+        ${CONDA_RUN} bash examples/models/llama2/install_requirements.sh
+        ${CONDA_RUN} bash examples/models/llava/install_requirements.sh
 
         # run python unittest
-        python -m unittest examples.models.llava.test.test_llava
+        ${CONDA_RUN} python -m unittest examples.models.llava.test.test_llava
 
         # run e2e (export, tokenizer and runner)
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llava.sh Release
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llava.sh Release
 
   test-qnn-model:
     name: test-qnn-model
