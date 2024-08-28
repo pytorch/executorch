@@ -162,7 +162,7 @@ class LLMEdgeManager:
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             # pyre-fixme[8]
-            self.pre_autograd_graph_module = capture_pre_autograd_graph(
+            self.pre_autograd_graph_module = torch.export.export(
                 self.model, self.example_inputs, dynamic_shapes=dynamic_shape
             )
         return self
