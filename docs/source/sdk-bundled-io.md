@@ -211,21 +211,19 @@ We need the pointer to ExecuTorch program to do the execution. To unify the proc
 
 Here's an example of how to use the `GetProgramData` API:
 ```c++
-std::shared_ptr<char> buff_ptr;
-size_t buff_len;
+// Assume that the user has read the contents of the file into file_data using
+// whatever method works best for their application. The file could contain
+// either BundledProgram data or Program data.
+void* file_data = ...;
+size_t file_data_len = ...;
 
-// FILE_PATH here can be either BundledProgram or Program flatbuffer file.
-Error status = torch::executor::util::read_file_content(
-    FILE_PATH, &buff_ptr, &buff_len);
-ET_CHECK_MSG(
-    status == Error::Ok,
-    "read_file_content() failed with status 0x%" PRIx32,
-    status);
-
+// If file_data contains a BundledProgram, GetProgramData() will return a
+// pointer to the Program data embedded inside it. Otherwise it will return
+// file_data, which already pointed to Program data.
 const void* program_ptr;
 size_t program_len;
 status = torch::executor::bundled_program::GetProgramData(
-    buff_ptr.get(), buff_len, &program_ptr, &program_len);
+    file_data, file_data_len, &program_ptr, &program_len);
 ET_CHECK_MSG(
     status == Error::Ok,
     "GetProgramData() failed with status 0x%" PRIx32,

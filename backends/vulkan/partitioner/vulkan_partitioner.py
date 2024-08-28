@@ -38,7 +38,7 @@ ops_not_to_decompose = [
     torch.ops.aten.upsample_nearest2d.vec,
 ]
 
-logger: logging.Logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger("")
 logger.setLevel(logging.INFO)
 
 

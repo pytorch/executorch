@@ -126,7 +126,7 @@ Error Runner::load() {
       tokenizer_.get(),
       text_decoder_runner_.get(),
       metadata_.at(kUseKVCache),
-      enable_parallel_prefill_);
+      metadata_.at(kEnableDynamicShape));
 
   text_token_generator_ = std::make_unique<TextTokenGenerator>(
       tokenizer_.get(),

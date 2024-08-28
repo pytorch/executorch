@@ -60,7 +60,7 @@ TextDecoderRunner::TextDecoderRunner(
     (void)managed_start_pos; // unused
 
     ::executorch::runtime::Result<std::vector<::executorch::runtime::EValue>>
-        outputs_res = module_->forward({tokens});
+        outputs_res = module_->forward(tokens);
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_CHECK_MSG(
         outputs_res.get().size() == 1,
