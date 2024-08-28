@@ -57,6 +57,11 @@ class TensorInfo final {
    */
   size_t nbytes() const;
 
+  /**
+   * Returns whether the tensor's memory was planned during export.
+   */
+  bool is_memory_planned() const;
+
  private:
   // Let MethodMeta create TensorInfo.
   friend class MethodMeta;
@@ -64,7 +69,8 @@ class TensorInfo final {
   TensorInfo(
       Span<const int32_t> sizes,
       Span<const uint8_t> dim_order,
-      exec_aten::ScalarType scalar_type);
+      exec_aten::ScalarType scalar_type,
+      const bool is_memory_planned);
 
   /**
    * The sizes of the tensor.
@@ -87,6 +93,9 @@ class TensorInfo final {
 
   /// The size in bytes of the tensor.
   size_t nbytes_;
+
+  /// Whether the tensor's memory was planned during export.
+  const bool is_memory_planned_;
 };
 
 /**
@@ -175,13 +184,6 @@ class MethodMeta final {
    * @returns The size in bytes on success, or an error on failure.
    */
   Result<int64_t> memory_planned_buffer_size(size_t index) const;
-
-  /**
-   * Get whether the specified tensor is memory planned.
-   *
-   * @returns True if the tensor is memory planned.
-   */
-  Result<bool> is_output_tensor_memory_planned(size_t index) const;
 
   /**
    * DEPRECATED: Use num_memory_planned_buffers() instead.

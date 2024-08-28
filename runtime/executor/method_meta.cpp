@@ -68,11 +68,13 @@ size_t calculate_nbytes(
 TensorInfo::TensorInfo(
     Span<const int32_t> sizes,
     Span<const uint8_t> dim_order,
-    exec_aten::ScalarType scalar_type)
+    exec_aten::ScalarType scalar_type,
+    const bool is_memory_planned)
     : sizes_(sizes),
       dim_order_(dim_order),
       scalar_type_(scalar_type),
-      nbytes_(calculate_nbytes(sizes_, scalar_type_)) {}
+      nbytes_(calculate_nbytes(sizes_, scalar_type_)),
+      is_memory_planned_(is_memory_planned) {}
 
 Span<const int32_t> TensorInfo::sizes() const {
   return sizes_;
@@ -88,6 +90,10 @@ exec_aten::ScalarType TensorInfo::scalar_type() const {
 
 size_t TensorInfo::nbytes() const {
   return nbytes_;
+}
+
+bool TensorInfo::is_memory_planned() const {
+  return is_memory_planned_;
 }
 
 MethodMeta::MethodMeta(const executorch_flatbuffer::ExecutionPlan* s_plan)
@@ -132,7 +138,8 @@ Result<TensorInfo> MethodMeta::input_tensor_meta(size_t index) const {
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
-      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()));
+      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()),
+      tensor_value->allocation_info() != nullptr);
 }
 
 size_t MethodMeta::num_outputs() const {
@@ -170,7 +177,8 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
           tensor_value->sizes()->data(), tensor_value->sizes()->size()),
       Span<const uint8_t>(
           tensor_value->dim_order()->data(), tensor_value->dim_order()->size()),
-      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()));
+      static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()),
+      tensor_value->allocation_info() != nullptr);
 }
 
 size_t MethodMeta::num_memory_planned_buffers() const {
@@ -195,23 +203,6 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
   // Index zero is reserved internally, and we hide it from users. Adjust the
   // provided index to point to one of the actual buffers.
   return s_plan_->non_const_buffer_sizes()->Get(index + 1);
-}
-
-Result<bool> MethodMeta::is_output_tensor_memory_planned(size_t index) const {
-  auto tag = this->output_tag(index);
-  if (!tag.ok()) {
-    return tag.error();
-  }
-  ET_CHECK_OR_RETURN_ERROR(
-      tag.get() == Tag::Tensor,
-      InvalidArgument,
-      "Tag: %zu output: %zu is not Tensor",
-      (size_t)tag.get(),
-      index);
-  auto input_index = s_plan_->outputs()->Get(index);
-  auto tensor_value = s_plan_->values()->Get(input_index)->val_as_Tensor();
-
-  return tensor_value->allocation_info() != nullptr;
 }
 
 } // namespace runtime
