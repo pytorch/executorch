@@ -30,7 +30,7 @@ class LlavaImagePrefiller : public ImagePrefiller {
         image.data.data(), {3, image.height, image.width}, ScalarType::Byte);
     // Run image encoder
     std::vector<EValue> image_encoder_outputs = ET_UNWRAP(module_->execute(
-        kImageEncoderMethod, {managed_images.get_aliasing_tensor()}));
+        kImageEncoderMethod, managed_images.get_aliasing_tensor()));
 
     // inputs:[start_pos, embeds]
     ManagedTensor managed_start_pos(&start_pos, {1}, ScalarType::Long);

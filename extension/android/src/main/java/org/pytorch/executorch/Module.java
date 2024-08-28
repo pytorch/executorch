@@ -27,8 +27,8 @@ public class Module {
   /** Load mode for the module. Use memory locking and ignore errors. */
   public static final int LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS = 3;
 
-  /** Reference to the INativePeer object of this module. */
-  private INativePeer mNativePeer;
+  /** Reference to the NativePeer object of this module. */
+  private NativePeer mNativePeer;
 
   /**
    * Loads a serialized ExecuTorch module from the specified path on the disk. Uses default load
@@ -68,7 +68,7 @@ public class Module {
     return load(modelPath, null);
   }
 
-  Module(INativePeer nativePeer) {
+  Module(NativePeer nativePeer) {
     this.mNativePeer = nativePeer;
   }
 

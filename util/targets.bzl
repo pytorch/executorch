@@ -7,20 +7,6 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    runtime.cxx_library(
-        name = "read_file",
-        srcs = ["read_file.cpp"],
-        exported_headers = ["read_file.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/platform:compiler",
-        ],
-    )
-
     for aten_mode in (True, False):
         aten_suffix = ("_aten" if aten_mode else "")
 
