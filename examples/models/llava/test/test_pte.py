@@ -14,10 +14,8 @@ from executorch.extension.pybindings.portable_lib import _load_for_executorch
 from PIL import Image
 
 # Custom ops has to be loaded after portable_lib.
-# I don't know how to stop UFMT so I'm just using if True: to avoid lint error
-if True:
-    from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
-    from executorch.kernels import quantized  # noqa
+from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
+from executorch.kernels import quantized  # noqa # usort: skip
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
