@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 
 from typing import List, Tuple, Union
@@ -14,9 +13,6 @@ from executorch.backends.arm.test import common
 
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from parameterized import parameterized
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class Conv2d(torch.nn.Module):
