@@ -288,6 +288,59 @@ TEST_F(OpAddOutKernelTest, BroadcastSupported) {
   EXPECT_TENSOR_EQ(out, tf.ones({5, 2, 3, 4}));
 }
 
+TEST_F(OpAddOutKernelTest, BroadcastOneElementTensor) {
+  TensorFactory<ScalarType::Float> tf;
+  Tensor x = tf.make({1}, {1.75});
+  Tensor y = tf.make({3, 2}, {-1.5, -1, -0.5, 0, 0.5, 1.5});
+
+  Tensor out = tf.zeros({3, 2});
+
+  Tensor ret = op_add_out(x, y, 1, out);
+
+  Tensor expected = tf.make(
+      {3, 2},
+      {
+          0.25,
+          0.75,
+          1.25,
+          1.75,
+          2.25,
+          3.25,
+      });
+
+  EXPECT_TENSOR_EQ(out, expected);
+
+  out = op_add_out(y, x, 1, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorTypePromotion) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Double> tfDouble;
+  Tensor x = tfDouble.make({1}, {1.75});
+  Tensor y = tf.make({3, 2}, {-1.5, -1, -0.5, 0, 0.5, 1.5});
+
+  Tensor out = tfDouble.zeros({3, 2});
+
+  Tensor ret = op_add_out(x, y, 1, out);
+
+  Tensor expected = tfDouble.make(
+      {3, 2},
+      {
+          0.25,
+          0.75,
+          1.25,
+          1.75,
+          2.25,
+          3.25,
+      });
+
+  EXPECT_TENSOR_EQ(out, expected);
+
+  out = op_add_out(y, x, 1, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
 //
 // Death Tests
 //
@@ -355,15 +408,15 @@ TEST_F(OpAddOutKernelTest, BoolOutputWithIntegralInput) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_add_out(a, b, /*alpha=*/1, out));
 }
 
-TEST_F(OpAddOutKernelTest, MismatchedInputShapesDies) {
+TEST_F(OpAddOutKernelTest, MismatchedNonBroadcastableInputShapesDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Addends with different shapes.
-  Tensor a = tf.ones(/*sizes=*/{4});
+  Tensor a = tf.ones(/*sizes=*/{4, 2});
   Tensor b = tf.ones(/*sizes=*/{2, 2});
 
   // Destination for the sum; matches the shape of one of the inputs.
-  Tensor out = tf.zeros(/*sizes=*/{4});
+  Tensor out = tf.zeros(/*sizes=*/{8});
 
   // Adding the two mismatched tensors should cause an assertion and kill the
   // test process.
