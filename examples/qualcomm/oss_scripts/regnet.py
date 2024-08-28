@@ -10,9 +10,8 @@ import sys
 from multiprocessing.connection import Client
 
 import numpy as np
-
 import torch
-from executorch.examples.models.mobilenet_v3 import MV3Model
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.qualcomm.utils import (
     build_executorch_binary,
     make_output_dir,
@@ -20,6 +19,13 @@ from executorch.examples.qualcomm.utils import (
     setup_common_args_and_variables,
     SimpleADB,
     topk_accuracy,
+)
+
+from torchvision.models import (
+    regnet_x_400mf,
+    RegNet_X_400MF_Weights,
+    regnet_y_400mf,
+    RegNet_Y_400MF_Weights,
 )
 
 
@@ -51,7 +57,8 @@ def get_dataset(dataset_path, data_size):
             break
         feature, target = data
         inputs.append((feature,))
-        targets.append(target)
+        for element in target:
+            targets.append(element)
         input_list += f"input_{index}_0.raw\n"
 
     return inputs, targets, input_list
@@ -74,17 +81,23 @@ def main(args):
         dataset_path=f"{args.dataset}",
         data_size=data_num,
     )
-    pte_filename = "mv3_qnn"
-    instance = MV3Model()
+
+    if args.weights == "regnet_y_400mf":
+        weights = RegNet_Y_400MF_Weights.DEFAULT
+        model = regnet_y_400mf(weights=weights).eval()
+        pte_filename = "regnet_y_400mf"
+    else:
+        weights = RegNet_X_400MF_Weights.DEFAULT
+        model = regnet_x_400mf(weights=weights).eval()
+        pte_filename = "regnet_x_400mf"
+
     build_executorch_binary(
-        instance.get_eager_model().eval(),
-        instance.get_example_inputs(),
+        model,
+        inputs[0],
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
-        skip_node_id_set=skip_node_id_set,
-        skip_node_op_set=skip_node_op_set,
-        shared_buffer=args.shared_buffer,
+        quant_dtype=QuantDtype.use_8a8w,
     )
 
     if args.compile_only:
@@ -98,7 +111,6 @@ def main(args):
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
-        shared_buffer=args.shared_buffer,
     )
     adb.push(inputs=inputs, input_list=input_list)
     adb.execute()
@@ -130,6 +142,13 @@ def main(args):
 
 if __name__ == "__main__":
     parser = setup_common_args_and_variables()
+    parser.add_argument(
+        "-a",
+        "--artifact",
+        help="path for storing generated artifacts by this example. Default ./regnet",
+        default="./regnet",
+        type=str,
+    )
 
     parser.add_argument(
         "-d",
@@ -144,12 +163,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "-a",
-        "--artifact",
-        help="path for storing generated artifacts by this example. "
-        "Default ./mobilenet_v3",
-        default="./mobilenet_v3",
+        "--weights",
         type=str,
+        choices=["regnet_y_400mf", "regnet_x_400mf"],
+        help="Specify which regent weights/model to execute",
+        required=True,
     )
 
     args = parser.parse_args()
