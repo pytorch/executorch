@@ -177,6 +177,13 @@ class MethodMeta final {
   Result<int64_t> memory_planned_buffer_size(size_t index) const;
 
   /**
+   * Get whether the specified tensor is memory planned.
+   *
+   * @returns True if the tensor is memory planned.
+   */
+  Result<bool> is_output_tensor_memory_planned(size_t index) const;
+
+  /**
    * DEPRECATED: Use num_memory_planned_buffers() instead.
    */
   ET_DEPRECATED size_t num_non_const_buffers() const {

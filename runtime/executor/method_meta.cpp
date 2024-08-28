@@ -197,5 +197,22 @@ Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
   return s_plan_->non_const_buffer_sizes()->Get(index + 1);
 }
 
+Result<bool> MethodMeta::is_output_tensor_memory_planned(size_t index) const {
+  auto tag = this->output_tag(index);
+  if (!tag.ok()) {
+    return tag.error();
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      tag.get() == Tag::Tensor,
+      InvalidArgument,
+      "Tag: %zu output: %zu is not Tensor",
+      (size_t)tag.get(),
+      index);
+  auto input_index = s_plan_->outputs()->Get(index);
+  auto tensor_value = s_plan_->values()->Get(input_index)->val_as_Tensor();
+
+  return tensor_value->allocation_info() != nullptr;
+}
+
 } // namespace runtime
 } // namespace executorch
