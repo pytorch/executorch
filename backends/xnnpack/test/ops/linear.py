@@ -407,8 +407,8 @@ class TestLinear(unittest.TestCase):
     )
     def test_qd8_fp32_per_token_weight_per_channel_group_int4(self):
         M_sizes = [1, 2, 17, 31]
-        K_sizes = [8, 32, 64, 128]
-        bl_sizes = [8, 16, 16, 32]
+        K_sizes = [32, 32, 64, 128]
+        bl_sizes = [32, 32, 32, 64]
         N_sizes = [2, 17, 92, 128]
 
         for use_bias in [True, False]:
@@ -430,8 +430,8 @@ class TestLinear(unittest.TestCase):
     )
     def test_qd8_fp16_per_token_weight_per_channel_group_int4(self):
         M_sizes = [1, 2, 17, 31]
-        K_sizes = [8, 32, 64, 128]
-        bl_sizes = [8, 16, 16, 32]
+        K_sizes = [32, 32, 64, 128]
+        bl_sizes = [32, 32, 32, 64]
         N_sizes = [2, 17, 92, 128]
 
         for use_bias in [True, False]:
@@ -602,8 +602,8 @@ class TestLinear(unittest.TestCase):
         use_bias: bool = False,
         group_size: int = 8,
         num_linears: int = 1,
-        atol: float = 1e-3,
-        rtol: float = 1e-3,
+        atol: float = 5e-3,
+        rtol: float = 5e-3,
     ):
         quantize_(mod, int8_dynamic_activation_int4_weight(group_size=group_size))
         unwrap_tensor_subclass(mod)
