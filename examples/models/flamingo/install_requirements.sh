@@ -7,3 +7,7 @@
 
 # Install torchtune nightly for model definitions.
 pip install --pre torchtune --extra-index-url https://download.pytorch.org/whl/nightly/cpu --no-cache-dir
+
+# Install torchao.
+TORCHAO_VERSION=$(cat "$(dirname "$0")"/../../../.ci/docker/ci_commit_pins/torchao.txt)
+pip install --no-use-pep517 --user "git+https://github.com/pytorch/ao.git@${TORCHAO_VERSION}"
