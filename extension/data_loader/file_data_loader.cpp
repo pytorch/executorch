@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/extension/data_loader/file.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
-#include <file.h>
 
 #include <algorithm>
 #include <cerrno>

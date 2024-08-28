@@ -8,6 +8,9 @@
 
 #pragma once
 
+#ifndef _WIN32
+#include <unistd.h>
+#else
 #include <executorch/runtime/platform/compiler.h> // For ssize_t.
 #include <io.h>
 
@@ -51,3 +54,4 @@ inline ssize_t pread(int __fd, void* __buf, size_t __nbytes, size_t __offset) {
 // To avoid conflicts with std::numeric_limits<int32_t>::max() in
 // file_data_loader.cpp.
 #undef max
+#endif
