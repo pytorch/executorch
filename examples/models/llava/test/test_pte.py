@@ -17,7 +17,7 @@ from PIL import Image
 # I don't know how to stop UFMT so I'm just using if True: to avoid lint error
 if True:
     from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
-
+    from executorch.kernels import quantized  # noqa
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
@@ -54,7 +54,7 @@ def main():
     )[0]
     print(pte_prefill_before_img)
 
-    start_pos += pte_prefill_before_img.shape[1]
+    start_pos += prompt_before_image.shape[1]
 
     # pte prefill image
     logging.warning("Image encoder started")
@@ -71,7 +71,7 @@ def main():
     logging.warning("Image token prefill finished")
     print(pte_prefill_img)
 
-    start_pos += pte_prefill_img.shape[1]
+    start_pos += pte_embeds_img.shape[1]
 
     # pte prefill prompt after img
     logging.warning("Text token prefill started")
