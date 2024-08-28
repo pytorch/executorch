@@ -668,25 +668,21 @@ file which can be loaded by a desktop or mobile application at runtime.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// main.cpp</span>
 
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;cstdint&gt;</span>
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;functional&gt;</span>
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;memory&gt;</span>
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;unordered_map&gt;</span>
 
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;basic_tokenizer.h&quot;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;basic_sampler.h&quot;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;basic_tokenizer.h&quot;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;managed_tensor.h&quot;</span>
 
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/evalue_util/print_evalue.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/evalue.h&gt;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/exec_aten/exec_aten.h&gt;</span>
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/exec_aten/util/dim_order_util.h&gt;</span>
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/exec_aten/util/tensor_util.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/result.h&gt;</span>
 
-<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">torch</span><span class="o">::</span><span class="nn">executor</span><span class="p">;</span>
-
-<span class="k">using</span><span class="w"> </span><span class="n">SizesType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">exec_aten</span><span class="o">::</span><span class="n">SizesType</span><span class="p">;</span>
-<span class="k">using</span><span class="w"> </span><span class="n">DimOrderType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">exec_aten</span><span class="o">::</span><span class="n">DimOrderType</span><span class="p">;</span>
-<span class="k">using</span><span class="w"> </span><span class="n">StridesType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">exec_aten</span><span class="o">::</span><span class="n">StridesType</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">exec_aten</span><span class="o">::</span><span class="n">ScalarType</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">exec_aten</span><span class="o">::</span><span class="n">Tensor</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">extension</span><span class="o">::</span><span class="n">Module</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">EValue</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="n">executorch</span><span class="o">::</span><span class="n">runtime</span><span class="o">::</span><span class="n">Result</span><span class="p">;</span>
 </pre></div>
 </div>
 <p>The model inputs and outputs take the form of tensors. A tensor can be thought of as an multi-dimensional array.
