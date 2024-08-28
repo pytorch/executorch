@@ -6,7 +6,7 @@ In this example, we export to ExecuTorch a model ([phi-3-mini](https://github.co
 `./install_requirements.sh` in ExecuTorch root directory.
 
 ### Step 2: Install Requirements
-- `./examples/models/phi3-mini-lora/install_requirements.sh`
+- `./examples/models/phi-3-mini-lora/install_requirements.sh`
 
 ### Step 3: Export and run the model
 1. Export the inferenace and training models to ExecuTorch.
@@ -22,5 +22,6 @@ python export_model.py
 # Build the executor_runner target
 cmake --build cmake-out --target executor_runner -j9
 
-./cmake-out/executor_runner --model_path mini_phi3_lora.pte
+# Run the model for inference.
+./cmake-out/executor_runner --model_path phi3_mini_lora.pte
 ```
