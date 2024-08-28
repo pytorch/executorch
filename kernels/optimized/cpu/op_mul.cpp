@@ -22,45 +22,74 @@ using ScalarType = exec_aten::ScalarType;
 
 namespace {
 
+// NOTE: we bake ArrayRef iterators being pointers into the return
+// type here because we assume that iterators are portable across
+// ArrayRef copies.
+const Tensor::SizesType* arrayref_begin_ignoring_leading_1s(
+    ArrayRef<Tensor::SizesType> arr) {
+  return std::find_if(
+      arr.begin(), arr.end(), [](Tensor::SizesType x) { return x != 1; });
+}
+
 bool sizes_match_ignoring_leading_1s(
     ArrayRef<Tensor::SizesType> lhs,
     ArrayRef<Tensor::SizesType> rhs) {
-  auto lhs_begin = lhs.begin();
+  auto lhs_begin = arrayref_begin_ignoring_leading_1s(lhs);
   auto lhs_end = lhs.end();
-  while (lhs_begin != lhs_end && *lhs_begin == 1) {
-    ++lhs_begin;
-  }
 
-  auto rhs_begin = rhs.begin();
+  auto rhs_begin = arrayref_begin_ignoring_leading_1s(rhs);
   auto rhs_end = rhs.end();
-  while (rhs_begin != rhs_end && *rhs_begin == 1) {
-    ++rhs_begin;
-  }
 
   return ((lhs_end - lhs_begin) == (rhs_end - rhs_begin)) &&
       std::equal(lhs_begin, lhs_end, rhs_begin);
 }
 
 // Move to generic util as this is applicable to all binary ops
-bool can_use_optimized_path(
-    const Tensor& a,
-    const Tensor& b,
-    const Tensor& out) {
+enum class ElementwiseOptimizedPath {
+  kNone,
+  kTreatAs1d,
+  kBroadcast2dBy1d,
+  kBroadcast2dBy1dReverseArguments,
+};
+
+ElementwiseOptimizedPath select_broadcast_2d_by_1d_optimized_path(
+    const Tensor& lhs,
+    const Tensor& rhs) {
+  auto lhs_begin = arrayref_begin_ignoring_leading_1s(lhs.sizes());
+  auto lhs_end = lhs.sizes().end();
+
+  auto rhs_begin = arrayref_begin_ignoring_leading_1s(rhs.sizes());
+  auto rhs_end = rhs.sizes().end();
+
+  const auto lhs_size = lhs_end - lhs_begin;
+  const auto rhs_size = rhs_end - rhs_begin;
+  if (lhs_size == 2 && rhs_size == 1 && lhs_begin[1] == rhs_begin[0]) {
+    return ElementwiseOptimizedPath::kBroadcast2dBy1d;
+  }
+
+  if (lhs_size == 1 && rhs_size == 2 && rhs_begin[1] == lhs_begin[0]) {
+    return ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments;
+  }
+
+  return ElementwiseOptimizedPath::kNone;
+}
+
+ElementwiseOptimizedPath
+select_optimized_path(const Tensor& a, const Tensor& b, const Tensor& out) {
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  bool can_use_optimized_path = true;
-  can_use_optimized_path =
-      can_use_optimized_path && ((a_type == b_type) && (a_type == out_type));
-  can_use_optimized_path = can_use_optimized_path &&
-      (a_type != ScalarType::Half && b_type != ScalarType::Half);
-  can_use_optimized_path = can_use_optimized_path &&
-      (a.sizes().equals(b.sizes()) ||
-       (a.numel() == b.numel() &&
-        (a.numel() == out.numel() ||
-         sizes_match_ignoring_leading_1s(a.sizes(), b.sizes()))));
-  return can_use_optimized_path;
+  if (a_type != b_type || a_type != out_type || a_type == ScalarType::Half) {
+    return ElementwiseOptimizedPath::kNone;
+  }
+  if (a.sizes().equals(b.sizes()) ||
+      (a.numel() == b.numel() &&
+       (a.numel() == out.numel() ||
+        sizes_match_ignoring_leading_1s(a.sizes(), b.sizes())))) {
+    return ElementwiseOptimizedPath::kTreatAs1d;
+  }
+  return select_broadcast_2d_by_1d_optimized_path(a, b);
 }
 
 template <
@@ -147,7 +176,8 @@ Tensor& opt_mul_out(
     return opt_mul_out(ctx, b, a, out);
   }
 
-  if (can_use_optimized_path(a, b, out)) {
+  auto selected_optimized_path = select_optimized_path(a, b, out);
+  if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
     // Resize for dynamic shape
     auto error = resize_tensor(out, a.sizes());
     ET_KERNEL_CHECK_MSG(
@@ -165,6 +195,38 @@ Tensor& opt_mul_out(
           a.const_data_ptr<CTYPE>(),
           b.const_data_ptr<CTYPE>(),
           out.numel());
+    });
+  } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
+    const Tensor* lhs;
+    const Tensor* rhs;
+    if (selected_optimized_path ==
+        ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
+      lhs = &b;
+      rhs = &a;
+    } else {
+      // Catch failure to update logic when adding new broadcasting possibility.
+      ET_DCHECK(
+          selected_optimized_path ==
+          ElementwiseOptimizedPath::kBroadcast2dBy1d);
+      lhs = &a;
+      rhs = &b;
+    }
+    auto error = resize_tensor(out, lhs->sizes());
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        error == Error::Ok,
+        InvalidArgument,
+        out,
+        "Failed to resize output tensor.");
+    ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
+      using Vec = executorch::vec::Vectorized<CTYPE>;
+      executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
+          [](Vec x, Vec y) { return x * y; },
+          out.mutable_data_ptr<CTYPE>(),
+          lhs->const_data_ptr<CTYPE>(),
+          rhs->const_data_ptr<CTYPE>(),
+          lhs->sizes()[lhs->dim() - 2],
+          lhs->sizes()[lhs->dim() - 1]);
     });
   } else {
     ScalarType common_type =
