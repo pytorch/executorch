@@ -229,6 +229,12 @@ TEST_F(OpDivOutTest, BroadcastScalarSupported2) {
 
   Tensor ret = tf.make({3, 1, 1}, {4, 2, 1});
   EXPECT_TENSOR_EQ(out, ret);
+
+  std::swap(a, b);
+  out = tf.zeros({3, 1, 1});
+  op_div_out(a, b, out);
+  ret = tf.make({3, 1, 1}, {0.25, 0.5, 1});
+  EXPECT_TENSOR_EQ(out, ret);
 }
 
 TEST_F(OpDivOutTest, BroadcastDimSizeIsOneAB) {
