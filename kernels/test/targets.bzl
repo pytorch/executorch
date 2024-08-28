@@ -211,6 +211,7 @@ def define_common_targets():
     _common_op_test("op_fmod_test", ["aten", "portable"])
     _common_op_test("op_full_like_test", ["aten", "portable"])
     _common_op_test("op_full_test", ["aten", "portable"])
+    _common_op_test("op_gather_test", ["aten", "portable"])
     _common_op_test("op_ge_test", ["aten", "portable"])
     _common_op_test("op_gelu_test", ["aten", "portable", "optimized"])
     _common_op_test("op_glu_test", ["aten", "portable"])
