@@ -37,6 +37,7 @@ jobs:
   validate-apple-test-spec:
     needs: upload-apple-test-spec-for-validation
     uses: ./.github/workflows/apple.yml
+    secrets: inherit
     permissions:
       id-token: write
       contents: read
