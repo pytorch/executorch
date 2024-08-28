@@ -73,8 +73,8 @@ TensorInfo::TensorInfo(
     : sizes_(sizes),
       dim_order_(dim_order),
       scalar_type_(scalar_type),
-      nbytes_(calculate_nbytes(sizes_, scalar_type_)),
-      is_memory_planned_(is_memory_planned) {}
+      is_memory_planned_(is_memory_planned),
+      nbytes_(calculate_nbytes(sizes_, scalar_type_)) {}
 
 Span<const int32_t> TensorInfo::sizes() const {
   return sizes_;
@@ -88,12 +88,12 @@ exec_aten::ScalarType TensorInfo::scalar_type() const {
   return scalar_type_;
 }
 
-size_t TensorInfo::nbytes() const {
-  return nbytes_;
-}
-
 bool TensorInfo::is_memory_planned() const {
   return is_memory_planned_;
+}
+
+size_t TensorInfo::nbytes() const {
+  return nbytes_;
 }
 
 MethodMeta::MethodMeta(const executorch_flatbuffer::ExecutionPlan* s_plan)

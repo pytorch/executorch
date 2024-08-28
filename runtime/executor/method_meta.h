@@ -53,14 +53,14 @@ class TensorInfo final {
   exec_aten::ScalarType scalar_type() const;
 
   /**
-   * Returns the size of the tensor in bytes.
-   */
-  size_t nbytes() const;
-
-  /**
    * Returns whether the tensor's memory was planned during export.
    */
   bool is_memory_planned() const;
+
+  /**
+   * Returns the size of the tensor in bytes.
+   */
+  size_t nbytes() const;
 
  private:
   // Let MethodMeta create TensorInfo.
@@ -91,11 +91,11 @@ class TensorInfo final {
   /// The scalar type of the tensor.
   exec_aten::ScalarType scalar_type_;
 
+  /// Whether the tensor's memory was planned during export.
+  bool is_memory_planned_;
+
   /// The size in bytes of the tensor.
   size_t nbytes_;
-
-  /// Whether the tensor's memory was planned during export.
-  const bool is_memory_planned_;
 };
 
 /**
