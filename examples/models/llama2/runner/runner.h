@@ -45,7 +45,6 @@ class Runner {
 
  private:
   float temperature_;
-  bool enable_parallel_prefill_;
   bool shouldStop_{false};
 
   // model

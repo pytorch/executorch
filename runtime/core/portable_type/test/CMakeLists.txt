@@ -23,7 +23,7 @@ set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 
 include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
-set(_test_srcs optional_test.cpp executor_tensor_test.cpp half_test.cpp
+set(_test_srcs optional_test.cpp tensor_test.cpp half_test.cpp
                scalar_test.cpp tensor_impl_test.cpp
 )
 
