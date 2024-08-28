@@ -93,6 +93,44 @@ if(${ANDROID})
         ${_common_compile_options}
     )
 
+    set(_mtk_oss_executor_runner__srcs ${_executor_runner__srcs})
+    list(
+        TRANSFORM
+        _mtk_oss_executor_runner__srcs
+        PREPEND
+        "${EXECUTORCH_SOURCE_DIR}/"
+    )
+    list(
+        FILTER
+        _mtk_oss_executor_runner__srcs
+        EXCLUDE REGEX
+        ".*executor_runner.cpp$"
+    )
+    list(
+        PREPEND
+        _mtk_oss_executor_runner__srcs
+        ${CMAKE_CURRENT_LIST_DIR}/executor_runner/mtk_oss_executor_runner.cpp
+    )
+
+    add_executable(mtk_oss_executor_runner ${_mtk_oss_executor_runner__srcs})
+
+    target_include_directories(mtk_oss_executor_runner
+        PUBLIC
+        ${_common_include_directories}
+        ${EXECUTORCH_ROOT}/cmake-android-out/third-party/gflags/include
+    )
+
+    target_link_libraries(mtk_oss_executor_runner
+        ${_executor_runner_libs}
+        executorch
+        neuron_backend
+        gflags
+    )
+    target_compile_options(mtk_oss_executor_runner
+        PUBLIC
+        ${_common_compile_options}
+    )
+
     set(_mtk_llama_executor_runner__srcs ${_mtk_executor_runner__srcs})
     list(
         FILTER

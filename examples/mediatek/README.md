@@ -9,6 +9,8 @@ examples/mediatek
         ├── preformatter_templates    # Model specific prompt preformatter templates
         ├── prompts                   # Calibration Prompts
         ├── tokenizers_               # Model tokenizer scripts
+    ├── oss_utils                     # Utils for oss models
+├── eval_utils                        # Utils for eval oss models
 ├── model_export_scripts              # Model specifc export scripts
 ├── models                            # Model definitions
     ├── llm_models                    # LLM model definitions
@@ -44,6 +46,7 @@ pip3 install mtk_converter-8.8.0.dev20240723+public.d1467db9-cp310-cp310-manylin
 ```
 
 ## AoT Flow
+### llama
 ##### Note: Verify that localhost connection is available before running AoT Flow
 1. Exporting Models to `.pte`
 - In the `examples/mediatek directory`, run:
@@ -71,6 +74,14 @@ source shell_scripts/export_llama.sh <model_name> <num_chunks> <prompt_num_token
     - Additionally, an embedding bin file will be generated in the weights folder where the `config.json` can be found in. [`examples/mediatek/models/llm_models/weights/<model_name>/embedding_<model_config_folder>_fp32.bin`]
     - eg. For `llama3-8B-instruct`, embedding bin generated in `examples/mediatek/models/llm_models/weights/llama3-8B-instruct/`
     - AoT flow will take roughly 2.5 hours (114GB RAM for `num_chunks=4`) to complete (Results will vary by device/hardware configurations)
+
+### oss
+1. Exporting Model to `.pte`
+```bash
+bash shell_scripts/export_oss.sh <model_name>
+```
+- Argument Options:
+    - `model_name`: deeplabv3/edsr/inceptionv3/inceptionv4/mobilenetv2/mobilenetv3/resnet18/resnet50
 
 # Runtime
 ## Supported Chips
@@ -100,6 +111,13 @@ adb push <MODEL_NAME>.pte <PHONE_PATH, e.g. /data/local/tmp>
 
 Make sure to replace `<MODEL_NAME>` with the actual name of your model file. And, replace the `<PHONE_PATH>` with the desired detination on the device.
 
+##### Note: For oss models, please push additional files to your Android device
+```bash
+adb push mtk_oss_executor_runner <PHONE_PATH, e.g. /data/local/tmp>
+adb push input_list.txt <PHONE_PATH, e.g. /data/local/tmp>
+for i in input*bin; do adb push "$i" <PHONE_PATH, e.g. /data/local/tmp>; done;
+```
+
 ### Executing the Model
 
 Execute the model on your Android device by running:
@@ -111,3 +129,22 @@ adb shell "/data/local/tmp/mtk_executor_runner --model_path /data/local/tmp/<MOD
 In the command above, replace `<MODEL_NAME>` with the name of your model file and `<ITER_TIMES>` with the desired number of iterations to run the model.
 
 ##### Note: For llama models, please use `mtk_llama_executor_runner`. Refer to `examples/mediatek/executor_runner/run_llama3_sample.sh` for reference.
+##### Note: For oss models, please use `mtk_oss_executor_runner`.
+```bash
+adb shell "/data/local/tmp/mtk_oss_executor_runner --model_path /data/local/tmp/<MODEL_NAME>.pte --input_list /data/local/tmp/input_list.txt --output_folder /data/local/tmp/output_<MODEL_NAME>"
+adb pull "/data/local/tmp/output_<MODEL_NAME> ./"
+```
+
+### Check oss result on PC
+```bash
+python3 eval_utils/eval_oss_result.py --eval_type <eval_type> --target_f <golden_folder> --output_f <prediction_folder>
+```
+For example:
+```
+python3 eval_utils/eval_oss_result.py --eval_type piq --target_f edsr --output_f output_edsr
+```
+- Argument Options:
+    - `eval_type`: topk/piq/segmentation
+    - `target_f`: folder contain golden data files. file name is `golden_<data_idx>_0.bin`
+    - `output_f`: folder contain model output data files. file name is `output_<data_idx>_0.bin`
+
