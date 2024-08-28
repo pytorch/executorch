@@ -17,7 +17,7 @@ def define_common_targets():
             "//executorch/kernels/optimized:libvec",
             "//executorch/extension/kernel_util:kernel_util",
             "//executorch/extension/parallel:thread_parallel",
-            "//executorch/backends/xnnpack/threadpool:threadpool",
+            "//executorch/extension/threadpool:threadpool",
         ],
         compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
         visibility = [

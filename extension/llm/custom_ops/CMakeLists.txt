@@ -53,8 +53,8 @@ if(NOT EXECUTORCH_BUILD_XNNPACK)
   list(
     APPEND
     _custom_ops__srcs
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/threadpool/threadpool.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/threadpool/threadpool_guard.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/threadpool/threadpool.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/threadpool/threadpool_guard.cpp"
   )
 else()
   list(APPEND custom_ops_libs xnnpack_backend)
