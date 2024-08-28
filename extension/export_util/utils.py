@@ -63,7 +63,7 @@ def _core_aten_to_edge(
         compile_config=edge_compile_config,
     )
     if verbose:
-        logging.info(f"Exported graph:\n{edge_manager.exported_program().graph}")
+        logging.info(f"Exported graph:\n{edge_manager.exported_program()}")
     return edge_manager
 
 
