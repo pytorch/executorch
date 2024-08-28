@@ -242,16 +242,18 @@ class ArmTester(Tester):
         # Loop inputs and compare reference stage with the compared stage.
         for run_iteration in range(num_runs):
             reference_input = inputs if inputs else next(self.generate_random_inputs())
-            if is_nhwc:
-                test_input = self.transpose_data_format(reference_input, "NHWC")
-            else:
-                test_input = reference_input
 
             # Test parameters can include constants that are used in eager mode but are already set as attributes
             # in TOSA. Therefore, only accept torch.Tensor inputs.
-            test_input = [
-                tensor for tensor in test_input if isinstance(tensor, torch.Tensor)
-            ]
+            test_input: list[torch.Tensor] = []
+            for arg in reference_input:
+                if isinstance(arg, torch.Tensor):
+                    test_input.append(arg)
+                if isinstance(arg, tuple) and isinstance(arg[0], torch.Tensor):
+                    test_input.extend(list(arg))
+
+            if is_nhwc:
+                test_input = self.transpose_data_format(test_input, "NHWC")
 
             input_shapes = [
                 generated_input.shape if hasattr(generated_input, "shape") else (1,)
