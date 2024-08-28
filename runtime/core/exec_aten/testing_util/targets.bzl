@@ -23,6 +23,7 @@ def define_common_targets():
                 # list.
                 "//executorch/runtime/core/exec_aten/util/test/...",
                 "//executorch/runtime/core/exec_aten/testing_util/test/...",
+                "//executorch/runtime/core/portable_type/test/...",
                 "//executorch/kernels/prim_ops/test/...",
                 "//executorch/kernels/portable/test/...",
                 "//executorch/kernels/portable/cpu/util/test/...",

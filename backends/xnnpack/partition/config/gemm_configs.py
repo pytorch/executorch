@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from itertools import chain
 from typing import cast, List, Optional, Tuple
 
@@ -31,11 +32,15 @@ from executorch.backends.xnnpack.utils.utils import (
 from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
 )
+from executorch.exir.backend.utils import WhyNoPartition
 from torch.export import ExportedProgram
 from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
     SourcePartition,
 )
+
+logger = logging.getLogger(__name__)
+why = WhyNoPartition(logger=logger)
 
 
 class GEMMConfig(XNNPartitionerConfig):
@@ -60,6 +65,8 @@ class GEMMConfig(XNNPartitionerConfig):
             return False
 
         is_valid, _ = self.get_deps(node, ep)
+        if not is_valid:
+            why(node, "Failed to get valid dependent nodes.")
         return is_valid
 
     def get_node_and_deps(
@@ -282,10 +289,12 @@ class ConvolutionConfig(GEMMConfig):
 
         conv_stride = cast(List[int], node.args[3])
         if len(conv_stride) > 2:
+            why(node, "Only support 1D + 2D Conv")
             return False  # Only support 1D + 2D Conv
 
         transposed = cast(bool, node.args[6])
         if transposed:
+            why(node, "Transposed Conv is not supported")
             return False  # Currently don't support transposed conv
 
         return True

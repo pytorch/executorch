@@ -25,8 +25,16 @@ namespace {
  * Compute the number of elements based on the sizes of a tensor.
  */
 ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
+  ET_CHECK_MSG(
+      dim == 0 || sizes != nullptr,
+      "Sizes must be provided for non-scalar tensors");
   ssize_t numel = 1; // Zero-dimensional tensors (scalars) have numel == 1.
   for (ssize_t i = 0; i < dim; ++i) {
+    ET_CHECK_MSG(
+        sizes[i] >= 0,
+        "Size must be non-negative, got %d at dimension %zd",
+        sizes[i],
+        i);
     numel *= sizes[i];
   }
   return numel;
@@ -52,6 +60,7 @@ TensorImpl::TensorImpl(
       shape_dynamism_(dynamism) {
   ET_CHECK_MSG(
       isValid(type_), "Invalid type %" PRId8, static_cast<int8_t>(type_));
+  ET_CHECK_MSG(dim_ >= 0, "Dimension must be non-negative, got %zd", dim_);
 }
 
 size_t TensorImpl::nbytes() const {

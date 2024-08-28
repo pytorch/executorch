@@ -13,7 +13,7 @@ import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import java.util.Map;
 
-class NativePeer implements INativePeer {
+class NativePeer {
   static {
     // Loads libexecutorch.so from jniLibs
     NativeLoader.loadLibrary("executorch");
