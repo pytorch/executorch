@@ -24,13 +24,10 @@
 
 namespace torch::executor {
 namespace {
-static constexpr auto kAppendEosToPrompt = "append_eos_to_prompt";
 static constexpr auto kEnableDynamicShape = "enable_dynamic_shape";
 static constexpr auto kBosId = "get_bos_id";
 static constexpr auto kEosIds = "get_eos_ids";
 static constexpr auto kMaxSeqLen = "get_max_seq_len";
-static constexpr auto kNBos = "get_n_bos";
-static constexpr auto kNEos = "get_n_eos";
 static constexpr auto kVocabSize = "get_vocab_size";
 static constexpr auto kUseKVCache = "use_kv_cache";
 static constexpr auto kUseSDPAWithKVCache = "use_sdpa_with_kv_cache";
@@ -54,11 +51,8 @@ Runner::Runner(
 #endif
               ),
       metadata_({
-          {kAppendEosToPrompt, false},
           {kEnableDynamicShape, false},
           {kMaxSeqLen, 128},
-          {kNBos, 1},
-          {kNEos, 1},
           {kUseKVCache, true},
           {kUseSDPAWithKVCache, false},
       }) {
@@ -174,8 +168,8 @@ Error Runner::generate(
 
   Result<std::vector<uint64_t>> encode_res = tokenizer_->encode(
       prompt,
-      metadata_.at(kNBos),
-      metadata_.at(kAppendEosToPrompt) ? metadata_.at(kNEos) : 0);
+      /* bos */ 0,
+      /* eos */ 0);
 
   ET_CHECK_OK_OR_RETURN_ERROR(
       encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
