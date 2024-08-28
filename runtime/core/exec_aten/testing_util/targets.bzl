@@ -32,7 +32,6 @@ def define_common_targets():
                 "//executorch/kernels/test/...",
                 "//executorch/runtime/core/test/...",
                 "//executorch/test/...",
-                "//executorch/util/...",
                 "//executorch/backends/fb/qnnpack/test/...",
                 "//executorch/extension/kernel_util/test/...",
                 "@EXECUTORCH_CLIENTS",
