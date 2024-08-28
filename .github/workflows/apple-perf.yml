@@ -115,10 +115,100 @@ jobs:
           echo "devices=$(echo "$MAPPED_ARNS_JSON" | jq -c .)" >> $GITHUB_OUTPUT
           echo "delegates=$(echo $DELEGATES | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
 
+  export-models:
+    name: export-models
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    needs: set-parameters
+    strategy:
+      matrix:
+          model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+      fail-fast: false
+    with:
+      runner: macos-latest-xlarge
+      python-version: '3.11'
+      submodules: 'true'
+      timeout: 60
+      upload-artifact: ios-models
+      script: |
+        set -eux
+
+        .ci/scripts/setup-conda.sh
+
+        BUILD_TOOL=cmake
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+          .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+
+        if [[ ${{ matrix.delegate }} == "qnn" ]]; then
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output bash \
+            .ci/scripts/setup-qnn-deps.sh
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output bash \
+            .ci/scripts/build-qnn-sdk.sh
+        fi
+
+        if [[ ${{ matrix.delegate }} == "coreml" ]]; then
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+            backends/apple/coreml/scripts/install_requirements.sh
+        fi
+
+        if [[ ${{ matrix.delegate }} == "mps" ]]; then
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+            backends/apple/mps/install_requirements.sh
+        fi
+
+        ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}_${{ matrix.delegate }}
+
+        echo "::group::Exporting ${{ matrix.delegate }} model: ${{ matrix.model }}"
+        BUILD_MODE="cmake"
+        DTYPE="fp32"
+
+        if [[ ${{ matrix.model }} =~ ^stories* ]]; then
+            # Install requirements for export_llama
+            PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
+            # Test llama2
+            if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
+                DELEGATE_CONFIG="xnnpack+custom+qe"
+            fi
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
+        else
+            PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
+        fi
+        echo "::endgroup::"
+
+  # Upload models to S3. The artifacts are needed not only by the device farm but also TorchChat
+  upload-models:
+    needs: export-models
+    runs-on: linux.2xlarge
+    steps:
+      - name: Download the models from GitHub
+        uses: actions/download-artifact@v3
+        with:
+          # The name here needs to match the name of the upload-artifact parameter
+          name: ios-models
+          path: ${{ runner.temp }}/artifacts/
+
+      - name: Verify the models
+        shell: bash
+        working-directory: ${{ runner.temp }}/artifacts/
+        run: |
+          ls -lah ./
+
+      - name: Upload the models to S3
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifact
+          retention-days: 1
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/artifacts/
+
   build-llm-demo:
     name: build-llm-demo
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs: set-parameters
+    secrets: inherit
     strategy:
       matrix:
           tokenizer: [bpe]
@@ -128,6 +218,7 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       upload-artifact: ios-apps
+      secrets-env: BUILD_CERTIFICATE_BASE64 BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
       timeout: 90
       script: |
         set -eux
@@ -139,13 +230,19 @@ jobs:
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
+        # Setup Apple certificate for iOS development
+        BUILD_PROVISION_PROFILE_BASE64="${SECRET_EXECUTORCH_DEMO_BUILD_PROVISION_PROFILE_BASE64}" \
+        BUILD_CERTIFICATE_BASE64="${SECRET_BUILD_CERTIFICATE_BASE64}" \
+        KEYCHAIN_PASSWORD="${SECRET_KEYCHAIN_PASSWORD}" \
+        .ci/scripts/setup-ios.sh
+
         # Install CoreML Backend Requirements
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        backends/apple/coreml/scripts/install_requirements.sh
+          backends/apple/coreml/scripts/install_requirements.sh
 
         # Install MPS Backend Requirements
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        backends/apple/mps/install_requirements.sh
+          backends/apple/mps/install_requirements.sh
 
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
         bash build/build_apple_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
