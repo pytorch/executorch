@@ -36,6 +36,7 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
+from executorch.util.activation_memory_profiler import generate_memory_trace
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
@@ -265,6 +266,12 @@ def main():
         action=BooleanOptionalAction,
         help="Generate artifacts for llava runner.",
     )
+    parser.add_argument(
+        "--profile_memory",
+        required=False,
+        action="store_true",
+        help="Generate chrome trace of activation memory for intermediate tensors.",
+    )
     args = parser.parse_args()
     logging.info(
         f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}, max_seq_len: {args.max_seq_len}"
@@ -275,6 +282,15 @@ def main():
     )
 
     executorch_program = export_all(llava_model)
+
+    # memory profiling
+    if args.profile_memory:
+        for method_name in executorch_program.methods:
+            generate_memory_trace(
+                executorch_program,
+                f"{args.pte_name}_{method_name}.json",
+                method_name=method_name,
+            )
 
     with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)
