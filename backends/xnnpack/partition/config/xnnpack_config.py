@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 from abc import abstractmethod
 from enum import Enum
 from typing import List, Optional
@@ -13,7 +14,11 @@ from executorch.exir.backend.canonical_partitioners.config_partitioner import (
     format_target_name,
     PartitionerConfig,
 )
+from executorch.exir.backend.utils import WhyNoPartition
 from torch.export import ExportedProgram
+
+logger = logging.getLogger(__name__)
+why = WhyNoPartition(logger=logger)
 
 
 class ConfigPrecisionType(Enum):
@@ -22,7 +27,6 @@ class ConfigPrecisionType(Enum):
     DYNAMIC_QUANT = 3
 
 
-# TODO: add WhyNotPartition to XNNPartitionerConfig
 class XNNPartitionerConfig(PartitionerConfig):
     """
     Base partitioner config for XNNPACK Partitioner Configs. Base wrapper class
@@ -125,10 +129,12 @@ class XNNPartitionerConfig(PartitionerConfig):
         )
 
         if len(self.enabled_precision_types) == 0:
+            why(node, reason="not enabled precision types")
             return False
 
         has_valid_dtypes = self._check_node_has_valid_dtype(node)
         if not has_valid_dtypes:
+            why(node, reason="invalid dtype")
             return False
 
         return True

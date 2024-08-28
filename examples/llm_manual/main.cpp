@@ -6,31 +6,24 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// main.cpp
-
 #include <cstdint>
-#include <functional>
-#include <memory>
-#include <unordered_map>
 
 #include "basic_sampler.h"
 #include "basic_tokenizer.h"
 #include "managed_tensor.h"
 
-#include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/result.h>
 
-using namespace torch::executor;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using executorch::extension::Module;
+using executorch::runtime::EValue;
+using executorch::runtime::Result;
 
-using SizesType = exec_aten::SizesType;
-using DimOrderType = exec_aten::DimOrderType;
-using StridesType = exec_aten::StridesType;
-
-// main.cpp
-
+// The value of the gpt2 `<|endoftext|>` token.
 #define ENDOFTEXT 50256
 
 std::string generate(

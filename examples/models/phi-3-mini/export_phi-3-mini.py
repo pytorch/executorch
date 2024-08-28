@@ -69,7 +69,7 @@ def export(args) -> None:
         )
         model = prepare_pt2e(model, xnnpack_quantizer)  # pyre-fixme[6]
         model(*example_inputs)
-        model = convert_pt2e(model, fold_quantize=False)
+        model = convert_pt2e(model)
         DuplicateDynamicQuantChainPass()(model)
         # TODO(lunwenh): update it to use export once
         # https://github.com/pytorch/pytorch/issues/128394 is resolved.

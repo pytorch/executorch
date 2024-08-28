@@ -35,7 +35,7 @@ const int32_t kChannels = 3;
                     error:(NSError**)error {
   int32_t sizes[] = {1, kChannels, kSize, kSize};
   TensorImpl inputTensor(ScalarType::Float, std::size(sizes), sizes, input);
-  const auto result = _module->forward({EValue(Tensor(&inputTensor))});
+  const auto result = _module->forward(Tensor(&inputTensor));
 
   if (!result.ok()) {
     if (error) {
