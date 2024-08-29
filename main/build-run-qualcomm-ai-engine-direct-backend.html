@@ -611,8 +611,8 @@ An example usage is</p>
 <h3>AOT (Ahead-of-time) components:<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this heading">¶</a></h3>
 <p>Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct binary.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
-mkdir<span class="w"> </span>cmake-out
-<span class="nb">cd</span><span class="w"> </span>cmake-out
+mkdir<span class="w"> </span>build-x86
+<span class="nb">cd</span><span class="w"> </span>build-x86
 <span class="c1"># Note that the below command might change.</span>
 <span class="c1"># Please refer to the above build.sh for latest workable commands.</span>
 cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
@@ -641,8 +641,8 @@ cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnWrapp
 <p>A example <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> executable would be used to run the compiled <code class="docutils literal notranslate"><span class="pre">pte</span></code> model.</p>
 <p>Commands to build <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> for Android:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
-mkdir<span class="w"> </span>cmake-out-android
-<span class="nb">cd</span><span class="w"> </span>cmake-out-android
+mkdir<span class="w"> </span>build-android
+<span class="nb">cd</span><span class="w"> </span>build-android
 <span class="c1"># build executorch &amp; qnn_executorch_backend</span>
 cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span><span class="nv">$PWD</span><span class="w"> </span><span class="se">\</span>
@@ -672,7 +672,7 @@ cmake<span class="w"> </span>../examples/qualcomm<span class="w"> </span><span c
 cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
 
 <span class="c1"># qnn_executor_runner can be found under examples/qualcomm</span>
-<span class="c1"># The full path is $EXECUTORCH_ROOT/cmake-out-android/examples/qualcomm/qnn_executor_runner</span>
+<span class="c1"># The full path is $EXECUTORCH_ROOT/build-android/examples/qualcomm/qnn_executor_runner</span>
 ls<span class="w"> </span>examples/qualcomm
 </pre></div>
 </div>
@@ -690,7 +690,7 @@ We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands t
 cp<span class="w"> </span>schema/program.fbs<span class="w"> </span>exir/_serialize/program.fbs
 cp<span class="w"> </span>schema/scalar_type.fbs<span class="w"> </span>exir/_serialize/scalar_type.fbs
 
-python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>cmake-out-android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--compile_only<span class="w"> </span>--download
+python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build-android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--compile_only<span class="w"> </span>--download
 </pre></div>
 </div>
 <p>You might see something like below:</p>
@@ -715,7 +715,7 @@ python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.script
 <p>We can test model inferences before deploying it to a device by HTP emulator.</p>
 <p>Let’s build <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> for a x64 host:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># assuming the AOT component is built.</span>
-<span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/cmake-out
+<span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/build-x86
 cmake<span class="w"> </span>../examples/qualcomm<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">/lib/cmake/ExecuTorch;</span><span class="nv">$PWD</span><span class="s2">/third-party/gflags;&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE<span class="o">=</span>BOTH<span class="w"> </span><span class="se">\</span>
@@ -725,7 +725,7 @@ cmake<span class="w"> </span>../examples/qualcomm<span class="w"> </span><span c
 cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<span class="w"> </span>-j<span class="k">$(</span>nproc<span class="k">)</span>
 
 <span class="c1"># qnn_executor_runner can be found under examples/qualcomm</span>
-<span class="c1"># The full path is $EXECUTORCH_ROOT/cmake-out/examples/qualcomm/qnn_executor_runner</span>
+<span class="c1"># The full path is $EXECUTORCH_ROOT/build-x86/examples/qualcomm/qnn_executor_runner</span>
 ls<span class="w"> </span>examples/qualcomm/
 </pre></div>
 </div>
@@ -733,13 +733,13 @@ ls<span class="w"> </span>examples/qualcomm/
 We set the below two paths to <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code> environment variable:</p>
 <ol class="arabic simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">$QNN_SDK_ROOT/lib/x86_64-linux-clang/</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/cmake-out/lib/</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT/build-x86/lib/</span></code></p></li>
 </ol>
 <p>The first path is for QNN libraries including HTP emulator. It has been configured in the AOT compilation section.</p>
 <p>The second path is for <code class="docutils literal notranslate"><span class="pre">libqnn_executorch_backend.so</span></code>.</p>
 <p>So, we can run <code class="docutils literal notranslate"><span class="pre">./deeplab_v3/dlv3_qnn.pte</span></code> by:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/cmake-out
-<span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="nv">$EXECUTORCH_ROOT</span>/cmake-out/lib/:<span class="nv">$LD_LIBRARY_PATH</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/build-x86
+<span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="nv">$EXECUTORCH_ROOT</span>/build-x86/lib/:<span class="nv">$LD_LIBRARY_PATH</span>
 examples/qualcomm/qnn_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>../deeplab_v3/dlv3_qnn.pte
 </pre></div>
 </div>
@@ -778,8 +778,8 @@ adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span
 where to find these libraries by setting <code class="docutils literal notranslate"><span class="pre">ADSP_LIBRARY_PATH</span></code> and <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code>.
 So, we can run <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> like</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>./deeplab_v3/dlv3_qnn.pte<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
-adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/cmake-out-android/examples/qualcomm/executor_runner/qnn_executor_runner<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
-adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/cmake-out-android/lib/libqnn_executorch_backend.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/build-android/examples/qualcomm/executor_runner/qnn_executor_runner<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/build-android/lib/libqnn_executorch_backend.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;cd </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
 <span class="s2">           &amp;&amp; export LD_LIBRARY_PATH=</span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
 <span class="s2">           &amp;&amp; export ADSP_LIBRARY_PATH=</span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
@@ -800,7 +800,7 @@ adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;c
 </div>
 <p>The model is merely executed. If we want to feed real inputs and get model outputs, we can use</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
-python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>cmake-out-android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--download<span class="w"> </span>-s<span class="w"> </span>&lt;device_serial&gt;
+python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build-android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>--download<span class="w"> </span>-s<span class="w"> </span>&lt;device_serial&gt;
 </pre></div>
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">&lt;device_serial&gt;</span></code> can be found by <code class="docutils literal notranslate"><span class="pre">adb</span> <span class="pre">devices</span></code> command.</p>
