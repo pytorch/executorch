@@ -10,10 +10,10 @@ import XCTest
 import LLaMARunner
 
 final class LLaMATests: XCTestCase {
-  func testExample() throws {
+  func testLlama2() throws {
     guard
       let modelPath = Bundle(for: type(of: self))
-        .path(forResource: "model", ofType: "pte")
+        .path(forResource: "llama2", ofType: "pte")
     else {
       XCTFail("Failed to get model path")
       return

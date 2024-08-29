@@ -55,7 +55,7 @@
 		03DDA0FB2BD6368100D234B3 /* base64.h in Headers */ = {isa = PBXBuildFile; fileRef = 03DDA0FA2BD6368100D234B3 /* base64.h */; };
 		84A366112C7FF0D0004794DC /* LLaMATests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A366102C7FF0D0004794DC /* LLaMATests.swift */; };
 		84A366192C7FF876004794DC /* tokenizer.bin in Resources */ = {isa = PBXBuildFile; fileRef = 84A366182C7FF876004794DC /* tokenizer.bin */; };
-		84A3661B2C7FF90A004794DC /* model.pte in Resources */ = {isa = PBXBuildFile; fileRef = 84A3661A2C7FF90A004794DC /* model.pte */; };
+		84DD94232C803AE700C765A6 /* llama2.pte in Resources */ = {isa = PBXBuildFile; fileRef = 84DD94222C803AE700C765A6 /* llama2.pte */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -126,7 +126,7 @@
 		84A3660E2C7FF0D0004794DC /* LLaMATests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LLaMATests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		84A366102C7FF0D0004794DC /* LLaMATests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLaMATests.swift; sourceTree = "<group>"; };
 		84A366182C7FF876004794DC /* tokenizer.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = tokenizer.bin; sourceTree = "<group>"; };
-		84A3661A2C7FF90A004794DC /* model.pte */ = {isa = PBXFileReference; lastKnownFileType = file; path = model.pte; sourceTree = "<group>"; };
+		84DD94222C803AE700C765A6 /* llama2.pte */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = llama2.pte; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -314,7 +314,7 @@
 		84A366172C7FF846004794DC /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				84A3661A2C7FF90A004794DC /* model.pte */,
+				84DD94222C803AE700C765A6 /* llama2.pte */,
 				84A366182C7FF876004794DC /* tokenizer.bin */,
 			);
 			path = Resources;
@@ -484,8 +484,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				84DD94232C803AE700C765A6 /* llama2.pte in Resources */,
 				84A366192C7FF876004794DC /* tokenizer.bin in Resources */,
-				84A3661B2C7FF90A004794DC /* model.pte in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
