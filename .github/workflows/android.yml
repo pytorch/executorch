@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/android/*
   pull_request:
     paths:
       - .ci/docker/**
