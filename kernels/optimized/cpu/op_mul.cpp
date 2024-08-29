@@ -119,6 +119,34 @@ Tensor& opt_mul_out(
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
+  if (b.numel() == 1) {
+    if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half) {
+      auto error = resize_tensor(out, a.sizes());
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          error == Error::Ok,
+          InvalidArgument,
+          out,
+          "Failed to resize output tensor.");
+      ET_SWITCH_REALB_TYPES(a_type, ctx, "mul.out", CTYPE, [&]() {
+        ET_SWITCH_REALB_TYPES(b_type, ctx, "mul.out", CTYPE_B, [&]() {
+          CTYPE_B b_val = *b.const_data_ptr<CTYPE_B>();
+          CTYPE b_casted = static_cast<CTYPE>(b_val);
+
+          using Vec = executorch::vec::Vectorized<CTYPE>;
+          executorch::vec::map<CTYPE>(
+              [b_casted](Vec x) { return x * Vec(b_casted); },
+              out.mutable_data_ptr<CTYPE>(),
+              a.const_data_ptr<CTYPE>(),
+              out.numel());
+        });
+      });
+      return out;
+    }
+  } else if (a.numel() == 1) {
+    return opt_mul_out(ctx, b, a, out);
+  }
+
   if (can_use_optimized_path(a, b, out)) {
     // Resize for dynamic shape
     auto error = resize_tensor(out, a.sizes());
