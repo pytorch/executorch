@@ -6,6 +6,7 @@
 
 import logging
 import os
+import shutil
 import tempfile
 import unittest
 
@@ -149,3 +150,36 @@ class TestDumpOperatorsAndDtypes(unittest.TestCase):
             .dump_operator_distribution()
         )
         # Just test that there are no execeptions.
+
+
+class TestCollateTosaTests(unittest.TestCase):
+    """Tests the collation of TOSA tests through setting the environment variable TOSA_TESTCASE_BASE_PATH."""
+
+    def test_collate_tosa_BI_tests(self):
+        # Set the environment variable to trigger the collation of TOSA tests
+        os.environ["TOSA_TESTCASES_BASE_PATH"] = "test_collate_tosa_tests"
+        # Clear out the directory
+
+        model = Linear(20, 30)
+        (
+            ArmTester(
+                model,
+                example_inputs=model.get_inputs(),
+                compile_spec=common.get_tosa_compile_spec(),
+            )
+            .quantize()
+            .export()
+            .to_edge()
+            .partition()
+            .to_executorch()
+        )
+        # test that the output directory is created and contains the expected files
+        assert os.path.exists(
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/output.tosa"
+        )
+        assert os.path.exists(
+            "test_collate_tosa_tests/tosa-bi/TestCollateTosaTests/test_collate_tosa_BI_tests/desc.json"
+        )
+
+        os.environ.pop("TOSA_TESTCASES_BASE_PATH")
+        shutil.rmtree("test_collate_tosa_tests", ignore_errors=True)
