@@ -165,6 +165,21 @@ TEST_F(OpMulOutTest, BoolTensors) {
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{false, false, true, false}));
 }
 
+TEST_F(OpMulOutTest, OptimizedPathIgnoresLeading1Dimensions) {
+  TensorFactory<ScalarType::Float> tf;
+
+  const std::vector<int32_t> sizes1 = {1, 1, 2, 2};
+  const std::vector<int32_t> sizes2 = {1, 2, 2};
+
+  // Destination for the mul.
+  Tensor out = tf.zeros(sizes1);
+
+  // Multiply two tensors
+  op_mul_out(
+      tf.make(sizes1, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.ones(sizes2), out);
+  EXPECT_TENSOR_CLOSE(out, tf.make(sizes1, /*data=*/{1.1, 2.2, 4.4, 8.8}));
+}
+
 // Mismatched shape tests.
 TEST_F(OpMulOutTest, MismatchedInputShapesDies) {
   if (SupportedFeatures::get()->is_aten) {
