@@ -88,7 +88,8 @@ class LLMEdgeManager:
         self.output_dir = "."
         self.dynamic_shapes = dynamic_shapes
         self._saved_pte_filename = None
-        self.export_fn = capture_pre_autograd_graph
+        logging.info(f"Applying export function: {export_fn}")
+        self.export_fn = export_fn
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
@@ -159,20 +160,17 @@ class LLMEdgeManager:
         return edge_config
 
     def capture_pre_autograd_graph(self) -> "LLMEdgeManager":
-        print("running capture_pre_autograd_graph")
         dynamic_shape = self._get_dynamic_shape()
         # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             # pyre-fixme[8]
-            print("using capture_for_training")
-            # self.pre_autograd_graph_module = torch.export.export(
-            #     self.model, self.example_inputs, dynamic_shapes=dynamic_shape, strict=True
-            # ).module()
-            self.pre_autograd_graph_module = self.export_fn(self.model, self.example_inputs, dynamic_shapes=dynamic_shape)
-            # self.pre_autograd_graph_module = capture_pre_autograd_graph(
-            #     self.model, self.example_inputs, dynamic_shapes=dynamic_shape
-            # )
+            if self.export_fn == torch.export.export:
+                self.pre_autograd_graph_module = self.export_fn(
+                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape, strict=True
+                ).module()
+            else:
+                self.pre_autograd_graph_module = self.export_fn(self.model, self.example_inputs, dynamic_shapes=dynamic_shape)
 
         return self
 
@@ -212,7 +210,6 @@ class LLMEdgeManager:
         """
         Export the model to Edge dialect and retrieve a LLMEdgeManager.
         """
-        print("running export_to_edge")
         dynamic_shape = self._get_dynamic_shape()
         edge_config = self._get_edge_config()
 
@@ -220,8 +217,8 @@ class LLMEdgeManager:
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             if self.pre_autograd_graph_module is None:
-                # pyre-fixme[8]
-                self.pre_autograd_graph_module = self.export_fn(self.model, self.example_inputs, dynamic_shapes=dynamic_shape)
+                # Run capture_pre_autograd_graph if it didn't run
+                self.capture_pre_autograd_graph()
             self.edge_manager = export_to_edge(
                 self.pre_autograd_graph_module,  # pyre-fixme[6]
                 self.example_inputs,
