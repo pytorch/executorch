@@ -144,6 +144,11 @@ std::vector<float> create_random_float_buffer(
     const float min = 0,
     const float max = 1);
 
+std::vector<uint8_t> create_random_uint8_buffer(
+    const size_t numel,
+    const uint8_t min = 0,
+    const uint8_t max = 255);
+
 void fill_vtensor(
     ComputeGraph& graph,
     const IOValueRef idx,

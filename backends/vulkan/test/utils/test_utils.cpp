@@ -377,6 +377,20 @@ std::vector<float> create_random_float_buffer(
   return data;
 }
 
+std::vector<uint8_t> create_random_uint8_buffer(
+    const size_t numel,
+    const uint8_t min,
+    const uint8_t max) {
+  std::vector<uint8_t> data(numel);
+  std::default_random_engine rng;
+  std::uniform_real_distribution<float> dist(min, max);
+
+  for (size_t i = 0; i < data.size(); ++i) {
+    data[i] = (uint8_t)dist(rng);
+  }
+  return data;
+}
+
 void fill_vtensor(
     ComputeGraph& graph,
     const IOValueRef idx,
