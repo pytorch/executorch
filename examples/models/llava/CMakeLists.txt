@@ -21,7 +21,6 @@ project(llava)
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "Build the optimized kernels" OFF)
 
-
 include(CMakeDependentOption)
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
@@ -131,8 +130,8 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   list(APPEND link_libraries pthreadpool)
   # These 2 source files are included in xnnpack_backend
   if(NOT TARGET xnnpack_backend)
-    list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/threadpool.cpp
-         ${XNNPACK_ROOT}/threadpool/threadpool_guard.cpp
+    list(APPEND _srcs ${EXECUTORCH_ROOT}/extension/threadpool/threadpool.cpp
+         ${EXECUTORCH_ROOT}/extension/threadpool/threadpool_guard.cpp
     )
   endif()
   list(APPEND _common_include_directories
@@ -143,7 +142,7 @@ endif()
 # Extra sources for cpuinfo
 if(EXECUTORCH_BUILD_CPUINFO)
   list(APPEND link_libraries cpuinfo)
-  list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/cpuinfo_utils.cpp)
+  list(APPEND _srcs ${EXECUTORCH_ROOT}/extension/threadpool/cpuinfo_utils.cpp)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/cpuinfo/include
   )

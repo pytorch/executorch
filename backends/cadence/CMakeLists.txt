@@ -27,8 +27,8 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(TARGET_DIR reference)
 
 if(EXECUTORCH_NNLIB_OPT)
-set(TARGET_DIR hifi)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)
+  set(TARGET_DIR hifi)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/${TARGET_DIR}/third-party/nnlib)
 endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -68,7 +68,7 @@ target_include_directories(
 
 target_include_directories(
   cadence_runner PUBLIC ${ROOT_DIR}/.. ${CMAKE_BINARY_DIR}
-                                    ${_common_include_directories}
+                        ${_common_include_directories}
 )
 
 target_link_libraries(

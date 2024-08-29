@@ -252,7 +252,10 @@ class ArmTester(Tester):
                 if isinstance(arg, tuple) and isinstance(arg[0], torch.Tensor):
                     test_input.extend(list(arg))
 
-            if is_nhwc:
+            if (
+                is_nhwc
+                and test_stage == self.stages[self.stage_name(tester.ToExecutorch)]
+            ):
                 test_input = self.transpose_data_format(test_input, "NHWC")
 
             input_shapes = [
@@ -263,7 +266,10 @@ class ArmTester(Tester):
 
             reference_output = reference_stage.run_artifact(reference_input)
             test_output = tuple(test_stage.run_artifact(test_input))
-            if is_nhwc:
+            if (
+                is_nhwc
+                and test_stage == self.stages[self.stage_name(tester.ToExecutorch)]
+            ):
                 test_output = self.transpose_data_format(test_output, "NCHW")
 
             self._compare_outputs(

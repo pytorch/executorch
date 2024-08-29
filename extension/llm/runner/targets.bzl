@@ -71,17 +71,6 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
-            name = "metadata_util" + aten_suffix,
-            exported_headers = ["metadata_util.h"],
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
-            exported_deps = [
-                "//executorch/extension/module:module" + aten_suffix,
-            ],
-        )
-
-        runtime.cxx_library(
             name = "runner_lib" + aten_suffix,
             exported_headers = [
                 "multimodal_runner.h",

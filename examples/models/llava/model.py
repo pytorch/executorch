@@ -21,7 +21,6 @@ from executorch.examples.models.llava.image_util import prepare_image
 from executorch.examples.models.model_base import EagerModelBase
 from PIL import Image
 
-from torch import nn
 from torch.export import Dim
 from torchvision.transforms.v2 import functional as F
 
@@ -60,11 +59,6 @@ class Llava(torch.nn.Module):
             use_hf_rope=True,
             max_seq_len=max_seq_len,
         )
-        self.embed_tokens = nn.Embedding(
-            self.model_.config.text_config.vocab_size,
-            self.model_.config.text_config.hidden_size,
-            self.model_.config.pad_token_id,
-        )
         self.text_model = Transformer(self.text_model_args)
         # use custom op for SDPA.
         if use_sdpa_with_kv_cache_op:
@@ -73,11 +67,6 @@ class Llava(torch.nn.Module):
         self.text_model.load_state_dict(
             state_dict=self._translate_state_dict_for_text_model(),
             strict=False,
-            assign=True,
-        )
-        self.embed_tokens.load_state_dict(
-            state_dict=self.model_.language_model.model.embed_tokens.state_dict(),
-            strict=True,
             assign=True,
         )
 
@@ -132,6 +121,9 @@ class Llava(torch.nn.Module):
 
     def get_model(self):
         return self.model_.get_model()
+
+    def embed_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+        return self.model_.language_model.model.embed_tokens(tokens)
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
         images = images.to(dtype=self.model_.dtype)

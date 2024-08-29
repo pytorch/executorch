@@ -14,6 +14,13 @@
 namespace torch {
 namespace executor {
 
+bool check_gather_args(
+    const Tensor& in,
+    int64_t dim,
+    const Tensor& index,
+    bool sparse_grad,
+    Tensor& output);
+
 bool check_index_select_args(
     const Tensor& in,
     int64_t dim,

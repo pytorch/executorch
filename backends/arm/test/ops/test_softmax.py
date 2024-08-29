@@ -5,7 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import logging
 import unittest
 
 from typing import Tuple
@@ -15,15 +14,17 @@ from executorch.backends.arm.test import common
 from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from parameterized import parameterized
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 test_data_suite = [
     # (test_name, test_data, dim)
-    ("zeros", torch.zeros(10, 10, 10, 10), 1),
+    ("zeros", torch.zeros(10, 10, 10, 10), 0),
+    ("zeros_neg_dim", torch.zeros(10, 10, 10, 10), -4),
     ("ones", torch.ones(10, 10, 10, 10), 1),
+    ("ones_neg_dim", torch.ones(10, 10, 10, 10), -1),
     ("rand", torch.rand(10, 10, 10, 10), 2),
+    ("rand_neg_dim", torch.rand(10, 10, 10, 10), -2),
     ("randn", torch.randn(10, 10, 10, 10), 3),
+    ("randn_neg_dim", torch.randn(10, 10, 10, 10), -3),
 ]
 
 

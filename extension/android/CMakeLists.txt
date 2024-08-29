@@ -95,7 +95,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
 
   if(TARGET pthreadpool)
     set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp
-                       ../../backends/xnnpack/threadpool/cpuinfo_utils.cpp
+                       ../../extension/threadpool/cpuinfo_utils.cpp
     )
   else()
     set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp)

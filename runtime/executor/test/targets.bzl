@@ -175,7 +175,6 @@ def define_common_targets(is_fbcode = False):
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
                 "//executorch/runtime/kernel:operator_registry",
-                "//executorch/util:util",
                 "//executorch/extension/data_loader:file_data_loader",
             ],
             env = modules_env,
