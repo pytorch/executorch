@@ -49,7 +49,8 @@ function(generate_program_schema _schema_srcs _schema_name)
   # and some users need an alignment larger than the default, which is typically
   # 32.
   target_compile_definitions(
-    ${_schema_name} INTERFACE FLATBUFFERS_MAX_ALIGNMENT=1024)
+    ${_schema_name} INTERFACE FLATBUFFERS_MAX_ALIGNMENT=1024
+  )
 
   target_include_directories(
     ${_schema_name}

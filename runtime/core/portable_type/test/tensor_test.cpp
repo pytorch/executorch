@@ -7,13 +7,25 @@
  */
 
 #include <executorch/runtime/core/portable_type/tensor.h>
-#include <executorch/test/utils/DeathTest.h>
+
 #include <gtest/gtest.h>
+
+#include <executorch/runtime/platform/runtime.h>
+#include <executorch/test/utils/DeathTest.h>
 
 namespace torch {
 namespace executor {
 
-TEST(TensorTest, InvalidScalarType) {
+class TensorTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Since these tests cause ET_LOG to be called, the PAL must be initialized
+    // first.
+    runtime_init();
+  }
+};
+
+TEST_F(TensorTest, InvalidScalarType) {
   TensorImpl::SizesType sizes[1] = {1};
 
   // Undefined, which is sort of a special case since it's not part of the
@@ -28,7 +40,7 @@ TEST(TensorTest, InvalidScalarType) {
   ET_EXPECT_DEATH({ TensorImpl y(static_cast<ScalarType>(-1), 1, sizes); }, "");
 }
 
-TEST(TensorTest, SetData) {
+TEST_F(TensorTest, SetData) {
   TensorImpl::SizesType sizes[1] = {5};
   TensorImpl::DimOrderType dim_order[1] = {0};
   int32_t data[5] = {0, 0, 1, 0, 0};
@@ -39,7 +51,7 @@ TEST(TensorTest, SetData) {
   EXPECT_EQ(a.const_data_ptr(), nullptr);
 }
 
-TEST(TensorTest, Strides) {
+TEST_F(TensorTest, Strides) {
   TensorImpl::SizesType sizes[2] = {2, 2};
   TensorImpl::DimOrderType dim_order[2] = {0, 1};
   int32_t data[4] = {0, 0, 1, 1};
@@ -53,7 +65,7 @@ TEST(TensorTest, Strides) {
   EXPECT_EQ(a.const_data_ptr<int32_t>()[0 + a.strides()[0]], 1);
 }
 
-TEST(TensorTest, ModifyDataOfConstTensor) {
+TEST_F(TensorTest, ModifyDataOfConstTensor) {
   TensorImpl::SizesType sizes[1] = {1};
   TensorImpl::DimOrderType dim_order[2] = {0};
   int32_t data[1] = {1};

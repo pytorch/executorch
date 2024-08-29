@@ -61,6 +61,7 @@ void check_tensor(const TensorInfo& tensor_info) {
   EXPECT_EQ(dim_order.size(), 2);
   EXPECT_EQ(dim_order[0], 0);
   EXPECT_EQ(dim_order[1], 1);
+  EXPECT_EQ(tensor_info.is_memory_planned(), true);
   EXPECT_EQ(tensor_info.nbytes(), 16);
 }
 } // namespace

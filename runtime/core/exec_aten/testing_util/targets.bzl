@@ -23,6 +23,7 @@ def define_common_targets():
                 # list.
                 "//executorch/runtime/core/exec_aten/util/test/...",
                 "//executorch/runtime/core/exec_aten/testing_util/test/...",
+                "//executorch/runtime/core/portable_type/test/...",
                 "//executorch/kernels/prim_ops/test/...",
                 "//executorch/kernels/portable/test/...",
                 "//executorch/kernels/portable/cpu/util/test/...",
@@ -31,7 +32,6 @@ def define_common_targets():
                 "//executorch/kernels/test/...",
                 "//executorch/runtime/core/test/...",
                 "//executorch/test/...",
-                "//executorch/util/...",
                 "//executorch/backends/fb/qnnpack/test/...",
                 "//executorch/extension/kernel_util/test/...",
                 "@EXECUTORCH_CLIENTS",

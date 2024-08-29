@@ -53,11 +53,13 @@ def weights_to_outputs_pass(
             break
     assert output_node is not None
 
-    # Get place holder nodes with gradients
+    # Get input nodes that are weights with an associated gradient
     placeholder_nodes = [
         node
         for node in gm.graph.nodes
-        if node.op == "placeholder" and node.target in inputs_to_params.keys()
+        if node.op == "placeholder"
+        and node.target in inputs_to_params.keys()
+        and inputs_to_params[node.target] in grad_targets
     ]
 
     # Flag these placeholder nodes as having a gradient attached so that memory planning will operate on them.

@@ -8,15 +8,14 @@ import logging
 import sys
 
 import torch
-
+from executorch.examples.models.llava.image_util import prepare_image
 from executorch.examples.models.llava.model import LlavaModel
 from executorch.extension.pybindings.portable_lib import _load_for_executorch
+from PIL import Image
 
 # Custom ops has to be loaded after portable_lib.
-# I don't know how to stop UFMT so I'm just using if True: to avoid lint error
-if True:
-    from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa
-
+from executorch.extension.llm.custom_ops import sdpa_with_kv_cache  # noqa # usort: skip
+from executorch.kernels import quantized  # noqa # usort: skip
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.DEBUG, format=FORMAT)
@@ -24,6 +23,12 @@ logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 
 def main():
     args = sys.argv[1:]
+    if len(args) == 0:
+        print(
+            "Usage: python test_pte.py <model_path> <image_path?>. If no image, will use default image."
+        )
+        sys.exit(1)
+
     llava_module = _load_for_executorch(args[0])
 
     llava_model = LlavaModel()
@@ -31,6 +36,10 @@ def main():
     prompt_before_image, resized, prompt_after_image = (
         llava_model.get_inputs_for_prefill()
     )
+    if len(args) == 2:
+        image_path = args[1]
+        image = Image.open(image_path)
+        resized = prepare_image(image, target_h=336, target_w=336)
 
     start_pos = 0
     # pte prefill prompt before img
@@ -43,7 +52,7 @@ def main():
     )[0]
     print(pte_prefill_before_img)
 
-    start_pos += pte_prefill_before_img.shape[1]
+    start_pos += prompt_before_image.shape[1]
 
     # pte prefill image
     logging.warning("Image encoder started")
@@ -60,7 +69,7 @@ def main():
     logging.warning("Image token prefill finished")
     print(pte_prefill_img)
 
-    start_pos += pte_prefill_img.shape[1]
+    start_pos += pte_embeds_img.shape[1]
 
     # pte prefill prompt after img
     logging.warning("Text token prefill started")

@@ -70,7 +70,7 @@ if [ "$BUILD_AARCH64" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     else
         # Force rebuild flatccrt for the correct platform
-        cd $BUILD_ROOT/sdk && make clean
+        cd $BUILD_ROOT/devtools && make clean
     fi
 
     cd $BUILD_ROOT
@@ -112,7 +112,7 @@ if [ "$BUILD_X86_64" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     else
         # Force rebuild flatccrt for the correct platform
-        cd $BUILD_ROOT/sdk && make clean
+        cd $BUILD_ROOT/devtools && make clean
     fi
 
     cd $BUILD_ROOT

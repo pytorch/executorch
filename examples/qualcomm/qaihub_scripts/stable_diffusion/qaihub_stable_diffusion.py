@@ -4,12 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import gc
 import json
 import os
 from multiprocessing.connection import Client
 
-import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManagerAdaptor
 import numpy as np
 import piq
 import torch
@@ -18,23 +16,24 @@ from diffusers.models.embeddings import get_timestep_embedding
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
+
 from executorch.backends.qualcomm.utils.utils import (
-    canonicalize_program,
     from_context_binary,
     generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
-    generate_qnn_executorch_option,
 )
 
 from executorch.examples.qualcomm.qaihub_scripts.stable_diffusion.stable_diffusion_lib import (
     StableDiffusion,
 )
+from executorch.examples.qualcomm.qaihub_scripts.utils.utils import (
+    gen_pte_from_ctx_bin,
+    get_encoding,
+)
 from executorch.examples.qualcomm.utils import (
     setup_common_args_and_variables,
     SimpleADB,
 )
-from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from PIL import Image
 from torchvision.transforms import ToTensor
 
@@ -52,42 +51,6 @@ def get_quant_data(
         quant_data = data.div(scale).add(offset).clip(min=0, max=65535).detach()
 
     return quant_data.to(dtype=torch.uint16)
-
-
-def get_encoding(
-    path_to_shard: str,
-    compiler_specs: str,
-    get_input: bool,
-    get_output: bool,
-    num_input: int,
-    num_output: int,
-):
-    encoding_list = []
-    with open(path_to_shard, "rb") as f:
-        ctx_bin = f.read()
-        qnn_mgr = PyQnnManagerAdaptor.QnnManager(
-            generate_qnn_executorch_option(compiler_specs), ctx_bin
-        )
-        assert qnn_mgr.Init().value == 0, "failed to load context binary"
-        qnn_mgr.AllocateTensor()
-        if get_input:
-            encoding_input = {"scale": [], "offset": []}
-            for i in range(num_input):
-                inputs = qnn_mgr.GetGraphInputs()[i]
-                encoding = inputs.GetEncodings()
-                encoding_input["scale"].append(encoding.data["scale"].item())
-                encoding_input["offset"].append(encoding.data["offset"].item())
-            encoding_list.append(encoding_input)
-        if get_output:
-            encoding_output = {"scale": [], "offset": []}
-            for i in range(num_output):
-                outputs = qnn_mgr.GetGraphOutputs()[i]
-                encoding = outputs.GetEncodings()
-                encoding_output["scale"].append(encoding.data["scale"].item())
-                encoding_output["offset"].append(encoding.data["offset"].item())
-            encoding_list.append(encoding_output)
-        qnn_mgr.Destroy()
-    return encoding_list
 
 
 def get_encodings(
@@ -248,44 +211,6 @@ def save_result(output_image):
     print(f"Output image saved at {save_path}")
 
 
-def gen_pte_from_ctx_bin(args, compiler_specs):
-    # Create custom operators as context loader
-    bundle_programs = [
-        from_context_binary(args.text_encoder_bin, "ctx_loader_0"),
-        from_context_binary(args.unet_bin, "ctx_loader_1"),
-        from_context_binary(args.vae_bin, "ctx_loader_2"),
-    ]
-
-    # Lower with QnnBackend
-    lowered_modules = [
-        to_backend("QnnBackend", prog["edge_program"], compiler_specs)
-        for prog in bundle_programs
-    ]
-    # Setup spill-fill buffer for relieving runtime memory usage
-    canonicalize_program(lowered_modules)
-    # export pte files
-    pte_files = []
-    for target_name in target_names:
-        memory_planning_pass = MemoryPlanningPass(
-            memory_planning_algo="greedy",
-            alloc_graph_input=False,
-            alloc_graph_output=False,
-        )
-        pte_files.append(f"{args.artifact}/{args.pte_prefix}_{target_name}.pte")
-        with open(pte_files[-1], "wb") as file:
-            file.write(
-                lowered_modules[0].buffer(
-                    extract_delegate_segments=True, memory_planning=memory_planning_pass
-                )
-            )
-        # GC for reducing host memory consuming
-        bundle_programs.pop(0)
-        lowered_modules.pop(0)
-        gc.collect()
-
-    return pte_files
-
-
 def inference(args, compiler_specs, pte_files):
     # Loading a pretrained EulerDiscreteScheduler from the https://huggingface.co/stabilityai/stable-diffusion-2-1-base.
     scheduler = EulerDiscreteScheduler.from_pretrained(
@@ -408,7 +333,8 @@ def inference(args, compiler_specs, pte_files):
             file.write(flattened_tensor.numpy().tobytes())
         files.append(os.path.join(args.artifact, "latents.raw"))
 
-    adb.push(inputs=input_unet, input_list=input_list_unet, files=files)
+    if not args.skip_push:
+        adb.push(inputs=input_unet, input_list=input_list_unet, files=files)
     adb.execute(custom_runner_cmd=qnn_executor_runner_args)
 
     output_image = []
@@ -442,7 +368,16 @@ def main(args):
     )
 
     if args.pre_gen_pte is None:
-        pte_files = gen_pte_from_ctx_bin(args, compiler_specs)
+        # Create custom operators as context loader
+        bundle_programs = [
+            from_context_binary(args.text_encoder_bin, "ctx_loader_0"),
+            from_context_binary(args.unet_bin, "ctx_loader_1"),
+            from_context_binary(args.vae_bin, "ctx_loader_2"),
+        ]
+        pte_names = [f"{args.pte_prefix}_{target_name}" for target_name in target_names]
+        pte_files = gen_pte_from_ctx_bin(
+            args.artifact, pte_names, compiler_specs, bundle_programs
+        )
         assert (
             len(pte_files) == 3
         ), f"Error: Expected 3 PTE files, but got {len(pte_files)} files."

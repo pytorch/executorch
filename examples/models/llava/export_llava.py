@@ -17,11 +17,13 @@ from executorch.examples.models.llama2.export_llama_lib import (
     get_quantizer_and_quant_params,
 )
 from executorch.examples.models.llama2.source_transformation.quantize import (
+    EmbeddingQuantHandler,
     get_quant_weight_transform,
 )
 from executorch.examples.models.llama2.source_transformation.sdpa import (
     replace_sdpa_with_custom_op,
 )
+from executorch.examples.models.llava.image_util import serialize_image
 from executorch.examples.models.llava.model import LlavaModel
 from executorch.exir import (
     EdgeCompileConfig,
@@ -35,7 +37,7 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
-from torch import nn
+from executorch.util.activation_memory_profiler import generate_memory_trace
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
@@ -156,12 +158,20 @@ def export_image_encoder(llava, resized, dynamic_shapes):
 
 
 def export_token_embedding(llava, prompt):
-    embed = llava.embed_tokens
-    token_dim_1 = Dim("token_dim_1", min=2, max=3518)
+    def quant_embedding(model):
+        return EmbeddingQuantHandler(
+            model,
+            bitwidth=8,
+            group_size=32,
+            packed=False,
+        ).quantized_model()
+
+    quantized_token_embed = quant_embedding(llava.model_.language_model.model)
+    token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
         token_embedding_ep = torch.export.export(
-            embed, (prompt,), dynamic_shapes=dynamic_shapes
+            quantized_token_embed.embed_tokens, (prompt,), dynamic_shapes=dynamic_shapes
         )
     return token_embedding_ep
 
@@ -231,14 +241,7 @@ def get_image_tensor_for_llava_runner(llava_model):
     # llava runner doesn't have image reader so an image tensor is needed.
     (resized,) = llava_model.get_example_inputs()
 
-    copy = torch.tensor(resized)
-    m = nn.Module()
-    par = nn.Parameter(copy, requires_grad=False)
-    m.register_parameter("0", par)
-    tensors = torch.jit.script(m)
-    tensors.save("image.pt")
-
-    logging.info("Saved image tensor to image.pt")
+    serialize_image(resized, "image.pt")
 
 
 def get_tokenizer_for_llava_runner(llava_model):
@@ -257,6 +260,11 @@ def main():
         help="Use sdpa_with_kv_cache custom op in LLava text model.",
     )
     parser.add_argument(
+        "--max-seq-len",
+        default=768,
+        help="Maximum sequence length for the text model.",
+    )
+    parser.add_argument(
         "--pte-name",
         default="llava_combined_xnnpack.pte",
         help="Name of the exported ExecuTorch program.",
@@ -267,13 +275,31 @@ def main():
         action=BooleanOptionalAction,
         help="Generate artifacts for llava runner.",
     )
+    parser.add_argument(
+        "--profile_memory",
+        required=False,
+        action="store_true",
+        help="Generate chrome trace of activation memory for intermediate tensors.",
+    )
     args = parser.parse_args()
     logging.info(
-        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}"
+        f"Exporting Llava model to ExecuTorch with sdpa_with_kv_cache: {args.use_sdpa_with_kv_cache}, max_seq_len: {args.max_seq_len}"
     )
-    llava_model = LlavaModel(use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache)
+    llava_model = LlavaModel(
+        use_sdpa_with_kv_cache_op=args.use_sdpa_with_kv_cache,
+        max_seq_len=args.max_seq_len,
+    )
 
     executorch_program = export_all(llava_model)
+
+    # memory profiling
+    if args.profile_memory:
+        for method_name in executorch_program.methods:
+            generate_memory_trace(
+                executorch_program,
+                f"{args.pte_name}_{method_name}.json",
+                method_name=method_name,
+            )
 
     with open(args.pte_name, "wb") as f:
         executorch_program.write_to_file(f)

@@ -120,7 +120,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/executor:program",
                 "//executorch/kernels/portable:generated_lib",
                 "//executorch/extension/data_loader:file_data_loader",
-                "//executorch/util:util",
+                "//executorch/extension/runner_util:inputs",
             ],
             env = modules_env,
         )
@@ -133,8 +133,8 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
-                "//executorch/util:util",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/runner_util:inputs",
                 "//executorch/kernels/portable:generated_lib",
             ],
             env = modules_env,
@@ -175,7 +175,6 @@ def define_common_targets(is_fbcode = False):
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:program",
                 "//executorch/runtime/kernel:operator_registry",
-                "//executorch/util:util",
                 "//executorch/extension/data_loader:file_data_loader",
             ],
             env = modules_env,
@@ -189,12 +188,12 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":managed_memory_manager",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/extension/runner_util:inputs",
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/executor:program",
                 "//executorch/runtime/kernel:kernel_runtime_context",
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/runtime/platform:platform",
-                "//executorch/util:util",
             ],
             env = modules_env,
         )
@@ -210,7 +209,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/executor:program",
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
-                "//executorch/util:util",
+                "//executorch/extension/runner_util:inputs",
             ],
             env = {
                 # The tests use these vars to find the program files to load.
