@@ -29,7 +29,7 @@ if [[ "${TOKENIZER}" = "bpe" ]]; then
     CODE_SIGN_IDENTITY="iPhone Distribution" \
     CODE_SIGNING_REQUIRED=No \
     CODE_SIGNING_ALLOWED=No \
-    GCC_PREPROCESSOR_DEFINITIONS='$GCC_PREPROCESSOR_DEFINITIONS ET_USE_TIKTOKEN=0 '
+    GCC_PREPROCESSOR_DEFINITIONS="DEBUG=1 ET_USE_TIKTOKEN=0"
 else
   xcodebuild build-for-testing \
     -project "${APP_PATH}.xcodeproj" \
