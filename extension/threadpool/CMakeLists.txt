@@ -16,6 +16,10 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+
 add_library(extension_threadpool threadpool.cpp threadpool_guard.cpp cpuinfo_utils.cpp)
 target_link_libraries(extension_threadpool executorch)
 target_include_directories(extension_threadpool PUBLIC ${EXECUTORCH_ROOT}/..)
