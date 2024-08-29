@@ -62,15 +62,15 @@ popd
 pushd "${BUILD_DIR}"
 
 ls -lah
-zip -vr "${MOCK_APP_NAME}.xctestrun.zip" *.xctestrun
+zip -vr "${APP_NAME}.xctestrun.zip" *.xctestrun
 
 popd
 
 if [[ -n "${ARTIFACTS_DIR_NAME}" ]]; then
   mkdir -p "${ARTIFACTS_DIR_NAME}"
   # Prepare all the artifacts to upload
-  cp "${BUILD_DIR}/${MODE}-${PLATFORM}/${MOCK_APP_NAME}.ipa" "${ARTIFACTS_DIR_NAME}/"
-  cp "${BUILD_DIR}/${MOCK_APP_NAME}.xctestrun.zip" "${ARTIFACTS_DIR_NAME}/"
+  cp "${BUILD_DIR}/${MODE}-${PLATFORM}/${APP_NAME}.ipa" "${ARTIFACTS_DIR_NAME}/"
+  cp "${BUILD_DIR}/${APP_NAME}.xctestrun.zip" "${ARTIFACTS_DIR_NAME}/"
 
   ls -lah "${ARTIFACTS_DIR_NAME}/"
 fi

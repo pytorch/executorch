@@ -260,6 +260,9 @@ jobs:
         curl "https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip" -o model.zip
         unzip model.zip
 
+        # DEBUG
+        ls -lah
+
         ${CONDA_RUN} --no-capture-output \
           build/build_apple_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
 
@@ -289,3 +292,32 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
           path: ${{ runner.temp }}/artifacts/
+
+  benchmark-on-device:
+    # Only PR from ExecuTorch itself has permission to access AWS, forked PRs will fail to
+    # authenticate with the cloud service. So, this job will be skipped on the latter
+    if: ${{ !github.event.pull_request.head.repo.fork }}
+    needs:
+      - set-parameters
+      - upload-ios-apps
+    permissions:
+      id-token: write
+      contents: read
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    strategy:
+      matrix:
+        model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+        delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+        device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
+    with:
+      device-type: ios
+      # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS
+      runner: linux.2xlarge
+      test-infra-ref: ''
+      # This is the ARN of ExecuTorch project on AWS
+      project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
+      device-pool-arn: ${{ matrix.device }}
+      # Uploaded to S3 from the previous job
+      ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMA.ipa
+      ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMA.xctestrun.zip
+      test-spec: ${{ inputs.test_spec || 'https://ossci-ios.s3.amazonaws.com/executorch/default-ios-device-farm-appium-test-spec.yml' }}
