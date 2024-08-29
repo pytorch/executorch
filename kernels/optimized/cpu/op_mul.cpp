@@ -22,6 +22,25 @@ using ScalarType = exec_aten::ScalarType;
 
 namespace {
 
+bool sizes_match_ignoring_leading_1s(
+    ArrayRef<Tensor::SizesType> lhs,
+    ArrayRef<Tensor::SizesType> rhs) {
+  auto lhs_begin = lhs.begin();
+  auto lhs_end = lhs.end();
+  while (lhs_begin != lhs_end && *lhs_begin == 1) {
+    ++lhs_begin;
+  }
+
+  auto rhs_begin = rhs.begin();
+  auto rhs_end = rhs.end();
+  while (rhs_begin != rhs_end && *rhs_begin == 1) {
+    ++rhs_begin;
+  }
+
+  return ((lhs_end - lhs_begin) == (rhs_end - rhs_begin)) &&
+      std::equal(lhs_begin, lhs_end, rhs_begin);
+}
+
 // Move to generic util as this is applicable to all binary ops
 bool can_use_optimized_path(
     const Tensor& a,
@@ -38,7 +57,9 @@ bool can_use_optimized_path(
       (a_type != ScalarType::Half && b_type != ScalarType::Half);
   can_use_optimized_path = can_use_optimized_path &&
       (a.sizes().equals(b.sizes()) ||
-       (a.numel() == b.numel() && a.numel() == out.numel()));
+       (a.numel() == b.numel() &&
+        (a.numel() == out.numel() ||
+         sizes_match_ignoring_leading_1s(a.sizes(), b.sizes()))));
   return can_use_optimized_path;
 }
 
