@@ -53,6 +53,11 @@ class TensorInfo final {
   exec_aten::ScalarType scalar_type() const;
 
   /**
+   * Returns whether the tensor's memory was planned during export.
+   */
+  bool is_memory_planned() const;
+
+  /**
    * Returns the size of the tensor in bytes.
    */
   size_t nbytes() const;
@@ -64,7 +69,8 @@ class TensorInfo final {
   TensorInfo(
       Span<const int32_t> sizes,
       Span<const uint8_t> dim_order,
-      exec_aten::ScalarType scalar_type);
+      exec_aten::ScalarType scalar_type,
+      const bool is_memory_planned);
 
   /**
    * The sizes of the tensor.
@@ -84,6 +90,9 @@ class TensorInfo final {
 
   /// The scalar type of the tensor.
   exec_aten::ScalarType scalar_type_;
+
+  /// Whether the tensor's memory was planned during export.
+  bool is_memory_planned_;
 
   /// The size in bytes of the tensor.
   size_t nbytes_;
