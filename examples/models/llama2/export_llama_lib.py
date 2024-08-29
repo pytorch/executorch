@@ -17,6 +17,7 @@ from enum import Enum
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Optional, Union
+from torch._export import capture_pre_autograd_graph
 
 import pkg_resources
 
