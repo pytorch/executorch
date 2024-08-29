@@ -22,7 +22,7 @@ def _annotate_mm(
     quantization_config: QuantizationConfig,
     filter_fn: Optional[Callable[[Node], bool]] = None,
 ) -> Optional[List[List[Node]]]:
-    mm_partitions = get_source_partitions(gm.graph, [torch.mm], filter_fn)
+    mm_partitions = get_source_partitions(gm.graph, [torch.mm, torch.bmm], filter_fn)
     mm_partitions = list(itertools.chain.from_iterable(mm_partitions.values()))
     annotated_partitions = []
     for mm_partition in mm_partitions:
