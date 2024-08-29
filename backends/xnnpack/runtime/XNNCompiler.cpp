@@ -9,7 +9,7 @@
 #include <executorch/backends/xnnpack/runtime/XNNCompiler.h>
 #include <executorch/backends/xnnpack/runtime/XNNHeader.h>
 #include <executorch/backends/xnnpack/serialization/schema_generated.h>
-#include <executorch/backends/xnnpack/threadpool/threadpool.h>
+#include <executorch/extension/threadpool/threadpool.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <unordered_map>
 
