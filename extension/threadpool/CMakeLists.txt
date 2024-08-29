@@ -19,6 +19,12 @@ endif()
 add_library(extension_threadpool threadpool.cpp threadpool_guard.cpp cpuinfo_utils.cpp)
 target_link_libraries(extension_threadpool executorch)
 target_include_directories(extension_threadpool PUBLIC ${EXECUTORCH_ROOT}/..)
+target_include_directories(
+  extension_threadpool
+  PUBLIC
+    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/cpuinfo/include
+    ${EXECUTORCH_ROOT}/backends/xnnpack/third-party/pthreadpool/include
+)
 target_compile_options(extension_threadpool PUBLIC ${_common_compile_options})
 
 # Install libraries
