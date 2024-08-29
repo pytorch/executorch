@@ -32,9 +32,11 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
-# NB: Enabling this will serialize execution of delegate instances
-# Keeping this OFF by default to maintain existing behavior, to be revisited.
-option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE "Enable workspace sharing across different delegate instances" OFF)
+# NB: Enabling this will serialize execution of delegate instances Keeping this
+# OFF by default to maintain existing behavior, to be revisited.
+option(EXECUTORCH_XNNPACK_SHARED_WORKSPACE
+       "Enable workspace sharing across different delegate instances" OFF
+)
 if(EXECUTORCH_XNNPACK_SHARED_WORKSPACE)
   add_definitions(-DENABLE_XNNPACK_SHARED_WORKSPACE)
 endif()

@@ -26,10 +26,13 @@ class TestJointGraph(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.linear = torch.nn.Linear(3, 3)
+                self.linear_no_train = torch.nn.Linear(3, 3)
+                for param in self.linear_no_train.parameters():
+                    param.requires_grad = False
                 self.loss = torch.nn.CrossEntropyLoss()
 
             def forward(self, x, y):
-                return self.loss(self.linear(x).softmax(dim=0), y)
+                return self.loss(self.linear_no_train(self.linear(x)).softmax(dim=0), y)
 
         m = Module()
         example_inputs = (torch.ones(3), torch.tensor([1.0, 0.0, 0.0]))
@@ -110,7 +113,7 @@ class TestJointGraph(unittest.TestCase):
         self.assertTrue(torch.allclose(m.linear.bias, et_outputs[4]))
 
         self.assertEqual(
-            len(et.executorch_program.execution_plan), 3
+            len(et.executorch_program.execution_plan), 4
         )  # forward + 2 training metadata functions
 
         # gradient outputs start at index 1
@@ -121,9 +124,16 @@ class TestJointGraph(unittest.TestCase):
             1,
         )
 
-        # parameter outputs start at index 3
         self.assertEqual(
             et.executorch_program.execution_plan[2]  # pyre-ignore
+            .values[0]
+            .val.string_val,
+            "linear.weight",
+        )
+
+        # parameter outputs start at index 3
+        self.assertEqual(
+            et.executorch_program.execution_plan[3]  # pyre-ignore
             .values[0]
             .val.int_val,
             3,

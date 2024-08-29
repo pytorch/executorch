@@ -11,12 +11,12 @@
 #include <memory>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/util.h>
 
 #include <gtest/gtest.h>
 
@@ -24,6 +24,8 @@ using namespace ::testing;
 using exec_aten::ArrayRef;
 using exec_aten::Scalar;
 using exec_aten::Tensor;
+using executorch::extension::FileDataLoader;
+using executorch::extension::prepare_input_tensors;
 using executorch::runtime::Error;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::MemoryManager;
@@ -31,7 +33,6 @@ using executorch::runtime::Method;
 using executorch::runtime::Program;
 using executorch::runtime::Result;
 using executorch::runtime::testing::ManagedMemoryManager;
-using torch::executor::util::FileDataLoader;
 
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
 constexpr size_t kDefaultRuntimeMemBytes = 32 * 1024U;
@@ -85,10 +86,9 @@ TEST_F(AllocationFailureStressTest, End2EndIncreaseRuntimeMemUntilSuccess) {
 
     // Execution does not use the runtime allocator, so it should always succeed
     // once load was successful.
-    exec_aten::ArrayRef<void*> inputs =
-        torch::executor::util::PrepareInputTensors(*method);
+    auto input_cleanup = prepare_input_tensors(*method);
+    ASSERT_EQ(input_cleanup.error(), Error::Ok);
     err = method->execute();
-    torch::executor::util::FreeInputs(inputs);
     ASSERT_EQ(err, Error::Ok);
   }
   EXPECT_GT(num_load_failures, 0) << "Expected at least some failures";
@@ -121,10 +121,9 @@ TEST_F(AllocationFailureStressTest, End2EndNonConstantMemUntilSuccess) {
 
     // Execution does not use the runtime allocator, so it should always succeed
     // once load was successful.
-    exec_aten::ArrayRef<void*> inputs =
-        torch::executor::util::PrepareInputTensors(*method);
+    auto input_cleanup = prepare_input_tensors(*method);
+    ASSERT_EQ(input_cleanup.error(), Error::Ok);
     err = method->execute();
-    torch::executor::util::FreeInputs(inputs);
     ASSERT_EQ(err, Error::Ok);
   }
   EXPECT_GT(num_load_failures, 0) << "Expected at least some failures";

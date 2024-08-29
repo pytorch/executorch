@@ -23,8 +23,8 @@ include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
 set(_test_srcs
     thread_parallel_test.cpp ../thread_parallel.cpp
-    ${EXECUTORCH_ROOT}/backends/xnnpack/threadpool/threadpool.cpp
-    ${EXECUTORCH_ROOT}/backends/xnnpack/threadpool/threadpool_guard.cpp
+    ${EXECUTORCH_ROOT}/extension/threadpool/threadpool.cpp
+    ${EXECUTORCH_ROOT}/extension/threadpool/threadpool_guard.cpp
 )
 
 et_cxx_test(

@@ -26,6 +26,10 @@ from executorch.exir.backend.test.demos.rpc.executor_backend_partitioner import 
 from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
     ExecutorBackend,
 )
+from executorch.exir.backend.test.op_partitioner_demo import (
+    AddAttributePartitionerDemo,
+    AllNodesPartitionerDemo,
+)
 from executorch.exir.backend.utils import get_delegates, tag_constant_data
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -619,3 +623,111 @@ class TestPartitioner(unittest.TestCase):
             and node.target == torch.ops.aten.copy_.default
         ]
         self.assertEqual(len(copy_node), 1)
+
+    def test_buffer_mutation1(self):
+        class TestModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("b", torch.ones(3, 3))
+
+            def forward(self, x):
+                self.b.add_(x)
+                return x + self.b
+
+        model_inputs = (torch.ones(3, 3),)
+        orig_res = TestModule()(*model_inputs)
+        edge_program = exir.to_edge(torch.export.export(TestModule(), model_inputs))
+        lowered = edge_program.to_backend(AddAttributePartitionerDemo())
+
+        self.assertTrue(
+            torch.allclose(lowered.exported_program().module()(*model_inputs), orig_res)
+        )
+
+        self.assertEqual(
+            len(lowered.exported_program().graph_signature.buffers_to_mutate),
+            0,
+        )
+        lowered_module_nodes = get_delegates(lowered.exported_program().graph)
+        self.assertEqual(len(lowered_module_nodes), 1)
+        lowered_module_node = lowered_module_nodes[0]
+
+        # get call delegate node
+        call_delegate_node = list(lowered_module_node.users.keys())[0]
+        self.assertEqual(len(call_delegate_node.args), 2)
+
+        lower_module = getattr(
+            lowered.exported_program().graph_module, lowered_module_node.name
+        )
+        delegated_ep = lower_module.original_module
+
+        self.assertEqual(len(delegated_ep.state_dict), 1)
+        self.assertEqual(len(delegated_ep.graph_signature.buffers_to_mutate), 1)
+        self.assertEqual(len(delegated_ep.graph_signature.buffers), 1)
+
+    def test_buffer_mutation_llama_repro(self):
+        SHAPE = (2, 3)
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("cache", torch.zeros(SHAPE, dtype=torch.float32))
+
+            def forward(self, q, k_val, input_pos):
+                q_T = q.transpose(0, 1)
+                k = torch.ops.aten.index_put_(self.cache, [input_pos, None], k_val)
+                attn = k.mm(q_T)
+                return attn
+
+        q = torch.rand(1, 3)
+        k = torch.rand(1, 3)
+        example_inputs = (q, k, torch.tensor([1, 1]))
+
+        model = Model()
+        model.eval()
+
+        exir_program_aten = torch.export.export(model, example_inputs)
+        exir_program_aten.module()(*example_inputs)
+        edge_program_manager = exir.to_edge(exir_program_aten)
+        lowered = edge_program_manager.to_backend(AllNodesPartitionerDemo())
+
+        self.assertEqual(
+            len(lowered.exported_program().graph_signature.buffers_to_mutate),
+            0,
+        )
+        lowered_module_nodes = get_delegates(lowered.exported_program().graph)
+        self.assertEqual(len(lowered_module_nodes), 1)
+        lowered_module_node = lowered_module_nodes[0]
+
+        # get call delegate node
+        call_delegate_node = list(lowered_module_node.users.keys())[0]
+        self.assertEqual(len(call_delegate_node.args), 4)
+
+        lower_module = getattr(
+            lowered.exported_program().graph_module, lowered_module_node.name
+        )
+        delegated_ep = lower_module.original_module
+
+        self.assertEqual(len(delegated_ep.state_dict), 1)
+        self.assertEqual(len(delegated_ep.graph_signature.buffers_to_mutate), 1)
+        self.assertEqual(len(delegated_ep.graph_signature.buffers), 1)
+
+    def test_buffer_mutation_unsupported(self):
+        SHAPE = (2, 3)
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state_1", torch.zeros(SHAPE, dtype=torch.float32))
+
+            def forward(self, x):
+                add = self.state_1.add_(x)
+                return add
+
+        model = Model()
+        model.eval()
+
+        example_inputs = (torch.randn(SHAPE),)
+        exir_program_aten = torch.export.export(model, example_inputs)
+        edge_program_manager = exir.to_edge(exir_program_aten)
+        with self.assertRaises(AssertionError):
+            edge_program_manager.to_backend(AddAttributePartitionerDemo())

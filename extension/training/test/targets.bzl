@@ -25,7 +25,6 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//executorch/runtime/executor:program",
-                "//executorch/util:util",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
                 "//executorch/extension/evalue_util:print_evalue",

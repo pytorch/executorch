@@ -13,6 +13,7 @@
 #include <memory>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/method.h>
@@ -22,7 +23,6 @@
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/util.h>
 
 #include <gtest/gtest.h>
 
@@ -158,12 +158,15 @@ class KernelIntegrationTest : public ::testing::Test {
     method_ = std::make_unique<Method>(std::move(method.get()));
 
     // Set up its inputs.
-    inputs_ = torch::executor::util::PrepareInputTensors(*method_);
+    auto inputs_cleanup =
+        executorch::extension::prepare_input_tensors(*method_);
+    ASSERT_EQ(inputs_cleanup.error(), Error::Ok);
+    inputs_cleanup_ = std::make_unique<executorch::extension::BufferCleanup>(
+        std::move(*inputs_cleanup));
   }
 
   void TearDown() override {
-    torch::executor::util::FreeInputs(inputs_);
-    inputs_ = {};
+    inputs_cleanup_.reset();
   }
 
  private:
@@ -173,7 +176,7 @@ class KernelIntegrationTest : public ::testing::Test {
   // Must outlive method_
   std::unique_ptr<Program> program_;
   std::unique_ptr<ManagedMemoryManager> mmm_;
-  ArrayRef<void*> inputs_;
+  std::unique_ptr<executorch::extension::BufferCleanup> inputs_cleanup_;
 
  protected:
   // An executable method that will call the kernel associated with control_.
