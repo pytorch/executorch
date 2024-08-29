@@ -172,10 +172,10 @@ option(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT "Build the custom ops lib for AOT"
 )
 
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
-       OFF
+       ON
 )
 
-option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
+option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" ON)
 
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
        OFF
@@ -779,6 +779,9 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
     list(APPEND _executor_runner_libs portable_ops_lib)
   endif()
 
+  if(EXECUTORCH_BUILD_EXTENSION_MODULE)
+    list(APPEND _executor_runner_libs extension_module)
+  endif()
   # Generate lib to register quantized ops
   if(EXECUTORCH_BUILD_KERNELS_QUANTIZED)
     list(APPEND _executor_runner_libs quantized_ops_lib)
