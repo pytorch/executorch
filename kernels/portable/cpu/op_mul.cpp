@@ -70,7 +70,7 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(ctx, tensor_is_realhb_type(out), InvalidArgument, out);
+  ET_KERNEL_CHECK(ctx, executorch::runtime::tensor_is_realhbbf16_type(out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -79,12 +79,12 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
 
   ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, "mul.out", CTYPE_A, [&]() {
-    ET_SWITCH_REALHB_TYPES(b_type, ctx, "mul.out", CTYPE_B, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "mul.out", CTYPE_A, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, "mul.out", CTYPE_B, [&]() {
       using CTYPE_IN = typename torch::executor::
           promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
       ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-      ET_SWITCH_REALHB_TYPES(out_type, ctx, "mul.out", CTYPE_OUT, [&]() {
+      ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, "mul.out", CTYPE_OUT, [&]() {
         MulInner<
             can_cast<CTYPE_IN, CTYPE_OUT>::value,
             CTYPE_A,
@@ -123,15 +123,15 @@ Tensor& mul_scalar_out(
 
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
-  if (common_type == ScalarType::Half) {
+  if (common_type == ScalarType::Half || common_type == ScalarType::BFloat16) {
     common_type = ScalarType::Float;
   }
 
-  ET_SWITCH_REALHB_TYPES(a_type, ctx, "mul.Scalar_out", CTYPE_A, [&]() {
+  ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "mul.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "mul.Scalar_out", CTYPE_B, [&]() {
       ET_SWITCH_REALB_TYPES(
           common_type, ctx, "mul.Scalar_out", CTYPE_IN, [&]() {
-            ET_SWITCH_REALHB_TYPES(
+            ET_SWITCH_REALHBBF16_TYPES(
                 out_type, ctx, "mul.Scalar_out", CTYPE_OUT, [&]() {
                   CTYPE_B b_val;
                   utils::extract_scalar(b, &b_val);
