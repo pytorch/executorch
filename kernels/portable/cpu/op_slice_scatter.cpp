@@ -74,8 +74,8 @@ Tensor& slice_scatter_out(
   ScalarType in_type = input.scalar_type();
   ScalarType src_type = src.scalar_type();
 
-  ET_SWITCH_REALHB_TYPES(in_type, ctx, "slice_scatter.out", CTYPE, [&]() {
-    ET_SWITCH_REALHB_TYPES(
+  ET_SWITCH_REALHBBF16_TYPES(in_type, ctx, "slice_scatter.out", CTYPE, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(
         src_type, ctx, "slice_scatter.out", CTYPE_SRC, [&]() {
           CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
           const CTYPE_SRC* src_data = src.const_data_ptr<CTYPE_SRC>();
