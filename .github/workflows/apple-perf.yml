@@ -1,6 +1,7 @@
 name: apple-perf
 
 on:
+  # DEBUG: TO BE REMOVED
   pull_request:
   schedule:
     - cron: 0 1 * * *
@@ -166,18 +167,19 @@ jobs:
         DTYPE="fp32"
 
         if [[ ${{ matrix.model }} =~ ^stories* ]]; then
-            # Install requirements for export_llama
-            PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-              bash examples/models/llama2/install_requirements.sh
-            # Test llama2
-            if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
-                DELEGATE_CONFIG="xnnpack+custom+qe"
-            fi
-            PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-              bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
+          # Install requirements for export_llama
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+            bash examples/models/llama2/install_requirements.sh
+
+          # Test llama2
+          if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
+            DELEGATE_CONFIG="xnnpack+custom+qe"
+          fi
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+            bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
         else
-            PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-              bash .ci/scripts/test.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+            bash .ci/scripts/test.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
         fi
         echo "::endgroup::"
 
@@ -214,6 +216,9 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs:
       - set-parameters
+      # TODO (huydhn): Unlike Android, iOS export model is packaged together with the test suite,
+      # so we need to wait for the model to become available before we can prepare the test. Try
+      # to figure out a way to copy the export model to the device as extra data archive instead
       - upload-models
     secrets: inherit
     strategy:
@@ -260,7 +265,7 @@ jobs:
         curl "https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip" -o model.zip
         unzip model.zip
 
-        # DEBUG
+        # DEBUG: TO BE REMOVED
         ls -lah
 
         ${CONDA_RUN} --no-capture-output \
@@ -294,9 +299,6 @@ jobs:
           path: ${{ runner.temp }}/artifacts/
 
   benchmark-on-device:
-    # Only PR from ExecuTorch itself has permission to access AWS, forked PRs will fail to
-    # authenticate with the cloud service. So, this job will be skipped on the latter
-    if: ${{ !github.event.pull_request.head.repo.fork }}
     needs:
       - set-parameters
       - upload-ios-apps

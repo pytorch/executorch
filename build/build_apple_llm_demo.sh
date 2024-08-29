@@ -18,7 +18,8 @@ mkdir -p "${TEST_RESOURCE_PATH}"
 cp *.pte *.bin "${TEST_RESOURCE_PATH}/"
 
 if [[ "${TOKENIZER}" = "bpe" ]]; then
-  xcodebuild build -project "${APP_PATH}.xcodeproj" \
+  xcodebuild build-for-testing \
+    -project "${APP_PATH}.xcodeproj" \
     -scheme LLaMA \
     -destination platform="iOS" \
     -allowProvisioningUpdates \
@@ -30,7 +31,8 @@ if [[ "${TOKENIZER}" = "bpe" ]]; then
     CODE_SIGNING_ALLOWED=No \
     GCC_PREPROCESSOR_DEFINITIONS='$GCC_PREPROCESSOR_DEFINITIONS ET_USE_TIKTOKEN=0 '
 else
-  xcodebuild build -project "${APP_PATH}.xcodeproj" \
+  xcodebuild build-for-testing \
+    -project "${APP_PATH}.xcodeproj" \
     -scheme LLaMA \
     -destination platform="iOS" \
     -allowProvisioningUpdates \
