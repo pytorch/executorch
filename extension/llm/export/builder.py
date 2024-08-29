@@ -88,6 +88,7 @@ class LLMEdgeManager:
         self.output_dir = "."
         self.dynamic_shapes = dynamic_shapes
         self._saved_pte_filename = None
+        self.export_fn = capture_pre_autograd_graph
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
@@ -168,7 +169,7 @@ class LLMEdgeManager:
             # self.pre_autograd_graph_module = torch.export.export(
             #     self.model, self.example_inputs, dynamic_shapes=dynamic_shape, strict=True
             # ).module()
-            self.pre_autograd_graph_module = export_fn(self.model, self.example_inputs, dynamic_shapes=dynamic_shape)
+            self.pre_autograd_graph_module = self.export_fn(self.model, self.example_inputs, dynamic_shapes=dynamic_shape)
             # self.pre_autograd_graph_module = capture_pre_autograd_graph(
             #     self.model, self.example_inputs, dynamic_shapes=dynamic_shape
             # )
@@ -220,7 +221,7 @@ class LLMEdgeManager:
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             if self.pre_autograd_graph_module is None:
                 # pyre-fixme[8]
-                self.pre_autograd_graph_module = export_fn(self.model, self.example_inputs, dynamic_shapes=dynamic_shape)
+                self.pre_autograd_graph_module = self.export_fn(self.model, self.example_inputs, dynamic_shapes=dynamic_shape)
             self.edge_manager = export_to_edge(
                 self.pre_autograd_graph_module,  # pyre-fixme[6]
                 self.example_inputs,

@@ -608,6 +608,7 @@ def _load_llama_model(
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
+    export_fn = capture_pre_autograd_graph,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
@@ -669,4 +670,5 @@ def _load_llama_model(
             model.params,
             metadata_str,
         ),
+        export_fn = capture_pre_autograd_graph,
     )
