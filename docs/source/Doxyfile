@@ -964,8 +964,7 @@ INPUT                  = ../runtime/executor/memory_manager.h \
                          ../runtime/core/tensor_shape_dynamism.h \
                          ../runtime/platform/compiler.h \
                          ../runtime/executor/ \
-                         ../runtime/platform/ \
-                         ../util/
+                         ../runtime/platform/
 
 
 

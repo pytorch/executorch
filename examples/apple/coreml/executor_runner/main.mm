@@ -14,7 +14,6 @@
 #import <executorch/runtime/platform/log.h>
 #import <executorch/runtime/platform/runtime.h>
 #import <executorch/devtools/etdump/etdump_flatcc.h>
-#import <executorch/util/util.h>
 #import <memory>
 #import <numeric>
 #import <string>

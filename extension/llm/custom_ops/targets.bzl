@@ -8,8 +8,8 @@ def define_common_targets():
     """
     runtime.cxx_library(
         name = "custom_ops",
-        srcs = ["op_sdpa.cpp"],
-        exported_headers = ["op_sdpa.h"],
+        srcs = ["op_sdpa.cpp", "op_fallback.cpp"],
+        exported_headers = ["op_sdpa.h", "op_fallback.h"],
         exported_deps = [
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/kernels/portable/cpu:scalar_utils",
@@ -17,7 +17,7 @@ def define_common_targets():
             "//executorch/kernels/optimized:libvec",
             "//executorch/extension/kernel_util:kernel_util",
             "//executorch/extension/parallel:thread_parallel",
-            "//executorch/backends/xnnpack/threadpool:threadpool",
+            "//executorch/extension/threadpool:threadpool",
         ],
         compiler_flags = ["-Wno-missing-prototypes", "-Wno-global-constructors"],
         visibility = [

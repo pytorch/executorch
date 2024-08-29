@@ -41,7 +41,7 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
 set(EXECUTORCH_SRCS_FILE
-  "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
 )
 extract_sources(${EXECUTORCH_SRCS_FILE})
 include(${EXECUTORCH_SRCS_FILE})
@@ -49,7 +49,6 @@ include(${EXECUTORCH_SRCS_FILE})
 get_filename_component(
   EXECUTORCH_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE
 )
-
 
 # portable_ops_lib
 gen_selected_ops(LIB_NAME "full_portable_ops_lib" INCLUDE_ALL_OPS "ON")
@@ -68,21 +67,13 @@ target_include_directories(
 )
 
 # build qnn_executor_runner
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/executor_runner
-)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/executor_runner)
 
 # build qnn_llama_runner
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama2
-)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/oss_scripts/llama2)
 
 # build qaihub_llama2_7b_runner and qaihub_llama3_8b_runner
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama
-)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/llama)
 
 # build qaihub_stable_diffusion_runner
-add_subdirectory(
-  ${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/stable_diffusion
-)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/qaihub_scripts/stable_diffusion)

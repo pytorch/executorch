@@ -560,6 +560,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_gather",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:index_util",
+        ],
+    ),
+    op_target(
         name = "op_ge",
         deps = [
             ":scalar_utils",
@@ -857,6 +863,12 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_pixel_shuffle",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op_pixel_unshuffle",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],

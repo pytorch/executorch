@@ -20,8 +20,8 @@
 #include <vector>
 
 #ifdef ET_USE_THREADPOOL
-#include <executorch/backends/xnnpack/threadpool/threadpool.h>
 #include <executorch/extension/parallel/thread_parallel.h>
+#include <executorch/extension/threadpool/threadpool.h>
 #endif
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
