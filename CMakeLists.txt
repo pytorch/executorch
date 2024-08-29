@@ -637,6 +637,9 @@ if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
 endif()
 
+# Always build threadpool because it is used by multiple components
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/threadpool)
+
 if(EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 
