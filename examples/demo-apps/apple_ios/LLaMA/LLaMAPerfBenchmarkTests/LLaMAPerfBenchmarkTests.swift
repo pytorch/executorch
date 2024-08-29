@@ -9,7 +9,7 @@
 import XCTest
 import LLaMARunner
 
-final class LLaMATests: XCTestCase {
+final class LLaMAPerfBenchmarkTests: XCTestCase {
   func testLlama2() throws {
     guard
       let modelPath = Bundle(for: type(of: self))
@@ -34,5 +34,12 @@ final class LLaMATests: XCTestCase {
       XCTFail("Failed to load the model: \(loadError)")
     }
     XCTAssertTrue(runner.isloaded())
+
+    let seq_len = 128
+    var tokens: [String] = []
+    try runner.generate("How do you do! I'm testing llama2 on mobile device", sequenceLength: seq_len) { token in
+      tokens.append(token)
+    }
   }
 }
+

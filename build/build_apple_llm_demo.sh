@@ -20,7 +20,7 @@ cp *.pte *.bin "${TEST_RESOURCE_PATH}/"
 if [[ "${TOKENIZER}" = "bpe" ]]; then
   xcodebuild build-for-testing \
     -project "${APP_PATH}.xcodeproj" \
-    -scheme LLaMA \
+    -scheme LLaMAPerfBenchmark \
     -destination platform="iOS" \
     -allowProvisioningUpdates \
     DEVELOPMENT_TEAM=78E7V7QP35 \
@@ -33,7 +33,7 @@ if [[ "${TOKENIZER}" = "bpe" ]]; then
 else
   xcodebuild build-for-testing \
     -project "${APP_PATH}.xcodeproj" \
-    -scheme LLaMA \
+    -scheme LLaMAPerfBenchmark \
     -destination platform="iOS" \
     -allowProvisioningUpdates \
     DEVELOPMENT_TEAM=78E7V7QP35 \
@@ -53,7 +53,7 @@ PLATFORM="iphoneos"
 pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
 
 rm -rf Payload && mkdir Payload
-APP_NAME=LLaMA
+APP_NAME=LLaMAPerfBenchmark
 
 ls -lah
 cp -r "${APP_NAME}.app" Payload && zip -vr "${APP_NAME}.ipa" Payload

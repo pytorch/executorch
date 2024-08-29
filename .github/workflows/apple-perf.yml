@@ -265,9 +265,6 @@ jobs:
         curl "https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip" -o model.zip
         unzip model.zip
 
-        # DEBUG: TO BE REMOVED
-        ls -lah
-
         ${CONDA_RUN} --no-capture-output \
           build/build_apple_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
 
