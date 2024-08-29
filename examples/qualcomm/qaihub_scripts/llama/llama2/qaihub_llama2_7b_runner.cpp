@@ -36,8 +36,8 @@ DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
 DEFINE_double(
     temperature,
-    0.8f,
-    "Temperature; Default is 0.8f. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
+    0.0f,
+    "Temperature; Default is 0.0f. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
 DEFINE_int32(
     eval_mode,
     0,
@@ -75,9 +75,10 @@ int main(int argc, char** argv) {
 
   // generate tokens & store inference output
   std::ofstream fout(FLAGS_output_path.c_str());
-  runner.generate(FLAGS_prompt, FLAGS_seq_len, [&](const std::string& piece) {
-    fout << piece;
-  });
+  runner.generate(
+      FLAGS_prompt, "", FLAGS_seq_len, [&](const std::string& piece) {
+        fout << piece;
+      });
   fout.close();
   return 0;
 }
