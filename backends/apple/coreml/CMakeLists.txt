@@ -14,10 +14,10 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 if(EXECUTORCH_BUILD_SDK)
-# protobuf requires frtti
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -frtti" )
+  # protobuf requires frtti
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -frtti")
 endif()
-  
+
 option(COREML_BUILD_EXECUTOR_RUNNER "Build CoreML executor runner." OFF)
 
 # inmemoryfs sources
