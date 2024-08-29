@@ -157,6 +157,10 @@ file(MAKE_DIRECTORY
      ${_program_schema__include_dir}/executorch/devtools/bundled_program
 )
 
+
+# Note that the flatcc project actually writes its outputs into the source
+# tree instead of under the binary directory, and there's no way to change
+# that behavior.
 if(WIN32)
   set(_flatcc_bin_path ${_flatcc_source_dir}/bin/${CMAKE_BUILD_TYPE}/flatcc)
 else()
@@ -166,9 +170,6 @@ endif()
 add_custom_command(
   OUTPUT ${_etdump_schema__outputs}
   COMMAND
-    # Note that the flatcc project actually writes its outputs into the source
-    # tree instead of under the binary directory, and there's no way to change
-    # that behavior.
     ${_flatcc_bin_path} -cwr -o
     ${_program_schema__include_dir}/executorch/devtools/etdump
     ${_etdump_schema__srcs}
