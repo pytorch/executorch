@@ -183,7 +183,6 @@ jobs:
         fi
         echo "::endgroup::"
 
-  # Upload models to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-models:
     needs: export-models
     runs-on: linux.2xlarge
@@ -317,6 +316,6 @@ jobs:
       project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
       device-pool-arn: ${{ matrix.device }}
       # Uploaded to S3 from the previous job
-      ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMA.ipa
-      ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMA.xctestrun.zip
+      ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMAPerfBenchmark.ipa
+      ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMAPerfBenchmark.xctestrun.zip
       test-spec: ${{ inputs.test_spec || 'https://ossci-ios.s3.amazonaws.com/executorch/default-ios-device-farm-appium-test-spec.yml' }}
