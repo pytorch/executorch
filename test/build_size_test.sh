@@ -31,7 +31,7 @@ cmake_install_executorch_lib() {
   rm -rf cmake-out
 
   retry cmake -DBUCK2="$BUCK2" \
-          -DCMAKE_CXX_STANDARD=14 \
+          -DCMAKE_CXX_STANDARD=11 \
           -DCMAKE_CXX_STANDARD_REQUIRED=ON \
           -DCMAKE_CXX_FLAGS="$CXX_FLAGS" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
