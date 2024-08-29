@@ -330,13 +330,13 @@ class Module final {
   /**
    * Set output data pointer for forward method.
    *
-   * @param[in] output_tensor A Tensor for the output of 'forward' method.
+   * @param[in] output_value A Tensor for the output of 'forward' method.
    * @param[in] output_index Index of the output in 'forward' method.
    *
    * @returns An Error to indicate success or failure of the loading process.
    */
   ::executorch::runtime::Error set_output_data_ptr(
-      exec_aten::Tensor& output_tensor,
+      ::executorch::runtime::EValue output_value,
       size_t output_index);
 
  private:
