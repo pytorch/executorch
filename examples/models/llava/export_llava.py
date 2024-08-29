@@ -208,10 +208,15 @@ def export_all(llava_model: LlavaModel):
         partitioner={
             "image_encoder": [XnnpackPartitioner()],
             "text_model": [
+                # First partition the DQLinear nodes, then partition the rest of the nodes,
+                # to avoid multiple DQLinear nodes in the same partition,
+                # to avoid holding multiple unpacked and packed weight buffers in memory,
+                # to reduce peak memory footprint.
                 XnnpackPartitioner(
                     config_precisions=ConfigPrecisionType.DYNAMIC_QUANT,
                     per_op_mode=True,
-                )
+                ),
+                XnnpackPartitioner(),
             ],
         },
         compile_config=EdgeCompileConfig(_check_ir_validity=False),
