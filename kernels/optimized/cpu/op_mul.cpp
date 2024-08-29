@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/optimized/cpu/binary_ops.h>
 #include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
@@ -21,76 +22,6 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 namespace {
-
-// NOTE: we bake ArrayRef iterators being pointers into the return
-// type here because we assume that iterators are portable across
-// ArrayRef copies.
-const Tensor::SizesType* arrayref_begin_ignoring_leading_1s(
-    ArrayRef<Tensor::SizesType> arr) {
-  return std::find_if(
-      arr.begin(), arr.end(), [](Tensor::SizesType x) { return x != 1; });
-}
-
-bool sizes_match_ignoring_leading_1s(
-    ArrayRef<Tensor::SizesType> lhs,
-    ArrayRef<Tensor::SizesType> rhs) {
-  auto lhs_begin = arrayref_begin_ignoring_leading_1s(lhs);
-  auto lhs_end = lhs.end();
-
-  auto rhs_begin = arrayref_begin_ignoring_leading_1s(rhs);
-  auto rhs_end = rhs.end();
-
-  return ((lhs_end - lhs_begin) == (rhs_end - rhs_begin)) &&
-      std::equal(lhs_begin, lhs_end, rhs_begin);
-}
-
-// Move to generic util as this is applicable to all binary ops
-enum class ElementwiseOptimizedPath {
-  kNone,
-  kTreatAs1d,
-  kBroadcast2dBy1d,
-  kBroadcast2dBy1dReverseArguments,
-};
-
-ElementwiseOptimizedPath select_broadcast_2d_by_1d_optimized_path(
-    const Tensor& lhs,
-    const Tensor& rhs) {
-  auto lhs_begin = arrayref_begin_ignoring_leading_1s(lhs.sizes());
-  auto lhs_end = lhs.sizes().end();
-
-  auto rhs_begin = arrayref_begin_ignoring_leading_1s(rhs.sizes());
-  auto rhs_end = rhs.sizes().end();
-
-  const auto lhs_size = lhs_end - lhs_begin;
-  const auto rhs_size = rhs_end - rhs_begin;
-  if (lhs_size == 2 && rhs_size == 1 && lhs_begin[1] == rhs_begin[0]) {
-    return ElementwiseOptimizedPath::kBroadcast2dBy1d;
-  }
-
-  if (lhs_size == 1 && rhs_size == 2 && rhs_begin[1] == lhs_begin[0]) {
-    return ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments;
-  }
-
-  return ElementwiseOptimizedPath::kNone;
-}
-
-ElementwiseOptimizedPath
-select_optimized_path(const Tensor& a, const Tensor& b, const Tensor& out) {
-  ScalarType a_type = a.scalar_type();
-  ScalarType b_type = b.scalar_type();
-  ScalarType out_type = out.scalar_type();
-
-  if (a_type != b_type || a_type != out_type || a_type == ScalarType::Half) {
-    return ElementwiseOptimizedPath::kNone;
-  }
-  if (a.sizes().equals(b.sizes()) ||
-      (a.numel() == b.numel() &&
-       (a.numel() == out.numel() ||
-        sizes_match_ignoring_leading_1s(a.sizes(), b.sizes())))) {
-    return ElementwiseOptimizedPath::kTreatAs1d;
-  }
-  return select_broadcast_2d_by_1d_optimized_path(a, b);
-}
 
 template <
     bool can_cast,
