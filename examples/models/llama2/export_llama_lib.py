@@ -45,6 +45,7 @@ from executorch.extension.llm.export.quantizer_lib import (
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
+from .source_transformation.fht import replace_feed_forward_with_custom
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
@@ -309,6 +310,15 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         help="Generate logits for all inputs.",
     )
+
+    parser.add_argument(
+        "--use_spin_quant",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Use spin quant or not. This option should be set to true if the model has been retrained by SpinQuant",
+    )
+
     return parser
 
 
@@ -410,6 +420,9 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_causal_mask)
+    if args.use_spin_quant:
+        transforms.append(replace_feed_forward_with_custom)
+
     return (
         _load_llama_model(
             modelname=modelname,
