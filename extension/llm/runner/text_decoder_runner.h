@@ -67,39 +67,31 @@ class TextDecoderRunner {
    * @return The next token.
    */
   inline int32_t logits_to_token(const exec_aten::Tensor& logits_tensor) {
-    switch (logits_tensor.scalar_type()) {
-      // If the logit_tensor rank is 3, the shape is [batch, seq_length,
-      // vocab_size], get the last logits, sample and return. Else the model
-      // outputs the last logit, directly sample and return.
-      case exec_aten::ScalarType::Float: {
-        float* logits = logits_tensor.mutable_data_ptr<float>();
-        if (logits_tensor.dim() == 3) {
-          auto num_tokens = logits_tensor.size(1);
-          auto vocab_size = logits_tensor.size(2);
-          float* logits_last = logits;
-          logits_last += (num_tokens - 1) * vocab_size;
-          return sampler_->sample(logits_last);
-        }
-        return sampler_->sample(logits);
-      }
-      case exec_aten::ScalarType::Half: {
-        exec_aten::Half* logits =
-            logits_tensor.mutable_data_ptr<exec_aten::Half>();
-        if (logits_tensor.dim() == 3) {
-          auto num_tokens = logits_tensor.size(1);
-          auto vocab_size = logits_tensor.size(2);
-          exec_aten::Half* logits_last = logits;
-          logits_last += (num_tokens - 1) * vocab_size;
-          return sampler_->sample(logits_last);
-        }
-        return sampler_->sample(logits);
-      }
-      default:
-        ET_CHECK_MSG(
-            false,
-            "Unsupported dtype output %hhd",
-            static_cast<int8_t>(logits_tensor.scalar_type()));
-    }
+    int32_t result = 0;
+    ET_SWITCH_THREE_TYPES(
+        Float,
+        Half,
+        BFloat16,
+        logits_tensor.scalar_type(),
+        unused,
+        "logits_to_token",
+        CTYPE,
+        [&]() {
+          // If the logit_tensor rank is 3, the shape is [batch, seq_length,
+          // vocab_size], get the last logits, sample and return. Else the model
+          // outputs the last logit, directly sample and return.
+          auto* logits = logits_tensor.mutable_data_ptr<CTYPE>();
+          if (logits_tensor.dim() == 3) {
+            auto num_tokens = logits_tensor.size(1);
+            auto vocab_size = logits_tensor.size(2);
+            auto* logits_last = logits;
+            logits_last += (num_tokens - 1) * vocab_size;
+            result = sampler_->sample(logits_last);
+          } else {
+            result = sampler_->sample(logits);
+          }
+        });
+    return result;
   }
 
  protected:
