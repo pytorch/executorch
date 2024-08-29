@@ -136,7 +136,7 @@ ValueRef prepack_buffer(
     ComputeGraph& graph,
     const ValueRef vref,
     const utils::GPUMemoryLayout layout) {
-  ValueRef v = graph.add_tensor_like(vref, layout);
+  ValueRef v = graph.add_tensor_like(vref, utils::kBuffer, layout);
 
   vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR("buffer_to_buffer");
 
