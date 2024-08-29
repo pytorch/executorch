@@ -11,7 +11,7 @@ TOKENIZER="${1:-bpe}"
 ARTIFACTS_DIR_NAME="$2"
 
 APP_PATH="examples/demo-apps/apple_ios/LLaMA/LLaMA"
-TEST_RESOURCE_PATH="examples/demo-apps/apple_ios/LLaMA/LLaMATests/Resources"
+TEST_RESOURCE_PATH="examples/demo-apps/apple_ios/LLaMA/LLaMAPerfBenchmarkTests/Resources"
 
 mkdir -p "${TEST_RESOURCE_PATH}"
 # Copy all existing model

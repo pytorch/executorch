@@ -18,7 +18,7 @@ final class LLaMAPerfBenchmarkTests: XCTestCase {
       XCTFail("Failed to get model path")
       return
     }
-      
+
     guard
       let tokenizerPath = Bundle(for: type(of: self))
         .path(forResource: "tokenizer", ofType: "bin")
@@ -26,7 +26,7 @@ final class LLaMAPerfBenchmarkTests: XCTestCase {
       XCTFail("Failed to get tokenizer path")
       return
     }
-      
+
     let runner = Runner(modelPath: modelPath, tokenizerPath: tokenizerPath)
     do {
       try runner.load()
@@ -42,4 +42,3 @@ final class LLaMAPerfBenchmarkTests: XCTestCase {
     }
   }
 }
-
