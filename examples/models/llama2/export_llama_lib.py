@@ -17,7 +17,6 @@ from enum import Enum
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Optional, Union
-from torch._export import capture_pre_autograd_graph
 
 import pkg_resources
 
@@ -44,6 +43,7 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_qnn_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from torch._export import capture_pre_autograd_graph
 
 from ..model_factory import EagerModelFactory
 from .source_transformation.quantize import (
@@ -608,7 +608,7 @@ def _load_llama_model(
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
-    export_fn = capture_pre_autograd_graph,
+    export_fn=capture_pre_autograd_graph,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
@@ -670,5 +670,5 @@ def _load_llama_model(
             model.params,
             metadata_str,
         ),
-        export_fn = capture_pre_autograd_graph,
+        export_fn=capture_pre_autograd_graph,
     )

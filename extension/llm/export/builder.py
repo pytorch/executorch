@@ -69,7 +69,7 @@ class LLMEdgeManager:
         verbose: bool = False,
         metadata: Optional[dict] = None,
         dynamic_shapes: Optional[Any] = None,
-        export_fn = capture_pre_autograd_graph,
+        export_fn=capture_pre_autograd_graph,
     ):
         self.model = model
         # graph module returned from capture_pre_autograd_graph
@@ -167,10 +167,15 @@ class LLMEdgeManager:
             # pyre-fixme[8]
             if self.export_fn == torch.export.export:
                 self.pre_autograd_graph_module = self.export_fn(
-                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape, strict=True
+                    self.model,
+                    self.example_inputs,
+                    dynamic_shapes=dynamic_shape,
+                    strict=True,
                 ).module()
             else:
-                self.pre_autograd_graph_module = self.export_fn(self.model, self.example_inputs, dynamic_shapes=dynamic_shape)
+                self.pre_autograd_graph_module = self.export_fn(
+                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape
+                )
 
         return self
 
