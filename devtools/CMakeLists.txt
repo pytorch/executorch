@@ -92,11 +92,11 @@ if(EXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT)
   # headers on the host during the build, even if we're cross-compiling the
   # flatcc runtime to a different architecture.
   execute_process(
-    COMMAND ${CMAKE_COMMAND} ${_flatcc_source_dir}
-    -DFLATCC_TEST=OFF -DFLATCC_REFLECTION=OFF
-    # See above comment about POSITION_INDEPENDENT_CODE.
-    -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-    -B${CMAKE_BINARY_DIR}/_host_build
+    COMMAND
+      ${CMAKE_COMMAND} ${_flatcc_source_dir} -DFLATCC_TEST=OFF
+      -DFLATCC_REFLECTION=OFF
+      # See above comment about POSITION_INDEPENDENT_CODE.
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON -B${CMAKE_BINARY_DIR}/_host_build
   )
   execute_process(
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}/_host_build

@@ -26,10 +26,13 @@ class TestJointGraph(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.linear = torch.nn.Linear(3, 3)
+                self.linear_no_train = torch.nn.Linear(3, 3)
+                for param in self.linear_no_train.parameters():
+                    param.requires_grad = False
                 self.loss = torch.nn.CrossEntropyLoss()
 
             def forward(self, x, y):
-                return self.loss(self.linear(x).softmax(dim=0), y)
+                return self.loss(self.linear_no_train(self.linear(x)).softmax(dim=0), y)
 
         m = Module()
         example_inputs = (torch.ones(3), torch.tensor([1.0, 0.0, 0.0]))

@@ -173,6 +173,8 @@
 
 - op: full.out
 
+- op: gather.out
+
 - op: ge.Scalar_out
 
 - op: ge.Tensor_out
@@ -274,6 +276,8 @@
 - op: permute_copy.out
 
 - op: pixel_shuffle.out
+
+- op: pixel_unshuffle.out
 
 - op: pow.Scalar_out
 

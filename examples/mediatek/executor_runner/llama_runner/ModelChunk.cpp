@@ -19,7 +19,6 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/util.h>
 
 #define ENSURE_INIT \
   ET_CHECK_MSG(Initialized(), "Error: Model chunk not initialized.");

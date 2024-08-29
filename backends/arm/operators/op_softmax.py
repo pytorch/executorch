@@ -33,7 +33,7 @@ class SoftmaxVisitor(NodeVisitor):
         input_name = inputs[0].name
         dim_order = inputs[0].dim_order
         input_shape = tosa_shape(inputs[0].shape, dim_order)
-        dim_value = dim_order.index(inputs[1].number)
+        dim_value = dim_order.index(inputs[1].number % len(dim_order))
 
         ## softmax = exp(logits - max(logits)) / reduce_sum(exp(logits - max(logits)), -1)
         # FP32
