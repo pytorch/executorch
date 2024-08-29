@@ -210,6 +210,7 @@ class ExecuTorchLlamaJni
 } // namespace executorch_jni
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
+
   return facebook::jni::initialize(
       vm, [] { executorch_jni::ExecuTorchLlamaJni::registerNatives(); });
 }
