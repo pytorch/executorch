@@ -73,7 +73,7 @@ class ExecutorchBackendConfig:
 
     # When extracting segments, the starting offset of each segment will be
     # aligned to this value (in bytes). Must be a power of two.
-    segment_alignment: int = 4096
+    segment_alignment: int = 128
 
     # If provided, the minimum alignment of tensor buffers in the program. Must
     # be a power of 2. If not provided, uses the value in the schema file.
