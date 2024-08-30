@@ -158,7 +158,7 @@ MemoryMap::MemoryMap(const VulkanBuffer& buffer, const uint8_t access)
   }
 }
 
-MemoryMap::MemoryMap(MemoryMap&& other) noexcept
+MemoryMap::MemoryMap(MemoryMap&& other)
     : access_(other.access_),
       allocator_(other.allocator_),
       allocation_(other.allocation_),
@@ -166,6 +166,19 @@ MemoryMap::MemoryMap(MemoryMap&& other) noexcept
       data_len_{other.data_len_} {
   other.allocation_ = VK_NULL_HANDLE;
   other.data_ = nullptr;
+}
+
+MemoryMap& MemoryMap::operator=(MemoryMap&& other) {
+  access_ = other.access_;
+  allocator_ = other.allocator_;
+  allocation_ = other.allocation_;
+  data_ = other.data_;
+  data_len_ = other.data_len_;
+
+  other.allocation_ = VK_NULL_HANDLE;
+  other.data_ = nullptr;
+
+  return *this;
 }
 
 MemoryMap::~MemoryMap() {

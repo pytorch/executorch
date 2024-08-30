@@ -52,7 +52,11 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   // the vkapi::vTensor metadata.
   if (graph->val_is_none(tref_)) {
     size_t numel = utils::multiply_integers(packed->sizes());
-    api::StagingBuffer staging(graph->context(), packed->dtype(), numel);
+    api::StagingBuffer staging(
+        graph->context(),
+        packed->dtype(),
+        numel,
+        vkapi::MemoryAccessType::WRITE);
     size_t nbytes = numel * vkapi::element_size(packed->dtype());
     set_staging_zeros(staging, nbytes);
     return staging;
@@ -60,7 +64,8 @@ api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
 
   TensorRefPtr tref = graph->get_tref(tref_);
   size_t numel = utils::multiply_integers(tref->sizes);
-  api::StagingBuffer staging(graph->context(), tref->dtype, numel);
+  api::StagingBuffer staging(
+      graph->context(), tref->dtype, numel, vkapi::MemoryAccessType::WRITE);
   size_t nbytes = numel * vkapi::element_size(tref->dtype);
   copy_ptr_to_staging(tref->data, staging, nbytes);
   return staging;

@@ -336,7 +336,7 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
 
 TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
   size_t len = 16;
-  StagingBuffer buffer(context(), vkapi::kFloat, len);
+  StagingBuffer buffer(context(), vkapi::kFloat, len, vkapi::MemoryAccessType::WRITE);
 
   float scale = 3.0f;
   float offset = 1.5f;
@@ -408,7 +408,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   }
 
   StagingBuffer staging_buffer(
-      context(), vkapi::kFloat, a.staging_buffer_numel());
+      context(), vkapi::kFloat, a.staging_buffer_numel(), vkapi::MemoryAccessType::WRITE);
   record_image_to_nchw_op(context(), a, staging_buffer.buffer());
 
   submit_to_gpu();
@@ -428,7 +428,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
 
 template <typename T, vkapi::ScalarType dtype>
 void test_storage_buffer_type(const size_t len) {
-  StagingBuffer buffer(context(), dtype, len);
+  StagingBuffer buffer(context(), dtype, len, vkapi::MemoryAccessType::WRITE);
 
   std::string kernel_name("idx_fill_buffer");
   switch (dtype) {
@@ -2040,7 +2040,7 @@ void run_from_gpu_test(
         vten.sizes_ubo());
   }
 
-  StagingBuffer staging_buffer(context(), dtype, vten.staging_buffer_numel());
+  StagingBuffer staging_buffer(context(), dtype, vten.staging_buffer_numel(), vkapi::MemoryAccessType::READ);
 
   if (dtype == vkapi::kChar &&
       !context()->adapter_ptr()->has_full_int8_buffers_support()) {
@@ -2074,7 +2074,7 @@ void round_trip_test(
 
   // Create and fill input staging buffer
   StagingBuffer staging_buffer_in(
-      context(), dtype, vten.staging_buffer_numel());
+      context(), dtype, vten.staging_buffer_numel(), vkapi::MemoryAccessType::WRITE);
 
   std::vector<T> data_in(staging_buffer_in.numel());
   for (int i = 0; i < staging_buffer_in.numel(); i++) {
@@ -2085,7 +2085,7 @@ void round_trip_test(
 
   // Output staging buffer
   StagingBuffer staging_buffer_out(
-      context(), dtype, vten.staging_buffer_numel());
+      context(), dtype, vten.staging_buffer_numel(), vkapi::MemoryAccessType::READ);
 
   record_nchw_to_image_op(context(), staging_buffer_in.buffer(), vten);
 
@@ -2538,7 +2538,7 @@ void test_conv2d(
 
   // Create and fill input staging buffer
   const int64_t in_numel = utils::multiply_integers(original_sizes);
-  StagingBuffer staging_buffer_in(context(), vkapi::kFloat, in_numel);
+  StagingBuffer staging_buffer_in(context(), vkapi::kFloat, in_numel, vkapi::MemoryAccessType::WRITE);
 
   std::vector<float> data_in(in_numel);
   for (int i = 0; i < in_numel; i++) {
@@ -2550,7 +2550,7 @@ void test_conv2d(
   // Output staging buffer
   const int64_t out_numel =
       padded_sizes[0] * padded_sizes[1] * original_sizes[2] * original_sizes[3];
-  StagingBuffer staging_buffer_out(context(), vkapi::kFloat, out_numel);
+  StagingBuffer staging_buffer_out(context(), vkapi::kFloat, out_numel, vkapi::MemoryAccessType::READ);
 
   // Copy data in and out of the tensor
   record_conv2d_prepack_weights_op(

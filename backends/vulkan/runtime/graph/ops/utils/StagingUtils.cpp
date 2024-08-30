@@ -75,18 +75,14 @@ void copy_ptr_to_staging(
     const void* src,
     api::StagingBuffer& staging,
     const size_t nbytes) {
-  vkapi::MemoryMap mapping(staging.buffer(), vkapi::MemoryAccessType::WRITE);
-  mapping.invalidate();
-  memcpy_to_mapping(src, mapping, nbytes, staging.dtype());
+  memcpy_to_mapping(src, staging.mapping(), nbytes, staging.dtype());
 }
 
 void copy_staging_to_ptr(
     api::StagingBuffer& staging,
     void* dst,
     const size_t nbytes) {
-  vkapi::MemoryMap mapping(staging.buffer(), vkapi::MemoryAccessType::READ);
-  mapping.invalidate();
-  memcpy_from_mapping(mapping, dst, nbytes, staging.dtype());
+  memcpy_from_mapping(staging.mapping(), dst, nbytes, staging.dtype());
 }
 
 void set_staging_zeros(api::StagingBuffer& staging, const size_t nbytes) {

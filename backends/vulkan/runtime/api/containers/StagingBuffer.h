@@ -24,18 +24,21 @@ class StagingBuffer final {
   size_t numel_;
   size_t nbytes_;
   vkapi::VulkanBuffer vulkan_buffer_;
+  vkapi::MemoryMap memory_map_;
 
  public:
   StagingBuffer(
       Context* context_p,
       const vkapi::ScalarType dtype,
-      const size_t numel)
+      const size_t numel,
+      const vkapi::MemoryAccessType access)
       : context_p_(context_p),
         dtype_(dtype),
         numel_(numel),
         nbytes_(element_size(dtype_) * numel_),
         vulkan_buffer_(
-            context_p_->adapter_ptr()->vma().create_staging_buffer(nbytes_)) {}
+            context_p_->adapter_ptr()->vma().create_staging_buffer(nbytes_)),
+        memory_map_(vulkan_buffer_, access) {}
 
   StagingBuffer(const StagingBuffer&) = delete;
   StagingBuffer& operator=(const StagingBuffer&) = delete;
@@ -53,6 +56,10 @@ class StagingBuffer final {
 
   inline vkapi::VulkanBuffer& buffer() {
     return vulkan_buffer_;
+  }
+
+  inline vkapi::MemoryMap& mapping() {
+    return memory_map_;
   }
 
   inline size_t numel() {

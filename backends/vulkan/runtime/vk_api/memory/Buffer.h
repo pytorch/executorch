@@ -174,8 +174,8 @@ class MemoryMap final {
   MemoryMap(const MemoryMap&) = delete;
   MemoryMap& operator=(const MemoryMap&) = delete;
 
-  MemoryMap(MemoryMap&&) noexcept;
-  MemoryMap& operator=(MemoryMap&&) = delete;
+  MemoryMap(MemoryMap&&);
+  MemoryMap& operator=(MemoryMap&&);
 
   ~MemoryMap();
 

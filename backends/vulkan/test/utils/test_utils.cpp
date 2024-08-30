@@ -324,7 +324,7 @@ void record_reference_matmul(
   _(int8_t, QInt8)
 
 void fill_vtensor(api::vTensor& vten, std::vector<float>& data) {
-  api::StagingBuffer staging_buffer(api::context(), vten.dtype(), data.size());
+  api::StagingBuffer staging_buffer(api::context(), vten.dtype(), data.size(), vkapi::MemoryAccessType::WRITE);
 
 #define CASE(ctype, name)                                                     \
   case vkapi::ScalarType::name: {                                             \
@@ -412,7 +412,7 @@ void fill_vtensor(
 
 void extract_vtensor(api::vTensor& vten, std::vector<float>& data) {
   api::StagingBuffer staging_buffer(
-      api::context(), vten.dtype(), vten.staging_buffer_numel());
+      api::context(), vten.dtype(), vten.staging_buffer_numel(), vkapi::MemoryAccessType::READ);
 
   if (vten.storage_type() == utils::StorageType::BUFFER) {
     record_buffer_to_nchw_op(api::context(), vten, staging_buffer.buffer());

@@ -233,10 +233,11 @@ ValueRef ComputeGraph::add_tensorref(
 
 ValueRef ComputeGraph::add_staging(
     const vkapi::ScalarType dtype,
-    const size_t numel) {
+    const size_t numel,
+    const vkapi::MemoryAccessType access) {
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
-  values_.emplace_back(api::StagingBuffer(context(), dtype, numel));
+  values_.emplace_back(api::StagingBuffer(context(), dtype, numel, access));
   return idx;
 }
 
@@ -269,7 +270,8 @@ ValueRef ComputeGraph::set_input_tensor(
     // For texture storage, the buffer size needs to account for the zero
     // padding applied by unused texel elements.
     size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
-    ValueRef staging_idx = add_staging(dtype, buf_numel);
+    ValueRef staging_idx =
+        add_staging(dtype, buf_numel, vkapi::MemoryAccessType::WRITE);
     add_staging_to_tensor_node(*this, staging_idx, idx);
     inputs_.push_back({idx, staging_idx});
     return staging_idx;
@@ -286,7 +288,8 @@ ValueRef ComputeGraph::set_output_tensor(
     // For texture storage, the buffer size needs to account for the zero
     // padding applied by unused texel elements.
     size_t buf_numel = get_tensor(idx)->staging_buffer_numel();
-    ValueRef staging_idx = add_staging(dtype, buf_numel);
+    ValueRef staging_idx =
+        add_staging(dtype, buf_numel, vkapi::MemoryAccessType::READ);
     // We only run this when the tensor is non-empty.  When the underlying
     // tensor is empty (e.g. padded_numel == 0), we do not allocate a VkImage to
     // tensor, we will not be able to bind the node for execution.
