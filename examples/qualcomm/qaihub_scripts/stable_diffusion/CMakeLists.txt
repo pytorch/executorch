@@ -19,8 +19,13 @@ target_include_directories(
   qaihub_stable_diffusion_runner PUBLIC ${_common_include_directories}
 )
 target_link_libraries(
-  qaihub_stable_diffusion_runner qnn_executorch_backend executorch_no_prim_ops
-  extension_data_loader extension_module gflags
+  qaihub_stable_diffusion_runner
+  qnn_executorch_backend
+  executorch_no_prim_ops
+  extension_data_loader
+  extension_module
+  gflags
+  re2::re2
 )
 target_compile_options(
   qaihub_stable_diffusion_runner PUBLIC ${_common_compile_options}
