@@ -31,6 +31,7 @@ from . import (  # noqa
     op_sigmoid,
     op_slice,
     op_softmax,
+    op_squeeze,
     op_sub,
     op_unsqueeze,
     op_view,
