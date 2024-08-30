@@ -22,7 +22,7 @@ namespace extension {
 /**
  * A facade class for loading programs and executing methods within them.
  */
-class Module final {
+class Module {
  public:
   /**
    * Enum to define loading behavior.
@@ -357,6 +357,8 @@ class Module final {
   std::unique_ptr<::executorch::runtime::MemoryAllocator> memory_allocator_;
   std::unique_ptr<::executorch::runtime::MemoryAllocator> temp_allocator_;
   std::unique_ptr<::executorch::runtime::EventTracer> event_tracer_;
+
+ protected:
   std::unordered_map<std::string, MethodHolder> methods_;
 };
 
