@@ -41,7 +41,7 @@ _EXTERNAL_DEPS = {
     "libtorch_python": "//third-party:libtorch_python",
     "prettytable": "//third-party:prettytable",
     "pybind11": "//third-party:pybind11",
-    "re2": [],  # TODO(larryliu0820): Add support
+    "re2": "//extension/llm/third-party:re2",
     "sentencepiece-py": [],
     # Core C++ PyTorch functionality like Tensor and ScalarType.
     "torch-core-cpp": "//third-party:libtorch",

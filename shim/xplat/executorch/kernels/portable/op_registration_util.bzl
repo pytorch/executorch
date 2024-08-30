@@ -980,6 +980,13 @@ ATEN_OPS = (
         deps = [":scalar_utils"],
     ),
     op_target(
+        name = "op_scatter",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:index_util",
+        ],
+    ),
+    op_target(
         name = "op_scatter_add",
         deps = [
             "//executorch/kernels/portable/cpu/util:index_util",

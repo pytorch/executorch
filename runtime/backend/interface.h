@@ -110,46 +110,6 @@ class PyTorchBackendInterface {
   virtual void destroy(ET_UNUSED DelegateHandle* handle) const {}
 };
 
-struct Backend {
-  const char* name_;
-  PyTorchBackendInterface* interface_ptr_;
-};
-
-// The max number of backends that can be registered in
-// an app. It's hard coded to 16 because it's not estimated
-// to have more than 16 backends in a system. Each table
-// element has two pointers, represented by Backend struct.
-// The memory overhead for this table is minimum (only a few bytes).
-constexpr size_t kRegistrationTableMaxSize = 16;
-
-class BackendRegistry {
- public:
-  BackendRegistry() : registrationTableSize_(0) {}
-
-  /**
-   * Registers the Backend object (i.e. string name and PyTorchBackendInterface
-   * pair) so that it could be called via the name during the runtime.
-   * @param[in] backend Backend object of the user-defined backend delegate.
-   * @retval Error code representing whether registration was successful.
-   */
-  ET_NODISCARD Error register_backend(const Backend& backend);
-
-  /**
-   * Returns the corresponding object pointer for a given string name.
-   * The mapping is populated using register_backend method.
-   *
-   * @param[in] name Name of the user-defined backend delegate.
-   * @retval Pointer to the appropriate object that implements
-   *         PyTorchBackendInterface. Nullptr if it can't find anything
-   *         with the given name.
-   */
-  PyTorchBackendInterface* get_backend_class(const char* name);
-
- private:
-  Backend backend_table_[kRegistrationTableMaxSize];
-  size_t registrationTableSize_;
-};
-
 /**
  * Returns the corresponding object pointer for a given string name.
  * The mapping is populated using register_backend method.
@@ -160,6 +120,16 @@ class BackendRegistry {
  *         with the given name.
  */
 PyTorchBackendInterface* get_backend_class(const char* name);
+
+/**
+ * A named instance of a backend.
+ */
+struct Backend {
+  /// The name of the backend. Must match the string used in the PTE file.
+  const char* name;
+  /// The instance of the backend to use when loading and executing programs.
+  PyTorchBackendInterface* backend;
+};
 
 /**
  * Registers the Backend object (i.e. string name and PyTorchBackendInterface
@@ -178,11 +148,9 @@ namespace executor {
 // TODO(T197294990): Remove these deprecated aliases once all users have moved
 // to the new `::executorch` namespaces.
 using ::executorch::runtime::Backend;
-using ::executorch::runtime::BackendRegistry;
 using ::executorch::runtime::CompileSpec;
 using ::executorch::runtime::DelegateHandle;
 using ::executorch::runtime::get_backend_class;
-// using ::executorch::runtime::kRegistrationTableMaxSize;
 using ::executorch::runtime::PyTorchBackendInterface;
 using ::executorch::runtime::register_backend;
 using ::executorch::runtime::SizedBuffer;

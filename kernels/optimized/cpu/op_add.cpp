@@ -83,7 +83,8 @@ Tensor& opt_add_out(
   ScalarType out_type = out.scalar_type();
 
   if (b.numel() == 1) {
-    if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half && a_type != ScalarType::BFloat16) {
+    if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
+        a_type != ScalarType::BFloat16) {
       auto error = resize_tensor(out, a.sizes());
       ET_KERNEL_CHECK_MSG(
           ctx,

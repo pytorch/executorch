@@ -305,7 +305,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp32]
-        model: [dl3]
+        model: [dl3, mv3, mv2, ic4, ic3]
       fail-fast: false
     with:
       runner: linux.2xlarge
