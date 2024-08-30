@@ -71,10 +71,13 @@ def main(args):
         )
 
     data_num = 100
-    inputs, targets, input_list = get_dataset(
-        dataset_path=f"{args.dataset}",
-        data_size=data_num,
-    )
+    if args.compile_only:
+        inputs = [(torch.rand(1, 3, 224, 224),)]
+    else:
+        inputs, targets, input_list = get_dataset(
+            dataset_path=f"{args.dataset}",
+            data_size=data_num,
+        )
     pte_filename = "mv2_qnn"
     instance = MV2Model()
     build_executorch_binary(
@@ -142,7 +145,7 @@ if __name__ == "__main__":
             "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
         ),
         type=str,
-        required=True,
+        required=False,
     )
 
     parser.add_argument(
