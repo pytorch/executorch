@@ -71,8 +71,6 @@
 		84DD94A02C81061100C765A6 /* LLaMARunner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */; };
 		84DD94A12C81061100C765A6 /* LLaMARunner.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		84DD94AF2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84DD94AE2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.swift */; };
-		84DD94B82C811E8B00C765A6 /* llama2.pte in Resources */ = {isa = PBXBuildFile; fileRef = 84DD94B62C811E8B00C765A6 /* llama2.pte */; };
-		84DD94B92C811E8B00C765A6 /* tokenizer.bin in Resources */ = {isa = PBXBuildFile; fileRef = 84DD94B72C811E8B00C765A6 /* tokenizer.bin */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -163,8 +161,6 @@
 		84DD94A72C8107AB00C765A6 /* LLaMAPerfBenchmark.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LLaMAPerfBenchmark.entitlements; sourceTree = "<group>"; };
 		84DD94AC2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LLaMAPerfBenchmarkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		84DD94AE2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLaMAPerfBenchmarkTests.swift; sourceTree = "<group>"; };
-		84DD94B62C811E8B00C765A6 /* llama2.pte */ = {isa = PBXFileReference; lastKnownFileType = file; path = llama2.pte; sourceTree = "<group>"; };
-		84DD94B72C811E8B00C765A6 /* tokenizer.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = tokenizer.bin; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -384,19 +380,9 @@
 		84DD94AD2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests */ = {
 			isa = PBXGroup;
 			children = (
-				84DD94B52C811E6800C765A6 /* Resources */,
 				84DD94AE2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.swift */,
 			);
 			path = LLaMAPerfBenchmarkTests;
-			sourceTree = "<group>";
-		};
-		84DD94B52C811E6800C765A6 /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				84DD94B62C811E8B00C765A6 /* llama2.pte */,
-				84DD94B72C811E8B00C765A6 /* tokenizer.bin */,
-			);
-			path = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -609,8 +595,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				84DD94B82C811E8B00C765A6 /* llama2.pte in Resources */,
-				84DD94B92C811E8B00C765A6 /* tokenizer.bin in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

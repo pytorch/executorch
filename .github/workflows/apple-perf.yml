@@ -213,16 +213,10 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs:
       - set-parameters
-      # TODO (huydhn): Unlike Android, iOS export model is packaged together with the test suite,
-      # so we need to wait for the model to become available before we can prepare the test. Try
-      # to figure out a way to copy the export model to the device as extra data archive instead
-      - upload-models
     secrets: inherit
     strategy:
       matrix:
           tokenizer: [bpe]
-          model: ${{ fromJson(needs.set-parameters.outputs.models) }}
-          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
@@ -258,10 +252,6 @@ jobs:
           backends/apple/mps/install_requirements.sh
         echo "::endgroup::"
 
-        # Download the export model from the previous job
-        curl "https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip" -o model.zip
-        unzip model.zip
-
         ${CONDA_RUN} --no-capture-output \
           build/build_apple_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
 
@@ -296,6 +286,7 @@ jobs:
     needs:
       - set-parameters
       - upload-ios-apps
+      - upload-models
     permissions:
       id-token: write
       contents: read
@@ -317,3 +308,4 @@ jobs:
       ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMAPerfBenchmark.ipa
       ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMAPerfBenchmark.xctestrun.zip
       test-spec: ${{ inputs.test_spec || 'https://ossci-ios.s3.amazonaws.com/executorch/default-ios-device-farm-appium-test-spec.yml' }}
+      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
