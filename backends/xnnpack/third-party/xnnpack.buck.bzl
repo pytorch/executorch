@@ -1,7 +1,6 @@
 load("//third-party:glob_defs.bzl", "subdir_glob")
 load(
     ":xnnpack_src_defs.bzl",
-    "JIT_SRCS",
     "LOGGING_SRCS",
     "OPERATOR_SRCS",
     "SUBGRAPH_SRCS",
@@ -71,27 +70,6 @@ def define_xnnpack():
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
-        name = "jit_memory",
-        srcs = JIT_SRCS,
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-        ]),
-        header_namespace = "",
-        compiler_flags = [
-            "-std=c++17",
-        ],
-        preferred_linkage = "static",
-        preprocessor_flags = [
-            "-DXNN_LOG_LEVEL=0",
-        ],
-        exported_deps = [
-            ":clog",
-            ":interface",
-        ],
-    )
-
-    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
-    native.cxx_library(
         name = "operators",
         srcs = OPERATOR_SRCS + [
             "XNNPACK/src/allocator.c",
@@ -139,7 +117,6 @@ def define_xnnpack():
         preferred_linkage = "static",
         preprocessor_flags = [
             "-DXNN_LOG_LEVEL=0",
-            "-DXNN_ENABLE_JIT=0",
             "-DXNN_ENABLE_SPARSE=0",
             "-DXNN_ENABLE_GEMM_M_SPECIALIZATION=0",
             "-DXNN_ENABLE_MEMOPT",
@@ -1223,7 +1200,6 @@ def define_xnnpack():
     ]
 
     ARM_XNNPACK_DEPS = [
-        ":jit_memory",
         ":ukernels_armsimd32",
         ":ukernels_fp16arith",
         ":ukernels_asm",
@@ -1246,11 +1222,10 @@ def define_xnnpack():
             "XNNPACK/src/configs/hardware-config.c",
             "XNNPACK/src/microparams-init.c",
             "XNNPACK/src/operator-run.c",
-            "XNNPACK/src/operators/post-operation.c",
             "XNNPACK/src/microkernel-utils.c",
         ],
         headers = subdir_glob([
-            ("XNNPACK/src", "xnnpack/*.h"),
+            ("XNNPACK/src", "**/*.h"),
             ("XNNPACK/include", "**/*.h"),
         ]),
         exported_headers = {
@@ -1271,7 +1246,6 @@ def define_xnnpack():
             "-DXNN_NO_X8_OPERATORS",
             "-DXNN_ENABLE_MEMOPT",
             "-DXNN_ENABLE_SPARSE=0",
-            "-DXNN_ENABLE_JIT=0",
             "-DXNN_ENABLE_ASSEMBLY",
             "-DXNN_ENABLE_GEMM_M_SPECIALIZATION",
             "-DXNN_ENABLE_ARM_DOTPROD",
