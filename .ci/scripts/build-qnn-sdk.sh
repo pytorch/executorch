@@ -6,6 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 set -eux
+set -o xtrace
 
 build_qnn_backend() {
   echo "Start building qnn backend."
