@@ -88,7 +88,8 @@ class LLMEdgeManager:
         self.output_dir = "."
         self.dynamic_shapes = dynamic_shapes
         self._saved_pte_filename = None
-        logging.info(f"Applying export function: {export_fn}")
+        logging.info(f"Applying export function: {export_fn.__name__}")
+
         self.export_fn = export_fn
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":

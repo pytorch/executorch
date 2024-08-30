@@ -670,5 +670,5 @@ def _load_llama_model(
             model.params,
             metadata_str,
         ),
-        export_fn=capture_pre_autograd_graph,
+        export_fn=export_fn,
     )
