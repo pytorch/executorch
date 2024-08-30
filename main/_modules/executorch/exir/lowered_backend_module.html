@@ -608,7 +608,7 @@
 <div class="viewcode-block" id="LoweredBackendModule.buffer"><a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule.buffer">[docs]</a>    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">extract_delegate_segments</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="n">segment_alignment</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4096</span><span class="p">,</span>
+        <span class="n">segment_alignment</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">128</span><span class="p">,</span>
         <span class="n">constant_tensor_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">delegate_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">memory_planning</span><span class="p">:</span> <span class="n">MemoryPlanningPass</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># pyre-fixme[9]</span>
