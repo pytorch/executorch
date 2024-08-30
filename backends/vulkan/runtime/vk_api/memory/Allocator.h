@@ -67,8 +67,6 @@ class Allocator final {
       const bool gpu_only = true,
       const bool allocate_memory = true);
 
-  VulkanBuffer create_staging_buffer(const VkDeviceSize);
-
   /*
    * Create a uniform buffer with a specified size
    */
