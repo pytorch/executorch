@@ -16,11 +16,8 @@
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
-#if ET_USE_TIKTOKEN
 #include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
-#else /* BPE */
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
-#endif /* ET_USE_TIKTOKEN*/
 
 namespace torch::executor {
 namespace {
@@ -46,13 +43,6 @@ Runner::Runner(
     : temperature_(temperature),
       module_(std::make_unique<Module>(model_path, Module::LoadMode::File)),
       tokenizer_path_(tokenizer_path),
-      tokenizer_(
-#if ET_USE_TIKTOKEN
-          get_tiktoken_for_llama()
-#else
-          std::make_unique<BPETokenizer>()
-#endif
-              ),
       metadata_({
           {kAppendEosToPrompt, false},
           {kEnableDynamicShape, false},
@@ -79,8 +69,19 @@ Error Runner::load() {
     return Error::Ok;
   }
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
-
-  tokenizer_->load(tokenizer_path_);
+  // load tokenizer
+  tokenizer_ = nullptr;
+  tokenizer_ = std::make_unique<BPETokenizer>();
+  Error err = tokenizer_->load(tokenizer_path_);
+  if (err == Error::InvalidArgument) {
+    ET_LOG(
+        Info,
+        "Failed to load %s as a BPETokenizer artifact, trying Tiktoken",
+        tokenizer_path_.c_str());
+    tokenizer_.reset();
+    tokenizer_ = get_tiktoken_for_llama();
+    tokenizer_->load(tokenizer_path_);
+  }
 
   ET_LOG(Info, "Reading metadata from model");
 
