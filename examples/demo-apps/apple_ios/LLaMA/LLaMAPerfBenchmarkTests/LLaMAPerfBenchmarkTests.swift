@@ -12,14 +12,22 @@ import LLaMARunner
 final class LLaMAPerfBenchmarkTests: XCTestCase {
   func testLlama2() throws {
     guard
-        let modelPath = Bundle.main.path(forResource: "llama2", ofType: "pte")
+      let modelPath = Bundle.main.path(
+        forResource: "llama2",
+        ofType: "pte",
+        inDirectory: "aatp/data"
+      )
     else {
       XCTFail("Failed to get model path")
       return
     }
 
     guard
-      let tokenizerPath = Bundle.main.path(forResource: "tokenizer", ofType: "bin")
+      let tokenizerPath = Bundle.main.path(
+        forResource: "tokenizer",
+        ofType: "bin",
+        inDirectory: "aatp/data"
+      )
     else {
       XCTFail("Failed to get tokenizer path")
       return

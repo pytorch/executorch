@@ -142,13 +142,6 @@ jobs:
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
           .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
-        if [[ ${{ matrix.delegate }} == "qnn" ]]; then
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output bash \
-            .ci/scripts/setup-qnn-deps.sh
-          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output bash \
-            .ci/scripts/build-qnn-sdk.sh
-        fi
-
         if [[ ${{ matrix.delegate }} == "coreml" ]]; then
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             backends/apple/coreml/scripts/install_requirements.sh
@@ -178,6 +171,7 @@ jobs:
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
         else
+          # TODO (huydhn): Extend the export script here to support other backends such as coreml, mps
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash .ci/scripts/test.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
         fi
