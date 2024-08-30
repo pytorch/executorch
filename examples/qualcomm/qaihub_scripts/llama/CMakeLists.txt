@@ -31,7 +31,7 @@ target_include_directories(
 )
 target_link_libraries(
   qaihub_llama2_7b_runner qnn_executorch_backend executorch_no_prim_ops
-  extension_data_loader extension_module gflags
+  extension_data_loader extension_module gflags re2::re2
 )
 target_compile_options(
   qaihub_llama2_7b_runner PUBLIC ${_common_compile_options}
@@ -71,7 +71,6 @@ list(
   _qaihub_llama3_8b_runner__srcs
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../models/llama2/tokenizer/llama_tiktoken.cpp
 )
-set(_preprocessor_flag -DET_USE_TIKTOKEN)
 
 # build qaihub llama3 8b runner
 add_executable(qaihub_llama3_8b_runner ${_qaihub_llama3_8b_runner__srcs})
