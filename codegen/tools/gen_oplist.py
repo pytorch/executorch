@@ -300,14 +300,33 @@ def main(args: List[Any]) -> None:
     )
     options = parser.parse_args(args)
 
-    gen_oplist(
-        output_path=options.output_path,
-        model_file_path=options.model_file_path,
-        ops_schema_yaml_path=options.ops_schema_yaml_path,
-        root_ops=options.root_ops,
-        ops_dict=options.ops_dict,
-        include_all_operators=options.include_all_operators,
-    )
+    try:
+        gen_oplist(
+            output_path=options.output_path,
+            model_file_path=options.model_file_path,
+            ops_schema_yaml_path=options.ops_schema_yaml_path,
+            root_ops=options.root_ops,
+            ops_dict=options.ops_dict,
+            include_all_operators=options.include_all_operators,
+        )
+    except Exception as e:
+        command = ["python codegen/tools/gen_oplist.py"]
+        if options.model_file_path:
+            command.append(f"--model_file_path {options.model_file_path}")
+        if options.ops_schema_yaml_path:
+            command.append(f"--ops_schema_yaml_path {options.ops_schema_yaml_path}")
+        if options.root_ops:
+            command.append(f"--root_ops {options.root_ops}")
+        if options.ops_dict:
+            command.append(f"--ops_dict {options.ops_dict}")
+        if options.include_all_operators:
+            command.append("--include-all-operators")
+        repro_command = " ".join(command)
+        raise RuntimeError(
+            f"""Failed to generate selected_operators.yaml. Repro command:
+            {repro_command}
+            """
+        ) from e
 
 
 if __name__ == "__main__":
