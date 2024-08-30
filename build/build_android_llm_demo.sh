@@ -91,11 +91,17 @@ build_aar() {
   popd
 }
 
-build_android_llm_demo_app() {
+build_android_demo_apps() {
   mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
   cp ${BUILD_AAR_DIR}/executorch-llama.aar examples/demo-apps/android/LlamaDemo/app/libs
   pushd examples/demo-apps/android/LlamaDemo
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
+  popd
+
+  mkdir -p examples/demo-apps/android/MiniBench/app/libs
+  cp ${BUILD_AAR_DIR}/executorch.aar examples/demo-apps/android/LlamaDemo/app/libs
+  pushd examples/demo-apps/android/MiniBench
+  ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build
   popd
 }
 
@@ -116,6 +122,10 @@ collect_artifacts_to_be_uploaded() {
   # Collect JAR and AAR
   cp extension/android/build/libs/executorch.jar "${DEMO_APP_DIR}"
   find "${BUILD_AAR_DIR}/" -name 'executorch*.aar' -exec cp {} "${DEMO_APP_DIR}" \;
+  # Collect MiniBench APK
+  MINIBENCH_APP_DIR="${ARTIFACTS_DIR_NAME}/minibench"
+  mkdir -p "${MINIBENCH_APP_DIR}"
+  cp examples/demo-apps/android/MiniBench/app/build/outputs/apk/debug/*.apk "${MINIBENCH_APP_DIR}"
 }
 
 BUILD_AAR_DIR="$(mktemp -d)"
@@ -130,5 +140,5 @@ for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
   build_android_native_library ${ANDROID_ABI}
 done
 build_aar
-build_android_llm_demo_app
+build_android_demo_apps
 collect_artifacts_to_be_uploaded ${ARTIFACTS_DIR_NAME}
