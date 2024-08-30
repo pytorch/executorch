@@ -12,6 +12,7 @@ import sys
 from multiprocessing.connection import Client
 
 import numpy as np
+import torch
 
 from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
@@ -74,9 +75,13 @@ def main(args):
         )
 
     data_num = 100
-    inputs, targets, input_list = get_dataset(
-        data_size=data_num, dataset_dir=args.artifact, download=args.download
-    )
+    if args.compile_only:
+        inputs = [(torch.rand(1, 3, 224, 224),)]
+    else:
+        inputs, targets, input_list = get_dataset(
+            data_size=data_num, dataset_dir=args.artifact, download=args.download
+        )
+
     pte_filename = "dlv3_qnn"
     instance = DeepLabV3ResNet101Model()
 
