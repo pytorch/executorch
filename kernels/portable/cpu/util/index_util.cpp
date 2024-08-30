@@ -191,6 +191,15 @@ bool check_scatter_add_args(
   return true;
 }
 
+bool check_scatter_value_args(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Scalar& value,
+    Tensor& out) {
+  return check_gather_args(self, dim, index, false, out);
+}
+
 bool check_select_scatter_args(
     const Tensor& in,
     const Tensor& src,

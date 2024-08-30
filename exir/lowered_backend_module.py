@@ -137,7 +137,7 @@ class LoweredBackendModule(torch.nn.Module):
     def buffer(
         self,
         extract_delegate_segments: bool = False,
-        segment_alignment: int = 4096,
+        segment_alignment: int = 128,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
         memory_planning: MemoryPlanningPass = None,  # pyre-fixme[9]
