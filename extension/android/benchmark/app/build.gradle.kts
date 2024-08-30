@@ -8,8 +8,8 @@ android {
 
     defaultConfig {
         applicationId = "org.pytorch.minibench"
-        minSdk = 24
-        targetSdk = 34
+        minSdk = 28
+        targetSdk = 33
         versionCode = 1
         versionName = "1.0"
 
