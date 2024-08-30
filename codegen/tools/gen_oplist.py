@@ -230,7 +230,7 @@ def gen_oplist(
     if model_file_path:
         assert os.path.isfile(
             model_file_path
-        ), "The value for --model_file_path needs to be a valid file."
+        ), f"The value for --model_file_path needs to be a valid file, got {model_file_path}"
         op_set.update(_get_operators(model_file_path))
         source_name = model_file_path
         et_kernel_metadata = merge_et_kernel_metadata(
@@ -239,7 +239,7 @@ def gen_oplist(
     if ops_schema_yaml_path:
         assert os.path.isfile(
             ops_schema_yaml_path
-        ), "The value for --ops_schema_yaml_path needs to be a valid file."
+        ), f"The value for --ops_schema_yaml_path needs to be a valid file, got {ops_schema_yaml_path}"
         et_kernel_metadata = merge_et_kernel_metadata(
             et_kernel_metadata,
             _get_et_kernel_metadata_from_ops_yaml(ops_schema_yaml_path),
