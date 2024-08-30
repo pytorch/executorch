@@ -67,6 +67,7 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.view_copy.default,
             exir_ops.edge.aten.clone.default,
             exir_ops.edge.aten.mean.dim,
+            exir_ops.edge.aten.var.correction,
             exir_ops.edge.aten.unsqueeze_copy.default,
             exir_ops.edge.aten.squeeze_copy.dims,
             operator.getitem,
@@ -86,6 +87,9 @@ class TOSASupportedOperators(OperatorSupportBase):
     def is_node_supported_custom(self, node: torch.fx.Node) -> bool:
         if node.target == exir_ops.edge.aten.mean.dim:
             keep_dim = node.args[2] if len(node.args) > 2 else False
+            return keep_dim
+        if node.target == exir_ops.edge.aten.var.correction:
+            keep_dim = node.kwargs.get("keepdim", False)
             return keep_dim
         return True
 
