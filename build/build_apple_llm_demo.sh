@@ -44,6 +44,7 @@ BUILD_DIR=$(xcodebuild -showBuildSettings -project "$APP_PATH.xcodeproj" -json |
 
 # Prepare the demo app, debug mode here is the default from xcodebuild and match
 # with what we have in the test spec
+# TODO (huydhn): See if we can switch to release mode here
 MODE="Debug"
 PLATFORM="iphoneos"
 pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
