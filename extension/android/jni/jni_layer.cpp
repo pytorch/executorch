@@ -357,7 +357,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     auto&& load_result = module_->load_method("forward");
     auto&& buf = prepare_input_tensors(*(module_->methods_["forward"].method));
     auto&& result = module_->methods_["forward"].method->execute();
-    return (jint) result;
+    return (jint)result;
   }
 
   static void registerNatives() {

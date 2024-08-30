@@ -39,7 +39,9 @@ class NativePeer {
   @DoNotStrip
   public native EValue[] forward(EValue... inputs);
 
-  /** Run a "forward" call with the sample inputs (ones) to test a module
+  /**
+   * Run a "forward" call with the sample inputs (ones) to test a module
+   *
    * @return the outputs of the forward call
    * @apiNote This is experimental and test-only API
    */
