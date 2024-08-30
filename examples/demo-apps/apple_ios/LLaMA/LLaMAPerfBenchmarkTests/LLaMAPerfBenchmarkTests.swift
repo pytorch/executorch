@@ -11,8 +11,19 @@ import LLaMARunner
 
 final class LLaMAPerfBenchmarkTests: XCTestCase {
   func testLlama2() throws {
-    let modelPath = NSHomeDirectory() + "/llama2.pte"
-    let tokenizerPath = NSHomeDirectory() + "/tokenizer.bin"
+    guard
+        let modelPath = Bundle.main.path(forResource: "llama2", ofType: "pte")
+    else {
+      XCTFail("Failed to get model path")
+      return
+    }
+
+    guard
+      let tokenizerPath = Bundle.main.path(forResource: "tokenizer", ofType: "bin")
+    else {
+      XCTFail("Failed to get tokenizer path")
+      return
+    }
 
     let runner = Runner(modelPath: modelPath, tokenizerPath: tokenizerPath)
     do {
