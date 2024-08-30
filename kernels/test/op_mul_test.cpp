@@ -134,8 +134,8 @@ class OpMulOutTest : public OperatorTest {
     TensorFactory<DTYPE> tf_a;
 
     std::vector<std::vector<int32_t>> b_sizeses = {
-      {2},
-      {1, 2},
+        {2},
+        {1, 2},
     };
     for (const auto& b_sizes : b_sizeses) {
       // a and b of different shapes
