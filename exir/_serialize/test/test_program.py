@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import copy
 import difflib
 import json
@@ -36,7 +38,7 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tests.common import get_test_program
 
-SEGMENT_ALIGNMENT: int = 4096
+SEGMENT_ALIGNMENT: int = 128
 
 CONSTANT_TENSOR_ALIGNMENT: int = 16
 
