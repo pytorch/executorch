@@ -227,8 +227,6 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
     cmake --build cmake-out/examples/models/llama2 -j16 --config Release
     ```
 
-For Llama3, add `-DEXECUTORCH_USE_TIKTOKEN=ON` option when building the llama runner.
-
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L18-L40).
     ```
     cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
@@ -283,7 +281,6 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
 
 cmake --build cmake-out-android/examples/models/llama2 -j16 --config Release
 ```
-For Llama3, add `-DEXECUTORCH_USE_TIKTOKEN=ON` option when building the llama runner.
 
 **2. Run on Android via adb shell**
 
