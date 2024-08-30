@@ -321,6 +321,8 @@
 
 - op: scalar_tensor.out
 
+- op: scatter.value_out
+
 - op: scatter_add.out
 
 - op: select_copy.int_out
