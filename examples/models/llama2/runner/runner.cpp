@@ -142,6 +142,7 @@ Error Runner::load() {
 Error Runner::generate(
     const std::string& prompt,
     int32_t seq_len,
+    bool echo,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
   // Prepare the inputs.
@@ -212,7 +213,9 @@ Error Runner::generate(
   uint64_t cur_token = prefill_res.get();
 
   // print the first token from prefill. No prev_token so use cur_token for it.
-  wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
+  if (echo) {
+    wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
+  }
 
   // start the main loop
   prompt_tokens.push_back(cur_token);

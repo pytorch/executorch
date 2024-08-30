@@ -39,6 +39,7 @@ class Runner {
   Error generate(
       const std::string& prompt,
       int32_t seq_len = 128,
+      bool echo = true,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
   void stop();
