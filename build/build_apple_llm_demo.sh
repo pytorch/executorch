@@ -17,7 +17,6 @@ if [[ "${TOKENIZER}" = "bpe" ]]; then
     -project "${APP_PATH}.xcodeproj" \
     -scheme LLaMAPerfBenchmark \
     -destination platform="iOS" \
-    -configuration Release \
     -allowProvisioningUpdates \
     DEVELOPMENT_TEAM=78E7V7QP35 \
     CODE_SIGN_STYLE=Manual \
@@ -25,13 +24,12 @@ if [[ "${TOKENIZER}" = "bpe" ]]; then
     CODE_SIGN_IDENTITY="iPhone Distribution" \
     CODE_SIGNING_REQUIRED=No \
     CODE_SIGNING_ALLOWED=No \
-    GCC_PREPROCESSOR_DEFINITIONS="ET_USE_TIKTOKEN=0"
+    GCC_PREPROCESSOR_DEFINITIONS="DEBUG=1 ET_USE_TIKTOKEN=0"
 else
   xcodebuild build-for-testing \
     -project "${APP_PATH}.xcodeproj" \
     -scheme LLaMAPerfBenchmark \
     -destination platform="iOS" \
-    -configuration Release \
     -allowProvisioningUpdates \
     DEVELOPMENT_TEAM=78E7V7QP35 \
     CODE_SIGN_STYLE=Manual \
@@ -44,8 +42,9 @@ fi
 # The hack to figure out where the xctest package locates
 BUILD_DIR=$(xcodebuild -showBuildSettings -project "$APP_PATH.xcodeproj" -json | jq -r ".[0].buildSettings.BUILD_DIR")
 
-# Prepare the demo app
-MODE="Release"
+# Prepare the demo app, debug mode here is the default from xcodebuild and match
+# with what we have in the test spec
+MODE="Debug"
 PLATFORM="iphoneos"
 pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
 
