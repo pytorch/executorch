@@ -1,6 +1,8 @@
 name: apple-perf
 
 on:
+  # DEBUG: TO BE REMOVE
+  pull_request:
   schedule:
     - cron: 0 1 * * *
   # Note: GitHub has an upper limit of 10 inputs
