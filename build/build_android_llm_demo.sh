@@ -87,13 +87,14 @@ build_aar() {
   find jni -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
   # Zip all necessary files into the AAR file
   zip -r executorch.aar libs jni/*/libexecutorch.so AndroidManifest.xml
-  zip -r executorch-llama.aar libs jni/*/libexecutorch_llama_jni.so AndroidManifest.xml
+  zip -r executorch-llama.aar libs jni/*/libexecutorch_llama_jni.so jni/*/libexecutorch.so AndroidManifest.xml
   popd
 }
 
 build_android_llm_demo_app() {
   mkdir -p examples/demo-apps/android/LlamaDemo/app/libs
   cp ${BUILD_AAR_DIR}/executorch-llama.aar examples/demo-apps/android/LlamaDemo/app/libs
+  cp ${BUILD_AAR_DIR}/executorch-llama.aar extension/android/benchmark/app/libs/executorch.aar
   pushd examples/demo-apps/android/LlamaDemo
   ANDROID_HOME="${ANDROID_SDK:-/opt/android/sdk}" ./gradlew build assembleAndroidTest
   popd
@@ -120,7 +121,7 @@ collect_artifacts_to_be_uploaded() {
 
 BUILD_AAR_DIR="$(mktemp -d)"
 export BUILD_AAR_DIR
-ANDROID_ABIS=("arm64-v8a" "x86_64")
+ANDROID_ABIS=("x86_64")
 export ANDROID_ABIS
 
 ARTIFACTS_DIR_NAME="$1"

@@ -70,14 +70,7 @@ if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
 endif()
 
-add_library(executorch_jni SHARED jni/jni_layer.cpp)
-target_link_libraries(executorch_jni ${link_libraries})
-target_include_directories(
-  executorch_jni PRIVATE ${_common_include_directories}
-)
-target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
-if(EXECUTORCH_BUILD_LLAMA_JNI)
   set(LLAMA_RUNNER_PATH
       ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/runner/libllama_runner.a
   )
@@ -100,7 +93,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
 
   target_link_options_shared_lib(quantized_ops_lib)
 
-  set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp)
+  set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp jni/jni_layer.cpp)
   add_library(executorch_llama_jni SHARED ${LLAMA_JNI_SRCS})
   if(TARGET pthreadpool)
     target_compile_definitions(executorch_llama_jni PRIVATE ET_USE_THREADPOOL=1)
@@ -144,4 +137,3 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   )
   set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
   target_link_libraries(executorch_llama_jni re2::re2)
-endif()

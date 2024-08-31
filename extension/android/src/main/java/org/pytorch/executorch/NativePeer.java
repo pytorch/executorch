@@ -17,7 +17,7 @@ import java.util.Map;
 class NativePeer {
   static {
     // Loads libexecutorch.so from jniLibs
-    NativeLoader.loadLibrary("executorch");
+    NativeLoader.loadLibrary("executorch_llama_jni");
   }
 
   private final HybridData mHybridData;
