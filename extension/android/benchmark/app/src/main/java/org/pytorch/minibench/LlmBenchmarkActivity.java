@@ -51,7 +51,7 @@ public class LlmBenchmarkActivity extends Activity implements ModelRunnerCallbac
             return;
         }
         mStatsDump.generateStart = System.currentTimeMillis();
-        mModelRunner.generate(mPrompt);
+        int generateStatus = mModelRunner.generate(mPrompt);
     }
 
     @Override
