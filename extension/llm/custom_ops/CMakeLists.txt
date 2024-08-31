@@ -47,17 +47,10 @@ list(APPEND custom_ops_libs eigen_blas)
 
 list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
-# TODO: Consider moving xnnpack/threadpool in a separate lib since it's now used
-# by custom ops too.
 if(NOT EXECUTORCH_BUILD_XNNPACK)
-  list(
-    APPEND
-    _custom_ops__srcs
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/threadpool/threadpool.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/threadpool/threadpool_guard.cpp"
-  )
+  list(APPEND custom_ops_libs extension_threadpool)
 else()
-  list(APPEND custom_ops_libs xnnpack_backend)
+  list(APPEND custom_ops_libs extension_threadpool xnnpack_backend)
 endif()
 
 add_library(custom_ops ${_custom_ops__srcs})

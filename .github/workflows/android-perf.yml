@@ -84,7 +84,7 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: "dl3,mv3,mv2,ic4,ic3"
+          CRON_DEFAULT_MODELS: "stories110M,dl3,mv3,mv2,ic4,ic3"
           CRON_DEFAULT_DEVICES: "samsung_galaxy_s2x"
           CRON_DEFAULT_DELEGATES: "xnnpack,qnn"
         run: |
@@ -162,6 +162,11 @@ jobs:
             # Test llama2
             if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
                 DELEGATE_CONFIG="xnnpack+custom+qe"
+            elif [[ ${{ matrix.delegate }} == "qnn" ]]; then
+                DELEGATE_CONFIG="qnn"
+            else
+                echo "Unsupported delegate ${{ matrix.delegate }}"
+                exit 1
             fi
             PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
         else
@@ -201,9 +206,6 @@ jobs:
     name: build-llm-demo
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     needs: set-parameters
-    strategy:
-      matrix:
-          tokenizer: [bpe]
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
@@ -222,7 +224,7 @@ jobs:
 
         # TODO: This needs to be replaced with a generic loader .apk
         # Build LLM Demo for Android
-        bash build/build_android_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
+        bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
   # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-android-apps:
