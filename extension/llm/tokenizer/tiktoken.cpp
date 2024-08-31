@@ -252,7 +252,11 @@ Tiktoken::_split_with_allowed_special_token(
     return std::make_pair(std::nullopt, input);
   }
 
+#if __cplusplus >= 202002L
   auto start = input.begin();
+#else
+  const char* start = input.data();
+#endif
   std::string special;
   while (true) {
     if (!re2::RE2::FindAndConsume(&input, *_special_token_regex, &special)) {
@@ -262,9 +266,15 @@ Tiktoken::_split_with_allowed_special_token(
 
     if (allowed_special.count(special) == 1) {
       // Found an allowed special token, split the text with it.
+#if __cplusplus >= 202002L
       return std::make_pair(
           special,
           re2::StringPiece(start, input.begin() - start - special.size()));
+#else
+      return std::make_pair(
+          special,
+          re2::StringPiece(start, (input.data() - start) - special.size()));
+#endif
     } // else try to find the next special token
   }
 
