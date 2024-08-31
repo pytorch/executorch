@@ -18,6 +18,7 @@
 #include "jni_layer_constants.h"
 
 #include <executorch/extension/module/module.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 #include <executorch/runtime/platform/log.h>
@@ -56,7 +57,7 @@ void et_pal_emit_log_message(
 
 using namespace torch::executor;
 
-namespace executorch_jni {
+namespace executorch::extension {
 class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
  public:
   constexpr static const char* kJavaDescriptor =
@@ -352,19 +353,26 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     return jresult;
   }
 
+  jint forward_ones() {
+    auto&& load_result = module_->load_method("forward");
+    auto&& buf = prepare_input_tensors(*(module_->methods_["forward"].method));
+    auto&& result = module_->methods_["forward"].method->execute();
+    return (jint)result;
+  }
+
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
         makeNativeMethod("forward", ExecuTorchJni::forward),
         makeNativeMethod("execute", ExecuTorchJni::execute),
         makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
+        makeNativeMethod("forwardOnes", ExecuTorchJni::forward_ones),
     });
   }
 };
-
-} // namespace executorch_jni
+} // namespace executorch::extension
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
   return facebook::jni::initialize(
-      vm, [] { executorch_jni::ExecuTorchJni::registerNatives(); });
+      vm, [] { executorch::extension::ExecuTorchJni::registerNatives(); });
 }
