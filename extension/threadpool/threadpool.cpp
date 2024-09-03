@@ -14,6 +14,7 @@
 #include <cpuinfo.h>
 
 #include <atomic>
+#include <memory>
 
 namespace torch {
 namespace executorch {
