@@ -63,6 +63,7 @@ DECL_VALUE_PTR_CLASS(IntListPtr, std::vector<int64_t>)
 DECL_VALUE_PTR_CLASS(DoubleListPtr, std::vector<double>)
 DECL_VALUE_PTR_CLASS(BoolListPtr, std::vector<bool>)
 DECL_VALUE_PTR_CLASS(ValueListPtr, std::vector<ValueRef>)
+DECL_VALUE_PTR_CLASS(SymIntPtr, SymInt);
 
 #undef DECL_VALUE_PTR_CLASS
 
@@ -154,6 +155,7 @@ class ComputeGraph final {
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(DoubleListPtr, double_list, DoubleList)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(BoolListPtr, bool_list, BoolList)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(ValueListPtr, value_list, ValueList)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(SymIntPtr, symint, SymInt);
 
 #undef GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS
 
@@ -422,14 +424,27 @@ class ComputeGraph final {
 
   ValueRef add_string(std::string&& str);
 
+  ValueRef add_symint(const int32_t val);
+
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
   template <typename Block>
-  const vkapi::BufferBindInfo create_params_buffer(const Block& data) {
+  vkapi::BufferBindInfo create_params_buffer(const Block& data) {
     param_ubos_.emplace_back(api::ParamsBuffer(context_.get(), data));
     return vkapi::BufferBindInfo(param_ubos_.back().buffer());
   }
+
+  /*
+   * Given a ValueRef, do the following depending on the type of the Value:
+   * - If it is a SymInt, return the BufferBindInfo of the ParamsBuffer object
+   *   backing the SymInt.
+   * - If it is a regular Int, create a new ParamsBuffer using the integer value
+   *   and return the BufferBindInfo of the created ParamsBuffer.
+   */
+  vkapi::BufferBindInfo get_or_create_int_param_buffer(const ValueRef idx);
+
+  void set_symint(const ValueRef idx, const int32_t val);
 
   /*
    * Convenience function to add an input tensor along with its staging buffer
@@ -577,6 +592,7 @@ class ComputeGraph final {
   friend class DoubleListPtr;
   friend class BoolListPtr;
   friend class ValueListPtr;
+  friend class SymIntPtr;
 };
 
 template <typename T>
