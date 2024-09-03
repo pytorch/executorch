@@ -36,16 +36,22 @@ using namespace vkcompute;
       utils::GPUMemoryLayout::TENSOR_WIDTH_PACKED,  \
       allocate_memory);
 
-#define DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(tensor)          \
-  api::StagingBuffer staging_buffer_##tensor(                        \
-      api::context(), vkapi::kFloat, tensor.staging_buffer_numel(), vkapi::MemoryAccessType::WRITE); \
-  record_nchw_to_image_op(                                           \
+#define DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(tensor) \
+  api::StagingBuffer staging_buffer_##tensor(               \
+      api::context(),                                       \
+      vkapi::kFloat,                                        \
+      tensor.staging_buffer_numel(),                        \
+      vkapi::MemoryAccessType::WRITE);                      \
+  record_nchw_to_image_op(                                  \
       api::context(), staging_buffer_##tensor.buffer(), tensor);
 
-#define DEFINE_STAGING_BUFFER_AND_RECORD_FROM_GPU_FOR(tensor)        \
-  api::StagingBuffer staging_buffer_##tensor(                        \
-      api::context(), vkapi::kFloat, tensor.staging_buffer_numel(), vkapi::MemoryAccessType::READ); \
-  record_image_to_nchw_op(                                           \
+#define DEFINE_STAGING_BUFFER_AND_RECORD_FROM_GPU_FOR(tensor) \
+  api::StagingBuffer staging_buffer_##tensor(                 \
+      api::context(),                                         \
+      vkapi::kFloat,                                          \
+      tensor.staging_buffer_numel(),                          \
+      vkapi::MemoryAccessType::READ);                         \
+  record_image_to_nchw_op(                                    \
       api::context(), tensor, staging_buffer_##tensor.buffer());
 
 #define CHECK_VALUE(data, idx, expected)                          \
