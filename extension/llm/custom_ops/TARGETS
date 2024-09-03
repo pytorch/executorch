@@ -14,7 +14,7 @@ runtime.python_test(
         "test_sdpa_with_kv_cache.py",
     ],
     preload_deps = [
-        ":custom_ops_aot_lib",
+        ":custom_ops_aot_lib_mkl_noomp",
         ":custom_ops_aot_py",
     ],
     deps = [
