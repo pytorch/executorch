@@ -15,6 +15,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
+#include <iostream>
+
 namespace vkcompute {
 
 //
@@ -46,6 +48,70 @@ VALUE_PTR_CLASS_IMPL(ValueListPtr, std::vector<ValueRef>, ValueList)
 VALUE_PTR_CLASS_IMPL(SymIntPtr, SymInt, SymInt)
 
 #undef VALUE_PTR_CLASS_IMPL
+
+//
+// TmpTensorVRef
+//
+
+TmpTensorVRef::TmpTensorVRef(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout)
+    : graph_p(graph_ptr), sobj_idx(-1), vref(kDummyValueRef) {
+  set_sobj_idx();
+  vref =
+      graph_p->add_tensor(sizes, dtype, storage_type, memory_layout, sobj_idx);
+}
+
+TmpTensorVRef::TmpTensorVRef(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::StorageType storage_type)
+    : graph_p(graph_ptr), sobj_idx(-1), vref(kDummyValueRef) {
+  set_sobj_idx();
+  vref = graph_p->add_tensor(sizes, dtype, storage_type, sobj_idx);
+}
+
+TmpTensorVRef::TmpTensorVRef(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::GPUMemoryLayout memory_layout)
+    : graph_p(graph_ptr), sobj_idx(-1), vref(kDummyValueRef) {
+  set_sobj_idx();
+  vref = graph_p->add_tensor(sizes, dtype, memory_layout, sobj_idx);
+}
+
+TmpTensorVRef::TmpTensorVRef(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype)
+    : graph_p(graph_ptr), sobj_idx(-1), vref(kDummyValueRef) {
+  set_sobj_idx();
+  vref = graph_p->add_tensor(sizes, dtype, sobj_idx);
+}
+
+TmpTensorVRef::~TmpTensorVRef() {
+  // Lifetime of this temporary tensor is expired; return the shared object to
+  // the pool, as long as the sobj index is valid
+  if (sobj_idx >= 0) {
+    graph_p->tmp_shared_object_idxs_.emplace(sobj_idx);
+  }
+}
+
+void TmpTensorVRef::set_sobj_idx() {
+  // If no available temporary shared objects, request a new one to be created
+  if (graph_p->tmp_shared_object_idxs_.empty()) {
+    sobj_idx = graph_p->shared_objects_.size();
+  } else {
+    // Get the first available shared object idx
+    sobj_idx = graph_p->tmp_shared_object_idxs_.top();
+    graph_p->tmp_shared_object_idxs_.pop();
+  }
+}
 
 //
 // ComputeGraph
