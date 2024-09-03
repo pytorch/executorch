@@ -361,7 +361,7 @@ class _Emitter(torch.fx.Interpreter):
                             f"such as ConstraintBasedSymShapeEvalPass, this may be the cause of an "
                             f"unbacked SymInt with its upper bound lazily set to 2^64-1 (uint64 max) "
                             "during torch.export()."
-                        )
+                        ),
                     )
                 )
 
@@ -1541,7 +1541,6 @@ class _TopLevelEmitter(_Emitter):
         is_user_input = True
 
         if isinstance(target, str) and isinstance(spec, TensorSpec):
-
             fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
 
             # From the fqn find the corresponding tensor

@@ -21,6 +21,7 @@ from executorch.exir.error import internal_assert
 from executorch.exir.schema import ScalarType, TensorShapeDynamism
 from executorch.exir.sym_util import eval_shape
 
+
 class AddressSpaceOverflowException(Exception):
     pass
 
@@ -300,7 +301,9 @@ def make_allocation_info(mem_id: int, mem_offset: int) -> schema.AllocationDetai
     memory_offset_low = mem_offset & ((1 << 32) - 1)
     memory_offset_high = mem_offset >> 32
     if memory_offset_high >= 1 << 32:
-        raise AddressSpaceOverflowException(f"mem_offset {mem_offset} does not fit in 64 bits")
+        raise AddressSpaceOverflowException(
+            f"mem_offset {mem_offset} does not fit in 64 bits"
+        )
 
     allocation_info = schema.AllocationDetails(
         memory_id=mem_id,
