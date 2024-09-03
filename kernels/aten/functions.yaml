@@ -115,6 +115,8 @@
 
 - op: convolution.out
 
+- op: convolution_backward.out
+
 - op: copy.out
 
 - op: cos.out
