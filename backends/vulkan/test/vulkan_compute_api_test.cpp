@@ -992,6 +992,28 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
       graph.get_tensor(name.value)->staging_buffer_numel()); \
   graph.copy_from_staging(name.staging, data_##name.data(), data_##name.size());
 
+// The purpose of this test is simply to track the size of various classes over
+// time, in the interest of making sure that they doesn't grow too large.
+TEST_F(VulkanComputeAPITest, print_object_sizes) {
+#define PRINT_SIZE(name) \
+  std::cout << #name << " size: " << sizeof(name) << " B" << std::endl
+  PRINT_SIZE(vTensor);
+  PRINT_SIZE(Value);
+  PRINT_SIZE(StagingBuffer);
+  PRINT_SIZE(ComputeGraph);
+  PRINT_SIZE(ExecuteNode);
+#undef PRINT_SIZE
+
+  // The actual sizes of each object is dependent on the platform. However, we
+  // can alert ourselves to any significant changes in the sizes of these
+  // objects by checking the `sizeof()` the class against some loose thresholds.
+  EXPECT_TRUE(sizeof(vTensor) < 1800);
+  EXPECT_TRUE(sizeof(Value) < 2400);
+  EXPECT_TRUE(sizeof(StagingBuffer) < 500);
+  EXPECT_TRUE(sizeof(ComputeGraph) < 500);
+  EXPECT_TRUE(sizeof(ExecuteNode) < 500);
+}
+
 TEST(VulkanComputeGraphTest, test_values_scalars) {
   GraphConfig config;
   ComputeGraph graph(config);
