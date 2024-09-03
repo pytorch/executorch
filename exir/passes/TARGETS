@@ -202,6 +202,7 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/exir:_warnings",
         "//executorch/exir:pass_base",
         "//executorch/exir:sym_util",
         "//executorch/exir:tensor",
