@@ -323,6 +323,8 @@
 
 - op: scalar_tensor.out
 
+- op: scatter.src_out
+
 - op: scatter.value_out
 
 - op: scatter_add.out
