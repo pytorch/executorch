@@ -53,7 +53,7 @@ struct Value final {
     } u;
 
     api::vTensor as_tensor;
-    api::StorageBuffer as_staging;
+    api::StagingBuffer as_staging;
     TensorRef as_tensorref;
 
     std::vector<int64_t> as_int_list;
@@ -108,7 +108,7 @@ struct Value final {
       CASE_MOVE_MOVEABLE_TYPE(
           TypeTag::TENSOR, api::vTensor, as_tensor, vTensor);
       CASE_MOVE_MOVEABLE_TYPE(
-          TypeTag::STAGING, api::StorageBuffer, as_staging, StorageBuffer);
+          TypeTag::STAGING, api::StagingBuffer, as_staging, StagingBuffer);
       CASE_MOVE_MOVEABLE_TYPE(
           TypeTag::TENSORREF, TensorRef, as_tensorref, TensorRef);
       // Scalar lists
@@ -152,7 +152,7 @@ struct Value final {
         payload.as_tensor.~vTensor();
         break;
       case TypeTag::STAGING:
-        payload.as_staging.~StorageBuffer();
+        payload.as_staging.~StagingBuffer();
         break;
       case TypeTag::TENSORREF:
         payload.as_tensorref.~TensorRef();
@@ -247,7 +247,7 @@ struct Value final {
       as_tensor);
 
   SUPPORT_TRIVIALLY_MOVEABLE_TYPE(
-      api::StorageBuffer,
+      api::StagingBuffer,
       Staging,
       TypeTag::STAGING,
       as_staging);
