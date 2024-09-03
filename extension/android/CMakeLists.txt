@@ -32,8 +32,15 @@ find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
 set(link_libraries)
-list(APPEND link_libraries extension_data_loader extension_module executorch
-     fbjni
+list(
+  APPEND
+  link_libraries
+  executorch
+  extension_data_loader
+  extension_module
+  extension_runner_util
+  extension_threadpool
+  fbjni
 )
 
 if(TARGET optimized_native_cpu_ops_lib)
@@ -93,13 +100,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
 
   target_link_options_shared_lib(quantized_ops_lib)
 
-  if(TARGET pthreadpool)
-    set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp
-                       ../../extension/threadpool/cpuinfo_utils.cpp
-    )
-  else()
-    set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp)
-  endif()
+  set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp)
   add_library(executorch_llama_jni SHARED ${LLAMA_JNI_SRCS})
   if(TARGET pthreadpool)
     target_compile_definitions(executorch_llama_jni PRIVATE ET_USE_THREADPOOL=1)

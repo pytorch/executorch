@@ -16,6 +16,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
     const QnnExecuTorchContextBinary& qnn_context_blob,
     const QnnExecuTorchOptions* options) {
   auto backend_params = std::make_unique<BackendConfigParameters>();
+
   switch (options->backend_options()->backend_type()) {
     case QnnExecuTorchBackendType::kHtpBackend: {
       auto htp_options = options->backend_options()->htp_options();
@@ -51,6 +52,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
       }
       backend_params->qnn_backend_ptr_ =
           std::make_unique<HtpBackend>(implementation, logger);
+
       backend_params->qnn_device_ptr_ = std::make_unique<HtpDevice>(
           implementation, logger, options->soc_info(), htp_options);
 
@@ -72,7 +74,6 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
       backend_params->qnn_mem_manager_ptr_ = std::make_unique<QnnMemManager>(
           implementation, backend_params->qnn_context_ptr_.get());
       backend_params->backend_init_state_ = BackendInitializeState::INITIALIZED;
-      return backend_params;
     } break;
     case QnnExecuTorchBackendType::kGpuBackend:
     case QnnExecuTorchBackendType::kDspBackend:
@@ -81,7 +82,11 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
       return nullptr;
   }
 
-  // should not reach here
+  if (backend_params->qnn_backend_ptr_->VerifyQNNSDKVersion(
+          options->backend_options()->backend_type()) == Error::Ok) {
+    return backend_params;
+  }
+
   return nullptr;
 }
 } // namespace qnn

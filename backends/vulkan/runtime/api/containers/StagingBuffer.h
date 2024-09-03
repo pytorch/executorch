@@ -17,7 +17,7 @@
 namespace vkcompute {
 namespace api {
 
-class StorageBuffer final {
+class StagingBuffer final {
  private:
   Context* context_p_;
   vkapi::ScalarType dtype_;
@@ -27,7 +27,7 @@ class StorageBuffer final {
   vkapi::MemoryMap memory_map_;
 
  public:
-  StorageBuffer(
+  StagingBuffer(
       Context* context_p,
       const vkapi::ScalarType dtype,
       const size_t numel,
@@ -40,13 +40,13 @@ class StorageBuffer final {
             context_p_->adapter_ptr()->vma().create_staging_buffer(nbytes_)),
         memory_map_(vulkan_buffer_, access) {}
 
-  StorageBuffer(const StorageBuffer&) = delete;
-  StorageBuffer& operator=(const StorageBuffer&) = delete;
+  StagingBuffer(const StagingBuffer&) = delete;
+  StagingBuffer& operator=(const StagingBuffer&) = delete;
 
-  StorageBuffer(StorageBuffer&&) = default;
-  StorageBuffer& operator=(StorageBuffer&&) = default;
+  StagingBuffer(StagingBuffer&&) = default;
+  StagingBuffer& operator=(StagingBuffer&&) = default;
 
-  ~StorageBuffer() {
+  ~StagingBuffer() {
     context_p_->register_buffer_cleanup(vulkan_buffer_);
   }
 

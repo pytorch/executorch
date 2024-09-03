@@ -17,7 +17,6 @@ build_jar() {
 
 build_android_native_library() {
   ANDROID_ABI="$1"
-  TOKENIZER="$2"
   ANDROID_NDK="${ANDROID_NDK:-/opt/ndk}"
   CMAKE_OUT="cmake-out-android-${ANDROID_ABI}"
 
@@ -31,6 +30,7 @@ build_android_native_library() {
     -DEXECUTORCH_XNNPACK_SHARED_WORKSPACE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
@@ -100,9 +100,8 @@ build_android_llm_demo_app() {
 }
 
 collect_artifacts_to_be_uploaded() {
-  TOKENIZER="$1"
-  ARTIFACTS_DIR_NAME="$2"
-  DEMO_APP_DIR="${ARTIFACTS_DIR_NAME}/llm_demo_${TOKENIZER}"
+  ARTIFACTS_DIR_NAME="$1"
+  DEMO_APP_DIR="${ARTIFACTS_DIR_NAME}/llm_demo"
   # The app directory is named using its build flavor as a suffix.
   mkdir -p "${DEMO_APP_DIR}"
   # Collect the app and its test suite
@@ -124,13 +123,12 @@ export BUILD_AAR_DIR
 ANDROID_ABIS=("arm64-v8a" "x86_64")
 export ANDROID_ABIS
 
-TOKENIZER="${1:-bpe}"
-ARTIFACTS_DIR_NAME="$2"
+ARTIFACTS_DIR_NAME="$1"
 
 build_jar
 for ANDROID_ABI in "${ANDROID_ABIS[@]}"; do
-  build_android_native_library ${ANDROID_ABI} ${TOKENIZER}
+  build_android_native_library ${ANDROID_ABI}
 done
 build_aar
 build_android_llm_demo_app
-collect_artifacts_to_be_uploaded ${TOKENIZER} ${ARTIFACTS_DIR_NAME}
+collect_artifacts_to_be_uploaded ${ARTIFACTS_DIR_NAME}

@@ -112,7 +112,7 @@ void record_image_to_nchw_op(
 void record_int8_image_to_nchw_noint8_op(
     api::Context* const context,
     api::vTensor& v_src,
-    api::StorageBuffer& dst_buffer) {
+    api::StagingBuffer& dst_buffer) {
   vkapi::PipelineBarrier pipeline_barrier{};
   uint32_t buffer_len = utils::safe_downcast<uint32_t>(dst_buffer.numel() / 4);
   utils::uvec3 global_wg_size = {buffer_len, 1, 1};
@@ -324,7 +324,7 @@ void record_reference_matmul(
   _(int8_t, QInt8)
 
 void fill_vtensor(api::vTensor& vten, std::vector<float>& data) {
-  api::StorageBuffer staging_buffer(
+  api::StagingBuffer staging_buffer(
       api::context(),
       vten.dtype(),
       data.size(),
@@ -415,7 +415,7 @@ void fill_vtensor(
 }
 
 void extract_vtensor(api::vTensor& vten, std::vector<float>& data) {
-  api::StorageBuffer staging_buffer(
+  api::StagingBuffer staging_buffer(
       api::context(),
       vten.dtype(),
       vten.staging_buffer_numel(),

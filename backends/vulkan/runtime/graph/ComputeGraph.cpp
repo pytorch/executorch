@@ -38,7 +38,7 @@ namespace vkcompute {
 
 VALUE_PTR_CLASS_IMPL(vTensorPtr, api::vTensor, Tensor)
 VALUE_PTR_CLASS_IMPL(TensorRefPtr, TensorRef, TensorRef)
-VALUE_PTR_CLASS_IMPL(StagingPtr, api::StorageBuffer, Staging)
+VALUE_PTR_CLASS_IMPL(StagingPtr, api::StagingBuffer, Staging)
 VALUE_PTR_CLASS_IMPL(IntListPtr, std::vector<int64_t>, IntList)
 VALUE_PTR_CLASS_IMPL(DoubleListPtr, std::vector<double>, DoubleList)
 VALUE_PTR_CLASS_IMPL(BoolListPtr, std::vector<bool>, BoolList)
@@ -237,7 +237,7 @@ ValueRef ComputeGraph::add_staging(
     const vkapi::MemoryAccessType access) {
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
-  values_.emplace_back(api::StorageBuffer(context(), dtype, numel, access));
+  values_.emplace_back(api::StagingBuffer(context(), dtype, numel, access));
   return idx;
 }
 
