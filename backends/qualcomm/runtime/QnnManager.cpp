@@ -8,6 +8,7 @@
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <algorithm>
 #include <cstdlib>
@@ -281,6 +282,8 @@ Error QnnManager::Init() {
         options_->backend_options()->backend_type());
     backend_params_ptr_ = QnnBackendFactory().Create(
         qnn_loaded_backend_, logger_.get(), qnn_context_blob_, options_);
+    ET_CHECK_OR_RETURN_ERROR(
+        backend_params_ptr_ != nullptr, Internal, "Failed to load Qnn backend.")
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
         Internal,
