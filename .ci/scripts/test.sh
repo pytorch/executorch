@@ -170,6 +170,9 @@ test_model_with_qnn() {
   elif [[ "${MODEL_NAME}" == "ic3" ]]; then
     EXPORT_SCRIPT=inception_v3
     EXPORTED_MODEL_NAME=ic3_qnn.pte
+  elif [[ "${MODEL_NAME}" == "vit" ]]; then
+    EXPORT_SCRIPT=torchvision_vit
+    EXPORTED_MODEL_NAME=vit_qnn.pte
   fi
 
   "${PYTHON_EXECUTABLE}" -m examples.qualcomm.scripts.${EXPORT_SCRIPT} -b ${CMAKE_OUTPUT_DIR} -m SM8550 --compile_only
