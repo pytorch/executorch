@@ -216,7 +216,7 @@ def build_executorch_binary(
         else:
             raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
 
-        captured_model = torch.export.export(model, inputs).module()
+        captured_model = torch.export.export_for_training(model, inputs).module()
         annotated_model = prepare_pt2e(captured_model, quantizer)
         print("Quantizing the model...")
         # calibration
