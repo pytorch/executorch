@@ -127,13 +127,7 @@ set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
 # Extra compile option and include dir for pthreadpool
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   list(APPEND _common_compile_options -DET_USE_THREADPOOL)
-  list(APPEND link_libraries pthreadpool)
-  # These 2 source files are included in xnnpack_backend
-  if(NOT TARGET xnnpack_backend)
-    list(APPEND _srcs ${EXECUTORCH_ROOT}/extension/threadpool/threadpool.cpp
-         ${EXECUTORCH_ROOT}/extension/threadpool/threadpool_guard.cpp
-    )
-  endif()
+  list(APPEND link_libraries extension_threadpool pthreadpool)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/pthreadpool/include
   )
@@ -141,8 +135,7 @@ endif()
 
 # Extra sources for cpuinfo
 if(EXECUTORCH_BUILD_CPUINFO)
-  list(APPEND link_libraries cpuinfo)
-  list(APPEND _srcs ${EXECUTORCH_ROOT}/extension/threadpool/cpuinfo_utils.cpp)
+  list(APPEND link_libraries extension_threadpool cpuinfo)
   list(APPEND _common_include_directories
        ${XNNPACK_ROOT}/third-party/cpuinfo/include
   )

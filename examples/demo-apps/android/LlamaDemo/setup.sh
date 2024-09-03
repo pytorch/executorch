@@ -8,7 +8,6 @@
 set -eu
 
 CMAKE_OUT="${CMAKE_OUT:-cmake-out-android}"
-EXECUTORCH_USE_TIKTOKEN="${EXECUTORCH_USE_TIKTOKEN:-OFF}"
 # Note: Set up ANDROID_NDK and ANDROID_ABI
 cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
