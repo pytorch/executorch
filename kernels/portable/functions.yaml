@@ -847,6 +847,11 @@
     - arg_meta: null
       kernel_name: torch::executor::tanh_out
 
+- op: topk.values
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::topk_values
+
 - op: transpose_copy.int_out
   kernels:
     - arg_meta: null
