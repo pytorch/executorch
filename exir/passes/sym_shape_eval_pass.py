@@ -181,7 +181,7 @@ class HintBasedSymShapeEvalPass(PassBase):
 
     Warning: if you're using torch.export with constrain API, this method doesn't respect the input constraints.
 
-    Not inherit from ExportPass since we simply need a way to iterate thru
+    Not inherited from ExportPass since we simply need a way to iterate thru
     every node's output. PassBase is easier for that purpose.
     """
 
@@ -245,7 +245,7 @@ class ConstraintBasedSymShapeEvalPass(PassBase):
     formula. We should convert those symbolic formula to concrete value for
     static/upperbound tensors so we can properly do memory planning for them.
 
-    Not inherit from ExportPass since we simply need a way to iterate thru
+    Not inherited from ExportPass since we simply need a way to iterate through
     every node's output. PassBase is easier for that purpose.
     """
 
