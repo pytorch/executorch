@@ -17,7 +17,8 @@ template <typename T>
 struct is_reduced_floating_point
     : std::integral_constant<
           bool,
-  std::is_same<T, torch::executor::BFloat16>::value || std::is_same<T, torch::executor::Half>::value> {};
+          std::is_same<T, torch::executor::BFloat16>::value ||
+              std::is_same<T, torch::executor::Half>::value> {};
 
 template <
     typename T,
