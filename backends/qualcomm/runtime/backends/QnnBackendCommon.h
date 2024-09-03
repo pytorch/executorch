@@ -13,8 +13,10 @@
 
 #include <vector>
 
+#include "HTP/QnnHtpCommon.h"
 #include "QnnBackend.h"
 #include "QnnCommon.h"
+#include "QnnTypes.h"
 namespace torch {
 namespace executor {
 namespace qnn {
@@ -43,7 +45,10 @@ class QnnBackend {
     return handle_;
   }
 
+  Error VerifyQNNSDKVersion(const QnnExecuTorchBackendType backend_id);
+
  protected:
+  virtual Qnn_Version_t GetExpectedBackendVersion() const = 0;
   virtual Error MakeConfig(std::vector<const QnnBackend_Config_t*>& config) {
     return Error::Ok;
   };
@@ -52,6 +57,10 @@ class QnnBackend {
   Qnn_BackendHandle_t handle_;
   const QnnImplementation& implementation_;
   QnnLogger* logger_;
+  Error VersionChecker(
+      const Qnn_Version_t& qnn_version,
+      const Qnn_Version_t& expected,
+      const std::string& prefix);
 };
 } // namespace qnn
 } // namespace executor
