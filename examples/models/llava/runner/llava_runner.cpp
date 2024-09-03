@@ -74,7 +74,7 @@ Error LlavaRunner::load() {
 }
 
 Error LlavaRunner::generate(
-    std::vector<Image>& images,
+    std::vector<Image> images,
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
