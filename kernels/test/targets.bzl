@@ -295,6 +295,7 @@ def define_common_targets():
     _common_op_test("op_tan_test", ["aten", "portable"])
     _common_op_test("op_tanh_test", ["aten", "portable"])
     _common_op_test("op_to_copy_test", ["aten", "portable"])
+    _common_op_test("op_topk_test", ["aten", "portable"])
     _common_op_test("op_transpose_copy_test", ["aten", "portable"])
     _common_op_test("op_tril_test", ["aten", "portable"])
     _common_op_test("op_trunc_test", ["aten", "portable"])

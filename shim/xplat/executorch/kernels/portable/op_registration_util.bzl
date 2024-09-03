@@ -1126,6 +1126,9 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_topk",
+    ),
+    op_target(
         name = "op_transpose_copy",
         deps = ["//executorch/kernels/portable/cpu/util:transpose_util"],
     ),
