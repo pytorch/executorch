@@ -43,7 +43,7 @@ def define_common_targets():
         name = "scalar_type",
         exported_headers = [
             "bfloat16.h",
-            "bfloat16-math.h",
+            "bfloat16_math.h",
             "complex.h",
             "half.h",
             "scalar_type.h",
