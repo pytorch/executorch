@@ -169,6 +169,15 @@ TEST_F(TiktokenExtensionTest, LoadTiktokenFileWithInvalidBase64) {
   EXPECT_EQ(res, Error::InvalidArgument);
 }
 
+TEST_F(TiktokenExtensionTest, LoadTiktokenFileWithNoSpace) {
+  auto invalidModelPath = std::getenv("RESOURCES_PATH") +
+      std::string("/test_tiktoken_no_space.model");
+
+  Error res = tokenizer_->load(invalidModelPath.c_str());
+
+  EXPECT_EQ(res, Error::InvalidArgument);
+}
+
 TEST_F(TiktokenExtensionTest, LoadTiktokenFileWithBPEFile) {
   auto invalidModelPath =
       std::getenv("RESOURCES_PATH") + std::string("/test_bpe_tokenizer.bin");
