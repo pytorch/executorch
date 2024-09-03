@@ -18,14 +18,14 @@ namespace vkcompute {
 
 void copy_ptr_to_staging(
     const void* src,
-    api::StagingBuffer& staging,
+    api::StorageBuffer& staging,
     const size_t nbytes);
 void copy_staging_to_ptr(
-    api::StagingBuffer& staging,
+    api::StorageBuffer& staging,
     void* dst,
     const size_t nbytes);
 
-void set_staging_zeros(api::StagingBuffer& staging, const size_t nbytes);
+void set_staging_zeros(api::StorageBuffer& staging, const size_t nbytes);
 
 //
 // Functions to get shaders
