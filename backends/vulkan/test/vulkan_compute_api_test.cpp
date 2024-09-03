@@ -336,7 +336,7 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
 
 TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
   size_t len = 16;
-  StagingBuffer buffer(
+  StorageBuffer buffer(
       context(), vkapi::kFloat, len, vkapi::MemoryAccessType::WRITE);
 
   float scale = 3.0f;
@@ -408,7 +408,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
         params.buffer());
   }
 
-  StagingBuffer staging_buffer(
+  StorageBuffer staging_buffer(
       context(),
       vkapi::kFloat,
       a.staging_buffer_numel(),
@@ -432,7 +432,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
 
 template <typename T, vkapi::ScalarType dtype>
 void test_storage_buffer_type(const size_t len) {
-  StagingBuffer buffer(context(), dtype, len, vkapi::MemoryAccessType::WRITE);
+  StorageBuffer buffer(context(), dtype, len, vkapi::MemoryAccessType::WRITE);
 
   std::string kernel_name("idx_fill_buffer");
   switch (dtype) {
@@ -2044,7 +2044,7 @@ void run_from_gpu_test(
         vten.sizes_ubo());
   }
 
-  StagingBuffer staging_buffer(
+  StorageBuffer staging_buffer(
       context(),
       dtype,
       vten.staging_buffer_numel(),
@@ -2081,7 +2081,7 @@ void round_trip_test(
   vTensor vten = vTensor(context(), sizes, dtype, storage_type, memory_layout);
 
   // Create and fill input staging buffer
-  StagingBuffer staging_buffer_in(
+  StorageBuffer staging_buffer_in(
       context(),
       dtype,
       vten.staging_buffer_numel(),
@@ -2095,7 +2095,7 @@ void round_trip_test(
       data_in.data(), staging_buffer_in, vten.staging_buffer_nbytes());
 
   // Output staging buffer
-  StagingBuffer staging_buffer_out(
+  StorageBuffer staging_buffer_out(
       context(),
       dtype,
       vten.staging_buffer_numel(),
@@ -2552,7 +2552,7 @@ void test_conv2d(
 
   // Create and fill input staging buffer
   const int64_t in_numel = utils::multiply_integers(original_sizes);
-  StagingBuffer staging_buffer_in(
+  StorageBuffer staging_buffer_in(
       context(), vkapi::kFloat, in_numel, vkapi::MemoryAccessType::WRITE);
 
   std::vector<float> data_in(in_numel);
@@ -2565,7 +2565,7 @@ void test_conv2d(
   // Output staging buffer
   const int64_t out_numel =
       padded_sizes[0] * padded_sizes[1] * original_sizes[2] * original_sizes[3];
-  StagingBuffer staging_buffer_out(
+  StorageBuffer staging_buffer_out(
       context(), vkapi::kFloat, out_numel, vkapi::MemoryAccessType::READ);
 
   // Copy data in and out of the tensor

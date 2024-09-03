@@ -165,6 +165,17 @@ VulkanBuffer Allocator::create_storage_buffer(
       allocator_, size, alloc_create_info, buffer_usage, allocate_memory);
 }
 
+VulkanBuffer Allocator::create_staging_buffer(const VkDeviceSize size) {
+  VmaAllocationCreateInfo alloc_create_info = {};
+  alloc_create_info.flags = DEFAULT_ALLOCATION_STRATEGY;
+  alloc_create_info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+
+  VkBufferUsageFlags buffer_usage =
+      VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+  return VulkanBuffer(allocator_, size, alloc_create_info, buffer_usage);
+}
+
 VulkanBuffer Allocator::create_uniform_buffer(const VkDeviceSize size) {
   VmaAllocationCreateInfo alloc_create_info = {};
   alloc_create_info.flags = DEFAULT_ALLOCATION_STRATEGY |

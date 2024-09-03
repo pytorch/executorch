@@ -40,7 +40,7 @@ uint32_t bind_params_to_descriptor_set(
     const uint32_t base_idx);
 
 void bind_staging_to_descriptor_set(
-    api::StagingBuffer& staging,
+    api::StorageBuffer& staging,
     vkapi::DescriptorSet& descriptor_set,
     const uint32_t idx);
 
