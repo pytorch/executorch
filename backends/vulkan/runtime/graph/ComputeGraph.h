@@ -58,7 +58,7 @@ class ComputeGraph;
 
 DECL_VALUE_PTR_CLASS(vTensorPtr, api::vTensor)
 DECL_VALUE_PTR_CLASS(TensorRefPtr, TensorRef)
-DECL_VALUE_PTR_CLASS(StagingPtr, api::StagingBuffer)
+DECL_VALUE_PTR_CLASS(StagingPtr, api::StorageBuffer)
 DECL_VALUE_PTR_CLASS(IntListPtr, std::vector<int64_t>)
 DECL_VALUE_PTR_CLASS(DoubleListPtr, std::vector<double>)
 DECL_VALUE_PTR_CLASS(BoolListPtr, std::vector<bool>)
