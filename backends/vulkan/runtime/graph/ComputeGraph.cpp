@@ -15,8 +15,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
-#include <iostream>
-
 namespace vkcompute {
 
 //

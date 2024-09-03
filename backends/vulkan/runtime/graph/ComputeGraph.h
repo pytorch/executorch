@@ -672,7 +672,7 @@ class ComputeGraph final {
   friend class ValueListPtr;
   friend class SymIntPtr;
 
-  friend class TmpTensorVRef;
+  friend struct TmpTensorVRef;
 };
 
 template <typename T>
