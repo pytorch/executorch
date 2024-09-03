@@ -190,6 +190,7 @@ def define_common_targets():
     _common_op_test("op_clone_test", ["aten", "portable"])
     _common_op_test("op_constant_pad_nd_test", ["aten", "portable"])
     _common_op_test("op_convolution_test", ["aten", "portable"])
+    _common_op_test("op_convolution_backward_test", ["aten", "portable"])
     _common_op_test("op_copy_test", ["aten", "portable"])
     _common_op_test("op_cos_test", ["aten", "portable"])
     _common_op_test("op_cosh_test", ["aten", "portable"])
