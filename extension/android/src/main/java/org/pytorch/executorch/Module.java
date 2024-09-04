@@ -79,6 +79,12 @@ public class Module {
    * @return return value from the 'forward' method.
    */
   public EValue[] forward(EValue... inputs) {
+    if (inputs.length == 0) {
+      // forward default args (ones)
+      mNativePeer.forwardOnes();
+      // discard the return value
+      return null;
+    }
     return mNativePeer.forward(inputs);
   }
 
