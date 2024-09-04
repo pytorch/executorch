@@ -151,28 +151,28 @@ TEST_F(TensorPtrTest, TensorDeleterReleasesCapturedSharedPtr) {
 }
 
 TEST_F(TensorPtrTest, TensorOwningData) {
-  auto tensor_impl = make_tensor_ptr(
+  auto tensor = make_tensor_ptr(
       {2, 5},
       {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f},
       {1, 0},
       {1, 2});
 
-  EXPECT_EQ(tensor_impl->dim(), 2);
-  EXPECT_EQ(tensor_impl->size(0), 2);
-  EXPECT_EQ(tensor_impl->size(1), 5);
-  EXPECT_EQ(tensor_impl->strides()[0], 1);
-  EXPECT_EQ(tensor_impl->strides()[1], 2);
-  EXPECT_EQ(((float*)tensor_impl->data())[0], 1.0f);
-  EXPECT_EQ(((float*)tensor_impl->data())[9], 10.0f);
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 2);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->strides()[0], 1);
+  EXPECT_EQ(tensor->strides()[1], 2);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[0], 1.0f);
+  EXPECT_EQ(tensor->const_data_ptr<float>()[9], 10.0f);
 }
 
 TEST_F(TensorPtrTest, TensorOwningEmptyData) {
-  auto tensor_impl = make_tensor_ptr({0, 5}, {});
+  auto tensor = make_tensor_ptr({0, 5}, {});
 
-  EXPECT_EQ(tensor_impl->dim(), 2);
-  EXPECT_EQ(tensor_impl->size(0), 0);
-  EXPECT_EQ(tensor_impl->size(1), 5);
-  EXPECT_EQ(tensor_impl->strides()[0], 5);
-  EXPECT_EQ(tensor_impl->strides()[1], 1);
-  EXPECT_EQ(tensor_impl->data(), nullptr);
+  EXPECT_EQ(tensor->dim(), 2);
+  EXPECT_EQ(tensor->size(0), 0);
+  EXPECT_EQ(tensor->size(1), 5);
+  EXPECT_EQ(tensor->strides()[0], 5);
+  EXPECT_EQ(tensor->strides()[1], 1);
+  EXPECT_EQ(tensor->data_ptr<float>(), nullptr);
 }
