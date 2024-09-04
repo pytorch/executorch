@@ -11,7 +11,7 @@
 #import <executorch/extension/module/module.h>
 #import <executorch/extension/tensor/tensor.h>
 
-using namespace ::torch::executor;
+using namespace ::executorch::extension;
 
 NSErrorDomain const ETMobileNetClassifierErrorDomain =
     @"MobileNetClassifierErrorDomain";
