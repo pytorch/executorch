@@ -9,6 +9,7 @@
 #import "MobileNetClassifier.h"
 
 #import <executorch/extension/module/module.h>
+#import <executorch/extension/tensor/tensor.h>
 
 using namespace ::torch::executor;
 
@@ -33,9 +34,8 @@ const int32_t kChannels = 3;
                    output:(float*)output
                outputSize:(NSInteger)outputSize
                     error:(NSError**)error {
-  int32_t sizes[] = {1, kChannels, kSize, kSize};
-  TensorImpl inputTensor(ScalarType::Float, std::size(sizes), sizes, input);
-  const auto result = _module->forward(Tensor(&inputTensor));
+  const auto result =
+      _module->forward(from_blob(input, {1, kChannels, kSize, kSize}));
 
   if (!result.ok()) {
     if (error) {
