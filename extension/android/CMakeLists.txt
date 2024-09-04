@@ -32,8 +32,15 @@ find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
 set(link_libraries)
-list(APPEND link_libraries extension_data_loader extension_module extension_threadpool executorch
-     fbjni
+list(
+  APPEND
+  link_libraries
+  executorch
+  extension_data_loader
+  extension_module
+  extension_runner_util
+  extension_threadpool
+  fbjni
 )
 
 if(TARGET optimized_native_cpu_ops_lib)
