@@ -1,0 +1,305 @@
+name: apple-perf
+
+on:
+  schedule:
+    - cron: 0 1 * * *
+  # Note: GitHub has an upper limit of 10 inputs
+  workflow_dispatch:
+    inputs:
+      models:
+        description: Models to be benchmarked
+        required: false
+        type: string
+        default: stories110M
+      devices:
+        description: Target devices to run benchmark
+        required: false
+        type: string
+        default: apple_iphone_15
+      delegates:
+        description: Backend delegates
+        required: false
+        type: string
+        default: xnnpack
+      benchmark_configs:
+        description: The list of configs used the benchmark
+        required: false
+        type: string
+      test_spec:
+        description: The test spec to drive the test on AWS devices
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      models:
+        description: Models to be benchmarked
+        required: false
+        type: string
+        default: stories110M
+      devices:
+        description: Target devices to run benchmark
+        required: false
+        type: string
+        default: apple_iphone_15
+      delegates:
+        description: Backend delegates
+        required: false
+        type: string
+        default: xnnpack
+      benchmark_configs:
+        description: The list of configs used the benchmark
+        required: false
+        type: string
+      test_spec:
+        description: The test spec to drive the test on AWS devices
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  set-parameters:
+    runs-on: linux.2xlarge
+    outputs:
+      models: ${{ steps.set-parameters.outputs.models }}
+      devices: ${{ steps.set-parameters.outputs.devices }}
+      delegates: ${{ steps.set-parameters.outputs.delegates }}
+    steps:
+      - name: Set parameters
+        id: set-parameters
+        shell: bash
+        env:
+          # Separate default values from the workflow dispatch. To ensure defaults are accessible
+          # during scheduled runs and to provide flexibility for different defaults between
+          # on-demand and periodic benchmarking.
+          CRON_DEFAULT_MODELS: "stories110M"
+          CRON_DEFAULT_DEVICES: "apple_iphone_15"
+          CRON_DEFAULT_DELEGATES: "xnnpack"
+        run: |
+          set -ex
+          MODELS="${{ inputs.models }}"
+          if [ -z "$MODELS" ]; then
+            MODELS="$CRON_DEFAULT_MODELS"
+          fi
+          DEVICES="${{ inputs.devices }}"
+          if [ -z "$DEVICES" ]; then
+            DEVICES="$CRON_DEFAULT_DEVICES"
+          fi
+          DELEGATES="${{ inputs.delegates }}"
+          if [ -z "$DELEGATES" ]; then
+            DELEGATES="$CRON_DEFAULT_DELEGATES"
+          fi
+
+          # Mapping devices to their corresponding device-pool-arn
+          declare -A DEVICE_POOL_ARNS
+          DEVICE_POOL_ARNS[apple_iphone_15]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/3b5acd2e-92e2-4778-b651-7726bafe129d"
+
+          # Resolve device names with their corresponding ARNs
+          if [[ ! $(echo "$DEVICES" | jq empty 2>/dev/null) ]]; then
+            DEVICES=$(echo "$DEVICES" | jq -Rc 'split(",")')
+          fi
+          declare -a MAPPED_ARNS=()
+          for DEVICE in $(echo "$DEVICES" | jq -r '.[]'); do
+            if [[ -z "${DEVICE_POOL_ARNS[$DEVICE]}" ]]; then
+              echo "Error: No ARN found for device '$DEVICE'. Abort." >&2
+              exit 1
+            fi
+            MAPPED_ARNS+=("${DEVICE_POOL_ARNS[$DEVICE]}")
+          done
+
+          echo "models=$(echo $MODELS | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
+          MAPPED_ARNS_JSON=$(printf '%s\n' "${MAPPED_ARNS[@]}" | jq -R . | jq -s .)
+          echo "devices=$(echo "$MAPPED_ARNS_JSON" | jq -c .)" >> $GITHUB_OUTPUT
+          echo "delegates=$(echo $DELEGATES | jq -Rc 'split(",")')" >> $GITHUB_OUTPUT
+
+  export-models:
+    name: export-models
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    needs: set-parameters
+    strategy:
+      matrix:
+          model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+      fail-fast: false
+    with:
+      runner: macos-latest-xlarge
+      python-version: '3.11'
+      submodules: 'true'
+      timeout: 60
+      upload-artifact: ios-models
+      script: |
+        set -eux
+
+        echo "::group::Setting up CI environment"
+        .ci/scripts/setup-conda.sh
+
+        BUILD_TOOL=cmake
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+          .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+
+        if [[ ${{ matrix.delegate }} == "coreml" ]]; then
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+            backends/apple/coreml/scripts/install_requirements.sh
+        fi
+
+        if [[ ${{ matrix.delegate }} == "mps" ]]; then
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+            backends/apple/mps/install_requirements.sh
+        fi
+
+        ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded/${{ matrix.model }}_${{ matrix.delegate }}
+        echo "::endgroup::"
+
+        echo "::group::Exporting ${{ matrix.delegate }} model: ${{ matrix.model }}"
+        BUILD_MODE="cmake"
+        DTYPE="fp32"
+
+        if [[ ${{ matrix.model }} =~ ^stories* ]]; then
+          # Install requirements for export_llama
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+            bash examples/models/llama2/install_requirements.sh
+
+          # Test llama2
+          if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
+            DELEGATE_CONFIG="xnnpack+custom+qe"
+          fi
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+            bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
+        else
+          # TODO (huydhn): Extend the export script here to support other backends such as coreml, mps
+          PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+            bash .ci/scripts/test.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
+        fi
+        echo "::endgroup::"
+
+  upload-models:
+    needs: export-models
+    runs-on: linux.2xlarge
+    steps:
+      - name: Download the models from GitHub
+        uses: actions/download-artifact@v3
+        with:
+          # The name here needs to match the name of the upload-artifact parameter
+          name: ios-models
+          path: ${{ runner.temp }}/artifacts/
+
+      - name: Verify the models
+        shell: bash
+        working-directory: ${{ runner.temp }}/artifacts/
+        run: |
+          ls -lah ./
+
+      - name: Upload the models to S3
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifact
+          retention-days: 1
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/artifacts/
+
+  build-llm-demo:
+    name: build-llm-demo
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    needs:
+      - set-parameters
+    secrets: inherit
+    strategy:
+      matrix:
+          tokenizer: [bpe]
+    with:
+      runner: macos-latest-xlarge
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      upload-artifact: ios-apps
+      secrets-env: BUILD_CERTIFICATE_BASE64 BUILD_PROVISION_PROFILE_BASE64 KEYCHAIN_PASSWORD
+      timeout: 90
+      script: |
+        set -eux
+
+        echo "::group::Setting up CI environment"
+        .ci/scripts/setup-conda.sh
+
+        BUILD_TOOL=cmake
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+        .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
+
+        # Setup Apple certificate for iOS development
+        BUILD_PROVISION_PROFILE_BASE64="${SECRET_BUILD_PROVISION_PROFILE_BASE64}" \
+        BUILD_CERTIFICATE_BASE64="${SECRET_BUILD_CERTIFICATE_BASE64}" \
+        KEYCHAIN_PASSWORD="${SECRET_KEYCHAIN_PASSWORD}" \
+        .ci/scripts/setup-ios.sh
+
+        # Install CoreML Backend Requirements
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+          backends/apple/coreml/scripts/install_requirements.sh
+
+        # Install MPS Backend Requirements
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+          backends/apple/mps/install_requirements.sh
+        echo "::endgroup::"
+
+        ${CONDA_RUN} --no-capture-output \
+          build/build_apple_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
+
+  upload-ios-apps:
+    needs: build-llm-demo
+    runs-on: linux.2xlarge
+    steps:
+      - name: Download the apps from GitHub
+        uses: actions/download-artifact@v3
+        with:
+          # The name here needs to match the name of the upload-artifact parameter
+          name: ios-apps
+          path: ${{ runner.temp }}/artifacts/
+
+      - name: Verify the apps
+        shell: bash
+        working-directory: ${{ runner.temp }}/artifacts/
+        run: |
+          ls -lah ./
+
+      - name: Upload the apps to S3
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifact
+          retention-days: 14
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/artifacts/
+
+  benchmark-on-device:
+    needs:
+      - set-parameters
+      - upload-ios-apps
+      - upload-models
+    permissions:
+      id-token: write
+      contents: read
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    strategy:
+      matrix:
+        model: ${{ fromJson(needs.set-parameters.outputs.models) }}
+        delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+        device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
+    with:
+      device-type: ios
+      # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS
+      runner: linux.2xlarge
+      test-infra-ref: ''
+      # This is the ARN of ExecuTorch project on AWS
+      project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
+      device-pool-arn: ${{ matrix.device }}
+      # Uploaded to S3 from the previous job
+      ios-ipa-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMAPerfBenchmark.ipa
+      ios-xctestrun-zip: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/LLaMAPerfBenchmark.xctestrun.zip
+      test-spec: ${{ inputs.test_spec || 'https://ossci-ios.s3.amazonaws.com/executorch/default-ios-device-farm-appium-test-spec.yml' }}
+      extra-data: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/${{ matrix.model }}_${{ matrix.delegate }}/model.zip
