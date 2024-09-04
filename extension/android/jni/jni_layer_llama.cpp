@@ -165,7 +165,7 @@ class ExecuTorchLlamaJni
         images.push_back(image_runner);
       }
       multi_modal_runner_->generate(
-          images,
+          std::move(images),
           prompt->toStdString(),
           seq_len,
           [callback](std::string result) { callback->onResult(result); },
