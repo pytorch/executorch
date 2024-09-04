@@ -140,7 +140,7 @@ def get_qnn_partitioner(
 
     return QnnPartitioner(  # pyre-fixme[16]
         generate_qnn_executorch_compiler_spec(  # pyre-fixme[16]
-            soc_model=QcomChipset.SM8650,  # default to SM8650  # pyre-fixme[16]
+            soc_model=QcomChipset.SM8450,  # default to SM8450  # pyre-fixme[16]
             # pyre-fixme[16]
             backend_options=generate_htp_compiler_spec(
                 use_fp16=use_fp16,
