@@ -85,7 +85,8 @@ void record_nchw_to_image_op(
           vkapi::PipelineStage::COMPUTE,
           vkapi::MemoryAccessType::WRITE),
       src_buffer,
-      v_dst.sizes_ubo());
+      v_dst.sizes_ubo(),
+      v_dst.axis_mapping_ubo());
 }
 
 void record_image_to_nchw_op(
@@ -106,7 +107,8 @@ void record_image_to_nchw_op(
       0,
       dst_buffer,
       v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
-      v_src.sizes_ubo());
+      v_src.sizes_ubo(),
+      v_src.axis_mapping_ubo());
 }
 
 void record_int8_image_to_nchw_noint8_op(
@@ -127,6 +129,7 @@ void record_int8_image_to_nchw_noint8_op(
       dst_buffer.buffer(),
       v_src.image(pipeline_barrier, vkapi::PipelineStage::COMPUTE),
       v_src.sizes_ubo(),
+      v_src.axis_mapping_ubo(),
       v_src.numel_ubo());
 }
 
