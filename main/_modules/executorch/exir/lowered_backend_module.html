@@ -1167,9 +1167,6 @@
     <span class="n">in_spec</span> <span class="o">=</span> <span class="n">pytree</span><span class="o">.</span><span class="n">tree_flatten</span><span class="p">((</span><span class="nb">tuple</span><span class="p">(</span><span class="n">subgraph_signature</span><span class="o">.</span><span class="n">user_inputs</span><span class="p">),</span> <span class="p">{}))[</span><span class="mi">1</span><span class="p">]</span>
     <span class="n">out_spec</span> <span class="o">=</span> <span class="n">pytree</span><span class="o">.</span><span class="n">tree_flatten</span><span class="p">(</span><span class="n">subgraph_signature</span><span class="o">.</span><span class="n">user_outputs</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
 
-    <span class="nb">print</span><span class="p">(</span><span class="n">submodule</span><span class="o">.</span><span class="n">graph</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">subgraph_signature</span><span class="p">)</span>
-
     <span class="k">return</span> <span class="p">(</span>
         <span class="n">ExportedProgram</span><span class="p">(</span>
             <span class="n">root</span><span class="o">=</span><span class="n">submodule</span><span class="p">,</span>
