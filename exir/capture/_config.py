@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Union
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
-from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.fx._compatibility import compatibility
 
@@ -86,7 +86,7 @@ class ExecutorchBackendConfig:
     # A single sym shape eval pass can be defined for all the programs in the
     # EdgeProgramManager or can be defined per program.
     sym_shape_eval_pass: Union[PassType, Dict[str, PassType]] = (
-        HintBasedSymShapeEvalPass()
+        ConstraintBasedSymShapeEvalPass()
     )
 
     # If set to true, view_copy operations will be converted to lightweight

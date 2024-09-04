@@ -83,6 +83,8 @@ Tensor& add_out(
       executorch::runtime::tensor_is_realhbbf16_type(out),
       InvalidArgument,
       out);
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -139,6 +141,8 @@ Tensor& add_scalar_out(
       executorch::runtime::tensor_is_realhbbf16_type(out),
       InvalidArgument,
       out);
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);

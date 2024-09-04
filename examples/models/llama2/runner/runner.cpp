@@ -124,7 +124,6 @@ Error Runner::load() {
       metadata_.at(kVocabSize),
       temperature_);
   text_prefiller_ = std::make_unique<TextPrefiller>(
-      tokenizer_.get(),
       text_decoder_runner_.get(),
       metadata_.at(kUseKVCache),
       metadata_.at(kEnableDynamicShape));
@@ -201,8 +200,11 @@ Error Runner::generate(
   // Prefill first
   // Here feed all tokens to the model and get the next predicted token
   // after the prompt. After that we will enter generate loop.
-  auto prefill_res =
-      text_prefiller_->prefill(prompt_tokens, 0, wrapped_callback);
+
+  // print prompts
+  wrapped_callback(prompt);
+
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, 0);
   stats_.first_token_ms = util::time_in_ms();
   stats_.prompt_eval_end_ms = util::time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
