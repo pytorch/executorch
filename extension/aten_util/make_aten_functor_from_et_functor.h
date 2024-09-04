@@ -20,8 +20,8 @@
 #endif
 #include <ATen/native/Resize.h>
 #include <executorch/extension/kernel_util/type_list.h>
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/evalue.h>
-#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <torch/torch.h>
 
 namespace executorch {
@@ -105,37 +105,12 @@ struct type_convert<
             typename remove_const_ref<ETensor>::type,
             torch::executor::Tensor>>>
     final {
-  explicit type_convert(ATensor value) : value_(value) {
-    auto sizes =
-        std::make_shared<std::vector<torch::executor::Tensor::SizesType>>(
-            value_.sizes().begin(), value_.sizes().end());
-    const ssize_t dim = sizes->size();
-    auto dim_order =
-        std::make_shared<std::vector<torch::executor::Tensor::DimOrderType>>(
-            dim);
-    auto strides =
-        std::make_shared<std::vector<torch::executor::Tensor::StridesType>>(
-            dim);
-
-    std::iota(dim_order->begin(), dim_order->end(), 0);
-    ::executorch::runtime::dim_order_to_stride_nocheck(
-        sizes->data(), dim_order->data(), dim, strides->data());
-
-    auto tensor_impl = std::make_shared<torch::executor::TensorImpl>(
-        static_cast<torch::executor::ScalarType>(value_.scalar_type()),
-        sizes->size(),
-        sizes->data(),
-        value_.mutable_data_ptr(),
-        dim_order->data(),
-        strides->data());
-
-    converted_ = std::unique_ptr<
-        torch::executor::Tensor,
-        std::function<void(torch::executor::Tensor*)>>(
-        new torch::executor::Tensor(tensor_impl.get()),
-        [sizes, dim_order, strides, tensor_impl](
-            torch::executor::Tensor* pointer) { delete pointer; });
-  }
+  explicit type_convert(ATensor value)
+      : value_(value),
+        converted_(from_blob(
+            value_.mutable_data_ptr(),
+            {value_.sizes().begin(), value_.sizes().end()},
+            ::torch::executor::ScalarType(value_.scalar_type()))) {}
 
   ETensor call() {
     return *converted_;
@@ -143,10 +118,7 @@ struct type_convert<
 
  private:
   ATensor value_;
-  std::unique_ptr<
-      torch::executor::Tensor,
-      std::function<void(torch::executor::Tensor*)>>
-      converted_;
+  TensorPtr converted_;
 };
 
 // Tensors: ETen to ATen.
@@ -158,15 +130,14 @@ struct type_convert<
         std::is_same_v<typename remove_const_ref<ATensor>::type, at::Tensor> &&
         std::is_same_v<
             typename remove_const_ref<ETensor>::type,
-            torch::executor::Tensor>>>
+            ::torch::executor::Tensor>>>
     final {
   explicit type_convert(ETensor value)
-      : value_(value), sizes_(value_.sizes().begin(), value_.sizes().end()) {
-    converted_ = at::from_blob(
-        value_.mutable_data_ptr(),
-        sizes_,
-        static_cast<c10::ScalarType>(value_.scalar_type()));
-  }
+      : value_(value),
+        converted_(at::from_blob(
+            value_.mutable_data_ptr(),
+            std::vector<int64_t>{value_.sizes().begin(), value_.sizes().end()},
+            c10::ScalarType(value_.scalar_type()))) {}
 
   ATensor call() {
     return converted_;
@@ -175,7 +146,6 @@ struct type_convert<
  private:
   ETensor value_;
   at::Tensor converted_;
-  std::vector<int64_t> sizes_;
 };
 
 // Optionals: ATen to ETen.
