@@ -1518,6 +1518,105 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   }
 }
 
+TEST(VulkanComputeGraphTest, test_simple_graph_with_tmp_tensors) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> size_big = {8, 64, 124};
+  std::vector<int64_t> size_small = {8, 1, 124};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(
+      size_big, vkapi::kFloat, /*shared_object_idx = */ 0);
+  IOValueRef b = graph.add_input_tensor(
+      size_small, vkapi::kFloat, /*shared_object_idx = */ 1);
+
+  IOValueRef out = {};
+
+  out.value =
+      graph.add_tensor(size_big, vkapi::kFloat, /*shared_object_idx = */ 2);
+
+  // Perform the following compute
+  //
+  // a, b, out;
+  // {
+  //   inter;
+  //   {
+  //     tmp = a + b
+  //     tmp2 = tmp + a
+  //     inter = tmp2 + b
+  //   }
+  //   {
+  //     tmp = inter + b;
+  //     tmp2 = tmp + a
+  //     out = tmp2 + b;
+  //   }
+  // }
+  {
+    TmpTensor inter(&graph, size_big, vkapi::kFloat);
+    EXPECT_TRUE(inter.sobj_idx == 3);
+    {
+      TmpTensor tmp(&graph, size_big, vkapi::kFloat);
+      EXPECT_TRUE(tmp.sobj_idx == 4);
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {a, b, kDummyValueRef, tmp});
+
+      TmpTensor tmp2(&graph, size_big, vkapi::kFloat);
+      EXPECT_TRUE(tmp2.sobj_idx == 5);
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {tmp, a, kDummyValueRef, tmp2});
+
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {tmp2, b, kDummyValueRef, inter});
+    }
+    {
+      TmpTensor tmp(&graph, size_big, vkapi::kFloat);
+      EXPECT_TRUE(tmp.sobj_idx == 4);
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {inter, b, kDummyValueRef, tmp});
+
+      TmpTensor tmp2(&graph, size_big, vkapi::kFloat);
+      EXPECT_TRUE(tmp2.sobj_idx == 5);
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {tmp, a, kDummyValueRef, tmp2});
+
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {tmp2, b, kDummyValueRef, out});
+    }
+  }
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    float val_a = i + 2.0f;
+    float val_b = i + 1.5f;
+    float val_tmp = val_a + val_b;
+    float val_tmp2 = val_tmp + val_a;
+    float val_inter = val_tmp2 + val_b;
+    float val_tmp_2 = val_inter + val_b;
+    float val_tmp2_2 = val_tmp_2 + val_a;
+    float val_out = val_tmp2_2 + val_b;
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, val_out);
+    }
+  }
+}
+
 TEST(VulkanComputeGraphTest, test_large_graph) {
   auto build_start_time = std::chrono::system_clock::now();
   GraphConfig config;
