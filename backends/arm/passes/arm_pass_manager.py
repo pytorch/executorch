@@ -16,6 +16,7 @@ from executorch.backends.arm.passes.convert_split_to_slice import (
     ConvertSplitToSlicePass,
 )
 from executorch.backends.arm.passes.remove_clone_pass import RemoveClonePass
+from executorch.backends.arm.passes.size_adjust_conv2d_pass import SizeAdjustConv2DPass
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.pass_manager import PassManager
 
@@ -29,6 +30,7 @@ class ArmPassManager(PassManager):
         self, graph_module: torch.fx.Graph, compile_spec: CompileSpec
     ):
         """Apply passes before transforming program to backend"""
+        self.add_pass(SizeAdjustConv2DPass())
         self.add_pass(RemoveClonePass())
         self.add_pass(ConvertExpandCopyToRepeatPass())
         self.add_pass(ConvertSplitToSlicePass())
