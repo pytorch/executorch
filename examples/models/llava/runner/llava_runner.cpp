@@ -51,7 +51,6 @@ Error LlavaRunner::load() {
 
   // Load the text prefiller
   text_prefiller_ = std::make_unique<TextPrefiller>(
-      tokenizer_.get(),
       text_decoder_runner_.get(),
       /*use_kv_cache=*/true,
       /*enable_parallel_prefill=*/true);
@@ -74,7 +73,7 @@ Error LlavaRunner::load() {
 }
 
 Error LlavaRunner::generate(
-    std::vector<Image>& images,
+    std::vector<Image> images,
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
@@ -111,12 +110,14 @@ Error LlavaRunner::generate(
   }
 
   // prefill user prompt. No BOS because preset prompt already has it.
+  wrapped_callback(prompt);
+
   std::vector<uint64_t> user_prompt_tokens =
       ET_UNWRAP(tokenizer_->encode(prompt, /*bos=*/0, /*eos=*/0));
   size_t num_user_tokens = user_prompt_tokens.size();
 
-  uint64_t prefill_next_token = ET_UNWRAP(
-      text_prefiller_->prefill(user_prompt_tokens, pos, wrapped_callback));
+  uint64_t prefill_next_token =
+      ET_UNWRAP(text_prefiller_->prefill(user_prompt_tokens, pos));
   pos += num_user_tokens;
 
   // Generate tokens

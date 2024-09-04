@@ -46,7 +46,9 @@ class AnnotateChannelsLastDimOrder(ExportPass):
         NHWC_Order = (0, 2, 3, 1)
         HWCM_Order = (2, 3, 0, 1)
         for node in graph_module.graph.nodes:
-            if isinstance(node.meta["val"], tuple):
+            if isinstance(
+                node.meta["val"], (tuple, torch.fx.immutable_collections.immutable_list)
+            ):
                 node_data = node.meta["val"][0].data
             else:
                 node_data = node.meta["val"].data
