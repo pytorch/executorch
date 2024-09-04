@@ -17,8 +17,10 @@ def define_common_targets():
                 "tensor_ptr.cpp",
             ],
             exported_headers = [
+                "tensor.h",
                 "tensor_impl_ptr.h",
                 "tensor_ptr.h",
+                "tensor_ptr_maker.h",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
