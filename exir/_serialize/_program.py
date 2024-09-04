@@ -347,7 +347,7 @@ def serialize_pte_binary(
     *,
     mutable_data: Optional[List[Buffer]] = None,
     extract_delegate_segments: bool = False,
-    extract_constant_segment: bool = False,
+    extract_constant_segment: bool = True,
     segment_alignment: int = 128,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
