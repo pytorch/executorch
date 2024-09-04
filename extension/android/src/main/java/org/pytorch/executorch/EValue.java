@@ -27,6 +27,8 @@ import java.util.Optional;
  *
  * <p>{@code EValue} objects may retain references to objects passed into their constructors, and
  * may return references to their internal state from {@code toX()}.
+ *
+ * <p>Warning: These APIs are experimental and subject to change without notice
  */
 @DoNotStrip
 public class EValue {
