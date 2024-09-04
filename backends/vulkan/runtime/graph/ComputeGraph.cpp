@@ -38,11 +38,12 @@ namespace vkcompute {
 
 VALUE_PTR_CLASS_IMPL(vTensorPtr, api::vTensor, Tensor)
 VALUE_PTR_CLASS_IMPL(TensorRefPtr, TensorRef, TensorRef)
-VALUE_PTR_CLASS_IMPL(StagingPtr, api::StorageBuffer, Staging)
+VALUE_PTR_CLASS_IMPL(StagingPtr, api::StagingBuffer, Staging)
 VALUE_PTR_CLASS_IMPL(IntListPtr, std::vector<int64_t>, IntList)
 VALUE_PTR_CLASS_IMPL(DoubleListPtr, std::vector<double>, DoubleList)
 VALUE_PTR_CLASS_IMPL(BoolListPtr, std::vector<bool>, BoolList)
 VALUE_PTR_CLASS_IMPL(ValueListPtr, std::vector<ValueRef>, ValueList)
+VALUE_PTR_CLASS_IMPL(SymIntPtr, SymInt, SymInt)
 
 #undef VALUE_PTR_CLASS_IMPL
 
@@ -236,7 +237,7 @@ ValueRef ComputeGraph::add_staging(
     const size_t numel) {
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
-  values_.emplace_back(api::StorageBuffer(context(), dtype, numel));
+  values_.emplace_back(api::StagingBuffer(context(), dtype, numel));
   return idx;
 }
 
@@ -258,6 +259,13 @@ ValueRef ComputeGraph::add_string(std::string&& str) {
   ValueRef idx(static_cast<int>(values_.size()));
   check_no_active_value_ptrs();
   values_.emplace_back(std::move(str));
+  return idx;
+}
+
+ValueRef ComputeGraph::add_symint(const int32_t val) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
+  values_.emplace_back(SymInt(context(), val));
   return idx;
 }
 
@@ -298,6 +306,22 @@ ValueRef ComputeGraph::set_output_tensor(
   }
   outputs_.push_back({idx, kDummyValueRef});
   return idx;
+}
+
+vkapi::BufferBindInfo ComputeGraph::get_or_create_int_param_buffer(
+    const ValueRef idx) {
+  if (values_.at(idx).isInt()) {
+    const int32_t val = extract_scalar<int32_t>(idx);
+    create_params_buffer(val);
+  } else if (values_.at(idx).isSymInt()) {
+    SymIntPtr symint = get_symint(idx);
+    return vkapi::BufferBindInfo(symint->gpu_buffer.buffer());
+  }
+  VK_THROW("Cannot create a int param buffer for the given value");
+}
+
+void ComputeGraph::set_symint(const ValueRef idx, const int32_t val) {
+  get_symint(idx)->set(val);
 }
 
 SharedObject& ComputeGraph::get_shared_object(const int64_t idx) {
