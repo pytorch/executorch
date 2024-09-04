@@ -7,12 +7,12 @@
  */
 
 #include <executorch/runtime/backend/interface.h>
-#include <executorch/runtime/platform/assert.h>
 
 namespace executorch {
 namespace runtime {
 
-PyTorchBackendInterface::~PyTorchBackendInterface() {}
+// Pure-virtual dtors still need an implementation.
+BackendInterface::~BackendInterface() {}
 
 namespace {
 
@@ -31,7 +31,7 @@ size_t num_registered_backends = 0;
 
 } // namespace
 
-PyTorchBackendInterface* get_backend_class(const char* name) {
+BackendInterface* get_backend_class(const char* name) {
   for (size_t i = 0; i < num_registered_backends; i++) {
     Backend backend = registered_backends[i];
     if (strcmp(backend.name, name) == 0) {
