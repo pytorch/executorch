@@ -413,6 +413,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_convolution_backward",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
@@ -1124,6 +1130,9 @@ ATEN_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
+    ),
+    op_target(
+        name = "op_topk",
     ),
     op_target(
         name = "op_transpose_copy",

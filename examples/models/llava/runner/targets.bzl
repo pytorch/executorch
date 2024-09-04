@@ -8,6 +8,9 @@ def define_common_targets():
         visibility = [
             "@EXECUTORCH_CLIENTS",
         ],
+        compiler_flags = [
+            "-Wno-global-constructors",
+        ],
         exported_deps = [
             "//executorch/backends/xnnpack:xnnpack_backend",
             "//executorch/extension/llm/runner:runner_lib",

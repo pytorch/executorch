@@ -43,6 +43,13 @@ bool check_scatter_add_args(
     const Tensor& src,
     Tensor& out);
 
+bool check_scatter_src_args(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Tensor& src,
+    Tensor& out);
+
 bool check_scatter_value_args(
     const Tensor& self,
     int64_t dim,
