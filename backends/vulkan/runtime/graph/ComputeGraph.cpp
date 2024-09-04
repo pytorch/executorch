@@ -48,6 +48,72 @@ VALUE_PTR_CLASS_IMPL(SymIntPtr, SymInt, SymInt)
 #undef VALUE_PTR_CLASS_IMPL
 
 //
+// TmpTensor
+//
+
+TmpTensor::TmpTensor(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::StorageType storage_type,
+    const utils::GPUMemoryLayout memory_layout)
+    : graph_p(graph_ptr),
+      sobj_idx(get_sobj_idx()),
+      vref(graph_p->add_tensor(
+          sizes,
+          dtype,
+          storage_type,
+          memory_layout,
+          sobj_idx)) {}
+
+TmpTensor::TmpTensor(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::StorageType storage_type)
+    : graph_p(graph_ptr),
+      sobj_idx(get_sobj_idx()),
+      vref(graph_p->add_tensor(sizes, dtype, storage_type, sobj_idx)) {}
+
+TmpTensor::TmpTensor(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype,
+    const utils::GPUMemoryLayout memory_layout)
+    : graph_p(graph_ptr),
+      sobj_idx(get_sobj_idx()),
+      vref(graph_p->add_tensor(sizes, dtype, memory_layout, sobj_idx)) {}
+
+TmpTensor::TmpTensor(
+    ComputeGraph* const graph_ptr,
+    const std::vector<int64_t>& sizes,
+    const vkapi::ScalarType dtype)
+    : graph_p(graph_ptr),
+      sobj_idx(get_sobj_idx()),
+      vref(graph_p->add_tensor(sizes, dtype, sobj_idx)) {}
+
+TmpTensor::~TmpTensor() {
+  // Lifetime of this temporary tensor is expired; return the shared object to
+  // the pool, as long as the sobj index is valid
+  if (sobj_idx >= 0) {
+    graph_p->tmp_shared_object_idxs_.emplace(sobj_idx);
+  }
+}
+
+int64_t TmpTensor::get_sobj_idx() {
+  int64_t sobj_idx;
+  // If no available temporary shared objects, request a new one to be created
+  if (graph_p->tmp_shared_object_idxs_.empty()) {
+    sobj_idx = graph_p->shared_objects_.size();
+  } else {
+    // Get the first available shared object idx
+    sobj_idx = graph_p->tmp_shared_object_idxs_.top();
+    graph_p->tmp_shared_object_idxs_.pop();
+  }
+  return sobj_idx;
+}
+
+//
 // ComputeGraph
 //
 
