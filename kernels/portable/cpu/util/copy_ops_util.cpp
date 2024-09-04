@@ -411,33 +411,6 @@ void get_select_copy_out_target_size(
   }
 }
 
-bool check_slice_copy_args(
-    const Tensor& in,
-    int64_t dim,
-    int64_t step,
-    Tensor& out) {
-  ET_LOG_AND_RETURN_IF_FALSE(in.dim() > 0);
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      step > 0, "slice step must be greater than zero");
-  return true;
-}
-
-void get_slice_copy_out_target_size(
-    const Tensor& in,
-    int64_t dim,
-    int64_t num_values,
-    exec_aten::SizesType* out_sizes,
-    size_t* out_ndim) {
-  *out_ndim = in.dim();
-
-  for (size_t d = 0; d < in.dim(); ++d) {
-    out_sizes[d] = in.size(d);
-  }
-  out_sizes[dim] = num_values;
-}
-
 bool check_split_with_sizes_copy_args(
     const Tensor& in,
     exec_aten::ArrayRef<int64_t> split_sizes,
