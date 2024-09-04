@@ -45,7 +45,7 @@
  */
 
 #include "executorch/backends/mediatek/runtime/include/NeuronBufferAllocator.h"
-#include <executorch/examples/mediatek/executor_runner/mtk_llama_runner.h>
+// #include <executorch/examples/mediatek/executor_runner/mtk_llama_runner.h>
 
 #include <ctime>
 #include <iostream>
@@ -59,7 +59,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/util.h>
+// #include <executorch/util/util.h>
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/runtime/core/result.h>
 

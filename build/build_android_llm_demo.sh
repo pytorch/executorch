@@ -34,6 +34,8 @@ build_android_native_library() {
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_NEURON=ON \
+    -DNEURON_BUFFER_ALLOCATOR_LIB="$NEURON_BUFFER_ALLOCATOR_LIB" \
     -DCMAKE_BUILD_TYPE=Release \
     -B"${CMAKE_OUT}"
 
@@ -47,7 +49,7 @@ build_android_native_library() {
   cmake examples/models/llama2 \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="$ANDROID_ABI" \
-    -DANDROID_PLATFORM=android-23 \
+    -DANDROID_PLATFORM=android-26 \
     -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
@@ -61,7 +63,7 @@ build_android_native_library() {
   cmake extension/android \
     -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI="${ANDROID_ABI}" \
-    -DANDROID_PLATFORM=android-23 \
+    -DANDROID_PLATFORM=android-26 \
     -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_LOG_LEVEL=Info \

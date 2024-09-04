@@ -41,6 +41,7 @@ list(
   extension_runner_util
   extension_threadpool
   fbjni
+  neuron_backend
 )
 
 if(TARGET optimized_native_cpu_ops_lib)
@@ -100,7 +101,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
 
   target_link_options_shared_lib(quantized_ops_lib)
 
-  set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp)
+  set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/mtk_llama_runner.cpp)
   add_library(executorch_llama_jni SHARED ${LLAMA_JNI_SRCS})
   if(TARGET pthreadpool)
     target_compile_definitions(executorch_llama_jni PRIVATE ET_USE_THREADPOOL=1)
