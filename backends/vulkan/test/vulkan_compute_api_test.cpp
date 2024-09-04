@@ -1554,15 +1554,15 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_tmp_tensors) {
   //   }
   // }
   {
-    TmpTensorVRef inter(&graph, size_big, vkapi::kFloat);
+    TmpTensor inter(&graph, size_big, vkapi::kFloat);
     EXPECT_TRUE(inter.sobj_idx == 3);
     {
-      TmpTensorVRef tmp(&graph, size_big, vkapi::kFloat);
+      TmpTensor tmp(&graph, size_big, vkapi::kFloat);
       EXPECT_TRUE(tmp.sobj_idx == 4);
       VK_GET_OP_FN("aten.add.Tensor")
       (graph, {a, b, kDummyValueRef, tmp});
 
-      TmpTensorVRef tmp2(&graph, size_big, vkapi::kFloat);
+      TmpTensor tmp2(&graph, size_big, vkapi::kFloat);
       EXPECT_TRUE(tmp2.sobj_idx == 5);
       VK_GET_OP_FN("aten.add.Tensor")
       (graph, {tmp, a, kDummyValueRef, tmp2});
@@ -1571,12 +1571,12 @@ TEST(VulkanComputeGraphTest, test_simple_graph_with_tmp_tensors) {
       (graph, {tmp2, b, kDummyValueRef, inter});
     }
     {
-      TmpTensorVRef tmp(&graph, size_big, vkapi::kFloat);
+      TmpTensor tmp(&graph, size_big, vkapi::kFloat);
       EXPECT_TRUE(tmp.sobj_idx == 4);
       VK_GET_OP_FN("aten.add.Tensor")
       (graph, {inter, b, kDummyValueRef, tmp});
 
-      TmpTensorVRef tmp2(&graph, size_big, vkapi::kFloat);
+      TmpTensor tmp2(&graph, size_big, vkapi::kFloat);
       EXPECT_TRUE(tmp2.sobj_idx == 5);
       VK_GET_OP_FN("aten.add.Tensor")
       (graph, {tmp, a, kDummyValueRef, tmp2});

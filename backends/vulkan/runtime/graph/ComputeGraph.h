@@ -69,7 +69,7 @@ DECL_VALUE_PTR_CLASS(SymIntPtr, SymInt);
 #undef DECL_VALUE_PTR_CLASS
 
 //
-// TmpTensorVRef
+// TmpTensor
 //
 
 /*
@@ -87,7 +87,7 @@ DECL_VALUE_PTR_CLASS(SymIntPtr, SymInt);
  * This class should only be used to create tensors whose lifetimes exist only
  * in a well defined scope (i.e. within a function).
  */
-struct TmpTensorVRef {
+struct TmpTensor {
   ComputeGraph* graph_p;
   int64_t sobj_idx;
   ValueRef vref;
@@ -96,48 +96,49 @@ struct TmpTensorVRef {
   // Match all available overloads of `add_tensor`
   //
 
-  TmpTensorVRef(
+  TmpTensor(
       ComputeGraph* const graph_ptr,
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const utils::StorageType storage_type,
       const utils::GPUMemoryLayout memory_layout);
 
-  TmpTensorVRef(
+  TmpTensor(
       ComputeGraph* const graph_ptr,
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const utils::StorageType storage_type);
 
-  TmpTensorVRef(
+  TmpTensor(
       ComputeGraph* const graph_ptr,
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype,
       const utils::GPUMemoryLayout memory_layout);
 
-  TmpTensorVRef(
+  TmpTensor(
       ComputeGraph* const graph_ptr,
       const std::vector<int64_t>& sizes,
       const vkapi::ScalarType dtype);
 
   // No copy construction or assignment
-  TmpTensorVRef(TmpTensorVRef& other) = delete;
-  TmpTensorVRef& operator=(TmpTensorVRef& other) = delete;
+  TmpTensor(TmpTensor& other) = delete;
+  TmpTensor& operator=(TmpTensor& other) = delete;
 
   // No move construction or assignment
-  TmpTensorVRef(TmpTensorVRef&& other) = delete;
-  TmpTensorVRef& operator=(TmpTensorVRef&& other) = delete;
+  TmpTensor(TmpTensor&& other) = delete;
+  TmpTensor& operator=(TmpTensor&& other) = delete;
 
   // Custom cast to ValueRef
   operator ValueRef() const {
     return vref;
   };
 
-  ~TmpTensorVRef();
+  ~TmpTensor();
 
  private:
-  // Helper function to get new shared obj index
-  void set_sobj_idx();
+  // Helper function to get first available shared object index or request a new
+  // one to be created.
+  int64_t get_sobj_idx();
 };
 
 //
@@ -169,8 +170,8 @@ class ComputeGraph final {
   std::unique_ptr<api::Context> context_;
 
   std::vector<SharedObject> shared_objects_;
-  // This stack is used by `TmpTensorVRef` instances to recycle shared objects
-  // for temporary tensors. See the comments of `TmpTensorVRef` for more details
+  // This stack is used by `TmpTensor` instances to recycle shared objects
+  // for temporary tensors. See the comments of `TmpTensor` for more details
   std::stack<int64_t> tmp_shared_object_idxs_;
 
   std::vector<Value> values_;
@@ -672,7 +673,7 @@ class ComputeGraph final {
   friend class ValueListPtr;
   friend class SymIntPtr;
 
-  friend struct TmpTensorVRef;
+  friend struct TmpTensor;
 };
 
 template <typename T>
