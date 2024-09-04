@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import XCTest
 import LLaMARunner
+import XCTest
 
 final class LLaMAPerfBenchmarkTests: XCTestCase {
   func testLlama2() throws {
