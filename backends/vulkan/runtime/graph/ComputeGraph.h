@@ -93,7 +93,7 @@ struct TmpTensorVRef {
   ValueRef vref;
 
   //
-  // Match all available overloads of `add_tensor` and `add_tensor_like`
+  // Match all available overloads of `add_tensor`
   //
 
   TmpTensorVRef(
