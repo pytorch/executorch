@@ -13,6 +13,7 @@
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/SymInt.h>
 #include <executorch/backends/vulkan/runtime/graph/containers/Types.h>
 
 namespace vkcompute {
@@ -66,6 +67,8 @@ struct Value final {
     std::vector<ValueRef> as_value_list;
 
     std::string as_string;
+
+    SymInt as_symint;
 
     Payload() : u() {}
     // NOLINTNEXTLINE
@@ -123,6 +126,7 @@ struct Value final {
           TypeTag::VALUELIST, std::vector<ValueRef>, as_value_list, vector);
       CASE_MOVE_MOVEABLE_TYPE(
           TypeTag::STRING, std::string, as_string, basic_string);
+      CASE_MOVE_MOVEABLE_TYPE(TypeTag::SYMINT, SymInt, as_symint, SymInt);
 
       case TypeTag::NONE:
         clearToNone();
@@ -171,6 +175,9 @@ struct Value final {
         break;
       case TypeTag::STRING:
         payload.as_string.~basic_string();
+        break;
+      case TypeTag::SYMINT:
+        payload.as_symint.~SymInt();
         break;
       // Manually list out the types so that if a type here is added later and
       // not handled the compiler can catch it.
@@ -287,6 +294,8 @@ struct Value final {
       String,
       TypeTag::STRING,
       as_string);
+
+  SUPPORT_TRIVIALLY_MOVEABLE_TYPE(SymInt, SymInt, TypeTag::SYMINT, as_symint);
 
 #undef SUPPORT_TRIVIALLY_COPYABLE_TYPE
 #undef SUPPORT_TRIVIALLY_MOVEABLE_TYPE

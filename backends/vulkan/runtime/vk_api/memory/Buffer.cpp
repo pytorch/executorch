@@ -67,7 +67,7 @@ VulkanBuffer::VulkanBuffer(
         &allocation_create_info,
         &handle_,
         &(memory_.allocation),
-        nullptr));
+        &(memory_.allocation_info)));
   } else {
     VmaAllocatorInfo allocator_info{};
     vmaGetAllocatorInfo(allocator_, &allocator_info);
@@ -158,7 +158,7 @@ MemoryMap::MemoryMap(const VulkanBuffer& buffer, const uint8_t access)
   }
 }
 
-MemoryMap::MemoryMap(MemoryMap&& other)
+MemoryMap::MemoryMap(MemoryMap&& other) noexcept
     : access_(other.access_),
       allocator_(other.allocator_),
       allocation_(other.allocation_),
@@ -166,19 +166,6 @@ MemoryMap::MemoryMap(MemoryMap&& other)
       data_len_{other.data_len_} {
   other.allocation_ = VK_NULL_HANDLE;
   other.data_ = nullptr;
-}
-
-MemoryMap& MemoryMap::operator=(MemoryMap&& other) {
-  access_ = other.access_;
-  allocator_ = other.allocator_;
-  allocation_ = other.allocation_;
-  data_ = other.data_;
-  data_len_ = other.data_len_;
-
-  other.allocation_ = VK_NULL_HANDLE;
-  other.data_ = nullptr;
-
-  return *this;
 }
 
 MemoryMap::~MemoryMap() {

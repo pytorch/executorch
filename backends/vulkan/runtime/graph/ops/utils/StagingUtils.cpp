@@ -17,78 +17,32 @@
 
 namespace vkcompute {
 
-template <typename T>
-void memcpy_to_mapping_impl(
-    const void* src,
-    vkapi::MemoryMap& dst_mapping,
-    const size_t nbytes) {
-  T* data_ptr = dst_mapping.template data<T>();
-  memcpy(data_ptr, reinterpret_cast<const T*>(src), nbytes);
-}
-
-template <typename T>
-void memcpy_from_mapping_impl(
-    vkapi::MemoryMap& src_mapping,
-    void* dst,
-    const size_t nbytes) {
-  T* data_ptr = src_mapping.template data<T>();
-  memcpy(reinterpret_cast<T*>(dst), data_ptr, nbytes);
-}
-
-void memcpy_to_mapping(
-    const void* src,
-    vkapi::MemoryMap& dst_mapping,
-    const size_t nbytes,
-    const vkapi::ScalarType dtype) {
-#define DTYPE_CASE(ctype, vkformat, name)                    \
-  case vkapi::ScalarType::name:                              \
-    memcpy_to_mapping_impl<ctype>(src, dst_mapping, nbytes); \
-    break;
-
-  switch (dtype) {
-    VK_FORALL_SCALAR_TYPES(DTYPE_CASE)
-    default:
-      VK_THROW("Unrecognized dtype!");
-  }
-#undef DTYPE_CASE
-}
-
-void memcpy_from_mapping(
-    vkapi::MemoryMap& src_mapping,
-    void* dst,
-    const size_t nbytes,
-    const vkapi::ScalarType dtype) {
-#define DTYPE_CASE(ctype, vkformat, name)                      \
-  case vkapi::ScalarType::name:                                \
-    memcpy_from_mapping_impl<ctype>(src_mapping, dst, nbytes); \
-    break;
-
-  switch (dtype) {
-    VK_FORALL_SCALAR_TYPES(DTYPE_CASE)
-    default:
-      VK_THROW("Unrecognized dtype!");
-  }
-#undef DTYPE_CASE
-}
-
 void copy_ptr_to_staging(
     const void* src,
     api::StagingBuffer& staging,
     const size_t nbytes) {
-  memcpy_to_mapping(src, staging.mapping(), nbytes, staging.dtype());
+  memcpy(staging.data(), src, nbytes);
+  vmaFlushAllocation(
+      staging.buffer().vma_allocator(),
+      staging.buffer().allocation(),
+      0u,
+      VK_WHOLE_SIZE);
 }
 
 void copy_staging_to_ptr(
     api::StagingBuffer& staging,
     void* dst,
     const size_t nbytes) {
-  memcpy_from_mapping(staging.mapping(), dst, nbytes, staging.dtype());
+  vmaInvalidateAllocation(
+      staging.buffer().vma_allocator(),
+      staging.buffer().allocation(),
+      0u,
+      VK_WHOLE_SIZE);
+  memcpy(dst, staging.data(), nbytes);
 }
 
 void set_staging_zeros(api::StagingBuffer& staging, const size_t nbytes) {
-  vkapi::MemoryMap mapping(staging.buffer(), vkapi::MemoryAccessType::WRITE);
-  uint8_t* data_ptr = mapping.template data<uint8_t>();
-  memset(data_ptr, 0, staging.nbytes());
+  memset(staging.data(), 0, staging.nbytes());
 }
 
 vkapi::ShaderInfo get_nchw_to_tensor_shader(

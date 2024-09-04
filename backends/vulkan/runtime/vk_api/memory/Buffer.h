@@ -114,6 +114,10 @@ class VulkanBuffer final {
     return memory_.allocation;
   }
 
+  inline VmaAllocationInfo allocation_info() const {
+    return memory_.allocation_info;
+  }
+
   inline VmaAllocationCreateInfo allocation_create_info() const {
     return VmaAllocationCreateInfo(memory_.create_info);
   }
@@ -174,8 +178,8 @@ class MemoryMap final {
   MemoryMap(const MemoryMap&) = delete;
   MemoryMap& operator=(const MemoryMap&) = delete;
 
-  MemoryMap(MemoryMap&&);
-  MemoryMap& operator=(MemoryMap&&);
+  MemoryMap(MemoryMap&&) noexcept;
+  MemoryMap& operator=(MemoryMap&&) = delete;
 
   ~MemoryMap();
 
