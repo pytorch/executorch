@@ -37,7 +37,7 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
     Intent intent = getIntent();
 
     modelDir = new File(intent.getStringExtra("model_dir"));
-    File model = Arrays.stream(directory.listFiles())
+    File model = Arrays.stream(modelDir.listFiles())
             .filter(file -> file.getName().endsWith(".pte"))
             .findFirst();
     String tokenizerPath = intent.getStringExtra("tokenizer_path");
