@@ -33,7 +33,10 @@ from executorch.exir import (
 
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
-from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+from executorch.exir.passes.sym_shape_eval_pass import (
+    ConstraintBasedSymShapeEvalPass,
+    HintBasedSymShapeEvalPass,
+)
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
@@ -227,6 +230,8 @@ def export_all(llava_model: LlavaModel):
             memory_planning_pass=MemoryPlanningPass("greedy", alloc_graph_input=False),
             sym_shape_eval_pass={
                 "image_encoder": ConstraintBasedSymShapeEvalPass(),
+                "text_model": ConstraintBasedSymShapeEvalPass(),
+                "token_embedding": HintBasedSymShapeEvalPass(),
             },
         )
     )

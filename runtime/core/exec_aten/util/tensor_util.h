@@ -235,8 +235,9 @@
  */
 #define ET_CHECK_CONTIGUOUS(a__)                                              \
   ({                                                                          \
-    const ::exec_aten::ArrayRef<int32_t> strides = a__.strides();             \
-    const ::exec_aten::ArrayRef<int32_t> sizes = a__.sizes();                 \
+    const ::exec_aten::ArrayRef<exec_aten::StridesType> strides =             \
+        a__.strides();                                                        \
+    const ::exec_aten::ArrayRef<exec_aten::StridesType> sizes = a__.sizes();  \
     ET_CHECK_MSG(                                                             \
         strides[strides.size() - 1] == 1,                                     \
         "The stride of the last dimension shall be 1 for contiguous tensor, " \
@@ -267,8 +268,10 @@
         "Two tensors shall have same number of strides, but not %zu and %zu.", \
         a__.dim(),                                                             \
         b__.dim());                                                            \
-    const ::exec_aten::ArrayRef<int32_t> a_strides = a__.strides();            \
-    const ::exec_aten::ArrayRef<int32_t> b_strides = b__.strides();            \
+    const ::exec_aten::ArrayRef<exec_aten::StridesType> a_strides =            \
+        a__.strides();                                                         \
+    const ::exec_aten::ArrayRef<exec_aten::StridesType> b_strides =            \
+        b__.strides();                                                         \
     for (size_t i = 0; i < a__.dim(); i++) {                                   \
       ET_CHECK_MSG(                                                            \
           a_strides[i] == b_strides[i],                                        \
@@ -276,8 +279,8 @@
           "but now is %d and %d.",                                             \
           i,                                                                   \
           i,                                                                   \
-          a_strides[i],                                                        \
-          b_strides[i]);                                                       \
+          (int32_t)a_strides[i],                                               \
+          (int32_t)b_strides[i]);                                              \
     }                                                                          \
   })
 
@@ -295,9 +298,12 @@
         a__.dim(),                                                      \
         b__.dim(),                                                      \
         c__.dim());                                                     \
-    const ::exec_aten::ArrayRef<int32_t> a_strides = a__.strides();     \
-    const ::exec_aten::ArrayRef<int32_t> b_strides = b__.strides();     \
-    const ::exec_aten::ArrayRef<int32_t> c_strides = c__.strides();     \
+    const ::exec_aten::ArrayRef<exec_aten::StridesType> a_strides =     \
+        a__.strides();                                                  \
+    const ::exec_aten::ArrayRef<exec_aten::StridesType> b_strides =     \
+        b__.strides();                                                  \
+    const ::exec_aten::ArrayRef<exec_aten::StridesType> c_strides =     \
+        c__.strides();                                                  \
     for (size_t i = 0; i < a__.dim(); i++) {                            \
       ET_CHECK_MSG(                                                     \
           a_strides[i] == b_strides[i] && b_strides[i] == c_strides[i], \
@@ -306,9 +312,9 @@
           i,                                                            \
           i,                                                            \
           i,                                                            \
-          a_strides[i],                                                 \
-          b_strides[i],                                                 \
-          c_strides[i]);                                                \
+          (int32_t)a_strides[i],                                        \
+          (int32_t)b_strides[i],                                        \
+          (int32_t)c_strides[i]);                                       \
     }                                                                   \
   })
 
@@ -848,11 +854,11 @@ inline bool tensor_is_scalar(exec_aten::Tensor t) {
 
 /**
  * The expected output size may not be the existing size of any inputs and
- * outputs if the operator supports both broadcast and dynamic shape. Therefore
- * such operators needs extra space to store the calculated expected output
- * size. such dynamic allocation is troublesome in executorch so we can just
- * hard code a static value of a relatively small value because users don't
- * create high dimensional tensors.
+ * outputs if the operator supports both broadcast and dynamic shape.
+ * Therefore such operators needs extra space to store the calculated expected
+ * output size. such dynamic allocation is troublesome in executorch so we can
+ * just hard code a static value of a relatively small value because users
+ * don't create high dimensional tensors.
  */
 constexpr size_t kTensorDimensionLimit = 16;
 
@@ -893,8 +899,8 @@ inline size_t getTrailingDims(const exec_aten::Tensor& tensor, int64_t dim) {
  * @param[in] tensor The tensor that will be indexed
  * @param[in] coordinate A n-dimensional array representing the coordinate to
  * index. It is assumed that the array has kTensorDimensionLimit elements.
- * @param[out] index The linear index to element at the specified coordinate in
- * the tensor.
+ * @param[out] index The linear index to element at the specified coordinate
+ * in the tensor.
  */
 inline size_t coordinateToIndex(
     const exec_aten::Tensor& tensor,
@@ -935,10 +941,10 @@ inline void indexToCoordinate(
  *
  * @param[in] tensor The source of the value to extract.
  * @param[out] out_val The extracted value, on success.
- * @returns `true` if a value was extracted, and sets `*out_val` to that value.
- *    `false` if a value could not be extracted: either it was not an integer
- *    Scalar Tensor, or the value of that Scalar Tensor could not be represented
- *    by INT_T.
+ * @returns `true` if a value was extracted, and sets `*out_val` to that
+ * value. `false` if a value could not be extracted: either it was not an
+ * integer Scalar Tensor, or the value of that Scalar Tensor could not be
+ * represented by INT_T.
  */
 template <
     typename INT_T,
@@ -973,10 +979,10 @@ bool extract_scalar_tensor(exec_aten::Tensor tensor, INT_T* out_val) {
  *
  * @param[in] tensor The source of the value to extract.
  * @param[out] out_val The extracted value, on success.
- * @returns `true` if a value was extracted, and sets `*out_val` to that value.
- *    `false` if a value could not be extracted: either it was not a floating
- *    point Scalar Tensor, or the value of that Scalar Tensor could not be
- *    represented by FLOAT_T.
+ * @returns `true` if a value was extracted, and sets `*out_val` to that
+ * value. `false` if a value could not be extracted: either it was not a
+ * floating point Scalar Tensor, or the value of that Scalar Tensor could not
+ * be represented by FLOAT_T.
  */
 template <
     typename FLOAT_T,
@@ -1076,9 +1082,9 @@ ET_NODISCARD Error resize_tensor_impl(
  * expand the tensor if new size exceeds the current capacity. Currently
  * fails an ET_CHECK if the tensor cannot be resized.
  *
- * WARNING: Placeholder API until discussion around runtime context is settled,
- * will likely move to be a class method on a TensorResizer object passed in
- * through runtimeContext.
+ * WARNING: Placeholder API until discussion around runtime context is
+ * settled, will likely move to be a class method on a TensorResizer object
+ * passed in through runtimeContext.
  */
 ET_NODISCARD inline Error resize_tensor(
     exec_aten::Tensor t,
@@ -1091,9 +1097,9 @@ ET_NODISCARD inline Error resize_tensor(
  * expand the tensor if new size exceeds the current capacity. Currently
  * fails an ET_CHECK if the tensor cannot be resized.
  *
- * WARNING: Placeholder API until discussion around runtime context is settled,
- * will likely move to be a class method on a TensorResizer object passed in
- * through runtimeContext.
+ * WARNING: Placeholder API until discussion around runtime context is
+ * settled, will likely move to be a class method on a TensorResizer object
+ * passed in through runtimeContext.
  */
 template <
     typename T,
@@ -1124,8 +1130,8 @@ ET_DEPRECATED inline void resize(
 /**
  * Get dim_order of a Tensor and write it to out_dim_order.
  * @param tensor The tensor where we want to get dim order from.
- * @param out_dim_order Pointing to an array of DimOrderType where we write dim
- * order into it.
+ * @param out_dim_order Pointing to an array of DimOrderType where we write
+ * dim order into it.
  * @param out_dim_order_size Size of the DimOrderType array.
  */
 ET_NODISCARD Error get_dim_order(
@@ -1134,17 +1140,93 @@ ET_NODISCARD Error get_dim_order(
     size_t out_dim_order_size);
 
 /**
- * Checks whether a tensor has a valid dim order. If the dim order could not be
- * determined, then this function returns false by default.
+ * Checks whether a tensor has a valid dim order. If the dim order could not
+ * be determined, then this function returns false by default.
  */
 bool tensor_has_valid_dim_order(exec_aten::Tensor t);
 
 /**
- * Checks whether a tensor has either the default of channels last dim order. If
- * the dim order could not be determined, then this function returns false by
- * default.
+ * Checks whether a tensor has either the default of channels last dim order.
+ * If the dim order could not be determined, then this function returns false
+ * by default.
  */
 bool tensor_is_default_or_channels_last_dim_order(exec_aten::Tensor t);
+
+/**
+ * Checks whether a tensor has the default dimension order.
+ * Logs an error message if the tensor does not meet the expected criteria.
+ *
+ * @param t The tensor to check the dimension order of.
+ * @return True if the tensor has the default dimension order, false otherwise.
+ */
+bool tensor_is_default_dim_order(exec_aten::Tensor t);
+
+/**
+ * Checks whether a tensor has the channels last dimension order.
+ * Logs an error message if the tensor does not meet the expected criteria.
+ *
+ * @param t The tensor to check the dimension order of.
+ * @return True if the tensor has the channels last dimension order, false
+ * otherwise.
+ */
+bool tensor_is_channels_last_dim_order(exec_aten::Tensor t);
+
+/**
+ * Asserts that four tensors have the same dim_order
+ *
+ * Note that this macro only tests dim order, but not others like actual data,
+ * sizes, etc.
+ *
+ */
+bool tensors_have_same_dim_order(
+    const exec_aten::ArrayRef<exec_aten::Tensor> tensor_list);
+
+/**
+ * Asserts that two tensors have the same dim_order
+ *
+ * Note that this macro only tests dim order, but not others like actual data,
+ * sizes, etc.
+ */
+
+inline bool tensors_have_same_dim_order(
+    const exec_aten::Tensor& a,
+    const exec_aten::Tensor& b) {
+  exec_aten::Tensor tensor_list[2] = {a, b};
+  return tensors_have_same_dim_order(tensor_list);
+}
+
+/**
+ * Asserts that three tensors have the same dim_order
+ *
+ * Note that this macro only tests dim order, but not others like actual data,
+ * sizes, etc.
+ *
+ */
+
+inline bool tensors_have_same_dim_order(
+    const exec_aten::Tensor& a,
+    const exec_aten::Tensor& b,
+    const exec_aten::Tensor& c) {
+  exec_aten::Tensor tensor_list[3] = {a, b, c};
+  return tensors_have_same_dim_order(tensor_list);
+}
+
+/**
+ * Asserts that four tensors have the same dim_order
+ *
+ * Note that this macro only tests dim order, but not others like actual data,
+ * sizes, etc.
+ *
+ */
+
+inline bool tensors_have_same_dim_order(
+    const exec_aten::Tensor& a,
+    const exec_aten::Tensor& b,
+    const exec_aten::Tensor& c,
+    const exec_aten::Tensor& d) {
+  exec_aten::Tensor tensor_list[4] = {a, b, c, d};
+  return tensors_have_same_dim_order(tensor_list);
+}
 
 /**
  * Given an n-dimensional coordinate array and an array of tensor strides,
@@ -1197,6 +1279,7 @@ using ::executorch::runtime::tensor_is_bits_type;
 using ::executorch::runtime::tensor_is_bool_type;
 using ::executorch::runtime::tensor_is_complex_type;
 using ::executorch::runtime::tensor_is_contiguous;
+using ::executorch::runtime::tensor_is_default_dim_order;
 using ::executorch::runtime::tensor_is_default_or_channels_last_dim_order;
 using ::executorch::runtime::tensor_is_floating_type;
 using ::executorch::runtime::tensor_is_integral_type;
@@ -1205,6 +1288,7 @@ using ::executorch::runtime::tensor_is_real_type;
 using ::executorch::runtime::tensor_is_realh_type;
 using ::executorch::runtime::tensor_is_realhb_type;
 using ::executorch::runtime::tensor_is_scalar;
+using ::executorch::runtime::tensors_have_same_dim_order;
 using ::executorch::runtime::tensors_have_same_dtype;
 using ::executorch::runtime::tensors_have_same_rank;
 using ::executorch::runtime::tensors_have_same_shape;

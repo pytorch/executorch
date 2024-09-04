@@ -40,7 +40,7 @@ class Conv2dVisitor(NodeVisitor):
 
         if mod_remainder > pad:
             raise RuntimeError(
-                f"ignoring input element is not currently supported, got a large stride {stride}"
+                "This case should be handled by the SizeAdjustConv2d pass, is it enabled?"
             )
         return pad - mod_remainder
 

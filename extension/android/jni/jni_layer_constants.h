@@ -10,7 +10,7 @@
 
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 
-namespace executorch_jni {
+namespace executorch::extension {
 
 constexpr static int kTensorDTypeUInt8 = 0;
 constexpr static int kTensorDTypeInt8 = 1;
@@ -93,4 +93,4 @@ const std::unordered_map<int, ScalarType> java_dtype_to_scalar_type = {
     {kTensorDTypeBits16, ScalarType::Bits16},
 };
 
-} // namespace executorch_jni
+} // namespace executorch::extension
