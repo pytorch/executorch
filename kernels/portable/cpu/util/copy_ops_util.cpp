@@ -95,6 +95,8 @@ bool check_cat_args(
     ET_LOG_AND_RETURN_IF_FALSE(
         canCast(tensors[i].scalar_type(), out.scalar_type()));
 
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dim_order(tensors[i], out));
+
     // Empty tensors have no shape constraints.
     if (tensors[i].numel() == 0) {
       continue;
