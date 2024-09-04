@@ -44,6 +44,11 @@ Tensor& avg_pool2d_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   size_t output_ndim = 0;
   exec_aten::SizesType output_sizes[kTensorDimensionLimit];
   get_avg_pool2d_out_target_size(
