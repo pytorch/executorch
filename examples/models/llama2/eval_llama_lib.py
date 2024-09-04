@@ -62,15 +62,19 @@ class ETPybindEvalWrapper(EagerEvalWrapper):
         # Given inps (tokens), return the logits from a single forward call
         # inps: Tensor of shape (1, max_seq_len - 1)
         # logits: Tensor of shape (1, max_seq_len - 1, vocab_size)
+        result = []
         if self._use_kv_cache:
             pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
             result = self._et_model.forward(
                 (inps[:, : self._max_seq_length], pos_tensor)
             )
-            return result[0]
         else:
             result = self._et_model.forward((inps,))
-            return result[0]
+        if result[0].dim() != 3:
+            raise ValueError(
+                f"Dim of logits must be 3 for evaluation. Got {result[0].dim()} here. Add --generate_full_logits in export_llama to generate a pte file with full logits."
+            )
+        return result[0]
 
 
 class ETRunnerEvalWrapper(EagerEvalWrapper):

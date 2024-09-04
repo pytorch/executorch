@@ -45,14 +45,14 @@ PrepackNode::PrepackNode(
   graph.update_descriptor_counts(noop_shader_, /*execute = */ false);
 }
 
-api::StorageBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
+api::StagingBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   vTensorPtr packed = graph->get_tensor(packed_);
 
   // If no TensorRef is provided, create a staging buffer of zeros according to
   // the vkapi::vTensor metadata.
   if (graph->val_is_none(tref_)) {
     size_t numel = utils::multiply_integers(packed->sizes());
-    api::StorageBuffer staging(graph->context(), packed->dtype(), numel);
+    api::StagingBuffer staging(graph->context(), packed->dtype(), numel);
     size_t nbytes = numel * vkapi::element_size(packed->dtype());
     set_staging_zeros(staging, nbytes);
     return staging;
@@ -60,7 +60,7 @@ api::StorageBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
 
   TensorRefPtr tref = graph->get_tref(tref_);
   size_t numel = utils::multiply_integers(tref->sizes);
-  api::StorageBuffer staging(graph->context(), tref->dtype, numel);
+  api::StagingBuffer staging(graph->context(), tref->dtype, numel);
   size_t nbytes = numel * vkapi::element_size(tref->dtype);
   copy_ptr_to_staging(tref->data, staging, nbytes);
   return staging;
@@ -70,7 +70,7 @@ void PrepackNode::encode(ComputeGraph* graph) {
   api::Context* const context = graph->context();
 
   vTensorPtr packed = graph->get_tensor(packed_);
-  api::StorageBuffer staging = create_staging_buffer(graph);
+  api::StagingBuffer staging = create_staging_buffer(graph);
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
