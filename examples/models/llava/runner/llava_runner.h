@@ -31,7 +31,7 @@ class LlavaRunner : public MultimodalRunner {
   bool is_loaded();
   Error load();
   Error generate(
-      std::vector<Image>& images,
+      std::vector<Image> images,
       const std::string& prompt,
       int32_t seq_len = 1024,
       std::function<void(const std::string&)> token_callback = {},
