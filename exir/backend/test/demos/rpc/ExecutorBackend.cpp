@@ -35,7 +35,7 @@ namespace executor {
  * front-end before having the actual backend ready.
  */
 
-class ExecutorBackend final : public PyTorchBackendInterface {
+class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~ExecutorBackend() = default;
 
