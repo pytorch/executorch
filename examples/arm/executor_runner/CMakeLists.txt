@@ -7,6 +7,7 @@ cmake_minimum_required(VERSION 3.20)
 project(arm_executor_runner)
 
 option(SEMIHOSTING "Enable semihosting" OFF)
+option(INCLUDE_PORTABLE_OPS "Include a library with portable ops." ON)
 
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
   message(
@@ -81,12 +82,15 @@ set_property(
            "${ET_BUILD_DIR_PATH}/backends/arm/libexecutorch_delegate_ethos_u.a"
 )
 
+if(INCLUDE_PORTABLE_OPS)
 add_library(portable_ops_lib STATIC IMPORTED)
 set_property(
   TARGET portable_ops_lib
   PROPERTY IMPORTED_LOCATION
            "${ET_BUILD_DIR_PATH}/examples/arm/libarm_portable_ops_lib.a"
 )
+endif()
+
 add_library(portable_kernels STATIC IMPORTED)
 set_property(
   TARGET portable_kernels
@@ -148,11 +152,14 @@ target_link_libraries(
   "-Wl,--whole-archive"
   executorch_delegate_ethos_u
   quantized_ops_lib
-  portable_ops_lib
   quantized_kernels
   portable_kernels
   "-Wl,--no-whole-archive"
 )
+
+if(INCLUDE_PORTABLE_OPS)
+  target_link_libraries(portable_ops_lib)
+endif()
 
 # ET headers and generated headers includes
 target_include_directories(
