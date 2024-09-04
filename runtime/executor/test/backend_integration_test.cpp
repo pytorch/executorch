@@ -31,6 +31,7 @@ using namespace ::testing;
 using exec_aten::ArrayRef;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
+using executorch::runtime::BackendInterface;
 using executorch::runtime::CompileSpec;
 using executorch::runtime::DataLoader;
 using executorch::runtime::DelegateHandle;
@@ -40,7 +41,6 @@ using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
 using executorch::runtime::Method;
 using executorch::runtime::Program;
-using executorch::runtime::PyTorchBackendInterface;
 using executorch::runtime::Result;
 using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
@@ -48,9 +48,9 @@ using torch::executor::util::FileDataLoader;
 /**
  * A backend class whose methods can be overridden individually.
  */
-class StubBackend final : public PyTorchBackendInterface {
+class StubBackend final : public BackendInterface {
  public:
-  // Function signature types that match the PyTorchBackendInterface methods.
+  // Function signature types that match the BackendInterface methods.
   using IsAvailableFn = std::function<bool()>;
   using InitFn = std::function<Result<DelegateHandle*>(
       FreeableBuffer*,
@@ -325,7 +325,7 @@ class BackendIntegrationTest : public ::testing::TestWithParam<bool> {
 };
 
 TEST_P(BackendIntegrationTest, BackendIsPresent) {
-  PyTorchBackendInterface* backend =
+  BackendInterface* backend =
       executorch::runtime::get_backend_class(StubBackend::kName);
   ASSERT_EQ(backend, &StubBackend::singleton());
 }
