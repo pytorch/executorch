@@ -166,7 +166,7 @@ def test_dump_tosa_ops(capsys):
     )
     captured = capsys.readouterr()
     assert "Partition operators:" in captured.out
-    assert "Tosa operators:" in captured.out
+    assert "TOSA operators:" in captured.out
 
 
 def test_fail_dump_tosa_ops(capsys):
