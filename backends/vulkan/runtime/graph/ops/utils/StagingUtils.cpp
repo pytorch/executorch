@@ -13,37 +13,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 
-#include <cstring>
-
 namespace vkcompute {
-
-void copy_ptr_to_staging(
-    const void* src,
-    api::StagingBuffer& staging,
-    const size_t nbytes) {
-  memcpy(staging.data(), src, nbytes);
-  vmaFlushAllocation(
-      staging.buffer().vma_allocator(),
-      staging.buffer().allocation(),
-      0u,
-      VK_WHOLE_SIZE);
-}
-
-void copy_staging_to_ptr(
-    api::StagingBuffer& staging,
-    void* dst,
-    const size_t nbytes) {
-  vmaInvalidateAllocation(
-      staging.buffer().vma_allocator(),
-      staging.buffer().allocation(),
-      0u,
-      VK_WHOLE_SIZE);
-  memcpy(dst, staging.data(), nbytes);
-}
-
-void set_staging_zeros(api::StagingBuffer& staging, const size_t nbytes) {
-  memset(staging.data(), 0, staging.nbytes());
-}
 
 vkapi::ShaderInfo get_nchw_to_tensor_shader(
     const api::vTensor& v_dst,

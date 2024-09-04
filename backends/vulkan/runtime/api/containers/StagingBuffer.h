@@ -14,6 +14,8 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/memory/Buffer.h>
 
+#include <cstring>
+
 namespace vkcompute {
 namespace api {
 
@@ -55,16 +57,36 @@ class StagingBuffer final {
     return vulkan_buffer_;
   }
 
-  inline void* data() {
-    return vulkan_buffer_.allocation_info().pMappedData;
-  }
-
   inline size_t numel() {
     return numel_;
   }
 
   inline size_t nbytes() {
     return nbytes_;
+  }
+
+  inline void copy_from(const void* src, const size_t nbytes) {
+    VK_CHECK_COND(nbytes <= nbytes_);
+    memcpy(vulkan_buffer_.allocation_info().pMappedData, src, nbytes);
+    vmaFlushAllocation(
+        vulkan_buffer_.vma_allocator(),
+        vulkan_buffer_.allocation(),
+        0u,
+        VK_WHOLE_SIZE);
+  }
+
+  inline void copy_to(void* dst, const size_t nbytes) {
+    VK_CHECK_COND(nbytes <= nbytes_);
+    vmaInvalidateAllocation(
+        vulkan_buffer_.vma_allocator(),
+        vulkan_buffer_.allocation(),
+        0u,
+        VK_WHOLE_SIZE);
+    memcpy(dst, vulkan_buffer_.allocation_info().pMappedData, nbytes);
+  }
+
+  inline void set_staging_zeros() {
+    memset(vulkan_buffer_.allocation_info().pMappedData, 0, nbytes_);
   }
 };
 

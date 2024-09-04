@@ -401,7 +401,7 @@ void ComputeGraph::copy_into_staging(
     const size_t numel) {
   StagingPtr staging = get_staging(idx);
   size_t nbytes = numel * vkapi::element_size(staging->dtype());
-  copy_ptr_to_staging(data, *staging, nbytes);
+  staging->copy_from(data, nbytes);
 }
 
 void ComputeGraph::copy_from_staging(
@@ -410,7 +410,7 @@ void ComputeGraph::copy_from_staging(
     const size_t numel) {
   StagingPtr staging = get_staging(idx);
   size_t nbytes = numel * vkapi::element_size(staging->dtype());
-  copy_staging_to_ptr(*staging, data, nbytes);
+  staging->copy_to(data, nbytes);
 }
 
 void ComputeGraph::prepare() {
