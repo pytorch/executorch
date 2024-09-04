@@ -1,4 +1,5 @@
 load("@fbsource//tools/build_defs:default_platform_defs.bzl", "DEVSERVER_PLATFORM_REGEX")
+load("@fbsource//tools/build_defs:fb_native_wrapper.bzl", "fb_native")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 # Because vec exists as a collection of header files, compile and preprocessor
@@ -99,44 +100,64 @@ def define_libs():
         ],
     )
 
-    runtime.cxx_library(
-        name = "libblas",
-        srcs = native.glob([
-            "blas/**/*.cpp",
-        ]),
-        exported_headers = native.glob([
-            "blas/**/*.h",
-        ]),
-        header_namespace = "executorch/kernels/optimized",
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        fbandroid_platform_preprocessor_flags = [
-            (
-                "^android-arm64.*$",
-                [
-                    "-DET_BUILD_WITH_BLAS",
-                ],
-            ),
-        ],
-        fbandroid_platform_deps = [
-            (
-                "^android-arm64.*$",
-                [
-                    "fbsource//third-party/openblas:openblas",
-                ],
-            ),
-        ],
-        fbobjc_exported_preprocessor_flags = [
-            "-DET_BUILD_WITH_BLAS",
-            "-DET_BUILD_FOR_APPLE",
-        ],
-        fbobjc_frameworks = [
-            "Accelerate",
-        ],
-        exported_deps = [
-            "//executorch/kernels/optimized:libutils",
-            "//executorch/runtime/core/exec_aten:lib",
+    # OSS doesn't have ovr_config//os:linux-x86_64
+    fb_native.config_setting(
+        name = "linux-x86_64",
+        constraint_values = [
+            "ovr_config//os/constraints:linux",
+            "ovr_config//cpu/constraints:x86_64",
         ],
     )
+
+    for libblas_name, mkl_dep in [("libblas", "fbsource//third-party/mkl:mkl_lp64_omp"), ("libblas_mkl_noomp", "fbsource//third-party/mkl:mkl")]:
+        runtime.cxx_library(
+            name = libblas_name,
+            srcs = native.glob([
+                "blas/**/*.cpp",
+            ]),
+            exported_headers = native.glob([
+                "blas/**/*.h",
+            ]),
+            header_namespace = "executorch/kernels/optimized",
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            preprocessor_flags = select({
+                ":linux-x86_64": [
+                    "-DET_BUILD_WITH_BLAS",
+                ] if not runtime.is_oss else [],
+                "DEFAULT": [],
+            }),
+            fbandroid_platform_preprocessor_flags = [
+                (
+                    "^android-arm64.*$",
+                    [
+                        "-DET_BUILD_WITH_BLAS",
+                    ],
+                ),
+            ],
+            fbandroid_platform_deps = [
+                (
+                    "^android-arm64.*$",
+                    [
+                        "fbsource//third-party/openblas:openblas",
+                    ],
+                ),
+            ],
+            fbobjc_exported_preprocessor_flags = [
+                "-DET_BUILD_WITH_BLAS",
+                "-DET_BUILD_FOR_APPLE",
+            ],
+            fbobjc_frameworks = [
+                "Accelerate",
+            ],
+            deps = select({
+                ":linux-x86_64": [mkl_dep] if not runtime.is_oss else [],
+                "DEFAULT": [],
+            }),
+            exported_deps = [
+                "//executorch/kernels/optimized:libutils",
+                "//executorch/runtime/core/exec_aten:lib",
+            ],
+        )
