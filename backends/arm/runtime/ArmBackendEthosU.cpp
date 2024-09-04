@@ -14,7 +14,6 @@
 #include <memory>
 
 #include <ethosu_driver.h>
-#include <pmu_ethosu.h>
 
 #include "executorch/backends/arm/runtime/VelaBinStream.h"
 #include "executorch/runtime/backend/interface.h"
@@ -31,6 +30,21 @@ typedef struct {
   FreeableBuffer* processed;
   bool permuted_io_flag;
 } ExecutionHandle;
+
+extern "C" {
+void __attribute__((weak)) ArmBackend_execute_begin() {}
+void __attribute__((weak)) ArmBackend_execute_end() {}
+}
+
+class ArmBackendExecuteCallbacks {
+ public:
+  ArmBackendExecuteCallbacks() {
+    ArmBackend_execute_begin();
+  }
+  ~ArmBackendExecuteCallbacks() {
+    ArmBackend_execute_end();
+  }
+};
 
 class ArmBackend final : public PyTorchBackendInterface {
  public:
@@ -83,6 +97,7 @@ class ArmBackend final : public PyTorchBackendInterface {
     ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
     VelaHandles handles;
 
+    ArmBackendExecuteCallbacks ArmBackend_execute_callbacks;
     // Command stream - we know at this point it's aligned
     char* data = (char*)execution_handle->processed->data();
     ET_LOG(Info, "ArmBackend::execute %p", data);
@@ -233,7 +248,6 @@ class ArmBackend final : public PyTorchBackendInterface {
         }
       }
     }
-
     return Error::Ok;
   }
 
