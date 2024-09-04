@@ -16,6 +16,8 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.File;
+import com.google.gson.Gson;
 
 public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback {
   ModelRunner mModelRunner;
@@ -23,6 +25,8 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
   String mPrompt;
   TextView mTextView;
   StatsDump mStatsDump;
+  // We will write the result back to this directory as it's known by the spec file
+  File modelDir;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -32,7 +36,10 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
 
     Intent intent = getIntent();
 
-    String modelPath = intent.getStringExtra("model_path");
+    modelDir = new File(intent.getStringExtra("model_dir"));
+    File model = Arrays.stream(directory.listFiles())
+            .filter(file -> file.getName().endsWith(".pte"))
+            .findFirst()
     String tokenizerPath = intent.getStringExtra("tokenizer_path");
 
     float temperature = intent.getFloatExtra("temperature", 0.8f);
@@ -42,7 +49,7 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
     }
 
     mStatsDump = new StatsDump();
-    mModelRunner = new ModelRunner(modelPath, tokenizerPath, temperature, this);
+    mModelRunner = new ModelRunner(model.getPath(), tokenizerPath, temperature, this);
     mStatsDump.loadStart = System.currentTimeMillis();
   }
 
@@ -79,8 +86,18 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
           mTextView.append(mStatsDump.toString());
         });
 
+    // TODO (huydhn): Remove txt files here once the JSON format is ready
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.txt")) {
       writer.write(mStatsDump.toString());
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+
+    // TODO (huydhn): Figure out on what the final JSON results looks like, we need something with
+    // the same number of fields as https://github.com/pytorch/pytorch/pull/135042
+    try (FileWriter writer = new FileWriter(modelDir.getPath() + "/benchmark_results.json")) {
+      Gson gson = new Gson();
+      writer.write(gson.toJson(mStatsDump));
     } catch (IOException e) {
       e.printStackTrace();
     }

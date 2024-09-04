@@ -73,8 +73,16 @@ phases:
           fi
         fi;
 
+      # Run the new generic benchmark activity
+      - echo "Run LLM benchmark"
+      - |
+        adb -s $DEVICEFARM_DEVICE_UDID shell am start -n com.example.executorchllamademo/.Benchmarking \
+        --es "model_dir" "/data/local/tmp/llama" \
+        --es "tokenizer_path" "/data/local/tmp/llama/tokenizer.bin"
+
   post_test:
     commands:
+      - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /data/local/tmp/llama/"
 
 artifacts:
   # By default, Device Farm will collect your artifacts from the $DEVICEFARM_LOG_DIR directory.
