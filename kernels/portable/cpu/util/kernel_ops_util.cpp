@@ -326,7 +326,7 @@ bool check_convolution_args(
     bool transposed,
     IntArrayRef output_padding,
     int64_t groups,
-    Tensor& out) {
+    const Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight, out));
 
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
