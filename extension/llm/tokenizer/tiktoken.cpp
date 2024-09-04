@@ -407,7 +407,7 @@ Tiktoken::encode(const std::string& text, int8_t bos, int8_t eos) const {
   for (auto i = 0; i < eos; ++i) {
     res.push_back(eos_tok_);
   }
-  return Result(res);
+  return Result<std::vector<uint64_t>>(std::move(res));
 }
 
 Result<std::string> Tiktoken::decode(uint64_t prev, uint64_t cur) const {
