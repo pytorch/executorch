@@ -1153,33 +1153,80 @@ bool tensor_has_valid_dim_order(exec_aten::Tensor t);
 bool tensor_is_default_or_channels_last_dim_order(exec_aten::Tensor t);
 
 /**
+ * Checks whether a tensor has the default dimension order.
+ * Logs an error message if the tensor does not meet the expected criteria.
+ *
+ * @param t The tensor to check the dimension order of.
+ * @return True if the tensor has the default dimension order, false otherwise.
+ */
+bool tensor_is_default_dim_order(exec_aten::Tensor t);
+
+/**
+ * Checks whether a tensor has the channels last dimension order.
+ * Logs an error message if the tensor does not meet the expected criteria.
+ *
+ * @param t The tensor to check the dimension order of.
+ * @return True if the tensor has the channels last dimension order, false
+ * otherwise.
+ */
+bool tensor_is_channels_last_dim_order(exec_aten::Tensor t);
+
+/**
+ * Asserts that four tensors have the same dim_order
+ *
+ * Note that this macro only tests dim order, but not others like actual data,
+ * sizes, etc.
+ *
+ */
+bool tensors_have_same_dim_order(
+    const exec_aten::ArrayRef<exec_aten::Tensor> tensor_list);
+
+/**
  * Asserts that two tensors have the same dim_order
  *
  * Note that this macro only tests dim order, but not others like actual data,
- * sizes, etc. Also this macro does not support ATen mode since we do not
- * support dim order in ATen mode.
- *
- * TODO(T183094318): Add dim order and related function support for ATen mode.
+ * sizes, etc.
  */
 
-bool tensors_have_same_dim_order(
+inline bool tensors_have_same_dim_order(
     const exec_aten::Tensor& a,
-    const exec_aten::Tensor& b);
+    const exec_aten::Tensor& b) {
+  exec_aten::Tensor tensor_list[2] = {a, b};
+  return tensors_have_same_dim_order(tensor_list);
+}
 
 /**
  * Asserts that three tensors have the same dim_order
  *
  * Note that this macro only tests dim order, but not others like actual data,
- * sizes, etc. Also this macro does not support ATen mode since we do not
- * support dim order in ATen mode.
+ * sizes, etc.
  *
- * TODO(T183094318): Add dim order and related function support for ATen mode.
  */
 
-bool tensors_have_same_dim_order(
+inline bool tensors_have_same_dim_order(
     const exec_aten::Tensor& a,
     const exec_aten::Tensor& b,
-    const exec_aten::Tensor& c);
+    const exec_aten::Tensor& c) {
+  exec_aten::Tensor tensor_list[3] = {a, b, c};
+  return tensors_have_same_dim_order(tensor_list);
+}
+
+/**
+ * Asserts that four tensors have the same dim_order
+ *
+ * Note that this macro only tests dim order, but not others like actual data,
+ * sizes, etc.
+ *
+ */
+
+inline bool tensors_have_same_dim_order(
+    const exec_aten::Tensor& a,
+    const exec_aten::Tensor& b,
+    const exec_aten::Tensor& c,
+    const exec_aten::Tensor& d) {
+  exec_aten::Tensor tensor_list[4] = {a, b, c, d};
+  return tensors_have_same_dim_order(tensor_list);
+}
 
 /**
  * Given an n-dimensional coordinate array and an array of tensor strides,
@@ -1232,6 +1279,7 @@ using ::executorch::runtime::tensor_is_bits_type;
 using ::executorch::runtime::tensor_is_bool_type;
 using ::executorch::runtime::tensor_is_complex_type;
 using ::executorch::runtime::tensor_is_contiguous;
+using ::executorch::runtime::tensor_is_default_dim_order;
 using ::executorch::runtime::tensor_is_default_or_channels_last_dim_order;
 using ::executorch::runtime::tensor_is_floating_type;
 using ::executorch::runtime::tensor_is_integral_type;
