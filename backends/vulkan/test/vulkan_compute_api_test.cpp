@@ -360,7 +360,7 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
   submit_to_gpu();
 
   std::vector<float> data(len);
-  copy_staging_to_ptr(buffer, data.data(), buffer.nbytes());
+  buffer.copy_to(data.data(), buffer.nbytes());
 
   for (size_t i = 0; i < len; ++i) {
     CHECK_VALUE(data, i, scale * i + offset);
@@ -470,7 +470,7 @@ void test_storage_buffer_type(const size_t len) {
   submit_to_gpu();
 
   std::vector<T> data(len);
-  copy_staging_to_ptr(buffer, data.data(), buffer.nbytes());
+  buffer.copy_to(data.data(), buffer.nbytes());
 
   for (size_t i = 0; i < len; ++i) {
     CHECK_VALUE(data, i, T(i));
@@ -2132,7 +2132,7 @@ void run_from_gpu_test(
   submit_to_gpu();
 
   std::vector<T> data_out(staging_buffer.numel());
-  copy_staging_to_ptr(staging_buffer, data_out.data(), staging_buffer.nbytes());
+  staging_buffer.copy_to(data_out.data(), staging_buffer.nbytes());
 
   for (int i = 0; i < vten.numel(); i++) {
     CHECK_VALUE(data_out, i, i + offset);
@@ -2160,8 +2160,7 @@ void round_trip_test(
   for (int i = 0; i < staging_buffer_in.numel(); i++) {
     data_in[i] = T(i * -1);
   }
-  copy_ptr_to_staging(
-      data_in.data(), staging_buffer_in, vten.staging_buffer_nbytes());
+  staging_buffer_in.copy_from(data_in.data(), vten.staging_buffer_nbytes());
 
   // Output staging buffer
   StagingBuffer staging_buffer_out(
@@ -2182,8 +2181,7 @@ void round_trip_test(
 
   // Extract data from output staging buffer
   std::vector<T> data_out(staging_buffer_out.numel());
-  copy_staging_to_ptr(
-      staging_buffer_out, data_out.data(), staging_buffer_out.nbytes());
+  staging_buffer_out.copy_to(data_out.data(), staging_buffer_out.nbytes());
 
   // All indices should be equal to the input data
   for (int i = 0; i < vten.numel(); i++) {
@@ -2624,8 +2622,7 @@ void test_conv2d(
   for (int i = 0; i < in_numel; i++) {
     data_in[i] = i + 1;
   }
-  copy_ptr_to_staging(
-      data_in.data(), staging_buffer_in, sizeof(float) * in_numel);
+  staging_buffer_in.copy_from(data_in.data(), sizeof(float) * in_numel);
 
   // Output staging buffer
   const int64_t out_numel =
@@ -2642,8 +2639,7 @@ void test_conv2d(
 
   // Extract data from output staging buffer
   std::vector<float> data_out(out_numel);
-  copy_staging_to_ptr(
-      staging_buffer_out, data_out.data(), sizeof(float) * out_numel);
+  staging_buffer_out.copy_to(data_out.data(), sizeof(float) * out_numel);
 
   // Check data matches results copied from ATen-VK
   for (int i = 0; i < vten.numel(); i++) {

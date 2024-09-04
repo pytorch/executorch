@@ -30,6 +30,7 @@ Allocation::Allocation()
       create_info{},
       allocator(VK_NULL_HANDLE),
       allocation(VK_NULL_HANDLE),
+      allocation_info({}),
       is_copy_(false) {}
 
 Allocation::Allocation(
@@ -40,6 +41,7 @@ Allocation::Allocation(
       create_info(create_info),
       allocator(vma_allocator),
       allocation(VK_NULL_HANDLE),
+      allocation_info({}),
       is_copy_(false) {
   VK_CHECK(vmaAllocateMemory(
       allocator, &memory_requirements, &create_info, &allocation, nullptr));
@@ -50,6 +52,7 @@ Allocation::Allocation(const Allocation& other) noexcept
       create_info(other.create_info),
       allocator(other.allocator),
       allocation(other.allocation),
+      allocation_info(other.allocation_info),
       is_copy_(true) {}
 
 Allocation::Allocation(Allocation&& other) noexcept
@@ -57,8 +60,10 @@ Allocation::Allocation(Allocation&& other) noexcept
       create_info(other.create_info),
       allocator(other.allocator),
       allocation(other.allocation),
+      allocation_info(other.allocation_info),
       is_copy_(other.is_copy_) {
   other.allocation = VK_NULL_HANDLE;
+  other.allocation_info = {};
 }
 
 Allocation& Allocation::operator=(Allocation&& other) noexcept {
@@ -68,9 +73,11 @@ Allocation& Allocation::operator=(Allocation&& other) noexcept {
   create_info = other.create_info;
   allocator = other.allocator;
   allocation = other.allocation;
+  allocation_info = other.allocation_info;
   is_copy_ = other.is_copy_;
 
   other.allocation = tmp_allocation;
+  other.allocation_info = {};
 
   return *this;
 }
