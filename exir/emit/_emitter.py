@@ -79,6 +79,7 @@ from executorch.exir.schema import (
     TensorShapeDynamism,
 )
 from executorch.exir.tensor import (
+    AddressSpaceOverflowException,
     layout_enum,
     make_allocation_info,
     make_tensor_value,
@@ -349,7 +350,20 @@ class _Emitter(torch.fx.Interpreter):
                 self.node,
                 f"Non-const tensor should be an activation tensor: mem_offset {spec.mem_offset}",
             )
-            allocation_info = make_allocation_info(spec.mem_id, spec.mem_offset)
+            try:
+                allocation_info = make_allocation_info(spec.mem_id, spec.mem_offset)
+            except AddressSpaceOverflowException as e:
+                raise InternalError(
+                    self._emit_node_specific_error(
+                        self.node,
+                        (
+                            f"{e}\nHint: If you are using a memory pass based on dynamic shape bounds, "
+                            f"such as ConstraintBasedSymShapeEvalPass, this may be the cause of an "
+                            f"unbacked SymInt with its upper bound lazily set to 2^64-1 (uint64 max) "
+                            "during torch.export()."
+                        ),
+                    )
+                )
 
         if spec.const:
             # Tensor with a blob we need to serialize. May not actually be constant at runtime
@@ -1527,7 +1541,6 @@ class _TopLevelEmitter(_Emitter):
         is_user_input = True
 
         if isinstance(target, str) and isinstance(spec, TensorSpec):
-
             fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
 
             # From the fqn find the corresponding tensor
