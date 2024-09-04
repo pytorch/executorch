@@ -57,6 +57,10 @@ class StagingBuffer final {
     return vulkan_buffer_;
   }
 
+  inline void* data() {
+    return vulkan_buffer_.allocation_info().pMappedData;
+  }
+
   inline size_t numel() {
     return numel_;
   }
@@ -67,7 +71,7 @@ class StagingBuffer final {
 
   inline void copy_from(const void* src, const size_t nbytes) {
     VK_CHECK_COND(nbytes <= nbytes_);
-    memcpy(vulkan_buffer_.allocation_info().pMappedData, src, nbytes);
+    memcpy(data(), src, nbytes);
     vmaFlushAllocation(
         vulkan_buffer_.vma_allocator(),
         vulkan_buffer_.allocation(),
@@ -82,11 +86,11 @@ class StagingBuffer final {
         vulkan_buffer_.allocation(),
         0u,
         VK_WHOLE_SIZE);
-    memcpy(dst, vulkan_buffer_.allocation_info().pMappedData, nbytes);
+    memcpy(dst, data(), nbytes);
   }
 
   inline void set_staging_zeros() {
-    memset(vulkan_buffer_.allocation_info().pMappedData, 0, nbytes_);
+    memset(data(), 0, nbytes_);
   }
 };
 
