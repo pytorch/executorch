@@ -12,6 +12,51 @@
 namespace torch {
 namespace executor {
 
+bool check_gather_args(
+    const Tensor& in,
+    int64_t dim,
+    const Tensor& index,
+    bool sparse_grad,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      index.scalar_type() == ScalarType::Long,
+      "Expected dypte int64 for index");
+  if (index.numel() != 0) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        nonzero_dim(in) == nonzero_dim(index),
+        "self and index should have the same dimensionality when index is not empty "
+        "except for the case when one has dimension 0 and the other has dimension 1");
+  }
+
+  // Normalize dim to non-negative value
+  if (dim < 0) {
+    dim += nonzero_dim(in);
+  }
+
+  for (size_t d = 0; d < nonzero_dim(in); ++d) {
+    if (d != dim) {
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          nonempty_size(index, d) <= nonempty_size(in, d),
+          "size of dimension %zd of index should be smaller than the size of that dimension of input if dimension %zd != dim %zd",
+          d,
+          d,
+          (size_t)dim);
+    }
+  }
+  const long* index_data = index.const_data_ptr<long>();
+  for (size_t i = 0; i < index.numel(); ++i) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        index_data[i] >= 0 && index_data[i] < nonempty_size(in, dim),
+        "Index is out of bounds for dimension %zd with size %zd",
+        (size_t)dim,
+        nonempty_size(index, dim));
+  }
+
+  return true;
+}
+
 bool check_index_select_args(
     const Tensor& in,
     int64_t dim,
@@ -144,6 +189,24 @@ bool check_scatter_add_args(
         nonempty_size(self, dim));
   }
   return true;
+}
+
+bool check_scatter_src_args(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Tensor& src,
+    Tensor& out) {
+  return check_scatter_add_args(self, dim, index, src, out);
+}
+
+bool check_scatter_value_args(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Scalar& value,
+    Tensor& out) {
+  return check_gather_args(self, dim, index, false, out);
 }
 
 bool check_select_scatter_args(

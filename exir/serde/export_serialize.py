@@ -1474,6 +1474,12 @@ class GraphModuleDeserializer:
 
             if val.expr_str in self.symbol_name_to_symbol:
                 sym = self.symbol_name_to_symbol[val.expr_str]
+                if (
+                    isinstance(sym, sympy.Symbol)
+                    and sym not in self.shape_env.var_to_val
+                ):
+                    if hint is not None:
+                        self.shape_env.add_var_to_val(sym, hint)
             else:
                 sym = sympy.sympify(val.expr_str, locals=self.symbol_name_to_symbol)
                 # NOTE(avik): Assumptions on symbols are not explicitly serialized.

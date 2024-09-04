@@ -23,12 +23,10 @@ include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
 set(_test_srcs
     thread_parallel_test.cpp ../thread_parallel.cpp
-    ${EXECUTORCH_ROOT}/backends/xnnpack/threadpool/threadpool.cpp
-    ${EXECUTORCH_ROOT}/backends/xnnpack/threadpool/threadpool_guard.cpp
 )
 
 et_cxx_test(
-  extension_parallel_test SOURCES ${_test_srcs} EXTRA_LIBS pthreadpool cpuinfo
+  extension_parallel_test SOURCES ${_test_srcs} EXTRA_LIBS pthreadpool cpuinfo extension_threadpool
 )
 target_include_directories(
   extension_parallel_test

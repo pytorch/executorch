@@ -540,7 +540,7 @@ vkapi::VulkanBuffer allocate_buffer(
   }
 
   return adapter_ptr->vma().create_storage_buffer(
-      element_size(dtype) * numel, /*gpu_only = */ true, allocate_memory);
+      element_size(dtype) * numel, allocate_memory);
 }
 
 vTensorStorage::vTensorStorage(

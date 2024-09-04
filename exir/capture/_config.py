@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Union
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
-from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.fx._compatibility import compatibility
 
@@ -73,7 +73,7 @@ class ExecutorchBackendConfig:
 
     # When extracting segments, the starting offset of each segment will be
     # aligned to this value (in bytes). Must be a power of two.
-    segment_alignment: int = 4096
+    segment_alignment: int = 128
 
     # If provided, the minimum alignment of tensor buffers in the program. Must
     # be a power of 2. If not provided, uses the value in the schema file.
@@ -86,7 +86,7 @@ class ExecutorchBackendConfig:
     # A single sym shape eval pass can be defined for all the programs in the
     # EdgeProgramManager or can be defined per program.
     sym_shape_eval_pass: Union[PassType, Dict[str, PassType]] = (
-        HintBasedSymShapeEvalPass()
+        ConstraintBasedSymShapeEvalPass()
     )
 
     # If set to true, view_copy operations will be converted to lightweight

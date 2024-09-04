@@ -21,6 +21,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/QPackUtils.h>
+
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
 using namespace vkcompute::api;
@@ -334,7 +336,7 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
 
 TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
   size_t len = 16;
-  StorageBuffer buffer(context(), vkapi::kFloat, len);
+  StagingBuffer buffer(context(), vkapi::kFloat, len);
 
   float scale = 3.0f;
   float offset = 1.5f;
@@ -405,7 +407,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
         params.buffer());
   }
 
-  StorageBuffer staging_buffer(
+  StagingBuffer staging_buffer(
       context(), vkapi::kFloat, a.staging_buffer_numel());
   record_image_to_nchw_op(context(), a, staging_buffer.buffer());
 
@@ -426,7 +428,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
 
 template <typename T, vkapi::ScalarType dtype>
 void test_storage_buffer_type(const size_t len) {
-  StorageBuffer buffer(context(), dtype, len);
+  StagingBuffer buffer(context(), dtype, len);
 
   std::string kernel_name("idx_fill_buffer");
   switch (dtype) {
@@ -990,6 +992,28 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
       graph.get_tensor(name.value)->staging_buffer_numel()); \
   graph.copy_from_staging(name.staging, data_##name.data(), data_##name.size());
 
+// The purpose of this test is simply to track the size of various classes over
+// time, in the interest of making sure that they doesn't grow too large.
+TEST_F(VulkanComputeAPITest, print_object_sizes) {
+#define PRINT_SIZE(name) \
+  std::cout << #name << " size: " << sizeof(name) << " B" << std::endl
+  PRINT_SIZE(vTensor);
+  PRINT_SIZE(Value);
+  PRINT_SIZE(StagingBuffer);
+  PRINT_SIZE(ComputeGraph);
+  PRINT_SIZE(ExecuteNode);
+#undef PRINT_SIZE
+
+  // The actual sizes of each object is dependent on the platform. However, we
+  // can alert ourselves to any significant changes in the sizes of these
+  // objects by checking the `sizeof()` the class against some loose thresholds.
+  EXPECT_TRUE(sizeof(vTensor) < 1800);
+  EXPECT_TRUE(sizeof(Value) < 2400);
+  EXPECT_TRUE(sizeof(StagingBuffer) < 500);
+  EXPECT_TRUE(sizeof(ComputeGraph) < 500);
+  EXPECT_TRUE(sizeof(ExecuteNode) < 500);
+}
+
 TEST(VulkanComputeGraphTest, test_values_scalars) {
   GraphConfig config;
   ComputeGraph graph(config);
@@ -1240,6 +1264,64 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
     // Sanity check that the values are correct
     for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
       CHECK_VALUE(data_out, i, val_c);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> sizes = {8, 64, 124};
+
+  // Build graph
+
+  ValueRef scalar = graph.add_symint(1);
+  IOValueRef a = graph.add_input_tensor(sizes, vkapi::kFloat);
+
+  IOValueRef out = {};
+  out.value = a.value;
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
+      VK_KERNEL_FROM_STR("scalar_add_texture"),
+      graph.create_global_wg_size(a.value),
+      graph.create_local_wg_size(a.value),
+      // Inputs and Outputs
+      {{out.value, vkapi::MemoryAccessType::WRITE}},
+      // Shader params buffers
+      {graph.texture_limits_ubo(a.value),
+       graph.get_or_create_int_param_buffer(scalar)},
+      // Specialization Constants
+      {},
+      // Resizing Logic
+      nullptr,
+      {}));
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    int scalar_val = i - 3.0f;
+    graph.set_symint(scalar, scalar_val);
+
+    float val_a = i + 2.0f;
+    float val_out = val_a + scalar_val;
+
+    fill_vtensor(graph, a, val_a);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, val_out);
     }
   }
 }
@@ -2038,7 +2120,7 @@ void run_from_gpu_test(
         vten.sizes_ubo());
   }
 
-  StorageBuffer staging_buffer(context(), dtype, vten.staging_buffer_numel());
+  StagingBuffer staging_buffer(context(), dtype, vten.staging_buffer_numel());
 
   if (dtype == vkapi::kChar &&
       !context()->adapter_ptr()->has_full_int8_buffers_support()) {
@@ -2071,7 +2153,7 @@ void round_trip_test(
   vTensor vten = vTensor(context(), sizes, dtype, storage_type, memory_layout);
 
   // Create and fill input staging buffer
-  StorageBuffer staging_buffer_in(
+  StagingBuffer staging_buffer_in(
       context(), dtype, vten.staging_buffer_numel());
 
   std::vector<T> data_in(staging_buffer_in.numel());
@@ -2082,7 +2164,7 @@ void round_trip_test(
       data_in.data(), staging_buffer_in, vten.staging_buffer_nbytes());
 
   // Output staging buffer
-  StorageBuffer staging_buffer_out(
+  StagingBuffer staging_buffer_out(
       context(), dtype, vten.staging_buffer_numel());
 
   record_nchw_to_image_op(context(), staging_buffer_in.buffer(), vten);
@@ -2536,7 +2618,7 @@ void test_conv2d(
 
   // Create and fill input staging buffer
   const int64_t in_numel = utils::multiply_integers(original_sizes);
-  StorageBuffer staging_buffer_in(context(), vkapi::kFloat, in_numel);
+  StagingBuffer staging_buffer_in(context(), vkapi::kFloat, in_numel);
 
   std::vector<float> data_in(in_numel);
   for (int i = 0; i < in_numel; i++) {
@@ -2548,7 +2630,7 @@ void test_conv2d(
   // Output staging buffer
   const int64_t out_numel =
       padded_sizes[0] * padded_sizes[1] * original_sizes[2] * original_sizes[3];
-  StorageBuffer staging_buffer_out(context(), vkapi::kFloat, out_numel);
+  StagingBuffer staging_buffer_out(context(), vkapi::kFloat, out_numel);
 
   // Copy data in and out of the tensor
   record_conv2d_prepack_weights_op(
@@ -2658,4 +2740,120 @@ TEST(VulkanComputeGraphOpsTest, grid_priors_test) {
       /*stride = */ 8,
       /*offset = */ 0.5,
       /*data_out_expected = */ {4, 4, 12, 4, 20, 4, 4, 12, 12, 12, 20, 12});
+}
+
+void test_int4pack_mm(std::vector<uint32_t> MKN, uint32_t group_size) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const uint32_t M = MKN[0];
+  const uint32_t K = MKN[1];
+  const uint32_t N = MKN[2];
+
+  const std::vector<int64_t> mat1_size = {M, K};
+  const std::vector<int64_t> mat2_size = {K, N};
+  const std::vector<int64_t> mat2_q_size = {N, K / 2}; // Transposed and packed
+  const std::vector<int64_t> out_size = {M, N};
+
+  std::vector<float> A_data = create_random_float_buffer(M * K);
+  IOValueRef A =
+      graph.add_input_tensor(mat1_size, vkapi::kFloat, utils::kBuffer);
+  graph.copy_into_staging(A.staging, A_data.data(), A_data.size());
+
+  // Quantized but un-packed weights
+  std::vector<uint8_t> B_quant_data = create_random_uint8_buffer(K * N, 0, 16);
+
+  // Pack and transpose weights to correspond to int4 weight format
+  std::vector<uint8_t> B_int4_data =
+      int4mm_pack_weights(mat2_size, B_quant_data.data());
+
+  IOValueRef B_int4 =
+      graph.add_input_tensor(mat2_q_size, vkapi::kQInt8, utils::kBuffer);
+  graph.copy_into_staging(
+      B_int4.staging, B_int4_data.data(), B_int4_data.size());
+
+  const int k_groups = K / group_size;
+
+  // Random scales and zeroes. Keep scales small to avoid overflow and zeroes in
+  // int4 range
+  IOValueRef scales_and_zeros =
+      graph.add_input_tensor({2, N, k_groups}, vkapi::kFloat, utils::kBuffer);
+  std::vector<float> s_data(graph.numel_of(scales_and_zeros.value));
+  const int zeros_stride = s_data.size() / 2;
+  for (size_t i = 0; i < zeros_stride; i++) {
+    s_data[i] = rand() % 100;
+    s_data[i + zeros_stride] = rand() % 16;
+  }
+
+  graph.copy_into_staging(
+      scales_and_zeros.staging, s_data.data(), s_data.size());
+
+  IOValueRef out_int4;
+  out_int4.value = graph.add_tensor(out_size, vkapi::kFloat, utils::kBuffer);
+
+  VK_GET_OP_FN("aten._weight_int4pack_mm.default")
+  (graph,
+   {A.value,
+    B_int4.value,
+    graph.add_scalar<int64_t>(group_size),
+    scales_and_zeros.value,
+    out_int4.value});
+
+  out_int4.staging = graph.set_output_tensor(out_int4.value);
+
+  // Dequantized matmul for comparison
+  IOValueRef B_deq =
+      graph.add_input_tensor(mat2_size, vkapi::kFloat, utils::kBuffer);
+  std::vector<float> B_deq_data = int4mm_dequantize_weights(
+      mat2_size, B_quant_data.data(), group_size, s_data.data());
+  graph.copy_into_staging(B_deq.staging, B_deq_data.data(), B_deq_data.size());
+
+  IOValueRef out_deq;
+  out_deq.value = graph.add_tensor(out_size, vkapi::kFloat, utils::kBuffer);
+
+  VK_GET_OP_FN("aten.mm.default")
+  (graph, {A.value, B_deq.value, out_deq.value});
+
+  out_deq.staging = graph.set_output_tensor(out_deq.value);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+  graph.propagate_resize();
+  graph.execute();
+
+  // Compare outputs
+  std::vector<float> out_int4_data(graph.numel_of(out_int4.value));
+  graph.copy_from_staging(
+      out_int4.staging, out_int4_data.data(), out_int4_data.size());
+
+  std::vector<float> out_deq_data(graph.numel_of(out_deq.value));
+  graph.copy_from_staging(
+      out_deq.staging, out_deq_data.data(), out_deq_data.size());
+
+  for (int i = 0; i < out_int4_data.size(); i++) {
+    CHECK_VALUE(out_int4_data, i, out_deq_data[i]);
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, int4pack_mm_test) {
+  if (!context()->adapter_ptr()->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+
+  // Vector multiplication, single group per row
+  test_int4pack_mm({1, 32, 1}, 32);
+
+  // Vector multiplication, multiple groups per row
+  test_int4pack_mm({1, 256, 1}, 64);
+
+  // Square matrices, single group per row
+  test_int4pack_mm({32, 32, 32}, 32);
+
+  // Irregular matrices, single group per row
+  test_int4pack_mm({37, 32, 19}, 32);
+
+  // Irregular matrices, multiple groups per row
+  test_int4pack_mm({37, 256, 19}, 64);
 }

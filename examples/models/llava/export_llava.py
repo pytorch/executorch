@@ -17,6 +17,7 @@ from executorch.examples.models.llama2.export_llama_lib import (
     get_quantizer_and_quant_params,
 )
 from executorch.examples.models.llama2.source_transformation.quantize import (
+    EmbeddingQuantHandler,
     get_quant_weight_transform,
 )
 from executorch.examples.models.llama2.source_transformation.sdpa import (
@@ -32,7 +33,10 @@ from executorch.exir import (
 
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
-from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+from executorch.exir.passes.sym_shape_eval_pass import (
+    ConstraintBasedSymShapeEvalPass,
+    HintBasedSymShapeEvalPass,
+)
 
 from executorch.extension.llm.export.builder import DType, LLMEdgeManager
 from executorch.extension.llm.tokenizer.tokenizer import Tokenizer
@@ -157,12 +161,20 @@ def export_image_encoder(llava, resized, dynamic_shapes):
 
 
 def export_token_embedding(llava, prompt):
-    embed = llava.embed_tokens
-    token_dim_1 = Dim("token_dim_1", min=2, max=3518)
+    def quant_embedding(model):
+        return EmbeddingQuantHandler(
+            model,
+            bitwidth=8,
+            group_size=32,
+            packed=False,
+        ).quantized_model()
+
+    quantized_token_embed = quant_embedding(llava.model_.language_model.model)
+    token_dim_1 = Dim("token_dim_1", min=2, max=llava.text_model_args.max_seq_len)
     dynamic_shapes = [{1: token_dim_1}]
     with torch.no_grad():
         token_embedding_ep = torch.export.export(
-            embed, (prompt,), dynamic_shapes=dynamic_shapes
+            quantized_token_embed.embed_tokens, (prompt,), dynamic_shapes=dynamic_shapes
         )
     return token_embedding_ep
 
@@ -218,6 +230,8 @@ def export_all(llava_model: LlavaModel):
             memory_planning_pass=MemoryPlanningPass("greedy", alloc_graph_input=False),
             sym_shape_eval_pass={
                 "image_encoder": ConstraintBasedSymShapeEvalPass(),
+                "text_model": ConstraintBasedSymShapeEvalPass(),
+                "token_embedding": HintBasedSymShapeEvalPass(),
             },
         )
     )

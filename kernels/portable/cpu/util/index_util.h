@@ -14,6 +14,13 @@
 namespace torch {
 namespace executor {
 
+bool check_gather_args(
+    const Tensor& in,
+    int64_t dim,
+    const Tensor& index,
+    bool sparse_grad,
+    Tensor& output);
+
 bool check_index_select_args(
     const Tensor& in,
     int64_t dim,
@@ -34,6 +41,20 @@ bool check_scatter_add_args(
     int64_t dim,
     const Tensor& index,
     const Tensor& src,
+    Tensor& out);
+
+bool check_scatter_src_args(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Tensor& src,
+    Tensor& out);
+
+bool check_scatter_value_args(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Scalar& value,
     Tensor& out);
 
 bool check_select_scatter_args(

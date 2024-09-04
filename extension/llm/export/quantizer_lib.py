@@ -179,7 +179,7 @@ def get_qnn_quantizer(
         quant_dtype = QuantDtype.use_16a16w  # pyre-fixme[16]
         # Due to the error with 16a16w in Qnn Htp, we need to disable per channel linear quantization when use 16a16w
         # TODO: enable it after the issue is fixed
-        logging.warn(
+        logging.warning(
             "Disable per channel quantization for linear due to the error with QNN HTP 16a16w."
         )
         qnn_quantizer.set_per_channel_linear_quant(enable=False)

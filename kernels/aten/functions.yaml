@@ -115,6 +115,8 @@
 
 - op: convolution.out
 
+- op: convolution_backward.out
+
 - op: copy.out
 
 - op: cos.out
@@ -172,6 +174,8 @@
 - op: full_like.out
 
 - op: full.out
+
+- op: gather.out
 
 - op: ge.Scalar_out
 
@@ -275,6 +279,8 @@
 
 - op: pixel_shuffle.out
 
+- op: pixel_unshuffle.out
+
 - op: pow.Scalar_out
 
 - op: pow.Tensor_Tensor_out
@@ -316,6 +322,10 @@
 - op: rsub.Scalar_out
 
 - op: scalar_tensor.out
+
+- op: scatter.src_out
+
+- op: scatter.value_out
 
 - op: scatter_add.out
 

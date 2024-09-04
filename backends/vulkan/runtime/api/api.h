@@ -12,7 +12,7 @@
 #include <executorch/backends/vulkan/runtime/api/ShaderRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/api/containers/ParamsBuffer.h>
-#include <executorch/backends/vulkan/runtime/api/containers/StorageBuffer.h>
+#include <executorch/backends/vulkan/runtime/api/containers/StagingBuffer.h>
 #include <executorch/backends/vulkan/runtime/api/containers/Tensor.h>
 
 #include <executorch/backends/vulkan/runtime/utils/VecUtils.h>

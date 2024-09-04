@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/optimized/cpu/binary_ops.h>
 #include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
@@ -83,9 +84,64 @@ Tensor& opt_sub_out(
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, tensor_is_realh_type(out), InvalidArgument, out);
+  if (a.numel() == 1 || b.numel() == 1) {
+    if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half) {
+      const Tensor* tensor;
+      const Tensor* scalar;
+      ScalarType tensor_type;
+      ScalarType scalar_type;
+      if (a.numel() == 1) {
+        tensor = &b;
+        tensor_type = b_type;
+        scalar = &a;
+        scalar_type = a_type;
+      } else {
+        tensor = &a;
+        tensor_type = a_type;
+        scalar = &b;
+        scalar_type = b_type;
+      }
+      auto error = resize_tensor(out, tensor->sizes());
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          error == Error::Ok,
+          InvalidArgument,
+          out,
+          "Failed to resize output tensor.");
+      ET_SWITCH_REAL_TYPES(tensor_type, ctx, "sub.out", CTYPE, [&]() {
+        ET_SWITCH_REAL_TYPES(scalar_type, ctx, "sub.out", CTYPE_SCALAR, [&]() {
+          CTYPE alpha_val;
+          ET_KERNEL_CHECK(
+              ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
+          CTYPE_SCALAR scalar_val = *scalar->const_data_ptr<CTYPE_SCALAR>();
+          CTYPE scalar_casted = static_cast<CTYPE>(scalar_val);
 
-  if (a_type == b_type && a_type == out_type && a.sizes().equals(b.sizes()) &&
-      a_type != ScalarType::Half) {
+          using Vec = executorch::vec::Vectorized<CTYPE>;
+          if (a.numel() == 1) {
+            executorch::vec::map<CTYPE>(
+                [alpha_val, scalar_casted](Vec x) {
+                  return Vec(scalar_casted) - Vec(alpha_val) * x;
+                },
+                out.mutable_data_ptr<CTYPE>(),
+                tensor->const_data_ptr<CTYPE>(),
+                out.numel());
+          } else {
+            executorch::vec::map<CTYPE>(
+                [alpha_val, scalar_casted](Vec x) {
+                  return x - Vec(alpha_val * scalar_casted);
+                },
+                out.mutable_data_ptr<CTYPE>(),
+                tensor->const_data_ptr<CTYPE>(),
+                out.numel());
+          }
+        });
+      });
+    }
+    return out;
+  }
+
+  auto selected_optimized_path = select_optimized_path(a, b, out);
+  if (selected_optimized_path == ElementwiseOptimizedPath::kTreatAs1d) {
     // Resize for dynamic shape
     auto error = resize_tensor(out, a.sizes());
     ET_KERNEL_CHECK_MSG(
@@ -95,7 +151,7 @@ Tensor& opt_sub_out(
         out,
         "Failed to resize output tensor.");
 
-    ET_SWITCH_REAL_TYPES(out_type, ctx, "sub.out", CTYPE, [&]() {
+    ET_SWITCH_REAL_TYPES(a_type, ctx, "sub.out", CTYPE, [&]() {
       CTYPE alpha_val;
       ET_KERNEL_CHECK(
           ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
@@ -107,6 +163,53 @@ Tensor& opt_sub_out(
           a.const_data_ptr<CTYPE>(),
           b.const_data_ptr<CTYPE>(),
           out.numel());
+    });
+  } else if (selected_optimized_path != ElementwiseOptimizedPath::kNone) {
+    const Tensor* lhs;
+    const Tensor* rhs;
+    if (selected_optimized_path ==
+        ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
+      lhs = &b;
+      rhs = &a;
+    } else {
+      // Catch failure to update logic when subing new broadcasting possibility.
+      ET_DCHECK(
+          selected_optimized_path ==
+          ElementwiseOptimizedPath::kBroadcast2dBy1d);
+      lhs = &a;
+      rhs = &b;
+    }
+    auto error = resize_tensor(out, lhs->sizes());
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        error == Error::Ok,
+        InvalidArgument,
+        out,
+        "Failed to resize output tensor.");
+    ET_SWITCH_REAL_TYPES(out_type, ctx, "sub.out", CTYPE, [&]() {
+      CTYPE alpha_val;
+      ET_KERNEL_CHECK(
+          ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
+
+      using Vec = executorch::vec::Vectorized<CTYPE>;
+      if (selected_optimized_path ==
+          ElementwiseOptimizedPath::kBroadcast2dBy1dReverseArguments) {
+        executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
+            [alpha_val](Vec x, Vec y) { return y - Vec(alpha_val) * x; },
+            out.mutable_data_ptr<CTYPE>(),
+            lhs->const_data_ptr<CTYPE>(),
+            rhs->const_data_ptr<CTYPE>(),
+            lhs->sizes()[lhs->dim() - 2],
+            lhs->sizes()[lhs->dim() - 1]);
+      } else {
+        executorch::vec::broadcasting_map_2d_by_1d<CTYPE>(
+            [alpha_val](Vec x, Vec y) { return x - Vec(alpha_val) * y; },
+            out.mutable_data_ptr<CTYPE>(),
+            lhs->const_data_ptr<CTYPE>(),
+            rhs->const_data_ptr<CTYPE>(),
+            lhs->sizes()[lhs->dim() - 2],
+            lhs->sizes()[lhs->dim() - 1]);
+      }
     });
   } else {
     ScalarType common_type =
@@ -128,6 +231,7 @@ Tensor& opt_sub_out(
           CTYPE_IN alpha_val;
           ET_KERNEL_CHECK(
               ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
+
           SubInner<
               can_cast<CTYPE_IN, CTYPE_OUT>::value,
               CTYPE_A,

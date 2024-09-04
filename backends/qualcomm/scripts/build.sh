@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 set -e
+set -o xtrace
 
 if [[ -z ${QNN_SDK_ROOT} ]]; then
     echo "Please export QNN_SDK_ROOT=/path/to/qnn_sdk"
@@ -70,7 +71,7 @@ if [ "$BUILD_AARCH64" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     else
         # Force rebuild flatccrt for the correct platform
-        cd $BUILD_ROOT/sdk && make clean
+        cd $BUILD_ROOT/devtools && make clean
     fi
 
     cd $BUILD_ROOT
@@ -112,7 +113,7 @@ if [ "$BUILD_X86_64" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     else
         # Force rebuild flatccrt for the correct platform
-        cd $BUILD_ROOT/sdk && make clean
+        cd $BUILD_ROOT/devtools && make clean
     fi
 
     cd $BUILD_ROOT
