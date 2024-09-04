@@ -154,19 +154,19 @@ inline TensorPtr make_tensor_ptr(
  * @return A TensorImplPtr managing the newly created TensorImpl.
  */
 template <exec_aten::ScalarType T = exec_aten::ScalarType::Float>
-TensorImplPtr make_tensor_ptr(
+TensorPtr make_tensor_ptr(
     std::vector<exec_aten::SizesType> sizes,
     std::vector<typename runtime::ScalarTypeToCppType<T>::type> data,
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
         exec_aten::TensorShapeDynamism::STATIC) {
-  return make_tensor_impl_ptr<T>(
+  return make_tensor_ptr(make_tensor_impl_ptr<T>(
       std::move(sizes),
       std::move(data),
       std::move(dim_order),
       std::move(strides),
-      dynamism);
+      dynamism));
 }
 
 /**
