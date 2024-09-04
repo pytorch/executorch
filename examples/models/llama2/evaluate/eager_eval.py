@@ -33,6 +33,7 @@ class EagerEvalWrapper(eval_wrapper):
         tokenizer: Union[SentencePieceTokenizer, Tiktoken],
         max_seq_length: Optional[int] = None,
         use_kv_cache: bool = False,
+        dynamic_shape: bool = True,
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         super().__init__(device=device)
@@ -41,6 +42,7 @@ class EagerEvalWrapper(eval_wrapper):
         self._device = torch.device(device)
         self._max_seq_length = 2048 if max_seq_length is None else max_seq_length
         self._use_kv_cache = use_kv_cache
+        self._dynamic_shape = dynamic_shape
 
     @property
     def eot_token_id(self):
@@ -77,18 +79,19 @@ class EagerEvalWrapper(eval_wrapper):
 
     def _model_call(self, inps):
         if self._use_kv_cache:
-            # pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
-            # # Batch process the whole sequence.
-            # print("EagerEvalWrapper: inps[:, : self._max_seq_length], pos_tensor", inps[:, : self._max_seq_length], pos_tensor)
-            # logits = self._model(inps[:, : self._max_seq_length], pos_tensor)
-            # return logits
-
-            result_logits = []
-            for pos in range(self._max_seq_length):
-                pos_tensor = torch.tensor([pos], dtype=torch.int64)
-                logits = self._model(inps[:, pos : pos + 1], pos_tensor)
-                result_logits.append(logits)
-            return torch.cat(result_logits, dim=1)
+            print(f"Using KV cache: {self._use_kv_cache}, self._dynamic_shape: {self._dynamic_shape}")
+            if not self._dynamic_shape:
+                result_logits = []
+                for pos in range(self._max_seq_length):
+                    pos_tensor = torch.tensor([pos], dtype=torch.int64)
+                    logits = self._model(inps[:, pos : pos + 1], pos_tensor)
+                    result_logits.append(logits)
+                return torch.cat(result_logits, dim=1)
+            else:
+                pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
+                # Batch process the whole sequence.
+                logits = self._model(inps[:, : self._max_seq_length], pos_tensor)
+                return logits
 
         else:
             return self._model(inps)
