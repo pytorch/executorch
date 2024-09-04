@@ -2742,7 +2742,10 @@ TEST(VulkanComputeGraphOpsTest, grid_priors_test) {
       /*data_out_expected = */ {4, 4, 12, 4, 20, 4, 4, 12, 12, 12, 20, 12});
 }
 
-void test_int4pack_mm(std::vector<uint32_t> MKN, uint32_t group_size) {
+void test_int4pack_mm(
+    std::vector<uint32_t> MKN,
+    uint32_t group_size,
+    utils::StorageType storage_type) {
   GraphConfig config;
   ComputeGraph graph(config);
 
@@ -2756,8 +2759,7 @@ void test_int4pack_mm(std::vector<uint32_t> MKN, uint32_t group_size) {
   const std::vector<int64_t> out_size = {M, N};
 
   std::vector<float> A_data = create_random_float_buffer(M * K);
-  IOValueRef A =
-      graph.add_input_tensor(mat1_size, vkapi::kFloat, utils::kBuffer);
+  IOValueRef A = graph.add_input_tensor(mat1_size, vkapi::kFloat, storage_type);
   graph.copy_into_staging(A.staging, A_data.data(), A_data.size());
 
   // Quantized but un-packed weights
@@ -2768,7 +2770,7 @@ void test_int4pack_mm(std::vector<uint32_t> MKN, uint32_t group_size) {
       int4mm_pack_weights(mat2_size, B_quant_data.data());
 
   IOValueRef B_int4 =
-      graph.add_input_tensor(mat2_q_size, vkapi::kQInt8, utils::kBuffer);
+      graph.add_input_tensor(mat2_q_size, vkapi::kQInt8, storage_type);
   graph.copy_into_staging(
       B_int4.staging, B_int4_data.data(), B_int4_data.size());
 
@@ -2777,7 +2779,7 @@ void test_int4pack_mm(std::vector<uint32_t> MKN, uint32_t group_size) {
   // Random scales and zeroes. Keep scales small to avoid overflow and zeroes in
   // int4 range
   IOValueRef scales_and_zeros =
-      graph.add_input_tensor({2, N, k_groups}, vkapi::kFloat, utils::kBuffer);
+      graph.add_input_tensor({2, N, k_groups}, vkapi::kFloat, storage_type);
   std::vector<float> s_data(graph.numel_of(scales_and_zeros.value));
   const int zeros_stride = s_data.size() / 2;
   for (size_t i = 0; i < zeros_stride; i++) {
@@ -2789,7 +2791,13 @@ void test_int4pack_mm(std::vector<uint32_t> MKN, uint32_t group_size) {
       scales_and_zeros.staging, s_data.data(), s_data.size());
 
   IOValueRef out_int4;
-  out_int4.value = graph.add_tensor(out_size, vkapi::kFloat, utils::kBuffer);
+
+  if (storage_type == utils::kBuffer) {
+    out_int4.value = graph.add_tensor(out_size, vkapi::kFloat, utils::kBuffer);
+  } else {
+    out_int4.value =
+        graph.add_tensor(out_size, vkapi::kFloat, utils::kChannelsPacked);
+  }
 
   VK_GET_OP_FN("aten._weight_int4pack_mm.default")
   (graph,
@@ -2803,13 +2811,13 @@ void test_int4pack_mm(std::vector<uint32_t> MKN, uint32_t group_size) {
 
   // Dequantized matmul for comparison
   IOValueRef B_deq =
-      graph.add_input_tensor(mat2_size, vkapi::kFloat, utils::kBuffer);
+      graph.add_input_tensor(mat2_size, vkapi::kFloat, storage_type);
   std::vector<float> B_deq_data = int4mm_dequantize_weights(
       mat2_size, B_quant_data.data(), group_size, s_data.data());
   graph.copy_into_staging(B_deq.staging, B_deq_data.data(), B_deq_data.size());
 
   IOValueRef out_deq;
-  out_deq.value = graph.add_tensor(out_size, vkapi::kFloat, utils::kBuffer);
+  out_deq.value = graph.add_tensor(out_size, vkapi::kFloat, storage_type);
 
   VK_GET_OP_FN("aten.mm.default")
   (graph, {A.value, B_deq.value, out_deq.value});
@@ -2842,18 +2850,20 @@ TEST(VulkanComputeGraphOpsTest, int4pack_mm_test) {
     GTEST_SKIP();
   }
 
-  // Vector multiplication, single group per row
-  test_int4pack_mm({1, 32, 1}, 32);
+  for (auto storage_type : {utils::kBuffer, utils::kTexture3D}) {
+    // Vector multiplication, single group per row
+    test_int4pack_mm({1, 32, 1}, 32, storage_type);
 
-  // Vector multiplication, multiple groups per row
-  test_int4pack_mm({1, 256, 1}, 64);
+    // Vector multiplication, multiple groups per row
+    test_int4pack_mm({1, 256, 1}, 64, storage_type);
 
-  // Square matrices, single group per row
-  test_int4pack_mm({32, 32, 32}, 32);
+    // Square matrices, single group per row
+    test_int4pack_mm({32, 32, 32}, 32, storage_type);
 
-  // Irregular matrices, single group per row
-  test_int4pack_mm({37, 32, 19}, 32);
+    // Irregular matrices, single group per row
+    test_int4pack_mm({37, 32, 19}, 32, storage_type);
 
-  // Irregular matrices, multiple groups per row
-  test_int4pack_mm({37, 256, 19}, 64);
+    // Irregular matrices, multiple groups per row
+    test_int4pack_mm({37, 256, 19}, 64, storage_type);
+  }
 }
