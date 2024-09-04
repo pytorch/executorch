@@ -336,7 +336,7 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
 
 TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
   size_t len = 16;
-  StorageBuffer buffer(context(), vkapi::kFloat, len);
+  StagingBuffer buffer(context(), vkapi::kFloat, len);
 
   float scale = 3.0f;
   float offset = 1.5f;
@@ -407,7 +407,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
         params.buffer());
   }
 
-  StorageBuffer staging_buffer(
+  StagingBuffer staging_buffer(
       context(), vkapi::kFloat, a.staging_buffer_numel());
   record_image_to_nchw_op(context(), a, staging_buffer.buffer());
 
@@ -428,7 +428,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
 
 template <typename T, vkapi::ScalarType dtype>
 void test_storage_buffer_type(const size_t len) {
-  StorageBuffer buffer(context(), dtype, len);
+  StagingBuffer buffer(context(), dtype, len);
 
   std::string kernel_name("idx_fill_buffer");
   switch (dtype) {
@@ -992,6 +992,28 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
       graph.get_tensor(name.value)->staging_buffer_numel()); \
   graph.copy_from_staging(name.staging, data_##name.data(), data_##name.size());
 
+// The purpose of this test is simply to track the size of various classes over
+// time, in the interest of making sure that they doesn't grow too large.
+TEST_F(VulkanComputeAPITest, print_object_sizes) {
+#define PRINT_SIZE(name) \
+  std::cout << #name << " size: " << sizeof(name) << " B" << std::endl
+  PRINT_SIZE(vTensor);
+  PRINT_SIZE(Value);
+  PRINT_SIZE(StagingBuffer);
+  PRINT_SIZE(ComputeGraph);
+  PRINT_SIZE(ExecuteNode);
+#undef PRINT_SIZE
+
+  // The actual sizes of each object is dependent on the platform. However, we
+  // can alert ourselves to any significant changes in the sizes of these
+  // objects by checking the `sizeof()` the class against some loose thresholds.
+  EXPECT_TRUE(sizeof(vTensor) < 1800);
+  EXPECT_TRUE(sizeof(Value) < 2400);
+  EXPECT_TRUE(sizeof(StagingBuffer) < 500);
+  EXPECT_TRUE(sizeof(ComputeGraph) < 500);
+  EXPECT_TRUE(sizeof(ExecuteNode) < 500);
+}
+
 TEST(VulkanComputeGraphTest, test_values_scalars) {
   GraphConfig config;
   ComputeGraph graph(config);
@@ -1242,6 +1264,64 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
     // Sanity check that the values are correct
     for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
       CHECK_VALUE(data_out, i, val_c);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> sizes = {8, 64, 124};
+
+  // Build graph
+
+  ValueRef scalar = graph.add_symint(1);
+  IOValueRef a = graph.add_input_tensor(sizes, vkapi::kFloat);
+
+  IOValueRef out = {};
+  out.value = a.value;
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
+      VK_KERNEL_FROM_STR("scalar_add_texture"),
+      graph.create_global_wg_size(a.value),
+      graph.create_local_wg_size(a.value),
+      // Inputs and Outputs
+      {{out.value, vkapi::MemoryAccessType::WRITE}},
+      // Shader params buffers
+      {graph.texture_limits_ubo(a.value),
+       graph.get_or_create_int_param_buffer(scalar)},
+      // Specialization Constants
+      {},
+      // Resizing Logic
+      nullptr,
+      {}));
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    int scalar_val = i - 3.0f;
+    graph.set_symint(scalar, scalar_val);
+
+    float val_a = i + 2.0f;
+    float val_out = val_a + scalar_val;
+
+    fill_vtensor(graph, a, val_a);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, val_out);
     }
   }
 }
@@ -2040,7 +2120,7 @@ void run_from_gpu_test(
         vten.sizes_ubo());
   }
 
-  StorageBuffer staging_buffer(context(), dtype, vten.staging_buffer_numel());
+  StagingBuffer staging_buffer(context(), dtype, vten.staging_buffer_numel());
 
   if (dtype == vkapi::kChar &&
       !context()->adapter_ptr()->has_full_int8_buffers_support()) {
@@ -2073,7 +2153,7 @@ void round_trip_test(
   vTensor vten = vTensor(context(), sizes, dtype, storage_type, memory_layout);
 
   // Create and fill input staging buffer
-  StorageBuffer staging_buffer_in(
+  StagingBuffer staging_buffer_in(
       context(), dtype, vten.staging_buffer_numel());
 
   std::vector<T> data_in(staging_buffer_in.numel());
@@ -2084,7 +2164,7 @@ void round_trip_test(
       data_in.data(), staging_buffer_in, vten.staging_buffer_nbytes());
 
   // Output staging buffer
-  StorageBuffer staging_buffer_out(
+  StagingBuffer staging_buffer_out(
       context(), dtype, vten.staging_buffer_numel());
 
   record_nchw_to_image_op(context(), staging_buffer_in.buffer(), vten);
@@ -2538,7 +2618,7 @@ void test_conv2d(
 
   // Create and fill input staging buffer
   const int64_t in_numel = utils::multiply_integers(original_sizes);
-  StorageBuffer staging_buffer_in(context(), vkapi::kFloat, in_numel);
+  StagingBuffer staging_buffer_in(context(), vkapi::kFloat, in_numel);
 
   std::vector<float> data_in(in_numel);
   for (int i = 0; i < in_numel; i++) {
@@ -2550,7 +2630,7 @@ void test_conv2d(
   // Output staging buffer
   const int64_t out_numel =
       padded_sizes[0] * padded_sizes[1] * original_sizes[2] * original_sizes[3];
-  StorageBuffer staging_buffer_out(context(), vkapi::kFloat, out_numel);
+  StagingBuffer staging_buffer_out(context(), vkapi::kFloat, out_numel);
 
   // Copy data in and out of the tensor
   record_conv2d_prepack_weights_op(
