@@ -16,19 +16,16 @@ namespace extension {
 namespace llm {
 
 TextPrefiller::TextPrefiller(
-    Tokenizer* tokenizer,
     TextDecoderRunner* text_decoder_runner,
     bool use_kv_cache,
     bool enable_parallel_prefill)
-    : tokenizer_(tokenizer),
-      text_decoder_runner_(text_decoder_runner),
+    : text_decoder_runner_(text_decoder_runner),
       use_kv_cache_(use_kv_cache),
       enable_parallel_prefill_(enable_parallel_prefill) {}
 
 ::executorch::runtime::Result<uint64_t> TextPrefiller::prefill(
     std::vector<uint64_t>& prompt_tokens,
-    int64_t start_pos,
-    std::function<void(const std::string&)> token_callback) {
+    int64_t start_pos) {
   ET_CHECK_MSG(!prompt_tokens.empty(), "Prompt cannot be null");
   if (!text_decoder_runner_->is_method_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(text_decoder_runner_->load());
@@ -55,21 +52,10 @@ TextPrefiller::TextPrefiller(
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_LOG(
         Info, "Prefill token result numel(): %zu", outputs_res.get().numel());
-    // insert new token into prompt_tokens
-    // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
-    uint64_t prev = prompt_tokens[0];
-    uint64_t cur;
-    for (int i = 0; i < prompt_tokens.size(); i++) {
-      cur = prompt_tokens[i];
-      if (token_callback && cur != tokenizer_->bos_tok()) {
-        token_callback(ET_UNWRAP(tokenizer_->decode(prev, cur)));
-      }
-      prev = cur;
-    }
+
     cur_token = text_decoder_runner_->logits_to_token(outputs_res.get());
   } else { // sequential prefill
     int64_t pos = 0; // position in the sequence
-    int64_t prev_token;
     // token & pos
     int64_t pos_data = 0;
     // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
@@ -87,26 +73,17 @@ TextPrefiller::TextPrefiller(
     exec_aten::Tensor logits_tensor = ET_UNWRAP(
         text_decoder_runner_->step(managed_tokens, managed_start_pos));
 
-    // if first token is not bos, we need to callback
-    if (cur_token != tokenizer_->bos_tok()) {
-      token_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
-    }
     pos = 1; // start from index 1
 
     while (pos < num_prompt_tokens) {
       // Run the model
       pos_data = start_pos + pos;
 
-      prev_token = cur_token;
-
       // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
       cur_token = prompt_tokens[pos];
 
       logits_tensor = ET_UNWRAP(
           text_decoder_runner_->step(managed_tokens, managed_start_pos));
-
-      // print the token as string, decode it with the Tokenizer object
-      token_callback(ET_UNWRAP(tokenizer_->decode(prev_token, cur_token)));
 
       pos++;
     }

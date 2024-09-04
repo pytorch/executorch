@@ -54,7 +54,10 @@ def define_common_targets():
         srcs = [
             "sdpa_with_kv_cache.py",
         ],
-        visibility = ["//executorch/..."],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
         deps = [
             "//caffe2:torch",
         ],

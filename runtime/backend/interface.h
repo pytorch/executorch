@@ -39,9 +39,9 @@ struct CompileSpec {
  */
 using DelegateHandle = void;
 
-class PyTorchBackendInterface {
+class BackendInterface {
  public:
-  virtual ~PyTorchBackendInterface() = 0;
+  virtual ~BackendInterface() = 0;
 
   /**
    * Returns true if the backend is available to process delegation calls.
@@ -52,19 +52,19 @@ class PyTorchBackendInterface {
    * Responsible to further process (compile/transform/optimize) the compiled
    * unit that was produced, ahead-of-time, as well as perform any backend
    * initialization to ready it for execution. This method is called every time
-   * the PyTorch program is initialized. Consequently, this is the place to
+   * the ExecuTorch program is initialized. Consequently, this is the place to
    * perform any backend initialization as well as transformations,
    * optimizations, and even compilation that depend on the target device. As
    * such, it is strongly encouraged to push as much processing as possible to
    * the ahead-of-time processing.
    *
-   * @param[in] processed An opaque (to PyTorch) compiled unit from the
-   *     preprocessor. Can contain anything the backend needs to execute the
-   *     equivalent semantics of the passed-in Module and its method. Often
-   *     passed unmodified to `execute()` as a `DelegateHandle`, unless it needs
-   *     further processing at init time to be fully executable. If the data is
-   *     not needed after init(), calling processed->Free() can reclaim its
-   *     memory.
+   * @param[in] processed An opaque (to ExecuTorch) backend-specific compiled
+   *     unit from the preprocessor. Can contain anything the backend needs to
+   *     execute the equivalent semantics of the passed-in Module and its
+   *     method. Often passed unmodified to `execute()` as a `DelegateHandle`,
+   *     unless it needs further processing at init time to be fully executable.
+   *     If the data is not needed after init(), calling processed->Free() can
+   *     reclaim its memory.
    * @param[in] compile_specs The exact same compiler specification that
    *     was used ahead-of-time to produce `processed`.
    *
@@ -115,11 +115,10 @@ class PyTorchBackendInterface {
  * The mapping is populated using register_backend method.
  *
  * @param[in] name Name of the user-defined backend delegate.
- * @retval Pointer to the appropriate object that implements
- *         PyTorchBackendInterface. Nullptr if it can't find anything
- *         with the given name.
+ * @retval Pointer to the appropriate object that implements BackendInterface.
+ *         Nullptr if it can't find anything with the given name.
  */
-PyTorchBackendInterface* get_backend_class(const char* name);
+BackendInterface* get_backend_class(const char* name);
 
 /**
  * A named instance of a backend.
@@ -128,12 +127,12 @@ struct Backend {
   /// The name of the backend. Must match the string used in the PTE file.
   const char* name;
   /// The instance of the backend to use when loading and executing programs.
-  PyTorchBackendInterface* backend;
+  BackendInterface* backend;
 };
 
 /**
- * Registers the Backend object (i.e. string name and PyTorchBackendInterface
- * pair) so that it could be called via the name during the runtime.
+ * Registers the Backend object (i.e. string name and BackendInterface pair) so
+ * that it could be called via the name during the runtime.
  *
  * @param[in] backend Backend object
  * @retval Error code representing whether registration was successful.
@@ -151,8 +150,8 @@ using ::executorch::runtime::Backend;
 using ::executorch::runtime::CompileSpec;
 using ::executorch::runtime::DelegateHandle;
 using ::executorch::runtime::get_backend_class;
-using ::executorch::runtime::PyTorchBackendInterface;
 using ::executorch::runtime::register_backend;
 using ::executorch::runtime::SizedBuffer;
+using PyTorchBackendInterface = ::executorch::runtime::BackendInterface;
 } // namespace executor
 } // namespace torch
