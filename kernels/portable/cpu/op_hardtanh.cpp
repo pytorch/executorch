@@ -36,6 +36,9 @@ Tensor& hardtanh_out(
       out,
       "Failed to resize output tensor.");
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ScalarType in_type = in.scalar_type();
   ScalarType min_type = utils::get_scalar_dtype(min);
   ScalarType max_type = utils::get_scalar_dtype(max);
