@@ -79,7 +79,6 @@ class EagerEvalWrapper(eval_wrapper):
 
     def _model_call(self, inps):
         if self._use_kv_cache:
-            print(f"Using KV cache: {self._use_kv_cache}, self._dynamic_shape: {self._dynamic_shape}")
             if not self._dynamic_shape:
                 # graph module exported without dynamic shape won't work with a different shape.
                 # And we have to do single token prefill here.
