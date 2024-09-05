@@ -29,6 +29,7 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+from torch.export import export_for_training
 
 from ....models import MODEL_NAME_TO_MODEL
 from ....models.model_factory import EagerModelFactory
@@ -166,7 +167,7 @@ if __name__ == "__main__":
 
     # pre-autograd export. eventually this will become torch.export
     with torch.no_grad():
-        model = torch._export.capture_pre_autograd_graph(model, example_inputs)
+        model = export_for_training(model, example_inputs).module()
         edge: EdgeProgramManager = export_to_edge(
             model,
             example_inputs,
