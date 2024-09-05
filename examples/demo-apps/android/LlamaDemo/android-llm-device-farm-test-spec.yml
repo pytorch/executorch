@@ -93,9 +93,8 @@ phases:
 
       - echo "Gather LLM benchmark results"
       - |
-        APP_DIR=$(adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo pwd)
-        adb -s $DEVICEFARM_DEVICE_UDID pull "${APP_DIR}"/files/benchmark_results.json $DEVICEFARM_LOG_DIR/
-
+        adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo cp files/benchmark_results.json /sdcard
+        adb -s $DEVICEFARM_DEVICE_UDID pull /sdcard/benchmark_results.json $DEVICEFARM_LOG_DIR/
 
 artifacts:
   # By default, Device Farm will collect your artifacts from the $DEVICEFARM_LOG_DIR directory.
