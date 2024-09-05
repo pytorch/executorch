@@ -313,7 +313,6 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       return jresult;
     }
 
-    std::vector<ManagedTensor> managed_tensors = {};
     std::vector<EValue> evalues;
     std::vector<TensorPtr> tensors;
 
