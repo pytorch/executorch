@@ -367,7 +367,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
     params_path = canonical_path(args.params)
     output_dir_path = canonical_path(args.output_dir, dir=True)
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
-    export_fn = capture_pre_autograd_graph
 
     # dtype override
     if args.dtype_override is not None:
@@ -400,7 +399,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             transforms.append(replace_kv_cache_with_simple_kv_cache)
             transforms.append(replace_sdpa_with_flex_sdpa)
             transforms.append(replace_causal_mask)
-            export_fn = torch.export.export
 
         elif args.coreml or args.mps:
             # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
@@ -421,7 +419,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
             metadata_str=args.metadata,
-            export_fn=export_fn,
+            args=args,
         )
         .set_output_dir(output_dir_path)
         .to_dtype(dtype_override)
@@ -608,7 +606,7 @@ def _load_llama_model(
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
-    export_fn=capture_pre_autograd_graph,
+    args,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
@@ -670,5 +668,5 @@ def _load_llama_model(
             model.params,
             metadata_str,
         ),
-        export_fn=export_fn,
+        args=args,
     )

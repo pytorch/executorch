@@ -65,11 +65,11 @@ class LLMEdgeManager:
         dtype,
         use_kv_cache,
         example_inputs,
+        args,
         enable_dynamic_shape: bool = False,
         verbose: bool = False,
         metadata: Optional[dict] = None,
         dynamic_shapes: Optional[Any] = None,
-        export_fn=capture_pre_autograd_graph,
     ):
         self.model = model
         # graph module returned from capture_pre_autograd_graph
@@ -88,9 +88,7 @@ class LLMEdgeManager:
         self.output_dir = "."
         self.dynamic_shapes = dynamic_shapes
         self._saved_pte_filename = None
-        logging.info(f"Applying export function: {export_fn.__name__}")
-
-        self.export_fn = export_fn
+        self.args = args
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
         """
@@ -166,15 +164,15 @@ class LLMEdgeManager:
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             # pyre-fixme[8]
-            if self.export_fn == torch.export.export:
-                self.pre_autograd_graph_module = self.export_fn(
+            if self.args.qnn:
+                self.pre_autograd_graph_module = torch.export.export(
                     self.model,
                     self.example_inputs,
                     dynamic_shapes=dynamic_shape,
                     strict=True,
                 ).module()
             else:
-                self.pre_autograd_graph_module = self.export_fn(
+                self.pre_autograd_graph_module = capture_pre_autograd_graph(
                     self.model, self.example_inputs, dynamic_shapes=dynamic_shape
                 )
 
