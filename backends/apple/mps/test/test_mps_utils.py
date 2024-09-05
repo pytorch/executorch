@@ -22,7 +22,7 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import export_to_edge
-from torch.export import export
+from torch.export import export, export_for_training
 
 # Config for Capturing the weights, will be moved in the future
 
@@ -209,9 +209,9 @@ class TestMPS(unittest.TestCase):
 
         expected_output = model(*sample_inputs)
 
-        model = torch._export.capture_pre_autograd_graph(
+        model = export_for_training(
             model, sample_inputs, dynamic_shapes=dynamic_shapes
-        )
+        ).module()
 
         edge_program = export_to_edge(
             model,
