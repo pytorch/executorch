@@ -72,6 +72,27 @@ Error LlavaRunner::load() {
   return Error::Ok;
 }
 
+Error LlavaRunner::prefill_images(
+    std::vector<Image>& images,
+    int64_t& start_pos) {
+  for (auto& image : images) {
+    // pos is updated inside image prefill.
+    ET_UNWRAP(image_prefiller_->prefill(image, start_pos));
+  }
+  return Error::Ok;
+}
+
+Result<uint64_t> LlavaRunner::prefill_prompt(
+    const std::string& prompt,
+    int64_t& start_pos,
+    int8_t bos,
+    int8_t eos) {
+  std::vector<uint64_t> prompt_tokens =
+      ET_UNWRAP(tokenizer_->encode(prompt, bos, eos));
+
+  return text_prefiller_->prefill(prompt_tokens, start_pos);
+}
+
 Error LlavaRunner::generate(
     std::vector<Image> images,
     const std::string& prompt,
@@ -96,36 +117,23 @@ Error LlavaRunner::generate(
   int64_t pos = 0;
 
   // prefill preset prompt
-  std::vector<uint64_t> preset_prompt_tokens =
-      ET_UNWRAP(tokenizer_->encode(kPresetPrompt, /*bos=*/1, /*eos=*/0));
-  size_t num_preset_tokens = preset_prompt_tokens.size();
-
-  ET_UNWRAP(text_prefiller_->prefill(preset_prompt_tokens, pos));
-  pos += num_preset_tokens;
+  prefill_prompt(kPresetPrompt, pos, /*bos=*/1, /*eos*/ 0);
 
   // prefill images
-  for (auto& image : images) {
-    // pos is updated inside image prefill.
-    ET_UNWRAP(image_prefiller_->prefill(image, pos));
-  }
+  prefill_images(images, pos);
 
   // prefill user prompt. No BOS because preset prompt already has it.
   wrapped_callback(prompt);
 
-  std::vector<uint64_t> user_prompt_tokens =
-      ET_UNWRAP(tokenizer_->encode(prompt, /*bos=*/0, /*eos=*/0));
-  size_t num_user_tokens = user_prompt_tokens.size();
-
   uint64_t prefill_next_token =
-      ET_UNWRAP(text_prefiller_->prefill(user_prompt_tokens, pos));
-  pos += num_user_tokens;
+      ET_UNWRAP(prefill_prompt(prompt, pos, /*bos=*/0, /*eos*/ 0));
+  stats_.num_prompt_tokens = pos;
 
   // Generate tokens
   int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
       {prefill_next_token}, pos, seq_len, wrapped_callback));
 
   // Bookkeeping
-  stats_.num_prompt_tokens = num_preset_tokens + num_user_tokens;
   stats_.num_generated_tokens = num_generated_tokens;
   ::executorch::llm::print_report(stats_);
   if (stats_callback) {
