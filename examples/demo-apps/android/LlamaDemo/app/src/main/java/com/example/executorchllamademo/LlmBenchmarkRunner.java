@@ -18,6 +18,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.File;
 import com.google.gson.Gson;
+import java.util.Arrays;
 
 public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback {
   ModelRunner mModelRunner;
