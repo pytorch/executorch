@@ -27,6 +27,7 @@ fb_android_library(
         "java/com/example/executorchllamademo/ModelRunner.java",
         "java/com/example/executorchllamademo/ModelRunnerCallback.java",
         "java/com/example/executorchllamademo/ModelType.java",
+        "java/com/example/executorchllamademo/ModelUtils.java",
         "java/com/example/executorchllamademo/PromptFormat.java",
         "java/com/example/executorchllamademo/SettingsActivity.java",
         "java/com/example/executorchllamademo/SettingsFields.java",
