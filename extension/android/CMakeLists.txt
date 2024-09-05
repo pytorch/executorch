@@ -101,7 +101,17 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
 
   target_link_options_shared_lib(quantized_ops_lib)
 
-  set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/mtk_llama_runner.cpp)
+  set(
+    LLAMA_JNI_SRCS jni/jni_layer_llama.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/mtk_llama_runner.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/LlamaModelChunk.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/LlamaRuntime.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/ModelChunk.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/MultiModelLoader.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/mask_builder.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/rotary_embedding.cpp
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner/llm_helper/token_embedding.cpp
+  )
   add_library(executorch_llama_jni SHARED ${LLAMA_JNI_SRCS})
   if(TARGET pthreadpool)
     target_compile_definitions(executorch_llama_jni PRIVATE ET_USE_THREADPOOL=1)
@@ -118,6 +128,8 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   endif()
   target_include_directories(
     executorch_llama_jni PRIVATE ${_common_include_directories}
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/
+    ${EXECUTORCH_ROOT}/examples/mediatek/executor_runner/llama_runner
   )
   target_link_libraries(
     executorch_llama_jni
@@ -129,6 +141,8 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     eigen_blas
     quantized_kernels
     quantized_ops_lib
+    ${NEURON_BUFFER_ALLOCATOR_LIB}
+
   )
   target_compile_options(executorch_llama_jni PUBLIC ${_common_compile_options})
   # link re2
