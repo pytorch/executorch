@@ -20,7 +20,7 @@
 namespace torch {
 namespace executor {
 
-class XnnpackBackend final : public PyTorchBackendInterface {
+class XnnpackBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~XnnpackBackend() = default;
 

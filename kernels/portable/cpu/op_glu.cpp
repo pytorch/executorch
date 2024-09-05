@@ -144,6 +144,9 @@ glu_out(RuntimeContext& ctx, const Tensor& self, int64_t dim, Tensor& out) {
   ET_KERNEL_CHECK(
       ctx, resize_glu_out(self, dim, out) == Error::Ok, InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
   ET_KERNEL_CHECK(ctx, check_glu_args(self, dim, out), InvalidArgument, out);
 
   const size_t non_negative_dim = dim < 0 ? dim + self.dim() : dim;
