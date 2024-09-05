@@ -25,11 +25,7 @@ TextPrefiller::TextPrefiller(
 
 ::executorch::runtime::Result<uint64_t> TextPrefiller::prefill(
     std::vector<uint64_t>& prompt_tokens,
-<<<<<<< HEAD
-    int64_t start_pos_index) {
-=======
     int64_t& start_pos) {
->>>>>>> 89291007b ([llava] Expose prefill image and prompt APIs)
   ET_CHECK_MSG(!prompt_tokens.empty(), "Prompt cannot be null");
   if (!text_decoder_runner_->is_method_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(text_decoder_runner_->load());
@@ -47,8 +43,7 @@ TextPrefiller::TextPrefiller(
         {1, num_prompt_tokens},
         exec_aten::ScalarType::Long);
 
-    auto start_pos =
-        from_blob(&start_pos_index, {1}, exec_aten::ScalarType::Long);
+    auto start_pos = from_blob(&start_pos, {1}, exec_aten::ScalarType::Long);
 
     auto outputs_res = text_decoder_runner_->step(tokens, start_pos);
 

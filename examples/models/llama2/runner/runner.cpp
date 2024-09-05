@@ -205,7 +205,7 @@ Error Runner::generate(
   // print prompts
   wrapped_callback(prompt);
 
-  auto prefill_res = text_prefiller_->prefill(prompt_tokens, 0);
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, 0l);
   stats_.first_token_ms = util::time_in_ms();
   stats_.prompt_eval_end_ms = util::time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
