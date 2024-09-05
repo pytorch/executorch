@@ -229,7 +229,6 @@ jobs:
         if [[ ${{ matrix.delegate }} == "qnn" ]]; then
             PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
             PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
-            export QNN_SDK_ROOT=/tmp/qnn
         fi
         
         # TODO: This needs to be replaced with a generic loader .apk
