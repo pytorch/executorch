@@ -206,6 +206,10 @@ jobs:
     name: build-llm-demo
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     needs: set-parameters
+    strategy:
+      matrix:
+          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+      fail-fast: false
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
@@ -227,6 +231,7 @@ jobs:
             PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
             export QNN_SDK_ROOT=/tmp/qnn
         fi
+        
         # TODO: This needs to be replaced with a generic loader .apk
         # Build LLM Demo for Android
         bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
