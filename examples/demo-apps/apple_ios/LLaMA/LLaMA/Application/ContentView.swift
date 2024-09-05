@@ -16,6 +16,79 @@ class RunnerHolder: ObservableObject {
   var llavaRunner: LLaVARunner?
 }
 
+extension UIImage {
+  func resized(to newSize: CGSize, scale: CGFloat = 1) -> UIImage {
+    NSLog(">>> Resizing image to \(newSize)")
+    let format = UIGraphicsImageRendererFormat.default()
+    format.scale = scale
+    let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
+    let image = renderer.image { _ in
+      draw(in: CGRect(origin: .zero, size: newSize))
+    }
+    return image
+  }
+
+  func toRGBArray() -> [UInt8]? {
+    guard let cgImage = self.cgImage else {
+      NSLog("Failed to get CGImage from UIImage")
+      return nil
+    }
+
+    let width = cgImage.width
+    let height = cgImage.height
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bytesPerPixel = 4
+    let bytesPerRow = bytesPerPixel * width
+    let bitsPerComponent = 8
+    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+
+    guard let context = CGContext(
+      data: nil,
+      width: width,
+      height: height,
+      bitsPerComponent: bitsPerComponent,
+      bytesPerRow: bytesPerRow,
+      space: colorSpace,
+      bitmapInfo: bitmapInfo
+    ) else {
+      NSLog("Failed to create CGContext")
+      return nil
+    }
+
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+    guard let pixelBuffer = context.data else {
+      NSLog("Failed to get pixel data from CGContext")
+      return nil
+    }
+
+    let pixelData = pixelBuffer.bindMemory(to: UInt8.self, capacity: width * height * bytesPerPixel)
+
+    var rgbArray = [UInt8](repeating: 0, count: width * height * 3)
+
+    for y in 0..<height {
+      for x in 0..<width {
+        let pixelIndex = (y * width + x) * bytesPerPixel
+        let r = UInt8(pixelData[pixelIndex])
+        let g = UInt8(pixelData[pixelIndex + 1])
+        let b = UInt8(pixelData[pixelIndex + 2])
+
+        let rgbIndex = (y * width + x)
+        rgbArray[rgbIndex] = r
+        rgbArray[rgbIndex + height * width] = g
+        rgbArray[rgbIndex + 2 * height * width] = b
+      }
+    }
+
+    let first100Values = rgbArray.prefix(100)
+    let joinedValues = first100Values.map { String($0) }.joined(separator: " ")
+    NSLog(">>>>>")
+    NSLog(joinedValues)
+
+    return rgbArray
+  }
+}
+
 struct ContentView: View {
   @State private var prompt = ""
   @State private var messages: [Message] = []
@@ -29,9 +102,26 @@ struct ContentView: View {
   @StateObject private var resourceMonitor = ResourceMonitor()
   @StateObject private var logManager = LogManager()
 
+  @State private var isImagePickerPresented = false
+  @State private var selectedImage: UIImage?
+  @State private var imagePickerSourceType: UIImagePickerController.SourceType = .photoLibrary
+
+  @State private var showingSettings = false
+  @State private var sliderTemperature: Double = 0.0
+  @State private var sliderTopK: Int = 1
+  @State private var sliderTopP: Double = 1.0
+  @State private var sliderMaxOutputToken: Int = 1
+  
   enum PickerType {
     case model
     case tokenizer
+  }
+  
+  init() {
+    _sliderTemperature = State(initialValue: resourceManager.temperature)
+    _sliderTopK = State(initialValue: resourceManager.topK)
+    _sliderTopP = State(initialValue: resourceManager.topP)
+    _sliderMaxOutputToken = State(initialValue: resourceManager.maxOutputTokens)
   }
 
   private var placeholder: String {
@@ -55,6 +145,68 @@ struct ContentView: View {
   var body: some View {
     NavigationView {
       VStack {
+        if showingSettings {
+          VStack(spacing: 20) {
+            Form {
+              Section(header: Text("MMModel and Tokenizer")
+                        .font(.headline)
+                        .foregroundColor(.primary)) {
+                Button(action: { pickerType = .model }) {
+                  Label(resourceManager.modelName == "" ? modelTitle : resourceManager.modelName, systemImage: "doc")
+                }
+                Button(action: { pickerType = .tokenizer }) {
+                  Label(resourceManager.tokenizerName == "" ? tokenizerTitle : resourceManager.tokenizerName, systemImage: "doc")
+                }
+              }
+
+              Section(header: Text("Parameters")
+                        .font(.headline)
+                        .foregroundColor(.primary)) {
+                VStack {
+                  HStack {
+                    Text("Temperature")
+                    Slider(value: $sliderTemperature, in: 0...2)
+                      .onChange(of: sliderTemperature) { newValue in
+                        resourceManager.temperature = newValue
+                      }
+                    Text(String(format: "%.1f", sliderTemperature))
+                  }
+                  HStack {
+                    Text("Top-K")
+                    Slider(value: Binding(
+                      get: { Double(sliderTopK) },
+                      set: { sliderTopK = Int($0) }
+                    ), in: 1...100, step: 1)
+                    .onChange(of: sliderTopK) { newValue in
+                      resourceManager.topK = newValue
+                    }
+                    Text(String(format: "%d", sliderTopK))
+                  }
+                  HStack {
+                    Text("Top-P")
+                    Slider(value: $sliderTopP, in: 0...1)
+                      .onChange(of: sliderTopP) { newValue in
+                        resourceManager.topP = newValue
+                      }
+                    Text(String(format: "%.1f", sliderTopP))
+                  }
+                  HStack {
+                    Text("Max output token")
+                    Slider(value: Binding(
+                      get: { Double(sliderMaxOutputToken) },
+                      set: { sliderMaxOutputToken = Int($0) }
+                    ), in: 1...8192, step: 1)
+                    .onChange(of: sliderMaxOutputToken) { newValue in
+                      resourceManager.maxOutputTokens = newValue
+                    }
+                    Text(String(format: "%d", sliderMaxOutputToken))
+                  }
+                }
+              }
+            }
+          }
+        }
+
         MessageListView(messages: $messages)
           .gesture(
             DragGesture().onChanged { value in
@@ -64,24 +216,33 @@ struct ContentView: View {
             }
           )
         HStack {
-          Menu {
-            Section(header: Text("Model")) {
-              Button(action: { pickerType = .model }) {
-                Label(modelTitle, systemImage: "doc")
-              }
-            }
-            Section(header: Text("Tokenizer")) {
-              Button(action: { pickerType = .tokenizer }) {
-                Label(tokenizerTitle, systemImage: "doc")
-              }
-            }
-          } label: {
-            Image(systemName: "ellipsis.circle")
+          Button(action: {
+            imagePickerSourceType = .photoLibrary
+            isImagePickerPresented = true
+          }) {
+            Image(systemName: "photo.on.rectangle")
               .resizable()
-              .aspectRatio(contentMode: .fit)
-              .frame(height: 28)
+              .scaledToFit()
+              .frame(width: 24, height: 24)
           }
-          .disabled(isGenerating)
+          .background(Color.clear)
+          .cornerRadius(8)
+
+          Button(action: {
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+              imagePickerSourceType = .camera
+              isImagePickerPresented = true
+            } else {
+              print("Camera not available")
+            }
+          }) {
+            Image(systemName: "camera")
+              .resizable()
+              .scaledToFit()
+              .frame(width: 24, height: 24)
+          }
+          .background(Color.clear)
+          .cornerRadius(8)
 
           TextField(placeholder, text: $prompt, axis: .vertical)
             .padding(8)
@@ -103,8 +264,18 @@ struct ContentView: View {
           .disabled(isGenerating ? shouldStopGenerating : (!isInputEnabled || prompt.isEmpty))
         }
         .padding([.leading, .trailing, .bottom], 10)
+        .sheet(isPresented: $isImagePickerPresented, onDismiss: addSelectedImageMessage) {
+          ImagePicker(selectedImage: $selectedImage, sourceType: imagePickerSourceType)
+        }
       }
       .navigationBarTitle(title, displayMode: .inline)
+      .navigationBarItems(leading:
+                            Button(action: {
+                              showingSettings.toggle()
+                            }) {
+                              Image(systemName: "gearshape")
+                                .imageScale(.large)
+                            })
       .navigationBarItems(trailing:
                             HStack {
                               Menu {
@@ -152,6 +323,13 @@ struct ContentView: View {
       }
     }
     .navigationViewStyle(StackNavigationViewStyle())
+  }
+
+  private func addSelectedImageMessage() {
+    if let selectedImage {
+      messages.append(Message(image: selectedImage))
+      messages.append(Message(type: .prompted))
+    }
   }
 
   private func generate() {
@@ -213,6 +391,27 @@ struct ContentView: View {
       }
       do {
         var tokens: [String] = []
+        
+        var textOnly: Bool = false
+        var rgbArray: [UInt8]?
+        let MAX_WIDTH = 336.0
+        var newHeight = 0.0
+        var imageBuffer: UnsafeMutableRawPointer?
+
+        if let img = selectedImage {
+          newHeight = 224.0 //MAX_WIDTH * img.size.height / img.size.width
+          let resizedImage = img.resized(to: CGSize(width: MAX_WIDTH, height: newHeight))
+          rgbArray = resizedImage.toRGBArray()
+          if rgbArray == nil {
+            textOnly = true
+          } else {
+            imageBuffer = UnsafeMutableRawPointer(mutating: rgbArray)
+          }
+        } else {
+          textOnly = true
+        }
+        
+//        try runnerHolder.runner?.mm_generate(textOnly, buffer: imageBuffer!, width: MAX_WIDTH, height: newHeight, prompt: text, sequenceLength: seq_len) { token in
         try runnerHolder.runner?.generate(text, sequenceLength: seq_len) { token in
           tokens.append(token)
           if tokens.count > 2 {

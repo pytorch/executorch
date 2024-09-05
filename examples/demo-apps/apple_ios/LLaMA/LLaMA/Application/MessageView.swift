@@ -27,8 +27,19 @@ struct MessageView: View {
           HStack {
             if message.type != .generated { Spacer() }
             if message.text.isEmpty {
-              ProgressView()
-                .progressViewStyle(CircularProgressViewStyle())
+              if let img = message.image {
+                Image(uiImage: img)
+                  .resizable()
+                  .scaledToFit()
+                  .frame(maxWidth: 200, maxHeight: 200)
+                  .padding()
+                  .background(Color.gray.opacity(0.2))
+                  .cornerRadius(8)
+                  .padding(.vertical, 2)
+              } else {
+                ProgressView()
+                  .progressViewStyle(CircularProgressViewStyle())
+              }
             } else {
               Text(message.text)
                 .padding(10)
