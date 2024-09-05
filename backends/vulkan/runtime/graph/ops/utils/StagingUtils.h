@@ -12,25 +12,6 @@
 
 namespace vkcompute {
 
-//
-// Functions to copy data into and out of a staging buffer
-//
-
-void copy_ptr_to_staging(
-    const void* src,
-    api::StagingBuffer& staging,
-    const size_t nbytes);
-void copy_staging_to_ptr(
-    api::StagingBuffer& staging,
-    void* dst,
-    const size_t nbytes);
-
-void set_staging_zeros(api::StagingBuffer& staging, const size_t nbytes);
-
-//
-// Functions to get shaders
-//
-
 vkapi::ShaderInfo get_nchw_to_tensor_shader(
     const api::vTensor& v_dst,
     bool int8_buffer_enabled = true);

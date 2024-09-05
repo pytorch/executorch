@@ -159,7 +159,7 @@ def is_tosa(compile_spec: List[CompileSpec]) -> bool:
     return False
 
 
-def get_intermediate_path(compile_spec: List[CompileSpec]) -> str:
+def get_intermediate_path(compile_spec: List[CompileSpec]) -> Optional[str]:
     for spec in compile_spec:
         if spec.key == "debug_artifact_path":
             return spec.value.decode()

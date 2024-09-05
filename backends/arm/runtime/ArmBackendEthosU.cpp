@@ -46,7 +46,7 @@ class ArmBackendExecuteCallbacks {
   }
 };
 
-class ArmBackend final : public PyTorchBackendInterface {
+class ArmBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ArmBackend() {}
 
