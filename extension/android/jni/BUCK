@@ -30,6 +30,7 @@ fb_android_cxx_library(
     compiler_flags = [
         "-frtti",
         "-fexceptions",
+        "-Wno-unused-variable",
     ],
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
@@ -38,6 +39,7 @@ fb_android_cxx_library(
         "//fbandroid/native/fb:fb",
         "//third-party/glog:glog",
         "//xplat/executorch/extension/module:module_static",
+        "//xplat/executorch/extension/runner_util:inputs_static",
         "//xplat/executorch/extension/runner_util:managed_tensor_static",
     ],
 )
@@ -50,6 +52,7 @@ fb_android_cxx_library(
     compiler_flags = [
         "-frtti",
         "-fexceptions",
+        "-Wno-unused-variable",
     ],
     soname = "libexecutorch.$(ext)",
     visibility = ["PUBLIC"],
@@ -60,6 +63,7 @@ fb_android_cxx_library(
         "//third-party/glog:glog",
         "//xplat/executorch/backends/xnnpack:xnnpack_backend_static",
         "//xplat/executorch/extension/module:module_static",
+        "//xplat/executorch/extension/runner_util:inputs_static",
         "//xplat/executorch/extension/runner_util:managed_tensor_static",
     ],
 )
