@@ -200,20 +200,20 @@ ivec4 to_tensor_idx(
   pos[axis_mapping[packed_dim]] *= 4;
 
   ivec4 tensor_idx;
-  for (int dim = 0; dim < 4; ++dim) {
+  for (int dim = 0; dim < 3; ++dim) {
     tensor_idx[dim] = pos[axis_mapping[dim]];
   }
 
-  // Early return if batch is 1. No need to adjust index.
-  if (sizes[3] == 1) {
-    tensor_idx[3] = 0;
+  // Early return if batch is 1. Batch index will be 0.
+  if (sizes.w == 1) {
+    tensor_idx.w = 0;
     return tensor_idx;
   }
 
   // Else, adjust the dim that's concatenated with batch. Note that the axis
   // mapping for the batch dim indicates WHCN dim index of the dim that it is
   // concatenated with, not a texture axis.
-  tensor_idx[3] /= sizes[axis_mapping[3]];
+  tensor_idx.w = tensor_idx[axis_mapping[3]] / sizes[axis_mapping[3]];
   tensor_idx[axis_mapping[3]] %= sizes[axis_mapping[3]];
 
   return tensor_idx;
@@ -248,7 +248,7 @@ ivec3 to_texture_pos(
   sizes[packed_dim] = alignup4(sizes[packed_dim]);
 
   ivec3 pos;
-  for (int dim = 0; dim < 4; ++dim) {
+  for (int dim = 0; dim < 3; ++dim) {
     pos[axis_mapping[dim]] = idx[dim];
   }
 
@@ -295,7 +295,7 @@ ivec4 to_texture_elem_pos(
   sizes[packed_dim] = alignup4(sizes[packed_dim]);
 
   ivec4 pos;
-  for (int dim = 0; dim < 4; ++dim) {
+  for (int dim = 0; dim < 3; ++dim) {
     pos[axis_mapping[dim]] = idx[dim];
   }
 

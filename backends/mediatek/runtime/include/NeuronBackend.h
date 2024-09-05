@@ -26,7 +26,7 @@
 namespace torch {
 namespace executor {
 
-class NeuronBackend final : public PyTorchBackendInterface {
+class NeuronBackend final : public ::executorch::runtime::BackendInterface {
  public:
   Result<DelegateHandle*> init(
       BackendInitContext& context,

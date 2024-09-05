@@ -329,15 +329,15 @@ void record_reference_matmul(
 void fill_vtensor(api::vTensor& vten, std::vector<float>& data) {
   api::StagingBuffer staging_buffer(api::context(), vten.dtype(), data.size());
 
-#define CASE(ctype, name)                                                     \
-  case vkapi::ScalarType::name: {                                             \
-    std::vector<ctype> data_converted;                                        \
-    data_converted.resize(data.size());                                       \
-    for (int i = 0; i < data.size(); ++i) {                                   \
-      data_converted[i] = ctype(data[i]);                                     \
-    }                                                                         \
-    copy_ptr_to_staging(                                                      \
-        data_converted.data(), staging_buffer, vten.staging_buffer_nbytes()); \
+#define CASE(ctype, name)                                     \
+  case vkapi::ScalarType::name: {                             \
+    std::vector<ctype> data_converted;                        \
+    data_converted.resize(data.size());                       \
+    for (int i = 0; i < data.size(); ++i) {                   \
+      data_converted[i] = ctype(data[i]);                     \
+    }                                                         \
+    staging_buffer.copy_from(                                 \
+        data_converted.data(), vten.staging_buffer_nbytes()); \
   } break;
 
   switch (vten.dtype()) {
@@ -427,14 +427,14 @@ void extract_vtensor(api::vTensor& vten, std::vector<float>& data) {
   api::context()->submit_cmd_to_gpu(fence.get_submit_handle());
   fence.wait();
 
-#define CASE(ctype, name)                                                     \
-  case vkapi::ScalarType::name: {                                             \
-    std::vector<ctype> data_converted(data.size());                           \
-    copy_staging_to_ptr(                                                      \
-        staging_buffer, data_converted.data(), vten.staging_buffer_nbytes()); \
-    for (int i = 0; i < data.size(); ++i) {                                   \
-      data[i] = float(data_converted[i]);                                     \
-    }                                                                         \
+#define CASE(ctype, name)                                     \
+  case vkapi::ScalarType::name: {                             \
+    std::vector<ctype> data_converted(data.size());           \
+    staging_buffer.copy_to(                                   \
+        data_converted.data(), vten.staging_buffer_nbytes()); \
+    for (int i = 0; i < data.size(); ++i) {                   \
+      data[i] = float(data_converted[i]);                     \
+    }                                                         \
   } break;
 
   switch (vten.dtype()) {

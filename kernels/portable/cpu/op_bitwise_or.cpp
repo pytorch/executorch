@@ -32,6 +32,9 @@ Tensor& bitwise_or_Tensor_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType common_type = promoteTypes(a_type, b_type);
@@ -73,6 +76,9 @@ Tensor& bitwise_or_Scalar_out(
     const Scalar& b,
     Tensor& out) {
   (void)ctx;
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
