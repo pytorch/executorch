@@ -102,6 +102,15 @@ Tensor& embedding_out(
       out.size(1),
       weight.size(1));
 
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(weight, indices, out),
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensor_is_default_dim_order(weight), InvalidArgument, out);
+
   ScalarType ix_type = indices.scalar_type();
   ET_CHECK_MSG(
       ix_type == ScalarType::Long || ix_type == ScalarType::Int,

@@ -19,7 +19,7 @@
 namespace torch {
 namespace executor {
 
-class MPSBackend final : public PyTorchBackendInterface {
+class MPSBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~MPSBackend() = default;
 

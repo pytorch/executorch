@@ -90,9 +90,20 @@ std::vector<int64_t> calculate_strides(
  * order.
  *
  * The last value `axis_mapping.at(3)` indicates the WHCN index of the tensor
- * dimension along which batches will be concatenated. To determine which image
- * texture axis is used for the concatenation, a double lookup will need to be
- * performed (axis_mapping.at(axis_mapping.at(3))).
+ * dimension along which batches will be concatenated. This dimension can be
+ * referred to as the "inner dimension" To determine which image texture axis is
+ * used for the concatenation, a double lookup will need to be performed
+ * (axis_mapping.at(axis_mapping.at(3))).
+ *
+ * The reason for strucuring axis mapping this way is because for the batch dim,
+ * two things need to be easily derived:
+ *
+ * 1. The dim idx of the inner dimension, so that the size of the inner
+ *    dimension can be easily determined.
+ * 2. The texture axis used to concatenate batches
+ *
+ * By storing the dim index of the inner dimension instead of the texture axis
+ * it maps to, both pieces of information are readily available.
  *
  * The axis mapping allows for permuted views of texture-backed tensors.
  */
