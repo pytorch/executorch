@@ -411,7 +411,7 @@ bool check_convolution_args(
     bool transposed,
     IntArrayRef output_padding,
     int64_t groups,
-    Tensor& out);
+    const Tensor& out);
 
 void get_convolution_out_target_size(
     const Tensor& in,

@@ -358,6 +358,8 @@ class Module final {
   std::unique_ptr<::executorch::runtime::MemoryAllocator> temp_allocator_;
   std::unique_ptr<::executorch::runtime::EventTracer> event_tracer_;
   std::unordered_map<std::string, MethodHolder> methods_;
+
+  friend class ExecuTorchJni;
 };
 
 } // namespace extension
