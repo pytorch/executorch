@@ -40,7 +40,8 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
     modelDir = new File(intent.getStringExtra("model_dir"));
     File model = Arrays.stream(modelDir.listFiles())
             .filter(file -> file.getName().endsWith(".pte"))
-            .findFirst();
+            .findFirst()
+            .get();
     String tokenizerPath = intent.getStringExtra("tokenizer_path");
 
     float temperature = intent.getFloatExtra("temperature", 0.8f);
