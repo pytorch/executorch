@@ -43,7 +43,6 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_qnn_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from torch._export import capture_pre_autograd_graph
 
 from ..model_factory import EagerModelFactory
 from .source_transformation.quantize import (
