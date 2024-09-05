@@ -43,6 +43,9 @@
 		03729F132BB2042B00152F2E /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F112BB2042B00152F2E /* sampler.cpp */; };
 		03729F162BB2043600152F2E /* bpe_tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F142BB2043600152F2E /* bpe_tokenizer.cpp */; };
 		03729F172BB2043600152F2E /* tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F152BB2043600152F2E /* tokenizer.h */; };
+		0372C3112C893FE900CD942A /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0372C3102C893FE900CD942A /* CoreGraphics.framework */; };
+		0372C3142C89418E00CD942A /* llava_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 0372C3122C89418E00CD942A /* llava_runner.h */; };
+		0372C3152C89418E00CD942A /* llava_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0372C3132C89418E00CD942A /* llava_runner.cpp */; };
 		038D678C2C482C1E00B88CF2 /* llama_tiktoken.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 038D678A2C482C1D00B88CF2 /* llama_tiktoken.cpp */; };
 		038D678D2C482C1E00B88CF2 /* llama_tiktoken.h in Headers */ = {isa = PBXBuildFile; fileRef = 038D678B2C482C1E00B88CF2 /* llama_tiktoken.h */; };
 		03BADE202BD2E88600DDFDC2 /* bpe_tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */; };
@@ -53,6 +56,24 @@
 		03D03DAB2C7823830088D6A7 /* text_decoder_runner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */; };
 		03D03DAC2C7823830088D6A7 /* text_decoder_runner.h in Headers */ = {isa = PBXBuildFile; fileRef = 03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */; };
 		03DDA0FB2BD6368100D234B3 /* base64.h in Headers */ = {isa = PBXBuildFile; fileRef = 03DDA0FA2BD6368100D234B3 /* base64.h */; };
+		84DD94742C8105EB00C765A6 /* LLaMAPerfBenchmarkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84DD94732C8105EB00C765A6 /* LLaMAPerfBenchmarkApp.swift */; };
+		84DD94812C81060E00C765A6 /* backend_coreml in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94802C81060E00C765A6 /* backend_coreml */; };
+		84DD94832C81060E00C765A6 /* backend_coreml_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94822C81060E00C765A6 /* backend_coreml_debug */; };
+		84DD94852C81060E00C765A6 /* backend_mps in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94842C81060E00C765A6 /* backend_mps */; };
+		84DD94872C81060E00C765A6 /* backend_mps_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94862C81060E00C765A6 /* backend_mps_debug */; };
+		84DD94892C81060E00C765A6 /* backend_xnnpack in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94882C81060E00C765A6 /* backend_xnnpack */; };
+		84DD948B2C81060E00C765A6 /* backend_xnnpack_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD948A2C81060E00C765A6 /* backend_xnnpack_debug */; };
+		84DD94912C81060E00C765A6 /* kernels_custom in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94902C81060E00C765A6 /* kernels_custom */; };
+		84DD94932C81060E00C765A6 /* kernels_custom_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94922C81060E00C765A6 /* kernels_custom_debug */; };
+		84DD94952C81060E00C765A6 /* kernels_optimized in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94942C81060E00C765A6 /* kernels_optimized */; };
+		84DD94972C81060E00C765A6 /* kernels_optimized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94962C81060E00C765A6 /* kernels_optimized_debug */; };
+		84DD94992C81060E00C765A6 /* kernels_portable in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD94982C81060E00C765A6 /* kernels_portable */; };
+		84DD949B2C81060E00C765A6 /* kernels_portable_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD949A2C81060E00C765A6 /* kernels_portable_debug */; };
+		84DD949D2C81060E00C765A6 /* kernels_quantized in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD949C2C81060E00C765A6 /* kernels_quantized */; };
+		84DD949F2C81060E00C765A6 /* kernels_quantized_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 84DD949E2C81060E00C765A6 /* kernels_quantized_debug */; };
+		84DD94A02C81061100C765A6 /* LLaMARunner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */; };
+		84DD94A12C81061100C765A6 /* LLaMARunner.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		84DD94AF2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84DD94AE2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,6 +83,20 @@
 			proxyType = 1;
 			remoteGlobalIDString = 03729ED42BB1F8DE00152F2E;
 			remoteInfo = LLaMARunner;
+		};
+		84DD94A22C81061100C765A6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 032C01672AC228E5002955E1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 03729ED42BB1F8DE00152F2E;
+			remoteInfo = LLaMARunner;
+		};
+		84DD94B02C811E3E00C765A6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 032C01672AC228E5002955E1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 84DD94702C8105EB00C765A6;
+			remoteInfo = LLaMAPerfBenchmark;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -73,6 +108,17 @@
 			dstSubfolderSpec = 10;
 			files = (
 				03729EDC2BB1F8DE00152F2E /* LLaMARunner.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		84DD94A42C81061100C765A6 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				84DD94A12C81061100C765A6 /* LLaMARunner.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -98,11 +144,14 @@
 		03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LLaMARunner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		03729F072BB203B300152F2E /* runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = runner.cpp; path = ../../../examples/models/llama2/runner/runner.cpp; sourceTree = "<group>"; };
 		03729F082BB203B300152F2E /* runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = runner.h; path = ../../../examples/models/llama2/runner/runner.h; sourceTree = "<group>"; };
-		03729F092BB203B300152F2E /* util.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = util.h; path = ../../../../extension/llm/runner/util.h; sourceTree = "<group>"; };
+		03729F092BB203B300152F2E /* util.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = util.h; sourceTree = "<group>"; };
 		03729F102BB2042B00152F2E /* sampler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = sampler.h; sourceTree = "<group>"; };
 		03729F112BB2042B00152F2E /* sampler.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = sampler.cpp; sourceTree = "<group>"; };
 		03729F142BB2043600152F2E /* bpe_tokenizer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = bpe_tokenizer.cpp; path = ../../../../extension/llm/tokenizer/bpe_tokenizer.cpp; sourceTree = "<group>"; };
 		03729F152BB2043600152F2E /* tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = tokenizer.h; path = ../../../../extension/llm/tokenizer/tokenizer.h; sourceTree = "<group>"; };
+		0372C3102C893FE900CD942A /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		0372C3122C89418E00CD942A /* llava_runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = llava_runner.h; path = ../../../examples/models/llava/runner/llava_runner.h; sourceTree = "<group>"; };
+		0372C3132C89418E00CD942A /* llava_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = llava_runner.cpp; path = ../../../examples/models/llava/runner/llava_runner.cpp; sourceTree = "<group>"; };
 		038D678A2C482C1D00B88CF2 /* llama_tiktoken.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = llama_tiktoken.cpp; sourceTree = "<group>"; };
 		038D678B2C482C1E00B88CF2 /* llama_tiktoken.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = llama_tiktoken.h; sourceTree = "<group>"; };
 		03BADE1F2BD2E88600DDFDC2 /* bpe_tokenizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = bpe_tokenizer.h; path = ../../../../extension/llm/tokenizer/bpe_tokenizer.h; sourceTree = "<group>"; };
@@ -113,6 +162,11 @@
 		03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = text_decoder_runner.cpp; sourceTree = "<group>"; };
 		03D03DAA2C7823830088D6A7 /* text_decoder_runner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = text_decoder_runner.h; sourceTree = "<group>"; };
 		03DDA0FA2BD6368100D234B3 /* base64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = base64.h; path = ../../../../extension/llm/tokenizer/base64.h; sourceTree = "<group>"; };
+		84DD94712C8105EB00C765A6 /* LLaMAPerfBenchmark.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LLaMAPerfBenchmark.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		84DD94732C8105EB00C765A6 /* LLaMAPerfBenchmarkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLaMAPerfBenchmarkApp.swift; sourceTree = "<group>"; };
+		84DD94A72C8107AB00C765A6 /* LLaMAPerfBenchmark.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LLaMAPerfBenchmark.entitlements; sourceTree = "<group>"; };
+		84DD94AC2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LLaMAPerfBenchmarkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		84DD94AE2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLaMAPerfBenchmarkTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -142,7 +196,37 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0372C3112C893FE900CD942A /* CoreGraphics.framework in Frameworks */,
 				03312C3E2BBFD076002106EF /* executorch_debug in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		84DD946E2C8105EB00C765A6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				84DD94932C81060E00C765A6 /* kernels_custom_debug in Frameworks */,
+				84DD94972C81060E00C765A6 /* kernels_optimized_debug in Frameworks */,
+				84DD94892C81060E00C765A6 /* backend_xnnpack in Frameworks */,
+				84DD949B2C81060E00C765A6 /* kernels_portable_debug in Frameworks */,
+				84DD949F2C81060E00C765A6 /* kernels_quantized_debug in Frameworks */,
+				84DD94812C81060E00C765A6 /* backend_coreml in Frameworks */,
+				84DD94912C81060E00C765A6 /* kernels_custom in Frameworks */,
+				84DD94852C81060E00C765A6 /* backend_mps in Frameworks */,
+				84DD94992C81060E00C765A6 /* kernels_portable in Frameworks */,
+				84DD94A02C81061100C765A6 /* LLaMARunner.framework in Frameworks */,
+				84DD94952C81060E00C765A6 /* kernels_optimized in Frameworks */,
+				84DD948B2C81060E00C765A6 /* backend_xnnpack_debug in Frameworks */,
+				84DD94872C81060E00C765A6 /* backend_mps_debug in Frameworks */,
+				84DD949D2C81060E00C765A6 /* kernels_quantized in Frameworks */,
+				84DD94832C81060E00C765A6 /* backend_coreml_debug in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		84DD94A92C811E3E00C765A6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -227,6 +311,11 @@
 				0324D69F2BAACB7C00DEF36F /* LLaMARunner */,
 				036CAF9D2BB1444500D6C2D5 /* LLaMA.app */,
 				03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */,
+				84DD94712C8105EB00C765A6 /* LLaMAPerfBenchmark.app */,
+				84DD94722C8105EB00C765A6 /* LLaMAPerfBenchmark */,
+				84DD94AD2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests */,
+				84DD947F2C81060E00C765A6 /* Frameworks */,
+				84DD94AC2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.xctest */,
 			);
 			sourceTree = "<group>";
 		};
@@ -241,6 +330,8 @@
 		03729F062BB2035900152F2E /* runner */ = {
 			isa = PBXGroup;
 			children = (
+				0372C3132C89418E00CD942A /* llava_runner.cpp */,
+				0372C3122C89418E00CD942A /* llava_runner.h */,
 				03729F072BB203B300152F2E /* runner.cpp */,
 				03729F082BB203B300152F2E /* runner.h */,
 				03D03DA92C7823830088D6A7 /* text_decoder_runner.cpp */,
@@ -279,6 +370,31 @@
 			path = ../../../../../../extension/llm/sampler;
 			sourceTree = "<group>";
 		};
+		84DD94722C8105EB00C765A6 /* LLaMAPerfBenchmark */ = {
+			isa = PBXGroup;
+			children = (
+				84DD94A72C8107AB00C765A6 /* LLaMAPerfBenchmark.entitlements */,
+				84DD94732C8105EB00C765A6 /* LLaMAPerfBenchmarkApp.swift */,
+			);
+			path = LLaMAPerfBenchmark;
+			sourceTree = "<group>";
+		};
+		84DD947F2C81060E00C765A6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				0372C3102C893FE900CD942A /* CoreGraphics.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		84DD94AD2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests */ = {
+			isa = PBXGroup;
+			children = (
+				84DD94AE2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.swift */,
+			);
+			path = LLaMAPerfBenchmarkTests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -297,6 +413,7 @@
 				038D678D2C482C1E00B88CF2 /* llama_tiktoken.h in Headers */,
 				03729F0C2BB203B300152F2E /* util.h in Headers */,
 				03729F0B2BB203B300152F2E /* runner.h in Headers */,
+				0372C3142C89418E00CD942A /* llava_runner.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -360,6 +477,59 @@
 			productReference = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */;
 			productType = "com.apple.product-type.framework";
 		};
+		84DD94702C8105EB00C765A6 /* LLaMAPerfBenchmark */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 84DD947C2C8105EC00C765A6 /* Build configuration list for PBXNativeTarget "LLaMAPerfBenchmark" */;
+			buildPhases = (
+				84DD946D2C8105EB00C765A6 /* Sources */,
+				84DD946E2C8105EB00C765A6 /* Frameworks */,
+				84DD946F2C8105EB00C765A6 /* Resources */,
+				84DD94A42C81061100C765A6 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				84DD94A32C81061100C765A6 /* PBXTargetDependency */,
+			);
+			name = LLaMAPerfBenchmark;
+			packageProductDependencies = (
+				84DD94802C81060E00C765A6 /* backend_coreml */,
+				84DD94822C81060E00C765A6 /* backend_coreml_debug */,
+				84DD94842C81060E00C765A6 /* backend_mps */,
+				84DD94862C81060E00C765A6 /* backend_mps_debug */,
+				84DD94882C81060E00C765A6 /* backend_xnnpack */,
+				84DD948A2C81060E00C765A6 /* backend_xnnpack_debug */,
+				84DD94902C81060E00C765A6 /* kernels_custom */,
+				84DD94922C81060E00C765A6 /* kernels_custom_debug */,
+				84DD94942C81060E00C765A6 /* kernels_optimized */,
+				84DD94962C81060E00C765A6 /* kernels_optimized_debug */,
+				84DD94982C81060E00C765A6 /* kernels_portable */,
+				84DD949A2C81060E00C765A6 /* kernels_portable_debug */,
+				84DD949C2C81060E00C765A6 /* kernels_quantized */,
+				84DD949E2C81060E00C765A6 /* kernels_quantized_debug */,
+			);
+			productName = LLaMAPerfBenchmark;
+			productReference = 84DD94712C8105EB00C765A6 /* LLaMAPerfBenchmark.app */;
+			productType = "com.apple.product-type.application";
+		};
+		84DD94AB2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 84DD94B22C811E3E00C765A6 /* Build configuration list for PBXNativeTarget "LLaMAPerfBenchmarkTests" */;
+			buildPhases = (
+				84DD94A82C811E3E00C765A6 /* Sources */,
+				84DD94A92C811E3E00C765A6 /* Frameworks */,
+				84DD94AA2C811E3E00C765A6 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				84DD94B12C811E3E00C765A6 /* PBXTargetDependency */,
+			);
+			name = LLaMAPerfBenchmarkTests;
+			productName = LLaMAPerfBenchmarkTests;
+			productReference = 84DD94AC2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -367,7 +537,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1500;
+				LastSwiftUpdateCheck = 1540;
 				LastUpgradeCheck = 1530;
 				TargetAttributes = {
 					032C016E2AC228E6002955E1 = {
@@ -375,6 +545,13 @@
 					};
 					03729ED42BB1F8DE00152F2E = {
 						CreatedOnToolsVersion = 15.3;
+					};
+					84DD94702C8105EB00C765A6 = {
+						CreatedOnToolsVersion = 15.4;
+					};
+					84DD94AB2C811E3E00C765A6 = {
+						CreatedOnToolsVersion = 15.4;
+						TestTargetID = 84DD94702C8105EB00C765A6;
 					};
 				};
 			};
@@ -396,6 +573,8 @@
 			targets = (
 				032C016E2AC228E6002955E1 /* LLaMA */,
 				03729ED42BB1F8DE00152F2E /* LLaMARunner */,
+				84DD94702C8105EB00C765A6 /* LLaMAPerfBenchmark */,
+				84DD94AB2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests */,
 			);
 		};
 /* End PBXProject section */
@@ -410,6 +589,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		03729ED32BB1F8DE00152F2E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		84DD946F2C8105EB00C765A6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		84DD94AA2C811E3E00C765A6 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -464,11 +657,28 @@
 				03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */,
 				03BADE232BD2EB6700DDFDC2 /* tiktoken.cpp in Sources */,
 				038D678C2C482C1E00B88CF2 /* llama_tiktoken.cpp in Sources */,
+				0372C3152C89418E00CD942A /* llava_runner.cpp in Sources */,
 				03D03DAB2C7823830088D6A7 /* text_decoder_runner.cpp in Sources */,
 				03729F162BB2043600152F2E /* bpe_tokenizer.cpp in Sources */,
 				03729F0A2BB203B300152F2E /* runner.cpp in Sources */,
 				03729F132BB2042B00152F2E /* sampler.cpp in Sources */,
 				03D03DA72C7823620088D6A7 /* text_prefiller.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		84DD946D2C8105EB00C765A6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				84DD94742C8105EB00C765A6 /* LLaMAPerfBenchmarkApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		84DD94A82C811E3E00C765A6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				84DD94AF2C811E3E00C765A6 /* LLaMAPerfBenchmarkTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -479,6 +689,16 @@
 			isa = PBXTargetDependency;
 			target = 03729ED42BB1F8DE00152F2E /* LLaMARunner */;
 			targetProxy = 03729ED92BB1F8DE00152F2E /* PBXContainerItemProxy */;
+		};
+		84DD94A32C81061100C765A6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 03729ED42BB1F8DE00152F2E /* LLaMARunner */;
+			targetProxy = 84DD94A22C81061100C765A6 /* PBXContainerItemProxy */;
+		};
+		84DD94B12C811E3E00C765A6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 84DD94702C8105EB00C765A6 /* LLaMAPerfBenchmark */;
+			targetProxy = 84DD94B02C811E3E00C765A6 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -847,6 +1067,164 @@
 			};
 			name = Release;
 		};
+		84DD947D2C8105EC00C765A6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = LLaMAPerfBenchmark/LLaMAPerfBenchmark.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_quantized-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_coreml-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-debug.a",
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_quantized-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_coreml-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-simulator-debug.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		84DD947E2C8105EC00C765A6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = LLaMAPerfBenchmark/LLaMAPerfBenchmark.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_quantized-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_coreml-ios-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-ios-debug.a",
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_portable-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_custom-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libkernels_quantized-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_xnnpack-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_coreml-simulator-debug.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libbackend_mps-simulator-debug.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		84DD94B32C811E3E00C765A6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LLaMAPerfBenchmark.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LLaMAPerfBenchmark";
+			};
+			name = Debug;
+		};
+		84DD94B42C811E3E00C765A6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.illama;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LLaMAPerfBenchmark.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LLaMAPerfBenchmark";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -873,6 +1251,24 @@
 			buildConfigurations = (
 				03729EDE2BB1F8DE00152F2E /* Debug */,
 				03729EDF2BB1F8DE00152F2E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		84DD947C2C8105EC00C765A6 /* Build configuration list for PBXNativeTarget "LLaMAPerfBenchmark" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				84DD947D2C8105EC00C765A6 /* Debug */,
+				84DD947E2C8105EC00C765A6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		84DD94B22C811E3E00C765A6 /* Build configuration list for PBXNativeTarget "LLaMAPerfBenchmarkTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				84DD94B32C811E3E00C765A6 /* Debug */,
+				84DD94B42C811E3E00C765A6 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -965,6 +1361,76 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = executorch_debug;
+		};
+		84DD94802C81060E00C765A6 /* backend_coreml */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_coreml;
+		};
+		84DD94822C81060E00C765A6 /* backend_coreml_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_coreml_debug;
+		};
+		84DD94842C81060E00C765A6 /* backend_mps */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_mps;
+		};
+		84DD94862C81060E00C765A6 /* backend_mps_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_mps_debug;
+		};
+		84DD94882C81060E00C765A6 /* backend_xnnpack */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_xnnpack;
+		};
+		84DD948A2C81060E00C765A6 /* backend_xnnpack_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = backend_xnnpack_debug;
+		};
+		84DD94902C81060E00C765A6 /* kernels_custom */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_custom;
+		};
+		84DD94922C81060E00C765A6 /* kernels_custom_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_custom_debug;
+		};
+		84DD94942C81060E00C765A6 /* kernels_optimized */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_optimized;
+		};
+		84DD94962C81060E00C765A6 /* kernels_optimized_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_optimized_debug;
+		};
+		84DD94982C81060E00C765A6 /* kernels_portable */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_portable;
+		};
+		84DD949A2C81060E00C765A6 /* kernels_portable_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_portable_debug;
+		};
+		84DD949C2C81060E00C765A6 /* kernels_quantized */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_quantized;
+		};
+		84DD949E2C81060E00C765A6 /* kernels_quantized_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = kernels_quantized_debug;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -12,5 +12,8 @@ q_4w_linear:
     DTYPE:
       - VALUE: float
       - VALUE: half
+    STORAGE:
+      - VALUE: buffer
+      - VALUE: texture3d
   shader_variants:
     - NAME: q_4w_linear

@@ -18,13 +18,13 @@ using executorch::runtime::ArrayRef;
 using executorch::runtime::Backend;
 using executorch::runtime::BackendExecutionContext;
 using executorch::runtime::BackendInitContext;
+using executorch::runtime::BackendInterface;
 using executorch::runtime::CompileSpec;
 using executorch::runtime::DelegateHandle;
 using executorch::runtime::Error;
 using executorch::runtime::EValue;
 using executorch::runtime::FreeableBuffer;
 using executorch::runtime::MemoryAllocator;
-using executorch::runtime::PyTorchBackendInterface;
 using executorch::runtime::Result;
 
 struct DemoOp {
@@ -37,7 +37,7 @@ struct DemoOpList {
   size_t numops;
 };
 
-class BackendWithDelegateMapping final : public PyTorchBackendInterface {
+class BackendWithDelegateMapping final : public BackendInterface {
  public:
   ~BackendWithDelegateMapping() override = default;
 

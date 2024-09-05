@@ -696,9 +696,6 @@ def create_exported_program_from_submodule(
     in_spec = pytree.tree_flatten((tuple(subgraph_signature.user_inputs), {}))[1]
     out_spec = pytree.tree_flatten(subgraph_signature.user_outputs)[1]
 
-    print(submodule.graph)
-    print(subgraph_signature)
-
     return (
         ExportedProgram(
             root=submodule,

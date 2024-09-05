@@ -2,7 +2,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import List
+from typing import cast, List
 
 import serializer.tosa_serializer as ts
 import torch
@@ -40,7 +40,7 @@ class Conv2dVisitor(NodeVisitor):
 
         if mod_remainder > pad:
             raise RuntimeError(
-                f"ignoring input element is not currently supported, got a large stride {stride}"
+                "This case should be handled by the SizeAdjustConv2d pass, is it enabled?"
             )
         return pad - mod_remainder
 
@@ -156,11 +156,12 @@ class Conv2dVisitor(NodeVisitor):
         # integer value domain of the next op. Otherwise return float32 output.
         if is_quant_node:
             # Get scale_factor from input, weight, and output.
-            _, input_scale, _, _, _, _ = getNodeArgs(node.args[0])
-            _, weight_scale, _, _, _, _ = getNodeArgs(node.args[1])
+            _, input_scale, _, _, _, _ = getNodeArgs(cast(torch.fx.Node, node.args[0]))
+            _, weight_scale, _, _, _, _ = getNodeArgs(cast(torch.fx.Node, node.args[1]))
             _, output_scale, output_zp, _, _, _ = getNodeArgs(list(node.users)[0])
             build_rescale_conv_output(
                 tosa_graph,
+                # pyre-fixme[61]: Uninitialized local [61]: Local variable `conv2d_res` is undefined, or not always defined.
                 conv2d_res,
                 output.name,
                 actual_out_type,

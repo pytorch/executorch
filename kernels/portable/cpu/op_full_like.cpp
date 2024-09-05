@@ -34,6 +34,11 @@ Tensor& full_like_out(
         "memory_format must be contiguous");
   }
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
       ctx,
