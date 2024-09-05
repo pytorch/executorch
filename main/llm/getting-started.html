@@ -671,9 +671,9 @@ file which can be loaded by a desktop or mobile application at runtime.</p>
 
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;basic_sampler.h&quot;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;basic_tokenizer.h&quot;</span>
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;managed_tensor.h&quot;</span>
 
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/module/module.h&gt;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/extension/tensor/tensor.h&gt;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/evalue.h&gt;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/exec_aten/exec_aten.h&gt;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/runtime/core/result.h&gt;</span>
@@ -711,14 +711,13 @@ output token by token. Each generated token is passed as input for the next run.
 <span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0u</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">max_output_length</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="c1">// Convert the input_tokens from a vector of int64_t to EValue.</span>
 <span class="w">        </span><span class="c1">// EValue is a unified data type in the ExecuTorch runtime.</span>
-<span class="w">        </span><span class="n">ManagedTensor</span><span class="w"> </span><span class="n">tensor_tokens</span><span class="p">(</span>
+<span class="w">        </span><span class="k">auto</span><span class="w"> </span><span class="n">inputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">from_blob</span><span class="p">(</span>
 <span class="w">            </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span>
 <span class="w">            </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;</span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">size</span><span class="p">())},</span>
 <span class="w">            </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Long</span><span class="p">);</span>
-<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">EValue</span><span class="o">&gt;</span><span class="w"> </span><span class="n">inputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="n">tensor_tokens</span><span class="p">.</span><span class="n">get_tensor</span><span class="p">()};</span>
 
 <span class="w">        </span><span class="c1">// Run the model. It will return a tensor of logits (log-probabilities).</span>
-<span class="w">        </span><span class="n">Result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">EValue</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">logits_evalue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">llm_model</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">inputs</span><span class="p">);</span>
+<span class="w">        </span><span class="k">auto</span><span class="w"> </span><span class="n">logits_evalue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">llm_model</span><span class="p">.</span><span class="n">forward</span><span class="p">(</span><span class="n">inputs</span><span class="p">);</span>
 
 <span class="w">        </span><span class="c1">// Convert the output logits from EValue to std::vector, which is what</span>
 <span class="w">        </span><span class="c1">// the sampler expects.</span>
@@ -797,7 +796,6 @@ penalties for repeated tokens, and biases to prioritize or de-prioritize specifi
 <p>Finally, download the following files into the same directory as main.h:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">curl</span> <span class="o">-</span><span class="n">O</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">llm_manual</span><span class="o">/</span><span class="n">basic_sampler</span><span class="o">.</span><span class="n">h</span>
 <span class="n">curl</span> <span class="o">-</span><span class="n">O</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">llm_manual</span><span class="o">/</span><span class="n">basic_tokenizer</span><span class="o">.</span><span class="n">h</span>
-<span class="n">curl</span> <span class="o">-</span><span class="n">O</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">raw</span><span class="o">.</span><span class="n">githubusercontent</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">llm_manual</span><span class="o">/</span><span class="n">managed_tensor</span><span class="o">.</span><span class="n">h</span>
 </pre></div>
 </div>
 <p>To learn more, see the <a class="reference internal" href="../extension-module.html"><span class="doc std std-doc">Runtime APIs Tutorial</span></a>.</p>
@@ -819,6 +817,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Set options for executorch build.
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER &quot;&quot; ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE &quot;&quot; ON)
+option(EXECUTORCH_BUILD_EXTENSION_TENSOR &quot;&quot; ON)
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED &quot;&quot; ON)
 
 # Include the executorch subdirectory.
@@ -832,6 +831,7 @@ target_link_libraries(
     PRIVATE
     executorch
     extension_module_static # Provides the Module class
+    extension_tensor # Provides the TensorPtr class
     optimized_native_cpu_ops_lib) # Provides baseline cross-platform kernels
 </pre></div>
 </div>
@@ -841,7 +841,6 @@ target_link_libraries(
 <li><p>main.cpp</p></li>
 <li><p>basic_tokenizer.h</p></li>
 <li><p>basic_sampler.h</p></li>
-<li><p>managed_tensor.h</p></li>
 <li><p>export_nanogpt.py</p></li>
 <li><p>model.py</p></li>
 <li><p>vocab.json</p></li>
@@ -961,6 +960,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Set options for executorch build.
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER &quot;&quot; ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE &quot;&quot; ON)
+option(EXECUTORCH_BUILD_EXTENSION_TENSOR &quot;&quot; ON)
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED &quot;&quot; ON)
 option(EXECUTORCH_BUILD_XNNPACK &quot;&quot; ON) # Build with Xnnpack backend
 
@@ -977,6 +977,7 @@ target_link_libraries(
     PRIVATE
     executorch
     extension_module_static # Provides the Module class
+    extension_tensor # Provides the TensorPtr class
     optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
     xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
 </pre></div>
@@ -990,7 +991,6 @@ Runtime</span></a> for more details</p>
 <li><p>main.cpp</p></li>
 <li><p>basic_tokenizer.h</p></li>
 <li><p>basic_sampler.h</p></li>
-<li><p>managed_tensor.h</p></li>
 <li><p>export_nanogpt.py</p></li>
 <li><p>model.py</p></li>
 <li><p>vocab.json</p></li>
