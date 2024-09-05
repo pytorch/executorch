@@ -165,6 +165,8 @@ class LLMEdgeManager:
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             # pyre-fixme[8]
             if self.args.qnn:
+                # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
+                # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
                 self.pre_autograd_graph_module = torch.export.export(
                     self.model,
                     self.example_inputs,
