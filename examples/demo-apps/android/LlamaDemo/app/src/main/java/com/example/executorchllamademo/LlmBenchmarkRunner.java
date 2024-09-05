@@ -98,7 +98,7 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
 
     // TODO (huydhn): Figure out on what the final JSON results looks like, we need something
     // with the same number of fields as https://github.com/pytorch/pytorch/pull/135042
-    try (FileWriter writer = new FileWriter(modelDir.getPath() + "/benchmark_results.json")) {
+    try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
       Gson gson = new Gson();
       writer.write(gson.toJson(mStatsDump));
     } catch (IOException e) {

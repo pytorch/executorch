@@ -73,16 +73,29 @@ phases:
           fi
         fi;
 
-      # Run the new generic benchmark activity
+      # Run the new generic benchmark activity https://developer.android.com/tools/adb#am
       - echo "Run LLM benchmark"
       - |
-        adb -s $DEVICEFARM_DEVICE_UDID shell am start -n com.example.executorchllamademo/.LlmBenchmarkRunner \
+        adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n com.example.executorchllamademo/.LlmBenchmarkRunner \
         --es "model_dir" "/data/local/tmp/llama" \
         --es "tokenizer_path" "/data/local/tmp/llama/tokenizer.bin"
 
   post_test:
     commands:
-      - adb -s $DEVICEFARM_DEVICE_UDID shell "ls -la /data/local/tmp/llama/"
+      - echo "Wait for the results"
+      - |
+        # TODO (huydhn): Polling like this looks brittle, figure out if there is a better way to wait
+        # for the benchmark results
+        adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo \
+        while ! test -f files/benchmark_results.json; do echo "Waiting for benchmark results..."; sleep 30; done
+
+        adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo ls -la files/
+
+      - echo "Gather LLM benchmark results"
+      - |
+        APP_DIR=$(adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo pwd)
+        adb -s $DEVICEFARM_DEVICE_UDID pull "${APP_DIR}"/files/benchmark_results.json $DEVICEFARM_LOG_DIR/
+
 
 artifacts:
   # By default, Device Farm will collect your artifacts from the $DEVICEFARM_LOG_DIR directory.
