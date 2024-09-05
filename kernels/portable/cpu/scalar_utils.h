@@ -94,12 +94,6 @@ struct promote_type_with_scalar_type {
   static_assert(
       !is_bits_type<T1>::value,
       "promote_type_with_scalar_type not valid for bits dtypes");
-  static_assert(
-      !std::is_same<
-          T1,
-          typename ScalarTypeToCppType<exec_aten::ScalarType::BFloat16>::type>::
-          value,
-      "promote_type_with_scalar_type not valid for BFloat16");
   using promote_type_with_scalar_type_not_respecting_half_to_float =
       typename std::conditional<
           is_complex_type<T1>::value ||
@@ -119,10 +113,14 @@ struct promote_type_with_scalar_type {
  public:
   using type = typename std::conditional<
       half_to_float &&
-          std::is_same<
-              promote_type_with_scalar_type_not_respecting_half_to_float,
-              typename ScalarTypeToCppType<exec_aten::ScalarType::Half>::type>::
-              value,
+          (std::is_same<
+               promote_type_with_scalar_type_not_respecting_half_to_float,
+               typename ScalarTypeToCppType<
+                   exec_aten::ScalarType::Half>::type>::value ||
+           std::is_same<
+               promote_type_with_scalar_type_not_respecting_half_to_float,
+               typename ScalarTypeToCppType<
+                   exec_aten::ScalarType::BFloat16>::type>::value),
       typename ScalarTypeToCppType<exec_aten::ScalarType::Float>::type,
       promote_type_with_scalar_type_not_respecting_half_to_float>::type;
 };
