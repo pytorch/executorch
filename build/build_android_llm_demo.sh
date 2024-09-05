@@ -19,6 +19,13 @@ build_android_native_library() {
   ANDROID_ABI="$1"
   ANDROID_NDK="${ANDROID_NDK:-/opt/ndk}"
   CMAKE_OUT="cmake-out-android-${ANDROID_ABI}"
+  QNN_SDK_ROOT="${QNN_SDK_ROOT:-}"
+  if [ -n "$QNN_SDK_ROOT" ]; then
+    EXECUTORCH_BUILD_QNN=ON
+  else
+    EXECUTORCH_BUILD_QNN=OFF
+  fi
+
 
   cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
@@ -34,6 +41,8 @@ build_android_native_library() {
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
+    -DEXECUTORCH_BUILD_QNN="${EXECUTORCH_BUILD_QNN}" \
+    -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
     -DCMAKE_BUILD_TYPE=Release \
     -B"${CMAKE_OUT}"
 
