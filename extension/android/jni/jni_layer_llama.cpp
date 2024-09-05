@@ -175,9 +175,9 @@ class ExecuTorchLlamaJni
       runner_->generate(
           prompt->toStdString(),
           seq_len,
-          echo,
           [callback](std::string result) { callback->onResult(result); },
-          [callback](const Stats& result) { callback->onStats(result); });
+          [callback](const Stats& result) { callback->onStats(result); },
+          echo);
     }
     return 0;
   }

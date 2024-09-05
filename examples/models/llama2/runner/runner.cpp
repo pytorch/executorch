@@ -142,9 +142,9 @@ Error Runner::load() {
 Error Runner::generate(
     const std::string& prompt,
     int32_t seq_len,
-    bool echo,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
+    std::function<void(const Stats&)> stats_callback,
+    bool echo) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
