@@ -14,10 +14,10 @@ import android.os.Bundle;
 import android.util.Log;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
+import com.google.gson.Gson;
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.File;
-import com.google.gson.Gson;
 import java.util.Arrays;
 
 public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback {
@@ -38,7 +38,8 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
     Intent intent = getIntent();
 
     modelDir = new File(intent.getStringExtra("model_dir"));
-    File model = Arrays.stream(modelDir.listFiles())
+    File model =
+        Arrays.stream(modelDir.listFiles())
             .filter(file -> file.getName().endsWith(".pte"))
             .findFirst()
             .get();
@@ -95,8 +96,8 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
       e.printStackTrace();
     }
 
-    // TODO (huydhn): Figure out on what the final JSON results looks like, we need something with
-    // the same number of fields as https://github.com/pytorch/pytorch/pull/135042
+    // TODO (huydhn): Figure out on what the final JSON results looks like, we need something
+    // with the same number of fields as https://github.com/pytorch/pytorch/pull/135042
     try (FileWriter writer = new FileWriter(modelDir.getPath() + "/benchmark_results.json")) {
       Gson gson = new Gson();
       writer.write(gson.toJson(mStatsDump));

@@ -76,7 +76,7 @@ phases:
       # Run the new generic benchmark activity
       - echo "Run LLM benchmark"
       - |
-        adb -s $DEVICEFARM_DEVICE_UDID shell am start -n com.example.executorchllamademo/.BENCHMARK \
+        adb -s $DEVICEFARM_DEVICE_UDID shell am start -n com.example.executorchllamademo/.LlmBenchmarkRunner \
         --es "model_dir" "/data/local/tmp/llama" \
         --es "tokenizer_path" "/data/local/tmp/llama/tokenizer.bin"
 
