@@ -24,11 +24,6 @@ NS_SWIFT_NAME(Runner)
        sequenceLength:(NSInteger)seq_len
     withTokenCallback:(nullable void (^)(NSString*))callback
                 error:(NSError**)error;
-- (BOOL)generate:(NSArray<UIImage*>*)images
-               prompt:(NSString*)prompt
-       sequenceLength:(NSInteger)seq_len
-    withTokenCallback:(nullable void (^)(NSString*))callback
-                error:(NSError**)error;
 - (void)stop;
 
 + (instancetype)new NS_UNAVAILABLE;
