@@ -28,6 +28,7 @@ target_link_libraries(
   full_portable_ops_lib
   extension_data_loader
   extension_module
+  extension_tensor
   gflags
   re2::re2
 )
