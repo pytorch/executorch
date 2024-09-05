@@ -157,13 +157,12 @@ def gen_eval_wrapper(
             if torch.cuda.is_available()
             else manager.model.eval().to(device="cpu")
         )
-
     return EagerEvalWrapper(
         model=model,
         tokenizer=tokenizer,
         max_seq_length=args.max_seq_length,
         use_kv_cache=args.use_kv_cache,
-        dynamic_shape=(manager.dynamic_shapes == None),
+        dynamic_shape=(manager.dynamic_shapes != None),
     )
 
 

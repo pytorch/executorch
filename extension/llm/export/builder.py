@@ -176,6 +176,7 @@ class LLMEdgeManager:
             )
         return self
 
+
     def pt2e_calibrate(
         self,
         prepared_module,
@@ -193,11 +194,30 @@ class LLMEdgeManager:
             )
 
         tokenizer = get_tokenizer(tokenizer_path)
+
+        def calibrate_template(module: torch.fx.GraphModule, tokenizer, string: str = "Once upon a time", max_len: int = 128):
+                # TODO: change criteria & support batch inputs if necessary
+                pos = torch.tensor(0, dtype=torch.int64)
+                token_list = [tokenizer.bos_id] + tokenizer.encode(string, bos=True, eos=False)
+
+                with torch.no_grad():
+                    while token_list[-1] != tokenizer.eos_id and pos < max_len:
+                        logits = module(
+                            torch.full((1, 1), token_list[pos]),
+                            torch.tensor((pos, )),
+                        )
+                        pos += 1
+                        if pos >= len(token_list):
+                            token_list.append(torch.argmax(logits[:], dim=-1).item())
+
+        calibrate_template(prepared_module, tokenizer, string="Once upon a time", max_len=calibration_seq_length)
+
         eval_wrapper = EagerEvalWrapper(
             model=prepared_module.to(device="cuda"),
             tokenizer=tokenizer,
             max_seq_length=calibration_seq_length,
             use_kv_cache=self.use_kv_cache,
+            dynamic_shape=self.enable_dynamic_shape,
         )
         eval_results = evaluate_model(
             eval_wrapper,
