@@ -8,10 +8,10 @@
 
 #pragma once
 
-#include <executorch/extension/runner_util/managed_tensor.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-
 #include <vector>
+
+#include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 namespace torch {
 namespace executor {
@@ -59,7 +59,7 @@ namespace executor {
  *
  * @returns A vector of cross attention masks, as Tensors, one for each image.
  */
-std::vector<ManagedTensor> cross_attention_mask(
+std::vector<::executorch::extension::TensorPtr> cross_attention_mask(
     const std::vector<int>& tokens,
     const std::vector<Tensor>& images,
     size_t tile_size,

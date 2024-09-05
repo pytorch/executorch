@@ -14,7 +14,6 @@
 #include <ctime>
 
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 
 #include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
