@@ -20,21 +20,21 @@ namespace torch::executor {
   const LLMType ROT_EMB_TYPE = LLMType::FP32;
 
   // Paths
-  const std::string TOKENIZER_PATH="/data/local/tmp/llama3/tokenizer.model"
-  const std::string TOKEN_EMBEDDING_PATH="/data/local/tmp/llama3/embedding_llama3_8b_instruct_fp32.bin"
+  const std::string TOKENIZER_PATH="/data/local/tmp/llama3/tokenizer.model";
+  const std::string TOKEN_EMBEDDING_PATH="/data/local/tmp/llama3/embedding_llama3_8b_instruct_fp32.bin";
 
   // Comma-Separated Paths
   const std::string PROMPT_MODEL_PATHS="\
   /data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_128t512c_0.pte,\
   /data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_128t512c_1.pte,\
   /data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_128t512c_2.pte,\
-  /data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_128t512c_3.pte,"
+  /data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_128t512c_3.pte,";
 
   // Comma-Separated Paths
   const std::string GEN_MODEL_PATHS="\
   /data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_1t512c_0.pte,\
   /data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_1t512c_1.pte,\
   /data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_1t512c_2.pte,\
-  /data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_1t512c_3.pte,"
+  /data/local/tmp/llama3/llama3_8b_SC_sym4W_sym16A_4_chunks_Overall_1t512c_3.pte,";
 
 } // namespace torch::executor

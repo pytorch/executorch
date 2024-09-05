@@ -45,7 +45,7 @@
  */
 
 #include "executorch/backends/mediatek/runtime/include/NeuronBufferAllocator.h"
-// #include <executorch/examples/mediatek/executor_runner/mtk_llama_runner.h>
+#include <executorch/examples/mediatek/executor_runner/mtk_llama_runner.h>
 
 #include <ctime>
 #include <iostream>
@@ -63,16 +63,12 @@
 #include <executorch/extension/llm/runner/util.h>
 #include <executorch/runtime/core/result.h>
 
-#include "llama_runner/LlamaConfig.h"
-#include "llama_runner/LlamaRuntime.h"
 #include "llama_runner/ModelChunk.h"
 #include "llama_runner/Utils.h"
 #include "llama_runner/llm_helper/include/llm_types.h"
 #include "llama_runner/llm_helper/include/llama_runner_values.h"
 
-#include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
-#include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
-
+static uint64_t MAX_RESPONSE = 50; // Maximum number of tokens to generate.
 // Global BOS and EOS option for tokenization (encoding)
 static constexpr int8_t kAddBos = 1;
 static constexpr int8_t kAddEos = 0;
@@ -81,7 +77,7 @@ using namespace torch::executor;
 using namespace torch::executor::llm_helper;
 using torch::executor::utils::Timer;
 
-Runner::MTKLlamaRunner(
+MTKLlamaRunner::MTKLlamaRunner(
   const std::string& model_path,
   const std::string& tokenizer_path,
   const float temperature)
@@ -92,7 +88,7 @@ Runner::MTKLlamaRunner(
         "Creating MTK Llama runner. Current it will self-load .pte, .bin, and .so files.");
 }
 
-Error Runner::load() {
+Error MTKLlamaRunner::load() {
   if (is_loaded()) {
     return Error::Ok;
   }
@@ -102,15 +98,16 @@ Error Runner::load() {
   tokenizer_ = load_tokenizer();
 
   // Load prompt model
+  runtime_ = std::make_unique<LlamaRuntime>();
   ET_LOG(Info, "Loading prompt model.");
   runtime_->Initialize(modeloptions_, modelpaths_);
 }
 
-bool Runner::is_loaded() const {
+bool MTKLlamaRunner::is_loaded() const {
   return tokenizer_ && runtime_;
 }
 
-Error Runner::generate(
+Error MTKLlamaRunner::generate(
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
@@ -131,10 +128,10 @@ Error Runner::generate(
       };
   
   ET_LOG(Info, "Starting inference.");    
-  inference(runtime_, tokenizer_, prompt, wrapped_callback);
+  inference(*runtime_.get(), tokenizer_, prompt, wrapped_callback);
 }
 
-void Runner::stop() {
+void MTKLlamaRunner::stop() {
   if (is_loaded()) {
     runtime_->Release();
   } else {
@@ -142,7 +139,7 @@ void Runner::stop() {
   }
 }
 
-LlamaModelOptions get_model_options() {
+LlamaModelOptions MTKLlamaRunner::get_model_options() {
   LlamaModelOptions options = {
       // Sizes
       .prompt_token_batch_size = PROMPT_TOKEN_BATCH_SIZE,
@@ -162,7 +159,7 @@ LlamaModelOptions get_model_options() {
   return options;
 }
 
-LlamaModelPaths get_model_paths() {
+LlamaModelPaths MTKLlamaRunner::get_model_paths() {
   LlamaModelPaths model_paths = {
       .tokenizer_path = TOKENIZER_PATH,
       .token_embedding_path = TOKEN_EMBEDDING_PATH,
@@ -171,7 +168,7 @@ LlamaModelPaths get_model_paths() {
   return model_paths;
 }
 
-Result<uint64_t> digest_prompt(
+Result<uint64_t> MTKLlamaRunner::digest_prompt(
     LlamaRuntime& llama_runtime,
     const std::unique_ptr<Tokenizer>& tokenizer,
     const std::vector<uint64_t> input_tokens) {
@@ -223,7 +220,7 @@ Result<uint64_t> digest_prompt(
   return first_output_token;
 }
 
-Error gen_response(
+Error MTKLlamaRunner::gen_response(
     LlamaRuntime& llama_runtime,
     const std::unique_ptr<Tokenizer>& tokenizer,
     const uint64_t input_token,
@@ -259,8 +256,8 @@ Error gen_response(
   // Print first output token
   token_callback(full_response);
 
-  while (gen_tok_count++ < model_options_.max_response &&
-         llama_runtime.GetTokenIndex() < model_options_.max_token_length) {
+  while (gen_tok_count++ < MAX_RESPONSE &&
+         llama_runtime.GetTokenIndex() < modeloptions_.max_token_length) {
     timer_gen_token.Start();
     void* logits = llama_runtime.Run({output_token});
     timer_gen_token.End();
@@ -296,10 +293,10 @@ Error gen_response(
   return Error::Ok;
 }
 
-Error inference(
+Error MTKLlamaRunner::inference(
     LlamaRuntime& llama_runtime,
     const std::unique_ptr<Tokenizer>& tokenizer,
-    const std::string& prompt
+    const std::string& prompt,
     std::function<void(const std::string&)> token_callback) {
   // Tokenize input prompt
   auto encode_res = tokenizer->encode(prompt, kAddBos, kAddEos);
@@ -317,10 +314,10 @@ Error inference(
   return gen_response(llama_runtime, tokenizer, first_output_token, token_callback);
 }
 
-std::unique_ptr<Tokenizer> load_tokenizer() {
+std::unique_ptr<Tokenizer> MTKLlamaRunner::load_tokenizer() {
   std::unique_ptr<Tokenizer> tokenizer;
   // Assumes that tokenizer type is Tiktoken
-  tokenizer = std::make_unique<torch::executor::Tiktoken>();
+  tokenizer = torch::executor::get_tiktoken_for_llama();
   tokenizer->load(modelpaths_.tokenizer_path);
   return tokenizer;
 }
