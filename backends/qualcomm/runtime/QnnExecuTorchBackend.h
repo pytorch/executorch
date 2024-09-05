@@ -14,7 +14,8 @@
 namespace torch {
 namespace executor {
 
-class QnnExecuTorchBackend final : public PyTorchBackendInterface {
+class QnnExecuTorchBackend final
+    : public ::executorch::runtime::BackendInterface {
  public:
   ~QnnExecuTorchBackend(){};
 

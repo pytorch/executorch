@@ -20,7 +20,7 @@ class BackendDelegate;
 namespace torch {
 namespace executor {
 
-class CoreMLBackendDelegate final : public PyTorchBackendInterface {
+class CoreMLBackendDelegate final : public ::executorch::runtime::BackendInterface {
 public:
     CoreMLBackendDelegate() noexcept;
     ~CoreMLBackendDelegate() = default;

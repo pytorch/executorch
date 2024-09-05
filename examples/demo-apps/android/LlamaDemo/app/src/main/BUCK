@@ -1,0 +1,65 @@
+load("@fbsource//tools/build_defs/android:fb_android_binary.bzl", "fb_android_binary")
+load("@fbsource//tools/build_defs/android:fb_android_library.bzl", "fb_android_library")
+load("@fbsource//tools/build_defs/android:fb_android_resource.bzl", "fb_android_resource")
+
+oncall("executorch")
+
+fb_android_resource(
+    name = "app_res",
+    package = "com.example.executorchllamademo",
+    res = "res",
+)
+
+fb_android_library(
+    name = "app_lib",
+    srcs = [
+        "java/com/example/executorchllamademo/AppLog.java",
+        "java/com/example/executorchllamademo/DemoSharedPreferences.java",
+        "java/com/example/executorchllamademo/ETImage.java",
+        "java/com/example/executorchllamademo/ETLogging.java",
+        "java/com/example/executorchllamademo/LlmBenchmarkRunner.java",
+        "java/com/example/executorchllamademo/LogsActivity.java",
+        "java/com/example/executorchllamademo/LogsAdapter.java",
+        "java/com/example/executorchllamademo/MainActivity.java",
+        "java/com/example/executorchllamademo/Message.java",
+        "java/com/example/executorchllamademo/MessageAdapter.java",
+        "java/com/example/executorchllamademo/MessageType.java",
+        "java/com/example/executorchllamademo/ModelRunner.java",
+        "java/com/example/executorchllamademo/ModelRunnerCallback.java",
+        "java/com/example/executorchllamademo/ModelType.java",
+        "java/com/example/executorchllamademo/ModelUtils.java",
+        "java/com/example/executorchllamademo/PromptFormat.java",
+        "java/com/example/executorchllamademo/SettingsActivity.java",
+        "java/com/example/executorchllamademo/SettingsFields.java",
+    ],
+    autoglob = False,
+    language = "JAVA",
+    deps = [
+        ":app_res",
+        "//third-party/java/androidx/constraintlayout/constraintlayout:constraintlayout",
+        "//third-party/java/com/google/code/gson/gson:gson",
+        "//xplat/executorch/extension/android:executorch_llama",
+    ],
+)
+
+fb_android_binary(
+    name = "ExecuTorchLlamaDemo",
+    keystore = "//fbandroid/keystores:debug",
+    manifest = "AndroidManifest.xml",
+    manifest_entries = {
+        "min_sdk_version": 21,
+        "target_sdk_version": 34,
+        "version_code": "1",
+        "version_name": "1.0",
+    },
+    package_type = "release",
+    skip_proguard = True,
+    deps = [
+        ":app_lib",
+        ":app_res",
+        "//third-party/java/androidx/appcompat/appcompat:appcompat",
+        "//third-party/java/com/google/code/gson/gson:gson",
+        "//xplat/executorch/extension/android:executorch_llama",
+        "//xplat/executorch/extension/android/jni:executorch_llama_jni",
+    ],
+)

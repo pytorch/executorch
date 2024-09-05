@@ -33,42 +33,26 @@
         std::move(*et_result__));                                      \
   })
 
-using ::exec_aten::Tensor;
-using ::executorch::extension::FileDataLoader;
-using ::executorch::extension::MallocMemoryAllocator;
-using ::executorch::extension::MmapDataLoader;
-using ::executorch::runtime::DataLoader;
-using ::executorch::runtime::Error;
-using ::executorch::runtime::EValue;
-using ::executorch::runtime::EventTracer;
-using ::executorch::runtime::HierarchicalAllocator;
-using ::executorch::runtime::MemoryAllocator;
-using ::executorch::runtime::MemoryManager;
-using ::executorch::runtime::MethodMeta;
-using ::executorch::runtime::Program;
-using ::executorch::runtime::Result;
-using ::executorch::runtime::Span;
-
 namespace executorch {
 namespace extension {
 
 Module::Module(
     const std::string& file_path,
-    const Module::LoadMode load_mode,
-    std::unique_ptr<EventTracer> event_tracer)
+    const LoadMode load_mode,
+    std::unique_ptr<runtime::EventTracer> event_tracer)
     : file_path_(file_path),
       load_mode_(load_mode),
       memory_allocator_(std::make_unique<MallocMemoryAllocator>()),
       temp_allocator_(std::make_unique<MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
-  ::executorch::runtime::runtime_init();
+  runtime::runtime_init();
 }
 
 Module::Module(
-    std::unique_ptr<DataLoader> data_loader,
-    std::unique_ptr<MemoryAllocator> memory_allocator,
-    std::unique_ptr<MemoryAllocator> temp_allocator,
-    std::unique_ptr<EventTracer> event_tracer)
+    std::unique_ptr<runtime::DataLoader> data_loader,
+    std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
+    std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
+    std::unique_ptr<runtime::EventTracer> event_tracer)
     : data_loader_(std::move(data_loader)),
       memory_allocator_(
           memory_allocator ? std::move(memory_allocator)
@@ -77,14 +61,14 @@ Module::Module(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
-  ::executorch::runtime::runtime_init();
+  runtime::runtime_init();
 }
 
 Module::Module(
-    std::shared_ptr<Program> program,
-    std::unique_ptr<MemoryAllocator> memory_allocator,
-    std::unique_ptr<MemoryAllocator> temp_allocator,
-    std::unique_ptr<EventTracer> event_tracer)
+    std::shared_ptr<runtime::Program> program,
+    std::unique_ptr<runtime::MemoryAllocator> memory_allocator,
+    std::unique_ptr<runtime::MemoryAllocator> temp_allocator,
+    std::unique_ptr<runtime::EventTracer> event_tracer)
     : program_(std::move(program)),
       memory_allocator_(
           memory_allocator ? std::move(memory_allocator)
@@ -93,10 +77,10 @@ Module::Module(
           temp_allocator ? std::move(temp_allocator)
                          : std::make_unique<MallocMemoryAllocator>()),
       event_tracer_(std::move(event_tracer)) {
-  ::executorch::runtime::runtime_init();
+  runtime::runtime_init();
 }
 
-Error Module::load(const Program::Verification verification) {
+runtime::Error Module::load(const runtime::Program::Verification verification) {
   if (!is_loaded()) {
     if (!data_loader_) {
       switch (load_mode_) {
@@ -119,18 +103,15 @@ Error Module::load(const Program::Verification verification) {
           break;
       }
     };
-    auto program =
-        ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
-    program_ = std::shared_ptr<Program>(
-        program.release(),
-        [data_loader = std::move(data_loader_)](Program* pointer) {
-          delete pointer;
-        });
+    auto program = ET_UNWRAP_UNIQUE(
+        runtime::Program::load(data_loader_.get(), verification));
+    program_ = std::shared_ptr<runtime::Program>(
+        program.release(), [](runtime::Program* pointer) { delete pointer; });
   }
-  return Error::Ok;
+  return runtime::Error::Ok;
 }
 
-Result<std::unordered_set<std::string>> Module::method_names() {
+runtime::Result<std::unordered_set<std::string>> Module::method_names() {
   ET_CHECK_OK_OR_RETURN_ERROR(load());
   const auto method_count = program_->num_methods();
   std::unordered_set<std::string> result;
@@ -142,7 +123,7 @@ Result<std::unordered_set<std::string>> Module::method_names() {
   return result;
 }
 
-Error Module::load_method(const std::string& method_name) {
+runtime::Error Module::load_method(const std::string& method_name) {
   if (!is_method_loaded(method_name)) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
 
@@ -161,10 +142,11 @@ Error Module::load_method(const std::string& method_name) {
       method_holder.planned_spans.emplace_back(
           method_holder.planned_buffers.back().data(), buffer_size);
     }
-    method_holder.planned_memory = std::make_unique<HierarchicalAllocator>(Span(
-        method_holder.planned_spans.data(),
-        method_holder.planned_spans.size()));
-    method_holder.memory_manager = std::make_unique<MemoryManager>(
+    method_holder.planned_memory =
+        std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
+            method_holder.planned_spans.data(),
+            method_holder.planned_spans.size()));
+    method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(
         memory_allocator_.get(),
         method_holder.planned_memory.get(),
         temp_allocator_.get());
@@ -174,35 +156,38 @@ Error Module::load_method(const std::string& method_name) {
         event_tracer_.get()));
     methods_.emplace(method_name, std::move(method_holder));
   }
-  return Error::Ok;
+  return runtime::Error::Ok;
 }
 
-Result<MethodMeta> Module::method_meta(const std::string& method_name) {
+runtime::Result<runtime::MethodMeta> Module::method_meta(
+    const std::string& method_name) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   return methods_.at(method_name).method->method_meta();
 }
 
-Result<std::vector<EValue>> Module::execute(
+runtime::Result<std::vector<runtime::EValue>> Module::execute(
     const std::string& method_name,
-    const std::vector<EValue>& input) {
+    const std::vector<runtime::EValue>& input) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
   auto& method = methods_.at(method_name).method;
 
-  for (auto index = 0; index < input.size(); ++index) {
-    ET_CHECK_OK_OR_RETURN_ERROR(method->set_input(input[index], index));
-  }
+  ET_CHECK_OK_OR_RETURN_ERROR(method->set_inputs(
+      exec_aten::ArrayRef<runtime::EValue>(input.data(), input.size())));
   ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
 
   const auto outputs_size = method->outputs_size();
-  std::vector<EValue> outputs(outputs_size);
+  std::vector<runtime::EValue> outputs(outputs_size);
   ET_CHECK_OK_OR_RETURN_ERROR(
       method->get_outputs(outputs.data(), outputs_size));
 
   return outputs;
 }
 
-Error Module::set_output_data_ptr(Tensor& output_tensor, size_t output_index) {
+runtime::Error Module::set_output_data_ptr(
+    runtime::EValue output_value,
+    size_t output_index) {
   ET_CHECK_OK_OR_RETURN_ERROR(load_method("forward"));
+  auto& output_tensor = output_value.toTensor();
   auto& method = methods_.at("forward").method;
   return method->set_output_data_ptr(
       output_tensor.mutable_data_ptr(), output_tensor.nbytes(), output_index);

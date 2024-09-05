@@ -15,7 +15,7 @@ on:
         description: Target devices to run benchmark
         required: false
         type: string
-        default: samsung_galaxy_s2x
+        default: samsung_galaxy_s22
       delegates:
         description: Backend delegates
         required: false
@@ -45,7 +45,7 @@ on:
         description: Target devices to run benchmark
         required: false
         type: string
-        default: samsung_galaxy_s2x
+        default: samsung_galaxy_s22
       delegates:
         description: Backend delegates
         required: false
@@ -84,9 +84,9 @@ jobs:
           # Separate default values from the workflow dispatch. To ensure defaults are accessible
           # during scheduled runs and to provide flexibility for different defaults between
           # on-demand and periodic benchmarking.
-          CRON_DEFAULT_MODELS: "stories110M"
-          CRON_DEFAULT_DEVICES: "samsung_galaxy_s2x"
-          CRON_DEFAULT_DELEGATES: "xnnpack"
+          CRON_DEFAULT_MODELS: "stories110M,dl3,mv3,mv2,ic4,ic3,vit"
+          CRON_DEFAULT_DEVICES: "samsung_galaxy_s22"
+          CRON_DEFAULT_DELEGATES: "xnnpack,qnn"
         run: |
           set -ex
           MODELS="${{ inputs.models }}"
@@ -104,7 +104,7 @@ jobs:
 
           # Mapping devices to their corresponding device-pool-arn
           declare -A DEVICE_POOL_ARNS
-          DEVICE_POOL_ARNS[samsung_galaxy_s2x]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa"
+          DEVICE_POOL_ARNS[samsung_galaxy_s22]="arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa"
 
           # Resolve device names with their corresponding ARNs
           if [[ ! $(echo "$DEVICES" | jq empty 2>/dev/null) ]]; then
@@ -162,6 +162,11 @@ jobs:
             # Test llama2
             if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
                 DELEGATE_CONFIG="xnnpack+custom+qe"
+            elif [[ ${{ matrix.delegate }} == "qnn" ]]; then
+                DELEGATE_CONFIG="qnn"
+            else
+                echo "Unsupported delegate ${{ matrix.delegate }}"
+                exit 1
             fi
             PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
         else
@@ -203,7 +208,8 @@ jobs:
     needs: set-parameters
     strategy:
       matrix:
-          tokenizer: [bpe]
+          delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
+      fail-fast: false
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
@@ -220,9 +226,15 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
+        if [[ ${{ matrix.delegate }} == "qnn" ]]; then
+            PYTHON_EXECUTABLE=python bash .ci/scripts/setup-qnn-deps.sh
+            PYTHON_EXECUTABLE=python bash .ci/scripts/build-qnn-sdk.sh
+        fi
+
         # TODO: This needs to be replaced with a generic loader .apk
         # Build LLM Demo for Android
-        bash build/build_android_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
+        export ANDROID_ABIS="arm64-v8a"
+        bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
   # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-android-apps:
@@ -278,9 +290,8 @@ jobs:
       # Unlike models there are limited numbers of build flavor for apps, and the model controls whether it should build with bpe/tiktoken tokenizer.
       # It's okay to build all possible apps with all possible flavors in job "build-llm-demo". However, in this job, once a model is given, there is only
       # one app+flavor that could load and run the model.
-      # TODO: Hard code llm_demo_bpe for now in this job.
-      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_bpe/app-debug.apk
-      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_bpe/app-debug-androidTest.apk
+      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo/app-debug.apk
+      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo/app-debug-androidTest.apk
       # NB: Need to set the default spec here so that it works for periodic too
       test-spec: ${{ inputs.test_spec || 'https://ossci-android.s3.amazonaws.com/executorch/android-llm-device-farm-test-spec.yml' }}
       # Uploaded to S3 from the previous job

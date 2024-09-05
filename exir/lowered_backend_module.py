@@ -8,6 +8,7 @@
 
 import copy
 import operator
+from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
@@ -136,7 +137,7 @@ class LoweredBackendModule(torch.nn.Module):
     def buffer(
         self,
         extract_delegate_segments: bool = False,
-        segment_alignment: int = 4096,
+        segment_alignment: int = 128,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
         memory_planning: MemoryPlanningPass = None,  # pyre-fixme[9]
@@ -488,8 +489,12 @@ def _get_new_signature(  # noqa: C901
         else {}
     )
 
+    toplevel_output_node_to_sig: Dict[str, List[OutputSpec]] = defaultdict(list)
+    if not is_submodule:
+        for output_spec in old_signature.output_specs:
+            toplevel_output_node_to_sig[output_spec.arg.name].append(output_spec)
+
     for node in gm.graph.nodes:
-        is_tagged = tag is None or node.meta.get("delegation_tag", None) == tag
         if node.op == "placeholder":
 
             if node.name not in input_node_to_sig:
@@ -507,7 +512,7 @@ def _get_new_signature(  # noqa: C901
             if not isinstance(orig_input_spec.arg, TensorArgument):
                 input_specs.append(orig_input_spec)
 
-            elif is_tagged:
+            elif node.meta.get("delegation_tag", None) == tag:
                 input_specs.append(orig_input_spec)
 
                 if orig_input_spec.kind == InputKind.USER_INPUT:
@@ -551,11 +556,72 @@ def _get_new_signature(  # noqa: C901
                 )
 
         if node.op == "output":
-            output_nodes = pytree.tree_leaves((node.args, node.kwargs))
+            buffer_mutation_idxs: Dict[int, List[OutputSpec]] = defaultdict(list)
+            for user in call_module_node.users.keys():
+                if user.name in toplevel_output_node_to_sig:
+                    assert (
+                        user.op == "call_function" and user.target == operator.getitem
+                    ), f"Invalid user {user}, node.op is {user.op} and node.target is {user.target}"
+                    getitem_idx = user.args[1]
+                    assert isinstance(
+                        getitem_idx, int
+                    ), f"Invalid getitem type: {type(getitem_idx)}"
+                    buffer_mutation_idxs[getitem_idx].extend(
+                        toplevel_output_node_to_sig[user.name]
+                    )
 
-            for output_node in output_nodes:
+            for i, output_node in enumerate(node.args[0]):
+                if i in buffer_mutation_idxs:
+                    assert isinstance(output_node, torch.fx.Node)
+                    orig_output_specs = buffer_mutation_idxs[i]
 
-                if not isinstance(output_node, torch.fx.Node):
+                    if any(
+                        orig_output_spec.kind == OutputKind.BUFFER_MUTATION
+                        and orig_output_spec.target in new_state_dict
+                        for orig_output_spec in orig_output_specs
+                    ):
+                        # If the delegate wants to consume the buffer, then the
+                        # delegate should also consume the buffer mutation
+                        # (output spec would be a BUFFER_MUTATION).  Otherwise
+                        # the delegate will just return the result of the
+                        # mutation as a USER_OUTPUT.
+
+                        orig_output_spec = [
+                            orig_output_spec
+                            for orig_output_spec in orig_output_specs
+                            if orig_output_spec.kind == OutputKind.BUFFER_MUTATION
+                            and orig_output_spec.target in new_state_dict
+                        ][0]
+
+                        assert len(orig_output_specs) == 1, (
+                            f"Constant {orig_output_spec.target} was tagged to be "
+                            "consumed by the buffer, and was found to also contain "
+                            "a buffer mutation. However this buffer mutation node "
+                            "was found to also be used as other types of outputs "
+                            "which is currently not supported. Please file an "
+                            "issue on Github. \n\n"
+                            f"The toplevel program: {original_program}\n"
+                        )
+                        output_specs.append(
+                            OutputSpec(
+                                kind=OutputKind.BUFFER_MUTATION,
+                                arg=TensorArgument(name=output_node.name),
+                                target=orig_output_spec.target,
+                            )
+                        )
+                        output_specs_to_delete[orig_output_spec.arg.name] = (
+                            orig_output_spec
+                        )
+                    else:
+                        output_specs.append(
+                            OutputSpec(
+                                kind=OutputKind.USER_OUTPUT,
+                                arg=TensorArgument(name=output_node.name),
+                                target=None,
+                            )
+                        )
+
+                elif not isinstance(output_node, torch.fx.Node):
                     output_specs.append(
                         OutputSpec(
                             kind=OutputKind.USER_OUTPUT,
@@ -774,7 +840,7 @@ def get_lowered_backend_modules(
     return lowered_programs
 
 
-def _unsafe_adjust_original_program(
+def _unsafe_adjust_original_program(  # noqa: C901
     original_program: ExportedProgram,
     call_delegate_node: torch.fx.Node,
     input_specs_to_delete: Dict[str, InputSpec],
@@ -830,3 +896,50 @@ def _unsafe_adjust_original_program(
             del original_program._constants[input_spec.target]
         else:
             raise RuntimeError(f"Invalid input spec {input_spec} received")
+
+    # Delete buffer mutations from the output which were consumed by the delegate
+    toplevel_output_node = None
+    for node in reversed(original_program.graph.nodes):
+        if node.op == "output":
+            toplevel_output_node = node
+            break
+
+    assert toplevel_output_node is not None
+    assert (
+        len(toplevel_output_node.args) == 1
+    ), f"Invalid output node: {toplevel_output_node} with args {toplevel_output_node.args}"
+
+    new_output_args = [
+        arg
+        for arg in toplevel_output_node.args[0]
+        if not isinstance(arg, torch.fx.Node) or arg.name not in output_specs_to_delete
+    ]
+    toplevel_output_node.args = (tuple(new_output_args),)
+
+    # Delete the buffer mutation getitem nodes
+    getitem_idxs: List[int] = []
+    user_nodes = list(call_delegate_node.users.keys())
+    for user in user_nodes:
+        if user.name in output_specs_to_delete:
+            assert (
+                user.op == "call_function" and user.target == operator.getitem
+            ), f"Invalid user {user}, node.op is {node.op} and node.target is {node.target}"
+            user_idx = user.args[1]
+            assert isinstance(user_idx, int), f"Invalid getitem type: {type(user_idx)}"
+            getitem_idxs.append(user_idx)
+            original_program.graph.erase_node(user)
+
+    getitem_idxs.sort(reverse=True)
+
+    # Adjust all the getitem indices after the deleted getitems
+    user_nodes = list(call_delegate_node.users.keys())
+    for user in user_nodes:
+        assert user.op == "call_function" and user.target == operator.getitem
+        user_idx = user.args[1]
+        assert isinstance(user_idx, int)
+        for i, idx in enumerate(getitem_idxs):
+            if user_idx > idx:
+                user.args = (user.args[0], user_idx - (len(getitem_idxs) - i))
+                break
+
+    original_program._validate()

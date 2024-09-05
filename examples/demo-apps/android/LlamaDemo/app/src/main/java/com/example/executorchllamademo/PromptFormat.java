@@ -21,6 +21,7 @@ public class PromptFormat {
             + SYSTEM_PLACEHOLDER
             + "<|eot_id|>";
       case LLAVA_1_5:
+        return "USER: ";
       default:
         return SYSTEM_PLACEHOLDER;
     }
@@ -35,6 +36,7 @@ public class PromptFormat {
             + "<|eot_id|>\n"
             + "<|start_header_id|>assistant<|end_header_id|>";
       case LLAVA_1_5:
+        return USER_PLACEHOLDER + " ASSISTANT:";
       default:
         return USER_PLACEHOLDER;
     }

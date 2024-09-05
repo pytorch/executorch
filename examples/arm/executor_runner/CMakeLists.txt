@@ -9,25 +9,38 @@ project(arm_executor_runner)
 option(SEMIHOSTING "Enable semihosting" OFF)
 
 if(NOT DEFINED ET_PTE_FILE_PATH AND NOT ${SEMIHOSTING})
-  message(FATAL_ERROR
-    "ET_PTE_FILE_PATH must specify a model .pte, for bare metal systems the "
-    "model is built into the binary.")
+  message(
+    FATAL_ERROR
+      "ET_PTE_FILE_PATH must specify a model .pte, for bare metal systems the "
+      "model is built into the binary."
+  )
 endif()
 
 # Example ExecuTorch demo for bare metal Cortex-M based systems
-set(ET_DIR_PATH "../../.." CACHE PATH
-  "Path to ExecuTorch dir")
-set(ET_BUILD_DIR_PATH "${ET_DIR_PATH}/cmake-out" CACHE PATH
-  "Path to ExecuTorch build dir")
-set(ET_INCLUDE_PATH "${ET_DIR_PATH}/.." CACHE PATH
-  "Path to ExecuTorch headers")
-set(ET_PTE_FILE_PATH "" CACHE PATH
-  "Path to ExecuTorch model pte")
-set(ETHOS_SDK_PATH "${ET_DIR_PATH}/examples/arm/ethos-u-scratch/ethos-u" CACHE PATH
-  "Path to Ethos-U bare metal driver/env")
-set(PYTHON_EXECUTABLE "python" CACHE PATH
-  "Define to override python executable used")
-
+set(ET_DIR_PATH
+    "../../.."
+    CACHE PATH "Path to ExecuTorch dir"
+)
+set(ET_BUILD_DIR_PATH
+    "${ET_DIR_PATH}/cmake-out"
+    CACHE PATH "Path to ExecuTorch build dir"
+)
+set(ET_INCLUDE_PATH
+    "${ET_DIR_PATH}/.."
+    CACHE PATH "Path to ExecuTorch headers"
+)
+set(ET_PTE_FILE_PATH
+    ""
+    CACHE PATH "Path to ExecuTorch model pte"
+)
+set(ETHOS_SDK_PATH
+    "${ET_DIR_PATH}/examples/arm/ethos-u-scratch/ethos-u"
+    CACHE PATH "Path to Ethos-U bare metal driver/env"
+)
+set(PYTHON_EXECUTABLE
+    "python"
+    CACHE PATH "Define to override python executable used"
+)
 
 get_filename_component(ET_BUILD_DIR_PATH ${ET_BUILD_DIR_PATH} REALPATH)
 get_filename_component(ET_DIR_PATH ${ET_DIR_PATH} REALPATH)
@@ -104,23 +117,25 @@ set_property(
 
 # Convert pte to header
 if(NOT ${SEMIHOSTING})
-  add_custom_target(gen_model_header
-      DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h)
+  add_custom_target(
+    gen_model_header DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
+  )
 
   add_custom_command(
-      OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
-      COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/pte_to_header.py
-      --pte ${ET_PTE_FILE_PATH}
-      --outdir ${CMAKE_CURRENT_BINARY_DIR}
-      DEPENDS ${ET_PTE_FILE_PATH}
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
+    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/pte_to_header.py --pte
+            ${ET_PTE_FILE_PATH} --outdir ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS ${ET_PTE_FILE_PATH}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   )
 endif()
 
 # The arm_executor_runner executable
 add_executable(arm_executor_runner)
 
-target_sources(arm_executor_runner PRIVATE arm_executor_runner.cpp)
+target_sources(
+  arm_executor_runner PRIVATE arm_executor_runner.cpp arm_perf_monitor.cpp
+)
 
 # Include the target's bare-metal linker script
 ethosu_eval_link_options(arm_executor_runner)
@@ -146,19 +161,17 @@ target_include_directories(
   arm_executor_runner PRIVATE ${ET_INCLUDE_PATH} ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-
-
 if(SEMIHOSTING)
-target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
+  target_compile_definitions(arm_executor_runner PUBLIC SEMIHOSTING)
 else()
-add_dependencies(arm_executor_runner gen_model_header)
+  add_dependencies(arm_executor_runner gen_model_header)
 endif()
 
 # Fixup compilation of retarget.c
 if(SEMIHOSTING)
-# Remove this when MLBEDSW-8910 is closed.
-set_source_files_properties(
-  ${ETHOS_SDK_PATH}/core_platform/targets/corstone-300/retarget.c
-  PROPERTIES HEADER_FILE_ONLY TRUE
-)
+  # Remove this when MLBEDSW-8910 is closed.
+  set_source_files_properties(
+    ${ETHOS_SDK_PATH}/core_platform/targets/corstone-300/retarget.c
+    PROPERTIES HEADER_FILE_ONLY TRUE
+  )
 endif()

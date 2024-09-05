@@ -14,7 +14,6 @@ from collections import Counter, OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import torch
-import torch.export._trace as export_trace
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
@@ -31,6 +30,7 @@ from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.exir.print_program import pretty_print, print_program
+from torch.export import export_for_training
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -157,10 +157,10 @@ class Quantize(Stage):
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
-        captured_graph = export_trace._export(
-            artifact, inputs, pre_dispatch=True
-        ).module()
+        assert inputs is not None
+        captured_graph = export_for_training(artifact, inputs).module()
 
+        assert isinstance(captured_graph, torch.fx.GraphModule)
         prepared = prepare_pt2e(captured_graph, self.quantizer)
 
         if self.calibrate:
