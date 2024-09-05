@@ -24,14 +24,6 @@ NS_SWIFT_NAME(Runner)
        sequenceLength:(NSInteger)seq_len
     withTokenCallback:(nullable void (^)(NSString*))callback
                 error:(NSError**)error;
-- (BOOL)mm_generate:(BOOL)textOnly
-               buffer:(void*)imageBuffer
-                width:(CGFloat)width
-               height:(CGFloat)height
-               prompt:(NSString*)prompt
-       sequenceLength:(NSInteger)seq_len
-    withTokenCallback:(nullable void (^)(NSString*))callback
-                error:(NSError**)error;
 - (void)stop;
 
 + (instancetype)new NS_UNAVAILABLE;
@@ -46,6 +38,16 @@ NS_SWIFT_NAME(LLaVARunner)
                     tokenizerPath:(NSString*)tokenizerPath;
 - (BOOL)isloaded;
 - (BOOL)loadWithError:(NSError**)error;
+
+- (BOOL)mm_generate:(BOOL)textOnly
+               buffer:(void*)imageBuffer
+                width:(CGFloat)width
+               height:(CGFloat)height
+               prompt:(NSString*)prompt
+       sequenceLength:(NSInteger)seq_len
+    withTokenCallback:(nullable void (^)(NSString*))callback
+                error:(NSError**)error;
+
 - (BOOL)generate:(NSArray<UIImage*>*)images
                prompt:(NSString*)prompt
        sequenceLength:(NSInteger)seq_len

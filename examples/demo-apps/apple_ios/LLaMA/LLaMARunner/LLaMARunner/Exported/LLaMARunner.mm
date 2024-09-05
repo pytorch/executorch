@@ -75,55 +75,6 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   return YES;
 }
 
-- (BOOL)mm_generate:(BOOL)textOnly
-        buffer:(void*)imageBuffer
-        width:(CGFloat)width
-        height:(CGFloat)height
-        prompt:(NSString*)prompt
-       sequenceLength:(NSInteger)seq_len
-    withTokenCallback:(nullable void (^)(NSString*))callback
-                error:(NSError**)error {
-
-  std::vector<Image> images = {};
-  if (!textOnly) {
-    NSLog(@">>> width: %f, height: %f", width, height);
-    uint8_t* data = static_cast<uint8_t*>(imageBuffer);
-    //float* data = static_cast<float*>(imageBuffer);
-
-    NSMutableString *outputString = [NSMutableString stringWithCapacity:500 * 6]; // Estimate initial capacity
-
-    for (int i = 0; i < 500; ++i) {
-        [outputString appendFormat:@"%d, ", data[i]];
-    }
-
-    NSLog(@">>> %@", outputString);
-
-
-    Image image;
-    image.width = width;
-    image.height = height;
-    image.channels = 3;
-
-    image.data.assign(data, data + image.width * image.height * image.channels);
-
-    images.push_back(image);
-  }
-  
-//  const auto status = _runner->generate(
-//      {images}, prompt.UTF8String, seq_len, [callback](const std::string& token) {
-//        callback(@(token.c_str()));
-//      });
-//  if (status != Error::Ok) {
-//    if (error) {
-//      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
-//                                   code:(NSInteger)status
-//                               userInfo:nil];
-//      return NO;
-//    }
-//  }
-  return YES;
-}
-
 - (void)stop {
   _runner->stop();
 }
@@ -179,6 +130,56 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 - (BOOL)isloaded {
   return _runner->is_loaded();
 }
+
+- (BOOL)mm_generate:(BOOL)textOnly
+        buffer:(void*)imageBuffer
+        width:(CGFloat)width
+        height:(CGFloat)height
+        prompt:(NSString*)prompt
+       sequenceLength:(NSInteger)seq_len
+    withTokenCallback:(nullable void (^)(NSString*))callback
+                error:(NSError**)error {
+
+  std::vector<Image> images = {};
+  if (!textOnly) {
+    NSLog(@">>> width: %f, height: %f", width, height);
+    uint8_t* data = static_cast<uint8_t*>(imageBuffer);
+    //float* data = static_cast<float*>(imageBuffer);
+
+    NSMutableString *outputString = [NSMutableString stringWithCapacity:500 * 6]; // Estimate initial capacity
+
+    for (int i = 0; i < 500; ++i) {
+        [outputString appendFormat:@"%d, ", data[i]];
+    }
+
+    NSLog(@">>> %@", outputString);
+
+
+    Image image;
+    image.width = width;
+    image.height = height;
+    image.channels = 3;
+
+    image.data.assign(data, data + image.width * image.height * image.channels);
+
+    images.push_back(image);
+  }
+  
+//  const auto status = _runner->generate(
+//      {images}, prompt.UTF8String, seq_len, [callback](const std::string& token) {
+//        callback(@(token.c_str()));
+//      });
+//  if (status != Error::Ok) {
+//    if (error) {
+//      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
+//                                   code:(NSInteger)status
+//                               userInfo:nil];
+//      return NO;
+//    }
+//  }
+  return YES;
+}
+
 
 - (BOOL)loadWithError:(NSError**)error {
   const auto status = _runner->load();

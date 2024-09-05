@@ -351,9 +351,14 @@ struct ContentView: View {
           isGenerating = false
         }
       }
+
       runnerHolder.runner = runnerHolder.runner ?? Runner(modelPath: modelPath, tokenizerPath: tokenizerPath)
+
+//      runnerHolder.llavaRunner = runnerHolder.llavaRunner ?? LLaVARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
+
       guard !shouldStopGenerating else { return }
       if let runner = runnerHolder.runner, !runner.isloaded() {
+      //if let runner = runnerHolder.llavaRunner, !runner.isloaded() {
         var error: Error?
         let startLoadTime = Date()
         do {
@@ -407,29 +412,48 @@ struct ContentView: View {
           } else {
             imageBuffer = UnsafeMutableRawPointer(mutating: rgbArray)
           }
-        } else {
-          textOnly = true
-        }
-        
-//        try runnerHolder.runner?.mm_generate(textOnly, buffer: imageBuffer!, width: MAX_WIDTH, height: newHeight, prompt: text, sequenceLength: seq_len) { token in
-        try runnerHolder.runner?.generate(text, sequenceLength: seq_len) { token in
-          tokens.append(token)
-          if tokens.count > 2 {
-            let text = tokens.joined()
-            let count = tokens.count
-            tokens = []
-            DispatchQueue.main.async {
-              withAnimation {
-                var message = messages.removeLast()
-                message.text += text
-                message.tokenCount += count
-                message.dateUpdated = Date()
-                messages.append(message)
+          
+          try runnerHolder.llavaRunner?.mm_generate(textOnly, buffer: imageBuffer!, width: MAX_WIDTH, height: newHeight, prompt: text, sequenceLength: seq_len) { token in
+            tokens.append(token)
+            if tokens.count > 2 {
+              let text = tokens.joined()
+              let count = tokens.count
+              tokens = []
+              DispatchQueue.main.async {
+                withAnimation {
+                  var message = messages.removeLast()
+                  message.text += text
+                  message.tokenCount += count
+                  message.dateUpdated = Date()
+                  messages.append(message)
+                }
               }
             }
+            if shouldStopGenerating {
+              runnerHolder.runner?.stop()
+            }
           }
-          if shouldStopGenerating {
-            runnerHolder.runner?.stop()
+        } else {
+          textOnly = true
+          try runnerHolder.runner?.generate(text, sequenceLength: seq_len) { token in
+            tokens.append(token)
+            if tokens.count > 2 {
+              let text = tokens.joined()
+              let count = tokens.count
+              tokens = []
+              DispatchQueue.main.async {
+                withAnimation {
+                  var message = messages.removeLast()
+                  message.text += text
+                  message.tokenCount += count
+                  message.dateUpdated = Date()
+                  messages.append(message)
+                }
+              }
+            }
+            if shouldStopGenerating {
+              runnerHolder.runner?.stop()
+            }
           }
         }
       } catch {
