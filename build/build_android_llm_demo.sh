@@ -139,7 +139,9 @@ collect_artifacts_to_be_uploaded() {
 
 BUILD_AAR_DIR="$(mktemp -d)"
 export BUILD_AAR_DIR
-ANDROID_ABIS=("arm64-v8a" "x86_64")
+if [ -z "$ANDROID_ABIS" ]; then
+  ANDROID_ABIS=("arm64-v8a" "x86_64")
+fi
 export ANDROID_ABIS
 
 ARTIFACTS_DIR_NAME="$1"
