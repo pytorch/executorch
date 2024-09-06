@@ -189,10 +189,10 @@ class LLMEdgeManager:
     ):
         logging.info("Run calibration...")
         try:
-            from executorch.examples.models.llama2.evaluate import (
-                EagerEvalWrapper,
-                evaluate_model,
+            from executorch.examples.models.llama2.eval_llama_lib import (
+                GraphModuleEvalWrapper,
             )
+            from executorch.examples.models.llama2.evaluate import evaluate_model
         except ImportError:
             raise ImportError(
                 "Please install the llm eval dependency via examples/models/llama2/install_requirements.sh"
@@ -224,12 +224,12 @@ class LLMEdgeManager:
             max_len=calibration_seq_length,
         )
 
-        eval_wrapper = EagerEvalWrapper(
+        eval_wrapper = GraphModuleEvalWrapper(
             model=prepared_module,
             tokenizer=tokenizer,
             max_seq_length=calibration_seq_length,
             use_kv_cache=self.use_kv_cache,
-            dynamic_shape=self.enable_dynamic_shape,
+            enable_dynamic_shape=self.enable_dynamic_shape,
         )
         eval_results = evaluate_model(
             eval_wrapper,
