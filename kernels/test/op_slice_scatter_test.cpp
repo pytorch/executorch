@@ -49,7 +49,7 @@ class OpSliceScatterTensorOutTest : public OperatorTest {
         5,   6,   7,   8, // [1, :]
         9,  10,  11,  12, // [2, :]
       });
-  
+
     // op_slice_scatter_out(input, src, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out),
     // src shape should equal to input[0:2:1, :]
     Tensor src = tf.make(
@@ -670,7 +670,7 @@ TEST_F(OpSliceScatterTensorOutTest, LegalStepsSupported) {
 /// zeros().
 TEST_F(OpSliceScatterTensorOutTest, AllRealDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REALHBF16_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
   // TODO: Also add tests for half, complex, quantized, and other types. Easiest
   // way to do that would be to make TensorFactory support zeros() and ones()
