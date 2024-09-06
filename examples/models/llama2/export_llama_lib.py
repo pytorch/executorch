@@ -43,13 +43,13 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_qnn_quantizer,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from torch._export import capture_pre_autograd_graph
 
 from ..model_factory import EagerModelFactory
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
+from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
@@ -415,6 +415,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             transforms.append(replace_kv_cache_with_simple_kv_cache)
             transforms.append(replace_sdpa_with_flex_sdpa)
             transforms.append(replace_causal_mask)
+            transforms.append(replace_rms_norm_with_native_rms_norm)
             transforms.append(convert_linear_to_conv2d)
 
         elif args.coreml or args.mps:
