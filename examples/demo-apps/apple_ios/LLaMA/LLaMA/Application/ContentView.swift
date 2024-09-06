@@ -18,7 +18,7 @@ class RunnerHolder: ObservableObject {
 
 extension UIImage {
   func resized(to newSize: CGSize, scale: CGFloat = 1) -> UIImage {
-    NSLog(">>> Resizing image to \(newSize)")
+//    NSLog(">>> Resizing image to \(newSize)")
     let format = UIGraphicsImageRendererFormat.default()
     format.scale = scale
     let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
@@ -80,10 +80,10 @@ extension UIImage {
       }
     }
 
-    let first100Values = rgbArray.prefix(100)
-    let joinedValues = first100Values.map { String($0) }.joined(separator: " ")
-    NSLog(">>>>>")
-    NSLog(joinedValues)
+//    let first100Values = rgbArray.prefix(100)
+//    let joinedValues = first100Values.map { String($0) }.joined(separator: " ")
+//    NSLog(">>>>>")
+//    NSLog(joinedValues)
 
     return rgbArray
   }
@@ -148,7 +148,7 @@ struct ContentView: View {
         if showingSettings {
           VStack(spacing: 20) {
             Form {
-              Section(header: Text("MMModel and Tokenizer")
+              Section(header: Text("Model and Tokenizer")
                         .font(.headline)
                         .foregroundColor(.primary)) {
                 Button(action: { pickerType = .model }) {
@@ -159,50 +159,50 @@ struct ContentView: View {
                 }
               }
 
-              Section(header: Text("Parameters")
-                        .font(.headline)
-                        .foregroundColor(.primary)) {
-                VStack {
-                  HStack {
-                    Text("Temperature")
-                    Slider(value: $sliderTemperature, in: 0...2)
-                      .onChange(of: sliderTemperature) { newValue in
-                        resourceManager.temperature = newValue
-                      }
-                    Text(String(format: "%.1f", sliderTemperature))
-                  }
-                  HStack {
-                    Text("Top-K")
-                    Slider(value: Binding(
-                      get: { Double(sliderTopK) },
-                      set: { sliderTopK = Int($0) }
-                    ), in: 1...100, step: 1)
-                    .onChange(of: sliderTopK) { newValue in
-                      resourceManager.topK = newValue
-                    }
-                    Text(String(format: "%d", sliderTopK))
-                  }
-                  HStack {
-                    Text("Top-P")
-                    Slider(value: $sliderTopP, in: 0...1)
-                      .onChange(of: sliderTopP) { newValue in
-                        resourceManager.topP = newValue
-                      }
-                    Text(String(format: "%.1f", sliderTopP))
-                  }
-                  HStack {
-                    Text("Max output token")
-                    Slider(value: Binding(
-                      get: { Double(sliderMaxOutputToken) },
-                      set: { sliderMaxOutputToken = Int($0) }
-                    ), in: 1...8192, step: 1)
-                    .onChange(of: sliderMaxOutputToken) { newValue in
-                      resourceManager.maxOutputTokens = newValue
-                    }
-                    Text(String(format: "%d", sliderMaxOutputToken))
-                  }
-                }
-              }
+//              Section(header: Text("Parameters")
+//                        .font(.headline)
+//                        .foregroundColor(.primary)) {
+//                VStack {
+//                  HStack {
+//                    Text("Temperature")
+//                    Slider(value: $sliderTemperature, in: 0...2)
+//                      .onChange(of: sliderTemperature) { newValue in
+//                        resourceManager.temperature = newValue
+//                      }
+//                    Text(String(format: "%.1f", sliderTemperature))
+//                  }
+//                  HStack {
+//                    Text("Top-K")
+//                    Slider(value: Binding(
+//                      get: { Double(sliderTopK) },
+//                      set: { sliderTopK = Int($0) }
+//                    ), in: 1...100, step: 1)
+//                    .onChange(of: sliderTopK) { newValue in
+//                      resourceManager.topK = newValue
+//                    }
+//                    Text(String(format: "%d", sliderTopK))
+//                  }
+//                  HStack {
+//                    Text("Top-P")
+//                    Slider(value: $sliderTopP, in: 0...1)
+//                      .onChange(of: sliderTopP) { newValue in
+//                        resourceManager.topP = newValue
+//                      }
+//                    Text(String(format: "%.1f", sliderTopP))
+//                  }
+//                  HStack {
+//                    Text("Max output token")
+//                    Slider(value: Binding(
+//                      get: { Double(sliderMaxOutputToken) },
+//                      set: { sliderMaxOutputToken = Int($0) }
+//                    ), in: 1...8192, step: 1)
+//                    .onChange(of: sliderMaxOutputToken) { newValue in
+//                      resourceManager.maxOutputTokens = newValue
+//                    }
+//                    Text(String(format: "%d", sliderMaxOutputToken))
+//                  }
+//                }
+//              }
             }
           }
         }
@@ -284,7 +284,7 @@ struct ContentView: View {
                                   Text("Available: \(resourceMonitor.availableMemory) Mb")
                                 }
                               } label: {
-                                Text("\(resourceMonitor.usedMemory) Mb")
+                                Text("\(resourceMonitor.usedMemory) Mb!!")
                               }
                               .onAppear {
                                 resourceMonitor.start()
@@ -352,13 +352,13 @@ struct ContentView: View {
         }
       }
 
-      runnerHolder.runner = runnerHolder.runner ?? Runner(modelPath: modelPath, tokenizerPath: tokenizerPath)
+//      runnerHolder.runner = runnerHolder.runner ?? Runner(modelPath: modelPath, tokenizerPath: tokenizerPath)
 
-//      runnerHolder.llavaRunner = runnerHolder.llavaRunner ?? LLaVARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
+      runnerHolder.llavaRunner = runnerHolder.llavaRunner ?? LLaVARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
 
       guard !shouldStopGenerating else { return }
-      if let runner = runnerHolder.runner, !runner.isloaded() {
-      //if let runner = runnerHolder.llavaRunner, !runner.isloaded() {
+//      if let runner = runnerHolder.runner, !runner.isloaded() {
+      if let runner = runnerHolder.llavaRunner, !runner.isloaded() {
         var error: Error?
         let startLoadTime = Date()
         do {
@@ -404,7 +404,7 @@ struct ContentView: View {
         var imageBuffer: UnsafeMutableRawPointer?
 
         if let img = selectedImage {
-          newHeight = 224.0 //MAX_WIDTH * img.size.height / img.size.width
+          newHeight = MAX_WIDTH * img.size.height / img.size.width // 224.0
           let resizedImage = img.resized(to: CGSize(width: MAX_WIDTH, height: newHeight))
           rgbArray = resizedImage.toRGBArray()
           if rgbArray == nil {
@@ -414,6 +414,10 @@ struct ContentView: View {
           }
           
           try runnerHolder.llavaRunner?.mm_generate(textOnly, buffer: imageBuffer!, width: MAX_WIDTH, height: newHeight, prompt: text, sequenceLength: seq_len) { token in
+            
+//          let imageArray: NSArray = [img] as NSArray
+//          try runnerHolder.llavaRunner?.generate(imageArray as! [UIImage], prompt: text, sequenceLength: seq_len) { token in
+            
             tokens.append(token)
             if tokens.count > 2 {
               let text = tokens.joined()

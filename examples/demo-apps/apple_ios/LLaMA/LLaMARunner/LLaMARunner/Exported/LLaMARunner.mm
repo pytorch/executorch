@@ -166,7 +166,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
   }
   
   const auto status = _runner->generate(
-      {images}, prompt.UTF8String, seq_len, [callback](const std::string& token) {
+      /*{images}*/std::move(images), prompt.UTF8String, seq_len, [callback](const std::string& token) {
         callback(@(token.c_str()));
       });
   if (status != Error::Ok) {
@@ -219,6 +219,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
     CGContextRelease(context);
     rawImages.push_back({std::move(buffer), width, height, 4});
   }
+  
   const auto status = _runner->generate(
       std::move(rawImages),
       prompt.UTF8String,
