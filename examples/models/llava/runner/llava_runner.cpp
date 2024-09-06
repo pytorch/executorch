@@ -131,6 +131,11 @@ Error LlavaRunner::generate(
     ET_CHECK_OK_OR_RETURN_ERROR(load());
   }
 
+  ET_LOG(
+      Info,
+      "RSS after loading model: %f MiB (0 if unsupported)",
+      util::get_rss_bytes() / 1024.0 / 1024.0);
+
   // Wrap the token_callback with print function
   std::function<void(const std::string&)> wrapped_callback =
       [token_callback](const std::string& piece) {
@@ -149,9 +154,21 @@ Error LlavaRunner::generate(
   // prefill images
   prefill_images(images, pos);
 
+  ET_LOG(
+      Info,
+      "RSS after prompt and image prefill: %f MiB (0 if unsupported)",
+      util::get_rss_bytes() / 1024.0 / 1024.0);
+
   // Generate tokens
-  return generate_from_pos(
-      prompt, seq_len, pos, wrapped_callback, stats_callback);
+  Error err =
+      generate_from_pos(prompt, seq_len, pos, wrapped_callback, stats_callback);
+
+  ET_LOG(
+      Info,
+      "RSS after finishing text generation: %f MiB (0 if unsupported)",
+      util::get_rss_bytes() / 1024.0 / 1024.0);
+
+  return err;
 }
 
 } // namespace torch::executor
