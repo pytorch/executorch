@@ -222,7 +222,6 @@ def export_all(llava_model: LlavaModel):
 
     executorch_program = lowered_and_edge.to_executorch(
         ExecutorchBackendConfig(
-            extract_constant_segment=True,
             extract_delegate_segments=True,
             passes=[
                 QuantFusionPass(),

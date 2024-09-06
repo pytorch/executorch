@@ -412,7 +412,7 @@ void maybe_resize_output(
 // VulkanBackend class
 //
 
-class VulkanBackend final : public PyTorchBackendInterface {
+class VulkanBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~VulkanBackend() override = default;
 

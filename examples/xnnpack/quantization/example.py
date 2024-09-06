@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import argparse
 import copy
 import logging
@@ -191,9 +193,7 @@ def main() -> None:
 
     start = time.perf_counter()
     prog = edge_m.to_executorch(
-        config=ExecutorchBackendConfig(
-            extract_delegate_segments=False, extract_constant_segment=False
-        )
+        config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
     save_pte_program(prog, f"{args.model_name}_quantized")
     end = time.perf_counter()

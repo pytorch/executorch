@@ -34,8 +34,9 @@ Run the following cmake commands from `executorch/`:
 cmake                                               \
     -DCMAKE_INSTALL_PREFIX=cmake-out                \
     -DCMAKE_BUILD_TYPE=Debug                        \
-    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON          \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON     \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON          \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON          \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON            \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON         \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON         \
