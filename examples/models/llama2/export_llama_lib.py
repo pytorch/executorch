@@ -423,6 +423,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
             metadata_str=args.metadata,
+            args=args,
         )
         .set_output_dir(output_dir_path)
         .to_dtype(dtype_override)
@@ -632,6 +633,7 @@ def _load_llama_model(
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
+    args,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
@@ -693,4 +695,5 @@ def _load_llama_model(
             model.params,
             metadata_str,
         ),
+        args=args,
     )
