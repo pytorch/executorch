@@ -261,7 +261,6 @@ class LLMEdgeManager:
         assert self.edge_manager, "Need to run export_to_edge() first"
         self.export_program = self.edge_manager.to_executorch(
             ExecutorchBackendConfig(
-                extract_constant_segment=True,
                 extract_delegate_segments=True,
                 passes=[
                     QuantFusionPass(),

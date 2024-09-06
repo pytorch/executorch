@@ -14,7 +14,6 @@
 #include <ctime>
 
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 
 #include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
@@ -69,17 +68,19 @@ Error Runner::load() {
     return Error::Ok;
   }
   ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
-  // load tokenizer
+  // load tokenizer. Assuming tiktoken is the default tokenizer
   tokenizer_ = nullptr;
-  tokenizer_ = std::make_unique<BPETokenizer>();
+  tokenizer_ = get_tiktoken_for_llama();
   Error err = tokenizer_->load(tokenizer_path_);
+  // Rely on tiktoken to throw error if the artifact is incompatible. Then we
+  // fallback to BPE tokenizer.
   if (err == Error::InvalidArgument) {
     ET_LOG(
         Info,
-        "Failed to load %s as a BPETokenizer artifact, trying Tiktoken",
+        "Failed to load %s as a Tiktoken artifact, trying BPE tokenizer",
         tokenizer_path_.c_str());
     tokenizer_.reset();
-    tokenizer_ = get_tiktoken_for_llama();
+    tokenizer_ = std::make_unique<BPETokenizer>();
     tokenizer_->load(tokenizer_path_);
   }
 

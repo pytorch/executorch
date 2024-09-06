@@ -259,6 +259,8 @@
 
 - op: mul.Scalar_out
 
+- op: narrow_copy.out
+
 - op: native_batch_norm.out
 
 - op: native_group_norm.out

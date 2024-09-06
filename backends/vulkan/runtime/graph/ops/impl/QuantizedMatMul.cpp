@@ -30,7 +30,16 @@ void check_q_matmul_args(
   VK_CHECK_COND(mat1_sizes.size() == 2);
   VK_CHECK_COND(mat1_sizes.size() == mat2_sizes.size());
 
-  VK_CHECK_COND(graph.memory_layout_of(mat1) == graph.memory_layout_of(out));
+  VK_CHECK_COND(graph.memory_layout_of(mat1) == utils::kWidthPacked);
+  VK_CHECK_COND(graph.memory_layout_of(mat2_data) == utils::kWidthPacked);
+  VK_CHECK_COND(
+      graph.memory_layout_of(scales_and_zeros) == utils::kWidthPacked);
+
+  if (graph.storage_type_of(out) == utils::kBuffer) {
+    VK_CHECK_COND(graph.memory_layout_of(out) == utils::kWidthPacked);
+  } else {
+    VK_CHECK_COND(graph.memory_layout_of(out) == utils::kChannelsPacked);
+  }
 
   const int mat1_K = utils::val_at(-1, mat1_sizes);
   const int mat2_K = utils::val_at(-1, mat2_sizes) * 2;
@@ -95,24 +104,39 @@ void add_q_matmul_node(
     const ValueRef group_size,
     const ValueRef scales_and_zeros_data,
     const ValueRef out) {
-  ValueRef mat2 =
-      prepack_buffer_if_tensor_ref(graph, mat2_data, utils::kWidthPacked);
+  auto storage_type = graph.storage_type_of(out);
+
+  ValueRef mat2;
+
+  if (storage_type == utils::kBuffer) {
+    mat2 = prepack_buffer_if_tensor_ref(graph, mat2_data, utils::kWidthPacked);
+  } else {
+    mat2 = prepack_if_tensor_ref(graph, mat2_data, utils::kWidthPacked);
+  }
+
   ValueRef scales_and_zeros =
       prepack_if_tensor_ref(graph, scales_and_zeros_data, utils::kWidthPacked);
 
   std::string kernel_name = "q_4w_linear";
 
   add_dtype_suffix(kernel_name, graph.dtype_of(out));
+  add_storage_type_suffix(kernel_name, storage_type);
 
   const uint32_t group_size_val = graph.extract_scalar<uint32_t>(group_size);
 
   vkapi::ParamsBindList ubos({});
-  ubos.append(graph.sizes_ubo(out));
-  ubos.append(graph.strides_ubo(out));
-  ubos.append(graph.strides_ubo(mat1));
-  ubos.append(graph.sizes_ubo(mat2));
-  ubos.append(graph.strides_ubo(mat2));
-  ubos.append(graph.strides_ubo(scales_and_zeros));
+  if (storage_type == utils::kBuffer) {
+    ubos.append(graph.sizes_ubo(out));
+    ubos.append(graph.strides_ubo(out));
+    ubos.append(graph.sizes_ubo(mat1));
+    ubos.append(graph.strides_ubo(mat1));
+    ubos.append(graph.strides_ubo(mat2));
+    ubos.append(graph.strides_ubo(scales_and_zeros));
+  } else {
+    ubos.append(graph.sizes_ubo(out));
+    ubos.append(graph.sizes_ubo(mat1));
+    ubos.append(graph.strides_ubo(scales_and_zeros));
+  }
 
   auto out_sizes = graph.sizes_of(out);
   uint32_t N = utils::val_at(-1, out_sizes);

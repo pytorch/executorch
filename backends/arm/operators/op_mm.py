@@ -96,6 +96,7 @@ class MMVisitor(NodeVisitor):
             build_rescale(
                 tosa_fb=tosa_graph,
                 scale=final_output_scale,
+                # pyre-ignore[61]: Uninitialized local [61]: Local variable `reshape_intermediate` is undefined, or not always defined.
                 input_node=reshape_intermediate,
                 output_name=output.name,
                 output_type=ts.DType.INT8,
