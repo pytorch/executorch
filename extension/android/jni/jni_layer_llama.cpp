@@ -180,6 +180,71 @@ class ExecuTorchLlamaJni
     return 0;
   }
 
+  jint prefill_prompt(
+      facebook::jni::alias_ref<jstring> prompt,
+      jlong start_pos,
+      jint bos,
+      jint eos,
+      jlong generated_token) {
+    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(Error::NotSupported);
+    }
+
+    auto&& result = multi_modal_runner_->prefill_prompt(
+        prompt->toStdString(), start_pos, bos, eos);
+    if (result.ok()) {
+      // TODO(hsz): make  generated_token a reference and update it here
+      generated_token = result.get();
+      return 0;
+    }
+    return static_cast<jint>(result.error());
+  }
+
+  jint prefill_images(
+      facebook::jni::alias_ref<jintArray> image,
+      jint width,
+      jint height,
+      jint channels,
+      jlong start_pos) {
+    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(Error::NotSupported);
+    }
+
+    auto image_size = image->size();
+    std::vector<Image> images;
+    if (image_size != 0) {
+      std::vector<jint> image_data_jint(image_size);
+      std::vector<uint8_t> image_data(image_size);
+      image->getRegion(0, image_size, image_data_jint.data());
+      for (int i = 0; i < image_size; i++) {
+        image_data[i] = image_data_jint[i];
+      }
+      Image image_runner{image_data, width, height, channels};
+      images.push_back(image_runner);
+    }
+    // TODO(hsz): make  start_pos a reference and update it here
+    jint result = static_cast<jint>(
+        multi_modal_runner_->prefill_images(images, start_pos));
+  }
+
+  jint generate_from_pos(
+      facebook::jni::alias_ref<jstring> prompt,
+      jint seq_len,
+      jlong start_pos,
+      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
+    if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
+      return static_cast<jint>(Error::NotSupported);
+    }
+    return static_cast<jint>(multi_modal_runner_->generate_from_pos(
+        prompt->toStdString(),
+        seq_len,
+        start_pos,
+        [callback](const std::string& result) { callback->onResult(result); },
+        [callback](const ::executorch::extension::llm::Stats& stats) {
+          callback->onStats(stats);
+        }));
+  }
+
   void stop() {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       multi_modal_runner_->stop();
