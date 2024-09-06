@@ -77,7 +77,7 @@ id<MLFeatureProvider> _Nullable get_zeroed_inputs(MLModel *model, NSError * __au
         if (!inputs) {
             return NO;
         }
-        
+
         id<MLFeatureProvider> outputs = [self predictionFromFeatures:inputs error:error];
         return outputs != nil;
     }
