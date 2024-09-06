@@ -22,7 +22,7 @@ namespace torch::executor {
 class ModuleTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
-    model_path_ = std::getenv("RESOURCES_PATH") + std::string("/model.pte");
+    model_path_ = std::getenv("RESOURCES_PATH") + std::string("/add.pte");
   }
 
   static std::string model_path_;
@@ -95,7 +95,7 @@ TEST_F(ModuleTest, TestMethodMeta) {
   const auto meta = module.method_meta("forward");
   EXPECT_TRUE(meta.ok());
   EXPECT_STREQ(meta->name(), "forward");
-  EXPECT_EQ(meta->num_inputs(), 1);
+  EXPECT_EQ(meta->num_inputs(), 2);
   EXPECT_EQ(*(meta->input_tag(0)), Tag::Tensor);
   EXPECT_EQ(meta->num_outputs(), 1);
   EXPECT_EQ(*(meta->output_tag(0)), Tag::Tensor);
@@ -103,9 +103,8 @@ TEST_F(ModuleTest, TestMethodMeta) {
   const auto input_meta = meta->input_tensor_meta(0);
   EXPECT_TRUE(input_meta.ok());
   EXPECT_EQ(input_meta->scalar_type(), ScalarType::Float);
-  EXPECT_EQ(input_meta->sizes().size(), 2);
+  EXPECT_EQ(input_meta->sizes().size(), 1);
   EXPECT_EQ(input_meta->sizes()[0], 1);
-  EXPECT_EQ(input_meta->sizes()[1], 2);
 
   const auto output_meta = meta->output_tensor_meta(0);
   EXPECT_TRUE(output_meta.ok());
@@ -124,19 +123,22 @@ TEST_F(ModuleTest, TestNonExistentMethodMeta) {
 TEST_F(ModuleTest, TestExecute) {
   Module module(model_path_);
 
-  std::array<float, 2> input{1, 2};
-  std::array<int32_t, 2> sizes{1, 2};
+  std::array<float, 1> input{1};
+  std::array<int32_t, 1> sizes{1};
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  const auto result = module.execute("forward", Tensor(&tensor));
+  const auto result =
+      module.execute("forward", {Tensor(&tensor), Tensor(&tensor)});
+  EXPECT_TRUE(result.ok());
+
   EXPECT_TRUE(result.ok());
   EXPECT_TRUE(module.is_loaded());
   EXPECT_TRUE(module.is_method_loaded("forward"));
 
   const auto data = result->at(0).toTensor().const_data_ptr<float>();
 
-  EXPECT_NEAR(data[0], 1.5, 1e-5);
+  EXPECT_NEAR(data[0], 2, 1e-5);
 }
 
 TEST_F(ModuleTest, TestExecutePreload) {
@@ -145,17 +147,18 @@ TEST_F(ModuleTest, TestExecutePreload) {
   const auto error = module.load();
   EXPECT_EQ(error, Error::Ok);
 
-  std::array<float, 2> input{1, 2};
-  std::array<int32_t, 2> sizes{1, 2};
+  std::array<float, 1> input{1};
+  std::array<int32_t, 1> sizes{1};
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  const auto result = module.execute("forward", Tensor(&tensor));
+  const auto result =
+      module.execute("forward", {Tensor(&tensor), Tensor(&tensor)});
   EXPECT_TRUE(result.ok());
 
   const auto data = result->at(0).toTensor().const_data_ptr<float>();
 
-  EXPECT_NEAR(data[0], 1.5, 1e-5);
+  EXPECT_NEAR(data[0], 2, 1e-5);
 }
 
 TEST_F(ModuleTest, TestExecutePreload_method) {
@@ -164,17 +167,18 @@ TEST_F(ModuleTest, TestExecutePreload_method) {
   const auto error = module.load_method("forward");
   EXPECT_EQ(error, Error::Ok);
 
-  std::array<float, 2> input{1, 2};
-  std::array<int32_t, 2> sizes{1, 2};
+  std::array<float, 1> input{1};
+  std::array<int32_t, 1> sizes{1};
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  const auto result = module.execute("forward", Tensor(&tensor));
+  const auto result =
+      module.execute("forward", {Tensor(&tensor), Tensor(&tensor)});
   EXPECT_TRUE(result.ok());
 
   const auto data = result->at(0).toTensor().const_data_ptr<float>();
 
-  EXPECT_NEAR(data[0], 1.5, 1e-5);
+  EXPECT_NEAR(data[0], 2, 1e-5);
 }
 
 TEST_F(ModuleTest, TestExecutePreloadProgramAndMethod) {
@@ -186,17 +190,18 @@ TEST_F(ModuleTest, TestExecutePreloadProgramAndMethod) {
   const auto load_method_error = module.load_method("forward");
   EXPECT_EQ(load_method_error, Error::Ok);
 
-  std::array<float, 2> input{1, 2};
-  std::array<int32_t, 2> sizes{1, 2};
+  std::array<float, 1> input{1};
+  std::array<int32_t, 1> sizes{1};
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  const auto result = module.execute("forward", Tensor(&tensor));
+  const auto result =
+      module.execute("forward", {Tensor(&tensor), Tensor(&tensor)});
   EXPECT_TRUE(result.ok());
 
   const auto data = result->at(0).toTensor().const_data_ptr<float>();
 
-  EXPECT_NEAR(data[0], 1.5, 1e-5);
+  EXPECT_NEAR(data[0], 2, 1e-5);
 }
 
 TEST_F(ModuleTest, TestExecuteOnNonExistent) {
@@ -218,41 +223,42 @@ TEST_F(ModuleTest, TestExecuteOnCurrupted) {
 TEST_F(ModuleTest, TestGet) {
   Module module(model_path_);
 
-  std::array<float, 2> input{1, 2};
-  std::array<int32_t, 2> sizes{1, 2};
+  std::array<float, 1> input{1};
+  std::array<int32_t, 1> sizes{1};
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  const auto result = module.get("forward", Tensor(&tensor));
+  const auto result = module.get("forward", {Tensor(&tensor), Tensor(&tensor)});
 
   EXPECT_TRUE(result.ok());
   const auto data = result->toTensor().const_data_ptr<float>();
-  EXPECT_NEAR(data[0], 1.5, 1e-5);
+  EXPECT_NEAR(data[0], 2, 1e-5);
 }
 
 TEST_F(ModuleTest, TestForward) {
   auto module = std::make_unique<Module>(model_path_);
 
-  std::array<float, 2> input{1, 2};
-  std::array<int32_t, 2> sizes{1, 2};
+  std::array<float, 1> input{1};
+  std::array<int32_t, 1> sizes{1};
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
-  const auto result = module->forward(Tensor(&tensor));
+
+  const auto result = module->forward({Tensor(&tensor), Tensor(&tensor)});
   EXPECT_TRUE(result.ok());
 
   const auto data = result->at(0).toTensor().const_data_ptr<float>();
 
-  EXPECT_NEAR(data[0], 1.5, 1e-5);
+  EXPECT_NEAR(data[0], 2, 1e-5);
 
   std::array<float, 2> input2{2, 3};
   TensorImpl tensor2(
       ScalarType::Float, sizes.size(), sizes.data(), input2.data());
-  const auto result2 = module->forward(Tensor(&tensor2));
+  const auto result2 = module->forward({Tensor(&tensor2), Tensor(&tensor2)});
   EXPECT_TRUE(result2.ok());
 
   const auto data2 = result->at(0).toTensor().const_data_ptr<float>();
 
-  EXPECT_NEAR(data2[0], 2.5, 1e-5);
+  EXPECT_NEAR(data2[0], 4, 1e-5);
 }
 
 TEST_F(ModuleTest, TestForwardWithInvalidInputs) {
@@ -303,23 +309,26 @@ TEST_F(ModuleTest, TestProgramSharingAndDataLoaderManagement) {
   EXPECT_EQ(load_error, Error::Ok);
   EXPECT_TRUE(module1->is_loaded());
 
-  std::array<float, 2> input{1, 2};
-  std::array<int32_t, 2> sizes{1, 2};
+  std::array<float, 1> input{1};
+  std::array<int32_t, 1> sizes{1};
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  auto result1 = module1->execute("forward", Tensor(&tensor));
+  auto result1 =
+      module1->execute("forward", {Tensor(&tensor), Tensor(&tensor)});
   EXPECT_TRUE(result1.ok());
 
   auto module2 = std::make_unique<Module>(module1->program());
 
-  auto result2 = module2->execute("forward", Tensor(&tensor));
+  auto result2 =
+      module2->execute("forward", {Tensor(&tensor), Tensor(&tensor)});
   EXPECT_TRUE(result2.ok());
 
   module1 = std::make_unique<Module>("/path/to/nonexistent/file.pte");
   EXPECT_FALSE(module1->is_loaded());
 
-  auto result3 = module2->execute("forward", Tensor(&tensor));
+  auto result3 =
+      module2->execute("forward", {Tensor(&tensor), Tensor(&tensor)});
   EXPECT_TRUE(result3.ok());
 }
 
@@ -351,17 +360,17 @@ TEST_F(ModuleTest, TestProgramPersistenceAndReuseAfterModuleDestruction) {
 
   EXPECT_EQ(module.program(), shared_program);
 
-  std::array<float, 2> input{1, 2};
-  std::array<int32_t, 2> sizes{1, 2};
+  std::array<float, 1> input{1};
+  std::array<int32_t, 1> sizes{1};
   TensorImpl tensor(
       ScalarType::Float, sizes.size(), sizes.data(), input.data());
 
-  auto result = module.execute("forward", Tensor(&tensor));
+  auto result = module.execute("forward", {Tensor(&tensor), Tensor(&tensor)});
   EXPECT_TRUE(result.ok());
 
   auto data = result->at(0).toTensor().const_data_ptr<float>();
 
-  EXPECT_NEAR(data[0], 1.5, 1e-5);
+  EXPECT_NEAR(data[0], 2, 1e-5);
 }
 
 TEST_F(ModuleTest, TestConcurrentExecutionWithSharedProgram) {
@@ -379,24 +388,24 @@ TEST_F(ModuleTest, TestConcurrentExecutionWithSharedProgram) {
   EXPECT_TRUE(program != nullptr);
 
   auto thread = [](std::shared_ptr<Program> program,
-                   const std::array<float, 2>& input) {
+                   const std::array<float, 1>& input) {
     Module module(program);
-    std::array<int32_t, 2> sizes{1, 2};
+    std::array<int32_t, 1> sizes{1};
     TensorImpl tensor(
         ScalarType::Float, sizes.size(), sizes.data(), (void*)input.data());
 
-    const auto result = module.forward(Tensor(&tensor));
+    const auto result = module.forward({Tensor(&tensor), Tensor(&tensor)});
     EXPECT_TRUE(result.ok());
 
     const auto data = result->at(0).toTensor().const_data_ptr<float>();
-    EXPECT_NEAR(data[0], (input[0] + input[1]) / 2.0, 1e-5);
+    EXPECT_NEAR(data[0], (input[0] * 2), 1e-5);
   };
 
-  std::thread t1(thread, program, std::array<float, 2>{1, 2});
-  std::thread t2(thread, program, std::array<float, 2>{2, 3});
-  std::thread t3(thread, program, std::array<float, 2>{3, 4});
-  std::thread t4(thread, program, std::array<float, 2>{4, 5});
-  std::thread t5(thread, program, std::array<float, 2>{5, 6});
+  std::thread t1(thread, program, std::array<float, 1>{1});
+  std::thread t2(thread, program, std::array<float, 1>{2});
+  std::thread t3(thread, program, std::array<float, 1>{3});
+  std::thread t4(thread, program, std::array<float, 1>{4});
+  std::thread t5(thread, program, std::array<float, 1>{5});
 
   t1.join();
   t2.join();

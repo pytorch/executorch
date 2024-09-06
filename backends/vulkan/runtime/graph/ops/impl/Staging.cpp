@@ -31,7 +31,8 @@ void add_staging_to_tensor_node(
          graph.strides_ubo(out_tensor),
          graph.numel_ubo(out_tensor)});
   } else {
-    ubos.append(graph.sizes_ubo(out_tensor));
+    ubos.append(
+        {graph.sizes_ubo(out_tensor), graph.axis_mapping_ubo(out_tensor)});
   }
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
@@ -69,7 +70,8 @@ void add_tensor_to_staging_node(
          graph.strides_ubo(in_tensor),
          graph.numel_ubo(in_tensor)});
   } else {
-    ubos.append(graph.sizes_ubo(in_tensor));
+    ubos.append(
+        {graph.sizes_ubo(in_tensor), graph.axis_mapping_ubo(in_tensor)});
   }
 
   // Normally, the image_to_nchw shader is structured so that each thread reads
@@ -113,7 +115,7 @@ ValueRef prepack(
   if (graph.is_buffer_storage(v)) {
     ubos.append({graph.sizes_ubo(v), graph.strides_ubo(v), graph.numel_ubo(v)});
   } else {
-    ubos.append(graph.sizes_ubo(v));
+    ubos.append({graph.sizes_ubo(v), graph.axis_mapping_ubo(v)});
   }
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
