@@ -8,7 +8,11 @@
 
 #include <executorch/examples/models/llava/runner/llava_runner.h>
 #include <gflags/gflags.h>
+#ifndef LLAVA_NO_TORCH_DUMMY_IMAGE
 #include <torch/torch.h>
+#else
+#include <algorithm> // std::fill
+#endif
 
 #if defined(ET_USE_THREADPOOL)
 #include <executorch/extension/threadpool/cpuinfo_utils.h>
@@ -80,6 +84,15 @@ int32_t main(int32_t argc, char** argv) {
 
   // read image and resize the longest edge to 336
   std::vector<uint8_t> image_data;
+
+#ifdef LLAVA_NO_TORCH_DUMMY_IMAGE
+  // Work without torch using a random data
+  image_data.resize(3 * 240 * 336);
+  std::fill(image_data.begin(), image_data.end(), 0); // black
+  std::array<int32_t, 3> image_shape = {3, 240, 336};
+  std::vector<torch::executor::Image> images = {
+      {.data = image_data, .width = image_shape[2], .height = image_shape[1]}};
+#else //  LLAVA_NO_TORCH_DUMMY_IMAGE
   //   cv::Mat image = cv::imread(image_path, cv::IMREAD_COLOR);
   //   int longest_edge = std::max(image.rows, image.cols);
   //   float scale_factor = 336.0f / longest_edge;
@@ -102,6 +115,8 @@ int32_t main(int32_t argc, char** argv) {
       {.data = image_data,
        .width = static_cast<int32_t>(image_tensor.size(2)),
        .height = static_cast<int32_t>(image_tensor.size(1))}};
+#endif // LLAVA_NO_TORCH_DUMMY_IMAGE
+
   // generate
   runner.generate(std::move(images), prompt, seq_len);
   return 0;
