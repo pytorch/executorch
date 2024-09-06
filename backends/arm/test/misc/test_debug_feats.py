@@ -175,11 +175,11 @@ def test_fail_dump_tosa_ops(capsys):
             return x + x
 
     model = Add()
-    compile_spec = common.get_tosa_compile_spec_unbuilt()
-    compile_spec.output_format = "vela"
     (
         ArmTester(
-            model, example_inputs=(torch.ones(5),), compile_spec=compile_spec.build()
+            model,
+            example_inputs=(torch.ones(5),),
+            compile_spec=common.get_u55_compile_spec(),
         )
         .quantize()
         .export()
