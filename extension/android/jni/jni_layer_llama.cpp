@@ -180,17 +180,16 @@ class ExecuTorchLlamaJni
     return 0;
   }
 
-  // Returns a tuple of (error, token, start_pos)
+  // Returns a tuple of (error, start_pos)
   // Contract is valid within an AAR (JNI + corresponding Java code)
-  // If the first element is not Error::Ok, the other two elements are
-  // undefined.
+  // If the first element is not Error::Ok, the other element is undefined.
   facebook::jni::local_ref<jlongArray> prefill_prompt(
       facebook::jni::alias_ref<jstring> prompt,
       jlong start_pos,
       jint bos,
       jint eos) {
     facebook::jni::local_ref<jlongArray> tuple_result =
-        facebook::jni::make_long_array(3);
+        facebook::jni::make_long_array(2);
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
       tuple_result->pin()[0] = static_cast<jint>(Error::NotSupported);
       return tuple_result;
@@ -200,8 +199,7 @@ class ExecuTorchLlamaJni
         prompt->toStdString(), start_pos, bos, eos);
     tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
     if (result.ok()) {
-      tuple_result->pin()[1] = static_cast<jlong>(result.get());
-      tuple_result->pin()[2] = static_cast<jlong>(start_pos);
+      tuple_result->pin()[1] = static_cast<jlong>(start_pos);
     }
     return tuple_result;
   }

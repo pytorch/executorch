@@ -113,7 +113,7 @@ public class LlamaModule {
     return nativeResult[1];
   }
 
-  // returns a tuple of (error code, updated startPos)
+  // returns a tuple of (status, updated startPos)
   private native long[] prefillImagesNative(
       int[] image, int width, int height, int channels, long startPos);
 
@@ -133,10 +133,10 @@ public class LlamaModule {
     if (nativeResult[0] != 0) {
       throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
     }
-    return nativeResult[2];
+    return nativeResult[1];
   }
 
-  // returns a tuple of (error, token, updated startPos)
+  // returns a tuple of (status, updated startPos)
   private native long[] prefillPromptNative(String prompt, long startPos, int bos, int eos);
 
   /**
