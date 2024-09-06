@@ -347,7 +347,6 @@ def serialize_pte_binary(
     *,
     mutable_data: Optional[List[Buffer]] = None,
     extract_delegate_segments: bool = False,
-    extract_constant_segment: bool = True,
     segment_alignment: int = 128,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
@@ -363,8 +362,6 @@ def serialize_pte_binary(
               and the starting segment offset.
             - Update the Program.segments field with the offsets and lengths
               of each segment.
-        extract_constant_segment: Whether to move the constant data from the Program
-            into a separate segment.
         segment_alignment: Alignment in bytes. The starting offset of each
             segment will be aligned to this value in the output data.
         constant_tensor_alignment: The minimum alignment of tensor
@@ -387,19 +384,18 @@ def serialize_pte_binary(
     # Store extracted segment data; this may be constant data or delegate data.
     segments: List[Cord] = []
 
-    if extract_constant_segment:
-        constant_segment_data, constant_segment_offsets = _extract_constant_segment(
-            program.constant_buffer, tensor_alignment=constant_tensor_alignment
+    constant_segment_data, constant_segment_offsets = _extract_constant_segment(
+        program.constant_buffer, tensor_alignment=constant_tensor_alignment
+    )
+    if len(constant_segment_data) > 0:
+        # Update program.constant_segment with constant subsegment offset information.
+        program.constant_segment = SubsegmentOffsets(
+            segment_index=len(segments), offsets=constant_segment_offsets
         )
-        if len(constant_segment_data) > 0:
-            # Update program.constant_segment with constant subsegment offset information.
-            program.constant_segment = SubsegmentOffsets(
-                segment_index=len(segments), offsets=constant_segment_offsets
-            )
-            # Clear the constant buffer, as constant data will be stored in segments.
-            program.constant_buffer = []
-            # Add to the aggregate segments cord.
-            segments.append(constant_segment_data)
+        # Clear the constant buffer, as constant data will be stored in segments.
+        program.constant_buffer = []
+        # Add to the aggregate segments cord.
+        segments.append(constant_segment_data)
 
     if mutable_data is not None:
         mutable_segment_data, mutable_segment_offsets = _extract_constant_segment(
