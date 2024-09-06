@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <array>
 #include <cinttypes>
 #include <cstdint>
 #include <limits>
@@ -164,7 +165,20 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
         ::exec_aten::ScalarType::SCALARTYPE>::type, \
     SCALARTYPE)
 
+#define ET_FORALL_FLOAT_TYPES_AND2(SCALARTYPE1, SCALARTYPE2, _) \
+  _(float, Float)                                               \
+  _(double, Double)                                             \
+  _(::executorch::runtime::ScalarTypeToCppType<                 \
+        ::exec_aten::ScalarType::SCALARTYPE1>::type,            \
+    SCALARTYPE1)                                                \
+  _(::executorch::runtime::ScalarTypeToCppType<                 \
+        ::exec_aten::ScalarType::SCALARTYPE2>::type,            \
+    SCALARTYPE2)
+
 #define ET_FORALL_FLOATH_TYPES(_) ET_FORALL_FLOAT_TYPES_AND(Half, _)
+
+#define ET_FORALL_FLOATHBF16_TYPES(_) \
+  ET_FORALL_FLOAT_TYPES_AND2(Half, BFloat16, _)
 
 // Here `ANOTHER_INPUT` should be another variable to be forwarded to a given
 // function. Not to be confused with another scalar type as in
@@ -176,6 +190,12 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
 #define ET_FORALL_FLOAT_TYPES_WITH2(ANOTHER_INPUT1, ANOTHER_INPUT2, _) \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, float, Float)                      \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, double, Double)
+
+#define ET_FORALL_FLOATHBF16_TYPES_WITH2(ANOTHER_INPUT1, ANOTHER_INPUT2, _) \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, float, Float)                           \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, double, Double)                         \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, ::exec_aten::Half, Half)                \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, ::exec_aten::BFloat16, BFloat16)
 
 // In this context, "REAL" means integer/float C types, which is why BFloat16
 // and Half are not included.
@@ -209,6 +229,17 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, float, Float)                     \
   _(ANOTHER_INPUT1, ANOTHER_INPUT2, double, Double)
 
+#define ET_FORALL_REALHBF16_TYPES_WITH2(ANOTHER_INPUT1, ANOTHER_INPUT2, _) \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, uint8_t, Byte)                         \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, int8_t, Char)                          \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, int16_t, Short)                        \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, int32_t, Int)                          \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, int64_t, Long)                         \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, float, Float)                          \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, double, Double)                        \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, exec_aten::Half, Half)                 \
+  _(ANOTHER_INPUT1, ANOTHER_INPUT2, exec_aten::BFloat16, BFloat16)
+
 // For macros that take `SCALARTYPEn` parameters, those parameters should be
 // an unquoted/unqualified enumerator name like `Int` or `Float`.
 #define ET_FORALL_REAL_TYPES_AND(SCALARTYPE, _)     \
@@ -223,7 +254,28 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
         ::exec_aten::ScalarType::SCALARTYPE>::type, \
     SCALARTYPE)
 
+#define ET_FORALL_REAL_TYPES_AND2(SCALARTYPE1, SCALARTYPE2, _) \
+  _(uint8_t, Byte)                                             \
+  _(int8_t, Char)                                              \
+  _(int16_t, Short)                                            \
+  _(int32_t, Int)                                              \
+  _(int64_t, Long)                                             \
+  _(float, Float)                                              \
+  _(double, Double)                                            \
+  _(::executorch::runtime::ScalarTypeToCppType<                \
+        ::exec_aten::ScalarType::SCALARTYPE1>::type,           \
+    SCALARTYPE1)                                               \
+  _(::executorch::runtime::ScalarTypeToCppType<                \
+        ::exec_aten::ScalarType::SCALARTYPE2>::type,           \
+    SCALARTYPE2)
+
 #define ET_FORALL_REALH_TYPES(_) ET_FORALL_REAL_TYPES_AND(Half, _)
+
+#define ET_FORALL_REALHBF16_TYPES(_) \
+  ET_FORALL_REAL_TYPES_AND2(Half, BFloat16, _)
+
+#define ET_FORALL_REALHBBF16_TYPES(_) \
+  ET_FORALL_REAL_TYPES_AND3(Bool, Half, BFloat16, _)
 
 #define ET_FORALL_REAL_TYPES_AND_WITH(SCALARTYPE, ANOTHER_INPUT, _) \
   _(ANOTHER_INPUT, uint8_t, Byte)                                   \
@@ -379,6 +431,10 @@ inline bool isRealHType(exec_aten::ScalarType t) {
 
 inline bool isRealHBType(exec_aten::ScalarType t) {
   return (isRealHType(t) || t == exec_aten::ScalarType::Bool);
+}
+
+inline bool isRealHBBF16Type(exec_aten::ScalarType t) {
+  return (isRealHBType(t) || t == exec_aten::ScalarType::BFloat16);
 }
 
 inline constexpr bool isComplexType(exec_aten::ScalarType t) {
@@ -589,6 +645,7 @@ using C4 =
 using C8 =
     typename ScalarTypeToCppType<exec_aten::ScalarType::ComplexDouble>::type;
 using B1 = typename ScalarTypeToCppType<exec_aten::ScalarType::Bool>::type;
+using BF = typename ScalarTypeToCppType<exec_aten::ScalarType::BFloat16>::type;
 
 #define TABLE_ENTRY(key1, key2, value)      \
   template <>                               \
@@ -613,6 +670,7 @@ TABLE_ENTRY(U1, C2, C2);
 TABLE_ENTRY(U1, C4, C4);
 TABLE_ENTRY(U1, C8, C8);
 TABLE_ENTRY(U1, B1, U1);
+TABLE_ENTRY(U1, BF, BF);
 TABLE_ENTRY(I1, U1, I2);
 TABLE_ENTRY(I1, I1, I1);
 TABLE_ENTRY(I1, I2, I2);
@@ -625,6 +683,7 @@ TABLE_ENTRY(I1, C2, C2);
 TABLE_ENTRY(I1, C4, C4);
 TABLE_ENTRY(I1, C8, C8);
 TABLE_ENTRY(I1, B1, I1);
+TABLE_ENTRY(I1, BF, BF);
 TABLE_ENTRY(I2, U1, I2);
 TABLE_ENTRY(I2, I1, I2);
 TABLE_ENTRY(I2, I2, I2);
@@ -637,6 +696,7 @@ TABLE_ENTRY(I2, C2, C2);
 TABLE_ENTRY(I2, C4, C4);
 TABLE_ENTRY(I2, C8, C8);
 TABLE_ENTRY(I2, B1, I2);
+TABLE_ENTRY(I2, BF, BF);
 TABLE_ENTRY(I4, U1, I4);
 TABLE_ENTRY(I4, I1, I4);
 TABLE_ENTRY(I4, I2, I4);
@@ -649,6 +709,7 @@ TABLE_ENTRY(I4, C2, C2);
 TABLE_ENTRY(I4, C4, C4);
 TABLE_ENTRY(I4, C8, C8);
 TABLE_ENTRY(I4, B1, I4);
+TABLE_ENTRY(I4, BF, BF);
 TABLE_ENTRY(I8, U1, I8);
 TABLE_ENTRY(I8, I1, I8);
 TABLE_ENTRY(I8, I2, I8);
@@ -661,6 +722,7 @@ TABLE_ENTRY(I8, C2, C2);
 TABLE_ENTRY(I8, C4, C4);
 TABLE_ENTRY(I8, C8, C8);
 TABLE_ENTRY(I8, B1, I8);
+TABLE_ENTRY(I8, BF, BF);
 TABLE_ENTRY(F2, U1, F2);
 TABLE_ENTRY(F2, I1, F2);
 TABLE_ENTRY(F2, I2, F2);
@@ -673,6 +735,7 @@ TABLE_ENTRY(F2, C2, C2);
 TABLE_ENTRY(F2, C4, C4);
 TABLE_ENTRY(F2, C8, C8);
 TABLE_ENTRY(F2, B1, F2);
+TABLE_ENTRY(F2, BF, F4);
 TABLE_ENTRY(F4, U1, F4);
 TABLE_ENTRY(F4, I1, F4);
 TABLE_ENTRY(F4, I2, F4);
@@ -685,6 +748,7 @@ TABLE_ENTRY(F4, C2, C4);
 TABLE_ENTRY(F4, C4, C4);
 TABLE_ENTRY(F4, C8, C8);
 TABLE_ENTRY(F4, B1, F4);
+TABLE_ENTRY(F4, BF, F4);
 TABLE_ENTRY(F8, U1, F8);
 TABLE_ENTRY(F8, I1, F8);
 TABLE_ENTRY(F8, I2, F8);
@@ -697,6 +761,7 @@ TABLE_ENTRY(F8, C2, C8);
 TABLE_ENTRY(F8, C4, C8);
 TABLE_ENTRY(F8, C8, C8);
 TABLE_ENTRY(F8, B1, F8);
+TABLE_ENTRY(F8, BF, F8);
 TABLE_ENTRY(C2, U1, C2);
 TABLE_ENTRY(C2, I1, C2);
 TABLE_ENTRY(C2, I2, C2);
@@ -709,6 +774,7 @@ TABLE_ENTRY(C2, C2, C2);
 TABLE_ENTRY(C2, C4, C4);
 TABLE_ENTRY(C2, C8, C8);
 TABLE_ENTRY(C2, B1, C2);
+TABLE_ENTRY(C2, BF, C4);
 TABLE_ENTRY(C4, U1, C4);
 TABLE_ENTRY(C4, I1, C4);
 TABLE_ENTRY(C4, I2, C4);
@@ -721,6 +787,7 @@ TABLE_ENTRY(C4, C2, C4);
 TABLE_ENTRY(C4, C4, C4);
 TABLE_ENTRY(C4, C8, C8);
 TABLE_ENTRY(C4, B1, C4);
+TABLE_ENTRY(C4, BF, C4);
 TABLE_ENTRY(C8, U1, C8);
 TABLE_ENTRY(C8, I1, C8);
 TABLE_ENTRY(C8, I2, C8);
@@ -733,6 +800,7 @@ TABLE_ENTRY(C8, C2, C8);
 TABLE_ENTRY(C8, C4, C8);
 TABLE_ENTRY(C8, C8, C8);
 TABLE_ENTRY(C8, B1, C8);
+TABLE_ENTRY(C8, BF, C8);
 TABLE_ENTRY(B1, U1, U1);
 TABLE_ENTRY(B1, I1, I1);
 TABLE_ENTRY(B1, I2, I2);
@@ -745,6 +813,20 @@ TABLE_ENTRY(B1, C2, C2);
 TABLE_ENTRY(B1, C4, C4);
 TABLE_ENTRY(B1, C8, C8);
 TABLE_ENTRY(B1, B1, B1);
+TABLE_ENTRY(B1, BF, BF);
+TABLE_ENTRY(BF, U1, BF);
+TABLE_ENTRY(BF, I1, BF);
+TABLE_ENTRY(BF, I2, BF);
+TABLE_ENTRY(BF, I4, BF);
+TABLE_ENTRY(BF, I8, BF);
+TABLE_ENTRY(BF, F2, F4);
+TABLE_ENTRY(BF, F4, F4);
+TABLE_ENTRY(BF, F8, F8);
+TABLE_ENTRY(BF, C2, C4);
+TABLE_ENTRY(BF, C4, C4);
+TABLE_ENTRY(BF, C8, C8);
+TABLE_ENTRY(BF, B1, BF);
+TABLE_ENTRY(BF, BF, BF);
 
 } // namespace internal
 
@@ -760,26 +842,20 @@ struct promote_types {
           (!is_bits_type<T1>::value && !is_bits_type<T2>::value),
       "promote_types not valid for bits dtypes");
 
-  static_assert(
-      !std::is_same<
-          T1,
-          typename ScalarTypeToCppType<exec_aten::ScalarType::BFloat16>::type>::
-              value &&
-          !std::is_same<
-              T2,
-              typename ScalarTypeToCppType<
-                  exec_aten::ScalarType::BFloat16>::type>::value,
-      "promote_types not valid for BFloat16");
   using promoted_type_not_respecting_half_to_float =
       typename internal::promote_types_lookup<T1, T2>::type;
 
  public:
   using type = typename std::conditional<
       half_to_float &&
-          std::is_same<
-              promoted_type_not_respecting_half_to_float,
-              typename ScalarTypeToCppType<exec_aten::ScalarType::Half>::type>::
-              value,
+          (std::is_same<
+               promoted_type_not_respecting_half_to_float,
+               typename ScalarTypeToCppType<
+                   exec_aten::ScalarType::Half>::type>::value ||
+           std::is_same<
+               promoted_type_not_respecting_half_to_float,
+               typename ScalarTypeToCppType<
+                   exec_aten::ScalarType::BFloat16>::type>::value),
       typename ScalarTypeToCppType<exec_aten::ScalarType::Float>::type,
       promoted_type_not_respecting_half_to_float>::type;
 };
@@ -787,7 +863,8 @@ struct promote_types {
 /**
  * Implements type promotion rules that are consistent with ATen behaviour,
  * which in turn is consistent with NumPy's promote_types.
- * If half_to_float is set to true, then half will be promoted to float instead
+ * If half_to_float is set to true, then half and bfloat16 will be promoted to
+ * float instead
  */
 inline exec_aten::ScalarType promoteTypes(
     exec_aten::ScalarType a,
@@ -806,6 +883,7 @@ inline exec_aten::ScalarType promoteTypes(
   constexpr auto c4 = exec_aten::ScalarType::ComplexFloat;
   constexpr auto c8 = exec_aten::ScalarType::ComplexDouble;
   constexpr auto b1 = exec_aten::ScalarType::Bool;
+  constexpr auto bf = exec_aten::ScalarType::BFloat16;
 
   // For QInt types, only allow exact match
   if (executorch::runtime::isQIntType(a) && a == b) {
@@ -825,34 +903,41 @@ inline exec_aten::ScalarType promoteTypes(
     ET_CHECK_MSG(false, "promoteTypes not valid for bits dtypes");
   }
 
-  ET_CHECK_MSG(
-      a != exec_aten::ScalarType::BFloat16 &&
-          b != exec_aten::ScalarType::BFloat16,
-      "promoteTypes not valid for BFloat16");
   // 12 types are handled by this function, see the constexpr definitions above
-  const int NUM_PROMOTE_TYPES = 12;
+  const int NUM_PROMOTE_TYPES = 13;
 
+  static constexpr std::array<int, int(exec_aten::ScalarType::NumOptions)>
+      dtype2index = {{
+          0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11,
+          -1, -1, -1, 12, -1, -1, -1, -1, -1, -1, -1, -1,
+      }};
+  auto ix_a = dtype2index[(int)a];
+  ET_CHECK(ix_a != -1);
+  auto ix_b = dtype2index[(int)b];
+  ET_CHECK(ix_b != -1);
   static constexpr exec_aten::ScalarType
       _promoteTypesLookup[NUM_PROMOTE_TYPES][NUM_PROMOTE_TYPES] = {
-          /*        u1  i1  i2  i4  i8  f2  f4  f8  c2  c4  c8  b1  */
-          /* u1 */ {u1, i2, i2, i4, i8, f2, f4, f8, c2, c4, c8, u1},
-          /* i1 */ {i2, i1, i2, i4, i8, f2, f4, f8, c2, c4, c8, i1},
-          /* i2 */ {i2, i2, i2, i4, i8, f2, f4, f8, c2, c4, c8, i2},
-          /* i4 */ {i4, i4, i4, i4, i8, f2, f4, f8, c2, c4, c8, i4},
-          /* i8 */ {i8, i8, i8, i8, i8, f2, f4, f8, c2, c4, c8, i8},
-          /* f2 */ {f2, f2, f2, f2, f2, f2, f4, f8, c2, c4, c8, f2},
-          /* f4 */ {f4, f4, f4, f4, f4, f4, f4, f8, c4, c4, c8, f4},
-          /* f8 */ {f8, f8, f8, f8, f8, f8, f8, f8, c8, c8, c8, f8},
-          /* c2 */ {c2, c2, c2, c2, c2, c2, c4, c8, c2, c4, c8, c2},
-          /* c4 */ {c4, c4, c4, c4, c4, c4, c4, c8, c4, c4, c8, c4},
-          /* c8 */ {c8, c8, c8, c8, c8, c8, c8, c8, c8, c8, c8, c8},
-          /* b1 */ {u1, i1, i2, i4, i8, f2, f4, f8, c2, c4, c8, b1},
+          /*        u1  i1  i2  i4  i8  f2  f4  f8  c2  c4  c8  b1  bf*/
+          /* u1 */ {u1, i2, i2, i4, i8, f2, f4, f8, c2, c4, c8, u1, bf},
+          /* i1 */ {i2, i1, i2, i4, i8, f2, f4, f8, c2, c4, c8, i1, bf},
+          /* i2 */ {i2, i2, i2, i4, i8, f2, f4, f8, c2, c4, c8, i2, bf},
+          /* i4 */ {i4, i4, i4, i4, i8, f2, f4, f8, c2, c4, c8, i4, bf},
+          /* i8 */ {i8, i8, i8, i8, i8, f2, f4, f8, c2, c4, c8, i8, bf},
+          /* f2 */ {f2, f2, f2, f2, f2, f2, f4, f8, c2, c4, c8, f2, f4},
+          /* f4 */ {f4, f4, f4, f4, f4, f4, f4, f8, c4, c4, c8, f4, f4},
+          /* f8 */ {f8, f8, f8, f8, f8, f8, f8, f8, c8, c8, c8, f8, f8},
+          /* c2 */ {c2, c2, c2, c2, c2, c2, c4, c8, c2, c4, c8, c2, c4},
+          /* c4 */ {c4, c4, c4, c4, c4, c4, c4, c8, c4, c4, c8, c4, c4},
+          /* c8 */ {c8, c8, c8, c8, c8, c8, c8, c8, c8, c8, c8, c8, c8},
+          /* b1 */ {u1, i1, i2, i4, i8, f2, f4, f8, c2, c4, c8, b1, bf},
+          /* bf */ {bf, bf, bf, bf, bf, f4, f4, f8, c4, c4, c8, bf, bf},
       };
 
-  exec_aten::ScalarType promoted_type =
-      _promoteTypesLookup[static_cast<int>(a)][static_cast<int>(b)];
+  exec_aten::ScalarType promoted_type = _promoteTypesLookup[ix_a][ix_b];
 
-  if (half_to_float && promoted_type == exec_aten::ScalarType::Half) {
+  if (half_to_float &&
+      (promoted_type == exec_aten::ScalarType::Half ||
+       promoted_type == exec_aten::ScalarType::BFloat16)) {
     promoted_type = exec_aten::ScalarType::Float;
   }
 
@@ -974,6 +1059,13 @@ inline exec_aten::ScalarType promoteTypes(
   ET_INTERNAL_SWITCH_CASE(                                          \
       exec_aten::ScalarType::ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__)
 
+#define ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND3(             \
+    ADDITIONAL1, ADDITIONAL2, ADDITIONAL3, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND2(                   \
+      ADDITIONAL1, ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__)    \
+  ET_INTERNAL_SWITCH_CASE(                                   \
+      exec_aten::ScalarType::ADDITIONAL3, CTYPE_ALIAS, __VA_ARGS__)
+
 #define ET_INTERNAL_SWITCH_CASE_INT_TYPES(CTYPE_ALIAS, ...)   \
   ET_INTERNAL_SWITCH_CASE(                                    \
       exec_aten::ScalarType::Byte, CTYPE_ALIAS, __VA_ARGS__)  \
@@ -1000,6 +1092,13 @@ inline exec_aten::ScalarType promoteTypes(
   ET_INTERNAL_SWITCH_CASE_FLOAT_TYPES(CTYPE_ALIAS, __VA_ARGS__)               \
   ET_INTERNAL_SWITCH_CASE(                                                    \
       exec_aten::ScalarType::ADDITIONAL, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_INTERNAL_SWITCH_CASE_FLOAT_TYPES_AND2( \
+    ADDITIONAL1, ADDITIONAL2, CTYPE_ALIAS, ...)   \
+  ET_INTERNAL_SWITCH_CASE_FLOAT_TYPES_AND(        \
+      ADDITIONAL1, CTYPE_ALIAS, __VA_ARGS__)      \
+  ET_INTERNAL_SWITCH_CASE(                        \
+      exec_aten::ScalarType::ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_INTERNAL_SWITCH_CASE_QINT_TYPES(CTYPE_ALIAS, ...)     \
   ET_INTERNAL_SWITCH_CASE(                                       \
@@ -1112,6 +1211,22 @@ inline exec_aten::ScalarType promoteTypes(
       ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND2(                       \
           ADDITIONAL1, ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__))
 
+#define ET_SWITCH_REAL_TYPES_AND3(             \
+    ADDITIONAL1,                               \
+    ADDITIONAL2,                               \
+    ADDITIONAL3,                               \
+    TYPE,                                      \
+    CONTEXT,                                   \
+    NAME,                                      \
+    CTYPE_ALIAS,                               \
+    ...)                                       \
+  ET_INTERNAL_SWITCH(                          \
+      TYPE,                                    \
+      CONTEXT,                                 \
+      NAME,                                    \
+      ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND3( \
+          ADDITIONAL1, ADDITIONAL2, ADDITIONAL3, CTYPE_ALIAS, __VA_ARGS__))
+
 #define ET_SWITCH_REALH_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_SWITCH_REAL_TYPES_AND(Half, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
 
@@ -1121,6 +1236,10 @@ inline exec_aten::ScalarType promoteTypes(
 #define ET_SWITCH_REALHB_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_SWITCH_REAL_TYPES_AND2(                                          \
       Half, Bool, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_SWITCH_REALHBBF16_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_REAL_TYPES_AND3(                                              \
+      Half, Bool, BFloat16, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_SWITCH_INT_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH(                                              \
@@ -1154,8 +1273,21 @@ inline exec_aten::ScalarType promoteTypes(
       ET_INTERNAL_SWITCH_CASE_FLOAT_TYPES_AND(         \
           ADDITIONAL, CTYPE_ALIAS, __VA_ARGS__))
 
+#define ET_SWITCH_FLOAT_TYPES_AND2(                                  \
+    ADDITIONAL1, ADDITIONAL2, TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH(                                                \
+      TYPE,                                                          \
+      CONTEXT,                                                       \
+      NAME,                                                          \
+      ET_INTERNAL_SWITCH_CASE_FLOAT_TYPES_AND2(                      \
+          ADDITIONAL1, ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__))
+
 #define ET_SWITCH_FLOATH_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_SWITCH_FLOAT_TYPES_AND(Half, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_SWITCH_FLOATHBF16_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_FLOAT_TYPES_AND2(                                             \
+      Half, BFloat16, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_SWITCH_QINT_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH(                                               \

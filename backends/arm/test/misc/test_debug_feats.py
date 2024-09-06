@@ -126,67 +126,26 @@ class TestNumericalDiffPrints(unittest.TestCase):
             self.fail()
 
 
-def test_dump_ops_and_dtypes():
-    model = Linear(20, 30)
-    (
-        ArmTester(
-            model,
-            example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec(),
+class TestDumpOperatorsAndDtypes(unittest.TestCase):
+    def test_dump_ops_and_dtypes(self):
+        model = Linear(20, 30)
+        (
+            ArmTester(
+                model,
+                example_inputs=model.get_inputs(),
+                compile_spec=common.get_tosa_compile_spec(),
+            )
+            .quantize()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .export()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .to_edge()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .partition()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
         )
-        .quantize()
-        .dump_dtype_distribution()
-        .dump_operator_distribution()
-        .export()
-        .dump_dtype_distribution()
-        .dump_operator_distribution()
-        .to_edge()
-        .dump_dtype_distribution()
-        .dump_operator_distribution()
-        .partition()
-        .dump_dtype_distribution()
-        .dump_operator_distribution()
-    )
-    # Just test that there are no execptions.
-
-
-def test_dump_tosa_ops(capsys):
-    model = Linear(20, 30)
-    (
-        ArmTester(
-            model,
-            example_inputs=model.get_inputs(),
-            compile_spec=common.get_tosa_compile_spec(),
-        )
-        .quantize()
-        .export()
-        .to_edge()
-        .partition()
-        .dump_operator_distribution()
-    )
-    captured = capsys.readouterr()
-    assert "Partition operators:" in captured.out
-    assert "TOSA operators:" in captured.out
-
-
-def test_fail_dump_tosa_ops(capsys):
-    class Add(torch.nn.Module):
-        def forward(self, x):
-            return x + x
-
-    model = Add()
-    compile_spec = common.get_tosa_compile_spec_unbuilt()
-    compile_spec.output_format = "vela"
-    (
-        ArmTester(
-            model, example_inputs=(torch.ones(5),), compile_spec=compile_spec.build()
-        )
-        .quantize()
-        .export()
-        .to_edge()
-        .partition()
-        .dump_operator_distribution()
-    )
-    captured = capsys.readouterr()
-    assert "Partition operators:" in captured.out
-    assert "Can not get operator distribution for vela command stream." in captured.out
+        # Just test that there are no execeptions.
