@@ -5,7 +5,7 @@
 
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, cast, Dict
 
 import numpy as np
 import serializer.tosa_serializer as ts
@@ -235,7 +235,7 @@ def build_avg_pool_2d_common(
     output_zp = 0
 
     if is_quant_node:
-        input_zp = get_quant_node_args(node.args[0]).zp
+        input_zp = get_quant_node_args(cast(torch.fx.Node, node.args[0])).zp
         output_zp = get_quant_node_args(list(node.users)[0]).zp
 
     attr = ts.TosaSerializerAttribute()
@@ -306,7 +306,9 @@ def process_call_function(
     )
 
     # Visiting each Node
+    # pyre-ignore[16]: Undefined attribute.
     if node.target.__name__ in node_visitors:
+        # pyre-ignore[16]: Undefined attribute.
         node_visitors[node.target.__name__].define_node(
             node,
             tosa_graph,
@@ -319,7 +321,10 @@ def process_call_function(
 
 
 def expand_dims(
-    tosa_graph: ts.TosaSerializer, input_node: TosaArg, dtype: ts.DType, dim: int
+    tosa_graph: ts.TosaSerializer,
+    input_node: TosaArg,
+    dtype: int,
+    dim: int,
 ) -> Any:
     """Inserts TOSA operators into the tosa_graph, that perform the equivalent
     of the expand_dims (a.k.a unsqueeze) operation. A new axis is created at the

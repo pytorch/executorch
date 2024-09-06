@@ -29,6 +29,11 @@ inline bool is_valid(ValueRef value_ref) {
 struct IOValueRef {
   ValueRef value;
   ValueRef staging;
+
+  // Custom cast to ValueRef
+  operator ValueRef() const {
+    return value;
+  };
 };
 
 /*

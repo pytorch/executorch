@@ -32,6 +32,9 @@ Tensor& bitwise_xor_Tensor_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType common_type = promoteTypes(a_type, b_type);
@@ -81,6 +84,9 @@ Tensor& bitwise_xor_Scalar_out(
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);

@@ -33,6 +33,11 @@ Tensor& index_put_out(
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_dtype(in, values), InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   ScalarType in_type = in.scalar_type();
   size_t block_count = count_index_blocks(indices);
 
