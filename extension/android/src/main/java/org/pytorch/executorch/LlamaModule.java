@@ -104,9 +104,12 @@ public class LlamaModule {
    * @param startPos The starting position in KV cache of the input in the LLM.
    * @return The updated starting position in KV cache of the input in the LLM.
    */
-  public long prefillImages(
-      int[] image, int width, int height, int channels, long startPos) {
-    return prefillImagesNative(image, width, height, channels, startPos)[1];
+  public long prefillImages(int[] image, int width, int height, int channels, long startPos) {
+    long[] nativeResult = prefillImagesNative(image, width, height, channels, startPos);
+    if (nativeResult[0] != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
+    }
+    return nativeResult[1];
   }
 
   // returns a tuple of (error code, updated startPos)
@@ -124,13 +127,15 @@ public class LlamaModule {
    * @return The updated starting position in KV cache of the input in the LLM.
    */
   public long prefillPrompt(String prompt, long startPos, int bos, int eos) {
-    return prefillPromptNative(prompt, startPos, bos, eos)[2];
+    long[] nativeResult = prefillPromptNative(prompt, startPos, bos, eos);
+    if (nativeResult[0] != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
+    }
+    return nativeResult[2];
   }
 
-
   // returns a tuple of (error, token, updated startPos)
-  private native long[] prefillPromptNative(
-      String prompt, long startPos, int bos, int eos);
+  private native long[] prefillPromptNative(String prompt, long startPos, int bos, int eos);
 
   /**
    * Generate tokens from the given prompt, starting from the given position.
