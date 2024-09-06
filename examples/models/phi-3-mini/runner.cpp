@@ -12,7 +12,7 @@
 #include <iostream>
 
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace torch::executor {
@@ -81,23 +81,17 @@ uint64_t Runner::logits_to_token(const exec_aten::Tensor& logits_tensor) {
 }
 
 uint64_t Runner::prefill(std::vector<uint64_t>& tokens) {
-  ManagedTensor input_tokens(
+  auto result = module_->forward(from_blob(
       tokens.data(),
       {1, static_cast<exec_aten::SizesType>(tokens.size())},
-      ScalarType::Long);
-  std::vector<EValue> inputs = {input_tokens.get_aliasing_tensor()};
-
-  auto result = module_->forward(inputs);
+      ScalarType::Long));
   ET_CHECK_MSG(result.error() == Error::Ok, "Failed to prefill tokens");
 
   return logits_to_token(result.get()[0].toTensor());
 }
 
 uint64_t Runner::run_model_step(uint64_t token) {
-  ManagedTensor input_token(&token, {1, 1}, ScalarType::Long);
-  std::vector<EValue> inputs = {input_token.get_aliasing_tensor()};
-
-  auto result = module_->forward(inputs);
+  auto result = module_->forward(from_blob(&token, {1, 1}, ScalarType::Long));
   ET_CHECK_MSG(
       result.error() == Error::Ok,
       "Failed to run forward() for token %" PRIu64,

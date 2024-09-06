@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 # Example script for exporting simple models to flatbuffer
 
 import argparse
@@ -103,9 +105,7 @@ if __name__ == "__main__":
     logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch(
-        config=ExecutorchBackendConfig(
-            extract_delegate_segments=False, extract_constant_segment=False
-        )
+        config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
     if args.etrecord is not None:

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import cast
+
 import torch.fx
 from executorch.backends.arm.tosa_mapping import extract_tensor_meta
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -31,7 +33,7 @@ class ConvertExpandCopyToRepeatPass(ExportPass):
 
                 expand_node = src_partition.nodes[0]
                 _, shape, _ = extract_tensor_meta(expand_node.all_input_nodes[0].meta)
-                multiples = expand_node.args[1]
+                multiples = cast(tuple[int], expand_node.args[1])
                 expanded_rank = len(multiples)
 
                 # Expanded shape is 'shape' front-padded with ones.
