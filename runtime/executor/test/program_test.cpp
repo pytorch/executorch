@@ -382,8 +382,7 @@ TEST_F(ProgramTest, DEPRECATEDLoad) {
 TEST_F(ProgramTest, LoadConstantSegment) {
   // Load the serialized ModuleLinear data, with constants in the segment and no
   // constants in the flatbuffer.
-  const char* linear_path =
-      std::getenv("ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH");
+  const char* linear_path = std::getenv("ET_MODULE_LINEAR_PATH");
   Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
@@ -424,11 +423,11 @@ TEST_F(ProgramTest, LoadConstantSegment) {
   EXPECT_GE(flatbuffer_program->constant_segment()->offsets()->size(), 1);
 }
 
-TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
+TEST_F(ProgramTest, LoadConstantSegmentWhenConstantBufferExists) {
   // Load the serialized ModuleLinear data, with constants in the flatbuffer and
   // no constants in the segment.
   const char* linear_path =
-      std::getenv("ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
+      std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
   Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
