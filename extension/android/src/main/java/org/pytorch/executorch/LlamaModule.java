@@ -103,6 +103,7 @@ public class LlamaModule {
    * @param channels Input image number of channels
    * @param startPos The starting position in KV cache of the input in the LLM.
    * @return The updated starting position in KV cache of the input in the LLM.
+   * @throws RuntimeException if the prefill failed
    */
   public long prefillImages(int[] image, int width, int height, int channels, long startPos) {
     long[] nativeResult = prefillImagesNative(image, width, height, channels, startPos);
@@ -125,6 +126,7 @@ public class LlamaModule {
    * @param bos The number of BOS (begin of sequence) token.
    * @param eos The number of EOS (end of sequence) token.
    * @return The updated starting position in KV cache of the input in the LLM.
+   * @throws RuntimeException if the prefill failed
    */
   public long prefillPrompt(String prompt, long startPos, int bos, int eos) {
     long[] nativeResult = prefillPromptNative(prompt, startPos, bos, eos);
