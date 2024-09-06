@@ -95,7 +95,7 @@ phases:
         done
 
         adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo ls -la files/
-        # Trying to pull the file using adb ends up with permission error, but his works too, so why not
+        # Trying to pull the file using adb ends up with permission error, but this works too, so why not
         echo "${BENCHMARK_RESULTS}" > $DEVICEFARM_LOG_DIR/benchmark_results.json
 
 artifacts:
