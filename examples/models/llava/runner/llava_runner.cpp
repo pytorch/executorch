@@ -105,6 +105,8 @@ Error LlavaRunner::generate_from_pos(
 
   uint64_t prefill_next_token =
       ET_UNWRAP(prefill_prompt(prompt, start_pos, /*bos=*/0, /*eos*/ 0));
+  stats_.first_token_ms = util::time_in_ms();
+  stats_.prompt_eval_end_ms = util::time_in_ms();
   stats_.num_prompt_tokens = start_pos;
 
   // Generate tokens
@@ -113,7 +115,6 @@ Error LlavaRunner::generate_from_pos(
 
   // Bookkeeping
   stats_.num_generated_tokens = num_generated_tokens;
-  ::executorch::llm::print_report(stats_);
   if (stats_callback) {
     stats_callback(stats_);
   }
@@ -147,6 +148,7 @@ Error LlavaRunner::generate(
       };
 
   int64_t pos = 0;
+  stats_.inference_start_ms = util::time_in_ms();
 
   // prefill preset prompt
   prefill_prompt(kPresetPrompt, pos, /*bos=*/1, /*eos*/ 0);
@@ -162,6 +164,9 @@ Error LlavaRunner::generate(
   // Generate tokens
   Error err =
       generate_from_pos(prompt, seq_len, pos, wrapped_callback, stats_callback);
+
+  stats_.inference_end_ms = util::time_in_ms();
+  ::executorch::llm::print_report(stats_);
 
   ET_LOG(
       Info,
