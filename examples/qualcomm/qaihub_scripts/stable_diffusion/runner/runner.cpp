@@ -12,7 +12,7 @@
 
 #include <executorch/examples/qualcomm/qaihub_scripts/stable_diffusion/runner/runner.h>
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
+#include <executorch/extension/tensor/tensor.h>
 
 #include <ctime>
 #include <fstream>
@@ -21,6 +21,8 @@
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/platform/log.h>
+
+using namespace ::executorch::extension;
 
 namespace torch {
 namespace executor {
@@ -350,31 +352,27 @@ Error Runner::generate(std::string prompt) {
 
   MethodMeta encoder_method_meta = method_metas[0].get();
   // Initialize text_encoder input tensors: cond/uncond tokenized_input[1,77]
-  ManagedTensor managed_cond_tokens(
+  auto cond_tokens_tensor = from_blob(
       cond_tokens.data(),
       {1, 77},
       encoder_method_meta.input_tensor_meta(0)->scalar_type());
-  ManagedTensor managed_uncond_tokens(
+  auto uncond_tokens_tensor = from_blob(
       uncond_tokens.data(),
       {1, 77},
       encoder_method_meta.input_tensor_meta(0)->scalar_type());
-  Tensor cond_tokens_tensor = managed_cond_tokens.get_aliasing_tensor();
-  Tensor uncond_tokens_tensor = managed_uncond_tokens.get_aliasing_tensor();
   // Initialize text_encoder output tensors: cond/uncond embedding[1, 77, 1024]
   constexpr int emb_size = 1 * 77 * 1024;
   std::vector<uint16_t> cond_emb_vec(emb_size);
   std::vector<uint16_t> uncond_emb_vec(emb_size);
   std::vector<float> fp_emb_vec(emb_size);
-  ManagedTensor managed_cond_emb(
+  auto cond_emb_tensor = from_blob(
       cond_emb_vec.data(),
       {1, 77, 1024},
       encoder_method_meta.output_tensor_meta(0)->scalar_type());
-  ManagedTensor managed_uncond_emb(
+  auto uncond_emb_tensor = from_blob(
       uncond_emb_vec.data(),
       {1, 77, 1024},
       encoder_method_meta.output_tensor_meta(0)->scalar_type());
-  Tensor cond_emb_tensor = managed_cond_emb.get_aliasing_tensor();
-  Tensor uncond_emb_tensor = managed_uncond_emb.get_aliasing_tensor();
   modules_[0]->set_output_data_ptr(cond_emb_tensor, 0);
   long encoder_start = util::time_in_ms();
   auto cond_res = modules_[0]->forward(cond_tokens_tensor);
@@ -403,22 +401,17 @@ Error Runner::generate(std::string prompt) {
   //  3. cond/uncond embedding[1,77,1024]
   std::vector<uint16_t> latent_model_input(latent.size());
   std::vector<float> fp_latent_model_input(latent.size());
-  ManagedTensor managed_latent(
+  auto latent_tensor = from_blob(
       latent_model_input.data(),
       {1, 64, 64, 4},
       unet_method_meta.input_tensor_meta(0)->scalar_type());
-  Tensor latent_tensor = managed_latent.get_aliasing_tensor();
-  std::vector<ManagedTensor> managed_time_emb_tensors;
-  std::vector<Tensor> time_emb_tensors;
-  managed_time_emb_tensors.reserve(num_time_steps_);
+  std::vector<TensorPtr> time_emb_tensors;
   time_emb_tensors.reserve(num_time_steps_);
-  for (int step_index = 0; step_index < num_time_steps_; step_index++) {
-    managed_time_emb_tensors.emplace_back(ManagedTensor(
+  for (auto step_index = 0; step_index < num_time_steps_; step_index++) {
+    time_emb_tensors.emplace_back(from_blob(
         time_emb_list_[step_index].data(),
         {1, 1280},
         unet_method_meta.input_tensor_meta(1)->scalar_type()));
-    time_emb_tensors.emplace_back(
-        managed_time_emb_tensors.back().get_aliasing_tensor());
   }
   // requantize text encoders output
   dequant_tensor(
@@ -447,17 +440,14 @@ Error Runner::generate(std::string prompt) {
   std::vector<uint16_t> noise_pred_uncond(latent.size());
   std::vector<float> fp_noise_pred_text(noise_pred_text.size());
   std::vector<float> fp_noise_pred_uncond(noise_pred_uncond.size());
-  ManagedTensor managed_noise_pred_text(
+  auto noise_pred_text_tensor = from_blob(
       noise_pred_text.data(),
       {1, 64, 64, 4},
       unet_method_meta.output_tensor_meta(0)->scalar_type());
-  Tensor noise_pred_text_tensor = managed_noise_pred_text.get_aliasing_tensor();
-  ManagedTensor managed_noise_pred_uncond(
+  auto noise_pred_uncond_tensor = from_blob(
       noise_pred_uncond.data(),
       {1, 64, 64, 4},
       unet_method_meta.output_tensor_meta(0)->scalar_type());
-  Tensor noise_pred_uncond_tensor =
-      managed_noise_pred_uncond.get_aliasing_tensor();
 
   // Execute unet
   for (int step_index = 0; step_index < num_time_steps_; step_index++) {
@@ -514,20 +504,18 @@ Error Runner::generate(std::string prompt) {
   MethodMeta vae_method_meta = method_metas[2].get();
   // Initialize vae input tensor : latent[1,64,64,4]
   std::vector<uint16_t> vae_input(latent.size());
-  ManagedTensor managed_vae_input(
+  auto vae_input_tensor = from_blob(
       vae_input.data(),
       {1, 64, 64, 4},
       vae_method_meta.input_tensor_meta(0)->scalar_type());
-  Tensor vae_input_tensor = managed_vae_input.get_aliasing_tensor();
   // Intialize vae output tensor: output[1,512,512,3]
   constexpr int image_size = 1 * 512 * 512 * 3;
   std::vector<uint16_t> q_out(image_size);
   std::vector<float> out(image_size);
-  ManagedTensor managed_output(
+  auto output_tensor = from_blob(
       q_out.data(),
       {1, 512, 512, 3},
       vae_method_meta.output_tensor_meta(0)->scalar_type());
-  Tensor output_tensor = managed_output.get_aliasing_tensor();
 
   quant_tensor(latent, vae_input, vae_input_scale_, vae_input_offset_);
 

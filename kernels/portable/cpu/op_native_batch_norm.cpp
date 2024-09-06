@@ -73,6 +73,28 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
       InvalidArgument,
       ret_val);
 
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(in, out, mean_out, invstd_out),
+      InvalidArgument,
+      ret_val);
+
+  if (weight.has_value()) {
+    ET_KERNEL_CHECK(
+        ctx,
+        tensors_have_same_dim_order(in, weight.value()),
+        InvalidArgument,
+        ret_val);
+  }
+
+  if (bias.has_value()) {
+    ET_KERNEL_CHECK(
+        ctx,
+        tensors_have_same_dim_order(in, bias.value()),
+        InvalidArgument,
+        ret_val);
+  }
+
   size_t C_dim = in.dim() >= 1 ? 1 : 0;
   size_t C = in.size(C_dim);
   size_t outer = getLeadingDims(in, C_dim);
