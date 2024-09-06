@@ -143,7 +143,8 @@ Error Runner::generate(
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
+    std::function<void(const Stats&)> stats_callback,
+    bool echo) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
@@ -208,7 +209,9 @@ Error Runner::generate(
   // after the prompt. After that we will enter generate loop.
 
   // print prompts
-  wrapped_callback(prompt);
+  if (echo) {
+    wrapped_callback(prompt);
+  }
   int64_t pos = 0;
   auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
   stats_.first_token_ms = util::time_in_ms();

@@ -33,6 +33,7 @@ public class LlamaModule {
 
   private final HybridData mHybridData;
   private static final int DEFAULT_SEQ_LEN = 128;
+  private static final boolean DEFAULT_ECHO = true;
 
   @DoNotStrip
   private static native HybridData initHybrid(
@@ -59,7 +60,7 @@ public class LlamaModule {
    * @param llamaCallback callback object to receive results.
    */
   public int generate(String prompt, LlamaCallback llamaCallback) {
-    return generate(prompt, DEFAULT_SEQ_LEN, llamaCallback);
+    return generate(prompt, DEFAULT_SEQ_LEN, DEFAULT_ECHO, llamaCallback);
   }
 
   /**
@@ -70,7 +71,30 @@ public class LlamaModule {
    * @param llamaCallback callback object to receive results.
    */
   public int generate(String prompt, int seqLen, LlamaCallback llamaCallback) {
-    return generate(null, 0, 0, 0, prompt, seqLen, llamaCallback);
+    return generate(null, 0, 0, 0, prompt, seqLen, DEFAULT_ECHO, llamaCallback);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param prompt Input prompt
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
+   * @param llamaCallback callback object to receive results.
+   */
+  public int generate(String prompt, boolean echo, LlamaCallback llamaCallback) {
+    return generate(null, 0, 0, 0, prompt, DEFAULT_SEQ_LEN, echo, llamaCallback);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param prompt Input prompt
+   * @param seqLen sequence length
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
+   * @param llamaCallback callback object to receive results.
+   */
+  public int generate(String prompt, int seqLen, boolean echo, LlamaCallback llamaCallback) {
+    return generate(null, 0, 0, 0, prompt, seqLen, echo, llamaCallback);
   }
 
   /**
@@ -82,6 +106,7 @@ public class LlamaModule {
    * @param channels Input image number of channels
    * @param prompt Input prompt
    * @param seqLen sequence length
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    * @param llamaCallback callback object to receive results.
    */
   @DoNotStrip
@@ -92,6 +117,7 @@ public class LlamaModule {
       int channels,
       String prompt,
       int seqLen,
+      boolean echo,
       LlamaCallback llamaCallback);
 
   /**
