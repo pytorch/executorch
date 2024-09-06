@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <cstring>
 
-#include <executorch/kernels/portable/cpu/util/index_util.h>
+#include <executorch/kernels/portable/cpu/util/slice_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
