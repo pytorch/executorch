@@ -387,7 +387,12 @@ def serialize_pte_binary(
     constant_segment_data, constant_segment_offsets = _extract_constant_segment(
         program.constant_buffer, tensor_alignment=constant_tensor_alignment
     )
-    if len(constant_segment_data) > 0:
+
+    # If there are no constants, len(constant_segment_data) = 0. However, there may
+    # be non-constants, in which case len(constant_segment_offsets) = 1, containing
+    # the placeholder value 0. Ensure the placeholder value is put into
+    # program.constant_segment.offsets.
+    if len(constant_segment_offsets) > 0:
         # Update program.constant_segment with constant subsegment offset information.
         program.constant_segment = SubsegmentOffsets(
             segment_index=len(segments), offsets=constant_segment_offsets
