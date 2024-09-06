@@ -213,9 +213,7 @@ Error Runner::generate(
   uint64_t cur_token = prefill_res.get();
 
   // print the first token from prefill. No prev_token so use cur_token for it.
-  if (echo) {
-    wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
-  }
+  wrapped_callback(ET_UNWRAP(tokenizer_->decode(cur_token, cur_token)));
 
   // start the main loop
   prompt_tokens.push_back(cur_token);
