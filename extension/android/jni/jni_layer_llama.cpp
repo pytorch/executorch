@@ -150,6 +150,7 @@ class ExecuTorchLlamaJni
       jint channels,
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
+      jboolean echo,
       facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       auto image_size = image->size();
@@ -175,7 +176,8 @@ class ExecuTorchLlamaJni
           prompt->toStdString(),
           seq_len,
           [callback](std::string result) { callback->onResult(result); },
-          [callback](const Stats& result) { callback->onStats(result); });
+          [callback](const Stats& result) { callback->onStats(result); },
+          echo);
     }
     return 0;
   }
