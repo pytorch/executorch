@@ -225,7 +225,7 @@ class LLMEdgeManager:
         )
 
         eval_wrapper = EagerEvalWrapper(
-            model=prepared_module.to(device="cuda"),
+            model=prepared_module,
             tokenizer=tokenizer,
             max_seq_length=calibration_seq_length,
             use_kv_cache=self.use_kv_cache,
