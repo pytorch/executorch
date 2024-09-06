@@ -65,7 +65,7 @@ class LLMEdgeManager:
         dtype,
         use_kv_cache,
         example_inputs,
-        args,
+        args: Optional[Any] = None,
         enable_dynamic_shape: bool = False,
         verbose: bool = False,
         metadata: Optional[dict] = None,
