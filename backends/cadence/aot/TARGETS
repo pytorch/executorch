@@ -60,6 +60,18 @@ python_library(
     ],
 )
 
+python_library(
+    name = "ops_registrations",
+    srcs = [
+        "ops_registrations.py",
+    ],
+    deps = [
+        ":utils",
+        "//caffe2:torch",
+        "//executorch/exir:scalar_type",
+    ],
+)
+
 export_file(name = "functions.yaml")
 
 executorch_generated_lib(
