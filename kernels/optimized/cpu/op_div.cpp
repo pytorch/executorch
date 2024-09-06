@@ -66,25 +66,11 @@ Tensor& opt_div_out(
         scalar = &b;
         scalar_type = b_type;
       }
-      Error error = Error::Ok;
-      if (a.numel() == 1 && b.numel() == 1) {
-        // Single-element tensors could have rank 0 or 1, so it's
-        // possible that the rank of the inputs doesn't match the
-        // output rank. resize_tensor doesn't like that. If it's rank
-        // 0 then it doesn't need resizing; if it's not rank 0 then we
-        // know exactly what we need.
-        if (out.dim() != 0) {
-          error = resize_tensor(out, {1});
-        }
-      } else {
-        error = resize_tensor(out, tensor->sizes());
-      }
-      ET_KERNEL_CHECK_MSG(
+      ET_KERNEL_CHECK(
           ctx,
-          error == Error::Ok,
+          resize_to_broadcast_target_size(a, b, out) == Error::Ok,
           InvalidArgument,
-          out,
-          "Failed to resize output tensor.");
+          out);
       ET_SWITCH_REALB_TYPES(tensor_type, ctx, "div.out", CTYPE, [&]() {
         ET_SWITCH_REALB_TYPES(scalar_type, ctx, "div.out", CTYPE_SCALAR, [&]() {
           CTYPE_SCALAR scalar_val = *scalar->const_data_ptr<CTYPE_SCALAR>();

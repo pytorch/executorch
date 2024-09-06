@@ -256,7 +256,6 @@ TEST_F(OpDivOutTest, BroadcastScalarRank0Supported) {
   EXPECT_TENSOR_EQ(out, ret);
 }
 
-
 TEST_F(OpDivOutTest, BroadcastDimSizeIsOneAB) {
   TensorFactory<ScalarType::Float> tf;
 
