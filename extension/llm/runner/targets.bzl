@@ -26,7 +26,7 @@ def define_common_targets():
                 ":stats",
                 "//executorch/extension/llm/sampler:sampler" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
-                "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
+                "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
         )
 
@@ -41,7 +41,7 @@ def define_common_targets():
                 ":text_decoder_runner" + aten_suffix,
                 "//executorch/extension/llm/tokenizer:tokenizer_header",
                 "//executorch/extension/module:module" + aten_suffix,
-                "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
+                "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
         )
 
@@ -55,7 +55,7 @@ def define_common_targets():
                 ":text_decoder_runner" + aten_suffix,
                 "//executorch/extension/llm/tokenizer:tokenizer_header",
                 "//executorch/extension/module:module" + aten_suffix,
-                "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
+                "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
         )
 

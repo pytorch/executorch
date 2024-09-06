@@ -475,6 +475,25 @@ TEST_F(OpSliceCopyTensorOutTest, EmptySizeInputDies) {
           input, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
 }
 
+TEST_F(OpSliceCopyTensorOutTest, ZeroLengthSupported) {
+  TensorFactory<ScalarType::Int> tf;
+
+  Tensor input = tf.ones({2, 3});
+  Tensor out = tf.ones({2, 0});
+
+  Tensor expect = tf.ones({2, 0});
+
+  Tensor ret = op_slice_copy_tensor_out(
+      input, /*dim=*/1, /*start=*/1, /*end=*/1, /*step=*/1, out);
+  EXPECT_TENSOR_EQ(ret, out);
+  EXPECT_TENSOR_EQ(ret, expect);
+
+  ret = op_slice_copy_tensor_out(
+      input, /*dim=*/1, /*start=*/-1, /*end=*/-1, /*step=*/1, out);
+  EXPECT_TENSOR_EQ(ret, out);
+  EXPECT_TENSOR_EQ(ret, expect);
+}
+
 TEST_F(OpSliceCopyTensorOutTest, NonPostiveStepsDies) {
   TensorFactory<ScalarType::Int> tf;
 
