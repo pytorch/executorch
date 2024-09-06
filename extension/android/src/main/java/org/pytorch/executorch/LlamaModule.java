@@ -104,8 +104,8 @@ public class LlamaModule {
    * @param eos The number of EOS (end of sequence) token.
    * @return a tuple of (error, token, updated startPos)
    */
-  public static native long[] prefill_prompt(
-      String prompt, long startPos, int bos, int eos, long generatedToken);
+  public static native long[] prefillPrompt(
+      String prompt, long startPos, int bos, int eos);
 
   /**
    * Prefill an LLaVA Module with the given images input.
@@ -117,7 +117,7 @@ public class LlamaModule {
    * @param startPos The starting position in KV cache of the input in the LLM.
    * @return a tuple of (error code, updated startPos)
    */
-  public static native long[] prefill_images(
+  public static native long[] prefillImages(
       int[] image, int width, int height, int channels, long startPos);
 
   /**
@@ -129,8 +129,8 @@ public class LlamaModule {
    * @param llamaCallback callback object to receive results.
    * @return The error code.
    */
-  public static native int generate_from_pos(
-      String prompt, int seqLen, long startPos, ExecuTorchLlamaCallback callback);
+  public static native int generateFromPos(
+      String prompt, int seqLen, long startPos, LlamaCallback callback);
 
   /** Stop current generate() before it finishes. */
   @DoNotStrip

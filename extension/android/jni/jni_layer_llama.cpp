@@ -188,8 +188,7 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> prompt,
       jlong start_pos,
       jint bos,
-      jint eos,
-      jlong generated_token) {
+      jint eos) {
     facebook::jni::local_ref<jlongArray> tuple_result =
         facebook::jni::make_long_array(3);
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
@@ -201,9 +200,7 @@ class ExecuTorchLlamaJni
         prompt->toStdString(), start_pos, bos, eos);
     tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
     if (result.ok()) {
-      // TODO(hsz): make  generated_token a reference and update it here
-      generated_token = result.get();
-      tuple_result->pin()[1] = static_cast<jlong>(generated_token);
+      tuple_result->pin()[1] = static_cast<jlong>(result.get());
       tuple_result->pin()[2] = static_cast<jlong>(start_pos);
     }
     return tuple_result;
