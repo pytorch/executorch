@@ -39,6 +39,7 @@ list(
   extension_data_loader
   extension_module
   extension_runner_util
+  extension_tensor
   extension_threadpool
   fbjni
 )

@@ -40,8 +40,8 @@ add_subdirectory(
 
 add_library(llava_runner STATIC ${_llava_runner__srcs})
 
-set(llava_runner_deps executorch extension_module extension_data_loader
-                      extension_llm_runner
+set(llava_runner_deps executorch extension_data_loader extension_llm_runner
+                      extension_module extension_tensor
 )
 
 target_link_libraries(llava_runner PUBLIC ${llava_runner_deps})

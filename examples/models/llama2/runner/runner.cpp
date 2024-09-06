@@ -14,7 +14,6 @@
 #include <ctime>
 
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 
 #include <executorch/examples/models/llama2/tokenizer/llama_tiktoken.h>
 #include <executorch/extension/llm/tokenizer/bpe_tokenizer.h>
@@ -205,8 +204,8 @@ Error Runner::generate(
 
   // print prompts
   wrapped_callback(prompt);
-
-  auto prefill_res = text_prefiller_->prefill(prompt_tokens, 0);
+  int64_t pos = 0;
+  auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
   stats_.first_token_ms = util::time_in_ms();
   stats_.prompt_eval_end_ms = util::time_in_ms();
   ET_CHECK_OK_OR_RETURN_ERROR(prefill_res.error());
