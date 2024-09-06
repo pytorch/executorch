@@ -72,6 +72,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.export import export_for_training
 
 from torch.testing import FileCheck
 
@@ -315,10 +316,11 @@ class TestXNNPACK(unittest.TestCase):
     ):
         module.eval()
         # program capture
-        m = torch._export.capture_pre_autograd_graph(
+
+        m = export_for_training(
             module,
             example_inputs,
-        )
+        ).module()
 
         quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config()

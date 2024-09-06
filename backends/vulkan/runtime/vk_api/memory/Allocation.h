@@ -62,6 +62,8 @@ struct Allocation final {
   VmaAllocator allocator;
   // Handles to the allocated memory
   VmaAllocation allocation;
+  // Information about the allocated memory
+  VmaAllocationInfo allocation_info;
 
  private:
   // Indicates whether this class instance is a copy of another class instance,

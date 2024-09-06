@@ -11,6 +11,7 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
 #include <optional>
+#include <stack>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
@@ -68,6 +69,79 @@ DECL_VALUE_PTR_CLASS(SymIntPtr, SymInt);
 #undef DECL_VALUE_PTR_CLASS
 
 //
+// TmpTensor
+//
+
+/*
+ * This struct is used to recycle the memory of temporary tensors that are
+ * created during the execution of a node. Upon construction, this struct will
+ * check the `tmp_shared_object_idxs_` of the provided `ComputeGraph` instance
+ * if any shared objects are available; if not, then a new one is created. A
+ * tensor value is then added to the `ComputeGraph` instance with the requested
+ * specifications. Upon destruction, the shared object index of the temporary
+ * tensor is returned to `tmp_shared_object_idxs_`.
+ *
+ * Note that instances of this struct can be used as if they were `ValueRef` due
+ * to implementation of a custom casting operator.
+ *
+ * This class should only be used to create tensors whose lifetimes exist only
+ * in a well defined scope (i.e. within a function).
+ */
+struct TmpTensor {
+  ComputeGraph* graph_p;
+  int64_t sobj_idx;
+  ValueRef vref;
+
+  //
+  // Match all available overloads of `add_tensor`
+  //
+
+  TmpTensor(
+      ComputeGraph* const graph_ptr,
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::StorageType storage_type,
+      const utils::GPUMemoryLayout memory_layout);
+
+  TmpTensor(
+      ComputeGraph* const graph_ptr,
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::StorageType storage_type);
+
+  TmpTensor(
+      ComputeGraph* const graph_ptr,
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::GPUMemoryLayout memory_layout);
+
+  TmpTensor(
+      ComputeGraph* const graph_ptr,
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype);
+
+  // No copy construction or assignment
+  TmpTensor(TmpTensor& other) = delete;
+  TmpTensor& operator=(TmpTensor& other) = delete;
+
+  // No move construction or assignment
+  TmpTensor(TmpTensor&& other) = delete;
+  TmpTensor& operator=(TmpTensor&& other) = delete;
+
+  // Custom cast to ValueRef
+  operator ValueRef() const {
+    return vref;
+  };
+
+  ~TmpTensor();
+
+ private:
+  // Helper function to get first available shared object index or request a new
+  // one to be created.
+  int64_t get_sobj_idx();
+};
+
+//
 // ComputeGraph
 //
 
@@ -94,7 +168,12 @@ class ComputeGraph final {
   vkapi::DescriptorPoolConfig execute_descriptor_counts_;
 
   std::unique_ptr<api::Context> context_;
+
   std::vector<SharedObject> shared_objects_;
+  // This stack is used by `TmpTensor` instances to recycle shared objects
+  // for temporary tensors. See the comments of `TmpTensor` for more details
+  std::stack<int64_t> tmp_shared_object_idxs_;
+
   std::vector<Value> values_;
   std::vector<api::ParamsBuffer> param_ubos_;
 
@@ -593,6 +672,8 @@ class ComputeGraph final {
   friend class BoolListPtr;
   friend class ValueListPtr;
   friend class SymIntPtr;
+
+  friend struct TmpTensor;
 };
 
 template <typename T>
