@@ -46,6 +46,7 @@ class DType(Enum):
         mapping = {
             DType.fp32: torch.float32,
             DType.fp16: torch.float16,
+            DType.bf16: torch.bfloat16,
         }
         if self not in mapping:
             raise ValueError(f"Unsupported dtype {self}")
