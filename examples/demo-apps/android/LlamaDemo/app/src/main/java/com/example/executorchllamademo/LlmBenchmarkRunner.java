@@ -26,8 +26,6 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
   String mPrompt;
   TextView mTextView;
   StatsDump mStatsDump;
-  // We will write the result back to this directory as it's known by the spec file
-  File modelDir;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -37,7 +35,7 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
 
     Intent intent = getIntent();
 
-    modelDir = new File(intent.getStringExtra("model_dir"));
+    File modelDir = new File(intent.getStringExtra("model_dir"));
     File model =
         Arrays.stream(modelDir.listFiles())
             .filter(file -> file.getName().endsWith(".pte"))
