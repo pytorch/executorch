@@ -7,10 +7,10 @@
  */
 
 #include <executorch/examples/models/flamingo/cross_attention/cross_attention_mask.h>
+
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::ManagedTensor;
 using torch::executor::ScalarType;
 using torch::executor::Tensor;
 using torch::executor::TensorImpl;
@@ -41,29 +41,27 @@ TEST(CrossAttentxnMaskTest, TestCrossAttentionMask) {
 
   std::vector<Tensor> images = {a, b, c};
   std::vector<std::vector<int>> mask_data;
-  std::vector<ManagedTensor> output_masks =
-      torch::executor::cross_attention_mask(
-          tokens,
-          images,
-          /*tile_size=*/1,
-          /*patch_size=*/1,
-          /*image_token_id=*/1,
-          /*out=*/mask_data);
+  auto output_masks = torch::executor::cross_attention_mask(
+      tokens,
+      images,
+      /*tile_size=*/1,
+      /*patch_size=*/1,
+      /*image_token_id=*/1,
+      /*out=*/mask_data);
 
   // Check contents of the mask.
   std::vector<std::vector<size_t>> expected_intervals = {
       {0, 7}, {1, 7}, {7, 12}};
   for (size_t mask_idx = 0; mask_idx < output_masks.size(); ++mask_idx) {
-    ManagedTensor& output_mask = output_masks[mask_idx];
-    Tensor output_tensor = output_mask.get_aliasing_tensor();
-    for (size_t i = 0; i < output_tensor.size(0); ++i) {
-      for (size_t j = 0; j < output_tensor.strides()[0]; ++j) {
-        size_t unrolled_index = i * output_tensor.strides()[0] + j;
+    auto& output_tensor = output_masks[mask_idx];
+    for (size_t i = 0; i < output_tensor->size(0); ++i) {
+      for (size_t j = 0; j < output_tensor->strides()[0]; ++j) {
+        size_t unrolled_index = i * output_tensor->strides()[0] + j;
         if (i >= expected_intervals[mask_idx][0] &&
             i < expected_intervals[mask_idx][1]) {
-          EXPECT_EQ(output_tensor.const_data_ptr<int>()[unrolled_index], 1);
+          EXPECT_EQ(output_tensor->const_data_ptr<int>()[unrolled_index], 1);
         } else {
-          EXPECT_EQ(output_tensor.const_data_ptr<int>()[unrolled_index], 0);
+          EXPECT_EQ(output_tensor->const_data_ptr<int>()[unrolled_index], 0);
         }
       }
     }

@@ -41,6 +41,9 @@ div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
 
@@ -96,6 +99,9 @@ Tensor& div_out_mode(
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
       InvalidArgument,
       out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -158,6 +164,9 @@ Tensor& div_scalar_out(
   ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType common_type = isFloatingType(a_type) ? a_type : ScalarType::Float;
   ScalarType out_type = out.scalar_type();
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 

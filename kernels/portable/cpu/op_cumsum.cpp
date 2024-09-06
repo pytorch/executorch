@@ -94,6 +94,9 @@ Tensor& cumsum_out(
       out);
 
   ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(self, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
       ctx, resize_tensor(out, self.sizes()) == Error::Ok, InvalidArgument, out);
 
   dim = (self.dim() == 0) ? 0 : dim < 0 ? dim + self.dim() : dim;

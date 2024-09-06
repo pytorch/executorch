@@ -1,0 +1,83 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "arm_partitioner",
+    srcs = [
+        "arm_partitioner.py",
+    ],
+    typing = True,
+    deps = [
+        ":arm_backend",
+        "//executorch/backends/arm/passes:passes",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_library(
+    name = "arm_backend",
+    srcs = [
+        "arm_backend.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/flatbuffers:flatbuffers",
+        "fbsource//third-party/pypi/ml-dtypes:ml-dtypes",
+        "fbsource//third-party/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/serialization_lib/python/tosa:tosa",
+        ":arm_vela",
+        "//executorch/backends/arm/operators:lib",
+        "//executorch/backends/arm/operators:node_visitor",
+        "//executorch/backends/arm/passes:passes",
+    ],
+)
+
+python_library(
+    name = "arm_vela",
+    srcs = [
+        "arm_vela.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/ethos-u-vela:ethos-u-vela",
+    ],
+)
+
+python_library(
+    name = "tosa_mapping",
+    srcs = [
+        "tosa_mapping.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/serialization_lib/python/serializer:serializer",
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "tosa_quant_utils",
+    srcs = [
+        "tosa_quant_utils.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/pypi/numpy:numpy",
+        "fbsource//third-party/serialization_lib/python/serializer:serializer",
+        "fbsource//third-party/serialization_lib/python/tosa:tosa",
+        ":tosa_mapping",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "tosa_utils",
+    srcs = [
+        "tosa_utils.py",
+    ],
+    typing = True,
+    deps = [
+        "fbsource//third-party/serialization_lib/python/serializer:serializer",
+        ":tosa_quant_utils",
+        "//executorch/backends/arm/operators:node_visitor",
+    ],
+)

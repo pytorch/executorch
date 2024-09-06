@@ -226,9 +226,7 @@ if __name__ == "__main__":
 
     try:
         exec_prog = edge.to_executorch(
-            config=ExecutorchBackendConfig(
-                extract_delegate_segments=False, extract_constant_segment=False
-            )
+            config=ExecutorchBackendConfig(extract_delegate_segments=False)
         )
     except RuntimeError as e:
         if "Missing out variants" in str(e.args[0]):

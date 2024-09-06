@@ -20,17 +20,14 @@ class LlavaTextDecoderRunner : public TextDecoderRunner {
       : TextDecoderRunner(module, true, vocab_size, temperature){};
 
   inline Result<exec_aten::Tensor> step(
-      ManagedTensor& managed_tokens,
-      ManagedTensor& managed_start_pos) override {
-    auto tokens = managed_tokens.get_aliasing_tensor();
-    auto start_pos = managed_start_pos.get_aliasing_tensor();
-
+      executorch::extension::TensorPtr& tokens,
+      executorch::extension::TensorPtr& start_pos) override {
     // run token embedding
-    std::vector<EValue> token_embedding_outputs =
+    auto token_embedding_outputs =
         ET_UNWRAP(module_->execute(kTokenEmbeddingMethod, tokens));
 
     // run text model
-    std::vector<EValue> outputs_res = ET_UNWRAP(module_->execute(
+    auto outputs_res = ET_UNWRAP(module_->execute(
         kTextModelMethod, {start_pos, token_embedding_outputs[0]}));
 
     ET_CHECK_MSG(

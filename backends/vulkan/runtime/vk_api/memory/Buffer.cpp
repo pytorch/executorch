@@ -67,7 +67,7 @@ VulkanBuffer::VulkanBuffer(
         &allocation_create_info,
         &handle_,
         &(memory_.allocation),
-        nullptr));
+        &(memory_.allocation_info)));
   } else {
     VmaAllocatorInfo allocator_info{};
     vmaGetAllocatorInfo(allocator_, &allocator_info);
