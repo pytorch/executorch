@@ -13,6 +13,12 @@ import com.facebook.jni.annotations.DoNotStrip;
 import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 
+/**
+ * LlamaModule is a wrapper around the Executorch Llama model. It provides a simple interface to
+ * generate text from the model.
+ *
+ * <p>Warning: These APIs are experimental and subject to change without notice
+ */
 public class LlamaModule {
 
   public static final int MODEL_TYPE_TEXT = 1;

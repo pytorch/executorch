@@ -91,7 +91,7 @@ TensorImplPtr make_tensor_impl_ptr(
       tensor_impl.release(),
       TensorImplPtrDeleter{
           std::unique_ptr<void, std::function<void(void*)>>(
-              data, std::move(deleter) ?: noop_deleter),
+              data, deleter ? std::move(deleter) : noop_deleter),
           std::move(sizes),
           std::move(dim_order),
           std::move(strides)});

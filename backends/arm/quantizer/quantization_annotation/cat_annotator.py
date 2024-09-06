@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import itertools
-from typing import Callable, List, Optional
+from typing import Callable, cast, List, Optional
 
 import torch.fx
 from executorch.backends.arm.quantizer import arm_quantizer_utils
@@ -34,7 +34,7 @@ def _annotate_cat(
         if arm_quantizer_utils.is_annotated(cat_node):
             continue
 
-        input_acts = cat_node.args[0]
+        input_acts = cast(list[torch.fx.Node], cat_node.args[0])
         input_act0 = input_acts[0]
 
         input_act_qspec = quantization_config.get_input_act_qspec()

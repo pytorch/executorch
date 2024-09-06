@@ -7,6 +7,6 @@
 
 set -x
 
-pip install transformers accelerate
+pip install transformers accelerate sentencepiece
 
 pip list

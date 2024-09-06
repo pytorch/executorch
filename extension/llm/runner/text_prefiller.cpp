@@ -25,7 +25,7 @@ TextPrefiller::TextPrefiller(
 
 ::executorch::runtime::Result<uint64_t> TextPrefiller::prefill(
     std::vector<uint64_t>& prompt_tokens,
-    int64_t start_pos) {
+    int64_t start_pos_index) {
   ET_CHECK_MSG(!prompt_tokens.empty(), "Prompt cannot be null");
   if (!text_decoder_runner_->is_method_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(text_decoder_runner_->load());
@@ -38,16 +38,15 @@ TextPrefiller::TextPrefiller(
   uint64_t cur_token;
   if (enable_parallel_prefill_ || !use_kv_cache_) {
     // initialize tensor wrappers
-    ManagedTensor managed_tokens(
+    auto tokens = from_blob(
         prompt_tokens.data(),
         {1, num_prompt_tokens},
         exec_aten::ScalarType::Long);
 
-    ManagedTensor managed_start_pos(
-        &start_pos, {1}, exec_aten::ScalarType::Long);
+    auto start_pos =
+        from_blob(&start_pos_index, {1}, exec_aten::ScalarType::Long);
 
-    ::executorch::runtime::Result<exec_aten::Tensor> outputs_res =
-        text_decoder_runner_->step(managed_tokens, managed_start_pos);
+    auto outputs_res = text_decoder_runner_->step(tokens, start_pos);
 
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_LOG(
@@ -62,28 +61,25 @@ TextPrefiller::TextPrefiller(
     cur_token = prompt_tokens[0];
 
     // initialize tensor wrappers
-    ManagedTensor managed_tokens(
-        &cur_token, {1, 1}, exec_aten::ScalarType::Long);
+    auto tokens = from_blob(&cur_token, {1, 1}, exec_aten::ScalarType::Long);
 
-    ManagedTensor managed_start_pos(
-        &pos_data, {1}, exec_aten::ScalarType::Long);
+    auto start_pos = from_blob(&pos_data, {1}, exec_aten::ScalarType::Long);
 
     // run the first token and get back logits tensor. Assuming the first token
     // is bos so don't callback.
-    exec_aten::Tensor logits_tensor = ET_UNWRAP(
-        text_decoder_runner_->step(managed_tokens, managed_start_pos));
+    auto logits_tensor =
+        ET_UNWRAP(text_decoder_runner_->step(tokens, start_pos));
 
     pos = 1; // start from index 1
 
     while (pos < num_prompt_tokens) {
       // Run the model
-      pos_data = start_pos + pos;
+      pos_data = start_pos_index + pos;
 
       // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
       cur_token = prompt_tokens[pos];
 
-      logits_tensor = ET_UNWRAP(
-          text_decoder_runner_->step(managed_tokens, managed_start_pos));
+      logits_tensor = ET_UNWRAP(text_decoder_runner_->step(tokens, start_pos));
 
       pos++;
     }

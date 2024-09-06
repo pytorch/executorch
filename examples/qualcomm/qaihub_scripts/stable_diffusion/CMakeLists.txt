@@ -24,6 +24,7 @@ target_link_libraries(
   executorch_no_prim_ops
   extension_data_loader
   extension_module
+  extension_tensor
   gflags
   re2::re2
 )
