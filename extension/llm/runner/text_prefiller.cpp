@@ -43,9 +43,10 @@ TextPrefiller::TextPrefiller(
         {1, num_prompt_tokens},
         exec_aten::ScalarType::Long);
 
-    auto start_pos = from_blob(&start_pos, {1}, exec_aten::ScalarType::Long);
+    auto start_pos_tensor =
+        from_blob(&start_pos, {1}, exec_aten::ScalarType::Long);
 
-    auto outputs_res = text_decoder_runner_->step(tokens, start_pos);
+    auto outputs_res = text_decoder_runner_->step(tokens, start_pos_tensor);
 
     ET_CHECK_OK_OR_RETURN_ERROR(outputs_res.error());
     ET_LOG(
@@ -61,12 +62,13 @@ TextPrefiller::TextPrefiller(
     // initialize tensor wrappers
     auto tokens = from_blob(&cur_token, {1, 1}, exec_aten::ScalarType::Long);
 
-    auto start_pos = from_blob(&start_pos, {1}, exec_aten::ScalarType::Long);
+    auto start_pos_tensor =
+        from_blob(&start_pos, {1}, exec_aten::ScalarType::Long);
 
     // run the first token and get back logits tensor. Assuming the first token
     // is bos so don't callback.
     auto logits_tensor =
-        ET_UNWRAP(text_decoder_runner_->step(tokens, start_pos));
+        ET_UNWRAP(text_decoder_runner_->step(tokens, start_pos_tensor));
 
     pos += 1; // start the loop from index 1
     start_pos += 1;
@@ -76,7 +78,8 @@ TextPrefiller::TextPrefiller(
       // NOLINTNEXTLINE(facebook-hte-ParameterUncheckedArrayBounds)
       cur_token = prompt_tokens[pos];
 
-      logits_tensor = ET_UNWRAP(text_decoder_runner_->step(tokens, start_pos));
+      logits_tensor =
+          ET_UNWRAP(text_decoder_runner_->step(tokens, start_pos_tensor));
 
       pos++;
       start_pos++;
