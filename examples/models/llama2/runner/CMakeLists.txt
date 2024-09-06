@@ -75,8 +75,8 @@ add_subdirectory(
 )
 set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
 
-set(llama_runner_deps executorch extension_module extension_data_loader
-                      re2::re2
+set(llama_runner_deps executorch extension_data_loader extension_module
+                      extension_tensor re2::re2
 )
 
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
