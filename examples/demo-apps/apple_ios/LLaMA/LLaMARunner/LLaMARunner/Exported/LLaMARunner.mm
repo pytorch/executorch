@@ -142,17 +142,17 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 
   std::vector<Image> images = {};
   if (!textOnly) {
-    NSLog(@">>> width: %f, height: %f", width, height);
+    //NSLog(@">>> width: %f, height: %f", width, height);
     uint8_t* data = static_cast<uint8_t*>(imageBuffer);
     //float* data = static_cast<float*>(imageBuffer);
 
-    NSMutableString *outputString = [NSMutableString stringWithCapacity:500 * 6]; // Estimate initial capacity
-
-    for (int i = 0; i < 500; ++i) {
-        [outputString appendFormat:@"%d, ", data[i]];
-    }
-
-    NSLog(@">>> %@", outputString);
+//    NSMutableString *outputString = [NSMutableString stringWithCapacity:500 * 6]; // Estimate initial capacity
+//
+//    for (int i = 0; i < 500; ++i) {
+//        [outputString appendFormat:@"%d, ", data[i]];
+//    }
+//
+//    NSLog(@">>> %@", outputString);
 
 
     Image image;
@@ -165,18 +165,18 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
     images.push_back(image);
   }
   
-//  const auto status = _runner->generate(
-//      {images}, prompt.UTF8String, seq_len, [callback](const std::string& token) {
-//        callback(@(token.c_str()));
-//      });
-//  if (status != Error::Ok) {
-//    if (error) {
-//      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
-//                                   code:(NSInteger)status
-//                               userInfo:nil];
-//      return NO;
-//    }
-//  }
+  const auto status = _runner->generate(
+      {images}, prompt.UTF8String, seq_len, [callback](const std::string& token) {
+        callback(@(token.c_str()));
+      });
+  if (status != Error::Ok) {
+    if (error) {
+      *error = [NSError errorWithDomain:LLaMARunnerErrorDomain
+                                   code:(NSInteger)status
+                               userInfo:nil];
+      return NO;
+    }
+  }
   return YES;
 }
 
