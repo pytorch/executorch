@@ -73,8 +73,15 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
 
   @Override
   public void onResult(String result) {
-    mResultMessage.appendText(result);
-    run();
+    if(result.equals("\n\n")) {
+      if(!mResultMessage.getText().isEmpty()) {
+        mResultMessage.appendText(result);
+        run();
+      }
+    } else {
+      mResultMessage.appendText(result);
+      run();
+    }
   }
 
   @Override
