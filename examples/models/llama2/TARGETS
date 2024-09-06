@@ -73,6 +73,7 @@ runtime.python_library(
         "source_transformation/quantize.py",
         "source_transformation/rms_norm.py",
         "source_transformation/rope.py",
+        "source_transformation/rotation.py",
         "source_transformation/sdpa.py",
     ],
     _is_external_target = True,

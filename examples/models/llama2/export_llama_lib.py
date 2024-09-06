@@ -51,6 +51,7 @@ from .source_transformation.quantize import (
 )
 from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
+from .source_transformation.rotation import fuse_layer_norms, get_rotate_model
 from .source_transformation.sdpa import (
     replace_causal_mask,
     replace_kv_cache_with_simple_kv_cache,
@@ -224,6 +225,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--params",
         default=f"{ckpt_dir}/params/demo_config.json",
         help="config.json",
+    )
+    parser.add_argument(
+        "--optimized_rotation_path",
+        default=None,
+        required=False,
+        help="Optimized rotation checkpoint path. You can download the optimized rotation matrices from https://github.com/facebookresearch/SpinQuant/tree/main",
     )
     parser.add_argument(
         "-m",
@@ -423,6 +430,10 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_causal_mask)
+
+    if args.optimized_rotation_path:
+        transforms.append(fuse_layer_norms)
+        transforms.append(get_rotate_model(args.optimized_rotation_path))
     return (
         _load_llama_model(
             modelname=modelname,
