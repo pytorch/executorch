@@ -12,7 +12,7 @@
 
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/module/module.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
+#include <executorch/extension/tensor/tensor.h>
 // patternlint-disable-next-line executorch-cpp-nostdinc
 #include <functional>
 
@@ -38,8 +38,8 @@ class TextDecoderRunner {
    * @return The output of the LLM Module. This will be a tensor of logits.
    */
   virtual ::executorch::runtime::Result<exec_aten::Tensor> step(
-      ManagedTensor& input,
-      ManagedTensor& start_pos);
+      TensorPtr& input,
+      TensorPtr& start_pos);
 
   /**
    * Load the Module for text decode purpose.

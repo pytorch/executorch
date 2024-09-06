@@ -38,6 +38,10 @@ CPP_SRC_NAME = "spv.cpp"
 # Basic configuration settings for shaders
 DEFAULT_ENV: Dict[str, Any] = {
     "PRECISION": "highp",
+    # B is shorthand for "binding". This is used to automatically increment the
+    # layout binding index when declaring layout bindings. Note that a container
+    # type is used because integers are immutable in Python.
+    "B": [0],
 }
 
 # Establishes relationships between different tensor types and different GLSL types
@@ -179,8 +183,14 @@ def get_access_qualifier(access_type: Optional[str]) -> str:
     raise AssertionError(f"Invalid access type: {access_type}")
 
 
+def get_slot_val(slot: Union[int, List[int]]) -> int:
+    if isinstance(slot, list):
+        return slot[0]
+    return slot
+
+
 def layout_declare_buffer(
-    slot: int,
+    slot: Union[int, List[int]],
     access_type: str,
     var_name: str,
     dtype: str,
@@ -192,15 +202,18 @@ def layout_declare_buffer(
         array_type = buffer_scalar_type(dtype)
 
     out_str = f"""
-layout(set = 0, binding = {slot}) buffer {precision} restrict {get_access_qualifier(access_type)} {var_name}Buffer {{
+layout(set = 0, binding = {get_slot_val(slot)}) buffer {precision} restrict {get_access_qualifier(access_type)} {var_name}Buffer {{
     {array_type} {var_name}[];
 }};
 """
+
+    if isinstance(slot, list):
+        slot[0] = slot[0] + 1
     return out_str
 
 
 def layout_declare_image(
-    slot: int,
+    slot: Union[int, List[int]],
     access_type: str,
     var_name: str,
     dtype: str,
@@ -209,11 +222,16 @@ def layout_declare_image(
 ) -> str:
     image_format = TYPE_MAPPINGS["IMAGE_FORMAT"][dtype]
     image_type = TYPE_MAPPINGS["IMAGE_T"][image_ndim][dtype]
-    return f"layout(set = 0, binding = {slot}, {image_format}) uniform {precision} restrict {get_access_qualifier(access_type)} {image_type} {var_name};"
+
+    ret_str = f"layout(set = 0, binding = {get_slot_val(slot)}, {image_format}) uniform {precision} restrict {get_access_qualifier(access_type)} {image_type} {var_name};"
+
+    if isinstance(slot, list):
+        slot[0] = slot[0] + 1
+    return ret_str
 
 
 def layout_declare_sampler(
-    slot: int,
+    slot: Union[int, List[int]],
     access_type: str,
     var_name: str,
     dtype: str,
@@ -222,11 +240,16 @@ def layout_declare_sampler(
     image_ndim: int = 3,
 ) -> str:
     sampler_type = TYPE_MAPPINGS["SAMPLER_T"][image_ndim][dtype]
-    return f"layout(set = 0, binding = {slot}) uniform {precision} {sampler_type} {var_name};"
+
+    ret_str = f"layout(set = 0, binding = {get_slot_val(slot)}) uniform {precision} {sampler_type} {var_name};"
+
+    if isinstance(slot, list):
+        slot[0] = slot[0] + 1
+    return ret_str
 
 
 def layout_declare_tensor(
-    slot: int,
+    slot: Union[int, List[int]],
     access_type: str,
     var_name: str,
     dtype: str,
@@ -262,7 +285,9 @@ def layout_declare_tensor(
         )
 
 
-def layout_declare_ubo(slot: int, *args, precision: str = "PRECISION") -> str:
+def layout_declare_ubo(
+    slot: Union[int, List[int]], *args, precision: str = "PRECISION"
+) -> str:
     assert len(args) % 2 == 0
 
     var_list = list(zip(args[::2], args[1::2]))
@@ -272,12 +297,14 @@ def layout_declare_ubo(slot: int, *args, precision: str = "PRECISION") -> str:
         ubo_name += var_name + "_"
 
     out_str = f"""
-layout(set = 0, binding = {slot}) uniform {precision} restrict readonly {ubo_name}UBO {{
+layout(set = 0, binding = {get_slot_val(slot)}) uniform {precision} restrict readonly {ubo_name}UBO {{
 """
     for type_name, var_name in var_list:
         out_str += f"{type_name} {var_name};\n"
     out_str += "};"
 
+    if isinstance(slot, list):
+        slot[0] = slot[0] + 1
     return out_str
 
 

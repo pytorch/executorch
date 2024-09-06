@@ -16,7 +16,6 @@
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/runner.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/platform/log.h>
 
 #include <gflags/gflags.h>

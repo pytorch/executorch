@@ -21,7 +21,7 @@
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
+#include <executorch/extension/tensor/tensor.h>
 
 class RpcMemAllocator {
  public:
@@ -248,13 +248,13 @@ class Runner {
   T getMetadataHelper(std::string method_name, T default_val);
   template <typename T>
   int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
-  Result<torch::executor::Tensor> run_model_step(
+  Result<Tensor> run_model_step(
       int64_t input_token,
-      Tensor& token,
-      Tensor& start_pos,
-      Tensor& atten_mask,
-      std::vector<Tensor>& kv_tensors,
-      std::vector<Tensor>& kv_outputs);
+      ::executorch::extension::TensorPtr& token,
+      ::executorch::extension::TensorPtr& start_pos,
+      ::executorch::extension::TensorPtr& atten_mask,
+      std::vector<::executorch::extension::TensorPtr>& kv_tensors,
+      std::vector<::executorch::extension::TensorPtr>& kv_outputs);
   // metadata
   int32_t vocab_size_;
   int64_t bos_id_;
