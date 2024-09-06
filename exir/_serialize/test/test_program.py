@@ -583,6 +583,33 @@ class TestProgram(unittest.TestCase):
         program2 = deserialize_pte_binary(pte_data)
         self.assert_programs_equal(program, program2)
 
+    def test_no_constants(self) -> None:
+        program = get_test_program()
+        # Insert placeholder for non-const tensors.
+        add_constant_data(program, [b""])
+
+        pte_data = bytes(
+            serialize_pte_binary(
+                program,
+                extract_delegate_segments=True,
+                segment_alignment=SEGMENT_ALIGNMENT,
+                constant_tensor_alignment=CONSTANT_TENSOR_ALIGNMENT,
+            )
+        )
+        # The input Program should not be modified.
+        self.assertEqual(program.segments, [])
+
+        # Peek inside the actual flatbuffer data to see the segments.
+        flatbuffer_program = _json_to_program(_program_flatbuffer_to_json(pte_data))
+
+        # Constant buffer should be empty.
+        self.assertEqual(len(flatbuffer_program.constant_buffer), 0)
+
+        # Constant segment should contain the placeholder.
+        self.assertEqual(flatbuffer_program.constant_segment.segment_index, 0)
+        self.assertEqual(len(flatbuffer_program.constant_segment.offsets), 1)
+        self.assertEqual(flatbuffer_program.constant_segment.offsets[0], 0)
+
     def test_unused_inline_delegate_blobs_with_segments(self) -> None:
         # Create a program with some delegate data blobs.
         program = get_test_program()
