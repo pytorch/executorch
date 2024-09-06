@@ -6,15 +6,16 @@
 # Utiliy functions for TOSA quantized lowerings
 
 import math
-from typing import NamedTuple
+from typing import NamedTuple, Sequence
 
 import numpy as np
 
 import serializer.tosa_serializer as ts
 import torch.fx
+import tosa.Op as TosaOp
 from executorch.backends.arm.tosa_mapping import map_dtype, TosaArg
 from executorch.exir.dialects._ops import ops as exir_ops
-from serializer.tosa_serializer import TosaOp, TosaSerializerTensor
+from serializer.tosa_serializer import TosaSerializerTensor
 from torch.fx import Node
 
 q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
@@ -65,6 +66,7 @@ def is_quant_node(node: torch.fx.Node):
 
 
 def get_quant_node_dtype(node: torch.fx.Node):
+    # pyre-ignore[16]: Undefined attribute.
     if "tosa" in node.target.__name__:
         return node.meta["val"].dtype
 
@@ -231,7 +233,7 @@ def build_rescale_from_int32(
     rescale_scale,
     is_scale32=True,
     is_double_round=False,
-) -> TosaSerializerTensor:
+) -> None:
     multiplier, shift = compute_multiplier_and_shift(rescale_scale)
     attr_rescale_output = ts.TosaSerializerAttribute()
     attr_rescale_output.RescaleAttribute(
@@ -254,7 +256,7 @@ def build_rescale_from_int32(
 
 
 def rescale_nodes_to_int32(
-    nodes: list[Node], tosa_graph: ts.TosaSerializer
+    nodes: Sequence[Node], tosa_graph: ts.TosaSerializer
 ) -> tuple[list[TosaSerializerTensor], float]:
     """Rescales all 'nodes' to int32, adding suitable RESCALE ops to 'tosa_graph'.
     The scales are adjusted using the smallest scale of all 'nodes'.

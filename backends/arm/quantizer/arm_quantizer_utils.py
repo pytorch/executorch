@@ -10,7 +10,7 @@
 #
 
 import operator
-from typing import Callable, cast, List
+from typing import Callable, cast, List, Union
 
 import torch
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
@@ -72,7 +72,7 @@ def get_shared_qspec(
 
         Both outputs are None if one of the inputs is a node that can't be quantized.
     """
-    input_act0 = node.args[0]
+    input_act0 = cast(Node, node.args[0])
     input_act1 = node.args[1]
 
     input_act_qspec = quantization_config.get_input_act_qspec()
@@ -169,7 +169,9 @@ def propagate_annotation(model: GraphModule) -> None:
         n = cast(Node, n)
         if is_annotated(n):
             continue
-        if n.op != "call_function" or not is_share_obs_or_fq_op(n.target):
+        if n.op != "call_function" or not is_share_obs_or_fq_op(
+            cast(Callable, n.target)
+        ):
             continue
 
         prev_node = n.args[0]
@@ -217,7 +219,7 @@ def convert_scalars_to_attrs(model: GraphModule) -> GraphModule:
             prefix = "_tensor_constant_"
             get_new_attr_name = get_new_attr_name_with_prefix(prefix)
             tensor_constant_name = get_new_attr_name(model)
-            float_tensor = torch.tensor(float(args[i]))
+            float_tensor = torch.tensor(float(cast(Union[int, float], args[i])))
             model.register_buffer(tensor_constant_name, float_tensor)
             fake_mode = n.meta["val"].fake_mode
             with model.graph.inserting_before(n):
