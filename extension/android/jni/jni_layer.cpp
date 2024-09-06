@@ -377,7 +377,6 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("forward", ExecuTorchJni::forward),
         makeNativeMethod("execute", ExecuTorchJni::execute),
         makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
-        makeNativeMethod("forwardOnes", ExecuTorchJni::forward_ones),
     });
   }
 };
