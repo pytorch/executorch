@@ -93,6 +93,32 @@ Result<uint64_t> LlavaRunner::prefill_prompt(
   return text_prefiller_->prefill(prompt_tokens, start_pos);
 }
 
+Error LlavaRunner::generate_from_pos(
+    const std::string& prompt,
+    int32_t seq_len,
+    int64_t start_pos,
+    std::function<void(const std::string&)> token_callback,
+    std::function<void(const ::executorch::extension::llm::Stats&)>
+        stats_callback) {
+  // prefill user prompt. No BOS because preset prompt already has it.
+  token_callback(prompt);
+
+  uint64_t prefill_next_token =
+      ET_UNWRAP(prefill_prompt(prompt, start_pos, /*bos=*/0, /*eos*/ 0));
+  stats_.num_prompt_tokens = start_pos;
+
+  // Generate tokens
+  int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
+      {prefill_next_token}, start_pos, seq_len, token_callback));
+
+  // Bookkeeping
+  stats_.num_generated_tokens = num_generated_tokens;
+  ::executorch::llm::print_report(stats_);
+  if (stats_callback) {
+    stats_callback(stats_);
+  }
+}
+
 Error LlavaRunner::generate(
     std::vector<Image> images,
     const std::string& prompt,
@@ -122,25 +148,9 @@ Error LlavaRunner::generate(
   // prefill images
   prefill_images(images, pos);
 
-  // prefill user prompt. No BOS because preset prompt already has it.
-  wrapped_callback(prompt);
-
-  uint64_t prefill_next_token =
-      ET_UNWRAP(prefill_prompt(prompt, pos, /*bos=*/0, /*eos*/ 0));
-  stats_.num_prompt_tokens = pos;
-
   // Generate tokens
-  int64_t num_generated_tokens = ET_UNWRAP(text_token_generator_->generate(
-      {prefill_next_token}, pos, seq_len, wrapped_callback));
-
-  // Bookkeeping
-  stats_.num_generated_tokens = num_generated_tokens;
-  ::executorch::llm::print_report(stats_);
-  if (stats_callback) {
-    stats_callback(stats_);
-  }
-
-  return Error::Ok;
+  return generate_from_pos(
+      prompt, seq_len, pos, wrapped_callback, stats_callback);
 }
 
 } // namespace torch::executor
