@@ -73,6 +73,9 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
 
   @Override
   public void onResult(String result) {
+    if (result.equals(PromptFormat.getStopToken(mCurrentSettingsFields.getModelType()))) {
+      return;
+    }
     if (result.equals("\n\n")) {
       if (!mResultMessage.getText().isEmpty()) {
         mResultMessage.appendText(result);
