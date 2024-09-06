@@ -84,7 +84,19 @@ Tensor& opt_add_out(
 
   if (b.numel() == 1) {
     if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half) {
-      auto error = resize_tensor(out, a.sizes());
+      Error error = Error::Ok;
+      if (a.numel() == 1 && b.numel() == 1) {
+        // Single-element tensors could have rank 0 or 1, so it's
+        // possible that the rank of the inputs doesn't match the
+        // output rank. resize_tensor doesn't like that. If it's rank
+        // 0 then it doesn't need resizing; if it's not rank 0 then we
+        // know exactly what we need.
+        if (out.dim() != 0) {
+          error = resize_tensor(out, {1});
+        }
+      } else {
+        error = resize_tensor(out, a.sizes());
+      }
       ET_KERNEL_CHECK_MSG(
           ctx,
           error == Error::Ok,
