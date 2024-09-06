@@ -94,6 +94,44 @@ public class LlamaModule {
       int seqLen,
       LlamaCallback llamaCallback);
 
+  /**
+   * Prefill an LLaVA Module with the given text input.
+   *
+   * @param prompt The text prompt to LLaVA.
+   * @param startPos The starting position in KV cache of the input in the LLM. It's passed as
+   *     reference and will be updated inside this function.
+   * @param bos The number of BOS (begin of sequence) token.
+   * @param eos The number of EOS (end of sequence) token.
+   * @return a tuple of (error, token, updated startPos)
+   */
+  public static native long[] prefill_prompt(
+      String prompt, long startPos, int bos, int eos, long generatedToken);
+
+  /**
+   * Prefill an LLaVA Module with the given images input.
+   *
+   * @param image Input image as a byte array
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
+   * @param startPos The starting position in KV cache of the input in the LLM.
+   * @return a tuple of (error code, updated startPos)
+   */
+  public static native long[] prefill_images(
+      int[] image, int width, int height, int channels, long startPos);
+
+  /**
+   * Generate tokens from the given prompt, starting from the given position.
+   *
+   * @param prompt The text prompt to LLaVA.
+   * @param seqLen The total sequence length, including the prompt tokens and new tokens.
+   * @param startPos The starting position in KV cache of the input in the LLM.
+   * @param llamaCallback callback object to receive results.
+   * @return The error code.
+   */
+  public static native int generate_from_pos(
+      String prompt, int seqLen, long startPos, ExecuTorchLlamaCallback callback);
+
   /** Stop current generate() before it finishes. */
   @DoNotStrip
   public native void stop();
