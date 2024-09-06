@@ -88,10 +88,12 @@ Result<util::BufferCleanup> prepare_input_tensors(
   size_t num_inputs = method_meta.num_inputs();
   size_t num_allocated = 0;
 
+#ifdef SEMIHOSTING
   ET_CHECK_OR_RETURN_ERROR(
       input_buffers.size() > 0 && num_inputs == input_buffers.size(),
       InvalidArgument,
       "Wrong number of inputs allocated compared to method");
+#endif
 
   void** inputs =
       static_cast<void**>(allocator.allocate(num_inputs * sizeof(void*)));
