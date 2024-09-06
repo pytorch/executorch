@@ -95,19 +95,6 @@ public class LlamaModule {
       LlamaCallback llamaCallback);
 
   /**
-   * Prefill an LLaVA Module with the given text input.
-   *
-   * @param prompt The text prompt to LLaVA.
-   * @param startPos The starting position in KV cache of the input in the LLM. It's passed as
-   *     reference and will be updated inside this function.
-   * @param bos The number of BOS (begin of sequence) token.
-   * @param eos The number of EOS (end of sequence) token.
-   * @return a tuple of (error, token, updated startPos)
-   */
-  public static native long[] prefillPrompt(
-      String prompt, long startPos, int bos, int eos);
-
-  /**
    * Prefill an LLaVA Module with the given images input.
    *
    * @param image Input image as a byte array
@@ -115,10 +102,35 @@ public class LlamaModule {
    * @param height Input image height
    * @param channels Input image number of channels
    * @param startPos The starting position in KV cache of the input in the LLM.
-   * @return a tuple of (error code, updated startPos)
+   * @return The updated starting position in KV cache of the input in the LLM.
    */
-  public static native long[] prefillImages(
+  public long prefillImages(
+      int[] image, int width, int height, int channels, long startPos) {
+    return prefillImagesNative(image, width, height, channels, startPos)[1];
+  }
+
+  // returns a tuple of (error code, updated startPos)
+  private native long[] prefillImagesNative(
       int[] image, int width, int height, int channels, long startPos);
+
+  /**
+   * Prefill an LLaVA Module with the given text input.
+   *
+   * @param prompt The text prompt to LLaVA.
+   * @param startPos The starting position in KV cache of the input in the LLM. It's passed as
+   *     reference and will be updated inside this function.
+   * @param bos The number of BOS (begin of sequence) token.
+   * @param eos The number of EOS (end of sequence) token.
+   * @return The updated starting position in KV cache of the input in the LLM.
+   */
+  public long prefillPrompt(String prompt, long startPos, int bos, int eos) {
+    return prefillPromptNative(prompt, startPos, bos, eos)[2];
+  }
+
+
+  // returns a tuple of (error, token, updated startPos)
+  private native long[] prefillPromptNative(
+      String prompt, long startPos, int bos, int eos);
 
   /**
    * Generate tokens from the given prompt, starting from the given position.
@@ -129,7 +141,7 @@ public class LlamaModule {
    * @param llamaCallback callback object to receive results.
    * @return The error code.
    */
-  public static native int generateFromPos(
+  public native int generateFromPos(
       String prompt, int seqLen, long startPos, LlamaCallback callback);
 
   /** Stop current generate() before it finishes. */
