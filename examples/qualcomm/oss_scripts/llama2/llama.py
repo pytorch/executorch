@@ -315,7 +315,6 @@ class SingleLlama:
             passes=[
                 BuildQuantIo(),
             ],
-            extract_constant_segment=False,
             # For shared buffer, user must pass the memory address
             # which is allocated by RPC memory to executor runner.
             # Therefore, won't want to pre-allocate

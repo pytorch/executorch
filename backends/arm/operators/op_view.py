@@ -6,6 +6,7 @@ from typing import List
 
 import serializer.tosa_serializer as ts
 import torch
+import tosa.Op as TosaOp
 
 from executorch.backends.arm.operators.node_visitor import (
     NodeVisitor,
@@ -13,7 +14,6 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_utils import tosa_shape
-from serializer.tosa_serializer import TosaOp
 
 
 @register_node_visitor

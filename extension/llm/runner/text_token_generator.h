@@ -12,6 +12,7 @@
 #include <executorch/extension/llm/runner/stats.h>
 #include <executorch/extension/llm/runner/text_decoder_runner.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
+#include <executorch/extension/tensor/tensor.h>
 
 namespace executorch {
 namespace extension {
@@ -69,15 +70,18 @@ class TextTokenGenerator {
     }
 
     // initialize tensor wrappers
-    ManagedTensor tokens_managed(
-        token_data.data(), token_shape, exec_aten::ScalarType::Long);
+    auto tokens_managed = from_blob(
+        token_data.data(),
+        token_shape,
+        exec_aten::ScalarType::Long,
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
 
-    ManagedTensor start_pos_managed(&pos, {1}, exec_aten::ScalarType::Long);
+    auto start_pos_managed = from_blob(&pos, {1}, exec_aten::ScalarType::Long);
 
     // Generate our tokens
     while (pos < seq_len - 1) {
       // Run the model
-      ::executorch::runtime::Result<exec_aten::Tensor> logits_res =
+      auto logits_res =
           text_decoder_runner_->step(tokens_managed, start_pos_managed);
 
       ET_CHECK_OK_OR_RETURN_ERROR(logits_res.error());
@@ -98,7 +102,8 @@ class TextTokenGenerator {
       } else {
         // push it to the back
         token_data.push_back(cur_token);
-        tokens_managed.resize({1, static_cast<int>(token_data.size())});
+        ET_CHECK_OK_OR_RETURN_ERROR(resize_tensor_ptr(
+            tokens_managed, {1, static_cast<int>(token_data.size())}));
       }
 
       // print the token as string, decode it with the Tokenizer object
