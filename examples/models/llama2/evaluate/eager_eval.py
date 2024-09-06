@@ -83,7 +83,7 @@ class EagerEvalWrapper(eval_wrapper):
                 # graph module exported without dynamic shape won't work with a different shape.
                 # And we have to do single token prefill here.
                 result_logits = []
-                for pos in range(self._max_seq_length):
+                for pos in range(inps.shape[-1]):
                     pos_tensor = torch.tensor([pos], dtype=torch.int64)
                     logits = self._model(inps[:, pos : pos + 1], pos_tensor)
                     result_logits.append(logits)

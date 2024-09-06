@@ -162,7 +162,7 @@ def gen_eval_wrapper(
         tokenizer=tokenizer,
         max_seq_length=args.max_seq_length,
         use_kv_cache=args.use_kv_cache,
-        dynamic_shape=(manager.dynamic_shapes != None),
+        dynamic_shape=(manager.dynamic_shapes is not None),
     )
 
 

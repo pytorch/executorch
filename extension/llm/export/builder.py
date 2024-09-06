@@ -11,7 +11,6 @@
 import logging
 from enum import Enum
 from typing import Any, Callable, List, Optional
-from executorch.extension.llm.tokenizer.utils import get_tokenizer
 
 import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
@@ -28,6 +27,7 @@ from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
+from executorch.extension.llm.tokenizer.utils import get_tokenizer
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer import Quantizer
@@ -70,6 +70,7 @@ class LLMEdgeManager:
         calibration_tasks: Optional[List[str]] = None,
         calibration_limit: Optional[int] = None,
         calibration_seq_length: Optional[int] = None,
+        calibration_data: Optional[str] = None,
         tokenizer_path: Optional[str] = None,
         verbose: bool = False,
         metadata: Optional[dict] = None,
@@ -95,6 +96,7 @@ class LLMEdgeManager:
         self.calibration_tasks = calibration_tasks
         self.calibration_limit = calibration_limit
         self.calibration_seq_length = calibration_seq_length
+        self.calibration_data = calibration_data
         self.tokenizer_path = tokenizer_path
 
     def set_output_dir(self, output_dir: str) -> "LLMEdgeManager":
@@ -176,18 +178,21 @@ class LLMEdgeManager:
             )
         return self
 
-
     def pt2e_calibrate(
         self,
         prepared_module,
         calibration_tasks,
         calibration_limit,
         calibration_seq_length,
+        calibration_data,
         tokenizer_path,
     ):
         logging.info("Run calibration...")
         try:
-            from executorch.examples.models.llama2.evaluate import EagerEvalWrapper, evaluate_model
+            from executorch.examples.models.llama2.evaluate import (
+                EagerEvalWrapper,
+                evaluate_model,
+            )
         except ImportError:
             raise ImportError(
                 "Please install the llm eval dependency via examples/models/llama2/install_requirements.sh"
@@ -195,22 +200,29 @@ class LLMEdgeManager:
 
         tokenizer = get_tokenizer(tokenizer_path)
 
-        def calibrate_template(module: torch.fx.GraphModule, tokenizer, string: str = "Once upon a time", max_len: int = 128):
-                # TODO: change criteria & support batch inputs if necessary
-                pos = torch.tensor(0, dtype=torch.int64)
-                token_list = [tokenizer.bos_id] + tokenizer.encode(string, bos=True, eos=False)
+        def calibrate_template(
+            module: torch.fx.GraphModule, tokenizer, prompts: str, max_len: int
+        ):
+            # TODO: change criteria & support batch inputs if necessary
+            pos = torch.tensor(0, dtype=torch.int64)
+            token_list = tokenizer.encode(prompts, bos=True, eos=False)
 
-                with torch.no_grad():
-                    while token_list[-1] != tokenizer.eos_id and pos < max_len:
-                        logits = module(
-                            torch.full((1, 1), token_list[pos]),
-                            torch.tensor((pos, )),
-                        )
-                        pos += 1
-                        if pos >= len(token_list):
-                            token_list.append(torch.argmax(logits[:], dim=-1).item())
+            with torch.no_grad():
+                while token_list[-1] != tokenizer.eos_id and pos < max_len:
+                    logits = module(
+                        torch.full((1, 1), token_list[pos]),
+                        torch.tensor((pos,)),
+                    )
+                    pos += 1
+                    if pos >= len(token_list):
+                        token_list.append(torch.argmax(logits[:], dim=-1).item())
 
-        calibrate_template(prepared_module, tokenizer, string="Once upon a time", max_len=calibration_seq_length)
+        calibrate_template(
+            module=prepared_module,
+            tokenizer=tokenizer,
+            prompts=calibration_data,
+            max_len=calibration_seq_length,
+        )
 
         eval_wrapper = EagerEvalWrapper(
             model=prepared_module.to(device="cuda"),
@@ -251,20 +263,26 @@ class LLMEdgeManager:
                     self.pre_autograd_graph_module is not None
                 ), "Please run capture_pre_autograd_graph first"
                 m = prepare_pt2e(self.pre_autograd_graph_module, composed_quantizer)
+                logging.info(
+                    f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"
+                )
                 # Calibrate
-                logging.info(f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, seq_length: {self.calibration_seq_length}, tokenizer_path: {self.tokenizer_path}")
                 if (
                     self.calibration_tasks is not None
                     and self.calibration_limit is not None
                     and self.calibration_seq_length is not None
+                    and self.calibration_data is not None
                     and self.tokenizer_path is not None
                 ):
-                    logging.info(f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, seq_length: {self.calibration_seq_length}")
+                    logging.info(
+                        f"Calibrating with tasks: {self.calibration_tasks}, limit: {self.calibration_limit}, calibration_data: {self.calibration_data}, tokenizer_path: {self.tokenizer_path}, seq_length: {self.calibration_seq_length}"
+                    )
                     self.pt2e_calibrate(
                         prepared_module=m,
                         calibration_tasks=self.calibration_tasks,
                         calibration_limit=self.calibration_limit,
                         calibration_seq_length=self.calibration_seq_length,
+                        calibration_data=self.calibration_data,
                         tokenizer_path=self.tokenizer_path,
                     )
                 else:
