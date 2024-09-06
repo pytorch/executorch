@@ -16,9 +16,10 @@ layout(std430) buffer;
 
 #extension GL_EXT_control_flow_attributes : require
 
-${layout_declare_tensor(0, "w", "t_out", "int8", "texture3d")}
-${layout_declare_buffer(1, "r", "nchw_in", "int")}
-${layout_declare_ubo(2, "ivec4", "tensor_sizes")}
+${layout_declare_tensor(B, "w", "t_out", "int8", "texture3d")}
+${layout_declare_buffer(B, "r", "nchw_in", "int")}
+${layout_declare_ubo(B, "ivec4", "sizes")}
+${layout_declare_ubo(B, "ivec4", "axis_mapping")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -36,7 +37,7 @@ int extend_sign(int x) {
 
 ivec4 read_texel(ivec4 tensor_idx) {
   const ivec4 buf_indices = get_texel_nchw_buffer_ixs(
-      tensor_idx, tensor_sizes, packed_dim);
+      tensor_idx, sizes, packed_dim);
 
   int shift = (1 << 8) - 1;
   ivec4 masks;
@@ -51,7 +52,7 @@ ivec4 read_texel(ivec4 tensor_idx) {
   ivec4 out_tex = ivec4(0);
 
   [[unroll]] for (int i = 0; i < 4; ++i) {
-    if (tensor_idx[packed_dim] + i < tensor_sizes[packed_dim]) {
+    if (tensor_idx[packed_dim] + i < sizes[packed_dim]) {
       int in_texel = nchw_in[buf_indices[i] / 4];
       int extracted_val = (in_texel & masks[i]) >> (8 * (buf_indices[i] % 4));
       extracted_val = extend_sign(extracted_val);
@@ -64,9 +65,9 @@ ivec4 read_texel(ivec4 tensor_idx) {
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 tensor_idx = to_tensor_idx(pos, tensor_sizes, packed_dim);
+  const ivec4 tensor_idx = to_tensor_idx(pos, sizes, axis_mapping, packed_dim);
 
-  if (any(greaterThanEqual(tensor_idx, tensor_sizes))) {
+  if (any(greaterThanEqual(tensor_idx, sizes))) {
     return;
   }
 
