@@ -37,5 +37,13 @@ void get_mm_out_target_size(
     Tensor::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_linear_args(const Tensor& in, const Tensor& mat2, Tensor& out);
+
+void get_linear_out_target_size(
+    const Tensor& mat1,
+    const Tensor& mat2,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim);
+
 } // namespace executor
 } // namespace torch
