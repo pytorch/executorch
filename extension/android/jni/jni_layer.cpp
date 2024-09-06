@@ -297,6 +297,9 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
     // If no inputs is given, it will run with sample inputs (ones)
     if (jinputs->size() == 0) {
+      if (module_->load_method(method) != Error::Ok) {
+        return {};
+      }
       auto&& underlying_method = module_->methods_[method].method;
       auto&& buf = prepare_input_tensors(*underlying_method);
       auto result = underlying_method->execute();
