@@ -180,34 +180,51 @@ class ExecuTorchLlamaJni
     return 0;
   }
 
-  jint prefill_prompt(
+  // Returns a tuple of (error, token, start_pos)
+  // Contract is valid within an AAR (JNI + corresponding Java code)
+  // If the first element is not Error::Ok, the other two elements are
+  // undefined.
+  facebook::jni::local_ref<jlongArray> prefill_prompt(
       facebook::jni::alias_ref<jstring> prompt,
       jlong start_pos,
       jint bos,
       jint eos,
       jlong generated_token) {
+    facebook::jni::local_ref<jlongArray> tuple_result =
+        facebook::jni::make_long_array(3);
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(Error::NotSupported);
+      tuple_result->pin()[0] = static_cast<jint>(Error::NotSupported);
+      return tuple_result;
     }
 
     auto&& result = multi_modal_runner_->prefill_prompt(
         prompt->toStdString(), start_pos, bos, eos);
+    tuple_result->pin()[0] = static_cast<jint>(Error::Ok);
     if (result.ok()) {
       // TODO(hsz): make  generated_token a reference and update it here
       generated_token = result.get();
-      return 0;
+      tuple_result->pin()[1] = static_cast<jlong>(generated_token);
+      tuple_result->pin()[2] = static_cast<jlong>(start_pos);
     }
-    return static_cast<jint>(result.error());
+    return tuple_result;
   }
 
-  jint prefill_images(
+  // Returns a tuple of (error, start_pos)
+  // Contract is valid within an AAR (JNI + corresponding Java code)
+  // If the first element is not Error::Ok, the other element is undefined.
+
+  facebook::jni::local_ref<jlongArray> prefill_images(
       facebook::jni::alias_ref<jintArray> image,
       jint width,
       jint height,
       jint channels,
       jlong start_pos) {
+    facebook::jni::local_ref<jlongArray> tuple_result =
+        facebook::jni::make_long_array(2);
+
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
-      return static_cast<jint>(Error::NotSupported);
+      tuple_result->pin()[0] = static_cast<jint>(Error::NotSupported);
+      return tuple_result;
     }
 
     auto image_size = image->size();
@@ -225,6 +242,9 @@ class ExecuTorchLlamaJni
     // TODO(hsz): make  start_pos a reference and update it here
     jint result = static_cast<jint>(
         multi_modal_runner_->prefill_images(images, start_pos));
+    tuple_result->pin()[0] = result;
+    tuple_result->pin()[1] = static_cast<jlong>(start_pos);
+    return tuple_result;
   }
 
   jint generate_from_pos(
