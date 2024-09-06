@@ -294,7 +294,6 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       facebook::jni::alias_ref<
           facebook::jni::JArrayClass<JEValue::javaobject>::javaobject>
           jinputs) {
-
     // If no inputs is given, it will run with sample inputs (ones)
     if (jinputs->size() == 0) {
       if (module_->load_method(method) != Error::Ok) {
@@ -307,10 +306,12 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         return {};
       }
       facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> jresult =
-        facebook::jni::JArrayClass<JEValue>::newArray(underlying_method->outputs_size());
+          facebook::jni::JArrayClass<JEValue>::newArray(
+              underlying_method->outputs_size());
 
       for (int i = 0; i < underlying_method->outputs_size(); i++) {
-        auto jevalue = JEValue::newJEValueFromEValue(underlying_method->get_output(i));
+        auto jevalue =
+            JEValue::newJEValueFromEValue(underlying_method->get_output(i));
         jresult->setElement(i, *jevalue);
       }
       return jresult;

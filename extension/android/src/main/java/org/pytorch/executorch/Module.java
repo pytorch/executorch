@@ -79,9 +79,9 @@ public class Module {
   /**
    * Runs the 'forward' method of this module with the specified arguments.
    *
-   * @param inputs arguments for the ExecuTorch module's 'forward' method.
-   * Note: if method 'forward' requires inputs but no inputs are given, the
-   * function will not error out, but run 'forward' with sample inputs.
+   * @param inputs arguments for the ExecuTorch module's 'forward' method. Note: if method 'forward'
+   *     requires inputs but no inputs are given, the function will not error out, but run 'forward'
+   *     with sample inputs.
    * @return return value from the 'forward' method.
    */
   public EValue[] forward(EValue... inputs) {
