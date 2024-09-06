@@ -41,15 +41,13 @@ target_include_directories(
   extension_module INTERFACE ${_common_include_directories}
 )
 
-if(EXECUTORCH_USE_TIKTOKEN)
-  list(APPEND _llama_runner__srcs
-       ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizer/tiktoken.cpp
-  )
-  list(APPEND _llama_runner__srcs
-       ${CMAKE_CURRENT_SOURCE_DIR}/../tokenizer/llama_tiktoken.cpp
-  )
-  set(_preprocessor_flag -DET_USE_TIKTOKEN)
-endif()
+list(
+  APPEND _llama_runner__srcs
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../../extension/llm/tokenizer/tiktoken.cpp
+)
+list(APPEND _llama_runner__srcs
+     ${CMAKE_CURRENT_SOURCE_DIR}/../tokenizer/llama_tiktoken.cpp
+)
 
 if(CMAKE_TOOLCHAIN_IOS
    OR ANDROID
@@ -62,7 +60,24 @@ else()
   add_library(llama_runner SHARED ${_llama_runner__srcs})
 endif()
 
-set(llama_runner_deps executorch extension_module extension_data_loader)
+# find RE2 for tokenizer, build tiktoken
+set(ABSL_ENABLE_INSTALL ON)
+set(ABSL_PROPAGATE_CXX_STD ON)
+set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/third-party/abseil-cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
+)
+add_subdirectory(
+  ${EXECUTORCH_ROOT}/extension/llm/third-party/re2
+  ${CMAKE_CURRENT_BINARY_DIR}/re2
+)
+set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
+
+set(llama_runner_deps executorch extension_data_loader extension_module
+                      extension_tensor re2::re2
+)
 
 target_link_libraries(llama_runner PUBLIC ${llama_runner_deps})
 

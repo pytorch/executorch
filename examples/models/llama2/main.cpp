@@ -11,8 +11,8 @@
 #include <executorch/examples/models/llama2/runner/runner.h>
 
 #if defined(ET_USE_THREADPOOL)
-#include <executorch/backends/xnnpack/threadpool/cpuinfo_utils.h>
-#include <executorch/backends/xnnpack/threadpool/threadpool.h>
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
+#include <executorch/extension/threadpool/threadpool.h>
 #endif
 
 DEFINE_string(

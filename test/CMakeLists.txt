@@ -62,8 +62,9 @@ endif()
 #
 add_executable(size_test_all_ops ${_size_test__srcs})
 target_link_options_shared_lib(portable_ops_lib)
-target_link_libraries(size_test_all_ops executorch
-  portable_ops_lib portable_kernels)
+target_link_libraries(
+  size_test_all_ops executorch portable_ops_lib portable_kernels
+)
 if(CMAKE_BUILD_TYPE EQUAL "Release")
   target_link_options(size_test_all_ops PRIVATE "LINKER:--gc-sections")
 endif()

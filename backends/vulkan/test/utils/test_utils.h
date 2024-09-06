@@ -37,13 +37,13 @@ using namespace vkcompute;
       allocate_memory);
 
 #define DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(tensor)          \
-  api::StorageBuffer staging_buffer_##tensor(                        \
+  api::StagingBuffer staging_buffer_##tensor(                        \
       api::context(), vkapi::kFloat, tensor.staging_buffer_numel()); \
   record_nchw_to_image_op(                                           \
       api::context(), staging_buffer_##tensor.buffer(), tensor);
 
 #define DEFINE_STAGING_BUFFER_AND_RECORD_FROM_GPU_FOR(tensor)        \
-  api::StorageBuffer staging_buffer_##tensor(                        \
+  api::StagingBuffer staging_buffer_##tensor(                        \
       api::context(), vkapi::kFloat, tensor.staging_buffer_numel()); \
   record_image_to_nchw_op(                                           \
       api::context(), tensor, staging_buffer_##tensor.buffer());
@@ -85,7 +85,7 @@ void record_image_to_nchw_op(
 void record_int8_image_to_nchw_noint8_op(
     api::Context* const context,
     api::vTensor& v_src,
-    api::StorageBuffer& dst_buffer);
+    api::StagingBuffer& dst_buffer);
 
 void record_conv2d_prepack_weights_op(
     api::Context* const context,
@@ -126,13 +126,13 @@ void record_reference_matmul(
 //
 
 inline void
-fill_staging(api::StorageBuffer& staging, float val, int numel = -1) {
+fill_staging(api::StagingBuffer& staging, float val, int numel = -1) {
   if (numel < 0) {
     numel = staging.numel();
   }
   std::vector<float> data(numel);
   std::fill(data.begin(), data.end(), val);
-  copy_ptr_to_staging(data.data(), staging, sizeof(float) * numel);
+  staging.copy_from(data.data(), sizeof(float) * numel);
 }
 
 void fill_vtensor(api::vTensor& vten, std::vector<float>& data);
@@ -143,6 +143,11 @@ std::vector<float> create_random_float_buffer(
     const size_t numel,
     const float min = 0,
     const float max = 1);
+
+std::vector<uint8_t> create_random_uint8_buffer(
+    const size_t numel,
+    const uint8_t min = 0,
+    const uint8_t max = 255);
 
 void fill_vtensor(
     ComputeGraph& graph,
@@ -159,12 +164,12 @@ inline std::vector<float> extract_vtensor(api::vTensor& vten) {
 }
 
 inline void
-check_staging_buffer(api::StorageBuffer& staging, float val, int numel = -1) {
+check_staging_buffer(api::StagingBuffer& staging, float val, int numel = -1) {
   if (numel < 0) {
     numel = staging.numel();
   }
   std::vector<float> data(numel);
-  copy_staging_to_ptr(staging, data.data(), sizeof(float) * numel);
+  staging.copy_to(data.data(), sizeof(float) * numel);
 
   for (size_t i = 0; i < data.size(); ++i) {
     CHECK_VALUE(data, i, val);

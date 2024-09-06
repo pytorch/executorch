@@ -46,6 +46,16 @@ public class ETImage {
     return bytes;
   }
 
+  public int[] getInts() {
+    // We need to convert the byte array to an int array because
+    // the runner expects an int array as input.
+    int[] intArray = new int[bytes.length];
+    for (int i = 0; i < bytes.length; i++) {
+      intArray[i] = (bytes[i++] & 0xFF);
+    }
+    return intArray;
+  }
+
   private byte[] getBytesFromImageURI(Uri uri) {
     try {
       int RESIZED_IMAGE_WIDTH = 336;
@@ -72,9 +82,9 @@ public class ETImage {
           int blue = Color.blue(color);
 
           // Store the RGB values in the byte array
-          rgbValues[(y * width + x) * 3] = (byte) red;
-          rgbValues[(y * width + x) * 3 + 1] = (byte) green;
-          rgbValues[(y * width + x) * 3 + 2] = (byte) blue;
+          rgbValues[y * width + x] = (byte) red;
+          rgbValues[(y * width + x) + height * width] = (byte) green;
+          rgbValues[(y * width + x) + 2 * height * width] = (byte) blue;
         }
       }
       return rgbValues;

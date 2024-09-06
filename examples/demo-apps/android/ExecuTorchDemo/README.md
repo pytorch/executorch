@@ -53,7 +53,7 @@ For delegating to Qualcomm Hexagon NPU, please follow the tutorial [here](build-
 After generating the model, copy the model to `assets` directory.
 
 ```bash
-python -m examples.qualcomm.scripts.deeplab_v3 -b cmake-out-android -m SM8450 -s <adb_connected_device_serial>
+python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8450 -s <adb_connected_device_serial>
 cp deeplab_v3/dlv3_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 
@@ -78,6 +78,7 @@ cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
   -DEXECUTORCH_BUILD_XNNPACK=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
   -Bcmake-android-out
 
 cmake --build cmake-android-out -j16 --target install
@@ -119,6 +120,7 @@ cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -Bcmake-android-out
 
 cmake --build cmake-android-out -j16 --target install

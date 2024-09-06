@@ -46,10 +46,11 @@ Tensor& to_copy_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REALHB_TYPES(self.scalar_type(), ctx, "to_copy", CTYPE_IN, [&] {
-    ET_SWITCH_REALHB_TYPES(out.scalar_type(), ctx, "to_copy", CTYPE_OUT, [&] {
-      _to_impl<CTYPE_IN, CTYPE_OUT>(self, out);
-    });
+  ET_SWITCH_REALHBBF16_TYPES(self.scalar_type(), ctx, "to_copy", CTYPE_IN, [&] {
+    ET_SWITCH_REALHBBF16_TYPES(
+        out.scalar_type(), ctx, "to_copy", CTYPE_OUT, [&] {
+          _to_impl<CTYPE_IN, CTYPE_OUT>(self, out);
+        });
   });
 
   return out;

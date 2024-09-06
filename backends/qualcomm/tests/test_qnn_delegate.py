@@ -1668,6 +1668,46 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 90)
 
+    def test_regnet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        weights = ["regnet_y_400mf", "regnet_x_400mf"]
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/regnet.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        for weight in weights:
+            p = subprocess.Popen(
+                cmds + ["--weights", weight], stdout=subprocess.DEVNULL
+            )
+            with Listener((self.ip, self.port)) as listener:
+                conn = listener.accept()
+                p.communicate()
+                msg = json.loads(conn.recv())
+                if "Error" in msg:
+                    self.fail(msg["Error"])
+                else:
+                    self.assertGreaterEqual(msg["top_1"], 60)
+                    self.assertGreaterEqual(msg["top_5"], 85)
+
     def test_ssd300_vgg16(self):
         if not self.required_envs([self.pretrained_weight, self.oss_repo]):
             self.skipTest("missing required envs")
@@ -1996,7 +2036,12 @@ class TestExampleQaihubScript(TestQNN):
                 self.fail(msg["Error"])
             else:
                 model_out = msg["result"]
-                self.assertTrue(model_out.startswith(prompt))
+                expected_result = (
+                    "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
+                    + prompt
+                    + "<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+                )
+                self.assertTrue(model_out.startswith(expected_result))
 
     def test_stable_diffusion(self):
         if not self.required_envs():

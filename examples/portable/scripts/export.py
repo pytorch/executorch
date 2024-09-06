@@ -62,7 +62,7 @@ def main() -> None:
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
-    backend_config = ExecutorchBackendConfig(extract_constant_segment=True)
+    backend_config = ExecutorchBackendConfig()
     if args.segment_alignment is not None:
         backend_config.segment_alignment = int(args.segment_alignment, 16)
     if (

@@ -23,8 +23,8 @@
 #include <executorch/runtime/platform/runtime.h>
 
 #if defined(ET_USE_THREADPOOL)
-#include <executorch/backends/xnnpack/threadpool/cpuinfo_utils.h>
-#include <executorch/backends/xnnpack/threadpool/threadpool.h>
+#include <executorch/extension/threadpool/cpuinfo_utils.h>
+#include <executorch/extension/threadpool/threadpool.h>
 #endif
 
 #include <fbjni/ByteBuffer.h>
@@ -165,7 +165,7 @@ class ExecuTorchLlamaJni
         images.push_back(image_runner);
       }
       multi_modal_runner_->generate(
-          images,
+          std::move(images),
           prompt->toStdString(),
           seq_len,
           [callback](std::string result) { callback->onResult(result); },

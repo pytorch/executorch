@@ -10,6 +10,8 @@ from typing import Callable, List, Optional
 
 import torch
 import torch.utils._pytree as pytree
+
+from executorch.exir._warnings import deprecated
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassBase, PassResult
 from executorch.exir.sym_util import eval_expr, eval_shape, eval_upper_bound
@@ -164,8 +166,21 @@ def index_Tensor(args, kwargs) -> List[Optional[int]]:  # noqa: C901
     return out_sizes
 
 
+@deprecated(
+    "`HintBasedSymShapeEvalPass` is deprecated "
+    "and will be removed in a future version of ExecuTorch. "
+    "Please use `ConstraintBasedSymShapeEvalPass` instead.",
+    category=FutureWarning,
+)
 class HintBasedSymShapeEvalPass(PassBase):
     """
+
+    .. warning::
+
+        'HintBasedSymShapeEvalPass` is deprecated
+        and will be removed in a future version of ExecuTorch.
+        Please use `ConstraintBasedSymShapeEvalPass` instead.
+
     If we enable dynamic shape tracing, a tensor's shape may become a symbolic
     formula. We should convert those symbolic formula to concrete value for
     static/upperbound tensors so we can properly do memory planning for them.
@@ -181,7 +196,7 @@ class HintBasedSymShapeEvalPass(PassBase):
 
     Warning: if you're using torch.export with constrain API, this method doesn't respect the input constraints.
 
-    Not inherit from ExportPass since we simply need a way to iterate thru
+    Not inherited from ExportPass since we simply need a way to iterate thru
     every node's output. PassBase is easier for that purpose.
     """
 
@@ -245,7 +260,7 @@ class ConstraintBasedSymShapeEvalPass(PassBase):
     formula. We should convert those symbolic formula to concrete value for
     static/upperbound tensors so we can properly do memory planning for them.
 
-    Not inherit from ExportPass since we simply need a way to iterate thru
+    Not inherited from ExportPass since we simply need a way to iterate through
     every node's output. PassBase is easier for that purpose.
     """
 

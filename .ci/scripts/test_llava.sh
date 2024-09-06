@@ -20,8 +20,9 @@ cmake_install_executorch_libraries() {
     cmake                                               \
         -DCMAKE_INSTALL_PREFIX=cmake-out                \
         -DCMAKE_BUILD_TYPE=${BUILD_TYPE}                \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON          \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON     \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON          \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON          \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON            \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON         \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON         \
@@ -61,7 +62,7 @@ export_llava() {
 # Download a new image with different size, to test if the model can handle different image sizes
 prepare_image_tensor() {
     echo "Downloading image"
-    curl -o basketball.jpg https://upload.wikimedia.org/wikipedia/commons/7/73/Chicago_Bulls_and_New_Jersey_Nets%2C_March_28%2C_1991.jpg 
+    curl -o basketball.jpg https://upload.wikimedia.org/wikipedia/commons/7/73/Chicago_Bulls_and_New_Jersey_Nets%2C_March_28%2C_1991.jpg
     $PYTHON_EXECUTABLE -m executorch.examples.models.llava.image_util --image-path basketball.jpg --output-path image.pt
 }
 
@@ -91,7 +92,7 @@ run_and_verify() {
     RESULT=$(cat result.txt)
     # set the expected prefix to be the same as prompt because there's a bug in sdpa_with_kv_cache that causes <unk> tokens.
     if [[ "$(uname)" == "Darwin" ]]; then
-        EXPECTED_PREFIX="ASSISTANT: image captures a basketball game in progress on a basketball court. There are several players on the court, with one player in the foreground holding a basketball, and"
+        EXPECTED_PREFIX="ASSISTANT: image captures a basketball game in progress, with several players on the court. One of the players is dribbling the ball, while the others are in various"
     else
         # set the expected prefix to be the same as prompt because there's a bug in sdpa_with_kv_cache that causes <unk> tokens.
         EXPECTED_PREFIX="ASSISTANT:"

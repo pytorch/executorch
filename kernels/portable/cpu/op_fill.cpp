@@ -31,6 +31,9 @@ Tensor& fill_scalar_out(
 
   ET_KERNEL_CHECK(ctx, a_type == out_type, InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
+
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
       ctx,
@@ -66,6 +69,9 @@ Tensor& fill_tensor_out(
 
   // Assert `b` must be a scalar tensor.
   ET_KERNEL_CHECK(ctx, tensor_is_scalar(b), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();

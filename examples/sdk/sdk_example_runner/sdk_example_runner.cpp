@@ -29,7 +29,6 @@
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/util.h>
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4MB
 static constexpr size_t kBundledAllocatorPoolSize = 16 * 1024U;

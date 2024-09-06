@@ -72,7 +72,7 @@ class OpMulOutTest : public OperatorTest {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_mul_enumerate_out_types<DTYPE_A, ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
   }
@@ -89,28 +89,98 @@ class OpMulOutTest : public OperatorTest {
 
     // Multiply two tensors
     op_mul_out(
-        tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.ones(sizes), out);
-    EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}));
+        tf.make(sizes, /*data=*/{1.25, 2.5, 4.75, 8.875}), tf.ones(sizes), out);
+    EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{1.25, 2.5, 4.75, 8.875}));
 
     op_mul_out(
         tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.zeros(sizes), out);
     EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{0.0, 0.0, 0.0, 0.0}));
 
     op_mul_out(
-        tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
-        tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
+        tf.make(sizes, /*data=*/{1.25, 2.5, 4.75, 8.875}),
+        tf.make(sizes, /*data=*/{1.25, 2.5, 4.75, 8.875}),
         out);
     EXPECT_TENSOR_CLOSE(
-        out, tf.make(sizes, /*data=*/{1.21, 4.84, 19.36, 77.44}));
+        out, tf.make(sizes, /*data=*/{1.5625, 6.25, 22.5625, 78.765625}));
   }
 
   void test_mul_enumerate_a_types() {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_mul_enumerate_b_types<ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
+    ET_FORALL_REALHBF16_TYPES(ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
+  }
+
+  template <ScalarType DTYPE>
+  void test_optimized_path_ignores_leading_1_dimensions() {
+    TensorFactory<DTYPE> tf;
+
+    const std::vector<int32_t> sizes1 = {1, 1, 2, 2};
+    const std::vector<int32_t> sizes2 = {1, 2, 2};
+
+    // Destination for the mul.
+    Tensor out = tf.zeros(sizes1);
+
+    // Multiply two tensors
+    op_mul_out(
+        tf.make(sizes1, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.ones(sizes2), out);
+    EXPECT_TENSOR_CLOSE(out, tf.make(sizes1, /*data=*/{1.1, 2.2, 4.4, 8.8}));
+  }
+
+  template <ScalarType DTYPE>
+  void test_broadcast_a2b() {
+    TensorFactory<DTYPE> tf_a;
+
+    std::vector<std::vector<int32_t>> b_sizeses = {
+        {2},
+        {1, 2},
+    };
+    for (const auto& b_sizes : b_sizeses) {
+      // a and b of different shapes
+      Tensor a = tf_a.make({2, 2}, /*data=*/{1, 2, 3, 4});
+      Tensor b = tf_a.make(b_sizes, /*data=*/{2, 2});
+
+      // Destination for output of mul.
+      Tensor out = tf_a.zeros({2, 2});
+
+      // Check that it matches the expected output.
+      EXPECT_TENSOR_CLOSE(
+          op_mul_out(a, b, out), tf_a.make({2, 2}, /*data=*/{2, 4, 6, 8}));
+    }
+  }
+
+  template <ScalarType DTYPE>
+  void test_broadcast_b2a() {
+    TensorFactory<DTYPE> tf_a;
+    // a and b of different shapes
+    Tensor a = tf_a.make({2}, /*data=*/{2, 2});
+    Tensor b = tf_a.make({2, 2}, /*data=*/{1, 2, 3, 4});
+
+    // Destination for output of mul.
+    Tensor out = tf_a.zeros({2, 2});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(
+        op_mul_out(a, b, out), tf_a.make({2, 2}, /*data=*/{2, 4, 6, 8}));
+  }
+
+  template <ScalarType DTYPE>
+  void test_scalar_input_broadcast() {
+    TensorFactory<DTYPE> tf_a;
+
+    // a is a 1d tensor and b is a scalar
+    Tensor a = tf_a.make({2}, /*data=*/{2, 2});
+    Tensor b = tf_a.make({}, /*data=*/{2});
+
+    // Destination for output of mul.
+    Tensor out = tf_a.make({2}, /*data=*/{2, 2});
+    Tensor expected = tf_a.make({2}, /*data=*/{4, 4});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+    EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
   }
 };
 
@@ -141,6 +211,14 @@ TEST_F(OpMulOutTest, DoubleTensors) {
   test_floating_point_mul_out<ScalarType::Double>();
 }
 
+TEST_F(OpMulOutTest, HalfTensors) {
+  test_floating_point_mul_out<ScalarType::Half>();
+}
+
+TEST_F(OpMulOutTest, BFloat16Tensors) {
+  test_floating_point_mul_out<ScalarType::BFloat16>();
+}
+
 TEST_F(OpMulOutTest, BoolTensors) {
   TensorFactory<ScalarType::Bool> tf;
 
@@ -165,8 +243,17 @@ TEST_F(OpMulOutTest, BoolTensors) {
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{false, false, true, false}));
 }
 
+TEST_F(OpMulOutTest, OptimizedPathIgnoresLeading1Dimensions) {
+#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
+  test_optimized_path_ignores_leading_1_dimensions<ScalarType::dtype>();
+
+  ET_FORALL_FLOATHBF16_TYPES(ENUMERATE_TEST_ENTRY);
+
+#undef ENUMERATE_TEST_ENTRY
+}
+
 // Mismatched shape tests.
-TEST_F(OpMulOutTest, MismatchedInputShapesDies) {
+TEST_F(OpMulOutTest, MismatchedNonBroadcastableInputShapesDies) {
   if (SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen currently supports mismatched shapes";
   }
@@ -174,11 +261,11 @@ TEST_F(OpMulOutTest, MismatchedInputShapesDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Input tensors with different shapes.
-  Tensor a = tf.ones(/*sizes=*/{1, 2});
+  Tensor a = tf.ones(/*sizes=*/{4, 2});
   Tensor b = tf.ones(/*sizes=*/{2, 2});
 
   // Output tensor; matches the shape of one of the inputs.
-  Tensor out = tf.zeros(/*sizes=*/{4});
+  Tensor out = tf.zeros(/*sizes=*/{8});
 
   // Multiplying the two mismatched tensors should cause an assertion and kill
   // the test process.
@@ -187,34 +274,16 @@ TEST_F(OpMulOutTest, MismatchedInputShapesDies) {
 
 // Broadcast tensor b's size to tensor a's size
 TEST_F(OpMulOutTest, BroadcastA2BTest) {
-  TensorFactory<ScalarType::Int> tf_a;
-
-  // a and b of different shapes
-  Tensor a = tf_a.make({2, 2}, /*data=*/{1, 2, 3, 4});
-  Tensor b = tf_a.make({2}, /*data=*/{2, 2});
-
-  // Destination for output of mul.
-  Tensor out = tf_a.zeros({2, 2});
-
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_CLOSE(
-      op_mul_out(a, b, out), tf_a.make({2, 2}, /*data=*/{2, 4, 6, 8}));
+  test_broadcast_a2b<ScalarType::Int>();
+  test_broadcast_a2b<ScalarType::Half>();
+  test_broadcast_a2b<ScalarType::BFloat16>();
 }
 
 // Broadcast tensor a's size to tensor b's size
 TEST_F(OpMulOutTest, BroadcastB2ATest) {
-  TensorFactory<ScalarType::Int> tf_a;
-
-  // a and b of different shapes
-  Tensor a = tf_a.make({2}, /*data=*/{2, 2});
-  Tensor b = tf_a.make({2, 2}, /*data=*/{1, 2, 3, 4});
-
-  // Destination for output of mul.
-  Tensor out = tf_a.zeros({2, 2});
-
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_CLOSE(
-      op_mul_out(a, b, out), tf_a.make({2, 2}, /*data=*/{2, 4, 6, 8}));
+  test_broadcast_b2a<ScalarType::Int>();
+  test_broadcast_b2a<ScalarType::Half>();
+  test_broadcast_b2a<ScalarType::BFloat16>();
 }
 
 // Broadcast tensor a and b's size to a new size c.
@@ -235,18 +304,9 @@ TEST_F(OpMulOutTest, BroadcastAB2CTest) {
 }
 
 TEST_F(OpMulOutTest, ScalarInputBroadcastTest) {
-  TensorFactory<ScalarType::Int> tf_a;
-
-  // a is a 1d tensor and b is a scalar
-  Tensor a = tf_a.make({2}, /*data=*/{2, 2});
-  Tensor b = tf_a.make({}, /*data=*/{2});
-
-  // Destination for output of mul.
-  Tensor out = tf_a.make({2}, /*data=*/{2, 2});
-  Tensor expected = tf_a.make({2}, /*data=*/{4, 4});
-
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+  test_scalar_input_broadcast<ScalarType::Int>();
+  test_scalar_input_broadcast<ScalarType::Half>();
+  test_scalar_input_broadcast<ScalarType::BFloat16>();
 }
 
 TEST_F(OpMulOutTest, MismatchedOutputShapesDies) {

@@ -139,37 +139,38 @@ TEST(ScalarTypeUtilTest, promoteTypesTest) {
 
   // Check some common cases
 
-  ET_CHECK(
-      promoteTypes(ScalarType::Float, ScalarType::Double) ==
-      ScalarType::Double);
-  ET_CHECK(
-      promoteTypes(ScalarType::Float, ScalarType::Short) == ScalarType::Float);
+  EXPECT_EQ(
+      promoteTypes(ScalarType::Float, ScalarType::Double), ScalarType::Double);
+  EXPECT_EQ(
+      promoteTypes(ScalarType::Float, ScalarType::Short), ScalarType::Float);
 
-  ET_CHECK(
-      promoteTypes(ScalarType::Float, ScalarType::Int) == ScalarType::Float);
-  ET_CHECK(
-      promoteTypes(ScalarType::Long, ScalarType::Float) == ScalarType::Float);
+  EXPECT_EQ(
+      promoteTypes(ScalarType::Float, ScalarType::Int), ScalarType::Float);
+  EXPECT_EQ(
+      promoteTypes(ScalarType::Long, ScalarType::Float), ScalarType::Float);
 
-  ET_CHECK(
-      promoteTypes(ScalarType::Bool, ScalarType::Bool) == ScalarType::Bool);
+  EXPECT_EQ(promoteTypes(ScalarType::Bool, ScalarType::Bool), ScalarType::Bool);
 
-  ET_CHECK(promoteTypes(ScalarType::Byte, ScalarType::Int) == ScalarType::Int);
-  ET_CHECK(
-      promoteTypes(ScalarType::Char, ScalarType::Bool) == ScalarType::Char);
-  ET_CHECK(promoteTypes(ScalarType::Bool, ScalarType::Int) == ScalarType::Int);
+  EXPECT_EQ(promoteTypes(ScalarType::Byte, ScalarType::Int), ScalarType::Int);
+  EXPECT_EQ(promoteTypes(ScalarType::Char, ScalarType::Bool), ScalarType::Char);
+  EXPECT_EQ(promoteTypes(ScalarType::Bool, ScalarType::Int), ScalarType::Int);
+
+  EXPECT_EQ(
+      promoteTypes(ScalarType::BFloat16, ScalarType::Half), ScalarType::Float);
+  EXPECT_EQ(
+      promoteTypes(ScalarType::BFloat16, ScalarType::Bool),
+      ScalarType::BFloat16);
 }
 
 template <typename T1, typename T2>
 struct promote_types_is_valid
     : std::integral_constant<
           bool,
-          !std::is_same<T1, exec_aten::BFloat16>::value &&
-              !std::is_same<T2, exec_aten::BFloat16>::value &&
-              (std::is_same<T1, T2>::value ||
-               (!executorch::runtime::is_qint_type<T1>::value &&
-                !executorch::runtime::is_qint_type<T2>::value &&
-                !executorch::runtime::is_bits_type<T1>::value &&
-                !executorch::runtime::is_bits_type<T2>::value))> {};
+          (std::is_same<T1, T2>::value ||
+           (!executorch::runtime::is_qint_type<T1>::value &&
+            !executorch::runtime::is_qint_type<T2>::value &&
+            !executorch::runtime::is_bits_type<T1>::value &&
+            !executorch::runtime::is_bits_type<T2>::value))> {};
 
 template <typename T1, bool half_to_float>
 struct CompileTimePromoteTypesTestCase {
@@ -195,7 +196,8 @@ struct CompileTimePromoteTypesTestCase {
     auto expected = executorch::runtime::promoteTypes(
         scalarType1, scalarType2, half_to_float);
     EXPECT_EQ(actual, expected)
-        << "promoting " << (int)scalarType1 << " to " << (int)scalarType2;
+        << "promoting " << (int)scalarType1 << " to " << (int)scalarType2
+        << " (half to float: " << half_to_float << ')';
   }
 
   template <

@@ -20,7 +20,6 @@
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
-#include <executorch/util/util.h>
 
 namespace torch {
 namespace executor {
@@ -36,7 +35,7 @@ namespace executor {
  * front-end before having the actual backend ready.
  */
 
-class ExecutorBackend final : public PyTorchBackendInterface {
+class ExecutorBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~ExecutorBackend() = default;
 

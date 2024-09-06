@@ -132,6 +132,33 @@ ValueRef prepack(
   return v;
 }
 
+ValueRef prepack_buffer(
+    ComputeGraph& graph,
+    const ValueRef vref,
+    const utils::GPUMemoryLayout layout) {
+  ValueRef v = graph.add_tensor_like(vref, utils::kBuffer, layout);
+
+  vkapi::ShaderInfo shader = VK_KERNEL_FROM_STR("buffer_to_buffer");
+
+  vkapi::ParamsBindList ubos;
+  ubos.append({graph.numel_ubo(v)});
+
+  graph.prepack_nodes().emplace_back(new PrepackNode(
+      graph,
+      shader,
+      graph.create_global_wg_size(v),
+      graph.create_local_wg_size(v),
+      // Input and Outputs
+      vref,
+      v,
+      // Parameter Buffers
+      ubos,
+      // Specialization Constants
+      {}));
+
+  return v;
+}
+
 ValueRef prepack_if_tensor_ref(
     ComputeGraph& graph,
     const ValueRef v,
@@ -143,11 +170,32 @@ ValueRef prepack_if_tensor_ref(
   }
 }
 
+ValueRef prepack_buffer_if_tensor_ref(
+    ComputeGraph& graph,
+    const ValueRef v,
+    const utils::GPUMemoryLayout layout) {
+  if (graph.val_is_tref(v)) {
+    return prepack_buffer(graph, v, layout);
+  } else {
+    return v;
+  }
+}
+
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
   if (graph.val_is_tref(v)) {
     utils::GPUMemoryLayout layout =
         graph.suggested_memory_layout(graph.get_tref(v)->sizes);
     return prepack(graph, v, layout);
+  } else {
+    return v;
+  }
+}
+
+ValueRef prepack_buffer_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
+  if (graph.val_is_tref(v)) {
+    utils::GPUMemoryLayout layout =
+        graph.suggested_memory_layout(graph.get_tref(v)->sizes);
+    return prepack_buffer(graph, v, layout);
   } else {
     return v;
   }

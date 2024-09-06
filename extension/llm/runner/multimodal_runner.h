@@ -31,7 +31,6 @@
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 
 namespace executorch {
 namespace extension {
@@ -56,7 +55,7 @@ class MultimodalRunner {
   virtual bool is_loaded() = 0;
   virtual ::executorch::runtime::Error load() = 0;
   virtual ::executorch::runtime::Error generate(
-      std::vector<Image>& images,
+      std::vector<Image> images,
       const std::string& prompt,
       int32_t seq_len = 1024,
       std::function<void(const std::string&)> token_callback = {},

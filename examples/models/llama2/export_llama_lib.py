@@ -194,6 +194,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether or not to export a model using kv cache",
     )
     parser.add_argument(
+        "--num_sharding",
+        type=int,
+        default=0,
+        help="Specify the number of splits by inserting the fallback custom op. The graph will be split evenly by layers.",
+    )
+    parser.add_argument(
         "--use_sdpa_with_kv_cache",
         default=False,
         action="store_true",
@@ -456,6 +462,9 @@ def _validate_args(args):
             " Please use --disable_dynamic_shape."
         )
 
+    if args.num_sharding > 0 and not args.qnn:
+        raise ValueError("Model shard is only supported with qnn backend now.")
+
 
 def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
     _validate_args(args)
@@ -502,11 +511,11 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
+        from executorch.extension.llm.custom_ops import model_sharding
+
         partitioners.append(
             get_qnn_partitioner(
-                quant_dtype,
-                args.use_kv_cache,
-                args.pt2e_quantize,
+                args.use_kv_cache, args.pt2e_quantize, args.num_sharding
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
@@ -515,6 +524,13 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`, Optional type has no attribute `exported_program`
         _transform(builder_exported_to_edge.edge_manager.exported_program())
 
+        if args.num_sharding > 0:
+            model_sharding.split_graph(
+                builder_exported_to_edge.edge_manager.exported_program(),
+                builder_exported_to_edge.metadata["get_n_layers"],
+                shares=args.num_sharding,
+            )
+
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
@@ -522,7 +538,13 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         logging.info("Generating etrecord")
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners)
+        if args.num_sharding > 0 and args.qnn:
+            from executorch.backends.qualcomm.utils.utils import canonicalize_program
+
+            canonicalize_program(builder.edge_manager.exported_program())
+
+        builder = builder.to_executorch()
 
         # Generate ETRecord
         if edge_manager_copy:
@@ -533,7 +555,13 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
             )
             logging.info("Generated etrecord.bin")
     else:
-        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners)
+        if args.num_sharding > 0 and args.qnn:
+            from executorch.backends.qualcomm.utils.utils import canonicalize_program
+
+            canonicalize_program(builder.edge_manager.exported_program())
+
+        builder = builder.to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
@@ -576,6 +604,7 @@ def _load_llama_model_metadata(
         "get_max_seq_len": model_args.max_seq_len,
         "get_n_bos": 1,
         "get_n_eos": 2 if is_fairseq2 else 1,
+        "get_n_layers": model_args.n_layers,
         "get_vocab_size": model_args.vocab_size,
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,

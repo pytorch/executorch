@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import copy
 import difflib
 import json
@@ -36,7 +38,7 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tests.common import get_test_program
 
-SEGMENT_ALIGNMENT: int = 4096
+SEGMENT_ALIGNMENT: int = 128
 
 CONSTANT_TENSOR_ALIGNMENT: int = 16
 
@@ -167,7 +169,6 @@ class TestProgram(unittest.TestCase):
         pte_data = bytes(
             serialize_pte_binary(
                 program,
-                extract_constant_segment=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=constant_tensor_alignment,
             )
@@ -425,16 +426,12 @@ class TestProgram(unittest.TestCase):
 
     def test_round_trip_no_segments_and_no_header(self) -> None:
         """Tests that a Program serialized with extract_delegate_segments=True
-        or extract_constant_segment=True, when there are no segments, does not
-        contain an extended header, constant segment, or delegate segments. Confirm
-        that a Program remains the same after serializing and deserializing.
+        when there are no segments does not contain an extended header,
+        constant segment, or delegate segments. Confirm that a Program remains
+        the same after serializing and deserializing.
         """
         program = get_test_program()
-        pte_data = bytes(
-            serialize_pte_binary(
-                program, extract_delegate_segments=True, extract_constant_segment=True
-            )
-        )
+        pte_data = bytes(serialize_pte_binary(program, extract_delegate_segments=True))
         self.assertGreater(len(pte_data), 16)
 
         # File magic should be present at the expected offset.
@@ -635,7 +632,6 @@ class TestProgram(unittest.TestCase):
         with self.assertRaises(ValueError):
             serialize_pte_binary(
                 program,
-                extract_constant_segment=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=constant_tensor_alignment,
             )
@@ -660,7 +656,6 @@ class TestProgram(unittest.TestCase):
             serialize_pte_binary(
                 program,
                 extract_delegate_segments=True,
-                extract_constant_segment=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=CONSTANT_TENSOR_ALIGNMENT,
             )

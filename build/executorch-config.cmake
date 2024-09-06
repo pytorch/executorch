@@ -46,6 +46,8 @@ set(lib_list
     extension_module
     extension_module_static
     extension_runner_util
+    extension_tensor
+    extension_threadpool
     xnnpack_backend
     XNNPACK
     cpuinfo

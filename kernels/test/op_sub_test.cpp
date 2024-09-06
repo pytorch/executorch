@@ -198,6 +198,12 @@ TEST_F(OpSubOutTest, BroadcastScalarSupported2) {
 
   Tensor ret = tf.make({3, 1, 1}, {6, 4, 0});
   EXPECT_TENSOR_EQ(out, ret);
+
+  std::swap(a, b);
+  out = tf.zeros({3, 1, 1});
+  op_sub_out(a, b, 1, out);
+  ret = tf.make({3, 1, 1}, {-6, -4, 0});
+  EXPECT_TENSOR_EQ(out, ret);
 }
 
 //
@@ -265,15 +271,15 @@ TEST_F(OpSubOutTest, BoolOutputWithIntegralInput) {
   ET_EXPECT_KERNEL_FAILURE(context_, op_sub_out(a, b, /*alpha=*/1, out));
 }
 
-TEST_F(OpSubOutTest, MismatchedInputShapesDies) {
+TEST_F(OpSubOutTest, MismatchedNonBroadcastableInputShapesDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Subtrahend and minuend with different shapes.
-  Tensor a = tf.ones(/*sizes=*/{4});
+  Tensor a = tf.ones(/*sizes=*/{4, 2});
   Tensor b = tf.ones(/*sizes=*/{2, 2});
 
   // Destination for the subtraction; matches the shape of one of the inputs.
-  Tensor out = tf.zeros(/*sizes=*/{4});
+  Tensor out = tf.zeros(/*sizes=*/{8});
 
   // Performing substraction on two mismatched tensors should cause an assertion
   // and kill the test process.

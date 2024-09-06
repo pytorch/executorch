@@ -96,12 +96,6 @@ def main(args):
     if args.compile_only:
         sys.exit(0)
 
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # build_path : path where artifacts were built
-    # pte_path      : path where QNN delegate executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         build_path=f"{args.build_folder}",
