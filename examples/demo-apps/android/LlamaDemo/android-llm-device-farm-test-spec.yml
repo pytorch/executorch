@@ -82,19 +82,21 @@ phases:
 
   post_test:
     commands:
-      - echo "Wait for the results"
-      - |
-        # TODO (huydhn): Polling like this looks brittle, figure out if there is a better way to wait
-        # for the benchmark results
-        adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo \
-        while ! test -f files/benchmark_results.json; do echo "Waiting for benchmark results..."; sleep 30; done
-
-        adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo ls -la files/
-
       - echo "Gather LLM benchmark results"
       - |
-        adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo cp files/benchmark_results.json /sdcard
-        adb -s $DEVICEFARM_DEVICE_UDID pull /sdcard/benchmark_results.json $DEVICEFARM_LOG_DIR/
+        BENCHMARK_RESULTS=""
+        ATTEMPT=0
+        MAX_ATTEMPT=10
+        while [ -z "${BENCHMARK_RESULTS}" ] && [ $ATTEMPT -lt $MAX_ATTEMPT ]; do
+          echo "Waiting for benchmark results..."
+          BENCHMARK_RESULTS=$(adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo cat files/benchmark_results.json)
+          sleep 30
+          ((ATTEMPT++))
+        done
+
+        adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo ls -la files/
+        # Trying to pull the file using adb ends up with permission error, but his works too, so why not
+        echo "${BENCHMARK_RESULTS}" > $DEVICEFARM_LOG_DIR/benchmark_results.json
 
 artifacts:
   # By default, Device Farm will collect your artifacts from the $DEVICEFARM_LOG_DIR directory.
