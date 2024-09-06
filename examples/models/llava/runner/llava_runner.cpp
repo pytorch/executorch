@@ -117,6 +117,7 @@ Error LlavaRunner::generate_from_pos(
   if (stats_callback) {
     stats_callback(stats_);
   }
+  return Error::Ok;
 }
 
 Error LlavaRunner::generate(
