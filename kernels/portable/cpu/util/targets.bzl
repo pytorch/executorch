@@ -29,6 +29,7 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:distance_util",
             "//executorch/kernels/portable/cpu/util:select_copy_util",
             "//executorch/kernels/portable/cpu/util:advanced_index_util",
+            "//executorch/kernels/portable/cpu/util:slice_util",
         ],
         visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
     )
@@ -222,6 +223,16 @@ def define_common_targets():
             ":copy_ops_util",
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "slice_util",
+        srcs = ["slice_util.cpp"],
+        exported_headers = ["slice_util.h"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )

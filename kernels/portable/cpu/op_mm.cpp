@@ -29,6 +29,11 @@ mm_out(RuntimeContext& ctx, const Tensor& in, const Tensor& mat2, Tensor& out) {
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, mat2, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(in), InvalidArgument, out);
+
   ET_SWITCH_REAL_TYPES_AND2(
       Half, BFloat16, in.scalar_type(), ctx, "mm.out", CTYPE, [&]() {
         size_t m = in.size(0);

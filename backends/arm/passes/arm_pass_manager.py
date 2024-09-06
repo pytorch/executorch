@@ -23,11 +23,11 @@ from executorch.exir.pass_manager import PassManager
 
 class ArmPassManager(PassManager):
 
-    def _transform(self, graph_module: torch.fx.Graph):
+    def _transform(self, graph_module: torch.fx.GraphModule):
         return self(graph_module).graph_module
 
     def transform_to_backend_pipeline(
-        self, graph_module: torch.fx.Graph, compile_spec: CompileSpec
+        self, graph_module: torch.fx.GraphModule, compile_spec: list[CompileSpec]
     ):
         """Apply passes before transforming program to backend"""
         self.add_pass(SizeAdjustConv2DPass())

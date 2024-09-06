@@ -34,6 +34,9 @@ Tensor& eq_tensor_out(
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, b, out), InvalidArgument, out);
+
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "eq.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_REAL_TYPES_AND(
         Bool, b_type, ctx, "eq.Scalar_out", CTYPE_B, [&]() {
@@ -79,6 +82,9 @@ Tensor& eq_scalar_out(
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType out_type = out.scalar_type();
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "eq.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "eq.Scalar_out", CTYPE_B, [&]() {

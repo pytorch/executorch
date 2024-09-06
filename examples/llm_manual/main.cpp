@@ -10,9 +10,9 @@
 
 #include "basic_sampler.h"
 #include "basic_tokenizer.h"
-#include "managed_tensor.h"
 
 #include <executorch/extension/module/module.h>
+#include <executorch/extension/tensor/tensor.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/result.h>
@@ -42,14 +42,13 @@ std::string generate(
   for (auto i = 0u; i < max_output_length; i++) {
     // Convert the input_tokens from a vector of int64_t to EValue.
     // EValue is a unified data type in the ExecuTorch runtime.
-    ManagedTensor tensor_tokens(
+    auto inputs = from_blob(
         input_tokens.data(),
         {1, static_cast<int>(input_tokens.size())},
         ScalarType::Long);
-    std::vector<EValue> inputs = {tensor_tokens.get_tensor()};
 
     // Run the model. It will return a tensor of logits (log-probabilities).
-    Result<std::vector<EValue>> logits_evalue = llm_model.forward(inputs);
+    auto logits_evalue = llm_model.forward(inputs);
 
     // Convert the output logits from EValue to std::vector, which is what
     // the sampler expects.
