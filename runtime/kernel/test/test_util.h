@@ -16,9 +16,6 @@
 namespace executorch {
 namespace runtime {
 
-// Defined in //executorch/runtime/kernel/operator_registry.cpp.
-void make_kernel_key_string(ArrayRef<TensorMeta> key, char* buf);
-
 namespace testing {
 
 inline void make_kernel_key(
@@ -28,12 +25,11 @@ inline void make_kernel_key(
     char* buf) {
   std::vector<TensorMeta> meta;
   for (auto& t : tensors) {
-    ArrayRef<exec_aten::DimOrderType> dim_order(
-        t.second.data(), t.second.size());
+    Span<exec_aten::DimOrderType> dim_order(t.second.data(), t.second.size());
     meta.emplace_back(t.first, dim_order);
   }
-  auto meatadata = ArrayRef<TensorMeta>(meta.data(), meta.size());
-  make_kernel_key_string(meatadata, buf);
+  Span<const TensorMeta> metadata(meta.data(), meta.size());
+  internal::make_kernel_key_string(metadata, buf);
 }
 
 } // namespace testing

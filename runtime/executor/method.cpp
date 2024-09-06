@@ -527,19 +527,20 @@ Error Method::resolve_operator(
           i,
           static_cast<uint32_t>(err));
       meta[count].dim_order_ =
-          ArrayRef<exec_aten::DimOrderType>(dim_order_ptr, size);
+          Span<exec_aten::DimOrderType>(dim_order_ptr, size);
       count++;
     }
   }
-  // search kernel
-  if (hasOpsFn(operator_name, ArrayRef<TensorMeta>(meta, count))) {
-    kernels[kernel_index] =
-        getOpsFn(operator_name, ArrayRef<TensorMeta>(meta, count));
-    return Error::Ok;
-  } else {
+
+  // Find a kernel with the matching name and tensor meta.
+  Result<OpFunction> op_function =
+      get_op_function_from_registry(operator_name, {meta, count});
+  if (!op_function.ok()) {
     ET_LOG(Error, "Missing operator: [%d] %s", op_index, operator_name);
-    return Error::OperatorMissing;
+    return op_function.error();
   }
+  kernels[kernel_index] = op_function.get();
+  return Error::Ok;
 }
 
 Result<Method> Method::load(
