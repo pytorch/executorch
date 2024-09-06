@@ -53,6 +53,13 @@ _OPTIMIZED_ATEN_OPS = (
         }),
     ),
     op_target(
+        name = "op_mm",
+        deps = [
+            "//executorch/kernels/optimized:libblas",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_mul",
         deps = [
             ":binary_ops",
