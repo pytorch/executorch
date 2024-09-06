@@ -13,6 +13,7 @@ import LLaMARunner
 
 class RunnerHolder: ObservableObject {
   var runner: Runner?
+  var llavaRunner: LLaVARunner?
 }
 
 struct ContentView: View {

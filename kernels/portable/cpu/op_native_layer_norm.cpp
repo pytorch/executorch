@@ -117,6 +117,33 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
       InvalidArgument,
       ret_val);
 
+  // Only support default dim order for now.
+  // TODO: Support other dim orders.
+  ET_KERNEL_CHECK(
+      ctx, tensor_is_default_dim_order(input), InvalidArgument, ret_val);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      tensors_have_same_dim_order(input, out, mean_out, rstd_out),
+      InvalidArgument,
+      ret_val);
+
+  if (weight.has_value()) {
+    ET_KERNEL_CHECK(
+        ctx,
+        tensors_have_same_dim_order(input, weight.value()),
+        InvalidArgument,
+        ret_val);
+  }
+
+  if (bias.has_value()) {
+    ET_KERNEL_CHECK(
+        ctx,
+        tensors_have_same_dim_order(input, bias.value()),
+        InvalidArgument,
+        ret_val);
+  }
+
   Tensor::SizesType mean_rstd_sizes[kTensorDimensionLimit];
   size_t mean_rstd_ndim = 0;
   get_layer_norm_out_target_size(

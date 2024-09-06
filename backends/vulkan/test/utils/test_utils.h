@@ -132,7 +132,7 @@ fill_staging(api::StagingBuffer& staging, float val, int numel = -1) {
   }
   std::vector<float> data(numel);
   std::fill(data.begin(), data.end(), val);
-  copy_ptr_to_staging(data.data(), staging, sizeof(float) * numel);
+  staging.copy_from(data.data(), sizeof(float) * numel);
 }
 
 void fill_vtensor(api::vTensor& vten, std::vector<float>& data);
@@ -169,7 +169,7 @@ check_staging_buffer(api::StagingBuffer& staging, float val, int numel = -1) {
     numel = staging.numel();
   }
   std::vector<float> data(numel);
-  copy_staging_to_ptr(staging, data.data(), sizeof(float) * numel);
+  staging.copy_to(data.data(), sizeof(float) * numel);
 
   for (size_t i = 0; i < data.size(); ++i) {
     CHECK_VALUE(data, i, val);
