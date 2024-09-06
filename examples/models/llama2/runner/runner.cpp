@@ -204,7 +204,9 @@ Error Runner::generate(
   // after the prompt. After that we will enter generate loop.
 
   // print prompts
-  wrapped_callback(prompt);
+  if (echo) {
+    wrapped_callback(prompt);
+  }
   int64_t pos = 0;
   auto prefill_res = text_prefiller_->prefill(prompt_tokens, pos);
   stats_.first_token_ms = util::time_in_ms();
