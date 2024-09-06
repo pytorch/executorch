@@ -319,7 +319,6 @@ def build_args_parser() -> argparse.ArgumentParser:
 
 
 def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
-
     path = str(path)
 
     if verbose_export():
