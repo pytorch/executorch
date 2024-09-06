@@ -13,7 +13,7 @@ import executorch.backends.xnnpack.test.tester.tester as tester
 
 import numpy as np
 
-import torch.fx
+import torch
 
 from executorch.backends.arm.arm_backend import get_intermediate_path, is_permute_memory
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
@@ -297,7 +297,9 @@ class ArmTester(Tester):
 
         return graph
 
-    def dump_operator_distribution(self, path_to_dump: Optional[str] = None):
+    def dump_operator_distribution(
+        self, path_to_dump: Optional[str] = None
+    ) -> ArmQuantizer:
         """Dump a dictionary with {operator: operator count} for the operators in the
         graph of the current stage.
 
@@ -305,16 +307,13 @@ class ArmTester(Tester):
         """
         graph = self.get_graph(self.cur)
         op_dist = _get_operator_distribution(graph)
-        to_print = self.cur + " operators: " + _format_dict(dict(op_dist)) + "\n"
-
-        if self.cur == self.stage_name(tester.Partition):
-            to_print += _get_tosa_operator_distribution(
-                self.get_artifact(self.cur).exported_program().graph_module
-            )
+        to_print = self.cur + " operators: " + _format_dict(op_dist) + "\n"
         _dump_str(to_print, path_to_dump)
         return self
 
-    def dump_dtype_distribution(self, path_to_dump: Optional[str] = None):
+    def dump_dtype_distribution(
+        self, path_to_dump: Optional[str] = None
+    ) -> ArmQuantizer:
         """Dump a dictionary with {dtype: dtype count} for the dtypes of the nodes in the
         graph of the current stage.
 
@@ -420,36 +419,6 @@ def _get_operator_distribution(graph: Graph) -> dict[str, int]:
     return Counter(
         [str(node.target) for node in list(graph.nodes) if node.op == "call_function"]
     )
-
-
-def _get_tosa_operator_distribution(graph_module: torch.fx.GraphModule) -> str:
-    """Counts the occurences of operator names of all lowered modules containing
-    a TOSA flatbuffer.
-    The result is a string with the operator distribution or an error message.
-    """
-    op_list = []
-    id = 0
-    while lowered_module := getattr(graph_module, f"lowered_module_{id}", None):
-        for spec in lowered_module.compile_specs:
-            if spec.key != "output_format":
-                continue
-            if spec.value == b"tosa":
-                tosa_fb = lowered_module.processed_bytes
-                tosa_json = dbg_tosa_fb_to_json(tosa_fb)
-                for region in tosa_json["regions"]:
-                    for block in region["blocks"]:
-                        op_list.extend(
-                            [operator["op"] for operator in block["operators"]]
-                        )
-                break
-            elif spec.value == b"vela":
-                return "Can not get operator distribution for vela command stream."
-            else:
-                return f"Unknown output format '{spec.value}'."
-        id += 1
-    if id == 0:
-        return "No delegate with name 'lowered_module_0 found in graph module."
-    return "TOSA operators: " + _format_dict(dict(Counter(op_list)))
 
 
 def _dump_str(to_print: str, path_to_dump: Optional[str] = None):
