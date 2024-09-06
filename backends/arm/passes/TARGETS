@@ -1,0 +1,12 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "passes",
+    srcs = glob(["*.py"]),
+    typing = True,
+    deps = [
+        "//executorch/backends/arm:tosa_quant_utils",
+        "//executorch/backends/arm:tosa_utils",
+        "//executorch/exir:lib",
+    ],
+)

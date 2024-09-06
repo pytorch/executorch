@@ -102,7 +102,12 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
           mMessageAdapter.notifyDataSetChanged();
         });
     long runStartTime = System.currentTimeMillis();
-    mModule = new LlamaModule(modelPath, tokenizerPath, temperature);
+    mModule =
+        new LlamaModule(
+            ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType()),
+            modelPath,
+            tokenizerPath,
+            temperature);
     int loadResult = mModule.load();
     long loadDuration = System.currentTimeMillis() - runStartTime;
     String modelLoadError = "";
@@ -552,8 +557,6 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
     mSendButton.setOnClickListener(
         view -> {
           addSelectedImagesToChatThread(mSelectedImageUri);
-          // TODO: When ET supports multimodal, this is where we will add the images as part of the
-          // prompt.
           List<ETImage> processedImageList = getProcessedImagesForModel(mSelectedImageUri);
           processedImageList.forEach(
               image -> {
@@ -599,7 +602,34 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                       });
                   ETLogging.getInstance().log("Running inference.. prompt=" + prompt);
                   long generateStartTime = System.currentTimeMillis();
-                  mModule.generate(prompt, MainActivity.this);
+                  if (ModelUtils.getModelCategory(mCurrentSettingsFields.getModelType())
+                      == ModelUtils.VISION_MODEL) {
+                    if (!processedImageList.isEmpty()) {
+                      // For now, Llava only support 1 image.
+                      ETImage img = processedImageList.get(0);
+                      mModule.generate(
+                          processedImageList.get(0).getInts(),
+                          img.getWidth(),
+                          img.getHeight(),
+                          ModelUtils.VISION_MODEL_IMAGE_CHANNELS,
+                          prompt,
+                          ModelUtils.VISION_MODEL_SEQ_LEN,
+                          MainActivity.this);
+                    } else {
+                      // no image selected, we pass in empty int array
+                      mModule.generate(
+                          new int[0],
+                          0,
+                          0,
+                          ModelUtils.VISION_MODEL_IMAGE_CHANNELS,
+                          prompt,
+                          ModelUtils.VISION_MODEL_SEQ_LEN,
+                          MainActivity.this);
+                    }
+                  } else {
+                    mModule.generate(prompt, ModelUtils.TEXT_MODEL_SEQ_LEN, MainActivity.this);
+                  }
+
                   long generateDuration = System.currentTimeMillis() - generateStartTime;
                   mResultMessage.setTotalGenerationTime(generateDuration);
                   runOnUiThread(

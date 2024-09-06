@@ -809,6 +809,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_narrow_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:slice_util",
+        ],
+    ),
+    op_target(
         name = "op_native_batch_norm",
         deps = [
             "//executorch/kernels/portable/cpu/util:normalization_ops_util",
@@ -1042,14 +1048,13 @@ ATEN_OPS = (
     op_target(
         name = "op_slice_copy",
         deps = [
-            "//executorch/kernels/portable/cpu/util:copy_ops_util",
-            "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:slice_util",
         ],
     ),
     op_target(
         name = "op_slice_scatter",
         deps = [
-            "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:slice_util",
         ],
     ),
     op_target(
