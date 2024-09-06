@@ -11,10 +11,6 @@ import SwiftUI
 final class ResourceManager: ObservableObject {
   @AppStorage("modelPath") var modelPath = ""
   @AppStorage("tokenizerPath") var tokenizerPath = ""
-  @AppStorage("temperature") var temperature = 0.0 // 0 - 2.0
-  @AppStorage("topK") var topK = 2 // 1 - 100
-  @AppStorage("topP") var topP = 0.2 // 0 - 1.0
-  @AppStorage("maxOutputTokens") var maxOutputTokens = 512 // 1 - 8192
 
   private let fileManager = FileManager.default
 

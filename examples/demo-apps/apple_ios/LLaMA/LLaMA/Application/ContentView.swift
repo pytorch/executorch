@@ -107,23 +107,12 @@ struct ContentView: View {
   @State private var imagePickerSourceType: UIImagePickerController.SourceType = .photoLibrary
 
   @State private var showingSettings = false
-  @State private var sliderTemperature: Double = 0.0
-  @State private var sliderTopK: Int = 1
-  @State private var sliderTopP: Double = 1.0
-  @State private var sliderMaxOutputToken: Int = 1
   
   enum PickerType {
     case model
     case tokenizer
   }
   
-  init() {
-    _sliderTemperature = State(initialValue: resourceManager.temperature)
-    _sliderTopK = State(initialValue: resourceManager.topK)
-    _sliderTopP = State(initialValue: resourceManager.topP)
-    _sliderMaxOutputToken = State(initialValue: resourceManager.maxOutputTokens)
-  }
-
   private var placeholder: String {
     resourceManager.isModelValid ? resourceManager.isTokenizerValid ? "Prompt..." : "Select Tokenizer..." : "Select Model..."
   }
@@ -158,51 +147,6 @@ struct ContentView: View {
                   Label(resourceManager.tokenizerName == "" ? tokenizerTitle : resourceManager.tokenizerName, systemImage: "doc")
                 }
               }
-
-//              Section(header: Text("Parameters")
-//                        .font(.headline)
-//                        .foregroundColor(.primary)) {
-//                VStack {
-//                  HStack {
-//                    Text("Temperature")
-//                    Slider(value: $sliderTemperature, in: 0...2)
-//                      .onChange(of: sliderTemperature) { newValue in
-//                        resourceManager.temperature = newValue
-//                      }
-//                    Text(String(format: "%.1f", sliderTemperature))
-//                  }
-//                  HStack {
-//                    Text("Top-K")
-//                    Slider(value: Binding(
-//                      get: { Double(sliderTopK) },
-//                      set: { sliderTopK = Int($0) }
-//                    ), in: 1...100, step: 1)
-//                    .onChange(of: sliderTopK) { newValue in
-//                      resourceManager.topK = newValue
-//                    }
-//                    Text(String(format: "%d", sliderTopK))
-//                  }
-//                  HStack {
-//                    Text("Top-P")
-//                    Slider(value: $sliderTopP, in: 0...1)
-//                      .onChange(of: sliderTopP) { newValue in
-//                        resourceManager.topP = newValue
-//                      }
-//                    Text(String(format: "%.1f", sliderTopP))
-//                  }
-//                  HStack {
-//                    Text("Max output token")
-//                    Slider(value: Binding(
-//                      get: { Double(sliderMaxOutputToken) },
-//                      set: { sliderMaxOutputToken = Int($0) }
-//                    ), in: 1...8192, step: 1)
-//                    .onChange(of: sliderMaxOutputToken) { newValue in
-//                      resourceManager.maxOutputTokens = newValue
-//                    }
-//                    Text(String(format: "%d", sliderMaxOutputToken))
-//                  }
-//                }
-//              }
             }
           }
         }
@@ -284,7 +228,7 @@ struct ContentView: View {
                                   Text("Available: \(resourceMonitor.availableMemory) Mb")
                                 }
                               } label: {
-                                Text("\(resourceMonitor.usedMemory) Mb!!")
+                                Text("\(resourceMonitor.usedMemory) Mb")
                               }
                               .onAppear {
                                 resourceMonitor.start()
@@ -337,10 +281,11 @@ struct ContentView: View {
     isGenerating = true
     shouldStopGenerating = false
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    let seq_len = 128
+    let seq_len = 768 // original: 128, text: 256, vision: 768
     prompt = ""
     let modelPath = resourceManager.modelPath
     let tokenizerPath = resourceManager.tokenizerPath
+    let useLlama = modelPath.range(of: "llama", options: .caseInsensitive) != nil
 
     messages.append(Message(text: text))
     messages.append(Message(type: .generated))
@@ -352,41 +297,79 @@ struct ContentView: View {
         }
       }
 
-//      runnerHolder.runner = runnerHolder.runner ?? Runner(modelPath: modelPath, tokenizerPath: tokenizerPath)
-
-      runnerHolder.llavaRunner = runnerHolder.llavaRunner ?? LLaVARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
-
+      if useLlama {
+        runnerHolder.runner = runnerHolder.runner ?? Runner(modelPath: modelPath, tokenizerPath: tokenizerPath)
+      }
+      else {
+        runnerHolder.llavaRunner = runnerHolder.llavaRunner ?? LLaVARunner(modelPath: modelPath, tokenizerPath: tokenizerPath)
+      }
+      
       guard !shouldStopGenerating else { return }
-//      if let runner = runnerHolder.runner, !runner.isloaded() {
-      if let runner = runnerHolder.llavaRunner, !runner.isloaded() {
-        var error: Error?
-        let startLoadTime = Date()
-        do {
-          try runner.load()
-        } catch let loadError {
-          error = loadError
-        }
-        let loadTime = Date().timeIntervalSince(startLoadTime)
-        DispatchQueue.main.async {
-          withAnimation {
-            var message = messages.removeLast()
-            message.type = .info
-            if let error {
-              message.text = "Model loading failed: error \((error as NSError).code)"
-            } else {
-              message.text = "Model loaded in \(String(format: "%.2f", loadTime)) s"
-            }
-            messages.append(message)
-            if error == nil {
-              messages.append(Message(type: .generated))
+      if useLlama {
+        if let runner = runnerHolder.runner, !runner.isloaded() {
+          var error: Error?
+          let startLoadTime = Date()
+          do {
+            try runner.load()
+          } catch let loadError {
+            error = loadError
+          }
+          
+          let loadTime = Date().timeIntervalSince(startLoadTime)
+          DispatchQueue.main.async {
+            withAnimation {
+              var message = messages.removeLast()
+              message.type = .info
+              if let error {
+                message.text = "Model loading failed: error \((error as NSError).code)"
+              } else {
+                message.text = "Model loaded in \(String(format: "%.2f", loadTime)) s"
+              }
+              messages.append(message)
+              if error == nil {
+                messages.append(Message(type: .generated))
+              }
             }
           }
-        }
-        if error != nil {
-          return
+          if error != nil {
+            return
+          }
         }
       }
+      else {
+        if let runner = runnerHolder.llavaRunner, !runner.isloaded() {
+          var error: Error?
+          let startLoadTime = Date()
+          do {
+            try runner.load()
+          } catch let loadError {
+            error = loadError
+          }
+          
+          let loadTime = Date().timeIntervalSince(startLoadTime)
+          DispatchQueue.main.async {
+            withAnimation {
+              var message = messages.removeLast()
+              message.type = .info
+              if let error {
+                message.text = "Model loading failed: error \((error as NSError).code)"
+              } else {
+                message.text = "Model loaded in \(String(format: "%.2f", loadTime)) s"
+              }
+              messages.append(message)
+              if error == nil {
+                messages.append(Message(type: .generated))
+              }
+            }
+          }
+          if error != nil {
+            return
+          }
+        }
+      }
+        
       guard !shouldStopGenerating else {
+        NSLog(">>>shouldStopGenerating")
         DispatchQueue.main.async {
           withAnimation {
             _ = messages.removeLast()
@@ -414,9 +397,6 @@ struct ContentView: View {
           }
           
           try runnerHolder.llavaRunner?.mm_generate(textOnly, buffer: imageBuffer!, width: MAX_WIDTH, height: newHeight, prompt: text, sequenceLength: seq_len) { token in
-            
-//          let imageArray: NSArray = [img] as NSArray
-//          try runnerHolder.llavaRunner?.generate(imageArray as! [UIImage], prompt: text, sequenceLength: seq_len) { token in
             
             tokens.append(token)
             if tokens.count > 2 {

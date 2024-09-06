@@ -142,7 +142,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 
   std::vector<Image> images = {};
   if (!textOnly) {
-    //NSLog(@">>> width: %f, height: %f", width, height);
+    NSLog(@">>> width: %f, height: %f", width, height);
     uint8_t* data = static_cast<uint8_t*>(imageBuffer);
     //float* data = static_cast<float*>(imageBuffer);
 
@@ -164,7 +164,7 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
 
     images.push_back(image);
   }
-  
+    
   const auto status = _runner->generate(
       /*{images}*/std::move(images), prompt.UTF8String, seq_len, [callback](const std::string& token) {
         callback(@(token.c_str()));
