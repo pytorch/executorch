@@ -910,7 +910,6 @@
             <span class="n">new_prog</span><span class="p">,</span>
             <span class="n">emit_stacktrace</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">emit_stacktrace</span><span class="p">,</span>
             <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">extract_delegate_segments</span><span class="p">,</span>
-            <span class="n">extract_constant_segment</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">extract_constant_segment</span><span class="p">,</span>
             <span class="n">segment_alignment</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">segment_alignment</span><span class="p">,</span>
             <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">constant_tensor_alignment</span><span class="p">,</span>
             <span class="n">delegate_alignment</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">delegate_alignment</span><span class="p">,</span>
@@ -939,7 +938,6 @@
         <span class="n">exir_exported_program</span><span class="p">:</span> <span class="n">ExirExportedProgram</span><span class="p">,</span>
         <span class="n">emit_stacktrace</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
         <span class="n">extract_delegate_segments</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
-        <span class="n">extract_constant_segment</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
         <span class="n">segment_alignment</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">constant_tensor_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">delegate_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -954,7 +952,6 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EmitterOutput</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_emit_stacktrace</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">emit_stacktrace</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_extract_delegate_segments</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">extract_delegate_segments</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_extract_constant_segment</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">extract_constant_segment</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_segment_alignment</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">segment_alignment</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_constant_tensor_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">constant_tensor_alignment</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegate_alignment</span>
@@ -964,7 +961,6 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="o">=</span> <span class="n">_serialize_pte_binary</span><span class="p">(</span>
                 <span class="n">program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">program</span><span class="p">,</span>
                 <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_extract_delegate_segments</span><span class="p">,</span>
-                <span class="n">extract_constant_segment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_extract_constant_segment</span><span class="p">,</span>
                 <span class="n">segment_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_segment_alignment</span><span class="p">,</span>
                 <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_constant_tensor_alignment</span><span class="p">,</span>
                 <span class="n">delegate_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_delegate_alignment</span><span class="p">,</span>
@@ -1822,7 +1818,6 @@
             <span class="n">program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span><span class="p">,</span>
             <span class="n">mutable_data</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">mutable_data</span><span class="p">,</span>
             <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">extract_delegate_segments</span><span class="p">,</span>
-            <span class="n">extract_constant_segment</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">extract_constant_segment</span><span class="p">,</span>
             <span class="n">segment_alignment</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">segment_alignment</span><span class="p">,</span>
             <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">constant_tensor_alignment</span><span class="p">,</span>
             <span class="n">delegate_alignment</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">delegate_alignment</span><span class="p">,</span>
