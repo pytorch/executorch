@@ -50,6 +50,7 @@ set(lib_list
     extension_threadpool
     xnnpack_backend
     XNNPACK
+    microkernels-prod
     cpuinfo
     pthreadpool
     vulkan_backend
