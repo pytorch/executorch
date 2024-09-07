@@ -7,10 +7,12 @@
 
 #import <ETCoreMLModel.h>
 
-#import <ETCoreMLAsset.h>
+#import "ETCoreMLAsset.h"
+#import "ETCoreMLLogging.h"
+#import "multiarray.h"
+#import "objc_array_util.h"
+#import "MLModel_Prewarm.h"
 #import <functional>
-#import <objc_array_util.h>
-#import <multiarray.h>
 #import <numeric>
 
 #pragma mark - ETCoreMLMultiArrayDescriptor
@@ -194,6 +196,11 @@ NSDictionary<NSString *, MLMultiArrayConstraint *> *get_multi_array_output_const
         _cache = [[NSCache alloc] init];
         _inputConstraintsByName = get_multi_array_input_constraints_by_name(mlModel.modelDescription);
         _outputConstraintsByName = get_multi_array_output_constraints_by_name(mlModel.modelDescription);
+#if MODEL_STATE_IS_SUPPORTED
+        if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+            _state = mlModel.modelDescription.stateDescriptionsByName.count > 0 ? [_mlModel newState] : nil;
+        }
+#endif
     }
     
     return self;
@@ -270,6 +277,50 @@ NSDictionary<NSString *, MLMultiArrayConstraint *> *get_multi_array_output_const
                     copyData:NO
                        error:error];
     
+}
+
+- (nullable id<MLFeatureProvider>)predictionFromFeatures:(id<MLFeatureProvider>)input
+                                                 options:(MLPredictionOptions *)options
+                                                   error:(NSError **)error {
+
+#if MODEL_STATE_IS_SUPPORTED
+    if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+        if (self.state != nil) {
+            return [self.mlModel predictionFromFeatures:input
+                                             usingState:(MLState *)self.state
+                                                options:options
+                                                  error:error];
+        }
+    }
+#endif
+
+    return [self.mlModel predictionFromFeatures:input
+                                        options:options
+                                          error:error];
+}
+
+- (BOOL)prewarmAndReturnError:(NSError* __autoreleasing*)error {
+    BOOL prewarm = YES;
+#if MODEL_STATE_IS_SUPPORTED
+    if (@available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *)) {
+        prewarm = (self.mlModel.modelDescription.stateDescriptionsByName.count == 0);
+    }
+#endif
+
+    NSError *localError = nil;
+    BOOL result = prewarm ? [self.mlModel prewarmAndReturnError:&localError] : NO;
+    if (!result) {
+        ETCoreMLLogError(localError,
+                         "%@: Failed to prewarm model with identifier = %@",
+                         NSStringFromClass(self.class),
+                         self.identifier);
+    }
+
+    if (error) {
+        *error = localError;
+    }
+
+    return result;
 }
 
 @end
