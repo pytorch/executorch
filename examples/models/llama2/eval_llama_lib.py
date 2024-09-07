@@ -158,6 +158,15 @@ def gen_eval_wrapper(
             else manager.model.eval().to(device="cpu")
         )
 
+    # Save the checkpoint after the eager model preparation is done.
+    # The reason for this option is that the checkpoint can be used
+    # to do evaluations in other evaluation platforms, or with data
+    # that is not available in this eval_llama. We save the checkpoint
+    # here for consistency with eval_llama. The accuracy results we
+    # get from eval_llama can be used as a reference to other evaluations.
+    if args.output_eager_checkpoint_file is not None:
+        torch.save(model, args.output_eager_checkpoint_file)
+
     return EagerEvalWrapper(
         model=model,
         tokenizer=tokenizer,
@@ -195,6 +204,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="[For ExecuTorch] Path to the Tokenizer binary for evaluating ExecuTorch models via runtime",
+    )
+    parser.add_argument(
+        "--output_eager_checkpoint_file",
+        type=str,
+        default=None,
+        help="Save the checkpoint after source transformations, for other evaluation platform to run the same checkpoint.",
     )
 
     return parser
