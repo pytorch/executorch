@@ -282,6 +282,13 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
+        "--coreml-disable-state",
+        dest="coreml_enable_state",
+        default=True,  # Enable this by default
+        action="store_false",
+        help="Delegate mutable buffer to Core ML state",
+    )
+    parser.add_argument(
         "--qnn",
         action="store_true",
         help="Delegate llama2 to qnn backend (Qualcomm), please use it --kv_cahce=True",
@@ -504,7 +511,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     if args.coreml:
         coreml_partitioner = get_coreml_partitioner(
-            args.use_kv_cache, args.pt2e_quantize
+            args.use_kv_cache and args.coreml_enable_state, args.pt2e_quantize
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
