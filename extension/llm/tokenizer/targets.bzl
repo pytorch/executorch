@@ -11,36 +11,20 @@ def define_common_targets():
         srcs = [
             "__init__.py",
             "tokenizer.py",
+            "utils.py",
         ],
         base_module = "executorch.extension.llm.tokenizer",
         visibility = [
             "//executorch/examples/...",
             "//executorch/extension/llm/tokenizer/...",
+            "//executorch/extension/llm/export/...",
             "//bento/...",
             "//bento_kernels/...",
         ],
         _is_external_target = True,
-        external_deps = [
-            "sentencepiece-py",
-        ],
-    )
-
-    runtime.python_library(
-        name = "utils",
-        srcs = [
-            "utils.py",
-        ],
-        base_module = "executorch.extension.llm.utils",
-        visibility = [
-            "//executorch/examples/...",
-            "//executorch/extension/llm/tokenizer/...",
-            "//bento/...",
-            "//bento_kernels/...",
-        ],
         deps = [
-            "//executorch/examples/models/llama2/tokenizer:tiktoken",
+            "//executorch/examples/models/llama2/tokenizer:tiktoken_py",
         ],
-        _is_external_target = True,
         external_deps = [
             "sentencepiece-py",
         ],
