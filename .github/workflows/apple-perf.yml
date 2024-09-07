@@ -290,6 +290,7 @@ jobs:
         model: ${{ fromJson(needs.set-parameters.outputs.models) }}
         delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
         device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
+      fail-fast: false
     with:
       device-type: ios
       # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS

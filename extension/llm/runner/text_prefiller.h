@@ -36,7 +36,7 @@ class TextPrefiller {
    */
   ::executorch::runtime::Result<uint64_t> prefill(
       std::vector<uint64_t>& prompt_tokens,
-      int64_t start_pos = 0);
+      int64_t& start_pos);
 
  private:
   TextDecoderRunner* text_decoder_runner_;
