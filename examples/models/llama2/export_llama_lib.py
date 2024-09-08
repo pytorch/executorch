@@ -262,9 +262,9 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--dtype-override",
         default="fp32",
         type=str,
-        choices=["fp32", "fp16"],
+        choices=["fp32", "fp16", "bf16"],
         help="Override the dtype of the model (default is the checkpoint dtype)."
-        "Options: fp32, fp16. Please be aware that only some backends support fp16.",
+        "Options: fp32, fp16, bf16. Please be aware that only some backends support fp16 and bf16.",
     )
 
     parser.add_argument(
@@ -319,7 +319,6 @@ def build_args_parser() -> argparse.ArgumentParser:
 
 
 def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
-
     path = str(path)
 
     if verbose_export():
@@ -435,6 +434,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
             metadata_str=args.metadata,
+            args=args,
         )
         .set_output_dir(output_dir_path)
         .to_dtype(dtype_override)
@@ -649,6 +649,7 @@ def _load_llama_model(
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
+    args,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
@@ -715,4 +716,5 @@ def _load_llama_model(
             model.params,
             metadata_str,
         ),
+        args=args,
     )

@@ -47,6 +47,7 @@ class DType(Enum):
         mapping = {
             DType.fp32: torch.float32,
             DType.fp16: torch.float16,
+            DType.bf16: torch.bfloat16,
         }
         if self not in mapping:
             raise ValueError(f"Unsupported dtype {self}")
@@ -66,6 +67,7 @@ class LLMEdgeManager:
         dtype,
         use_kv_cache,
         example_inputs,
+        args: Optional[Any] = None,
         enable_dynamic_shape: bool = False,
         calibration_tasks: Optional[List[str]] = None,
         calibration_limit: Optional[int] = None,
@@ -93,6 +95,7 @@ class LLMEdgeManager:
         self.output_dir = "."
         self.dynamic_shapes = dynamic_shapes
         self._saved_pte_filename = None
+        self.args = args
         self.calibration_tasks = calibration_tasks
         self.calibration_limit = calibration_limit
         self.calibration_seq_length = calibration_seq_length
@@ -173,9 +176,20 @@ class LLMEdgeManager:
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             # pyre-fixme[8]
-            self.pre_autograd_graph_module = capture_pre_autograd_graph(
-                self.model, self.example_inputs, dynamic_shapes=dynamic_shape
-            )
+            if hasattr(self.args, "qnn") and self.args.qnn:
+                # TODO: this is temporary and export_for_training doesn't work with qnn either. We need a
+                # functional graph. See issue https://github.com/pytorch/executorch/pull/4627 for more details
+                self.pre_autograd_graph_module = torch.export.export(
+                    self.model,
+                    self.example_inputs,
+                    dynamic_shapes=dynamic_shape,
+                    strict=True,
+                ).module()
+            else:
+                self.pre_autograd_graph_module = capture_pre_autograd_graph(
+                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape
+                )
+
         return self
 
     def pt2e_calibrate(
@@ -309,10 +323,8 @@ class LLMEdgeManager:
         # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             if self.pre_autograd_graph_module is None:
-                # pyre-fixme[8]
-                self.pre_autograd_graph_module = capture_pre_autograd_graph(
-                    self.model, self.example_inputs, dynamic_shapes=dynamic_shape
-                )
+                # Run capture_pre_autograd_graph if it didn't run
+                self.capture_pre_autograd_graph()
             self.edge_manager = export_to_edge(
                 self.pre_autograd_graph_module,  # pyre-fixme[6]
                 self.example_inputs,

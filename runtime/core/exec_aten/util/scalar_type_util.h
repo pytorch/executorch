@@ -28,6 +28,7 @@
 #include <type_traits>
 
 #include <executorch/runtime/platform/assert.h>
+
 #ifdef USE_ATEN_LIB
 // Note that a lot of the macros/functions defined in this ScalarTypeUtil.h file
 // are also defined in c10/core/ScalarType.h, which is included via
@@ -39,14 +40,14 @@
 namespace exec_aten {
 using ScalarType = at::ScalarType;
 }
-#else
+#else // !USE_ATEN_LIB
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/core/portable_type/string_view.h>
 namespace exec_aten {
 using ScalarType = torch::executor::ScalarType;
 using string_view = torch::executor::string_view;
 } // namespace exec_aten
-#endif
+#endif // USE_ATEN_LIB
 
 namespace executorch {
 namespace runtime {
@@ -953,17 +954,19 @@ inline exec_aten::ScalarType promoteTypes(
 //
 
 #ifdef ET_INTERNAL_CHECK_SELECTIVE_BUILD
-#define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)  \
-  case enum_type: {                                           \
-    ET_INTERNAL_CHECK_SELECTIVE_BUILD(enum_type);             \
-    using CTYPE_ALIAS = ScalarTypeToCppType<enum_type>::type; \
-    return __VA_ARGS__();                                     \
+#define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)         \
+  case enum_type: {                                                  \
+    ET_INTERNAL_CHECK_SELECTIVE_BUILD(enum_type);                    \
+    using CTYPE_ALIAS =                                              \
+        ::executorch::runtime::ScalarTypeToCppType<enum_type>::type; \
+    return __VA_ARGS__();                                            \
   }
 #else
-#define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)  \
-  case enum_type: {                                           \
-    using CTYPE_ALIAS = ScalarTypeToCppType<enum_type>::type; \
-    return __VA_ARGS__();                                     \
+#define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)         \
+  case enum_type: {                                                  \
+    using CTYPE_ALIAS =                                              \
+        ::executorch::runtime::ScalarTypeToCppType<enum_type>::type; \
+    return __VA_ARGS__();                                            \
   }
 #endif
 
@@ -1343,8 +1346,29 @@ inline exec_aten::ScalarType promoteTypes(
           ET_INTERNAL_SWITCH_CASE(                                         \
               exec_aten::ScalarType::T2, CTYPE_ALIAS, __VA_ARGS__))
 
+#define ET_SWITCH_THREE_TYPES(                                     \
+    T1, T2, T3, TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...)             \
+  ET_INTERNAL_SWITCH(                                              \
+      TYPE,                                                        \
+      CONTEXT,                                                     \
+      NAME,                                                        \
+      ET_INTERNAL_SWITCH_CASE(                                     \
+          exec_aten::ScalarType::T1, CTYPE_ALIAS, __VA_ARGS__)     \
+          ET_INTERNAL_SWITCH_CASE(                                 \
+              exec_aten::ScalarType::T2, CTYPE_ALIAS, __VA_ARGS__) \
+              ET_INTERNAL_SWITCH_CASE(                             \
+                  exec_aten::ScalarType::T3, CTYPE_ALIAS, __VA_ARGS__))
+
 } // namespace runtime
 } // namespace executorch
+
+namespace exec_aten {
+#ifdef USE_ATEN_LIB
+using ::at::elementSize;
+#else // USE_ATEN_LIB
+using ::executorch::runtime::elementSize;
+#endif // USE_ATEN_LIB
+} // namespace exec_aten
 
 namespace torch {
 namespace executor {
