@@ -18,7 +18,6 @@ class RunnerHolder: ObservableObject {
 
 extension UIImage {
   func resized(to newSize: CGSize, scale: CGFloat = 1) -> UIImage {
-//    NSLog(">>> Resizing image to \(newSize)")
     let format = UIGraphicsImageRendererFormat.default()
     format.scale = scale
     let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
@@ -79,11 +78,6 @@ extension UIImage {
         rgbArray[rgbIndex + 2 * height * width] = b
       }
     }
-
-//    let first100Values = rgbArray.prefix(100)
-//    let joinedValues = first100Values.map { String($0) }.joined(separator: " ")
-//    NSLog(">>>>>")
-//    NSLog(joinedValues)
 
     return rgbArray
   }
@@ -272,7 +266,6 @@ struct ContentView: View {
   private func addSelectedImageMessage() {
     if let selectedImage {
       messages.append(Message(image: selectedImage))
-      messages.append(Message(type: .prompted))
     }
   }
 
@@ -282,13 +275,9 @@ struct ContentView: View {
     shouldStopGenerating = false
     let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     let seq_len = 768 // original: 128, text: 256, vision: 768
-    prompt = ""
     let modelPath = resourceManager.modelPath
     let tokenizerPath = resourceManager.tokenizerPath
     let useLlama = modelPath.range(of: "llama", options: .caseInsensitive) != nil
-
-    messages.append(Message(text: text))
-    messages.append(Message(type: .generated))
 
     runnerQueue.async {
       defer {
@@ -306,6 +295,9 @@ struct ContentView: View {
       
       guard !shouldStopGenerating else { return }
       if useLlama {
+        messages.append(Message(text: text))
+        messages.append(Message(type: .llamagenerated))
+
         if let runner = runnerHolder.runner, !runner.isloaded() {
           var error: Error?
           let startLoadTime = Date()
@@ -327,7 +319,7 @@ struct ContentView: View {
               }
               messages.append(message)
               if error == nil {
-                messages.append(Message(type: .generated))
+                messages.append(Message(type: .llamagenerated))
               }
             }
           }
@@ -337,6 +329,9 @@ struct ContentView: View {
         }
       }
       else {
+        messages.append(Message(text: text))
+        messages.append(Message(type: .llavagenerated))
+
         if let runner = runnerHolder.llavaRunner, !runner.isloaded() {
           var error: Error?
           let startLoadTime = Date()
@@ -358,7 +353,7 @@ struct ContentView: View {
               }
               messages.append(message)
               if error == nil {
-                messages.append(Message(type: .generated))
+                messages.append(Message(type: .llavagenerated))
               }
             }
           }
@@ -369,7 +364,6 @@ struct ContentView: View {
       }
         
       guard !shouldStopGenerating else {
-        NSLog(">>>shouldStopGenerating")
         DispatchQueue.main.async {
           withAnimation {
             _ = messages.removeLast()
@@ -379,64 +373,71 @@ struct ContentView: View {
       }
       do {
         var tokens: [String] = []
-        
-        var textOnly: Bool = false
         var rgbArray: [UInt8]?
         let MAX_WIDTH = 336.0
         var newHeight = 0.0
         var imageBuffer: UnsafeMutableRawPointer?
 
         if let img = selectedImage {
-          newHeight = MAX_WIDTH * img.size.height / img.size.width // 224.0
+          let llava_prompt = "\(text) ASSISTANT"
+              
+          newHeight = MAX_WIDTH * img.size.height / img.size.width
           let resizedImage = img.resized(to: CGSize(width: MAX_WIDTH, height: newHeight))
           rgbArray = resizedImage.toRGBArray()
-          if rgbArray == nil {
-            textOnly = true
-          } else {
-            imageBuffer = UnsafeMutableRawPointer(mutating: rgbArray)
-          }
+          imageBuffer = UnsafeMutableRawPointer(mutating: rgbArray)
           
-          try runnerHolder.llavaRunner?.mm_generate(textOnly, buffer: imageBuffer!, width: MAX_WIDTH, height: newHeight, prompt: text, sequenceLength: seq_len) { token in
+          try runnerHolder.llavaRunner?.mm_generate(imageBuffer!, width: MAX_WIDTH, height: newHeight, prompt: llava_prompt, sequenceLength: seq_len) { token in
             
-            tokens.append(token)
-            if tokens.count > 2 {
-              let text = tokens.joined()
-              let count = tokens.count
-              tokens = []
-              DispatchQueue.main.async {
-                withAnimation {
-                  var message = messages.removeLast()
-                  message.text += text
-                  message.tokenCount += count
-                  message.dateUpdated = Date()
-                  messages.append(message)
+            if token != llava_prompt {
+              tokens.append(token)
+              if tokens.count > 2 {
+                let text = tokens.joined()
+                let count = tokens.count
+                tokens = []
+                DispatchQueue.main.async {
+                  withAnimation {
+                    var message = messages.removeLast()
+                    message.text += text
+                    message.tokenCount += count
+                    message.dateUpdated = Date()
+                    messages.append(message)
+                  }
                 }
               }
-            }
-            if shouldStopGenerating {
-              runnerHolder.runner?.stop()
+              if shouldStopGenerating {
+                runnerHolder.runner?.stop()
+              }
             }
           }
         } else {
-          textOnly = true
-          try runnerHolder.runner?.generate(text, sequenceLength: seq_len) { token in
-            tokens.append(token)
-            if tokens.count > 2 {
-              let text = tokens.joined()
-              let count = tokens.count
-              tokens = []
-              DispatchQueue.main.async {
-                withAnimation {
-                  var message = messages.removeLast()
-                  message.text += text
-                  message.tokenCount += count
-                  message.dateUpdated = Date()
-                  messages.append(message)
+          let llama3_prompt = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\(text)<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+
+          try runnerHolder.runner?.generate(llama3_prompt, sequenceLength: seq_len) { token in
+            if token != llama3_prompt {
+              if token == "<|eot_id|>" {
+                shouldStopGenerating = true
+                runnerHolder.runner?.stop()
+              }
+              else {
+                tokens.append(token)
+                if tokens.count > 2 {
+                  let text = tokens.joined()
+                  let count = tokens.count
+                  tokens = []
+                  DispatchQueue.main.async {
+                    withAnimation {
+                      var message = messages.removeLast()
+                      message.text += text
+                      message.tokenCount += count
+                      message.dateUpdated = Date()
+                      messages.append(message)
+                    }
+                  }
+                }
+                if shouldStopGenerating {
+                  runnerHolder.runner?.stop()
                 }
               }
-            }
-            if shouldStopGenerating {
-              runnerHolder.runner?.stop()
             }
           }
         }

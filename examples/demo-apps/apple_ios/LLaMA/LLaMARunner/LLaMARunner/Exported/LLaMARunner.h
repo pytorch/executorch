@@ -39,8 +39,7 @@ NS_SWIFT_NAME(LLaVARunner)
 - (BOOL)isloaded;
 - (BOOL)loadWithError:(NSError**)error;
 
-- (BOOL)mm_generate:(BOOL)textOnly
-               buffer:(void*)imageBuffer
+- (BOOL)mm_generate:(void*)imageBuffer
                 width:(CGFloat)width
                height:(CGFloat)height
                prompt:(NSString*)prompt
@@ -48,11 +47,6 @@ NS_SWIFT_NAME(LLaVARunner)
     withTokenCallback:(nullable void (^)(NSString*))callback
                 error:(NSError**)error;
 
-- (BOOL)generate:(NSArray<UIImage*>*)images
-               prompt:(NSString*)prompt
-       sequenceLength:(NSInteger)seq_len
-    withTokenCallback:(nullable void (^)(NSString*))callback
-                error:(NSError**)error;
 - (void)stop;
 
 + (instancetype)new NS_UNAVAILABLE;

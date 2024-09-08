@@ -11,7 +11,8 @@ import SwiftUI
 
 enum MessageType {
   case prompted
-  case generated
+  case llamagenerated
+  case llavagenerated
   case info
 }
 
