@@ -181,3 +181,46 @@ TEST_F(TensorImplPtrTest, TensorImplOwningEmptyData) {
   EXPECT_EQ(tensor_impl->strides()[1], 1);
   EXPECT_EQ(tensor_impl->data(), nullptr);
 }
+
+TEST_F(TensorImplPtrTest, SharedDataManagement) {
+  auto data = std::make_shared<std::vector<float>>(100, 1.0f);
+  auto tensor_impl1 = make_tensor_impl_ptr(
+      exec_aten::ScalarType::Float, {10, 10}, data->data());
+  auto tensor_impl2 = tensor_impl1;
+
+  EXPECT_EQ(tensor_impl1.get(), tensor_impl2.get());
+  EXPECT_EQ(tensor_impl1.use_count(), 2);
+  EXPECT_EQ(((float*)tensor_impl1->data())[0], 1.0f);
+
+  ((float*)tensor_impl1->mutable_data())[0] = 2.0f;
+  EXPECT_EQ(((float*)tensor_impl2->data())[0], 2.0f);
+
+  tensor_impl1.reset();
+  EXPECT_NE(tensor_impl2.get(), nullptr);
+  EXPECT_EQ(tensor_impl2.use_count(), 1);
+
+  EXPECT_EQ(((float*)tensor_impl2->data())[0], 2.0f);
+}
+
+TEST_F(TensorImplPtrTest, CustomDeleterWithSharedData) {
+  auto data = std::make_shared<std::vector<float>>(100, 1.0f);
+  bool deleter_called = false;
+  {
+    auto tensor_impl = make_tensor_impl_ptr(
+        exec_aten::ScalarType::Float,
+        {10, 10},
+        data->data(),
+        {},
+        {},
+        exec_aten::TensorShapeDynamism::STATIC,
+        [data, &deleter_called](void*) mutable {
+          deleter_called = true;
+          data.reset();
+        });
+
+    EXPECT_EQ(data.use_count(), 2);
+    EXPECT_FALSE(deleter_called);
+  }
+  EXPECT_TRUE(deleter_called);
+  EXPECT_EQ(data.use_count(), 1);
+}
