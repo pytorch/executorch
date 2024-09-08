@@ -90,6 +90,7 @@ struct ContentView: View {
   @State private var pickerType: PickerType?
   @State private var isGenerating = false
   @State private var shouldStopGenerating = false
+  @State private var shouldStopShowingToken = false
   private let runnerQueue = DispatchQueue(label: "org.pytorch.executorch.llama")
   @StateObject private var runnerHolder = RunnerHolder()
   @StateObject private var resourceManager = ResourceManager()
@@ -273,12 +274,17 @@ struct ContentView: View {
     guard !prompt.isEmpty else { return }
     isGenerating = true
     shouldStopGenerating = false
-    let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    let seq_len = 768 // original: 128, text: 256, vision: 768
+    shouldStopShowingToken = false
+    let text = prompt
+    let seq_len = 768 // text: 256, vision: 768
     let modelPath = resourceManager.modelPath
     let tokenizerPath = resourceManager.tokenizerPath
     let useLlama = modelPath.range(of: "llama", options: .caseInsensitive) != nil
 
+    prompt = ""
+    hideKeyboard()
+    showingSettings = false
+    
     runnerQueue.async {
       defer {
         DispatchQueue.main.async {
@@ -389,23 +395,29 @@ struct ContentView: View {
           try runnerHolder.llavaRunner?.mm_generate(imageBuffer!, width: MAX_WIDTH, height: newHeight, prompt: llava_prompt, sequenceLength: seq_len) { token in
             
             if token != llava_prompt {
-              tokens.append(token)
-              if tokens.count > 2 {
-                let text = tokens.joined()
-                let count = tokens.count
-                tokens = []
-                DispatchQueue.main.async {
-                  withAnimation {
-                    var message = messages.removeLast()
-                    message.text += text
-                    message.tokenCount += count
-                    message.dateUpdated = Date()
-                    messages.append(message)
+              if token == "</s>" {
+                shouldStopGenerating = true
+                runnerHolder.runner?.stop()
+              }
+              else {
+                tokens.append(token)
+                if tokens.count > 2 {
+                  let text = tokens.joined()
+                  let count = tokens.count
+                  tokens = []
+                  DispatchQueue.main.async {
+                    withAnimation {
+                      var message = messages.removeLast()
+                      message.text += text
+                      message.tokenCount += count
+                      message.dateUpdated = Date()
+                      messages.append(message)
+                    }
                   }
                 }
-              }
-              if shouldStopGenerating {
-                runnerHolder.runner?.stop()
+                if shouldStopGenerating {
+                  runnerHolder.runner?.stop()
+                }
               }
             }
           }
@@ -413,13 +425,16 @@ struct ContentView: View {
           let llama3_prompt = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\(text)<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
 
           try runnerHolder.runner?.generate(llama3_prompt, sequenceLength: seq_len) { token in
-            if token != llama3_prompt {
+            
+            NSLog(">>> token={\(token)}")
+            if token != llama3_prompt && !shouldStopShowingToken {
+              // hack to fix the issue that extension/llm/runner/text_token_generator.h
+              // keeps generating after <|eot_id|>
               if token == "<|eot_id|>" {
-                shouldStopGenerating = true
-                runnerHolder.runner?.stop()
+                shouldStopShowingToken = true
               }
               else {
-                tokens.append(token)
+                tokens.append(token.trimmingCharacters(in: .newlines))
                 if tokens.count > 2 {
                   let text = tokens.joined()
                   let count = tokens.count
@@ -492,4 +507,10 @@ struct ContentView: View {
       }
     }
   }
+}
+
+extension View {
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
 }

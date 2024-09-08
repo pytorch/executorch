@@ -140,7 +140,6 @@ NSErrorDomain const LLaVARunnerErrorDomain = @"LLaVARunnerErrorDomain";
                 error:(NSError**)error {
 
   std::vector<Image> images = {};
-  NSLog(@">>> width: %f, height: %f", width, height);
   uint8_t* data = static_cast<uint8_t*>(imageBuffer);
 
   Image image;
