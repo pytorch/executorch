@@ -281,13 +281,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
-    parser.add_argument(
-        "--coreml-disable-state",
-        dest="coreml_enable_state",
-        default=True,  # Enable this by default
-        action="store_false",
-        help="Delegate mutable buffer to Core ML state",
-    )
+    parser.add_argument("--coreml-enable-state", action="store_true")
     parser.add_argument(
         "--qnn",
         action="store_true",

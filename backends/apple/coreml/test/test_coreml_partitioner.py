@@ -8,8 +8,6 @@ import coremltools as ct
 
 import executorch.exir
 
-import pytest
-
 import torch
 import torchvision
 
@@ -91,10 +89,6 @@ class TestCoreMLPartitioner(unittest.TestCase):
             if node.op == "call_function"
         ] == total
 
-    @pytest.mark.skipif(
-        "b" in ct.__version__ or ct.__version__ < "8.0",
-        reason="coremltools 8.0 or higher is required",
-    )
     def test_buffer(self):
         embedding_dim = 3
         max_seq_len = 2
