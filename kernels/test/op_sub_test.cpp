@@ -206,6 +206,25 @@ TEST_F(OpSubOutTest, BroadcastScalarSupported2) {
   EXPECT_TENSOR_EQ(out, ret);
 }
 
+TEST_F(OpSubOutTest, BroadcastScalarRank0Supported) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor a = tf.make({1}, {5});
+  Tensor b = tf.make({}, {2});
+
+  Tensor out = tf.zeros({1});
+
+  op_sub_out(a, b, 1, out);
+
+  Tensor ret = tf.make({1}, {3});
+  EXPECT_TENSOR_EQ(out, ret);
+
+  op_sub_out(b, a, 1, out);
+
+  ret = tf.make({1}, {-3});
+  EXPECT_TENSOR_EQ(out, ret);
+}
+
 //
 // Death Tests
 //
