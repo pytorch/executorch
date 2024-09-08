@@ -511,7 +511,9 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     if args.coreml:
         coreml_partitioner = get_coreml_partitioner(
-            args.use_kv_cache and args.coreml_enable_state, args.pt2e_quantize
+            args.use_kv_cache and args.coreml_enable_state,
+            args.embedding_quantize,
+            args.pt2e_quantize,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"

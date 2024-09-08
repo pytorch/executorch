@@ -56,7 +56,9 @@ def get_mps_partitioner(use_kv_cache: bool = False):
 
 
 def get_coreml_partitioner(
-    enable_state: bool = False, pt2e_quantize: Optional[str] = None
+    enable_state: bool = False,
+    embedding_quantize: Optional[str] = None,
+    pt2e_quantize: Optional[str] = None,
 ):
     try:
         import coremltools as ct
@@ -76,13 +78,17 @@ def get_coreml_partitioner(
     if enable_state:
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
     # In Core ML, quantization is introduced in iOS 16
-    if pt2e_quantize is not None:
+    if embedding_quantize is not None or pt2e_quantize is not None:
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS16)
     # In Core ML, 8-bit activation quantization is introduced in iOS 17
-    if pt2e_quantize in ("coreml_8a_c8w", "coreml_baseline_8a_c8w"):
+    if (
+        embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 8
+    ) or pt2e_quantize in ("coreml_8a_c8w", "coreml_baseline_8a_c8w"):
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS17)
     # In Core ML, 4-bit weight compression is introduced in iOS 18
-    if pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w"):
+    if (
+        embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 4
+    ) or pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w"):
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
 
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
