@@ -92,6 +92,13 @@ class CoreMLPartitioner(Partitioner):
 
         tag_constant_data(exported_program)
         if self.take_over_mutable_buffer:
+            logger.info(
+                "Core ML partitioner will take over torch mutable buffer as Core ML state, "
+                "so if your model contains mutable buffer, "
+                "then you will need MacOS15+/iOS18+ to execute. "
+                "If you want your mutable buffer model to be compatible with older OS, "
+                "then please set `take_over_mutable_buffer=False`"
+            )
             tag_mutated_buffer(exported_program)
 
         return PartitionResult(
