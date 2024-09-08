@@ -20,7 +20,6 @@
 namespace torch {
 namespace executor {
 
-namespace {
 /**
  * Compute the number of elements based on the sizes of a tensor.
  */
@@ -39,7 +38,6 @@ ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
   }
   return numel;
 }
-} // namespace
 
 TensorImpl::TensorImpl(
     ScalarType type,
