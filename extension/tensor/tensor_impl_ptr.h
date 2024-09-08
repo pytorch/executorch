@@ -94,15 +94,18 @@ TensorImplPtr make_tensor_impl_ptr(
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
         exec_aten::TensorShapeDynamism::STATIC) {
-  const auto data_ptr = data.data();
+  auto raw_data_ptr = data.data();
+  auto data_ptr = std::make_shared<
+      std::vector<typename runtime::ScalarTypeToCppType<T>::type>>(
+      std::move(data));
   return make_tensor_impl_ptr(
       T,
       std::move(sizes),
-      data_ptr,
+      raw_data_ptr,
       std::move(dim_order),
       std::move(strides),
       dynamism,
-      [data = std::move(data)](void*) {});
+      [data_ptr = std::move(data_ptr)](void*) {});
 }
 
 } // namespace extension

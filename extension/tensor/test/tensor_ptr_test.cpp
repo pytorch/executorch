@@ -176,3 +176,36 @@ TEST_F(TensorPtrTest, TensorOwningEmptyData) {
   EXPECT_EQ(tensor->strides()[1], 1);
   EXPECT_EQ(tensor->data_ptr<float>(), nullptr);
 }
+
+TEST_F(TensorPtrTest, TensorSharingImplModifiesSharedDataVector) {
+  std::vector<float> data = {1, 2, 3, 4, 5, 6};
+
+  auto tensor1 = make_tensor_ptr({2, 3}, std::move(data));
+  auto tensor2 = make_tensor_ptr(tensor1);
+
+  tensor1->mutable_data_ptr<float>()[0] = 10;
+  EXPECT_EQ(tensor2->const_data_ptr<float>()[0], 10);
+
+  tensor2->mutable_data_ptr<float>()[5] = 20;
+  EXPECT_EQ(tensor1->const_data_ptr<float>()[5], 20);
+}
+
+TEST_F(TensorPtrTest, TensorSharingImplResizingAffectsBothVector) {
+  std::vector<float> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+
+  auto tensor1 = make_tensor_ptr(
+      {3, 4},
+      std::move(data),
+      {},
+      {},
+      exec_aten::TensorShapeDynamism::DYNAMIC_UNBOUND);
+  auto tensor2 = make_tensor_ptr(tensor1);
+
+  EXPECT_EQ(resize_tensor_ptr(tensor1, {2, 6}), Error::Ok);
+  EXPECT_EQ(tensor2->size(0), 2);
+  EXPECT_EQ(tensor2->size(1), 6);
+
+  EXPECT_EQ(resize_tensor_ptr(tensor2, {4, 3}), Error::Ok);
+  EXPECT_EQ(tensor1->size(0), 4);
+  EXPECT_EQ(tensor1->size(1), 3);
+}
