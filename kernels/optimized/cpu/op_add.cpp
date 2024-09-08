@@ -83,7 +83,8 @@ Tensor& opt_add_out(
   ScalarType out_type = out.scalar_type();
 
   if (b.numel() == 1) {
-    if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half) {
+    if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
+        a_type != ScalarType::BFloat16) {
       ET_KERNEL_CHECK(
           ctx,
           resize_to_broadcast_target_size(a, b, out) == Error::Ok,
@@ -185,12 +186,12 @@ Tensor& opt_add_out(
         InvalidArgument,
         out);
 
-    ET_SWITCH_REALHB_TYPES(a_type, ctx, "add.out", CTYPE_A, [&]() {
-      ET_SWITCH_REALHB_TYPES(b_type, ctx, "add.out", CTYPE_B, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "add.out", CTYPE_A, [&]() {
+      ET_SWITCH_REALHBBF16_TYPES(b_type, ctx, "add.out", CTYPE_B, [&]() {
         using CTYPE_IN = typename torch::executor::
             promote_types<CTYPE_A, CTYPE_B, /*half_to_float*/ true>::type;
         ET_DCHECK(CppTypeToScalarType<CTYPE_IN>::value == common_type);
-        ET_SWITCH_REALHB_TYPES(out_type, ctx, "add.out", CTYPE_OUT, [&]() {
+        ET_SWITCH_REALHBBF16_TYPES(out_type, ctx, "add.out", CTYPE_OUT, [&]() {
           CTYPE_IN alpha_val;
           ET_KERNEL_CHECK(
               ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
@@ -225,7 +226,7 @@ Tensor& opt_add_scalar_out(
 
   ET_CHECK(common_type == out_type);
 
-  if (common_type == ScalarType::Half) {
+  if (common_type == ScalarType::Half || common_type == ScalarType::BFloat16) {
     common_type = ScalarType::Float;
   }
 
@@ -234,7 +235,7 @@ Tensor& opt_add_scalar_out(
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
   if (a_type == common_type && a_type == out_type &&
-      a_type != ScalarType::Half) {
+      a_type != ScalarType::Half && a_type != ScalarType::BFloat16) {
     ET_SWITCH_REALB_TYPES(a_type, ctx, "add.Scalar_out", CTYPE, [&]() {
       ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "add.Scalar_out", CTYPE_B, [&]() {
         CTYPE_B b_val;
@@ -254,11 +255,11 @@ Tensor& opt_add_scalar_out(
       });
     });
   } else {
-    ET_SWITCH_REALHB_TYPES(a_type, ctx, "add.Scalar_out", CTYPE_A, [&]() {
+    ET_SWITCH_REALHBBF16_TYPES(a_type, ctx, "add.Scalar_out", CTYPE_A, [&]() {
       ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "add.Scalar_out", CTYPE_B, [&]() {
         ET_SWITCH_REALB_TYPES(
             common_type, ctx, "add.Scalar_out", CTYPE_IN, [&]() {
-              ET_SWITCH_REALHB_TYPES(
+              ET_SWITCH_REALHBBF16_TYPES(
                   out_type, ctx, "add.Scalar_out", CTYPE_OUT, [&]() {
                     CTYPE_B b_val;
                     ET_EXTRACT_SCALAR(b, b_val);

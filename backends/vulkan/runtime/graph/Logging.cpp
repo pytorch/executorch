@@ -71,8 +71,8 @@ void ComputeGraph::print_readable() {
             << std::setfill(' ') << std::endl;
 
   std::cout << std::setw(6) << "idx" << std::setw(10) << "type" << std::setw(20)
-            << "sizes" << std::setw(10) << "node_type" << std::setw(10)
-            << "so_idx" << std::endl;
+            << "sizes" << std::setw(10) << "node_type" << std::setw(15)
+            << "storage_bytes" << std::setw(10) << "so_idx" << std::endl;
 
   size_t value_idx = 0;
   for (Value& val : values_) {
@@ -106,6 +106,16 @@ void ComputeGraph::print_readable() {
       } else {
         std::cout << "";
       }
+    }
+
+    // Actual storage bytes used
+    std::cout << std::setw(15);
+    if (val.isTensor()) {
+      const api::vTensor& v_tensor = val.toTensor();
+      auto memory_reqs = v_tensor.get_memory_requirements();
+      std::cout << memory_reqs.size;
+    } else {
+      std::cout << "";
     }
 
     std::cout << std::setw(10);

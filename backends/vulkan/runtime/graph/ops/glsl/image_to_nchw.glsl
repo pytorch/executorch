@@ -21,9 +21,10 @@ ${define_required_extensions(DTYPE)}
 
 layout(std430) buffer;
 
-${layout_declare_buffer(0, "w", "nchw_out", DTYPE)}
-${layout_declare_tensor(1, "r", "t_in", DTYPE, STORAGE)}
-${layout_declare_ubo(2, "ivec4", "sizes")}
+${layout_declare_buffer(B, "w", "nchw_out", DTYPE)}
+${layout_declare_tensor(B, "r", "t_in", DTYPE, STORAGE)}
+${layout_declare_ubo(B, "ivec4", "sizes")}
+${layout_declare_ubo(B, "ivec4", "axis_mapping")}
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
@@ -51,7 +52,7 @@ void write_out_texel(VEC4_T texel, ivec4 tensor_idx) {
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 tensor_idx = to_tensor_idx(pos, sizes, packed_dim);
+  const ivec4 tensor_idx = to_tensor_idx(pos, sizes, axis_mapping, packed_dim);
 
   if (any(greaterThanEqual(tensor_idx, sizes))) {
     return;

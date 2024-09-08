@@ -41,4 +41,16 @@ public class PromptFormat {
         return USER_PLACEHOLDER;
     }
   }
+
+  public static String getStopToken(ModelType modelType) {
+    switch (modelType) {
+      case LLAMA_3:
+      case LLAMA_3_1:
+        return "<|eot_id|>";
+      case LLAVA_1_5:
+        return "</s>";
+      default:
+        return "";
+    }
+  }
 }

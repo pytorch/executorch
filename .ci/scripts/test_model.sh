@@ -182,12 +182,28 @@ test_model_with_qnn() {
   EXPORTED_MODEL=./${EXPORT_SCRIPT}/${EXPORTED_MODEL_NAME}
 }
 
+test_model_with_coreml() {
+  if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+    echo "coreml doesn't support buck2."
+    exit 1
+  fi
+
+  "${PYTHON_EXECUTABLE}" -m examples.apple.coreml.scripts.export --model_name="${MODEL_NAME}"
+  EXPORTED_MODEL=$(find "." -type f -name "${MODEL_NAME}*.pte" -print -quit)
+}
+
 if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
 elif [[ "${BACKEND}" == "qnn" ]]; then
   echo "Testing ${MODEL_NAME} with qnn..."
   test_model_with_qnn
+  if [[ $? -eq 0 ]]; then
+    prepare_artifacts_upload
+  fi
+elif [[ "${BACKEND}" == "coreml" ]]; then
+  echo "Testing ${MODEL_NAME} with coreml..."
+  test_model_with_coreml
   if [[ $? -eq 0 ]]; then
     prepare_artifacts_upload
   fi
