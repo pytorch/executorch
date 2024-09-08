@@ -87,6 +87,11 @@ using IntArrayRef = at::IntArrayRef;
 template <typename T>
 using OptionalArrayRef = c10::OptionalArrayRef<T>;
 
+inline ssize_t compute_numel(const SizesType* sizes, ssize_t dim) {
+  return static_cast<ssize_t>(
+      c10::multiply_integers(c10::ArrayRef<SizesType>(sizes, dim)));
+}
+
 #else // Use executor types
 
 using Tensor = torch::executor::Tensor;
@@ -127,9 +132,12 @@ template <typename T>
 using OptionalArrayRef =
     torch::executor::optional<torch::executor::ArrayRef<T>>;
 
+using torch::executor::compute_numel;
+
 #endif // Use executor types
 
 } // namespace exec_aten
+
 namespace torch {
 namespace executor {
 using TensorList = exec_aten::TensorList;
