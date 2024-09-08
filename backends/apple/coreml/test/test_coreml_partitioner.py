@@ -2,12 +2,13 @@
 #
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-import pytest
 import unittest
 
 import coremltools as ct
 
 import executorch.exir
+
+import pytest
 
 import torch
 import torchvision
@@ -92,7 +93,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
     @pytest.mark.skipif(
         "b" in ct.__version__ or ct.__version__ < "8.0",
-        reason="coremltools 8.0 or higher is required"
+        reason="coremltools 8.0 or higher is required",
     )
     def test_buffer(self):
         embedding_dim = 3
@@ -101,7 +102,10 @@ class TestCoreMLPartitioner(unittest.TestCase):
         class Model(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.register_buffer("cache", torch.zeros((max_seq_len, embedding_dim), dtype=torch.float32))
+                self.register_buffer(
+                    "cache",
+                    torch.zeros((max_seq_len, embedding_dim), dtype=torch.float32),
+                )
 
             def forward(self, q, k_val, input_pos):
                 q_T = q.transpose(0, 1)
@@ -118,7 +122,9 @@ class TestCoreMLPartitioner(unittest.TestCase):
         example_inputs = (q, k_val, input_pos)
         exir_program_aten = torch.export.export(model, example_inputs)
 
-        compile_specs = CoreMLBackend.generate_compile_specs(minimum_deployment_target=ct.target.iOS18)
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            minimum_deployment_target=ct.target.iOS18
+        )
         partitioner = CoreMLPartitioner(compile_specs=compile_specs)
         edge_program_manager = executorch.exir.to_edge(
             exir_program_aten, compile_config=self.edge_compile_config
