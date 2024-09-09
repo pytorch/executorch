@@ -27,10 +27,10 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/runtime/core/exec_aten/util:dim_order_util" + aten_suffix,
-                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
             exported_deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],
         )

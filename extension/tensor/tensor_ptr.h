@@ -141,27 +141,80 @@ inline TensorPtr make_tensor_ptr(
  * Creates a TensorPtr that manages a Tensor with the specified properties.
  *
  * This template overload is specialized for cases where the tensor data is
- * provided as a vector of a specific scalar type, rather than a raw pointer.
- * The deleter ensures that the data vector is properly managed and its
- * lifetime is tied to the TensorImpl.
+ * provided as a vector. The scalar type is automatically deduced from the
+ * vector's data type. The deleter ensures that the data vector is properly
+ * managed and its lifetime is tied to the TensorImpl.
  *
- * @tparam T The scalar type of the tensor elements.
+ * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param sizes A vector specifying the size of each dimension.
  * @param data A vector containing the tensor's data.
  * @param dim_order A vector specifying the order of dimensions.
  * @param strides A vector specifying the strides of each dimension.
  * @param dynamism Specifies the mutability of the tensor's shape.
- * @return A TensorImplPtr managing the newly created TensorImpl.
+ * @return A TensorPtr that manages the newly created TensorImpl.
  */
-template <exec_aten::ScalarType T = exec_aten::ScalarType::Float>
+template <typename T = float>
 TensorPtr make_tensor_ptr(
     std::vector<exec_aten::SizesType> sizes,
-    std::vector<typename runtime::ScalarTypeToCppType<T>::type> data,
+    std::vector<T> data,
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
         exec_aten::TensorShapeDynamism::STATIC) {
-  return make_tensor_ptr(make_tensor_impl_ptr<T>(
+  return make_tensor_ptr(make_tensor_impl_ptr(
+      std::move(sizes),
+      std::move(data),
+      std::move(dim_order),
+      std::move(strides),
+      dynamism));
+}
+
+/**
+ * Creates a TensorPtr that manages a Tensor with the specified properties.
+ *
+ * This template overload is specialized for cases where the tensor data is
+ * provided as a vector. The scalar type is automatically deduced from the
+ * vector's data type. The deleter ensures that the data vector is properly
+ * managed and its lifetime is tied to the TensorImpl.
+ *
+ * @tparam T The C++ type of the tensor elements, deduced from the vector.
+ * @param data A vector containing the tensor's data.
+ * @param dynamism Specifies the mutability of the tensor's shape.
+ * @return A TensorPtr that manages the newly created TensorImpl.
+ */
+template <typename T = float>
+TensorPtr make_tensor_ptr(
+    std::vector<T> data,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::STATIC) {
+  return make_tensor_ptr(make_tensor_impl_ptr(std::move(data), dynamism));
+}
+
+/**
+ * Creates a TensorPtr that manages a Tensor with the specified properties.
+ *
+ * This overload accepts a raw memory buffer stored in a std::vector<uint8_t>
+ * and a scalar type to interpret the data. The vector is managed, and the
+ * memory's lifetime is tied to the TensorImpl.
+ *
+ * @param scalar_type The scalar type of the tensor elements.
+ * @param sizes A vector specifying the size of each dimension.
+ * @param data A vector containing the raw memory for the tensor's data.
+ * @param dim_order A vector specifying the order of dimensions.
+ * @param strides A vector specifying the strides of each dimension.
+ * @param dynamism Specifies the mutability of the tensor's shape.
+ * @return A TensorPtr managing the newly created Tensor.
+ */
+inline TensorPtr make_tensor_ptr(
+    exec_aten::ScalarType scalar_type,
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<uint8_t> data,
+    std::vector<exec_aten::DimOrderType> dim_order = {},
+    std::vector<exec_aten::StridesType> strides = {},
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::STATIC) {
+  return make_tensor_ptr(make_tensor_impl_ptr(
+      scalar_type,
       std::move(sizes),
       std::move(data),
       std::move(dim_order),

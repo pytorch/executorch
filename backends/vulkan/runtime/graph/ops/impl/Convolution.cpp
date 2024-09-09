@@ -106,7 +106,7 @@ ValueRef prepack_biases(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo()},
+      {t->sizes_ubo(), t->axis_mapping_ubo()},
       // Specialization constants
       {SV(t->packed_dim_whcn_idx())}));
 

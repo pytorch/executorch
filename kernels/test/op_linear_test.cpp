@@ -28,7 +28,7 @@ using torch::executor::testing::TensorFactory;
 class OpLinearOutTest : public OperatorTest {
  protected:
   Tensor& op_linear_out(const Tensor& self, const Tensor& mat2, Tensor& out) {
-    return torch::executor::aten::linear_outf(context_, self, mat2, torch::executor::nullopt, out);
+    return torch::executor::aten::linear_outf(context_, self, mat2, {}, out);
   }
 
   template <class CTYPE, exec_aten::ScalarType DTYPE>

@@ -352,6 +352,23 @@ TEST_F(OpAddOutKernelTest, BroadcastOneElementTensorTypePromotion) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
+TEST_F(OpAddOutKernelTest, BroadcastOneElementRank0Tensor) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor a = tf.make({1}, {5});
+  Tensor b = tf.make({}, {2});
+
+  Tensor out = tf.zeros({1});
+
+  op_add_out(a, b, 1, out);
+
+  Tensor ret = tf.make({1}, {7});
+  EXPECT_TENSOR_EQ(out, ret);
+
+  op_add_out(b, a, 1, out);
+  EXPECT_TENSOR_EQ(out, ret);
+}
+
 //
 // Death Tests
 //

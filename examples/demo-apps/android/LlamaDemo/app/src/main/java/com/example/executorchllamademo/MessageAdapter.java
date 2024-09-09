@@ -16,6 +16,7 @@ import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.TextView;
 import java.util.ArrayList;
+import java.util.Collections;
 
 public class MessageAdapter extends ArrayAdapter<Message> {
 
@@ -89,5 +90,42 @@ public class MessageAdapter extends ArrayAdapter<Message> {
 
   public ArrayList<Message> getSavedMessages() {
     return savedMessages;
+  }
+
+  public ArrayList<Message> getRecentSavedTextMessages(int numOfLatestPromptMessages) {
+    ArrayList<Message> recentMessages = new ArrayList<Message>();
+    int lastIndex = savedMessages.size() - 1;
+    Message messageToAdd = savedMessages.get(lastIndex);
+    int oldPromptID = messageToAdd.getPromptID();
+
+    for (int i = 0; i < savedMessages.size(); i++) {
+      messageToAdd = savedMessages.get(lastIndex - i);
+      if (messageToAdd.getMessageType() != MessageType.SYSTEM) {
+        if (messageToAdd.getPromptID() != oldPromptID) {
+          numOfLatestPromptMessages--;
+          oldPromptID = messageToAdd.getPromptID();
+        }
+        if (numOfLatestPromptMessages > 0) {
+          if (messageToAdd.getMessageType() == MessageType.TEXT) {
+            recentMessages.add(messageToAdd);
+          }
+        } else {
+          break;
+        }
+      }
+    }
+
+    // To place the order in [input1, output1, input2, output2...]
+    Collections.reverse(recentMessages);
+    return recentMessages;
+  }
+
+  public int getMaxPromptID() {
+    int maxPromptID = -1;
+    for (Message msg : savedMessages) {
+
+      maxPromptID = Math.max(msg.getPromptID(), maxPromptID);
+    }
+    return maxPromptID;
   }
 }

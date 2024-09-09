@@ -16,7 +16,7 @@ import shlex
 from enum import Enum
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import pkg_resources
 
@@ -166,19 +166,25 @@ def build_args_parser() -> argparse.ArgumentParser:
         nargs="+",
         type=str,
         default=None,
-        help="Tasks for GPTQ calibration",
+        help="Tasks for GPTQ calibration from lm_eval",
     )
     parser.add_argument(
         "--calibration_limit",
         type=int,
         default=None,
-        help="number of samples used for calibration",
+        help="number of samples used for calibration from lm_eval",
     )
     parser.add_argument(
         "--calibration_seq_length",
         type=int,
         default=None,
-        help="Sequence length for GPTQ calibration",
+        help="Sequence length for GPTQ calibration from lm_eval",
+    )
+    parser.add_argument(
+        "--calibration_data",
+        type=str,
+        default="Once upon a time",
+        help="Calibration prompts from users",
     )
     parser.add_argument(
         "-t",
@@ -313,7 +319,6 @@ def build_args_parser() -> argparse.ArgumentParser:
 
 
 def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
-
     path = str(path)
 
     if verbose_export():
@@ -421,9 +426,15 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             generate_full_logits=args.generate_full_logits,
             weight_type=weight_type,
             enable_dynamic_shape=args.enable_dynamic_shape,
+            calibration_tasks=args.calibration_tasks,
+            calibration_limit=args.calibration_limit,
+            calibration_seq_length=args.calibration_seq_length,
+            calibration_data=args.calibration_data,
+            tokenizer_path=args.tokenizer_path,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
             metadata_str=args.metadata,
+            args=args,
         )
         .set_output_dir(output_dir_path)
         .to_dtype(dtype_override)
@@ -630,9 +641,15 @@ def _load_llama_model(
     generate_full_logits: bool = False,
     weight_type: WeightType = WeightType.LLAMA,
     enable_dynamic_shape: bool = False,
+    calibration_tasks: Optional[List[str]] = None,
+    calibration_limit: Optional[int] = None,
+    calibration_seq_length: Optional[int] = None,
+    calibration_data: Optional[str] = None,
+    tokenizer_path: Optional[str] = None,
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
+    args,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
@@ -685,6 +702,11 @@ def _load_llama_model(
         use_kv_cache=use_kv_cache,
         example_inputs=example_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
+        calibration_tasks=calibration_tasks,
+        calibration_limit=calibration_limit,
+        calibration_seq_length=calibration_seq_length,
+        calibration_data=calibration_data,
+        tokenizer_path=tokenizer_path,
         verbose=verbose,
         metadata=_load_llama_model_metadata(
             weight_type,
@@ -694,4 +716,5 @@ def _load_llama_model(
             model.params,
             metadata_str,
         ),
+        args=args,
     )

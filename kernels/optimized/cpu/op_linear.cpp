@@ -39,6 +39,11 @@ Tensor& opt_linear_out(
       InvalidArgument,
       out);
 
+  // gemm on some platforms doesn't tolerate empty input.
+  if (out.numel() == 0) {
+    return out;
+  }
+
   int flattened_input_dim = 1;
   for (int ii = 0; ii < in.dim() - 1; ++ii) {
     flattened_input_dim *= in.sizes()[ii];
