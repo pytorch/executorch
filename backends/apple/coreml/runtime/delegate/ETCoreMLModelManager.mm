@@ -598,21 +598,8 @@ ETCoreMLModelDebugInfo * _Nullable get_model_debug_info(const inmemoryfs::InMemo
     if (!model) {
         return NO;
     }
-    
-    NSError *localError = nil;
-    BOOL result = [model.mlModel prewarmAndReturnError:&localError];
-    if (!result) {
-        ETCoreMLLogError(localError,
-                         "%@: Failed to prewarm model with identifier = %@",
-                         NSStringFromClass(self.assetManager.class),
-                         model.identifier);
-    }
-    
-    if (error) {
-        *error = localError;
-    }
-    
-    return result;
+
+    return [model prewarmAndReturnError:error];
 }
 
 - (void)prewarmRecentlyUsedAssetsWithMaxCount:(NSUInteger)maxCount {
