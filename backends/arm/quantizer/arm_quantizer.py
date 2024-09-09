@@ -19,10 +19,10 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 import torch
 import torch.nn.functional as F
+from executorch.backends.arm.passes.arm_pass_manager import ArmPassManager
 
 from executorch.backends.arm.quantizer import arm_quantizer_utils
 from executorch.backends.arm.quantizer.arm_quantizer_utils import (
-    convert_scalars_to_attrs,
     mark_nodes_as_annotated,
     propagate_annotation,
 )
@@ -317,7 +317,8 @@ class ArmQuantizer(Quantizer):
         """An initial pass for transforming the graph to prepare it for annotation.
         Currently transforms scalar values to tensor attributes.
         """
-        return convert_scalars_to_attrs(model)
+
+        return ArmPassManager().transform_for_annotation_pipeline(graph_module=model)
 
     def annotate(self, model: GraphModule) -> GraphModule:
         """Performs the quantization annotation on the graph.

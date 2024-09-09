@@ -15,7 +15,6 @@ from . import (  # noqa
     op_cat,
     op_conv2d,
     op_dequant,
-    op_div,
     op_exp,
     op_full,
     op_get_item,
