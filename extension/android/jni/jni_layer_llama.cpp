@@ -150,8 +150,8 @@ class ExecuTorchLlamaJni
       jint channels,
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
-      jboolean echo,
-      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
+      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback,
+      jboolean echo) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       auto image_size = image->size();
       std::vector<Image> images;
@@ -249,8 +249,8 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       jlong start_pos,
-      jboolean echo,
-      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
+      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback,
+      jboolean echo) {
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
       return static_cast<jint>(Error::NotSupported);
     }
