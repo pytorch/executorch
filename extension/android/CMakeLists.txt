@@ -78,11 +78,12 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
   )
 endif()
 
-set(JNI_SRCS jni/jni_layer.cpp)
+add_library(executorch_jni SHARED jni/jni_layer.cpp)
 
 if(EXECUTORCH_BUILD_LLAMA_JNI)
-  list(APPEND JNI_SRCS jni/jni_layer_llama.cpp)
+  target_sources(executorch_jni PRIVATE jni/jni_layer_llama.cpp)
   list(APPEND link_libraries llama_runner llava_runner)
+  target_compile_definitions(executorch_jni PUBLIC EXECUTORCH_BUILD_LLAMA_JNI=1)
   add_subdirectory(
     ${EXECUTORCH_ROOT}/examples/models/llava/runner
     ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llava/runner
@@ -97,8 +98,6 @@ endif()
 if(TARGET quantized_kernels)
   list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 endif()
-
-add_library(executorch_jni SHARED ${JNI_SRCS})
 
 target_include_directories(
   executorch_jni PRIVATE ${_common_include_directories}

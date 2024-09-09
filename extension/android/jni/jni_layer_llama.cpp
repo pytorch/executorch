@@ -265,7 +265,6 @@ class ExecuTorchLlamaJni
 
 } // namespace executorch_jni
 
-void register_natives_jni() {
+void register_natives_for_llama() {
 	executorch_jni::ExecuTorchLlamaJni::registerNatives();
 }
-
