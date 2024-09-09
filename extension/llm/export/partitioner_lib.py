@@ -130,11 +130,11 @@ def get_qnn_partitioner(
         )
     except ImportError:
         raise ImportError(
-            "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
+            "Please install the Qualcomm backend following https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
         )
 
     use_fp16 = True
-    skip_node_op_set = {"llama.fallback.default"}
+    skip_node_op_set = {"llama.fallback.default", "aten.embedding.default"}
     if pt2e_quantize is not None:
         use_fp16 = False
 
