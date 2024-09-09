@@ -12,6 +12,6 @@ def define_common_targets():
         headers = ["fast_hadamard_transform_special_unstrided_cpu.h"],
         deps = [
             "//executorch/extension/llm/custom_ops/spinquant:fast_hadamard_transform",
-            "//executorch/extension/llm/custom_ops/spinquant/FFHT:dumb_fht",
+            "//executorch/extension/llm/custom_ops/spinquant/third-party/FFHT:dumb_fht",
         ],
     )

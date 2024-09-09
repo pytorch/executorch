@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 // (c) Meta Platforms, Inc. and affiliates.
 #pragma once
 
@@ -6,7 +14,7 @@
 #include <cstdint>
 #include <memory>
 
-#include <executorch/extension/llm/custom_ops/spinquant/FFHT/fht.h>
+#include <executorch/extension/llm/custom_ops/spinquant/third-party/FFHT/fht.h>
 
 #include "fast_hadamard_transform_special.h"
 

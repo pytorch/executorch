@@ -1,4 +1,10 @@
-// Copyright (c) Meta Platforms, Inc. and affiliates.
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
 #include <cmath>
 #include <iostream>
@@ -6,9 +12,9 @@
 
 #include <gtest/gtest.h>
 
-#include <executorch/extension/llm/custom_ops/spinquant/FFHT/dumb_fht.h>
 #include <executorch/extension/llm/custom_ops/spinquant/fast_hadamard_transform.h>
 #include <executorch/extension/llm/custom_ops/spinquant/test/fast_hadamard_transform_special_unstrided_cpu.h>
+#include <executorch/extension/llm/custom_ops/spinquant/third-party/FFHT/dumb_fht.h>
 
 namespace {
 void reference_fht_impl(float* buf, int n) {

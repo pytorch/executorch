@@ -1,3 +1,4 @@
+// @generated
 #include "fht.h"
 static inline void helper_float_1(float* buf);
 static inline void helper_float_1(float* buf) {
