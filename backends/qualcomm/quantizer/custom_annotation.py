@@ -12,6 +12,8 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     QuantizationConfig,
 )
 from executorch.backends.qualcomm.quantizer.utils import QUANT_ANNOTATION_KEY
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.extension.llm.export.builder import LLMEdgeManager
 from torch.ao.quantization.quantizer import (
     QuantizationAnnotation,
     SharedQuantizationSpec,
@@ -144,3 +146,35 @@ def custom_annotate_matmul_16a8w(gm: torch.fx.GraphModule):
     for node in gm.graph.nodes:
         if node.op == "call_function" and node.target == torch.ops.aten.matmul.default:
             annotate_matmul(node, quantization_config_16a8w)
+
+
+def get_custom_quant_ios_dtype(
+    cache_shape: torch.Size,
+    node: torch.fx.Node,
+    kv_dtype=torch.uint8,
+    sharding_dtype=torch.uint16,
+):
+    """
+    This function is specific for llama inputs and outputs
+    """
+    if node.op == "placeholder" and "attention_sdpa_kv_cache_past_" in node.name:
+        return kv_dtype
+
+    # Tag index put node before copy node, because copy is a skipped node in qnn
+    if (
+        exir_ops.edge.aten.index_put.default == node.target
+        and node.meta["val"].shape == cache_shape
+    ):
+        return kv_dtype
+
+    # Tag sharding io
+    if exir_ops.edge.llama.fallback.default in [
+        u.target for u in list(node.users.keys())
+    ] + [node.target]:
+        return sharding_dtype
+
+    # Tag index op as quantized tensors. It is caused by sharding
+    if exir_ops.edge.aten.index.Tensor in [
+        u.target for u in list(node.users.keys())
+    ] + [node.target]:
+        return sharding_dtype
