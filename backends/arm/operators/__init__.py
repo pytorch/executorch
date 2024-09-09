@@ -26,6 +26,7 @@ from . import (  # noqa
     op_mul,
     op_permute,
     op_quant,
+    op_reciprocal,
     op_relu,
     op_repeat,
     op_rsqrt,
