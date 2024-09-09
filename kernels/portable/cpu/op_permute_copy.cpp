@@ -60,15 +60,20 @@ Tensor& permute_copy_out(
       out);
 
   const auto in_type = out.scalar_type();
+
+  size_t in_coord[kTensorDimensionLimit] = {0};
+  size_t trailing_dims_memo[kTensorDimensionLimit];
+  executorch::runtime::memoizeTrailingDims(in, trailing_dims_memo);
+
   // in and out must be the same dtype
   ET_SWITCH_ALL_TYPES(in_type, ctx, "permute_copy.out", CTYPE, [&] {
     const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
-    size_t in_coord[kTensorDimensionLimit] = {0};
-
     for (size_t i = 0; i < out.numel(); ++i) {
-      out_data[i] = in_data[coordinateToIndex(in, in_coord)];
+      out_data[i] =
+          in_data[executorch::runtime::coordinateToIndexWithTrailingDimsMemo(
+              in, in_coord, trailing_dims_memo)];
       increment_coordinate_permuted(in, in_coord, dims);
     }
   });
