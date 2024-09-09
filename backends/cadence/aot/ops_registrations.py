@@ -4,11 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 from math import prod
 from typing import Optional, Tuple
 
 import torch
-from executorch.exir.scalar_type import ScalarType
 from torch.library import impl, Library
 
 from .utils import get_conv1d_output_size, get_conv2d_output_size
@@ -74,8 +75,8 @@ def quantize_per_tensor_meta(
     zero_point: int,
     quant_min: int,
     quant_max: int,
-    dtype: ScalarType,
-):
+    dtype: torch.dtype,
+) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=dtype)
 
 
@@ -86,8 +87,8 @@ def dequantize_per_tensor_meta(
     zero_point: int,
     quant_min: int,
     quant_max: int,
-    dtype: ScalarType,
-):
+    dtype: torch.dtype,
+) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=torch.float)
 
 
@@ -102,7 +103,7 @@ def quantized_linear_meta(
     out_shift: torch.Tensor,
     out_zero_point: int,
     offset: Optional[torch.Tensor],
-):
+) -> torch.Tensor:
     # src comes in shape [leading_dims, in_dim]
     # weight comes in shape [out_dim, in_dim]
     # output comes in empty with shape [leading_dims, out_dim]
@@ -162,7 +163,7 @@ def quantized_layer_norm_meta(
     eps: float,
     output_scale: float,
     output_zero_point: int,
-):
+) -> torch.Tensor:
     return input.new_empty(input.size(), dtype=torch.uint8)
 
 
@@ -173,7 +174,7 @@ def quantized_relu_meta(
     out_zero_point: int,
     out_multiplier: torch.Tensor,
     out_shift: torch.Tensor,
-):
+) -> torch.Tensor:
     return X.new_empty(X.size(), dtype=torch.uint8)
 
 
