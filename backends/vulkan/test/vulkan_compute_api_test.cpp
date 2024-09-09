@@ -1007,10 +1007,16 @@ TEST_F(VulkanComputeAPITest, print_object_sizes) {
   // The actual sizes of each object is dependent on the platform. However, we
   // can alert ourselves to any significant changes in the sizes of these
   // objects by checking the `sizeof()` the class against some loose thresholds.
-  EXPECT_TRUE(sizeof(vTensor) < 1800);
-  EXPECT_TRUE(sizeof(Value) < 2400);
+
+  // Current known size on 64 bit system: 1824 B
+  EXPECT_TRUE(sizeof(vTensor) < 2000);
+  // Current known size on 64 bit system: 1840 B
+  EXPECT_TRUE(sizeof(Value) < 2200);
+  // Current known size on 64 bit system: 240 B
   EXPECT_TRUE(sizeof(StagingBuffer) < 500);
+  // Current known size on 64 bit system: 384 B
   EXPECT_TRUE(sizeof(ComputeGraph) < 500);
+  // Current known size on 64 bit system: 248 B
   EXPECT_TRUE(sizeof(ExecuteNode) < 500);
 }
 
@@ -1227,8 +1233,8 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
   GraphConfig config;
   ComputeGraph graph(config);
 
-  std::vector<int64_t> size_big = {8, 64, 124};
-  std::vector<int64_t> size_small = {8, 1, 124};
+  std::vector<int64_t> size_big = {1, 8, 8};
+  std::vector<int64_t> size_small = {1, 1, 8};
 
   // Build graph
 
@@ -1409,8 +1415,9 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       /*shared_object_idx = */ 4);
 
   // +2: t.sizes_ubo() for each staging shader
+  // +2: t.axis_mapping_ubo() for each staging shader
   // +2: staging buffer for each input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 4);
+  EXPECT_TRUE(get_vma_allocation_count() == 6);
 
   ValueRef c = graph.add_tensor(
       size_big,
@@ -1427,8 +1434,9 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() uniform buffer for staging shader
+  // +1: t.axis_mapping_ubo() uniform buffer for staging shader
   // +1: staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 9);
+  EXPECT_TRUE(get_vma_allocation_count() == 12);
 
   ValueRef e = graph.add_tensor(
       size_big,
@@ -1444,14 +1452,15 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() for staging shader
+  // +1: t.axis_mapping_ubo() for staging shader
   // +1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 13);
+  EXPECT_TRUE(get_vma_allocation_count() == 17);
 
   graph.prepare();
   graph.encode_execute();
 
   // +3: shared memory allocations for tensors
-  EXPECT_TRUE(get_vma_allocation_count() == 16);
+  EXPECT_TRUE(get_vma_allocation_count() == 20);
 
   // Run graph
 

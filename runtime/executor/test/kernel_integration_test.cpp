@@ -94,7 +94,7 @@ struct KernelControl {
         executorch::runtime::KernelKey("v1/6;0,1|6;0,1|6;0,1|6;0,1");
     Kernel kernel = executorch::runtime::Kernel(
         "aten::add.out", key, KernelControl::kernel_hook);
-    Error err = executorch::runtime::register_kernels({kernel});
+    Error err = executorch::runtime::register_kernel(kernel);
     EXPECT_EQ(err, Error::Ok);
 
     registered_ = true;

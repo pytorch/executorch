@@ -66,13 +66,11 @@ Tensor& opt_div_out(
         scalar = &b;
         scalar_type = b_type;
       }
-      auto error = resize_tensor(out, tensor->sizes());
-      ET_KERNEL_CHECK_MSG(
+      ET_KERNEL_CHECK(
           ctx,
-          error == Error::Ok,
+          resize_to_broadcast_target_size(a, b, out) == Error::Ok,
           InvalidArgument,
-          out,
-          "Failed to resize output tensor.");
+          out);
       ET_SWITCH_REALB_TYPES(tensor_type, ctx, "div.out", CTYPE, [&]() {
         ET_SWITCH_REALB_TYPES(scalar_type, ctx, "div.out", CTYPE_SCALAR, [&]() {
           CTYPE_SCALAR scalar_val = *scalar->const_data_ptr<CTYPE_SCALAR>();
