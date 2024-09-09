@@ -28,7 +28,7 @@ public class LlamaModule {
     if (!NativeLoader.isInitialized()) {
       NativeLoader.init(new SystemDelegate());
     }
-    NativeLoader.loadLibrary("executorch_llama_jni");
+    NativeLoader.loadLibrary("executorch");
   }
 
   private final HybridData mHybridData;
