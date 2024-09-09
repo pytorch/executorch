@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <memory>
 
+#include <executorch/extension/llm/custom_ops/spinquant/FFHT/fht.h>
+
 #include "fast_hadamard_transform_special.h"
 
 namespace executorch {
@@ -25,16 +27,13 @@ T fast_sqrt_of_power_of_2(int log2_n) {
 }
 
 template <typename T>
-void normalize_after_fht(
-    T* out,
-    int log2_vec_size) {
+void normalize_after_fht(T* out, int log2_vec_size) {
   const T inv_sqrt = T(1) / fast_sqrt_of_power_of_2<T>(log2_vec_size);
   const int vec_size = 1 << log2_vec_size;
   for (int ii = 0; ii < vec_size; ++ii) {
     out[ii] *= inv_sqrt;
   }
 }
-
 
 // Normalization step: divide by sqrt(1 << log2_vec_size). Similar
 // to fast_sqrt above, if N is even, then the maximum-precision way
@@ -46,7 +45,11 @@ void normalize_after_fht(
 // function to tend to increase the magnitude of the elements of
 // vec, which would resulting in clipping and therefore accuracy
 // loss, especially compounded over 30+ transformer layers.
-void quantized_normalize_after_fht(const int32_t* tmp, int16_t* out, int log2_vec_size, int vec_size) {
+void quantized_normalize_after_fht(
+    const int32_t* tmp,
+    int16_t* out,
+    int log2_vec_size,
+    int vec_size) {
   const int log2_sqrt_vec_size = log2_vec_size / 2;
   constexpr int32_t qmin = -(1 << 15) + 1;
   constexpr int32_t qmax = -qmin;
@@ -55,8 +58,9 @@ void quantized_normalize_after_fht(const int32_t* tmp, int16_t* out, int log2_ve
     static const int32_t inv_sqrt_2_numerator = 408;
     static const int32_t inv_sqrt_2_denominator = 577;
     for (int ii = 0; ii < vec_size; ++ii) {
-      const auto val_over_sqrt_vec_size = (tmp[ii] * inv_sqrt_2_numerator / inv_sqrt_2_denominator)
-        >> log2_sqrt_vec_size;
+      const auto val_over_sqrt_vec_size =
+          (tmp[ii] * inv_sqrt_2_numerator / inv_sqrt_2_denominator) >>
+          log2_sqrt_vec_size;
       out[ii] = std::clamp(val_over_sqrt_vec_size, qmin, qmax);
     }
   } else {
@@ -66,10 +70,22 @@ void quantized_normalize_after_fht(const int32_t* tmp, int16_t* out, int log2_ve
   }
 }
 
+void fast_hadamard_transform_ffht_impl(float* vec, int log2_vec_size) {
+  if (log2_vec_size <= 0) {
+    return;
+  }
+
+  fht_float(vec, log2_vec_size);
+  normalize_after_fht(vec, log2_vec_size);
+}
+
 template <typename T>
 void fast_hadamard_transform_unnormalized_simple_impl(
     T* vec,
     int log2_vec_size) {
+  // NOTE: If you're here because you're profiling a model and this is
+  // slow, consider updating FFHT to generate efficient assembly for
+  // your data type!
   if (log2_vec_size == 0) {
     return;
   }
@@ -90,9 +106,7 @@ void fast_hadamard_transform_unnormalized_simple_impl(
 }
 
 template <typename T>
-void fast_hadamard_transform_simple_impl(
-    T* vec,
-    int log2_vec_size) {
+void fast_hadamard_transform_simple_impl(T* vec, int log2_vec_size) {
   fast_hadamard_transform_unnormalized_simple_impl(vec, log2_vec_size);
   normalize_after_fht(vec, log2_vec_size);
 }
@@ -104,7 +118,11 @@ void fast_hadamard_transform_simple_impl(
 // of vec, which must be of length (1 << log2_vec_size).
 template <typename T>
 void fast_hadamard_transform(T* vec, int log2_vec_size) {
+  if constexpr (std::is_same_v<T, float>) {
+    internal::fast_hadamard_transform_ffht_impl(vec, log2_vec_size);
+  } else {
     internal::fast_hadamard_transform_simple_impl(vec, log2_vec_size);
+  }
 }
 
 // Compute a quantized fast Walsh-Hadamard transform of vec, which
@@ -116,8 +134,11 @@ void fast_hadamard_transform(T* vec, int log2_vec_size) {
 // following trivial identities:
 //
 // scale * a + scale * b = scale * (a + b)  (addition doesn't need the scale)
-// alpha * (scale * a) = scale * (alpha * a) (multiplication doesn't need the scale)
-void fast_hadamard_transform_symmetric_quantized_s16(int16_t* vec, int log2_vec_size) {
+// alpha * (scale * a) = scale * (alpha * a) (multiplication doesn't need the
+// scale)
+void fast_hadamard_transform_symmetric_quantized_s16(
+    int16_t* vec,
+    int log2_vec_size) {
   if (log2_vec_size == 0) {
     return;
   }
@@ -136,9 +157,11 @@ void fast_hadamard_transform_symmetric_quantized_s16(int16_t* vec, int log2_vec_
   // implementation.
   // NOTE: if we need this to be fast on CPU, we can use FFHT to
   // generate fht_uint32 similar to fht_float.
-  internal::fast_hadamard_transform_unnormalized_simple_impl(tmp.get(), log2_vec_size);
+  internal::fast_hadamard_transform_unnormalized_simple_impl(
+      tmp.get(), log2_vec_size);
 
-  internal::quantized_normalize_after_fht(tmp.get(), vec, log2_vec_size, vec_size);
+  internal::quantized_normalize_after_fht(
+      tmp.get(), vec, log2_vec_size, vec_size);
 }
 
 // Like fast_hadamard_transform, but vec must be of length 28 * (1 <<
@@ -161,24 +184,28 @@ void fast_hadamard_transform_28N(T* vec, int log2_vec_size) {
 // We don't need the quantization scale; see the function-level
 // comment on fast_hadamard_transform_symmetric_quantized_s16 for
 // details.
-void fast_hadamard_transform_symmetric_quantized_s16_28N(int16_t* vec, int log2_vec_size) {
+void fast_hadamard_transform_symmetric_quantized_s16_28N(
+    int16_t* vec,
+    int log2_vec_size) {
   if (log2_vec_size == 0) {
     return;
   }
   const int vec_size = (1 << log2_vec_size);
 
-  auto tmp = std::make_unique<int32_t[]>(vec_size);
+  auto tmp = std::make_unique<int32_t[]>(vec_size * 28);
   std::copy(vec, vec + vec_size * 28, tmp.get());
 
   for (int ii = 0; ii < 28; ++ii) {
-    internal::fast_hadamard_transform_unnormalized_simple_impl(&tmp[ii * vec_size], log2_vec_size);
+    internal::fast_hadamard_transform_unnormalized_simple_impl(
+        &tmp[ii * vec_size], log2_vec_size);
   }
 
   for (int ii = 0; ii < vec_size; ++ii) {
     hadamard_mult_28_strided(&tmp[ii], vec_size);
   }
 
-  internal::quantized_normalize_after_fht(tmp.get(), vec, log2_vec_size, vec_size * 28);
+  internal::quantized_normalize_after_fht(
+      tmp.get(), vec, log2_vec_size, vec_size * 28);
 }
 
 } // namespace executorch
