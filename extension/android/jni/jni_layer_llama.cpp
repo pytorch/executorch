@@ -285,9 +285,12 @@ class ExecuTorchLlamaJni
         makeNativeMethod("generate", ExecuTorchLlamaJni::generate),
         makeNativeMethod("stop", ExecuTorchLlamaJni::stop),
         makeNativeMethod("load", ExecuTorchLlamaJni::load),
-        makeNativeMethod("prefillImagesNative", ExecuTorchLlamaJni::prefill_images),
-        makeNativeMethod("prefillPromptNative", ExecuTorchLlamaJni::prefill_prompt),
-        makeNativeMethod("generateFromPos", ExecuTorchLlamaJni::generate_from_pos),
+        makeNativeMethod(
+            "prefillImagesNative", ExecuTorchLlamaJni::prefill_images),
+        makeNativeMethod(
+            "prefillPromptNative", ExecuTorchLlamaJni::prefill_prompt),
+        makeNativeMethod(
+            "generateFromPos", ExecuTorchLlamaJni::generate_from_pos),
     });
   }
 };
