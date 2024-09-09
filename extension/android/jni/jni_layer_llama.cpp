@@ -30,7 +30,6 @@
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
 
-
 using namespace torch::executor;
 
 namespace executorch_jni {
@@ -266,5 +265,5 @@ class ExecuTorchLlamaJni
 } // namespace executorch_jni
 
 void register_natives_for_llama() {
-	executorch_jni::ExecuTorchLlamaJni::registerNatives();
+  executorch_jni::ExecuTorchLlamaJni::registerNatives();
 }

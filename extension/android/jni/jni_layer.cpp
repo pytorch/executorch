@@ -393,8 +393,8 @@ extern void register_natives_for_llama();
 void register_natives_for_llama() {}
 #endif
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
-  return facebook::jni::initialize(
-      vm, [] { executorch::extension::ExecuTorchJni::registerNatives();
-     register_natives_for_llama();
- });
+  return facebook::jni::initialize(vm, [] {
+    executorch::extension::ExecuTorchJni::registerNatives();
+    register_natives_for_llama();
+  });
 }
