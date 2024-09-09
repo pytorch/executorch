@@ -266,7 +266,8 @@ def main(option="cuda"):
     generated_line = f"// @{'generated'} by special_hadamard_code_gen.py {option}\n"
 
     output_dir.write_text(
-        generated_line + header
+        generated_line
+        + header
         + "".join(array_code_gen(string_to_array(s), template) for s in had_strings)
     )
 
