@@ -38,6 +38,11 @@ void split_with_sizes_copy_out(
       check_split_with_sizes_copy_args(in, split_sizes, dim, out),
       InvalidArgument, );
 
+  for (size_t i = 0; i < out.size(); ++i) {
+    ET_KERNEL_CHECK(
+        ctx, tensors_have_same_dim_order(in, out[i]), InvalidArgument, );
+  }
+
   // If out is empty, then nothing needs to be done after checking the args.
   // Valid args implies that in.size(dim) == 0 and split_sizes is also empty.
   if (out.size() == 0) {
