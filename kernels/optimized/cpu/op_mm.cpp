@@ -32,6 +32,9 @@ Tensor& opt_mm_out(
       InvalidArgument,
       out);
 
+  if (out.numel() == 0) {
+    return out;
+  }
   ET_SWITCH_REAL_TYPES_AND2(
       Half, BFloat16, in.scalar_type(), ctx, "mm.out", CTYPE, [&]() {
         size_t n = in.size(0);
