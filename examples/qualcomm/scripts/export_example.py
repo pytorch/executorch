@@ -66,7 +66,7 @@ if __name__ == "__main__":
     quantizer.set_bit8_op_quant_config(quant_config)
 
     # Typical pytorch 2.0 quantization flow
-    m = torch.export.export(model.eval(), example_inputs).module()
+    m = torch.export.export_for_training(model.eval(), example_inputs).module()
     m = prepare_pt2e(m, quantizer)
     # Calibration
     m(*example_inputs)

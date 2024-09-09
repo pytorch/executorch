@@ -294,7 +294,7 @@ class SingleLlama:
         fx_graph_module = None
 
         with torch.no_grad():
-            fx_graph_module = torch.export.export(
+            fx_graph_module = torch.export.export_for_training(
                 self.llama_model, self.inputs
             ).module()
             fx_graph_module = prepare_pt2e(fx_graph_module, quantizer)
