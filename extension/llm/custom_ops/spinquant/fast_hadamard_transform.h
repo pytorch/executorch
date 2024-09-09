@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 // (c) Meta Platforms, Inc. and affiliates.
 #pragma once
 
@@ -24,9 +32,7 @@ T fast_sqrt_of_power_of_2(int log2_n) {
 }
 
 template <typename T>
-void normalize_after_fht(
-    T* out,
-    int log2_vec_size) {
+void normalize_after_fht(T* out, int log2_vec_size) {
   const T inv_sqrt = T(1) / fast_sqrt_of_power_of_2<T>(log2_vec_size);
   const int vec_size = 1 << log2_vec_size;
   for (int ii = 0; ii < vec_size; ++ii) {
@@ -35,9 +41,7 @@ void normalize_after_fht(
 }
 
 template <typename T>
-void fast_hadamard_transform_simple_impl(
-    T* vec,
-    int log2_vec_size) {
+void fast_hadamard_transform_simple_impl(T* vec, int log2_vec_size) {
   if (log2_vec_size == 0) {
     return;
   }
@@ -66,7 +70,7 @@ void fast_hadamard_transform_simple_impl(
 // of vec, which must be of length (1 << log2_vec_size).
 template <typename T>
 void fast_hadamard_transform(T* vec, int log2_vec_size) {
-    internal::fast_hadamard_transform_simple_impl(vec, log2_vec_size);
+  internal::fast_hadamard_transform_simple_impl(vec, log2_vec_size);
 }
 
 // Like fast_hadamard_transform, but vec must be of length 28 * (1 <<
