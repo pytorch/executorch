@@ -176,11 +176,11 @@ had_40_tpal = """
 had_strings = [had_12, had_20_will, had_28_will, had_40_tpal]
 
 header = """
-// This file is auto-generated. See "special_hadamard_code_gen.py"\n
 
 #pragma once
 
 """
+
 
 TEMPLATE = """
 __device__ __forceinline__ void hadamard_mult_thread_{N}(float x[{N}]) {{
@@ -220,8 +220,13 @@ void hadamard_mult_{N}_strided(T* input, int stride) {{
 
 def string_to_array(string):
     # Convert strings of + and - to bool arrays
-    string = string.strip().replace('+', '1').replace('-', '-1').split()
-    return np.stack([np.fromstring(" ".join(string[i]), dtype=np.int32, sep=' ') for i in range(len(string))])
+    string = string.strip().replace("+", "1").replace("-", "-1").split()
+    return np.stack(
+        [
+            np.fromstring(" ".join(string[i]), dtype=np.int32, sep=" ")
+            for i in range(len(string))
+        ]
+    )
 
 
 def strided_load_code_gen(N):
@@ -233,28 +238,43 @@ def array_code_gen(arr, template):
     assert arr.shape[0] == arr.shape[1]
     out = []
     for i in range(N):
-        out.append(f"out[{i}] = " + " ".join([f"{'+' if arr[i, j] == 1 else '-'} x[{j}]" for j in range(N)]) + ";")
-    return template.format(N=str(N), code='\n    '.join(out), strided_load_code = strided_load_code_gen(N))
-
-
-def main(template = TEMPLATE):
-    output_dir = Path(__file__).parent / "fast_hadamard_transform_special.h"
-    output_dir.write_text(header + ''.join(array_code_gen(string_to_array(s), template) for s in had_strings))
+        out.append(
+            f"out[{i}] = "
+            + " ".join([f"{'+' if arr[i, j] == 1 else '-'} x[{j}]" for j in range(N)])
+            + ";"
+        )
+    return template.format(
+        N=str(N), code="\n    ".join(out), strided_load_code=strided_load_code_gen(N)
+    )
 
 
 OPTION_TO_TEMPLATE = {
-    'cuda': TEMPLATE,
-    'cpu': CPU_TEMPLATE,
-    'strided_cpu': STRIDED_CPU_TEMPLATE,
+    "cuda": TEMPLATE,
+    "cpu": CPU_TEMPLATE,
+    "strided_cpu": STRIDED_CPU_TEMPLATE,
 }
 
 
-if __name__ == '__main__':
+def main(option="cuda"):
+    try:
+        template = OPTION_TO_TEMPLATE[option]
+    except KeyError:
+        raise Exception(
+            f"bad target option {option}; options are {', '.join(OPTION_TO_TEMPLATE.keys())}"
+        )
+    output_dir = Path(__file__).parent / "fast_hadamard_transform_special.h"
+    generated_line = f"// @{'generated'} by special_hadamard_code_gen.py {option}\n"
+
+    output_dir.write_text(
+        generated_line + header
+        + "".join(array_code_gen(string_to_array(s), template) for s in had_strings)
+    )
+
+
+if __name__ == "__main__":
     import sys
-    template = TEMPLATE
+
+    option = "cuda"
     if len(sys.argv) > 1:
         option = sys.argv[1]
-        if option not in OPTION_TO_TEMPLATE:
-            raise Exception(f"bad target option {option}; options are {', '.join(OPTION_TO_TEMPLATE.keys())}")
-        template = OPTION_TO_TEMPLATE[option]
-    main(template)
+    main(option)
