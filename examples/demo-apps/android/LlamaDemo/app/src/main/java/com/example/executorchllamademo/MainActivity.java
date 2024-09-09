@@ -73,8 +73,18 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
 
   @Override
   public void onResult(String result) {
-    mResultMessage.appendText(result);
-    run();
+    if (result.equals(PromptFormat.getStopToken(mCurrentSettingsFields.getModelType()))) {
+      return;
+    }
+    if (result.equals("\n\n")) {
+      if (!mResultMessage.getText().isEmpty()) {
+        mResultMessage.appendText(result);
+        run();
+      }
+    } else {
+      mResultMessage.appendText(result);
+      run();
+    }
   }
 
   @Override
@@ -614,6 +624,7 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                           ModelUtils.VISION_MODEL_IMAGE_CHANNELS,
                           prompt,
                           ModelUtils.VISION_MODEL_SEQ_LEN,
+                          false,
                           MainActivity.this);
                     } else {
                       // no image selected, we pass in empty int array
@@ -624,10 +635,12 @@ public class MainActivity extends AppCompatActivity implements Runnable, LlamaCa
                           ModelUtils.VISION_MODEL_IMAGE_CHANNELS,
                           prompt,
                           ModelUtils.VISION_MODEL_SEQ_LEN,
+                          false,
                           MainActivity.this);
                     }
                   } else {
-                    mModule.generate(prompt, ModelUtils.TEXT_MODEL_SEQ_LEN, MainActivity.this);
+                    mModule.generate(
+                        prompt, ModelUtils.TEXT_MODEL_SEQ_LEN, false, MainActivity.this);
                   }
 
                   long generateDuration = System.currentTimeMillis() - generateStartTime;

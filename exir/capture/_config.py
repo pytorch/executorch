@@ -65,12 +65,6 @@ class ExecutorchBackendConfig:
     # This makes it possible to free those blobs at runtime.
     extract_delegate_segments: bool = True
 
-    # Whether to extract constants from the Program into separate segments,
-    # rather than encoding those constants in the flatbuffer data.
-    # This reduces the memory overhead of creating the .pte file for models with
-    # large constant data.
-    extract_constant_segment: bool = True
-
     # When extracting segments, the starting offset of each segment will be
     # aligned to this value (in bytes). Must be a power of two.
     segment_alignment: int = 128

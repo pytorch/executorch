@@ -38,6 +38,7 @@ build_android_native_library() {
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
@@ -83,6 +84,19 @@ build_android_native_library() {
   # Copy artifacts to ABI specific directory
   mkdir -p "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}"
   cp "${CMAKE_OUT}"/extension/android/*.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+
+  # Copy QNN related so library
+  if [ -n "$QNN_SDK_ROOT" ] && [ "$ANDROID_ABI" == "arm64-v8a" ]; then
+    cp "${CMAKE_OUT}"/lib/libqnn_executorch_backend.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtp.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnSystem.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV69Stub.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV73Stub.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+    cp "${QNN_SDK_ROOT}"/lib/aarch64-android/libQnnHtpV75Stub.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+    cp "${QNN_SDK_ROOT}"/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+    cp "${QNN_SDK_ROOT}"/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+    cp "${QNN_SDK_ROOT}"/lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/"
+  fi
 }
 
 build_aar() {
@@ -95,8 +109,8 @@ build_aar() {
   # between Java and JNI
   find jni -type f -name "libexecutorch_jni.so" -exec bash -c 'mv "$1" "${1/_jni/}"' bash {} \;
   # Zip all necessary files into the AAR file
-  zip -r executorch.aar libs jni/*/libexecutorch.so AndroidManifest.xml
-  zip -r executorch-llama.aar libs jni/*/libexecutorch_llama_jni.so AndroidManifest.xml
+  zip -r executorch.aar libs jni/*/libexecutorch.so jni/*/libqnn*.so jni/*/libQnn*.so AndroidManifest.xml
+  zip -r executorch-llama.aar libs jni/*/libexecutorch_llama_jni.so jni/*/libqnn*.so jni/*/libQnn*.so AndroidManifest.xml
   popd
 }
 
@@ -139,7 +153,9 @@ collect_artifacts_to_be_uploaded() {
 
 BUILD_AAR_DIR="$(mktemp -d)"
 export BUILD_AAR_DIR
-ANDROID_ABIS=("arm64-v8a" "x86_64")
+if [ -z "$ANDROID_ABIS" ]; then
+  ANDROID_ABIS=("arm64-v8a" "x86_64")
+fi
 export ANDROID_ABIS
 
 ARTIFACTS_DIR_NAME="$1"

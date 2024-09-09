@@ -78,6 +78,7 @@ cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
   -DEXECUTORCH_BUILD_XNNPACK=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
   -Bcmake-android-out
 
 cmake --build cmake-android-out -j16 --target install
@@ -119,6 +120,7 @@ cmake . -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DQNN_SDK_ROOT="${QNN_SDK_ROOT}" \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -Bcmake-android-out
 
 cmake --build cmake-android-out -j16 --target install

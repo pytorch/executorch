@@ -41,7 +41,7 @@ jobs:
     with:
       # Just use a small model here with a minimal amount of configuration to test the spec
       models: stories110M
-      devices: samsung_galaxy_s2x
+      devices: samsung_galaxy_s22
       delegates: xnnpack
       test_spec: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/android-llm-device-farm-test-spec.yml
 

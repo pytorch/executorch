@@ -516,6 +516,15 @@ inline bool tensor_is_realhb_type(exec_aten::Tensor t) {
   return true;
 }
 
+inline bool tensor_is_realhbbf16_type(exec_aten::Tensor t) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      executorch::runtime::isRealHBBF16Type(t.scalar_type()),
+      "Expected to find a real type, but tensor has type %s",
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
 inline bool tensor_is_complex_type(exec_aten::Tensor t) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       torch::executor::isComplexType(t.scalar_type()),

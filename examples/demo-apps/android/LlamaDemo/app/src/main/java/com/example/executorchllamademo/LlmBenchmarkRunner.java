@@ -14,8 +14,11 @@ import android.os.Bundle;
 import android.util.Log;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
+import com.google.gson.Gson;
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.Arrays;
 
 public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback {
   ModelRunner mModelRunner;
@@ -32,7 +35,12 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
 
     Intent intent = getIntent();
 
-    String modelPath = intent.getStringExtra("model_path");
+    File modelDir = new File(intent.getStringExtra("model_dir"));
+    File model =
+        Arrays.stream(modelDir.listFiles())
+            .filter(file -> file.getName().endsWith(".pte"))
+            .findFirst()
+            .get();
     String tokenizerPath = intent.getStringExtra("tokenizer_path");
 
     float temperature = intent.getFloatExtra("temperature", 0.8f);
@@ -42,7 +50,7 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
     }
 
     mStatsDump = new StatsDump();
-    mModelRunner = new ModelRunner(modelPath, tokenizerPath, temperature, this);
+    mModelRunner = new ModelRunner(model.getPath(), tokenizerPath, temperature, this);
     mStatsDump.loadStart = System.currentTimeMillis();
   }
 
@@ -79,8 +87,18 @@ public class LlmBenchmarkRunner extends Activity implements ModelRunnerCallback 
           mTextView.append(mStatsDump.toString());
         });
 
+    // TODO (huydhn): Remove txt files here once the JSON format is ready
     try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.txt")) {
       writer.write(mStatsDump.toString());
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+
+    // TODO (huydhn): Figure out on what the final JSON results looks like, we need something
+    // with the same number of fields as https://github.com/pytorch/pytorch/pull/135042
+    try (FileWriter writer = new FileWriter(getFilesDir() + "/benchmark_results.json")) {
+      Gson gson = new Gson();
+      writer.write(gson.toJson(mStatsDump));
     } catch (IOException e) {
       e.printStackTrace();
     }

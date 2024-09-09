@@ -40,7 +40,7 @@ fb_android_cxx_library(
         "//third-party/glog:glog",
         "//xplat/executorch/extension/module:module_static",
         "//xplat/executorch/extension/runner_util:inputs_static",
-        "//xplat/executorch/extension/runner_util:managed_tensor_static",
+        "//xplat/executorch/extension/tensor:tensor_static",
     ],
 )
 
@@ -64,7 +64,7 @@ fb_android_cxx_library(
         "//xplat/executorch/backends/xnnpack:xnnpack_backend_static",
         "//xplat/executorch/extension/module:module_static",
         "//xplat/executorch/extension/runner_util:inputs_static",
-        "//xplat/executorch/extension/runner_util:managed_tensor_static",
+        "//xplat/executorch/extension/tensor:tensor_static",
     ],
 )
 
