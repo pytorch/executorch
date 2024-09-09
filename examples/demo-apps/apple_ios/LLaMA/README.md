@@ -60,11 +60,9 @@ Xcode will dowload and cache the package on the first run, which will take some 
 Click the image below to see a demo video of the app running Llama 3.1 and Llava on an iPhone 15 Pro device:
 
 <a href="https://drive.google.com/file/d/1yQ7UoB79vMEBuBaoYvO53dosYTjpOZhd/view?usp=sharing">
-  <img src="llama31.png" width="600" alt="iOS app running Llama 3.1">
-</a>
-
-<a href="https://drive.google.com/file/d/1yQ7UoB79vMEBuBaoYvO53dosYTjpOZhd/view?usp=sharing">
-  <img src="llava.png" width="600" alt="iOS app running Llava">
+  <img src="llama31.png" width="300" alt="iOS app running Llama 3.1">
+</a> <a href="https://drive.google.com/file/d/1yQ7UoB79vMEBuBaoYvO53dosYTjpOZhd/view?usp=sharing">
+  <img src="llava.png" width="300" alt="iOS app running Llava">
 </a>
 
 ## Reporting Issues
