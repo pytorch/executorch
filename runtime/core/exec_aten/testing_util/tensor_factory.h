@@ -28,18 +28,6 @@ namespace testing {
 namespace internal {
 
 /**
- * Returns the number of elements in the tensor, given the dimension
- * sizes, assuming contiguous data.
- */
-inline size_t sizes_to_numel(const std::vector<int32_t>& sizes) {
-  size_t n = 1;
-  for (auto s : sizes) {
-    n *= s;
-  }
-  return n;
-}
-
-/**
  * Check if given strides is legal under given sizes. In the `make` function,
  * the `strides` shall ensure:
  *  - a. strides.size() == sizes.size()
@@ -55,7 +43,7 @@ inline size_t sizes_to_numel(const std::vector<int32_t>& sizes) {
  */
 
 inline bool check_strides(
-    const std::vector<int32_t> sizes,
+    const std::vector<exec_aten::SizesType> sizes,
     const std::vector<exec_aten::StridesType> strides) {
   if (sizes.size() != strides.size()) {
     // The length of stride vector shall equal to size vector.
@@ -79,14 +67,14 @@ inline bool check_strides(
   // e.g. a = tensor(3, 2, 1).permute(2, 1, 0), a.size() == (1, 2, 3) and
   // a.strides == (1, 1, 2). We want to sort create a mapping to make the
   // sorted_stride as (2, 1, 1) while sorted_size == (3, 2, 1)
-  std::vector<std::int32_t> sorted_idx(sizes.size());
-  for (size_t i = 0; i < sizes.size(); i++) {
+  std::vector<int> sorted_idx(sizes.size());
+  for (auto i = 0; i < sizes.size(); ++i) {
     sorted_idx[i] = i;
   }
   std::sort(
       sorted_idx.begin(),
       sorted_idx.end(),
-      [&](const int32_t& a, const int32_t& b) {
+      [&](const auto& a, const auto& b) {
         if (strides[a] != strides[b]) {
           return strides[a] > strides[b];
         } else {
@@ -98,9 +86,9 @@ inline bool check_strides(
       });
 
   // Use the mapping to rearrange the sizes and strides
-  std::vector<std::int32_t> sorted_sizes(sizes.size());
-  std::vector<std::int32_t> sorted_strides(sizes.size());
-  for (size_t i = 0; i < sizes.size(); i++) {
+  std::vector<exec_aten::SizesType> sorted_sizes(sizes.size());
+  std::vector<exec_aten::StridesType> sorted_strides(sizes.size());
+  for (auto i = 0; i < sizes.size(); ++i) {
     sorted_sizes[i] = sizes[sorted_idx[i]] == 0 ? 1 : sizes[sorted_idx[i]];
     sorted_strides[i] = strides[sorted_idx[i]];
   }
@@ -113,7 +101,7 @@ inline bool check_strides(
 
   // Check if strides is legal
   bool legal = sorted_strides[strides.size() - 1] == 1;
-  for (size_t i = 0; i < strides.size() - 1 && legal; i++) {
+  for (auto i = 0; i < strides.size() - 1 && legal; ++i) {
     legal = legal &&
         (sorted_strides[i] == sorted_strides[i + 1] * sorted_sizes[i + 1]);
   }
@@ -127,14 +115,14 @@ inline bool check_strides(
  * array.
  */
 inline bool check_dim_order(
-    const std::vector<int32_t>& sizes,
-    const std::vector<uint8_t>& dim_order) {
+    const std::vector<exec_aten::SizesType>& sizes,
+    const std::vector<exec_aten::DimOrderType>& dim_order) {
   if (sizes.size() != dim_order.size()) {
     return false;
   }
   size_t gauss_sum = 0;
   std::vector<int> count(dim_order.size(), 0);
-  for (int i = 0; i < dim_order.size(); i++) {
+  for (auto i = 0; i < dim_order.size(); ++i) {
     if (dim_order[i] < 0 || dim_order[i] >= sizes.size()) {
       return false;
     }
@@ -150,8 +138,8 @@ inline bool check_dim_order(
 }
 
 inline std::vector<exec_aten::StridesType> strides_from_dim_order(
-    const std::vector<int32_t>& sizes,
-    const std::vector<uint8_t>& dim_order) {
+    const std::vector<exec_aten::SizesType>& sizes,
+    const std::vector<exec_aten::DimOrderType>& dim_order) {
   bool legal = check_dim_order(sizes, dim_order);
   ET_CHECK_MSG(legal, "The input dim_order variable is illegal.");
 
@@ -159,28 +147,26 @@ inline std::vector<exec_aten::StridesType> strides_from_dim_order(
   std::vector<exec_aten::StridesType> strides(ndim);
   strides[dim_order[ndim - 1]] = 1;
   for (int i = ndim - 2; i >= 0; --i) {
-    uint8_t cur_dim = dim_order[i];
-    uint8_t next_dim = dim_order[i + 1];
+    auto cur_dim = dim_order[i];
+    auto next_dim = dim_order[i + 1];
     strides[cur_dim] = (!sizes[next_dim]) ? strides[next_dim]
                                           : strides[next_dim] * sizes[next_dim];
   }
   return strides;
 }
 
-inline std::vector<uint8_t> channels_last_dim_order(size_t dims) {
+inline std::vector<exec_aten::DimOrderType> channels_last_dim_order(size_t dims) {
   ET_CHECK_MSG(
       dims >= 4 && dims <= 5,
       "Channels last dim order only valid for 4-dim and 5-dim tensors!");
 
-  std::vector<uint8_t> dim_order(dims);
+  std::vector<exec_aten::DimOrderType> dim_order(dims);
   // Channels is always assigned to dim 1
   dim_order[dims - 1] = 1;
 
   dim_order[0] = 0;
-  int d = 1;
-  while (d < dims - 1) {
+  for (auto d = 1; d < dims - 1; ++d) {
     dim_order[d] = d + 1;
-    d++;
   }
   return dim_order;
 }
@@ -258,12 +244,12 @@ class TensorFactory {
    * @return A new Tensor with the specified shape and data.
    */
   at::Tensor make(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       const std::vector<ctype>& data,
       const std::vector<exec_aten::StridesType> strides = {},
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    auto expected_numel = internal::sizes_to_numel(sizes);
+    auto expected_numel = exec_aten::compute_numel(sizes.data(), sizes.size());
     ET_CHECK_MSG(
         expected_numel == data.size(),
         "Number of data elements %zd "
@@ -300,12 +286,12 @@ class TensorFactory {
    * @return A new Tensor with the specified shape and data.
    */
   at::Tensor make_with_dimorder(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       const std::vector<ctype>& data,
-      const std::vector<uint8_t> dim_order = {},
+      const std::vector<exec_aten::DimOrderType> dim_order = {},
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    auto expected_numel = internal::sizes_to_numel(sizes);
+    auto expected_numel = exec_aten::compute_numel(sizes.data(), sizes.size());
     ET_CHECK_MSG(
         expected_numel == data.size(),
         "Number of data elements %zd "
@@ -338,7 +324,7 @@ class TensorFactory {
    * @return A new Tensor with the specified shape and data.
    */
   at::Tensor make_channels_last(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       const std::vector<ctype>& data,
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
@@ -364,40 +350,40 @@ class TensorFactory {
     ET_CHECK_MSG(
         input.sizes().size() == 4, "Only 4D tensors can be channels last");
 
-    const std::vector<int32_t> sizes(
+    const std::vector<exec_aten::SizesType> sizes(
         input.sizes().begin(), input.sizes().end());
 
-    std::vector<uint8_t> contiguous_dim_order(sizes.size());
-    for (uint8_t i = 0; i < sizes.size(); i++) {
+    std::vector<exec_aten::DimOrderType> contiguous_dim_order(sizes.size());
+    for (auto i = 0; i < sizes.size(); ++i) {
       contiguous_dim_order[i] = i;
     }
     std::vector<exec_aten::StridesType> contiguous_strides =
         internal::strides_from_dim_order(sizes, contiguous_dim_order);
 
-    for (int32_t i = 0; i < input.dim(); i++) {
+    for (auto i = 0; i < input.dim(); ++i) {
       ET_CHECK_MSG(
           input.strides()[i] == contiguous_strides[i],
           "Input tensor is not contiguous");
     }
 
-    int32_t N = sizes[0];
-    int32_t C = sizes[1];
-    int32_t H = sizes[2];
-    int32_t W = sizes[3];
+    auto N = sizes[0];
+    auto C = sizes[1];
+    auto H = sizes[2];
+    auto W = sizes[3];
 
     std::vector<ctype> contiguous_data(
         input.data_ptr<ctype>(), input.data_ptr<ctype>() + input.numel());
     std::vector<ctype> channels_last_data(
         N * C * H * W); // Create a new blob with the same total size to contain
                         // channels_last data
-    for (int32_t n = 0; n < N; ++n) {
-      for (int32_t c = 0; c < C; ++c) {
-        for (int32_t h = 0; h < H; ++h) {
-          for (int32_t w = 0; w < W; ++w) {
+    for (auto n = 0; n < N; ++n) {
+      for (auto c = 0; c < C; ++c) {
+        for (auto h = 0; h < H; ++h) {
+          for (auto w = 0; w < W; ++w) {
             // Calculate the index in the original blob
-            int32_t old_index = ((n * C + c) * H + h) * W + w;
+            auto old_index = ((n * C + c) * H + h) * W + w;
             // Calculate the index in the new blob
-            int32_t new_index = ((n * H + h) * W + w) * C + c;
+            auto new_index = ((n * H + h) * W + w) * C + c;
             // Copy the data
             channels_last_data[new_index] = contiguous_data[old_index];
           }
@@ -421,12 +407,11 @@ class TensorFactory {
    * @return A new Tensor with the specified shape.
    */
   at::Tensor full(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       ctype value,
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    auto sizes64 = vec_32_to_64(sizes);
-    return at::full(at::IntArrayRef(sizes64), value, at::dtype(DTYPE));
+    return at::full(at::IntArrayRef(sizes), value, at::dtype(DTYPE));
   }
 
   /**
@@ -438,12 +423,11 @@ class TensorFactory {
    * @return A new Tensor with the specified shape.
    */
   at::Tensor full_channels_last(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       ctype value,
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    auto sizes64 = vec_32_to_64(sizes);
-    return at::full(at::IntArrayRef(sizes64), value, at::dtype(DTYPE))
+    return at::full(at::IntArrayRef(sizes), value, at::dtype(DTYPE))
         .to(at::MemoryFormat::ChannelsLast);
   }
 
@@ -455,11 +439,10 @@ class TensorFactory {
    * @return A new Tensor with the specified shape.
    */
   at::Tensor zeros(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    auto sizes64 = vec_32_to_64(sizes);
-    return at::zeros(at::IntArrayRef(sizes64), at::dtype(DTYPE));
+    return at::zeros(at::IntArrayRef(sizes), at::dtype(DTYPE));
   }
 
   /**
@@ -470,11 +453,10 @@ class TensorFactory {
    * @return A new Tensor with the specified shape.
    */
   at::Tensor ones(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    auto sizes64 = vec_32_to_64(sizes);
-    return at::ones(at::IntArrayRef(sizes64), at::dtype(DTYPE));
+    return at::ones(at::IntArrayRef(sizes), at::dtype(DTYPE));
   }
 
   /**
@@ -488,7 +470,7 @@ class TensorFactory {
       const at::Tensor& input,
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    std::vector<int64_t> sizes64 = {input.sizes().begin(), input.sizes().end()};
+    std::vector<exec_aten::SizesType> sizes64 = {input.sizes().begin(), input.sizes().end()};
     return at::full(at::IntArrayRef(sizes64), 0, at::dtype(DTYPE));
   }
 
@@ -503,21 +485,11 @@ class TensorFactory {
       const at::Tensor& input,
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    std::vector<int64_t> sizes64 = {input.sizes().begin(), input.sizes().end()};
+    std::vector<exec_aten::SizesType> sizes64 = {input.sizes().begin(), input.sizes().end()};
     return at::full(at::IntArrayRef(sizes64), 1, at::dtype(DTYPE));
   }
 
  private:
-  /// Copies an int32_t vector into a new int64_t vector.
-  static std::vector<int64_t> vec_32_to_64(const std::vector<int32_t>& in) {
-    std::vector<int64_t> out{};
-    out.reserve(in.size());
-    for (auto i : in) {
-      out.push_back(i);
-    }
-    return out;
-  }
-
   /**
    * Returns a new Tensor with the specified shape and stride.
    *
@@ -526,13 +498,12 @@ class TensorFactory {
    * @return A new Tensor with the specified shape and strides.
    */
   at::Tensor empty_strided(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       const std::vector<exec_aten::StridesType>& strides,
       ET_UNUSED TensorShapeDynamism dynamism =
           TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    auto sizes64 = vec_32_to_64(sizes);
     return at::empty_strided(
-        sizes64,
+        sizes,
         strides,
         DTYPE,
         /*layout_opt=*/at::Layout::Strided,
@@ -572,9 +543,9 @@ namespace {
 // TODO: Add assert for strides[i] != 0 because strides of 0 is really used,
 // by pytorch/aten, to convey broadcasting dim.
 
-inline std::vector<uint8_t> dim_order_from_stride(
-    const std::vector<int32_t>& v) {
-  std::vector<uint8_t> indices(v.size());
+inline std::vector<exec_aten::DimOrderType> dim_order_from_stride(
+    const std::vector<exec_aten::StridesType>& v) {
+  std::vector<exec_aten::DimOrderType> indices(v.size());
   std::iota(indices.begin(), indices.end(), 0);
   stable_sort(indices.begin(), indices.end(), [&v](size_t i1, size_t i2) {
     return v[i1] > v[i2];
@@ -583,8 +554,8 @@ inline std::vector<uint8_t> dim_order_from_stride(
 }
 
 inline void validate_strides(
-    const std::vector<int32_t>& sizes,
-    const std::vector<int32_t>& strides) {
+    const std::vector<exec_aten::SizesType>& sizes,
+    const std::vector<exec_aten::StridesType>& strides) {
   if (sizes.size() != strides.size()) {
     ET_CHECK_MSG(false, "Stride and sizes are not equal in length");
   }
@@ -594,8 +565,8 @@ inline void validate_strides(
     }
   }
   // No two dimensions can have same stride value
-  for (int32_t i = 0; i < strides.size(); ++i) {
-    for (int32_t j = i + 1; j < strides.size(); ++j) {
+  for (auto i = 0; i < strides.size(); ++i) {
+    for (auto j = i + 1; j < strides.size(); ++j) {
       if ((sizes[i] == 0) || (sizes[j] == 0) ||
           ((sizes[i] == 1) || (sizes[j] == 1))) {
         continue;
@@ -684,7 +655,7 @@ ET_FORALL_QINT_TYPES(SPECIALIZE_ScalarTypeToCppTypeWrapper)
  * Tensor o = tf_float.ones({2, 2});
  *
  * // Sometimes it's helpful to share parameters.
- * std::vector<int32_t> sizes = {2, 2};
+ * std::vector<exec_aten::SizesType> sizes = {2, 2};
  * Tensor t3 = tf.make(sizes, {1, 2, 3, 4});
  * Tensor t4 = tf.ones(sizes);
  *
@@ -731,11 +702,11 @@ class TensorFactory {
    * @return A new Tensor with the specified shape and data.
    */
   torch::executor::Tensor make(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       const std::vector<ctype>& data,
       const std::vector<exec_aten::StridesType> strides = {},
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
-    std::vector<int32_t> default_strides;
+    std::vector<exec_aten::StridesType> default_strides;
     // Generate strides from the tensor dimensions, assuming contiguous data if
     // given strides is empty.
     if (!sizes.empty() && strides.empty()) {
@@ -750,7 +721,7 @@ class TensorFactory {
     validate_strides(sizes, actual_strides);
     auto dim_order = dim_order_from_stride(actual_strides);
 
-    auto expected_numel = internal::sizes_to_numel(sizes);
+    auto expected_numel = exec_aten::compute_numel(sizes.data(), sizes.size());
     ET_CHECK_MSG(
         expected_numel == data.size(),
         "Number of data elements %zd "
@@ -780,11 +751,11 @@ class TensorFactory {
    * @return A new Tensor with the specified shape and data.
    */
   torch::executor::Tensor make_with_dimorder(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       const std::vector<ctype>& data,
-      const std::vector<uint8_t> dim_order = {},
+      const std::vector<exec_aten::DimOrderType> dim_order = {},
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
-    std::vector<uint8_t> default_dim_order;
+    std::vector<exec_aten::DimOrderType> default_dim_order;
     // Generate strides from the tensor dimensions, assuming contiguous data if
     // given strides is empty.
     if (!sizes.empty() && dim_order.empty()) {
@@ -798,7 +769,7 @@ class TensorFactory {
 
     auto strides = internal::strides_from_dim_order(sizes, actual_dim_order);
 
-    auto expected_numel = internal::sizes_to_numel(sizes);
+    auto expected_numel = exec_aten::compute_numel(sizes.data(), sizes.size());
     ET_CHECK_MSG(
         expected_numel == data.size(),
         "Number of data elements %zd "
@@ -823,9 +794,9 @@ class TensorFactory {
    * @return A new Tensor with the specified shape and data.
    */
   torch::executor::Tensor make_channels_last(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       const std::vector<ctype>& data,
-      const std::vector<uint8_t> dim_order = {},
+      const std::vector<exec_aten::DimOrderType> dim_order = {},
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
     return make_with_dimorder(
         sizes, data, internal::channels_last_dim_order(sizes.size()), dynamism);
@@ -846,31 +817,31 @@ class TensorFactory {
   torch::executor::Tensor channels_last_like(
       const torch::executor::Tensor& input,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
-    const std::vector<int32_t> sizes(
+    const std::vector<exec_aten::SizesType> sizes(
         input.sizes().begin(), input.sizes().end());
 
     ET_CHECK_MSG(sizes.size() == 4, "Only 4D tensors can be channels last");
     ET_CHECK_MSG(
         is_contiguous_dim_order(input.dim_order().data(), input.dim()) == true,
         "Input tensor is not contiguous");
-    int32_t N = sizes[0];
-    int32_t C = sizes[1];
-    int32_t H = sizes[2];
-    int32_t W = sizes[3];
+    auto N = sizes[0];
+    auto C = sizes[1];
+    auto H = sizes[2];
+    auto W = sizes[3];
 
     std::vector<ctype> contiguous_data(
         input.data_ptr<ctype>(), input.data_ptr<ctype>() + input.numel());
     std::vector<ctype> channels_last_data(
         N * C * H * W); // Create a new blob with the same total size to contain
                         // channels_last data
-    for (int32_t n = 0; n < N; ++n) {
-      for (int32_t c = 0; c < C; ++c) {
-        for (int32_t h = 0; h < H; ++h) {
-          for (int32_t w = 0; w < W; ++w) {
+    for (auto n = 0; n < N; ++n) {
+      for (auto c = 0; c < C; ++c) {
+        for (auto h = 0; h < H; ++h) {
+          for (auto w = 0; w < W; ++w) {
             // Calculate the index in the original blob
-            int32_t old_index = ((n * C + c) * H + h) * W + w;
+            auto old_index = ((n * C + c) * H + h) * W + w;
             // Calculate the index in the new blob
-            int32_t new_index = ((n * H + h) * W + w) * C + c;
+            auto new_index = ((n * H + h) * W + w) * C + c;
             // Copy the data
             channels_last_data[new_index] = contiguous_data[old_index];
           }
@@ -894,10 +865,10 @@ class TensorFactory {
    * @return A new Tensor with the specified shape.
    */
   torch::executor::Tensor full(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       ctype value,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
-    std::vector<ctype> data(internal::sizes_to_numel(sizes), value);
+    std::vector<ctype> data(exec_aten::compute_numel(sizes.data(), sizes.size()), value);
     return make(sizes, data, /* empty strides */ {}, dynamism);
   }
 
@@ -910,10 +881,11 @@ class TensorFactory {
    * @return A new Tensor with the specified shape.
    */
   torch::executor::Tensor full_channels_last(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       ctype value,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
-    std::vector<ctype> data(internal::sizes_to_numel(sizes), value);
+    std::vector<ctype> data(
+        exec_aten::compute_numel(sizes.data(), sizes.size()), value);
     return make_with_dimorder(
         sizes, data, internal::channels_last_dim_order(sizes.size()), dynamism);
   }
@@ -926,7 +898,7 @@ class TensorFactory {
    * @return A new Tensor with the specified shape.
    */
   torch::executor::Tensor zeros_channels_last(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
     return full_channels_last(sizes, 0, dynamism);
   }
@@ -939,7 +911,7 @@ class TensorFactory {
    * @return A new Tensor with the specified shape.
    */
   torch::executor::Tensor zeros(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
     return full(sizes, 0, dynamism);
   }
@@ -952,7 +924,7 @@ class TensorFactory {
    * @return A new Tensor with the specified shape.
    */
   torch::executor::Tensor ones(
-      const std::vector<int32_t>& sizes,
+      const std::vector<exec_aten::SizesType>& sizes,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
     return full(sizes, 1, dynamism);
   }
@@ -967,7 +939,7 @@ class TensorFactory {
   torch::executor::Tensor zeros_like(
       const torch::executor::Tensor& input,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
-    std::vector<int32_t> sizes = {input.sizes().begin(), input.sizes().end()};
+    std::vector<exec_aten::SizesType> sizes = {input.sizes().begin(), input.sizes().end()};
     return full(sizes, 0, dynamism);
   }
 
@@ -981,7 +953,7 @@ class TensorFactory {
   torch::executor::Tensor ones_like(
       const torch::executor::Tensor& input,
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
-    std::vector<int32_t> sizes = {input.sizes().begin(), input.sizes().end()};
+    std::vector<exec_aten::SizesType> sizes = {input.sizes().begin(), input.sizes().end()};
     return full(sizes, 1, dynamism);
   }
 
@@ -991,10 +963,10 @@ class TensorFactory {
    */
   struct TensorMemory {
     TensorMemory(
-        const std::vector<int32_t>& sizes,
+        const std::vector<exec_aten::SizesType>& sizes,
         const std::vector<ctype>& data,
-        const std::vector<uint8_t>& dim_order,
-        const std::vector<int32_t>& strides,
+        const std::vector<exec_aten::DimOrderType>& dim_order,
+        const std::vector<exec_aten::StridesType>& strides,
         TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC)
         : sizes_(sizes),
           data_(data),
@@ -1009,9 +981,9 @@ class TensorFactory {
               strides_.data(),
               dynamism) {}
 
-    std::vector<int32_t> sizes_;
+    std::vector<exec_aten::SizesType> sizes_;
     std::vector<ctype> data_;
-    std::vector<uint8_t> dim_order_;
+    std::vector<exec_aten::DimOrderType> dim_order_;
     std::vector<exec_aten::StridesType> strides_;
     torch::executor::TensorImpl impl_;
   };
