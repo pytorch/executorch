@@ -684,6 +684,31 @@ def annotate_squeeze(node: Node, quantization_config: QuantizationConfig) -> Non
         annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.rms_norm.default])
+def annotate_rms_norm(node: Node, quantization_config: QuantizationConfig) -> None:
+    act_node = node.args[0]
+    weight_node = node.args[2]
+
+    if _is_annotated([node]):
+        return
+
+    # TODO current only support 16a16w
+    _annotate_input_qspec_map(
+        node,
+        act_node,
+        quantization_config.input_activation,
+    )
+
+    _annotate_input_qspec_map(
+        node,
+        weight_node,
+        quantization_config.input_activation,
+    )
+    nodes_to_mark_annotated = [node]
+    _annotate_output_qspec(node, quantization_config.output_activation)
+    _mark_nodes_as_annotated(nodes_to_mark_annotated)
+
+
 @register_annotator([torch.ops.aten.rsqrt.default])
 def annotate_rsqrt(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)

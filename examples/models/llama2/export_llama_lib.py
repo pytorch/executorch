@@ -49,6 +49,7 @@ from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
+from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
@@ -406,9 +407,16 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
 
     if args.use_kv_cache:
         if args.qnn:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
+            from executorch.backends.qualcomm.utils.utils import (
+                convert_linear_to_conv2d,
+            )
+
             transforms.append(replace_kv_cache_with_simple_kv_cache)
             transforms.append(replace_sdpa_with_flex_sdpa)
             transforms.append(replace_causal_mask)
+            transforms.append(replace_rms_norm_with_native_rms_norm)
+            transforms.append(convert_linear_to_conv2d)
 
         elif args.coreml or args.mps:
             # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
@@ -552,7 +560,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            canonicalize_program(builder.edge_manager.exported_program())
+            # TODO: Need to remove this once we have better way to handle buffer size
+            canonicalize_program(
+                builder.edge_manager.exported_program(), custom_buffer_size=542048256
+            )
 
         builder = builder.to_executorch()
 
@@ -569,7 +580,10 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         if args.num_sharding > 0 and args.qnn:
             from executorch.backends.qualcomm.utils.utils import canonicalize_program
 
-            canonicalize_program(builder.edge_manager.exported_program())
+            # TODO: Need to remove this once we have better way to handle buffer size
+            canonicalize_program(
+                builder.edge_manager.exported_program(), custom_buffer_size=542048256
+            )
 
         builder = builder.to_executorch()
 
