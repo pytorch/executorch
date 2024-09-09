@@ -172,7 +172,7 @@ TEST_F(TensorImplPtrTest, TensorImplOwningData) {
 }
 
 TEST_F(TensorImplPtrTest, TensorImplOwningEmptyData) {
-  auto tensor_impl = make_tensor_impl_ptr({0, 5}, {});
+  auto tensor_impl = make_tensor_impl_ptr({0, 5}, std::vector<float>());
 
   EXPECT_EQ(tensor_impl->dim(), 2);
   EXPECT_EQ(tensor_impl->size(0), 0);
@@ -180,6 +180,74 @@ TEST_F(TensorImplPtrTest, TensorImplOwningEmptyData) {
   EXPECT_EQ(tensor_impl->strides()[0], 5);
   EXPECT_EQ(tensor_impl->strides()[1], 1);
   EXPECT_EQ(tensor_impl->data(), nullptr);
+}
+
+TEST_F(TensorImplPtrTest, TensorImplDataOnlyDoubleType) {
+  std::vector<double> data = {1.0, 2.0, 3.0, 4.0};
+  auto tensor_impl = make_tensor_impl_ptr(std::move(data));
+
+  EXPECT_EQ(tensor_impl->dim(), 1);
+  EXPECT_EQ(tensor_impl->size(0), 4);
+  EXPECT_EQ(tensor_impl->strides()[0], 1);
+  EXPECT_EQ(((double*)tensor_impl->data())[0], 1.0);
+  EXPECT_EQ(((double*)tensor_impl->data())[3], 4.0);
+}
+
+TEST_F(TensorImplPtrTest, TensorImplDataOnlyInt32Type) {
+  std::vector<int32_t> data = {10, 20, 30, 40};
+  auto tensor_impl = make_tensor_impl_ptr(std::move(data));
+
+  EXPECT_EQ(tensor_impl->dim(), 1);
+  EXPECT_EQ(tensor_impl->size(0), 4);
+  EXPECT_EQ(tensor_impl->strides()[0], 1);
+  EXPECT_EQ(((int32_t*)tensor_impl->data())[0], 10);
+  EXPECT_EQ(((int32_t*)tensor_impl->data())[3], 40);
+}
+
+TEST_F(TensorImplPtrTest, TensorImplDataOnlyInt64Type) {
+  std::vector<int64_t> data = {100, 200, 300, 400};
+  auto tensor_impl = make_tensor_impl_ptr(std::move(data));
+
+  EXPECT_EQ(tensor_impl->dim(), 1);
+  EXPECT_EQ(tensor_impl->size(0), 4);
+  EXPECT_EQ(tensor_impl->strides()[0], 1);
+  EXPECT_EQ(((int64_t*)tensor_impl->data())[0], 100);
+  EXPECT_EQ(((int64_t*)tensor_impl->data())[3], 400);
+}
+
+TEST_F(TensorImplPtrTest, TensorImplDataOnlyUint8Type) {
+  std::vector<uint8_t> data = {10, 20, 30, 40};
+  auto tensor_impl = make_tensor_impl_ptr(std::move(data));
+
+  EXPECT_EQ(tensor_impl->dim(), 1);
+  EXPECT_EQ(tensor_impl->size(0), 4);
+  EXPECT_EQ(tensor_impl->strides()[0], 1);
+  EXPECT_EQ(((uint8_t*)tensor_impl->data())[0], 10);
+  EXPECT_EQ(((uint8_t*)tensor_impl->data())[3], 40);
+}
+
+TEST_F(TensorImplPtrTest, TensorImplAmbiguityWithMixedVectors) {
+  std::vector<exec_aten::SizesType> sizes = {2, 2};
+  std::vector<float> data = {1.0f, 2.0f, 3.0f, 4.0f};
+  auto tensor_impl = make_tensor_impl_ptr(std::move(sizes), std::move(data));
+
+  EXPECT_EQ(tensor_impl->dim(), 2);
+  EXPECT_EQ(tensor_impl->size(0), 2);
+  EXPECT_EQ(tensor_impl->size(1), 2);
+  EXPECT_EQ(tensor_impl->strides()[0], 2);
+  EXPECT_EQ(tensor_impl->strides()[1], 1);
+  EXPECT_EQ(((float*)tensor_impl->data())[0], 1.0f);
+  EXPECT_EQ(((float*)tensor_impl->data())[3], 4.0f);
+
+  auto tensor_impl2 = make_tensor_impl_ptr({2, 2}, {1.0f, 2.0f, 3.0f, 4.0f});
+
+  EXPECT_EQ(tensor_impl2->dim(), 2);
+  EXPECT_EQ(tensor_impl2->size(0), 2);
+  EXPECT_EQ(tensor_impl2->size(1), 2);
+  EXPECT_EQ(tensor_impl2->strides()[0], 2);
+  EXPECT_EQ(tensor_impl2->strides()[1], 1);
+  EXPECT_EQ(((float*)tensor_impl2->data())[0], 1.0f);
+  EXPECT_EQ(((float*)tensor_impl2->data())[3], 4.0f);
 }
 
 TEST_F(TensorImplPtrTest, SharedDataManagement) {
