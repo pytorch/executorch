@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 // (c) Meta Platforms, Inc. and affiliates.
 #pragma once
 
@@ -25,9 +33,7 @@ T fast_sqrt_of_power_of_2(int log2_n) {
 }
 
 template <typename T>
-void normalize_after_fht(
-    T* out,
-    int log2_vec_size) {
+void normalize_after_fht(T* out, int log2_vec_size) {
   const T inv_sqrt = T(1) / fast_sqrt_of_power_of_2<T>(log2_vec_size);
   const int vec_size = 1 << log2_vec_size;
   for (int ii = 0; ii < vec_size; ++ii) {
@@ -59,9 +65,7 @@ void fast_hadamard_transform_unnormalized_simple_impl(
 }
 
 template <typename T>
-void fast_hadamard_transform_simple_impl(
-    T* vec,
-    int log2_vec_size) {
+void fast_hadamard_transform_simple_impl(T* vec, int log2_vec_size) {
   fast_hadamard_transform_unnormalized_simple_impl(vec, log2_vec_size);
   normalize_after_fht(vec, log2_vec_size);
 }
@@ -73,7 +77,7 @@ void fast_hadamard_transform_simple_impl(
 // of vec, which must be of length (1 << log2_vec_size).
 template <typename T>
 void fast_hadamard_transform(T* vec, int log2_vec_size) {
-    internal::fast_hadamard_transform_simple_impl(vec, log2_vec_size);
+  internal::fast_hadamard_transform_simple_impl(vec, log2_vec_size);
 }
 
 // Compute a quantized fast Walsh-Hadamard transform of vec, which
@@ -85,8 +89,11 @@ void fast_hadamard_transform(T* vec, int log2_vec_size) {
 // following trivial identities:
 //
 // scale * a + scale * b = scale * (a + b)  (addition doesn't need the scale)
-// alpha * (scale * a) = scale * (alpha * a) (multiplication doesn't need the scale)
-void fast_hadamard_transform_symmetric_quantized_s16(int16_t* vec, int log2_vec_size) {
+// alpha * (scale * a) = scale * (alpha * a) (multiplication doesn't need the
+// scale)
+void fast_hadamard_transform_symmetric_quantized_s16(
+    int16_t* vec,
+    int log2_vec_size) {
   if (log2_vec_size == 0) {
     return;
   }
@@ -105,7 +112,8 @@ void fast_hadamard_transform_symmetric_quantized_s16(int16_t* vec, int log2_vec_
   // implementation.
   // NOTE: if we need this to be fast on CPU, we can use FFHT to
   // generate fht_uint32 similar to fht_float.
-  internal::fast_hadamard_transform_unnormalized_simple_impl(tmp.get(), log2_vec_size);
+  internal::fast_hadamard_transform_unnormalized_simple_impl(
+      tmp.get(), log2_vec_size);
 
   // Normalization step: divide by sqrt(1 << log2_vec_size). Similar
   // to fast_sqrt above, if N is even, then the maximum-precision way
@@ -125,8 +133,9 @@ void fast_hadamard_transform_symmetric_quantized_s16(int16_t* vec, int log2_vec_
     static const int32_t inv_sqrt_2_numerator = 408;
     static const int32_t inv_sqrt_2_denominator = 577;
     for (int ii = 0; ii < vec_size; ++ii) {
-      const auto val_over_sqrt_vec_size = (tmp[ii] * inv_sqrt_2_numerator / inv_sqrt_2_denominator)
-        >> log2_sqrt_vec_size;
+      const auto val_over_sqrt_vec_size =
+          (tmp[ii] * inv_sqrt_2_numerator / inv_sqrt_2_denominator) >>
+          log2_sqrt_vec_size;
       vec[ii] = std::clamp(val_over_sqrt_vec_size, qmin, qmax);
     }
   } else {

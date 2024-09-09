@@ -12,4 +12,5 @@ def define_common_targets():
             "fast_hadamard_transform.h",
             "fast_hadamard_transform_special.h",
         ],
+        visibility = ["@EXECUTORCH_CLIENTS"],
     )
