@@ -33,6 +33,7 @@ public class LlamaModule {
 
   private final HybridData mHybridData;
   private static final int DEFAULT_SEQ_LEN = 128;
+  private static final boolean DEFAULT_ECHO = true;
 
   @DoNotStrip
   private static native HybridData initHybrid(
@@ -59,7 +60,7 @@ public class LlamaModule {
    * @param llamaCallback callback object to receive results.
    */
   public int generate(String prompt, LlamaCallback llamaCallback) {
-    return generate(prompt, DEFAULT_SEQ_LEN, llamaCallback);
+    return generate(prompt, DEFAULT_SEQ_LEN, DEFAULT_ECHO, llamaCallback);
   }
 
   /**
@@ -70,7 +71,30 @@ public class LlamaModule {
    * @param llamaCallback callback object to receive results.
    */
   public int generate(String prompt, int seqLen, LlamaCallback llamaCallback) {
-    return generate(null, 0, 0, 0, prompt, seqLen, llamaCallback);
+    return generate(null, 0, 0, 0, prompt, seqLen, DEFAULT_ECHO, llamaCallback);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param prompt Input prompt
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
+   * @param llamaCallback callback object to receive results.
+   */
+  public int generate(String prompt, boolean echo, LlamaCallback llamaCallback) {
+    return generate(null, 0, 0, 0, prompt, DEFAULT_SEQ_LEN, echo, llamaCallback);
+  }
+
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param prompt Input prompt
+   * @param seqLen sequence length
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
+   * @param llamaCallback callback object to receive results.
+   */
+  public int generate(String prompt, int seqLen, boolean echo, LlamaCallback llamaCallback) {
+    return generate(null, 0, 0, 0, prompt, seqLen, echo, llamaCallback);
   }
 
   /**
@@ -82,6 +106,7 @@ public class LlamaModule {
    * @param channels Input image number of channels
    * @param prompt Input prompt
    * @param seqLen sequence length
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    * @param llamaCallback callback object to receive results.
    */
   @DoNotStrip
@@ -92,7 +117,65 @@ public class LlamaModule {
       int channels,
       String prompt,
       int seqLen,
+      boolean echo,
       LlamaCallback llamaCallback);
+
+  /**
+   * Prefill an LLaVA Module with the given images input.
+   *
+   * @param image Input image as a byte array
+   * @param width Input image width
+   * @param height Input image height
+   * @param channels Input image number of channels
+   * @param startPos The starting position in KV cache of the input in the LLM.
+   * @return The updated starting position in KV cache of the input in the LLM.
+   * @throws RuntimeException if the prefill failed
+   */
+  public long prefillImages(int[] image, int width, int height, int channels, long startPos) {
+    long[] nativeResult = prefillImagesNative(image, width, height, channels, startPos);
+    if (nativeResult[0] != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
+    }
+    return nativeResult[1];
+  }
+
+  // returns a tuple of (status, updated startPos)
+  private native long[] prefillImagesNative(
+      int[] image, int width, int height, int channels, long startPos);
+
+  /**
+   * Prefill an LLaVA Module with the given text input.
+   *
+   * @param prompt The text prompt to LLaVA.
+   * @param startPos The starting position in KV cache of the input in the LLM. It's passed as
+   *     reference and will be updated inside this function.
+   * @param bos The number of BOS (begin of sequence) token.
+   * @param eos The number of EOS (end of sequence) token.
+   * @return The updated starting position in KV cache of the input in the LLM.
+   * @throws RuntimeException if the prefill failed
+   */
+  public long prefillPrompt(String prompt, long startPos, int bos, int eos) {
+    long[] nativeResult = prefillPromptNative(prompt, startPos, bos, eos);
+    if (nativeResult[0] != 0) {
+      throw new RuntimeException("Prefill failed with error code: " + nativeResult[0]);
+    }
+    return nativeResult[1];
+  }
+
+  // returns a tuple of (status, updated startPos)
+  private native long[] prefillPromptNative(String prompt, long startPos, int bos, int eos);
+
+  /**
+   * Generate tokens from the given prompt, starting from the given position.
+   *
+   * @param prompt The text prompt to LLaVA.
+   * @param seqLen The total sequence length, including the prompt tokens and new tokens.
+   * @param startPos The starting position in KV cache of the input in the LLM.
+   * @param llamaCallback callback object to receive results.
+   * @return The error code.
+   */
+  public native int generateFromPos(
+      String prompt, int seqLen, long startPos, LlamaCallback callback);
 
   /** Stop current generate() before it finishes. */
   @DoNotStrip

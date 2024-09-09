@@ -67,7 +67,6 @@ class ExportedModule:
         ignore_to_out_var_failure: bool = False,
         dynamic_memory_planning_mode: DynamicMemoryPlanningMode = DynamicMemoryPlanningMode.UPPER_BOUND,
         capture_config=None,
-        extract_constant_segment: bool = True,
         skip_type_promotion: bool = False,
         export_joint_graph: bool = False,
     ) -> "ExportedModule":
@@ -206,7 +205,6 @@ class ExportedModule:
                 dynamic_memory_planning_mode=dynamic_memory_planning_mode,
                 memory_planning_pass=memory_planning_pass,
                 to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
-                extract_constant_segment=extract_constant_segment,
             )
         )
 

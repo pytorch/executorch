@@ -32,7 +32,8 @@ constexpr DimIndex kChannel4D = DimIndex::DIM_3RD_LAST;
 constexpr DimIndex kBatch4D = DimIndex::DIM_4TH_LAST;
 
 inline DimIndex normalize_to_dim_index(const api::vTensor& v_in, int32_t dim) {
-  return static_cast<DimIndex>(dim - v_in.dim());
+  return dim < 0 ? static_cast<DimIndex>(dim)
+                 : static_cast<DimIndex>(dim - v_in.dim());
 }
 
 /*

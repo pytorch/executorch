@@ -169,9 +169,8 @@ jobs:
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
         else
-          # TODO (huydhn): Extend the export script here to support other backends such as coreml, mps
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-            bash .ci/scripts/test.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
+            bash .ci/scripts/test_model.sh "${{ matrix.model }}" "${BUILD_MODE}" "${{ matrix.delegate }}" "${ARTIFACTS_DIR_NAME}"
         fi
         echo "::endgroup::"
 
@@ -290,6 +289,7 @@ jobs:
         model: ${{ fromJson(needs.set-parameters.outputs.models) }}
         delegate: ${{ fromJson(needs.set-parameters.outputs.delegates) }}
         device: ${{ fromJson(needs.set-parameters.outputs.devices) }}
+      fail-fast: false
     with:
       device-type: ios
       # For iOS testing, the runner just needs to call AWS Device Farm, so there is no need to run this on macOS

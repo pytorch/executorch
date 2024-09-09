@@ -74,36 +74,98 @@ TensorImplPtr make_tensor_impl_ptr(
  * specified properties.
  *
  * This template overload is specialized for cases where the tensor data is
- * provided as a vector of a specific scalar type, rather than a raw pointer.
- * The deleter ensures that the data vector is properly managed and its
- * lifetime is tied to the TensorImpl.
+ * provided as a vector. The scalar type is automatically deduced from the
+ * vector's data type. The deleter ensures that the data vector is properly
+ * managed and its lifetime is tied to the TensorImpl.
  *
- * @tparam T The scalar type of the tensor elements.
+ * @tparam T The C++ type of the tensor elements, deduced from the vector.
  * @param sizes A vector specifying the size of each dimension.
  * @param data A vector containing the tensor's data.
  * @param dim_order A vector specifying the order of dimensions.
  * @param strides A vector specifying the strides of each dimension.
  * @param dynamism Specifies the mutability of the tensor's shape.
- * @return A TensorImplPtr managing the newly created TensorImpl.
+ * @return A TensorImplPtr that manages the newly created TensorImpl.
  */
-template <exec_aten::ScalarType T = exec_aten::ScalarType::Float>
+template <typename T = float>
 TensorImplPtr make_tensor_impl_ptr(
     std::vector<exec_aten::SizesType> sizes,
-    std::vector<typename runtime::ScalarTypeToCppType<T>::type> data,
+    std::vector<T> data,
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
         exec_aten::TensorShapeDynamism::STATIC) {
-  const auto data_ptr = data.data();
+  constexpr exec_aten::ScalarType scalar_type =
+      runtime::CppTypeToScalarType<T>::value;
+  const auto raw_data_ptr = data.data();
+  auto data_ptr = std::make_shared<std::vector<T>>(std::move(data));
   return make_tensor_impl_ptr(
-      T,
+      scalar_type,
       std::move(sizes),
-      data_ptr,
+      raw_data_ptr,
       std::move(dim_order),
       std::move(strides),
       dynamism,
-      [data = std::move(data)](void*) {});
+      [data_ptr = std::move(data_ptr)](void*) {});
 }
+
+/**
+ * Creates a TensorImplPtr that manages a newly created TensorImpl with the
+ * specified properties.
+ *
+ * This template overload is specialized for cases where the tensor data is
+ * provided as a vector. The scalar type is automatically deduced from the
+ * vector's data type. The deleter ensures that the data vector is properly
+ * managed and its lifetime is tied to the TensorImpl.
+ *
+ * @tparam T The C++ type of the tensor elements, deduced from the vector.
+ * @param data A vector containing the tensor's data.
+ * @param dynamism Specifies the mutability of the tensor's shape.
+ * @return A TensorImplPtr that manages the newly created TensorImpl.
+ */
+template <typename T = float>
+TensorImplPtr make_tensor_impl_ptr(
+    std::vector<T> data,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::STATIC) {
+  constexpr exec_aten::ScalarType scalar_type =
+      runtime::CppTypeToScalarType<T>::value;
+  std::vector<exec_aten::SizesType> sizes{exec_aten::SizesType(data.size())};
+  const auto raw_data_ptr = data.data();
+  auto data_ptr = std::make_shared<std::vector<T>>(std::move(data));
+  return make_tensor_impl_ptr(
+      scalar_type,
+      std::move(sizes),
+      raw_data_ptr,
+      {0},
+      {1},
+      dynamism,
+      [data_ptr = std::move(data_ptr)](void*) {});
+}
+
+/**
+ * Creates a TensorImplPtr that manages a newly created TensorImpl with the
+ * specified properties.
+ *
+ * This overload accepts a raw memory buffer stored in a std::vector<uint8_t>
+ * and a scalar type to interpret the data. The vector is managed, and the
+ * memory's lifetime is tied to the TensorImpl.
+ *
+ * @param scalar_type The scalar type of the tensor elements.
+ * @param sizes A vector specifying the size of each dimension.
+ * @param data A vector containing the raw memory for the tensor's data.
+ * @param dim_order A vector specifying the order of dimensions.
+ * @param strides A vector specifying the strides of each dimension.
+ * @param dynamism Specifies the mutability of the tensor's shape.
+ * @return A TensorImplPtr managing the newly created TensorImpl.
+ */
+TensorImplPtr make_tensor_impl_ptr(
+    exec_aten::ScalarType scalar_type,
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<uint8_t> data,
+    std::vector<exec_aten::DimOrderType> dim_order = {},
+    std::vector<exec_aten::StridesType> strides = {},
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::STATIC);
 
 } // namespace extension
 } // namespace executorch
