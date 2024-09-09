@@ -1,5 +1,5 @@
 CXX=g++
-CXX_FLAGS=-O3 -Wall -march=native -std=c++11 -I../external/benchmark/include -L../external/benchmark/src -lbenchmark -lpthread
+CXX_FLAGS=-O3 -Wall -march=native -std=c++11 `pkg-config benchmark --cflags --libs` -lpthread
 
 .PHONY: run_float run_double clean
 
