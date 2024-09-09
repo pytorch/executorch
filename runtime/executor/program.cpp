@@ -29,8 +29,8 @@
 
 #pragma clang diagnostic ignored "-Wshadow"
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 namespace {
 
@@ -495,5 +495,5 @@ Error Program::load_mutable_subsegment_into(
       segment_base_offset_ + segment->offset() + offset, size, info, buffer);
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

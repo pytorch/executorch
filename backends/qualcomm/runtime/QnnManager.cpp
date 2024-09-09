@@ -8,6 +8,7 @@
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
 #include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <algorithm>
 #include <cstdlib>
@@ -282,6 +283,8 @@ Error QnnManager::Init() {
     backend_params_ptr_ = QnnBackendFactory().Create(
         qnn_loaded_backend_, logger_.get(), qnn_context_blob_, options_);
     ET_CHECK_OR_RETURN_ERROR(
+        backend_params_ptr_ != nullptr, Internal, "Failed to load Qnn backend.")
+    ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
         Internal,
         "Fail to configure Qnn backend");
@@ -332,7 +335,8 @@ Error QnnManager::AllocateTensor() {
     const std::string& tensor_name = tensor_wrapper->GetName();
     // this is required by identifying shared buffer mechanism
     // info might be missed if context binary came from qnn_converter
-    if (tensor_name.find("output_") == std::string::npos) {
+    if (options_->is_from_context_binary() &&
+        tensor_name.find("output_") == std::string::npos) {
       tensor_wrapper->SetName("output_" + tensor_name);
     }
     if (IsTensorDump()) {

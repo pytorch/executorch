@@ -23,8 +23,10 @@ include(${EXECUTORCH_ROOT}/build/Test.cmake)
 
 set(_test_srcs # We can't put runtime/test_runtime_utils.cpp because we don't
                # build aten
-    runtime/test_xnnexecutor.cpp ../threadpool/threadpool.cpp
-    ../threadpool/threadpool_guard.cpp ../threadpool/test/threadpool_test.cpp
+    runtime/test_xnnexecutor.cpp
+    ${EXECUTORCH_ROOT}/extension/threadpool/threadpool.cpp
+    ${EXECUTORCH_ROOT}/extension/threadpool/threadpool_guard.cpp
+    ${EXECUTORCH_ROOT}/extension/threadpool/test/threadpool_test.cpp
 )
 
 et_cxx_test(
@@ -32,6 +34,7 @@ et_cxx_test(
   SOURCES
   ${_test_srcs}
   EXTRA_LIBS
+  extension_threadpool
   xnnpack_backend
   XNNPACK
   pthreadpool

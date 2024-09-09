@@ -16,8 +16,8 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using namespace torch::util;
 using namespace torch::executor;
+using namespace torch::executor::util;
 
 namespace {
 at::Tensor generate_at_tensor() {

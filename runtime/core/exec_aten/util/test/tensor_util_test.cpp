@@ -14,12 +14,11 @@
 #include <cmath>
 #include <limits>
 
-#include <gtest/gtest.h>
-
 using namespace ::testing;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
-using torch::executor::testing::TensorFactory;
+using executorch::runtime::extract_scalar_tensor;
+using executorch::runtime::testing::TensorFactory;
 
 class TensorUtilTest : public ::testing::Test {
  protected:
@@ -34,7 +33,7 @@ class TensorUtilTest : public ::testing::Test {
   void SetUp() override {
     // As some of these tests cause ET_LOG to be called, the PAL must be
     // initialized first by calling runtime_init();
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
   }
 };
 
@@ -149,13 +148,13 @@ TEST_F(TensorUtilTest, GetLeadingDimsSmokeTest) {
   Tensor t = tf_int_.ones({2, 3, 4});
 
   // getLeadingDims(t, 1) => t.size(0)
-  EXPECT_EQ(torch::executor::getLeadingDims(t, 1), 2);
+  EXPECT_EQ(executorch::runtime::getLeadingDims(t, 1), 2);
 
   // getLeadingDims(t, 2) => t.size(0) * t.size(1)
-  EXPECT_EQ(torch::executor::getLeadingDims(t, 2), 6);
+  EXPECT_EQ(executorch::runtime::getLeadingDims(t, 2), 6);
 
   // getLeadingDims(t, 3) => t.size(0) * t.size(1) * t.size(2)
-  EXPECT_EQ(torch::executor::getLeadingDims(t, 3), 24);
+  EXPECT_EQ(executorch::runtime::getLeadingDims(t, 3), 24);
 }
 
 TEST_F(TensorUtilTest, GetLeadingDimsInputOutOfBoundDies) {
@@ -163,9 +162,9 @@ TEST_F(TensorUtilTest, GetLeadingDimsInputOutOfBoundDies) {
   Tensor t = tf_int_.ones({2, 3, 4});
 
   // dim needs to be in the range [0, t.dim()]
-  ET_EXPECT_DEATH(torch::executor::getLeadingDims(t, -2), "");
-  ET_EXPECT_DEATH(torch::executor::getLeadingDims(t, -1), "");
-  ET_EXPECT_DEATH(torch::executor::getLeadingDims(t, 4), "");
+  ET_EXPECT_DEATH(executorch::runtime::getLeadingDims(t, -2), "");
+  ET_EXPECT_DEATH(executorch::runtime::getLeadingDims(t, -1), "");
+  ET_EXPECT_DEATH(executorch::runtime::getLeadingDims(t, 4), "");
 }
 
 TEST_F(TensorUtilTest, GetTrailingDimsSmokeTest) {
@@ -173,13 +172,13 @@ TEST_F(TensorUtilTest, GetTrailingDimsSmokeTest) {
   Tensor t = tf_int_.ones({2, 3, 4});
 
   // getTrailingDims(t, 1) => t.size(2)
-  EXPECT_EQ(torch::executor::getTrailingDims(t, 1), 4);
+  EXPECT_EQ(executorch::runtime::getTrailingDims(t, 1), 4);
 
   // getTrailingDims(t, 0) => t.size(1) * t.size(2)
-  EXPECT_EQ(torch::executor::getTrailingDims(t, 0), 12);
+  EXPECT_EQ(executorch::runtime::getTrailingDims(t, 0), 12);
 
   // getTrailingDims(t, -1) => t.size(0) * t.size(1) * t.size(2)
-  EXPECT_EQ(torch::executor::getTrailingDims(t, -1), 24);
+  EXPECT_EQ(executorch::runtime::getTrailingDims(t, -1), 24);
 }
 
 TEST_F(TensorUtilTest, GetTrailingDimsInputOutOfBoundDies) {
@@ -187,9 +186,9 @@ TEST_F(TensorUtilTest, GetTrailingDimsInputOutOfBoundDies) {
   Tensor t = tf_int_.ones({2, 3, 4});
 
   // dim needs to be in the range [-1, t.dim() - 1)
-  ET_EXPECT_DEATH(torch::executor::getTrailingDims(t, -2), "");
-  ET_EXPECT_DEATH(torch::executor::getTrailingDims(t, 3), "");
-  ET_EXPECT_DEATH(torch::executor::getTrailingDims(t, 4), "");
+  ET_EXPECT_DEATH(executorch::runtime::getTrailingDims(t, -2), "");
+  ET_EXPECT_DEATH(executorch::runtime::getTrailingDims(t, 3), "");
+  ET_EXPECT_DEATH(executorch::runtime::getTrailingDims(t, 4), "");
 }
 
 TEST_F(TensorUtilTest, ContiguousCheckSupported) {
@@ -271,10 +270,10 @@ TEST_F(TensorUtilTest, CheckSameContiguousStrideSupported) {
 TEST_F(TensorUtilTest, ExtractIntScalarTensorSmoke) {
   Tensor t = tf_int_.ones({1});
   bool ok;
-#define CASE_INT_DTYPE(ctype, unused)                           \
-  ctype out_##ctype;                                            \
-  ok = torch::executor::extract_scalar_tensor(t, &out_##ctype); \
-  ASSERT_TRUE(ok);                                              \
+#define CASE_INT_DTYPE(ctype, unused)          \
+  ctype out_##ctype;                           \
+  ok = extract_scalar_tensor(t, &out_##ctype); \
+  ASSERT_TRUE(ok);                             \
   EXPECT_EQ(out_##ctype, 1);
 
   ET_FORALL_INT_TYPES(CASE_INT_DTYPE);
@@ -284,10 +283,10 @@ TEST_F(TensorUtilTest, ExtractIntScalarTensorSmoke) {
 TEST_F(TensorUtilTest, ExtractFloatScalarTensorFloatingTypeSmoke) {
   Tensor t = tf_float_.ones({1});
   bool ok;
-#define CASE_FLOAT_DTYPE(ctype, unused)                         \
-  ctype out_##ctype;                                            \
-  ok = torch::executor::extract_scalar_tensor(t, &out_##ctype); \
-  ASSERT_TRUE(ok);                                              \
+#define CASE_FLOAT_DTYPE(ctype, unused)        \
+  ctype out_##ctype;                           \
+  ok = extract_scalar_tensor(t, &out_##ctype); \
+  ASSERT_TRUE(ok);                             \
   EXPECT_EQ(out_##ctype, 1.0);
 
   ET_FORALL_FLOAT_TYPES(CASE_FLOAT_DTYPE);
@@ -297,10 +296,10 @@ TEST_F(TensorUtilTest, ExtractFloatScalarTensorFloatingTypeSmoke) {
 TEST_F(TensorUtilTest, ExtractFloatScalarTensorIntegralTypeSmoke) {
   Tensor t = tf_int_.ones({1});
   bool ok;
-#define CASE_FLOAT_DTYPE(ctype, unused)                         \
-  ctype out_##ctype;                                            \
-  ok = torch::executor::extract_scalar_tensor(t, &out_##ctype); \
-  ASSERT_TRUE(ok);                                              \
+#define CASE_FLOAT_DTYPE(ctype, unused)        \
+  ctype out_##ctype;                           \
+  ok = extract_scalar_tensor(t, &out_##ctype); \
+  ASSERT_TRUE(ok);                             \
   EXPECT_EQ(out_##ctype, 1.0);
 
   ET_FORALL_INT_TYPES(CASE_FLOAT_DTYPE);
@@ -311,7 +310,7 @@ TEST_F(TensorUtilTest, ExtractBoolScalarTensorSmoke) {
   Tensor t = tf_bool_.ones({1});
   bool out;
   bool ok;
-  ok = torch::executor::extract_scalar_tensor(t, &out);
+  ok = extract_scalar_tensor(t, &out);
   ASSERT_TRUE(ok);
   EXPECT_EQ(out, true);
 }
@@ -322,19 +321,19 @@ TEST_F(TensorUtilTest, FloatScalarTensorStressTests) {
 
   // Case: Positive Infinity
   Tensor t_pos_inf = tf_double_.make({1}, {INFINITY});
-  ok = torch::executor::extract_scalar_tensor(t_pos_inf, &value);
+  ok = extract_scalar_tensor(t_pos_inf, &value);
   EXPECT_TRUE(ok);
   EXPECT_TRUE(std::isinf(value));
 
   // Case: Negative Infinity
   Tensor t_neg_inf = tf_double_.make({1}, {-INFINITY});
-  ok = torch::executor::extract_scalar_tensor(t_neg_inf, &value);
+  ok = extract_scalar_tensor(t_neg_inf, &value);
   EXPECT_TRUE(ok);
   EXPECT_TRUE(std::isinf(value));
 
   // Case: Not a Number (NaN) - ex: sqrt(-1.0)
   Tensor t_nan = tf_double_.make({1}, {NAN});
-  ok = torch::executor::extract_scalar_tensor(t_nan, &value);
+  ok = extract_scalar_tensor(t_nan, &value);
   EXPECT_TRUE(ok);
   EXPECT_TRUE(std::isnan(value));
 }
@@ -344,7 +343,7 @@ TEST_F(TensorUtilTest, IntScalarTensorNotIntegralTypeFails) {
   int64_t out;
   // Fails since tensor is floating type but attempting to extract integer
   // value.
-  bool ok = torch::executor::extract_scalar_tensor(t, &out);
+  bool ok = extract_scalar_tensor(t, &out);
   EXPECT_FALSE(ok);
 }
 
@@ -352,7 +351,7 @@ TEST_F(TensorUtilTest, FloatScalarTensorNotFloatingTypeFails) {
   Tensor t = tf_bool_.ones({1});
   double out;
   // Fails since tensor is boolean type but attempting to extract float value.
-  bool ok = torch::executor::extract_scalar_tensor(t, &out);
+  bool ok = extract_scalar_tensor(t, &out);
   EXPECT_FALSE(ok);
 }
 
@@ -360,7 +359,7 @@ TEST_F(TensorUtilTest, IntTensorNotScalarFails) {
   Tensor t = tf_int_.ones({2, 3});
   int64_t out;
   // Fails since tensor has multiple dims and values.
-  bool ok = torch::executor::extract_scalar_tensor(t, &out);
+  bool ok = extract_scalar_tensor(t, &out);
   EXPECT_FALSE(ok);
 }
 
@@ -368,7 +367,7 @@ TEST_F(TensorUtilTest, FloatTensorNotScalarFails) {
   Tensor t = tf_float_.ones({2, 3});
   double out;
   // Fails since tensor has multiple dims and values.
-  bool ok = torch::executor::extract_scalar_tensor(t, &out);
+  bool ok = extract_scalar_tensor(t, &out);
   EXPECT_FALSE(ok);
 }
 
@@ -376,7 +375,7 @@ TEST_F(TensorUtilTest, IntTensorOutOfBoundFails) {
   Tensor t = tf_int_.make({1}, {256});
   int8_t out;
   // Fails since 256 is out of bounds for `int8_t` (-128 to 127).
-  bool ok = torch::executor::extract_scalar_tensor(t, &out);
+  bool ok = extract_scalar_tensor(t, &out);
   EXPECT_FALSE(ok);
 }
 
@@ -385,9 +384,9 @@ TEST_F(TensorUtilTest, FloatTensorOutOfBoundFails) {
   float out;
   bool ok;
 
-#define CASE_FLOAT(value)                               \
-  t = tf_double_.make({1}, {value});                    \
-  ok = torch::executor::extract_scalar_tensor(t, &out); \
+#define CASE_FLOAT(value)              \
+  t = tf_double_.make({1}, {value});   \
+  ok = extract_scalar_tensor(t, &out); \
   EXPECT_FALSE(ok);
 
   // Float tensor can't handle double's largest negative value (note the use of
@@ -405,7 +404,7 @@ TEST_F(TensorUtilTest, BoolScalarTensorNotBooleanTypeFails) {
   bool out;
   // Fails since tensor is integral type but attempting to extract boolean
   // value.
-  bool ok = torch::executor::extract_scalar_tensor(c, &out);
+  bool ok = extract_scalar_tensor(c, &out);
   EXPECT_FALSE(ok);
 }
 
@@ -413,7 +412,7 @@ TEST_F(TensorUtilTest, BoolTensorNotScalarFails) {
   Tensor c = tf_bool_.ones({2, 3});
   bool out;
   // Fails since tensor has multiple dims and values.
-  bool ok = torch::executor::extract_scalar_tensor(c, &out);
+  bool ok = extract_scalar_tensor(c, &out);
   EXPECT_FALSE(ok);
 }
 
@@ -422,7 +421,7 @@ TEST_F(TensorUtilTest, BoolTensorNotScalarFails) {
 //
 
 TEST_F(TensorUtilTest, TensorIsRankTest) {
-  using namespace torch::executor;
+  using executorch::runtime::tensor_is_rank;
   Tensor a = tf_float_.ones({2, 3, 5});
 
   EXPECT_TRUE(tensor_is_rank(a, 3));
@@ -431,7 +430,7 @@ TEST_F(TensorUtilTest, TensorIsRankTest) {
 }
 
 TEST_F(TensorUtilTest, TensorHasDimTest) {
-  using namespace torch::executor;
+  using executorch::runtime::tensor_has_dim;
   Tensor a = tf_float_.ones({2, 3, 5});
 
   EXPECT_TRUE(tensor_has_dim(a, 2));
@@ -446,7 +445,7 @@ TEST_F(TensorUtilTest, TensorHasDimTest) {
 }
 
 TEST_F(TensorUtilTest, TensorsHaveSameDtypeTest) {
-  using namespace torch::executor;
+  using executorch::runtime::tensors_have_same_dtype;
   Tensor a = tf_float_.ones({2, 3});
   Tensor b = tf_float_.ones({2, 3});
   Tensor c = tf_float_.ones({3, 3});
@@ -459,7 +458,7 @@ TEST_F(TensorUtilTest, TensorsHaveSameDtypeTest) {
 }
 
 TEST_F(TensorUtilTest, TensorsHaveSameSizeAtDimTest) {
-  using namespace torch::executor;
+  using executorch::runtime::tensors_have_same_size_at_dims;
   Tensor a = tf_float_.ones({2, 3, 4, 5});
   Tensor b = tf_float_.ones({5, 4, 3, 2});
 
@@ -471,7 +470,7 @@ TEST_F(TensorUtilTest, TensorsHaveSameSizeAtDimTest) {
 }
 
 TEST_F(TensorUtilTest, TensorsHaveSameShapeTest) {
-  using namespace torch::executor;
+  using executorch::runtime::tensors_have_same_shape;
   Tensor a = tf_float_.ones({2, 3});
   Tensor b = tf_int_.ones({2, 3});
   Tensor c = tf_byte_.ones({2, 3});
@@ -494,7 +493,7 @@ TEST_F(TensorUtilTest, TensorsHaveSameShapeTest) {
 }
 
 TEST_F(TensorUtilTest, TensorsHaveSameShapeAndDtypeTest) {
-  using namespace torch::executor;
+  using executorch::runtime::tensors_have_same_shape_and_dtype;
   Tensor a = tf_float_.ones({2, 3});
   Tensor b = tf_float_.ones({2, 3});
   Tensor c = tf_float_.ones({2, 3});
@@ -516,7 +515,7 @@ TEST_F(TensorUtilTest, TensorsHaveSameShapeAndDtypeTest) {
 }
 
 TEST_F(TensorUtilTest, TensorsHaveSameStridesTest) {
-  using namespace torch::executor;
+  using executorch::runtime::tensors_have_same_strides;
   Tensor a = tf_float_.full_channels_last({4, 5, 2, 3}, 1);
   Tensor b = tf_float_.full_channels_last({4, 5, 2, 3}, 2);
   Tensor c = tf_float_.full_channels_last({4, 5, 2, 3}, 3);
@@ -531,7 +530,7 @@ TEST_F(TensorUtilTest, TensorsHaveSameStridesTest) {
 }
 
 TEST_F(TensorUtilTest, TensorIsContiguous) {
-  using namespace torch::executor;
+  using executorch::runtime::tensor_is_contiguous;
   // Note that the strides.size() == 0 case is not tested, since
   Tensor a = tf_float_.full_channels_last({4, 5, 2, 3}, 1);
   Tensor b = tf_float_.ones({4, 5, 2, 3});
@@ -545,9 +544,64 @@ TEST_F(TensorUtilTest, TensorIsContiguous) {
 }
 
 TEST_F(TensorUtilTest, ResizeZeroDimTensor) {
-  using namespace torch::executor;
   Tensor a = tf_float_.ones({});
 
-  EXPECT_EQ(resize_tensor(a, {}), Error::Ok);
+  EXPECT_EQ(
+      executorch::runtime::resize_tensor(a, {}),
+      executorch::runtime::Error::Ok);
   EXPECT_EQ(a.dim(), 0);
+}
+
+TEST_F(TensorUtilTest, SameDimOrderContiguous) {
+  using namespace torch::executor;
+  // Three different tensors with the same shape and same dim order
+  // ([0, 1, 2, 3]), but different dtypes and contents.
+  std::vector<int32_t> sizes = {3, 5, 2, 1};
+  Tensor a = tf_byte_.ones(sizes);
+  Tensor b = tf_int_.zeros(sizes);
+  Tensor c = tf_float_.full(sizes, 0.1);
+
+  // The tensors have the same dim order, should pass the following checks.
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b));
+  EXPECT_TRUE(tensors_have_same_dim_order(b, a));
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b, c));
+  EXPECT_TRUE(tensors_have_same_dim_order(b, c, a));
+  EXPECT_TRUE(tensors_have_same_dim_order(c, a, b));
+}
+
+TEST_F(TensorUtilTest, SameDimOrderChannelsLast) {
+  using namespace torch::executor;
+  // Three different tensors with the same shape and same dim order
+  // ([0, 2, 3, 1]), but different dtypes and contents.
+  std::vector<int32_t> sizes = {3, 5, 2, 1};
+  Tensor a = tf_byte_.full_channels_last(sizes, 1);
+  Tensor b = tf_int_.full_channels_last(sizes, 0);
+  Tensor c = tf_float_.full_channels_last(sizes, 0.1);
+
+  // The tensors have the same dim order, should pass the following checks.
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b));
+  EXPECT_TRUE(tensors_have_same_dim_order(b, a));
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b, c));
+  EXPECT_TRUE(tensors_have_same_dim_order(b, c, a));
+  EXPECT_TRUE(tensors_have_same_dim_order(c, a, b));
+}
+
+TEST_F(TensorUtilTest, SameShapesDifferentDimOrder) {
+  using namespace torch::executor;
+  // Three different tensors with the same shape but different dtypes and
+  // contents, where b and c have the same dim order ([0, 2, 3, 1]) while a is
+  // different ([0, 1, 2, 3]).
+  std::vector<int32_t> sizes = {3, 5, 2, 1};
+  Tensor a = tf_byte_.ones(sizes);
+  Tensor b = tf_int_.full_channels_last(sizes, 0);
+  Tensor c = tf_float_.full_channels_last(sizes, 0.1);
+
+  // Not the same dim order. Chec
+  EXPECT_FALSE(tensors_have_same_dim_order(a, b));
+  EXPECT_FALSE(tensors_have_same_dim_order(b, a));
+
+  // Test with a mismatching tensor in all positions, where the other two agree.
+  EXPECT_FALSE(tensors_have_same_dim_order(a, b, c));
+  EXPECT_FALSE(tensors_have_same_dim_order(a, c, b));
+  EXPECT_FALSE(tensors_have_same_dim_order(c, b, a));
 }

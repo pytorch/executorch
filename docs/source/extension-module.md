@@ -22,7 +22,7 @@ Tensor::SizesType sizes[] = {1, 3, 256, 256};
 TensorImpl tensor(ScalarType::Float, std::size(sizes), sizes, input);
 
 // Perform an inference.
-const auto result = module.forward({EValue(Tensor(&tensor))});
+const auto result = module.forward(Tensor(&tensor));
 
 // Check for success or failure.
 if (result.ok()) {
@@ -105,13 +105,13 @@ Note: `method_meta()` will try to force-load the `Method` when called for the fi
 Assuming that the `Program`'s method names and their input format is known ahead of time, we rarely need to query for those and can run the methods directly by name using the `execute()` function:
 
 ```cpp
-const auto result = module.execute("forward", {EValue(Tensor(&tensor))});
+const auto result = module.execute("forward", Tensor(&tensor));
 ```
 
 Which can also be simplified for the standard `forward()` method name as:
 
 ```cpp
-const auto result = module.forward({EValue(Tensor(&tensor))});
+const auto result = module.forward(Tensor(&tensor));
 ```
 
 Note: `execute()` or `forward()` will try to force load the `Program` and the `Method` when called for the first time. Therefore, the first inference will take more time than subsequent ones as it loads the model lazily and prepares it for execution unless the `Program` or `Method` was loaded explicitly earlier using the corresponding functions.
@@ -132,7 +132,7 @@ Use [ExecuTorch Dump](sdk-etdump.md) to trace model execution. Create an instanc
 #include <fstream>
 #include <memory>
 #include <executorch/extension/module/module.h>
-#include <executorch/sdk/etdump/etdump_flatcc.h>
+#include <executorch/devtools/etdump/etdump_flatcc.h>
 
 using namespace ::torch::executor;
 

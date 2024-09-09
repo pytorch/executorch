@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 set -e
+set -o xtrace
 
 if [[ -z ${QNN_SDK_ROOT} ]]; then
     echo "Please export QNN_SDK_ROOT=/path/to/qnn_sdk"
@@ -70,7 +71,7 @@ if [ "$BUILD_AARCH64" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     else
         # Force rebuild flatccrt for the correct platform
-        cd $BUILD_ROOT/sdk && make clean
+        cd $BUILD_ROOT/devtools && make clean
     fi
 
     cd $BUILD_ROOT
@@ -80,6 +81,7 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_SDK=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
@@ -112,7 +114,7 @@ if [ "$BUILD_X86_64" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     else
         # Force rebuild flatccrt for the correct platform
-        cd $BUILD_ROOT/sdk && make clean
+        cd $BUILD_ROOT/devtools && make clean
     fi
 
     cd $BUILD_ROOT
@@ -123,6 +125,7 @@ if [ "$BUILD_X86_64" = true ]; then
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_SDK=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -S $PRJ_ROOT \

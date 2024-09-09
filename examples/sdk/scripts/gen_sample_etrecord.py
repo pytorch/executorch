@@ -4,12 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 # Generate fixture files
 import argparse
 import copy
 from typing import Any
 
 import torch
+from executorch.devtools import generate_etrecord
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -17,8 +20,6 @@ from executorch.exir import (
     ExportedProgram,
     to_edge,
 )
-from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.sdk import generate_etrecord
 from torch.export import export
 
 from ...models import MODEL_NAME_TO_MODEL
@@ -38,9 +39,7 @@ def gen_etrecord(model: torch.nn.Module, inputs: Any, output_path=None):
         aten_dialect, compile_config=EdgeCompileConfig(_check_ir_validity=True)
     )
     edge_program_copy = copy.deepcopy(edge_program)
-    et_program: ExecutorchProgramManager = edge_program_copy.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
-    )
+    et_program: ExecutorchProgramManager = edge_program_copy.to_executorch()
     generate_etrecord(
         (DEFAULT_OUTPUT_PATH if not output_path else output_path),
         edge_dialect_program=edge_program,

@@ -7,54 +7,53 @@
  */
 
 #include <executorch/runtime/backend/interface.h>
-#include <executorch/runtime/platform/assert.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
-PyTorchBackendInterface::~PyTorchBackendInterface() {}
+// Pure-virtual dtors still need an implementation.
+BackendInterface::~BackendInterface() {}
 
-// Task t128866626: Remove global static variables.
-// We want to be able to run multiple Executor instances
-// and having a global registration isn't a viable solution
-// in the long term.
-BackendRegistry& getBackendRegistry();
-BackendRegistry& getBackendRegistry() {
-  static BackendRegistry backend_reg;
-  return backend_reg;
-}
+namespace {
 
-PyTorchBackendInterface* get_backend_class(const char* name) {
-  return getBackendRegistry().get_backend_class(name);
-}
+// The max number of backends that can be registered globally.
+constexpr size_t kMaxRegisteredBackends = 16;
 
-PyTorchBackendInterface* BackendRegistry::get_backend_class(const char* name) {
-  for (size_t idx = 0; idx < registrationTableSize_; idx++) {
-    Backend backend = backend_table_[idx];
-    if (strcmp(backend.name_, name) == 0) {
-      return backend.interface_ptr_;
+// TODO(T128866626): Remove global static variables. We want to be able to run
+// multiple Executor instances and having a global registration isn't a viable
+// solution in the long term.
+
+/// Global table of registered backends.
+Backend registered_backends[kMaxRegisteredBackends];
+
+/// The number of backends registered in the table.
+size_t num_registered_backends = 0;
+
+} // namespace
+
+BackendInterface* get_backend_class(const char* name) {
+  for (size_t i = 0; i < num_registered_backends; i++) {
+    Backend backend = registered_backends[i];
+    if (strcmp(backend.name, name) == 0) {
+      return backend.backend;
     }
   }
   return nullptr;
 }
 
 Error register_backend(const Backend& backend) {
-  return getBackendRegistry().register_backend(backend);
-}
-
-Error BackendRegistry::register_backend(const Backend& backend) {
-  if (registrationTableSize_ >= kRegistrationTableMaxSize) {
+  if (num_registered_backends >= kMaxRegisteredBackends) {
     return Error::Internal;
   }
 
   // Check if the name already exists in the table
-  if (this->get_backend_class(backend.name_) != nullptr) {
+  if (get_backend_class(backend.name) != nullptr) {
     return Error::InvalidArgument;
   }
 
-  backend_table_[registrationTableSize_++] = backend;
+  registered_backends[num_registered_backends++] = backend;
   return Error::Ok;
 }
 
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

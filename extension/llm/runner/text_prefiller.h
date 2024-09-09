@@ -16,12 +16,13 @@
 // patternlint-disable-next-line executorch-cpp-nostdinc
 #include <functional>
 
-namespace torch::executor {
+namespace executorch {
+namespace extension {
+namespace llm {
 
 class TextPrefiller {
  public:
   TextPrefiller(
-      Tokenizer* tokenizer,
       TextDecoderRunner* text_decoder_runner,
       bool use_kv_cache_,
       bool enable_parallel_prefill);
@@ -31,20 +32,26 @@ class TextPrefiller {
    * tokenizer.
    * @param start_pos The starting position in KV cache of the input in the LLM
    * Module.
-   * @param token_callback A callback function that will be called for each
-   * token in the prompt.
    * @return The next token of the LLM Module after prefill.
    */
-  Result<uint64_t> prefill(
+  ::executorch::runtime::Result<uint64_t> prefill(
       std::vector<uint64_t>& prompt_tokens,
-      int64_t start_pos = 0,
-      std::function<void(const std::string&)> token_callback = {});
+      int64_t& start_pos);
 
  private:
-  Tokenizer* tokenizer_;
   TextDecoderRunner* text_decoder_runner_;
   bool use_kv_cache_;
   bool enable_parallel_prefill_;
 };
 
-} // namespace torch::executor
+} // namespace llm
+} // namespace extension
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::extension::llm::TextPrefiller;
+} // namespace executor
+} // namespace torch

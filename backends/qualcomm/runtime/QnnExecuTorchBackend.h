@@ -14,7 +14,8 @@
 namespace torch {
 namespace executor {
 
-class QnnExecuTorchBackend final : public PyTorchBackendInterface {
+class QnnExecuTorchBackend final
+    : public ::executorch::runtime::BackendInterface {
  public:
   ~QnnExecuTorchBackend(){};
 
@@ -24,7 +25,7 @@ class QnnExecuTorchBackend final : public PyTorchBackendInterface {
       ArrayRef<CompileSpec> compile_specs) const override;
 
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override;
 

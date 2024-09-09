@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/executor/program.h>
+
 #include <cctype>
 #include <filesystem>
 
@@ -16,7 +18,6 @@
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
-#include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/program_generated.h>
 #include <executorch/test/utils/DeathTest.h>
@@ -24,11 +25,11 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::DataLoader;
-using torch::executor::Error;
-using torch::executor::FreeableBuffer;
-using torch::executor::Program;
-using torch::executor::Result;
+using executorch::runtime::DataLoader;
+using executorch::runtime::Error;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
 using torch::executor::util::BufferDataLoader;
 using torch::executor::util::FileDataLoader;
 
@@ -42,7 +43,7 @@ class ProgramTest : public ::testing::Test {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Load the serialized ModuleAdd data.
     const char* path = std::getenv("ET_MODULE_ADD_PATH");
@@ -86,19 +87,19 @@ class ProgramTest : public ::testing::Test {
   std::unique_ptr<FileDataLoader> multi_loader_;
 };
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 namespace testing {
 // Provides access to private Program methods.
 class ProgramTestFriend final {
  public:
-  __ET_NODISCARD static Result<FreeableBuffer> LoadSegment(
+  ET_NODISCARD static Result<FreeableBuffer> LoadSegment(
       const Program* program,
       const DataLoader::SegmentInfo& segment_info) {
     return program->LoadSegment(segment_info);
   }
 
-  __ET_NODISCARD static Error load_mutable_subsegment_into(
+  ET_NODISCARD static Error load_mutable_subsegment_into(
       const Program* program,
       size_t mutable_data_segments_index,
       size_t offset_index,
@@ -114,10 +115,10 @@ class ProgramTestFriend final {
   }
 };
 } // namespace testing
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch
 
-using torch::executor::testing::ProgramTestFriend;
+using executorch::runtime::testing::ProgramTestFriend;
 
 TEST_F(ProgramTest, DataParsesWithMinimalVerification) {
   // Parse the Program from the data.
@@ -378,11 +379,32 @@ TEST_F(ProgramTest, DEPRECATEDLoad) {
   EXPECT_EQ(program_res.error(), Error::Ok);
 }
 
+TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
+  Result<Program> program =
+      Program::load(add_loader_.get(), kDefaultVerification);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Load constant segment data should fail.
+  const auto segment_info = DataLoader::SegmentInfo(
+      DataLoader::SegmentInfo::Type::Constant,
+      /*segment_index=*/0);
+  Result<FreeableBuffer> segment =
+      ProgramTestFriend::LoadSegment(&program.get(), segment_info);
+  EXPECT_NE(segment.error(), Error::Ok);
+
+  const executorch_flatbuffer::Program* flatbuffer_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+
+  // The constant buffer should be empty.
+  EXPECT_EQ(flatbuffer_program->constant_buffer()->size(), 0);
+
+  // Expect 1 constant segment, placeholder for non-const tensors.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 1);
+}
+
 TEST_F(ProgramTest, LoadConstantSegment) {
-  // Load the serialized ModuleLinear data, with constants in the segment and no
-  // constants in the flatbuffer.
-  const char* linear_path =
-      std::getenv("ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH");
+  // Load the serialized ModuleLinear data, with constants in the segment.
+  const char* linear_path = std::getenv("ET_MODULE_LINEAR_PATH");
   Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
@@ -423,11 +445,11 @@ TEST_F(ProgramTest, LoadConstantSegment) {
   EXPECT_GE(flatbuffer_program->constant_segment()->offsets()->size(), 1);
 }
 
-TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
+TEST_F(ProgramTest, LoadConstantSegmentWhenConstantBufferExists) {
   // Load the serialized ModuleLinear data, with constants in the flatbuffer and
   // no constants in the segment.
   const char* linear_path =
-      std::getenv("ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
+      std::getenv("DEPRECATED_ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
   Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
   ASSERT_EQ(linear_loader.error(), Error::Ok);
 
@@ -504,8 +526,8 @@ TEST_F(ProgramTest, LoadFromMutableSegment) {
   const executorch_flatbuffer::Program* flatbuffer_program =
       ProgramTestFriend::GetInternalProgram(&program.get());
 
-  // Expect 1 segment. 1 mutable segment and no constant segment.
-  EXPECT_EQ(flatbuffer_program->segments()->size(), 1);
+  // Expect 2 segments. 1 mutable segment and 1 constant segment.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 2);
 
   // Expect a mutable data segment.
   EXPECT_EQ(flatbuffer_program->mutable_data_segments()->size(), 1);

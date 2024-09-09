@@ -8,22 +8,24 @@
 
 #pragma once
 
-#include <sys/types.h> // TODO(T126923429): Include size_t, ssize_t
-
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/core/tensor_shape_dynamism.h>
 
-namespace torch {
-namespace executor {
-
 // Forward declaration of a helper that provides access to internal resizing
 // methods of TensorImpl. Real definition is in
 // executorch/runtime/core/exec_aten/tensor_util.h.
+namespace executorch {
+namespace runtime {
 namespace internal {
 class TensorResizerFriend;
 } // namespace internal
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
 
 /**
  * Manages the storage behind an ETensor (torch::executor::Tensor).
@@ -195,7 +197,7 @@ class TensorImpl {
    * DEPRECATED: Use torch::executor::resize_tensor() or
    * torch::executor::resize_tensor_impl().
    */
-  __ET_DEPRECATED
+  ET_DEPRECATED
   void set_sizes_contiguous(ArrayRef<SizesType> new_sizes) {
     Error err = internal_resize_contiguous(new_sizes);
     ET_CHECK_MSG(
@@ -204,7 +206,7 @@ class TensorImpl {
 
  private:
   // For access to internal_resize_contiguous().
-  friend class internal::TensorResizerFriend;
+  friend class ::executorch::runtime::internal::TensorResizerFriend;
 
   /**
    * Set the sizes and strides of a tensor assuming contiguous strides.
@@ -217,8 +219,7 @@ class TensorImpl {
    * error instead of panicking on failure. This is not part of the at::Tensor
    * API, and can only be used in lean mode.
    */
-  __ET_NODISCARD Error
-  internal_resize_contiguous(ArrayRef<SizesType> new_sizes);
+  ET_NODISCARD Error internal_resize_contiguous(ArrayRef<SizesType> new_sizes);
 
  private:
   // Keep fields arranged to avoid unnecessary alignment holes.
@@ -252,5 +253,20 @@ class TensorImpl {
   const TensorShapeDynamism shape_dynamism_;
 };
 
+/**
+ * Compute the number of elements based on the sizes of a tensor.
+ */
+ssize_t compute_numel(
+    const ::torch::executor::TensorImpl::SizesType* sizes,
+    ssize_t dim);
+
 } // namespace executor
 } // namespace torch
+
+namespace executorch {
+namespace runtime {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using torch::executor::compute_numel;
+} // namespace runtime
+} // namespace executorch

@@ -16,11 +16,13 @@ import shlex
 from enum import Enum
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import pkg_resources
 
 import torch
+
+from executorch.devtools.etrecord import generate_etrecord
 
 from executorch.examples.models.llama2.llama_transformer import ModelArgs
 
@@ -40,8 +42,6 @@ from executorch.extension.llm.export.quantizer_lib import (
     get_pt2e_quantizers,
     get_qnn_quantizer,
 )
-
-from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
@@ -166,19 +166,25 @@ def build_args_parser() -> argparse.ArgumentParser:
         nargs="+",
         type=str,
         default=None,
-        help="Tasks for GPTQ calibration",
+        help="Tasks for GPTQ calibration from lm_eval",
     )
     parser.add_argument(
         "--calibration_limit",
         type=int,
         default=None,
-        help="number of samples used for calibration",
+        help="number of samples used for calibration from lm_eval",
     )
     parser.add_argument(
         "--calibration_seq_length",
         type=int,
         default=None,
-        help="Sequence length for GPTQ calibration",
+        help="Sequence length for GPTQ calibration from lm_eval",
+    )
+    parser.add_argument(
+        "--calibration_data",
+        type=str,
+        default="Once upon a time",
+        help="Calibration prompts from users",
     )
     parser.add_argument(
         "-t",
@@ -192,6 +198,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="Whether or not to export a model using kv cache",
+    )
+    parser.add_argument(
+        "--num_sharding",
+        type=int,
+        default=0,
+        help="Specify the number of splits by inserting the fallback custom op. The graph will be split evenly by layers.",
     )
     parser.add_argument(
         "--use_sdpa_with_kv_cache",
@@ -250,9 +262,9 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--dtype-override",
         default="fp32",
         type=str,
-        choices=["fp32", "fp16"],
+        choices=["fp32", "fp16", "bf16"],
         help="Override the dtype of the model (default is the checkpoint dtype)."
-        "Options: fp32, fp16. Please be aware that only some backends support fp16.",
+        "Options: fp32, fp16, bf16. Please be aware that only some backends support fp16 and bf16.",
     )
 
     parser.add_argument(
@@ -296,11 +308,17 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Generate the ETRecord debug artifact.",
     )
 
+    parser.add_argument(
+        "--generate_full_logits",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Generate logits for all inputs.",
+    )
     return parser
 
 
 def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
-
     path = str(path)
 
     if verbose_export():
@@ -405,11 +423,18 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             params_path=params_path,
             use_kv_cache=args.use_kv_cache,
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
+            generate_full_logits=args.generate_full_logits,
             weight_type=weight_type,
             enable_dynamic_shape=args.enable_dynamic_shape,
+            calibration_tasks=args.calibration_tasks,
+            calibration_limit=args.calibration_limit,
+            calibration_seq_length=args.calibration_seq_length,
+            calibration_data=args.calibration_data,
+            tokenizer_path=args.tokenizer_path,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
             metadata_str=args.metadata,
+            args=args,
         )
         .set_output_dir(output_dir_path)
         .to_dtype(dtype_override)
@@ -446,6 +471,9 @@ def _validate_args(args):
             "Dynamic shape is not supported with coreml, MPS or qnn backends."
             " Please use --disable_dynamic_shape."
         )
+
+    if args.num_sharding > 0 and not args.qnn:
+        raise ValueError("Model shard is only supported with qnn backend now.")
 
 
 def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
@@ -493,11 +521,11 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
+        from executorch.extension.llm.custom_ops import model_sharding
+
         partitioners.append(
             get_qnn_partitioner(
-                quant_dtype,
-                args.use_kv_cache,
-                args.pt2e_quantize,
+                args.use_kv_cache, args.pt2e_quantize, args.num_sharding
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
@@ -506,6 +534,13 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`, Optional type has no attribute `exported_program`
         _transform(builder_exported_to_edge.edge_manager.exported_program())
 
+        if args.num_sharding > 0:
+            model_sharding.split_graph(
+                builder_exported_to_edge.edge_manager.exported_program(),
+                builder_exported_to_edge.metadata["get_n_layers"],
+                shares=args.num_sharding,
+            )
+
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
@@ -513,7 +548,13 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         logging.info("Generating etrecord")
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners)
+        if args.num_sharding > 0 and args.qnn:
+            from executorch.backends.qualcomm.utils.utils import canonicalize_program
+
+            canonicalize_program(builder.edge_manager.exported_program())
+
+        builder = builder.to_executorch()
 
         # Generate ETRecord
         if edge_manager_copy:
@@ -524,7 +565,13 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
             )
             logging.info("Generated etrecord.bin")
     else:
-        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners)
+        if args.num_sharding > 0 and args.qnn:
+            from executorch.backends.qualcomm.utils.utils import canonicalize_program
+
+            canonicalize_program(builder.edge_manager.exported_program())
+
+        builder = builder.to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
@@ -562,19 +609,12 @@ def _load_llama_model_metadata(
     is_fairseq2 = weight_type == WeightType.FAIRSEQ2
     metadata = {
         "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
-        "get_bos_id": (
-            model_args.bos_idx
-            if model_args.bos_idx is not None
-            else (3 if is_fairseq2 else 1)
-        ),
-        "get_eos_id": (
-            model_args.eos_idx
-            if model_args.eos_idx is not None
-            else (3 if is_fairseq2 else 2)
-        ),
+        "get_bos_id": 3 if is_fairseq2 else 1,
+        "get_eos_ids": [3] if is_fairseq2 else [2],
         "get_max_seq_len": model_args.max_seq_len,
         "get_n_bos": 1,
         "get_n_eos": 2 if is_fairseq2 else 1,
+        "get_n_layers": model_args.n_layers,
         "get_vocab_size": model_args.vocab_size,
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
@@ -598,11 +638,18 @@ def _load_llama_model(
     params_path: str,
     use_kv_cache: bool = False,
     use_sdpa_with_kv_cache: bool = False,
+    generate_full_logits: bool = False,
     weight_type: WeightType = WeightType.LLAMA,
     enable_dynamic_shape: bool = False,
+    calibration_tasks: Optional[List[str]] = None,
+    calibration_limit: Optional[int] = None,
+    calibration_seq_length: Optional[int] = None,
+    calibration_data: Optional[str] = None,
+    tokenizer_path: Optional[str] = None,
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
+    args,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
@@ -624,6 +671,7 @@ def _load_llama_model(
         params=params_path,
         use_kv_cache=use_kv_cache,
         use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
+        generate_full_logits=generate_full_logits,
         fairseq2=weight_type == WeightType.FAIRSEQ2,
         max_seq_len=max_seq_len,
         enable_dynamic_shape=enable_dynamic_shape,
@@ -654,6 +702,11 @@ def _load_llama_model(
         use_kv_cache=use_kv_cache,
         example_inputs=example_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
+        calibration_tasks=calibration_tasks,
+        calibration_limit=calibration_limit,
+        calibration_seq_length=calibration_seq_length,
+        calibration_data=calibration_data,
+        tokenizer_path=tokenizer_path,
         verbose=verbose,
         metadata=_load_llama_model_metadata(
             weight_type,
@@ -663,4 +716,5 @@ def _load_llama_model(
             model.params,
             metadata_str,
         ),
+        args=args,
     )

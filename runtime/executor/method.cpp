@@ -26,8 +26,8 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 /**
  * Runtime state for a backend delegate.
@@ -58,7 +58,7 @@ class BackendDelegate final {
     ET_CHECK_OR_RETURN_ERROR(
         delegate.id() != nullptr, InvalidProgram, "Missing backend id");
     const char* backend_id = delegate.id()->c_str();
-    PyTorchBackendInterface* backend = get_backend_class(backend_id);
+    BackendInterface* backend = get_backend_class(backend_id);
     ET_CHECK_OR_RETURN_ERROR(
         backend != nullptr,
         NotFound,
@@ -198,7 +198,7 @@ class BackendDelegate final {
   }
 
   FreeableBuffer segment_;
-  const PyTorchBackendInterface* backend_;
+  const BackendInterface* backend_;
   DelegateHandle* handle_;
 };
 
@@ -252,10 +252,10 @@ Result<bool> parse_cond_value(const EValue& cond_value) {
     // currently. If that's not the case then something is wrong in the model
     // and we should exit.
     ET_CHECK_OR_RETURN_ERROR(
-        ScalarType::Bool == cond_val.scalar_type(),
+        exec_aten::ScalarType::Bool == cond_val.scalar_type(),
         InvalidProgram,
         "Expected dtype of %" PRId8 " got %" PRId8,
-        static_cast<int8_t>(ScalarType::Bool),
+        static_cast<int8_t>(exec_aten::ScalarType::Bool),
         static_cast<int8_t>(cond_val.scalar_type()));
 
     const bool* cond_data = cond_val.const_data_ptr<bool>();
@@ -771,7 +771,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   return Error::Ok;
 }
 
-__ET_NODISCARD Error
+ET_NODISCARD Error
 Method::set_input(const EValue& input_evalue, size_t input_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
@@ -900,7 +900,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
   return Error::Ok;
 }
 
-__ET_NODISCARD Error
+ET_NODISCARD Error
 Method::set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues) {
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
@@ -929,7 +929,7 @@ Method::set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues) {
   return Error::Ok;
 }
 
-__ET_NODISCARD Error
+ET_NODISCARD Error
 Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   // Check method state
   ET_CHECK_OR_RETURN_ERROR(
@@ -944,7 +944,7 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   //     allowed.");
   // TODO(T188740925): for now, return error without logs.
   if (pre_allocated_output_) {
-    return ::torch::executor::Error::InvalidState;
+    return Error::InvalidState;
   }
 
   // Check the args
@@ -979,8 +979,7 @@ Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
   return internal::set_tensor_data(t, buffer, size);
 }
 
-__ET_NODISCARD Error
-Method::get_outputs(EValue* output_evalues, size_t length) {
+ET_NODISCARD Error Method::get_outputs(EValue* output_evalues, size_t length) {
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
       InvalidState,
@@ -1002,7 +1001,7 @@ Method::get_outputs(EValue* output_evalues, size_t length) {
   return Error::Ok;
 }
 
-__ET_NODISCARD Error Method::get_inputs(EValue* input_evalues, size_t length) {
+ET_NODISCARD Error Method::get_inputs(EValue* input_evalues, size_t length) {
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
       InvalidState,
@@ -1177,13 +1176,17 @@ Error Method::execute_instruction() {
   return err;
 }
 
-Error Method::experimental_reset_execution() {
+Error Method::reset_execution() {
   ET_CHECK_OR_RETURN_ERROR(
       step_state_.chain_idx == n_chains_,
       InvalidState,
       "Cannot reset until EndOfMethod has been reached.");
   step_state_ = StepState{0, 0};
   return Error::Ok;
+}
+
+Error Method::experimental_reset_execution() {
+  return reset_execution(); // @lint-ignore CLANGTIDY facebook-hte-Deprecated
 }
 
 // Log all the outputs of this method to the event tracer.
@@ -1200,7 +1203,7 @@ void Method::log_outputs() {
 #endif
 }
 
-Error Method::experimental_step() {
+Error Method::step() {
   EXECUTORCH_PROFILE_INSTRUCTION_SCOPE(
       static_cast<int32_t>(step_state_.chain_idx),
       static_cast<uint32_t>(step_state_.instr_idx));
@@ -1244,6 +1247,10 @@ Error Method::experimental_step() {
     log_outputs();
   }
   return Error::Ok;
+}
+
+Error Method::experimental_step() {
+  return step();
 }
 
 Error Method::execute() {
@@ -1290,7 +1297,7 @@ Error Method::execute() {
 
   // TODO(jakeszwe, dbort): Decide on calling execute back to back without
   // going through the reset api first.
-  return experimental_reset_execution();
+  return reset_execution(); // @lint-ignore CLANGTIDY facebook-hte-Deprecated
 }
 
 MethodMeta Method::method_meta() const {
@@ -1370,5 +1377,5 @@ Method::~Method() {
   }
   // All other fields are trivially destructible.
 }
-} // namespace executor
-} // namespace torch
+} // namespace runtime
+} // namespace executorch

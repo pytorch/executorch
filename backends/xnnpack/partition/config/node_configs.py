@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import operator
 from typing import List, Optional
 
@@ -16,7 +17,14 @@ from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.xnnpack.utils.utils import is_param_node
+from executorch.exir.backend.canonical_partitioners.config_partitioner import (
+    format_target_name,
+)
+from executorch.exir.backend.utils import WhyNoPartition
 from torch.export import ExportedProgram
+
+logger = logging.getLogger(__name__)
+why = WhyNoPartition(logger=logger)
 
 
 class BatchNormConfig(XNNPartitionerConfig):
@@ -29,7 +37,21 @@ class BatchNormConfig(XNNPartitionerConfig):
         bn = node
         conv = node.all_input_nodes[0]
 
-        return FuseBatchNormWithConvPass.can_fuse(conv, bn, ep)
+        if conv.op != "call_function":
+            return False
+
+        conv_name = format_target_name(conv.target.__name__)  # pyre-ignore
+
+        if conv_name not in ["convolution.default"]:
+            why(node, f"Invalid conv target {conv_name}")
+            return False
+
+        can_fuse = FuseBatchNormWithConvPass.can_fuse(conv, bn, ep)
+        if not can_fuse:
+            why(node, "BatchNorm cannot be fused with Convolution")
+            return False
+
+        return True
 
     def get_node_and_deps(
         self, node: torch.fx.Node, ep: ExportedProgram
@@ -65,15 +87,18 @@ class MaxDimConfig(XNNPartitionerConfig):
         output_0 = node_val[0]
         # Don't check indicies dtype
         if output_0.dtype not in supported_dtypes:
+            why(node, f"Unsupported output dtype {output_0.dtype}")
             return False
 
         max_input = node.all_input_nodes[0]
         if max_input.meta.get("val").dtype not in supported_dtypes:
+            why(node, f"Unsupported input dtype {max_input.meta.get('val').dtype}")
             return False
 
         # Make sure that all users are getitems of the first output
         for user in node.users:
             if not (user.target == operator.getitem and user.args[1] == 0):
+                why(node, "Unsupported user of max.dim")
                 return False
 
         return True
@@ -100,7 +125,11 @@ class PreluConfig(XNNPartitionerConfig):
             return False
 
         weight = node.all_input_nodes[1]
-        return is_param_node(ep, weight)
+        is_param = is_param_node(ep, weight)
+        if not is_param:
+            why(node, "Prelu weight must be a parameter")
+            return False
+        return True
 
     def get_original_aten(self) -> Optional[torch._ops.OpOverload]:
         return torch.ops.aten.prelu.default

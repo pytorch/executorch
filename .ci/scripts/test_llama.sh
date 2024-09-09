@@ -9,7 +9,7 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-MODEL_NAME=$1 # stories110M.pt
+MODEL_NAME=$1 # stories110M
 BUILD_TOOL=$2 # buck2 or cmake
 DTYPE=$3 # fp16 or fp32
 MODE=${4:-"xnnpack+custom"} # portable or xnnpack+custom or xnnpack+custom+qe
@@ -107,8 +107,9 @@ cmake_install_executorch_libraries() {
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Debug \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_BUILD_KERNELS_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
@@ -140,7 +141,7 @@ cmake_build_llama_runner() {
 
 cleanup_files() {
   echo "Deleting downloaded and generated files"
-  rm "${MODEL_NAME}"
+  rm "${CHECKPOINT_FILE_NAME}"
   rm tokenizer.model
   rm tokenizer.bin
   rm "${EXPORTED_MODEL_NAME}"
@@ -159,8 +160,10 @@ prepare_artifacts_upload() {
 
 # Download and create artifacts.
 PARAMS="params.json"
+CHECKPOINT_FILE_NAME=""
 touch "${PARAMS}"
-if [[ "${MODEL_NAME}" == "stories110M.pt" ]]; then
+if [[ "${MODEL_NAME}" == "stories110M" ]]; then
+  CHECKPOINT_FILE_NAME="stories110M.pt"
   download_stories_model_artifacts
 else
   echo "Unsupported model name ${MODEL_NAME}"
@@ -181,7 +184,7 @@ fi
 # Export model.
 EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
-EXPORT_ARGS="-c stories110M.pt -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME} -kv"
+EXPORT_ARGS="-c ${CHECKPOINT_FILE_NAME} -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME} -kv"
 if [[ "${XNNPACK}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -X -qmode 8da4w -G 128"
 fi

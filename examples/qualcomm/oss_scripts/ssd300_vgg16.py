@@ -28,7 +28,6 @@ def create_data_lists(voc07_path, data_size):
     Create lists of images, the bounding boxes and labels of the objects in these images, and save these to file.
 
     :param voc07_path: path to the 'VOC2007' folder
-    :param output_folder: folder where the JSONs must be saved
     """
     from utils import parse_annotation
 
@@ -156,12 +155,6 @@ def main(args):
     if args.compile_only:
         sys.exit(0)
 
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # build_path : path where QNN delegate artifacts were built
-    # pte_path      : path where executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         build_path=f"{args.build_folder}",

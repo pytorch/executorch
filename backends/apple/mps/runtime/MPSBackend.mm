@@ -19,7 +19,7 @@
 namespace torch {
 namespace executor {
 
-class MPSBackend final : public PyTorchBackendInterface {
+class MPSBackend final : public ::executorch::runtime::BackendInterface {
  public:
   ~MPSBackend() = default;
 
@@ -55,7 +55,7 @@ class MPSBackend final : public PyTorchBackendInterface {
 
   // Function that actually executes the model in the backend.
   Error execute(
-    __ET_UNUSED BackendExecutionContext& context,
+    ET_UNUSED BackendExecutionContext& context,
     DelegateHandle* handle,
     EValue** args) const override {
     auto executor = static_cast<mps::delegate::MPSExecutor*>(handle);

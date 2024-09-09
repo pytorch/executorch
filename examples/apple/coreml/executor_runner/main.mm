@@ -13,8 +13,7 @@
 #import <executorch/runtime/executor/program.h>
 #import <executorch/runtime/platform/log.h>
 #import <executorch/runtime/platform/runtime.h>
-#import <executorch/sdk/etdump/etdump_flatcc.h>
-#import <executorch/util/util.h>
+#import <executorch/devtools/etdump/etdump_flatcc.h>
 #import <memory>
 #import <numeric>
 #import <string>
@@ -160,7 +159,7 @@ public:
     :data_(read_data(filePath))
     {}
 
-    Result<FreeableBuffer> load(size_t offset, size_t size, __ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
+    Result<FreeableBuffer> load(size_t offset, size_t size, ET_UNUSED const DataLoader::SegmentInfo& segment_info) const override {
         NSData *subdata = [data_ subdataWithRange:NSMakeRange(offset, size)];
         return FreeableBuffer(subdata.bytes, size, nullptr);
     }

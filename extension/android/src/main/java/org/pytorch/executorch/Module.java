@@ -12,7 +12,11 @@ import com.facebook.soloader.nativeloader.NativeLoader;
 import com.facebook.soloader.nativeloader.SystemDelegate;
 import java.util.Map;
 
-/** Java wrapper for ExecuTorch Module. */
+/**
+ * Java wrapper for ExecuTorch Module.
+ *
+ * <p>Warning: These APIs are experimental and subject to change without notice
+ */
 public class Module {
 
   /** Load mode for the module. Load the whole file as a buffer. */
@@ -27,8 +31,8 @@ public class Module {
   /** Load mode for the module. Use memory locking and ignore errors. */
   public static final int LOAD_MODE_MMAP_USE_MLOCK_IGNORE_ERRORS = 3;
 
-  /** Reference to the INativePeer object of this module. */
-  private INativePeer mNativePeer;
+  /** Reference to the NativePeer object of this module. */
+  private NativePeer mNativePeer;
 
   /**
    * Loads a serialized ExecuTorch module from the specified path on the disk. Uses default load
@@ -68,14 +72,16 @@ public class Module {
     return load(modelPath, null);
   }
 
-  Module(INativePeer nativePeer) {
+  Module(NativePeer nativePeer) {
     this.mNativePeer = nativePeer;
   }
 
   /**
    * Runs the 'forward' method of this module with the specified arguments.
    *
-   * @param inputs arguments for the ExecuTorch module's 'forward' method.
+   * @param inputs arguments for the ExecuTorch module's 'forward' method. Note: if method 'forward'
+   *     requires inputs but no inputs are given, the function will not error out, but run 'forward'
+   *     with sample inputs.
    * @return return value from the 'forward' method.
    */
   public EValue[] forward(EValue... inputs) {

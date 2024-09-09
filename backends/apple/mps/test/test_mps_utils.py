@@ -12,16 +12,16 @@ import executorch.exir as exir
 import torch
 from executorch.backends.apple.mps import MPSBackend
 from executorch.backends.apple.mps.partition import MPSPartitioner
+from executorch.devtools import BundledProgram
+from executorch.devtools.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.devtools.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
 from executorch.exir import EdgeCompileConfig, ExirExportedProgram, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.extension.export_util.utils import export_to_edge
-from executorch.sdk import BundledProgram
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
-)
 from torch.export import export
 
 # Config for Capturing the weights, will be moved in the future
@@ -229,7 +229,7 @@ class TestMPS(unittest.TestCase):
         compile_specs = [CompileSpec("use_fp16", bytes([use_fp16]))]
 
         if use_partitioner:
-            logging.info(f"Edge IR graph:\n{edge_program.exported_program().graph}")
+            logging.info(f"Edge IR graph:\n{edge_program.exported_program()}")
             delegated_program = edge_program
             delegated_program = edge_program.to_backend(
                 MPSPartitioner(compile_specs=compile_specs)
@@ -239,9 +239,7 @@ class TestMPS(unittest.TestCase):
             )
 
             executorch_program = delegated_program.to_executorch(
-                config=ExecutorchBackendConfig(
-                    extract_delegate_segments=False, extract_constant_segment=False
-                )
+                config=ExecutorchBackendConfig(extract_delegate_segments=False)
             )
         else:
             delegated_program = to_backend(
@@ -258,9 +256,7 @@ class TestMPS(unittest.TestCase):
                     _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
                 ),
             ).to_executorch(
-                config=ExecutorchBackendConfig(
-                    extract_delegate_segments=False, extract_constant_segment=False
-                )
+                config=ExecutorchBackendConfig(extract_delegate_segments=False)
             )
 
         if bundled_program:

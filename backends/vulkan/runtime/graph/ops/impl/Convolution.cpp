@@ -106,7 +106,7 @@ ValueRef prepack_biases(
       graph.create_local_wg_size(v),
       vref,
       v,
-      {t->sizes_ubo()},
+      {t->sizes_ubo(), t->axis_mapping_ubo()},
       // Specialization constants
       {SV(t->packed_dim_whcn_idx())}));
 
@@ -562,6 +562,7 @@ void conv(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.convolution.default, conv);
   VK_REGISTER_OP(conv_with_clamp.default, conv);
+  VK_REGISTER_OP(et_vk.conv_with_clamp.default, conv);
 }
 
 } // namespace vkcompute

@@ -66,9 +66,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
   add_link_options("-s")
 
   # --gc-sections is added by torch.
-  add_compile_options(
-    "-O3" "-ffunction-sections" "-fdata-sections" "-frtti"
-  )
+  add_compile_options("-O3" "-ffunction-sections" "-fdata-sections" "-frtti")
 endif()
 
 include_directories(
@@ -261,11 +259,8 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
 
   if(CMAKE_BUILD_TYPE STREQUAL "Release")
     # need to allow exceptions in pybind
-    set(_pybind_compile_options
-      -Wno-deprecated-declarations
-      -fPIC
-      -frtti
-      -fexceptions
+    set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti
+                                -fexceptions
     )
     target_compile_options(
       PyQnnManagerAdaptor PUBLIC ${_pybind_compile_options}

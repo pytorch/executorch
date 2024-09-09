@@ -126,8 +126,8 @@ Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct b
 
 ```bash
 cd $EXECUTORCH_ROOT
-mkdir cmake-out
-cd cmake-out
+mkdir build-x86
+cd build-x86
 # Note that the below command might change.
 # Please refer to the above build.sh for latest workable commands.
 cmake .. \
@@ -136,6 +136,7 @@ cmake .. \
   -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
   -DEXECUTORCH_BUILD_SDK=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
   -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
   -DPYTHON_EXECUTABLE=python3 \
   -DEXECUTORCH_SEPARATE_FLATCC_HOST_PROJECT=OFF
@@ -158,8 +159,8 @@ Commands to build `qnn_executor_runner` for Android:
 
 ```bash
 cd $EXECUTORCH_ROOT
-mkdir cmake-out-android
-cd cmake-out-android
+mkdir build-android
+cd build-android
 # build executorch & qnn_executorch_backend
 cmake .. \
     -DCMAKE_INSTALL_PREFIX=$PWD \
@@ -167,6 +168,7 @@ cmake .. \
     -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
     -DEXECUTORCH_BUILD_SDK=ON \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
     -DPYTHON_EXECUTABLE=python3 \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
@@ -189,7 +191,7 @@ cmake ../examples/qualcomm \
 cmake --build examples/qualcomm -j$(nproc)
 
 # qnn_executor_runner can be found under examples/qualcomm
-# The full path is $EXECUTORCH_ROOT/cmake-out-android/examples/qualcomm/qnn_executor_runner
+# The full path is $EXECUTORCH_ROOT/build-android/examples/qualcomm/qnn_executor_runner
 ls examples/qualcomm
 ```
 
@@ -209,7 +211,7 @@ cd $EXECUTORCH_ROOT
 cp schema/program.fbs exir/_serialize/program.fbs
 cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
 
-python -m examples.qualcomm.scripts.deeplab_v3 -b cmake-out-android -m SM8550 --compile_only --download
+python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8550 --compile_only --download
 ```
 
 You might see something like below:
@@ -239,7 +241,7 @@ We can test model inferences before deploying it to a device by HTP emulator.
 Let's build `qnn_executor_runner` for a x64 host:
 ```bash
 # assuming the AOT component is built.
-cd $EXECUTORCH_ROOT/cmake-out
+cd $EXECUTORCH_ROOT/build-x86
 cmake ../examples/qualcomm \
   -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
   -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
@@ -249,14 +251,14 @@ cmake ../examples/qualcomm \
 cmake --build examples/qualcomm -j$(nproc)
 
 # qnn_executor_runner can be found under examples/qualcomm
-# The full path is $EXECUTORCH_ROOT/cmake-out/examples/qualcomm/qnn_executor_runner
+# The full path is $EXECUTORCH_ROOT/build-x86/examples/qualcomm/qnn_executor_runner
 ls examples/qualcomm/
 ```
 
 To run the HTP emulator, the dynamic linker need to access QNN libraries and `libqnn_executorch_backend.so`.
 We set the below two paths to `LD_LIBRARY_PATH` environment variable:
   1. `$QNN_SDK_ROOT/lib/x86_64-linux-clang/`
-  2. `$EXECUTORCH_ROOT/cmake-out/lib/`
+  2. `$EXECUTORCH_ROOT/build-x86/lib/`
 
 The first path is for QNN libraries including HTP emulator. It has been configured in the AOT compilation section.
 
@@ -264,8 +266,8 @@ The second path is for `libqnn_executorch_backend.so`.
 
 So, we can run `./deeplab_v3/dlv3_qnn.pte` by:
 ```bash
-cd $EXECUTORCH_ROOT/cmake-out
-export LD_LIBRARY_PATH=$EXECUTORCH_ROOT/cmake-out/lib/:$LD_LIBRARY_PATH
+cd $EXECUTORCH_ROOT/build-x86
+export LD_LIBRARY_PATH=$EXECUTORCH_ROOT/build-x86/lib/:$LD_LIBRARY_PATH
 examples/qualcomm/qnn_executor_runner --model_path ../deeplab_v3/dlv3_qnn.pte
 ```
 
@@ -308,8 +310,8 @@ So, we can run `qnn_executor_runner` like
 
 ```bash
 adb push ./deeplab_v3/dlv3_qnn.pte ${DEVICE_DIR}
-adb push ${EXECUTORCH_ROOT}/cmake-out-android/examples/qualcomm/executor_runner/qnn_executor_runner ${DEVICE_DIR}
-adb push ${EXECUTORCH_ROOT}/cmake-out-android/lib/libqnn_executorch_backend.so ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/build-android/examples/qualcomm/executor_runner/qnn_executor_runner ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/build-android/lib/libqnn_executorch_backend.so ${DEVICE_DIR}
 adb shell "cd ${DEVICE_DIR} \
            && export LD_LIBRARY_PATH=${DEVICE_DIR} \
            && export ADSP_LIBRARY_PATH=${DEVICE_DIR} \
@@ -333,7 +335,7 @@ I 00:00:00.364875 executorch:qnn_executor_runner.cpp:425] Write etdump to etdump
 The model is merely executed. If we want to feed real inputs and get model outputs, we can use
 ```bash
 cd $EXECUTORCH_ROOT
-python -m examples.qualcomm.scripts.deeplab_v3 -b cmake-out-android -m SM8550 --download -s <device_serial>
+python -m examples.qualcomm.scripts.deeplab_v3 -b build-android -m SM8550 --download -s <device_serial>
 ```
 The `<device_serial>` can be found by `adb devices` command.
 

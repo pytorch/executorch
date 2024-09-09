@@ -145,7 +145,7 @@ def get_aten_node_target_partitions(
     """
     Args:
         graph: The graph we want to partition
-        wanted_sources: List of orginal_aten ops (OpOverload)
+        wanted_original_aten_op: List of original_aten ops (OpOverload)
 
     Returns:
         Dictionary mapping aten ops that were given to a list of SourcePartitions

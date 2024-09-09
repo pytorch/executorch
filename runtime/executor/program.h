@@ -27,8 +27,8 @@ namespace executorch_flatbuffer {
 struct Program;
 } // namespace executorch_flatbuffer
 
-namespace torch {
-namespace executor {
+namespace executorch {
+namespace runtime {
 
 namespace testing {
 // Provides test access to private Program methods.
@@ -78,12 +78,12 @@ class Program final {
    * @param[in] verification The type of verification to do before returning
    *     success.
    */
-  __ET_NODISCARD static Result<Program> load(
+  ET_NODISCARD static Result<Program> load(
       DataLoader* loader,
       Verification verification = Verification::Minimal);
 
   /// DEPRECATED: Use the lowercase `load()` instead.
-  __ET_DEPRECATED __ET_NODISCARD static Result<Program> Load(
+  ET_DEPRECATED ET_NODISCARD static Result<Program> Load(
       DataLoader* loader,
       Verification verification = Verification::Minimal) {
     return load(loader, verification);
@@ -148,7 +148,7 @@ class Program final {
    *
    * @return The pytree encoding string for the output
    */
-  __ET_DEPRECATED Result<const char*> get_output_flattening_encoding(
+  ET_DEPRECATED Result<const char*> get_output_flattening_encoding(
       const char* method_name = "forward") const;
 
   /**
@@ -226,7 +226,7 @@ class Program final {
    *     DataLoader: The Program.segment table is inconsistent, or the
    *     data cannot be accessed.
    */
-  __ET_NODISCARD Result<FreeableBuffer> LoadSegment(
+  ET_NODISCARD Result<FreeableBuffer> LoadSegment(
       const DataLoader::SegmentInfo& segment_info) const;
 
   /**
@@ -247,7 +247,7 @@ class Program final {
    *     DataLoader: The Program.segment table is inconsistent, or the
    *     data cannot be accessed.
    */
-  __ET_NODISCARD Error load_mutable_subsegment_into(
+  ET_NODISCARD Error load_mutable_subsegment_into(
       size_t mutable_data_segments_index,
       size_t offset_index,
       size_t size,
@@ -290,5 +290,13 @@ class Program final {
   FreeableBuffer constant_segment_data_;
 };
 
+} // namespace runtime
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using ::executorch::runtime::Program;
 } // namespace executor
 } // namespace torch

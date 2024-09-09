@@ -39,6 +39,22 @@ from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class SimpleADB:
+    """
+    A wrapper class for communicating with Android device
+
+    Attributes:
+        qnn_sdk (str): QNN SDK path setup in environment variable
+        build_path (str): Path where artifacts were built
+        pte_path (str): Path where executorch binary was stored
+        workspace (str): Folder for storing artifacts on android device
+        device_id (str): Serial number of android device
+        soc_model (str): Chipset of device
+        host_id (str): Hostname of machine where device connects
+        error_only (bool): Redirect stdio and leave error messages only
+        shared_buffer (bool): Apply zero-copy mechanism in runtime
+        runner (str): Runtime executor binary
+    """
+
     def __init__(
         self,
         qnn_sdk,
@@ -62,13 +78,13 @@ class SimpleADB:
         self.input_list_filename = "input_list.txt"
         self.etdump_path = f"{self.workspace}/etdump.etdp"
         self.output_folder = f"{self.workspace}/outputs"
-        arch_table = {
+        self.arch_table = {
             "SM8650": "75",
             "SM8550": "73",
             "SM8475": "69",
             "SM8450": "69",
         }
-        self.soc_model = arch_table[soc_model]
+        self.soc_model = self.arch_table[soc_model]
         self.error_only = error_only
         self.shared_buffer = shared_buffer
         self.runner = runner
@@ -238,7 +254,6 @@ def build_executorch_binary(
     )
 
     executorch_config = ExecutorchBackendConfig(
-        extract_constant_segment=False,
         # For shared buffer, user must pass the memory address
         # which is allocated by RPC memory to executor runner.
         # Therefore, won't want to pre-allocate
@@ -337,7 +352,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-b",
         "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/cmake-out-android",
+        help="path to cmake binary directory for android, e.g., /path/to/build-android",
         type=str,
         required=True,
     )
@@ -400,6 +415,13 @@ def setup_common_args_and_variables():
         "--shared_buffer",
         help="Enables usage of shared buffer between application and backend for graph I/O.",
         action="store_true",
+    )
+
+    parser.add_argument(
+        "--skip_push",
+        help="If specified, skip pushing files to device.",
+        action="store_true",
+        default=False,
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.

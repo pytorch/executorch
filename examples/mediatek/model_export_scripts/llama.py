@@ -369,7 +369,6 @@ def export_to_et_ir(
                     alloc_graph_input=False,
                     alloc_graph_output=False,
                 ),
-                extract_constant_segment=True,
                 extract_delegate_segments=True,
             )
         )

@@ -14,6 +14,7 @@
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -23,34 +24,33 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <executorch/test/utils/alignment.h>
-#include <executorch/util/util.h>
 
 #include <gtest/gtest.h>
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
-using torch::executor::BackendExecutionContext;
-using torch::executor::BackendInitContext;
-using torch::executor::CompileSpec;
-using torch::executor::DataLoader;
-using torch::executor::DelegateHandle;
-using torch::executor::Error;
-using torch::executor::EValue;
-using torch::executor::FreeableBuffer;
-using torch::executor::MemoryAllocator;
-using torch::executor::Method;
-using torch::executor::Program;
-using torch::executor::PyTorchBackendInterface;
-using torch::executor::Result;
-using torch::executor::testing::ManagedMemoryManager;
+using executorch::runtime::BackendExecutionContext;
+using executorch::runtime::BackendInitContext;
+using executorch::runtime::BackendInterface;
+using executorch::runtime::CompileSpec;
+using executorch::runtime::DataLoader;
+using executorch::runtime::DelegateHandle;
+using executorch::runtime::Error;
+using executorch::runtime::EValue;
+using executorch::runtime::FreeableBuffer;
+using executorch::runtime::MemoryAllocator;
+using executorch::runtime::Method;
+using executorch::runtime::Program;
+using executorch::runtime::Result;
+using executorch::runtime::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
 /**
  * A backend class whose methods can be overridden individually.
  */
-class StubBackend final : public PyTorchBackendInterface {
+class StubBackend final : public BackendInterface {
  public:
-  // Function signature types that match the PyTorchBackendInterface methods.
+  // Function signature types that match the BackendInterface methods.
   using IsAvailableFn = std::function<bool()>;
   using InitFn = std::function<Result<DelegateHandle*>(
       FreeableBuffer*,
@@ -95,7 +95,7 @@ class StubBackend final : public PyTorchBackendInterface {
   }
 
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      ET_UNUSED BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     if (execute_fn_) {
@@ -135,7 +135,7 @@ class StubBackend final : public PyTorchBackendInterface {
   static Error register_singleton(const char* name = kName) {
     if (!registered_) {
       registered_ = true;
-      return torch::executor::register_backend({name, &singleton_});
+      return executorch::runtime::register_backend({name, &singleton_});
     }
     return Error::Ok;
   }
@@ -281,7 +281,7 @@ class BackendIntegrationTest : public ::testing::TestWithParam<bool> {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Make sure that the backend has been registered. Safe to call multiple
     // times. Doing this at runtime ensures that it's only registered if these
@@ -325,8 +325,8 @@ class BackendIntegrationTest : public ::testing::TestWithParam<bool> {
 };
 
 TEST_P(BackendIntegrationTest, BackendIsPresent) {
-  PyTorchBackendInterface* backend =
-      torch::executor::get_backend_class(StubBackend::kName);
+  BackendInterface* backend =
+      executorch::runtime::get_backend_class(StubBackend::kName);
   ASSERT_EQ(backend, &StubBackend::singleton());
 }
 
@@ -350,8 +350,8 @@ TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
   const void* processed_data = nullptr;
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
-          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED MemoryAllocator* runtime_allocator)
           -> Result<DelegateHandle*> {
         init_called = true;
         processed_data = processed->data();
@@ -394,8 +394,8 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   FreeableBuffer* init_processed = nullptr;
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
-          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED MemoryAllocator* runtime_allocator)
           -> Result<DelegateHandle*> {
         init_processed = processed;
         return processed;
@@ -405,7 +405,7 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   // FreeableBuffer.
   DelegateHandle* execute_handle = nullptr;
   StubBackend::singleton().install_execute(
-      [&](DelegateHandle* handle, __ET_UNUSED EValue** args) -> Error {
+      [&](DelegateHandle* handle, ET_UNUSED EValue** args) -> Error {
         execute_handle = handle;
         auto* processed = reinterpret_cast<FreeableBuffer*>(handle);
 
@@ -454,10 +454,9 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
     EXPECT_FALSE(spy_loader.WasFreed(init_processed->data()));
     auto method(std::move(method_res.get()));
     // Execute the model.
-    exec_aten::ArrayRef<void*> inputs =
-        torch::executor::util::PrepareInputTensors(method);
+    auto input_cleanup = executorch::extension::prepare_input_tensors(method);
+    ASSERT_EQ(input_cleanup.error(), Error::Ok);
     auto err = method.execute();
-    torch::executor::util::FreeInputs(inputs);
     EXPECT_EQ(err, Error::Ok);
 
     // Check that the processed buffer was passed to execute() as the handle.
@@ -492,8 +491,8 @@ TEST_P(BackendIntegrationTest, SegmentInfoIsPassedIntoDataLoader) {
   const void* processed_data = nullptr;
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
-          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED MemoryAllocator* runtime_allocator)
           -> Result<DelegateHandle*> {
         processed_data = processed->data();
         processed->Free();
@@ -548,7 +547,7 @@ class DelegateDataAlignmentTest : public ::testing::TestWithParam<bool> {
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
     // first.
-    torch::executor::runtime_init();
+    executorch::runtime::runtime_init();
 
     // Make sure that the backend has been registered. Safe to call multiple
     // times. Doing this at runtime ensures that it's only registered if these
@@ -606,8 +605,8 @@ TEST_P(DelegateDataAlignmentTest, ExpectedDataAlignment) {
   const void* processed_data = nullptr;
   StubBackend::singleton().install_init(
       [&](FreeableBuffer* processed,
-          __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-          __ET_UNUSED MemoryAllocator* runtime_allocator)
+          ET_UNUSED ArrayRef<CompileSpec> compile_specs,
+          ET_UNUSED MemoryAllocator* runtime_allocator)
           -> Result<DelegateHandle*> {
         processed_data = processed->data();
         return nullptr;

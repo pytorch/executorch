@@ -20,8 +20,8 @@
 #include <vector>
 
 #ifdef ET_USE_THREADPOOL
-#include <executorch/backends/xnnpack/threadpool/threadpool.h>
 #include <executorch/extension/parallel/thread_parallel.h>
+#include <executorch/extension/threadpool/threadpool.h>
 #endif
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
@@ -158,7 +158,7 @@ static inline scalar_t* conditional_data_ptr(scalar_t* ptr, scalar_t* ptr2) {
 template <
     typename scalar_t,
     typename std::enable_if_t<
-        torch::executor::is_reduced_floating_point<scalar_t>::value,
+        ::executorch::runtime::is_reduced_floating_point<scalar_t>::value,
         int> = 0>
 static inline scalar_t* conditional_data_ptr(float* ptr, scalar_t* ptr2) {
   (void)ptr;
@@ -247,7 +247,7 @@ void cpu_flash_attention(
       "KV_split_size must be greater than q_split_size");
 
   constexpr bool is_reduced_type =
-      torch::executor::is_reduced_floating_point<scalar_t>::value;
+      ::executorch::runtime::is_reduced_floating_point<scalar_t>::value;
 
   ET_CHECK_MSG(
       !is_reduced_type, "FlashAttention does not support reduced types.");

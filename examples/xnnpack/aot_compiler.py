@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 # Example script for exporting simple models to flatbuffer
 
 import argparse
@@ -12,9 +14,9 @@ import logging
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.devtools import generate_etrecord
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.extension.export_util.utils import export_to_edge, save_pte_program
-from executorch.sdk import generate_etrecord
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
@@ -103,9 +105,7 @@ if __name__ == "__main__":
     logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch(
-        config=ExecutorchBackendConfig(
-            extract_delegate_segments=False, extract_constant_segment=False
-        )
+        config=ExecutorchBackendConfig(extract_delegate_segments=False)
     )
 
     if args.etrecord is not None:

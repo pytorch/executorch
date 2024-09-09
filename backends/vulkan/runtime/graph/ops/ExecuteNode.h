@@ -48,7 +48,7 @@ class ExecuteNode final {
       const std::vector<ArgGroup>&,
       const std::vector<ValueRef>&)>;
 
-  ExecuteNode(
+  explicit ExecuteNode(
       ComputeGraph& graph,
       const vkapi::ShaderInfo& shader,
       const utils::uvec3& global_workgroup_size,
@@ -56,6 +56,15 @@ class ExecuteNode final {
       const std::vector<ArgGroup>& args,
       const vkapi::ParamsBindList& params,
       const vkapi::SpecVarList& spec_vars = {},
+      const ResizeFunction& resize_fn = nullptr,
+      const std::vector<ValueRef>& resize_args = {});
+
+  /*
+   * This overload of the ExecuteNode constructor is used to register ops which
+   * update a tensor view. No shader is dispatched, but the node still needs to
+   * update the view's sizes and strides after a resize.
+   */
+  explicit ExecuteNode(
       const ResizeFunction& resize_fn = nullptr,
       const std::vector<ValueRef>& resize_args = {});
 
@@ -83,6 +92,11 @@ class ExecuteNode final {
   const vkapi::SpecVarList spec_vars_;
   const ResizeFunction resize_fn_;
   const std::vector<ValueRef> resize_args_;
+
+ public:
+  operator bool() const {
+    return shader_;
+  }
 };
 
 } // namespace vkcompute

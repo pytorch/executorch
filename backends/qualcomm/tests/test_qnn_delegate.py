@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import io
 import json
 import subprocess
 import sys
@@ -1667,6 +1668,46 @@ class TestExampleOssScript(TestQNN):
                 self.assertGreaterEqual(msg["top_1"], 60)
                 self.assertGreaterEqual(msg["top_5"], 90)
 
+    def test_regnet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        weights = ["regnet_y_400mf", "regnet_x_400mf"]
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/regnet.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        for weight in weights:
+            p = subprocess.Popen(
+                cmds + ["--weights", weight], stdout=subprocess.DEVNULL
+            )
+            with Listener((self.ip, self.port)) as listener:
+                conn = listener.accept()
+                p.communicate()
+                msg = json.loads(conn.recv())
+                if "Error" in msg:
+                    self.fail(msg["Error"])
+                else:
+                    self.assertGreaterEqual(msg["top_1"], 60)
+                    self.assertGreaterEqual(msg["top_5"], 85)
+
     def test_ssd300_vgg16(self):
         if not self.required_envs([self.pretrained_weight, self.oss_repo]):
             self.skipTest("missing required envs")
@@ -1825,6 +1866,96 @@ class TestExampleQaihubScript(TestQNN):
             ]
         )
 
+    def test_utils_export(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            module = ContextBinaryExample()  # noqa: F405
+            generate_context_binary(
+                module=module,
+                inputs=module.example_inputs(),
+                quantized=True,
+                artifact_dir=tmp_dir,
+            )
+            ctx_path = f"{tmp_dir}/model_ctx.bin"
+            fpath = f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/utils/export.py"
+
+            # do compilation
+            compile_cmds = [
+                "python",
+                fpath,
+                "compile",
+                "-a",
+                ctx_path,
+                "-m",
+                self.model,
+                "-l",
+                "False",
+                "-b",
+                self.build_folder,
+                "-o",
+                f"{tmp_dir}/output_pte",
+            ]
+            compile_process = subprocess.Popen(
+                compile_cmds, stdout=subprocess.DEVNULL, cwd=self.executorch_root
+            )
+            output_pte_dir = f"{tmp_dir}/output_pte/model_ctx"
+            compile_process.communicate()
+
+            # check artifacts are correctly generated
+            self.assertTrue(
+                all(
+                    [
+                        Path(output_pte_dir).exists(),
+                        Path(f"{output_pte_dir}/model_ctx.json").exists(),
+                        Path(f"{output_pte_dir}/model_ctx.svg").exists(),
+                    ]
+                )
+            )
+
+            # prepare input files
+            input_list, inputs = [], module.example_inputs()
+            for name, tensor in inputs.items():
+                tensor_path = f"{output_pte_dir}/{name}.pt"
+                torch.save(tensor, tensor_path)
+                input_list.append(tensor_path)
+
+            # do execution
+            output_data_dir = f"{tmp_dir}/output_data"
+            execute_cmds = [
+                "python",
+                fpath,
+                "execute",
+                "-p",
+                output_pte_dir,
+                "-i",
+                *input_list,
+                "-s",
+                self.device,
+                "-z",
+                "-b",
+                self.build_folder,
+                "-o",
+                output_data_dir,
+            ]
+            if self.host is not None:
+                execute_cmds.append(f"-H {self.host}")
+            execute_process = subprocess.Popen(execute_cmds, cwd=self.executorch_root)
+            execute_process.communicate()
+
+            # read outputs
+            with open(f"{output_pte_dir}/model_ctx.json", "r") as f:
+                graph_info = json.load(f)
+
+            device_output = []
+            for output in graph_info["outputs"]:
+                with open(f"{output_data_dir}/{output['name']}.pt", "rb") as f:
+                    buffer = io.BytesIO(f.read())
+                    device_output.append(torch.load(buffer, weights_only=False))
+
+            # validate outputs
+            golden_output = module.forward(inputs["x"], inputs["y"])
+            self.atol, self.rtol = 1e-1, 1
+            self._assert_outputs_equal(golden_output, device_output)
+
     def test_llama2_7b(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
@@ -1832,7 +1963,7 @@ class TestExampleQaihubScript(TestQNN):
         prompt = "Explain the rules of baseball"
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/llama2/qaihub_llama2_7b.py",
+            f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/llama/llama2/qaihub_llama2_7b.py",
             "--artifact",
             self.artifact_dir,
             "--build_folder",
@@ -1865,6 +1996,101 @@ class TestExampleQaihubScript(TestQNN):
             else:
                 model_out = msg["result"]
                 self.assertTrue(model_out.startswith(prompt))
+
+    def test_llama3_8b(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "Explain the rules of baseball"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/llama/llama3/qaihub_llama3_8b.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--tokenizer_model",
+            f"{self.artifact_dir}/tokenizer.model",
+            "--context_binaries",
+            f"{self.artifact_dir}",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                model_out = msg["result"]
+                expected_result = (
+                    "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
+                    + prompt
+                    + "<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+                )
+                self.assertTrue(model_out.startswith(expected_result))
+
+    def test_stable_diffusion(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        prompt = "a photo of an astronaut riding a horse on mars"
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/qaihub_scripts/stable_diffusion/qaihub_stable_diffusion.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--text_encoder_bin",
+            f"{self.artifact_dir}/text_encoder.serialized.bin",
+            "--unet_bin",
+            f"{self.artifact_dir}/unet.serialized.bin",
+            "--vae_bin",
+            f"{self.artifact_dir}/vae.serialized.bin",
+            "--vocab_json",
+            f"{self.artifact_dir}/vocab.json",
+            "--num_time_steps",
+            "20",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--prompt",
+            f"{prompt}",
+            "--fix_latents",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            if "Error" in msg:
+                self.fail(msg["Error"])
+            else:
+                # For the default settings and prompt, the expected results will be {PSNR: 23.258, SSIM: 0.852}
+                self.assertGreaterEqual(msg["PSNR"], 20)
+                self.assertGreaterEqual(msg["SSIM"], 0.8)
 
 
 class TestExampleScript(TestQNN):

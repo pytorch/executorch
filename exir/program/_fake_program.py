@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-strict
+
 import copy
 from typing import Dict, Union
 
@@ -61,4 +63,5 @@ def update_to_real_program(
     """Update the fake exported program to point to the real state dict. Modifies the
     fake exported program in-place.
     """
-    fake_exported_program._state_dict = real_exported_program.state_dict
+    for k, v in real_exported_program.state_dict.items():
+        fake_exported_program._state_dict[k] = v

@@ -29,7 +29,9 @@ Allocation::Allocation()
     : memory_requirements{},
       create_info{},
       allocator(VK_NULL_HANDLE),
-      allocation(VK_NULL_HANDLE) {}
+      allocation(VK_NULL_HANDLE),
+      allocation_info({}),
+      is_copy_(false) {}
 
 Allocation::Allocation(
     VmaAllocator vma_allocator,
@@ -38,17 +40,30 @@ Allocation::Allocation(
     : memory_requirements(mem_props),
       create_info(create_info),
       allocator(vma_allocator),
-      allocation(VK_NULL_HANDLE) {
+      allocation(VK_NULL_HANDLE),
+      allocation_info({}),
+      is_copy_(false) {
   VK_CHECK(vmaAllocateMemory(
       allocator, &memory_requirements, &create_info, &allocation, nullptr));
 }
+
+Allocation::Allocation(const Allocation& other) noexcept
+    : memory_requirements(other.memory_requirements),
+      create_info(other.create_info),
+      allocator(other.allocator),
+      allocation(other.allocation),
+      allocation_info(other.allocation_info),
+      is_copy_(true) {}
 
 Allocation::Allocation(Allocation&& other) noexcept
     : memory_requirements(other.memory_requirements),
       create_info(other.create_info),
       allocator(other.allocator),
-      allocation(other.allocation) {
+      allocation(other.allocation),
+      allocation_info(other.allocation_info),
+      is_copy_(other.is_copy_) {
   other.allocation = VK_NULL_HANDLE;
+  other.allocation_info = {};
 }
 
 Allocation& Allocation::operator=(Allocation&& other) noexcept {
@@ -58,14 +73,20 @@ Allocation& Allocation::operator=(Allocation&& other) noexcept {
   create_info = other.create_info;
   allocator = other.allocator;
   allocation = other.allocation;
+  allocation_info = other.allocation_info;
+  is_copy_ = other.is_copy_;
 
   other.allocation = tmp_allocation;
+  other.allocation_info = {};
 
   return *this;
 }
 
 Allocation::~Allocation() {
-  if (VK_NULL_HANDLE != allocation) {
+  // Do not destroy the VmaAllocation if this class instance is a copy of some
+  // other class instance, since this means that this class instance does not
+  // have ownership of the underlying resource.
+  if (VK_NULL_HANDLE != allocation && !is_copy_) {
     vmaFreeMemory(allocator, allocation);
   }
 }

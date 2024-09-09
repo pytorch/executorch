@@ -413,6 +413,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_convolution_backward",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
@@ -557,6 +563,12 @@ ATEN_OPS = (
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":scalar_utils",
+        ],
+    ),
+    op_target(
+        name = "op_gather",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:index_util",
         ],
     ),
     op_target(
@@ -797,6 +809,12 @@ ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_narrow_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:slice_util",
+        ],
+    ),
+    op_target(
         name = "op_native_batch_norm",
         deps = [
             "//executorch/kernels/portable/cpu/util:normalization_ops_util",
@@ -835,7 +853,6 @@ ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:index_util",
-            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
     ),
     op_target(
@@ -858,6 +875,12 @@ ATEN_OPS = (
     ),
     op_target(
         name = "op_pixel_shuffle",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op_pixel_unshuffle",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
@@ -969,10 +992,16 @@ ATEN_OPS = (
         deps = [":scalar_utils"],
     ),
     op_target(
+        name = "op_scatter",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:index_util",
+        ],
+    ),
+    op_target(
         name = "op_scatter_add",
         deps = [
             "//executorch/kernels/portable/cpu/util:index_util",
-            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
@@ -987,10 +1016,9 @@ ATEN_OPS = (
     op_target(
         name = "op_select_scatter",
         deps = [
-            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/kernels/portable/cpu/util:index_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
-            "//executorch/kernels/portable/cpu/util:index_util",
         ],
     ),
     op_target(
@@ -1020,15 +1048,13 @@ ATEN_OPS = (
     op_target(
         name = "op_slice_copy",
         deps = [
-            "//executorch/kernels/portable/cpu/util:copy_ops_util",
-            "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:slice_util",
         ],
     ),
     op_target(
         name = "op_slice_scatter",
         deps = [
-            "//executorch/kernels/portable/cpu/util:index_util",
-            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+            "//executorch/kernels/portable/cpu/util:slice_util",
         ],
     ),
     op_target(
@@ -1109,6 +1135,9 @@ ATEN_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
+    ),
+    op_target(
+        name = "op_topk",
     ),
     op_target(
         name = "op_transpose_copy",

@@ -429,6 +429,7 @@ table Program {
   // Each constant is assigned an index into the table which are each individually aligned.
   // 0 index is reserved to be pointed to by non-constant Tensors.
   // If this field is non-empty, constant_segment.offsets must be empty.
+  // DEPRECATED: After D61996249 on 2024-09-05, no new PTE files will use this field.
   constant_buffer:[Buffer];
 
   // List of delegate data. Pointed to by BackendDelegateDataReference.

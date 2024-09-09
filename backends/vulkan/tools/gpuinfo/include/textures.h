@@ -61,7 +61,7 @@ void tex_cacheline_concurr(const App& app) {
       vTensor in_tensor =
           api::vTensor(api::context(), sizes_nchw, vkapi::kFloat);
 
-      StorageBuffer out_buf(context(), vkapi::kFloat, TEXEL_WIDTH);
+      StagingBuffer out_buf(context(), vkapi::kFloat, TEXEL_WIDTH);
 
       vkapi::PipelineBarrier pipeline_barrier{};
 
@@ -173,7 +173,7 @@ void tex_bandwidth(const App& app) {
       // workgroups, once the size of the access excedes the workgroup width.
       const uint32_t workgroup_width = local_x * NITER * NUNROLL;
 
-      StorageBuffer out_buf(
+      StagingBuffer out_buf(
           context(), vkapi::kFloat, VEC_WIDTH * app.nthread_logic);
       vkapi::PipelineBarrier pipeline_barrier{};
 

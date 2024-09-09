@@ -26,7 +26,7 @@ def define_common_targets():
                 ":stats",
                 "//executorch/extension/llm/sampler:sampler" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
-                "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
+                "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
         )
 
@@ -41,7 +41,7 @@ def define_common_targets():
                 ":text_decoder_runner" + aten_suffix,
                 "//executorch/extension/llm/tokenizer:tokenizer_header",
                 "//executorch/extension/module:module" + aten_suffix,
-                "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
+                "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
         )
 
@@ -55,13 +55,13 @@ def define_common_targets():
                 ":text_decoder_runner" + aten_suffix,
                 "//executorch/extension/llm/tokenizer:tokenizer_header",
                 "//executorch/extension/module:module" + aten_suffix,
-                "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
+                "//executorch/extension/tensor:tensor" + aten_suffix,
             ],
         )
 
         runtime.cxx_library(
-            name = "metadata_util" + aten_suffix,
-            exported_headers = ["metadata_util.h"],
+            name = "image_prefiller" + aten_suffix,
+            exported_headers = ["image_prefiller.h", "image.h"],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
@@ -73,14 +73,13 @@ def define_common_targets():
         runtime.cxx_library(
             name = "runner_lib" + aten_suffix,
             exported_headers = [
-                "image_prefiller.h",
-                "image.h",
                 "multimodal_runner.h",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
+                ":image_prefiller" + aten_suffix,
                 ":text_decoder_runner" + aten_suffix,
                 ":text_prefiller" + aten_suffix,
                 ":text_token_generator" + aten_suffix,

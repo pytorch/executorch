@@ -44,16 +44,7 @@ class QnnOperatorSupport(OperatorSupportBase):
     ):
         self.node_visitors = node_visitor.get_node_visitors(edge_program)
 
-        self.skip_node_op_builder_set = set()
-        if skip_node_op_set is not None:
-            self.skip_node_op_builder_set = set(
-                [
-                    self.node_visitors[val]
-                    for val in skip_node_op_set
-                    if val in self.node_visitors
-                ]
-            )
-
+        self.skip_node_op_set = skip_node_op_set
         self.skip_node_id_set = skip_node_id_set
         self.nodes_to_wrappers = defaultdict(dict)
         self.qnn_manager = PyQnnManager.QnnManager(
@@ -75,14 +66,9 @@ class QnnOperatorSupport(OperatorSupportBase):
         if node.target in allow_list_operator:
             return True
 
-        if self.skip_node_id_set is not None and node.name in self.skip_node_id_set:
-            print(f"[QNN Partitioner Op Support]: {node.target.__name__} | Skipped")
-            return False
-
         if (
-            self.skip_node_op_builder_set is not None
-            and self.node_visitors[node.target.__name__]
-            in self.skip_node_op_builder_set
+            node.name in self.skip_node_id_set
+            or node.target.__name__ in self.skip_node_op_set
         ):
             print(f"[QNN Partitioner Op Support]: {node.target.__name__} | Skipped")
             return False
@@ -124,8 +110,8 @@ class QnnPartitioner(Partitioner):
             QnnBackend.__name__, self.compiler_specs_snapshot
         )
         self.partition_tags: Dict[str, DelegationSpec] = {}
-        self.skip_node_id_set = skip_node_id_set
-        self.skip_node_op_set = skip_node_op_set
+        self.skip_node_id_set = set() if skip_node_id_set is None else skip_node_id_set
+        self.skip_node_op_set = set() if skip_node_op_set is None else skip_node_op_set
 
     def generate_partitions(
         self, edge_program: torch.export.ExportedProgram
@@ -141,18 +127,35 @@ class QnnPartitioner(Partitioner):
             op_support=self.op_support_checker,
         )
 
-    def tag_nodes(self, partitions: List[Partition]) -> None:
+    def tag_nodes(
+        self, partitions: List[Partition], edge_program: torch.export.ExportedProgram
+    ) -> None:
         for partition in partitions:
             for node in partition.nodes:
                 delegation_tag = f"qnn_{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
                 self.partition_tags[delegation_tag] = self.delegation_spec
 
+        # need to take care of consumed constants
+        consumed_constants = (
+            *edge_program.graph_signature.inputs_to_buffers,
+            *edge_program.graph_signature.inputs_to_parameters,
+        )
+        for node in edge_program.graph_module.graph.nodes:
+            # find placeholders as lifted_constants
+            if node.op != "placeholder" or len(node.users) != 0:
+                continue
+
+            if node.name in consumed_constants:
+                # does no harm to merge them into last partition,
+                # since they will all be removed in following stage
+                node.meta["delegation_tag"] = delegation_tag
+
     # override
     def partition(self, edge_program: torch.export.ExportedProgram) -> PartitionResult:
         partitions = self.generate_partitions(edge_program)
         if len(partitions) != 0:
-            self.tag_nodes(partitions)
+            self.tag_nodes(partitions, edge_program)
             tag_constant_data(edge_program)
         for node in edge_program.graph_module.graph.nodes:
             if hasattr(node, "meta"):
