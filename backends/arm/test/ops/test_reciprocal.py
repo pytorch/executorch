@@ -110,9 +110,7 @@ class TestReciprocal(unittest.TestCase):
         test_data = (input_,)
         self._test_reciprocal_tosa_BI_pipeline(self.Reciprocal(), test_data)
 
-    # Expected to fail since Vela does not support TABLE
     @parameterized.expand(test_data_suite)
-    @unittest.expectedFailure
     def test_reciprocal_u55_BI(self, test_name: str, input_: torch.Tensor):
         test_data = (input_,)
         self._test_reciprocal_u55_BI_pipeline(self.Reciprocal(), test_data)

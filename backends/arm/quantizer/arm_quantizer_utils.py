@@ -12,12 +12,11 @@
 #
 
 import operator
-from typing import Callable, cast, List, Union
+from typing import Callable, cast, List
 
 import torch
 from executorch.backends.arm.quantizer.quantization_config import QuantizationConfig
 from torch._subclasses import FakeTensor
-from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
 
 from torch.ao.quantization.quantizer import (
     QuantizationAnnotation,
@@ -199,42 +198,3 @@ def propagate_annotation(model: GraphModule) -> None:
             output_qspec=shared_qspec,
             _annotated=True,
         )
-
-
-def convert_scalars_to_attrs(model: GraphModule) -> GraphModule:
-    """For ops in 'targeted_ops', convert inputs that are scalar values
-    to attribute Nodes that output the same value.
-    #TODO Seems like this should be a pass.
-    """
-    targeted_ops = [
-        torch.ops.aten.add.Tensor,
-        torch.ops.aten.sub.Tensor,
-        torch.ops.aten.mul.Tensor,
-    ]
-    for n in model.graph.nodes:
-        n = cast(Node, n)
-        if n.op != "call_function" or n.target not in targeted_ops:
-            continue
-        args = list(n.args)
-        new_args = []
-        for i in range(len(args)):
-            if isinstance(args[i], Node):
-                new_args.append(args[i])
-                continue
-            prefix = "_tensor_constant_"
-            get_new_attr_name = get_new_attr_name_with_prefix(prefix)
-            tensor_constant_name = get_new_attr_name(model)
-            float_tensor = torch.tensor(float(cast(Union[int, float], args[i])))
-            model.register_buffer(tensor_constant_name, float_tensor)
-            fake_mode = n.meta["val"].fake_mode
-            with model.graph.inserting_before(n):
-                get_attr_node = model.graph.create_node(
-                    "get_attr", tensor_constant_name, (), {}
-                )
-                get_attr_node.meta["val"] = fake_mode.from_tensor(
-                    float_tensor, static_shapes=True
-                )
-                new_args.append(get_attr_node)
-        n.args = tuple(new_args)
-    model.recompile()
-    return model

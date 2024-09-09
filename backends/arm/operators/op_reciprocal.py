@@ -71,7 +71,6 @@ def div_table_8bit(in_quantargs: QuantArgs, out_quantargs: QuantArgs):
         # Convert div output back to quantized space.
         v3 = quantize_value(v2, out_quantargs)
 
-        # print(f"{v1} -> {v2} -> {v3}")
         return v3
 
     return [
