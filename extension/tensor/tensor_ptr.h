@@ -172,6 +172,27 @@ TensorPtr make_tensor_ptr(
 /**
  * Creates a TensorPtr that manages a Tensor with the specified properties.
  *
+ * This template overload is specialized for cases where the tensor data is
+ * provided as a vector. The scalar type is automatically deduced from the
+ * vector's data type. The deleter ensures that the data vector is properly
+ * managed and its lifetime is tied to the TensorImpl.
+ *
+ * @tparam T The C++ type of the tensor elements, deduced from the vector.
+ * @param data A vector containing the tensor's data.
+ * @param dynamism Specifies the mutability of the tensor's shape.
+ * @return A TensorPtr that manages the newly created TensorImpl.
+ */
+template <typename T = float>
+TensorPtr make_tensor_ptr(
+    std::vector<T> data,
+    exec_aten::TensorShapeDynamism dynamism =
+        exec_aten::TensorShapeDynamism::STATIC) {
+  return make_tensor_ptr(make_tensor_impl_ptr(std::move(data), dynamism));
+}
+
+/**
+ * Creates a TensorPtr that manages a Tensor with the specified properties.
+ *
  * This overload accepts a raw memory buffer stored in a std::vector<uint8_t>
  * and a scalar type to interpret the data. The vector is managed, and the
  * memory's lifetime is tied to the TensorImpl.
