@@ -852,7 +852,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "LLaMA/SupportingFiles/LLaMA-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = iLLaMA;
+				INFOPLIST_KEY_CFBundleDisplayName = Llama-Llava;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -914,7 +914,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "LLaMA/SupportingFiles/LLaMA-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = iLLaMA;
+				INFOPLIST_KEY_CFBundleDisplayName = Llama-Llava;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
