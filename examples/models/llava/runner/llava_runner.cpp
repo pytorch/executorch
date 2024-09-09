@@ -99,9 +99,12 @@ Error LlavaRunner::generate_from_pos(
     int64_t start_pos,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const ::executorch::extension::llm::Stats&)>
-        stats_callback) {
+        stats_callback,
+    bool echo) {
   // prefill user prompt. No BOS because preset prompt already has it.
-  token_callback(prompt);
+  if (echo) {
+    token_callback(prompt);
+  }
 
   uint64_t prefill_next_token =
       ET_UNWRAP(prefill_prompt(prompt, start_pos, /*bos=*/0, /*eos*/ 0));
@@ -125,7 +128,8 @@ Error LlavaRunner::generate(
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
+    std::function<void(const Stats&)> stats_callback,
+    bool echo) {
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
   if (!is_loaded()) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
@@ -160,8 +164,8 @@ Error LlavaRunner::generate(
       util::get_rss_bytes() / 1024.0 / 1024.0);
 
   // Generate tokens
-  Error err =
-      generate_from_pos(prompt, seq_len, pos, wrapped_callback, stats_callback);
+  Error err = generate_from_pos(
+      prompt, seq_len, pos, wrapped_callback, stats_callback, echo);
 
   ET_LOG(
       Info,

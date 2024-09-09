@@ -170,7 +170,8 @@ class ExecuTorchLlamaJni
           prompt->toStdString(),
           seq_len,
           [callback](std::string result) { callback->onResult(result); },
-          [callback](const Stats& result) { callback->onStats(result); });
+          [callback](const Stats& result) { callback->onStats(result); },
+          echo);
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       runner_->generate(
           prompt->toStdString(),
@@ -248,6 +249,7 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       jlong start_pos,
+      jboolean echo,
       facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
       return static_cast<jint>(Error::NotSupported);
@@ -259,7 +261,8 @@ class ExecuTorchLlamaJni
         [callback](const std::string& result) { callback->onResult(result); },
         [callback](const ::executorch::extension::llm::Stats& stats) {
           callback->onStats(stats);
-        }));
+        },
+        echo));
   }
 
   void stop() {

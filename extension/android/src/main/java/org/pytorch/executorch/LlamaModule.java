@@ -171,11 +171,12 @@ public class LlamaModule {
    * @param prompt The text prompt to LLaVA.
    * @param seqLen The total sequence length, including the prompt tokens and new tokens.
    * @param startPos The starting position in KV cache of the input in the LLM.
+   * @param echo indicate whether to echo the input prompt or not
    * @param llamaCallback callback object to receive results.
    * @return The error code.
    */
   public native int generateFromPos(
-      String prompt, int seqLen, long startPos, LlamaCallback callback);
+      String prompt, int seqLen, long startPos, boolean echo, LlamaCallback callback);
 
   /** Stop current generate() before it finishes. */
   @DoNotStrip
