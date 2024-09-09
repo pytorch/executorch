@@ -9,9 +9,13 @@ Before you begin, ensure you have the following prerequisites installed and conf
 ### 1. Buck2 Build Tool
 
 - **Download Buck2**: Obtain Buck2 from the official [releases page](https://github.com/facebook/buck2/releases/tag/2024-02-01).
-- **Add to PATH**: Extract the downloaded file and add the directory to your system's `$PATH` environment variable.
+- **Create Buck2 executable**: Extract the downloaded file and create an executable buck2.
 ```bash
-export PATH=<path_to_buck>:$PATH
+zstd -cdq "<downloaded_buck2_file>.zst" > "<path_to_store_buck2>/buck2" && chmod +x "<path_to_store_buck2>/buck2"
+```
+- **Set BUCK2 Path**: Ensure that the `$BUCK2` environment variable is set to the path to point to buck2.
+```bash
+export BUCK2=<path_to_store_buck2>/buck2
 ```
 
 ### 2. Android NDK
@@ -28,8 +32,9 @@ Download the following libraries from MediaTek's NeuroPilot portal (link to be a
 
 - `libneuronusdk_adapter.mtk.so`: This universal SDK contains the implementation required for executing target-dependent code on the MediaTek chip.
 - `libneuron_buffer_allocator.so`: This utility library is designed for allocating DMA buffers necessary for model inference.
+  - **Set NEURON LIB Path**: Add the pointer to the file by exporting to the `$NEURON_BUFFER_ALLOCATOR_LIB` environment variable.
 ```bash
-export NEURON_BUFFER_ALLOCATOR_LIB=<path_to_buffer_allocator>
+export NEURON_BUFFER_ALLOCATOR_LIB=<path_to_buffer_allocator/libneuron_buffer_allocator.so>
 ```
 
 ## Setup
