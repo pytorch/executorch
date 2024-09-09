@@ -14,11 +14,11 @@ package org.pytorch.minibench;
  */
 public interface ModelRunnerCallback {
 
-    void onModelLoaded(int status);
+  void onModelLoaded(int status);
 
-    void onTokenGenerated(String token);
+  void onTokenGenerated(String token);
 
-    void onStats(String token);
+  void onStats(String token);
 
-    void onGenerationStopped();
+  void onGenerationStopped();
 }
