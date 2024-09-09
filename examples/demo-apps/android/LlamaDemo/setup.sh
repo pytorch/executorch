@@ -56,7 +56,7 @@ cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config Relea
 
 BUILD_AAR_DIR="$(mktemp -d)"
 mkdir -p "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}" "${BUILD_AAR_DIR}/libs"
-cp "${CMAKE_OUT}"/extension/android/libexecutorch_llama_jni.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}"
+cp "${CMAKE_OUT}"/extension/android/libexecutorch_jni.so "${BUILD_AAR_DIR}/jni/${ANDROID_ABI}/libexecutorch.so"
 cp extension/android/build/libs/executorch.jar "${BUILD_AAR_DIR}/libs"
 echo \<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\" \
   package=\"org.pytorch.executorch\"\> \
