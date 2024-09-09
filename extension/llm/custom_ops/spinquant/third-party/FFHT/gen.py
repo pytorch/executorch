@@ -778,7 +778,7 @@ MAX_PERFORMANCE_PENALTY_FOR_REDUCED_SIZE = 1.1
 
 
 if __name__ == "__main__":
-    final_code = '#include "fht.h"\n'
+    final_code = '// @generated\n#include "fht.h"\n'
     code_so_far = ""
     hall_of_fame = []
     for type_name, composite_step_generator in [("float", float_neon_composite_step)]:
