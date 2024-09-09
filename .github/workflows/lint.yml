@@ -69,6 +69,10 @@ jobs:
           extension/android/benchmark/app/src/main/java/org/pytorch/minibench/*.java)
         if [ -n "$FILES_NEEDS_FORMAT" ]; then
           echo "Warning: The following files need formatting. Please use google-java-format."
-          echo "$FILES_NEEDS_FORMAT"
+          echo "Use a binary from https://github.com/google/google-java-format/releases/"
+          echo "For example:"
+          echo "wget https://github.com/google/google-java-format/releases/download/v1.23.0/google-java-format_linux-x86-64"
+          echo "chmod +x google-java-format_linux-x86-64"
+          echo "./google-java-format_linux-x86-64 -i $FILES_NEEDS_FORMAT"
           exit 1
         fi

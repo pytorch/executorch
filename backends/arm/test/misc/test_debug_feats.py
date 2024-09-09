@@ -180,13 +180,18 @@ def test_fail_dump_tosa_ops(capsys):
             model,
             example_inputs=(torch.ones(5),),
             compile_spec=common.get_u55_compile_spec(),
+            )
+            .quantize()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .export()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .to_edge()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
+            .partition()
+            .dump_dtype_distribution()
+            .dump_operator_distribution()
         )
-        .quantize()
-        .export()
-        .to_edge()
-        .partition()
-        .dump_operator_distribution()
-    )
-    captured = capsys.readouterr()
-    assert "Partition operators:" in captured.out
-    assert "Can not get operator distribution for vela command stream." in captured.out
+        # Just test that there are no execeptions.

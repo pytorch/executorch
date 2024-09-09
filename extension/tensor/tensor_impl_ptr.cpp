@@ -30,20 +30,23 @@ static void noop_deleter(void*) {}
  * TensorImpl is destroyed.
  */
 struct TensorImplPtrDeleter final {
-  std::unique_ptr<void, std::function<void(void*)>> data;
-  std::vector<exec_aten::SizesType> sizes;
-  std::vector<exec_aten::DimOrderType> dim_order;
-  std::vector<exec_aten::StridesType> strides;
+  // A custom deleter of the std::shared_ptr is required to be copyable until
+  // C++20, so any data it holds must be copyable too. Hence, we use shared_ptr
+  // to hold the data and metadata to avoid unnecessary copies.
+  std::shared_ptr<void> data;
+  std::shared_ptr<std::vector<exec_aten::SizesType>> sizes;
+  std::shared_ptr<std::vector<exec_aten::DimOrderType>> dim_order;
+  std::shared_ptr<std::vector<exec_aten::StridesType>> strides;
 
   void operator()(exec_aten::TensorImpl* pointer) {
     // Release all resources immediately since the data held by the
-    // TensorImplDeleter is tied to the managed object, not the smart pointer
+    // TensorImplPtrDeleter is tied to the managed object, not the smart pointer
     // itself. We need to free this memory when the object is destroyed, not
     // when the smart pointer (and deleter) are eventually destroyed or reset.
     data.reset();
-    sizes = {};
-    dim_order = {};
-    strides = {};
+    sizes.reset();
+    dim_order.reset();
+    strides.reset();
     delete pointer;
   }
 };
@@ -90,11 +93,13 @@ TensorImplPtr make_tensor_impl_ptr(
   return TensorImplPtr(
       tensor_impl.release(),
       TensorImplPtrDeleter{
-          std::unique_ptr<void, std::function<void(void*)>>(
+          std::shared_ptr<void>(
               data, deleter ? std::move(deleter) : noop_deleter),
-          std::move(sizes),
-          std::move(dim_order),
-          std::move(strides)});
+          std::make_shared<std::vector<exec_aten::SizesType>>(std::move(sizes)),
+          std::make_shared<std::vector<exec_aten::DimOrderType>>(
+              std::move(dim_order)),
+          std::make_shared<std::vector<exec_aten::StridesType>>(
+              std::move(strides))});
 #else
   auto options = c10::TensorOptions()
                      .dtype(c10::scalarTypeToTypeMeta(type))
@@ -114,6 +119,29 @@ TensorImplPtr make_tensor_impl_ptr(
   tensor_impl->set_sizes_and_strides(sizes, strides);
   return tensor_impl;
 #endif // USE_ATEN_LIB
+}
+
+TensorImplPtr make_tensor_impl_ptr(
+    exec_aten::ScalarType scalar_type,
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<uint8_t> data,
+    std::vector<exec_aten::DimOrderType> dim_order,
+    std::vector<exec_aten::StridesType> strides,
+    exec_aten::TensorShapeDynamism dynamism) {
+  ET_CHECK_MSG(
+      data.size() >= exec_aten::compute_numel(sizes.data(), sizes.size()) *
+              exec_aten::elementSize(scalar_type),
+      "Data size is smaller than required by sizes and scalar type.");
+  auto raw_data_ptr = data.data();
+  auto data_ptr = std::make_shared<std::vector<uint8_t>>(std::move(data));
+  return make_tensor_impl_ptr(
+      scalar_type,
+      std::move(sizes),
+      raw_data_ptr,
+      std::move(dim_order),
+      std::move(strides),
+      dynamism,
+      [data_ptr = std::move(data_ptr)](void*) {});
 }
 
 } // namespace extension

@@ -61,6 +61,50 @@ class MultimodalRunner {
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {}) = 0;
 
+  /**
+   * Prefill an LLaVA Module with the given images input.
+   * @param images The image input to LLaVA.
+   * @param start_pos The starting position in KV cache of the input in the LLM.
+   * It's passed as reference and will be updated inside this function.
+   * @return The error status of prefilling images.
+   */
+  virtual runtime::Error prefill_images(
+      std::vector<Image>& images,
+      int64_t& start_pos) = 0;
+
+  /**
+   * Prefill an LLaVA Module with the given text input.
+   * @param prompt The text prompt to LLaVA.
+   * @param start_pos The starting position in KV cache of the input in the LLM.
+   * It's passed as reference and will be updated inside this function.
+   * @param bos The number of BOS (begin of sequence) token.
+   * @param eos The number of EOS (end of sequence) token.
+   * @return The generated token of the LLaVA Module after prefill prompt.
+   */
+  virtual runtime::Result<uint64_t> prefill_prompt(
+      const std::string& prompt,
+      int64_t& start_pos,
+      int8_t bos = 0,
+      int8_t eos = 0) = 0;
+
+  /**
+   * Generate tokens from the given prompt, starting from the given position.
+   * @param prompt The text prompt to LLaVA.
+   * @param seq_len The total sequence length, including the prompt tokens and
+   * new tokens.
+   * @param start_pos The starting position in KV cache of the input in the LLM.
+   * @param token_callback What to do after a token is generated.
+   * @param stats_callback What to do with Stats.
+   * @return The error code.
+   */
+  virtual runtime::Error generate_from_pos(
+      const std::string& prompt,
+      int32_t seq_len = 1024,
+      int64_t start_pos = 0,
+      std::function<void(const std::string&)> token_callback = {},
+      std::function<void(const ::executorch::extension::llm::Stats&)>
+          stats_callback = {}) = 0;
+
   inline void stop() {
     text_token_generator_->stop();
   }

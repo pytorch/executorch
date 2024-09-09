@@ -43,15 +43,6 @@ class NativePeer {
   @DoNotStrip
   public native EValue[] forward(EValue... inputs);
 
-  /**
-   * Run a "forward" call with the sample inputs (ones) to test a module
-   *
-   * @return the outputs of the forward call
-   * @apiNote This is experimental and test-only API
-   */
-  @DoNotStrip
-  public native int forwardOnes();
-
   /** Run an arbitrary method on the module */
   @DoNotStrip
   public native EValue[] execute(String methodName, EValue... inputs);
