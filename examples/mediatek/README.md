@@ -21,14 +21,6 @@ examples/mediatek
 ├── mtk_build_examples.sh             # Script for building MediaTek backend and the examples
 └── README.md                         # Documentation for the examples (this file)
 ```
-# Examples
-## Build MediaTek examples
-1. Set up the environment by folllowing the instructions in `backends/mediatek/scripts`
-2. Build the backend and the examples by exedcuting the script:
-```bash
-./mtk_build_examples.sh
-```
-
 # AoT
 ## Environment Setup
 1. Setup ET Environment
@@ -79,7 +71,7 @@ The examples provided in this repository are tested and supported on the followi
 
 - MediaTek Dimensity 9300 (D9300)
 
-## Environment Setup
+## Environment Setup for (MTK Executor Runner)
 
 To set up the build environment for the `mtk_executor_runner`:
 
@@ -110,4 +102,43 @@ adb shell "/data/local/tmp/mtk_executor_runner --model_path /data/local/tmp/<MOD
 
 In the command above, replace `<MODEL_NAME>` with the name of your model file and `<ITER_TIMES>` with the desired number of iterations to run the model.
 
-##### Note: For llama models, please use `mtk_llama_executor_runner`. Refer to `examples/mediatek/executor_runner/run_llama3_sample.sh` for reference.
+## Environment Setup for (MTK Llama Executor Runner)
+
+To set up the build environment for the `mtk_llama_executor_runner`:
+
+1. Set up the environment by following the prerequisites in `backends/mediatek/scripts`
+2. Build the backend and the examples by executing the script:
+```bash
+./mtk_build_examples.sh
+```
+
+## Deploying and Running on the Device
+
+### Pushing Files to the Device
+
+Transfer the the `run_llama3_sample.sh` script, `mtk_llama_executor_runner` binary, `sample_prompt.txt` (created by you), `.so` files, `.pte` model files, `.bin` and `.model` files to your Android device using the following commands:
+
+```bash
+adb push examples/mediatek/executor_runner/run_llama3_sample.sh <PHONE_PATH, e.g. /data/local/tmp>
+adb push sample_prompt.txt <PHONE_PATH, e.g. /data/local/tmp>
+adb push cmake-android-out/examples/mtk_llama_executor_runner <PHONE_PATH, e.g. /data/local/tmp>
+adb push cmake-android-out/backends/mediatek/libneuron_backend.so <PHONE_PATH, e.g. /data/local/tmp>
+adb push libneuron_buffer_allocator.so <PHONE_PATH, e.g. /data/local/tmp>
+adb push libneuronusdk_adapter.mtk.so <PHONE_PATH, e.g. /data/local/tmp>
+adb push embedding_llamamodel.bin <PHONE_PATH, e.g. /data/local/tmp>
+adb push tokenizer.model <PHONE_PATH, e.g. /data/local/tmp>
+```
+
+Make sure to replace `<MODEL_NAME>` with the actual name of your model file. And, replace the `<PHONE_PATH>` with the desired detination on the device.
+
+### Executing the Model
+
+Execute the model on your Android device by running:
+
+```bash
+adb shell
+
+# on device:
+cd <PHONE_PATH>
+sh run_llama3_sample.sh
+```
