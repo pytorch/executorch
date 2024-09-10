@@ -321,6 +321,14 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         help="Generate logits for all inputs.",
     )
+
+    parser.add_argument(
+        "--soc_model",
+        help="[QNN backend] SoC model of current device. e.g. 'SM8650' for Snapdragon 8 Gen 3.",
+        type=str,
+        required=False,
+        default="SM8650",
+    )
     return parser
 
 
@@ -540,7 +548,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
         partitioners.append(
             get_qnn_partitioner(
-                args.use_kv_cache, args.pt2e_quantize, args.num_sharding
+                args.use_kv_cache, args.pt2e_quantize, args.num_sharding, args.soc_model
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
