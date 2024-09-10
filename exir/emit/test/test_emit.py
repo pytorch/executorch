@@ -23,6 +23,7 @@ from executorch.exir import (
     ExecutorchProgramManager,
     to_edge,
 )
+from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -35,6 +36,7 @@ from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
     Bool,
     DelegateCall,
+    Double,
     EValue,
     ExecutionPlan,
     Int,
@@ -1620,3 +1622,33 @@ class TestEmit(unittest.TestCase):
         executorch_module = _load_for_executorch_from_buffer(model.buffer)
         self.assertEqual(executorch_module(torch.zeros(1))[0], torch.zeros(1))
         self.assertEqual(executorch_module(torch.zeros(1))[0], torch.zeros(1) + 1)
+
+    def test_infinity_in_model(self) -> None:
+        class InfinityMaskModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.mask = torch.tensor([[1, 0], [0, 1]], dtype=torch.float32)
+
+            def forward(self, x):
+                masked_weights = x.masked_fill(self.mask == 0, float("-inf"))
+                return masked_weights
+
+        model = to_edge(
+            export(
+                InfinityMaskModel(),
+                (torch.randn(2, 2),),
+            )
+        )
+
+        # Confirm that we can serialize the model with infinity in it.
+        model = model.to_executorch()
+
+        # Assert that the infinity is stored as a string "-inf".
+        values = model.executorch_program.execution_plan[0].values
+        self.assertEqual(values[5].val, Double(double_val=float("-inf")))
+
+        # Confirm that we can also deserialize the model with infinity in it.
+        pte_data = deserialize_pte_binary(model.buffer)
+        self.assertEqual(
+            pte_data.execution_plan, model.executorch_program.execution_plan
+        )
