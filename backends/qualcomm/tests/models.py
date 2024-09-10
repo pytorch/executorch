@@ -55,6 +55,16 @@ class AvgPoolModule(torch.nn.Module):
         return self.avgPool(x)
 
 
+class BatchNorm(torch.nn.Module):
+    def __init__(self, n_features):
+        super().__init__()
+        self.native_batchnorm = torch.nn.BatchNorm2d(n_features)
+        self.eval()
+
+    def forward(self, x):
+        return self.native_batchnorm(x)
+
+
 class Bmm(torch.nn.Module):
     def __init__(self):
         super().__init__()
