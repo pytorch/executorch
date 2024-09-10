@@ -10,6 +10,8 @@
 #include <executorch/kernels/portable/cpu/util/matmul_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
+#include <array>
+
 namespace torch {
 namespace executor {
 namespace native {
@@ -24,11 +26,11 @@ Tensor& opt_mm_out(
   ET_KERNEL_CHECK(ctx, check_mm_args(in, mat2, out), InvalidArgument, out);
 
   size_t output_ndim = 0;
-  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
-  get_mm_out_target_size(in, mat2, output_sizes, &output_ndim);
+  std::array<exec_aten::SizesType, kTensorDimensionLimit> output_sizes;
+  get_mm_out_target_size(in, mat2, output_sizes.data(), &output_ndim);
   ET_KERNEL_CHECK(
       ctx,
-      resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok,
+      resize_tensor(out, {output_sizes.data(), output_ndim}) == Error::Ok,
       InvalidArgument,
       out);
 
