@@ -47,17 +47,10 @@ list(APPEND custom_ops_libs eigen_blas)
 
 list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
-# TODO: Consider moving xnnpack/threadpool in a separate lib since it's now used
-# by custom ops too.
 if(NOT EXECUTORCH_BUILD_XNNPACK)
-  list(
-    APPEND
-    _custom_ops__srcs
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/threadpool/threadpool.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/threadpool/threadpool_guard.cpp"
-  )
+  list(APPEND custom_ops_libs extension_threadpool)
 else()
-  list(APPEND custom_ops_libs xnnpack_backend)
+  list(APPEND custom_ops_libs extension_threadpool xnnpack_backend)
 endif()
 
 add_library(custom_ops ${_custom_ops__srcs})
@@ -80,16 +73,15 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
   # Add a AOT library
   find_package(Torch CONFIG REQUIRED)
   add_library(
-    custom_ops_aot_lib SHARED ${_custom_ops__srcs}
-                              ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
-                              ${CMAKE_CURRENT_SOURCE_DIR}/op_tile_crop.cpp
+    custom_ops_aot_lib SHARED
+    ${_custom_ops__srcs} ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/op_tile_crop.cpp
   )
   target_include_directories(
     custom_ops_aot_lib PUBLIC "${_common_include_directories}"
   )
   target_include_directories(
-    custom_ops_aot_lib
-    PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
+    custom_ops_aot_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../include"
   )
   if(TARGET portable_lib)
     # If we have portable_lib built, custom_ops_aot_lib gives the ability to use
@@ -101,10 +93,13 @@ if(EXECUTORCH_BUILD_KERNELS_CUSTOM_AOT)
     target_link_libraries(custom_ops_aot_lib PUBLIC executorch_no_prim_ops)
   endif()
 
-  target_link_libraries(custom_ops_aot_lib PUBLIC cpublas torch)
+  target_link_libraries(
+    custom_ops_aot_lib PUBLIC cpublas torch extension_tensor
+                              extension_threadpool
+  )
   if(WIN32)
-    # There is no direct replacement for libpthread.so on Windows.
-    # For the Windows build, link directly against pthreadpool and cpuinfo.
+    # There is no direct replacement for libpthread.so on Windows. For the
+    # Windows build, link directly against pthreadpool and cpuinfo.
     target_link_libraries(custom_ops_aot_lib PUBLIC pthreadpool cpuinfo)
   endif()
   target_compile_options(

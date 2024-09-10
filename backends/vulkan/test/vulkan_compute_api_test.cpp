@@ -21,6 +21,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/QPackUtils.h>
+
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
 using namespace vkcompute::api;
@@ -334,7 +336,7 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
 
 TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
   size_t len = 16;
-  StorageBuffer buffer(context(), vkapi::kFloat, len);
+  StagingBuffer buffer(context(), vkapi::kFloat, len);
 
   float scale = 3.0f;
   float offset = 1.5f;
@@ -358,7 +360,7 @@ TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
   submit_to_gpu();
 
   std::vector<float> data(len);
-  copy_staging_to_ptr(buffer, data.data(), buffer.nbytes());
+  buffer.copy_to(data.data(), buffer.nbytes());
 
   for (size_t i = 0; i < len; ++i) {
     CHECK_VALUE(data, i, scale * i + offset);
@@ -405,7 +407,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
         params.buffer());
   }
 
-  StorageBuffer staging_buffer(
+  StagingBuffer staging_buffer(
       context(), vkapi::kFloat, a.staging_buffer_numel());
   record_image_to_nchw_op(context(), a, staging_buffer.buffer());
 
@@ -426,7 +428,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
 
 template <typename T, vkapi::ScalarType dtype>
 void test_storage_buffer_type(const size_t len) {
-  StorageBuffer buffer(context(), dtype, len);
+  StagingBuffer buffer(context(), dtype, len);
 
   std::string kernel_name("idx_fill_buffer");
   switch (dtype) {
@@ -468,7 +470,7 @@ void test_storage_buffer_type(const size_t len) {
   submit_to_gpu();
 
   std::vector<T> data(len);
-  copy_staging_to_ptr(buffer, data.data(), buffer.nbytes());
+  buffer.copy_to(data.data(), buffer.nbytes());
 
   for (size_t i = 0; i < len; ++i) {
     CHECK_VALUE(data, i, T(i));
@@ -990,6 +992,34 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
       graph.get_tensor(name.value)->staging_buffer_numel()); \
   graph.copy_from_staging(name.staging, data_##name.data(), data_##name.size());
 
+// The purpose of this test is simply to track the size of various classes over
+// time, in the interest of making sure that they doesn't grow too large.
+TEST_F(VulkanComputeAPITest, print_object_sizes) {
+#define PRINT_SIZE(name) \
+  std::cout << #name << " size: " << sizeof(name) << " B" << std::endl
+  PRINT_SIZE(vTensor);
+  PRINT_SIZE(Value);
+  PRINT_SIZE(StagingBuffer);
+  PRINT_SIZE(ComputeGraph);
+  PRINT_SIZE(ExecuteNode);
+#undef PRINT_SIZE
+
+  // The actual sizes of each object is dependent on the platform. However, we
+  // can alert ourselves to any significant changes in the sizes of these
+  // objects by checking the `sizeof()` the class against some loose thresholds.
+
+  // Current known size on 64 bit system: 1824 B
+  EXPECT_TRUE(sizeof(vTensor) < 2000);
+  // Current known size on 64 bit system: 1840 B
+  EXPECT_TRUE(sizeof(Value) < 2200);
+  // Current known size on 64 bit system: 240 B
+  EXPECT_TRUE(sizeof(StagingBuffer) < 500);
+  // Current known size on 64 bit system: 384 B
+  EXPECT_TRUE(sizeof(ComputeGraph) < 500);
+  // Current known size on 64 bit system: 248 B
+  EXPECT_TRUE(sizeof(ExecuteNode) < 500);
+}
+
 TEST(VulkanComputeGraphTest, test_values_scalars) {
   GraphConfig config;
   ComputeGraph graph(config);
@@ -1203,8 +1233,8 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
   GraphConfig config;
   ComputeGraph graph(config);
 
-  std::vector<int64_t> size_big = {8, 64, 124};
-  std::vector<int64_t> size_small = {8, 1, 124};
+  std::vector<int64_t> size_big = {1, 8, 8};
+  std::vector<int64_t> size_small = {1, 1, 8};
 
   // Build graph
 
@@ -1240,6 +1270,64 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
     // Sanity check that the values are correct
     for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
       CHECK_VALUE(data_out, i, val_c);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_simple_graph_with_symint) {
+  GraphConfig config;
+  config.set_storage_type_override(utils::kTexture3D);
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> sizes = {8, 64, 124};
+
+  // Build graph
+
+  ValueRef scalar = graph.add_symint(1);
+  IOValueRef a = graph.add_input_tensor(sizes, vkapi::kFloat);
+
+  IOValueRef out = {};
+  out.value = a.value;
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
+      VK_KERNEL_FROM_STR("scalar_add_texture"),
+      graph.create_global_wg_size(a.value),
+      graph.create_local_wg_size(a.value),
+      // Inputs and Outputs
+      {{out.value, vkapi::MemoryAccessType::WRITE}},
+      // Shader params buffers
+      {graph.texture_limits_ubo(a.value),
+       graph.get_or_create_int_param_buffer(scalar)},
+      // Specialization Constants
+      {},
+      // Resizing Logic
+      nullptr,
+      {}));
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    int scalar_val = i - 3.0f;
+    graph.set_symint(scalar, scalar_val);
+
+    float val_a = i + 2.0f;
+    float val_out = val_a + scalar_val;
+
+    fill_vtensor(graph, a, val_a);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
+      CHECK_VALUE(data_out, i, val_out);
     }
   }
 }
@@ -1327,8 +1415,9 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       /*shared_object_idx = */ 4);
 
   // +2: t.sizes_ubo() for each staging shader
+  // +2: t.axis_mapping_ubo() for each staging shader
   // +2: staging buffer for each input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 4);
+  EXPECT_TRUE(get_vma_allocation_count() == 6);
 
   ValueRef c = graph.add_tensor(
       size_big,
@@ -1345,8 +1434,9 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() uniform buffer for staging shader
+  // +1: t.axis_mapping_ubo() uniform buffer for staging shader
   // +1: staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 9);
+  EXPECT_TRUE(get_vma_allocation_count() == 12);
 
   ValueRef e = graph.add_tensor(
       size_big,
@@ -1362,14 +1452,15 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
   // +2: alpha UBO, broadcast UBO for arithmetic shader
   // +1: t.sizes_ubo() for staging shader
+  // +1: t.axis_mapping_ubo() for staging shader
   // +1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 13);
+  EXPECT_TRUE(get_vma_allocation_count() == 17);
 
   graph.prepare();
   graph.encode_execute();
 
   // +3: shared memory allocations for tensors
-  EXPECT_TRUE(get_vma_allocation_count() == 16);
+  EXPECT_TRUE(get_vma_allocation_count() == 20);
 
   // Run graph
 
@@ -1431,6 +1522,105 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
 
     // Sanity check that the values are correct
     for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); i++) {
+      CHECK_VALUE(data_out, i, val_out);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_simple_graph_with_tmp_tensors) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> size_big = {8, 64, 124};
+  std::vector<int64_t> size_small = {8, 1, 124};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(
+      size_big, vkapi::kFloat, /*shared_object_idx = */ 0);
+  IOValueRef b = graph.add_input_tensor(
+      size_small, vkapi::kFloat, /*shared_object_idx = */ 1);
+
+  IOValueRef out = {};
+
+  out.value =
+      graph.add_tensor(size_big, vkapi::kFloat, /*shared_object_idx = */ 2);
+
+  // Perform the following compute
+  //
+  // a, b, out;
+  // {
+  //   inter;
+  //   {
+  //     tmp = a + b
+  //     tmp2 = tmp + a
+  //     inter = tmp2 + b
+  //   }
+  //   {
+  //     tmp = inter + b;
+  //     tmp2 = tmp + a
+  //     out = tmp2 + b;
+  //   }
+  // }
+  {
+    TmpTensor inter(&graph, size_big, vkapi::kFloat);
+    EXPECT_TRUE(inter.sobj_idx == 3);
+    {
+      TmpTensor tmp(&graph, size_big, vkapi::kFloat);
+      EXPECT_TRUE(tmp.sobj_idx == 4);
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {a, b, kDummyValueRef, tmp});
+
+      TmpTensor tmp2(&graph, size_big, vkapi::kFloat);
+      EXPECT_TRUE(tmp2.sobj_idx == 5);
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {tmp, a, kDummyValueRef, tmp2});
+
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {tmp2, b, kDummyValueRef, inter});
+    }
+    {
+      TmpTensor tmp(&graph, size_big, vkapi::kFloat);
+      EXPECT_TRUE(tmp.sobj_idx == 4);
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {inter, b, kDummyValueRef, tmp});
+
+      TmpTensor tmp2(&graph, size_big, vkapi::kFloat);
+      EXPECT_TRUE(tmp2.sobj_idx == 5);
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {tmp, a, kDummyValueRef, tmp2});
+
+      VK_GET_OP_FN("aten.add.Tensor")
+      (graph, {tmp2, b, kDummyValueRef, out});
+    }
+  }
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 5.0f; i < 30.0f; i += 10.0f) {
+    float val_a = i + 2.0f;
+    float val_b = i + 1.5f;
+    float val_tmp = val_a + val_b;
+    float val_tmp2 = val_tmp + val_a;
+    float val_inter = val_tmp2 + val_b;
+    float val_tmp_2 = val_inter + val_b;
+    float val_tmp2_2 = val_tmp_2 + val_a;
+    float val_out = val_tmp2_2 + val_b;
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
       CHECK_VALUE(data_out, i, val_out);
     }
   }
@@ -2038,7 +2228,7 @@ void run_from_gpu_test(
         vten.sizes_ubo());
   }
 
-  StorageBuffer staging_buffer(context(), dtype, vten.staging_buffer_numel());
+  StagingBuffer staging_buffer(context(), dtype, vten.staging_buffer_numel());
 
   if (dtype == vkapi::kChar &&
       !context()->adapter_ptr()->has_full_int8_buffers_support()) {
@@ -2050,7 +2240,7 @@ void run_from_gpu_test(
   submit_to_gpu();
 
   std::vector<T> data_out(staging_buffer.numel());
-  copy_staging_to_ptr(staging_buffer, data_out.data(), staging_buffer.nbytes());
+  staging_buffer.copy_to(data_out.data(), staging_buffer.nbytes());
 
   for (int i = 0; i < vten.numel(); i++) {
     CHECK_VALUE(data_out, i, i + offset);
@@ -2071,18 +2261,17 @@ void round_trip_test(
   vTensor vten = vTensor(context(), sizes, dtype, storage_type, memory_layout);
 
   // Create and fill input staging buffer
-  StorageBuffer staging_buffer_in(
+  StagingBuffer staging_buffer_in(
       context(), dtype, vten.staging_buffer_numel());
 
   std::vector<T> data_in(staging_buffer_in.numel());
   for (int i = 0; i < staging_buffer_in.numel(); i++) {
     data_in[i] = T(i * -1);
   }
-  copy_ptr_to_staging(
-      data_in.data(), staging_buffer_in, vten.staging_buffer_nbytes());
+  staging_buffer_in.copy_from(data_in.data(), vten.staging_buffer_nbytes());
 
   // Output staging buffer
-  StorageBuffer staging_buffer_out(
+  StagingBuffer staging_buffer_out(
       context(), dtype, vten.staging_buffer_numel());
 
   record_nchw_to_image_op(context(), staging_buffer_in.buffer(), vten);
@@ -2100,8 +2289,7 @@ void round_trip_test(
 
   // Extract data from output staging buffer
   std::vector<T> data_out(staging_buffer_out.numel());
-  copy_staging_to_ptr(
-      staging_buffer_out, data_out.data(), staging_buffer_out.nbytes());
+  staging_buffer_out.copy_to(data_out.data(), staging_buffer_out.nbytes());
 
   // All indices should be equal to the input data
   for (int i = 0; i < vten.numel(); i++) {
@@ -2536,19 +2724,18 @@ void test_conv2d(
 
   // Create and fill input staging buffer
   const int64_t in_numel = utils::multiply_integers(original_sizes);
-  StorageBuffer staging_buffer_in(context(), vkapi::kFloat, in_numel);
+  StagingBuffer staging_buffer_in(context(), vkapi::kFloat, in_numel);
 
   std::vector<float> data_in(in_numel);
   for (int i = 0; i < in_numel; i++) {
     data_in[i] = i + 1;
   }
-  copy_ptr_to_staging(
-      data_in.data(), staging_buffer_in, sizeof(float) * in_numel);
+  staging_buffer_in.copy_from(data_in.data(), sizeof(float) * in_numel);
 
   // Output staging buffer
   const int64_t out_numel =
       padded_sizes[0] * padded_sizes[1] * original_sizes[2] * original_sizes[3];
-  StorageBuffer staging_buffer_out(context(), vkapi::kFloat, out_numel);
+  StagingBuffer staging_buffer_out(context(), vkapi::kFloat, out_numel);
 
   // Copy data in and out of the tensor
   record_conv2d_prepack_weights_op(
@@ -2560,8 +2747,7 @@ void test_conv2d(
 
   // Extract data from output staging buffer
   std::vector<float> data_out(out_numel);
-  copy_staging_to_ptr(
-      staging_buffer_out, data_out.data(), sizeof(float) * out_numel);
+  staging_buffer_out.copy_to(data_out.data(), sizeof(float) * out_numel);
 
   // Check data matches results copied from ATen-VK
   for (int i = 0; i < vten.numel(); i++) {
@@ -2658,4 +2844,130 @@ TEST(VulkanComputeGraphOpsTest, grid_priors_test) {
       /*stride = */ 8,
       /*offset = */ 0.5,
       /*data_out_expected = */ {4, 4, 12, 4, 20, 4, 4, 12, 12, 12, 20, 12});
+}
+
+void test_int4pack_mm(
+    std::vector<uint32_t> MKN,
+    uint32_t group_size,
+    utils::StorageType storage_type) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  const uint32_t M = MKN[0];
+  const uint32_t K = MKN[1];
+  const uint32_t N = MKN[2];
+
+  const std::vector<int64_t> mat1_size = {M, K};
+  const std::vector<int64_t> mat2_size = {K, N};
+  const std::vector<int64_t> mat2_q_size = {N, K / 2}; // Transposed and packed
+  const std::vector<int64_t> out_size = {M, N};
+
+  std::vector<float> A_data = create_random_float_buffer(M * K);
+  IOValueRef A = graph.add_input_tensor(mat1_size, vkapi::kFloat, storage_type);
+  graph.copy_into_staging(A.staging, A_data.data(), A_data.size());
+
+  // Quantized but un-packed weights
+  std::vector<uint8_t> B_quant_data = create_random_uint8_buffer(K * N, 0, 16);
+
+  // Pack and transpose weights to correspond to int4 weight format
+  std::vector<uint8_t> B_int4_data =
+      int4mm_pack_weights(mat2_size, B_quant_data.data());
+
+  IOValueRef B_int4 =
+      graph.add_input_tensor(mat2_q_size, vkapi::kQInt8, storage_type);
+  graph.copy_into_staging(
+      B_int4.staging, B_int4_data.data(), B_int4_data.size());
+
+  const int k_groups = K / group_size;
+
+  // Random scales and zeroes. Keep scales small to avoid overflow and zeroes in
+  // int4 range
+  IOValueRef scales_and_zeros =
+      graph.add_input_tensor({2, N, k_groups}, vkapi::kFloat, storage_type);
+  std::vector<float> s_data(graph.numel_of(scales_and_zeros.value));
+  const int zeros_stride = s_data.size() / 2;
+  for (size_t i = 0; i < zeros_stride; i++) {
+    s_data[i] = rand() % 100;
+    s_data[i + zeros_stride] = rand() % 16;
+  }
+
+  graph.copy_into_staging(
+      scales_and_zeros.staging, s_data.data(), s_data.size());
+
+  IOValueRef out_int4;
+
+  if (storage_type == utils::kBuffer) {
+    out_int4.value = graph.add_tensor(out_size, vkapi::kFloat, utils::kBuffer);
+  } else {
+    out_int4.value =
+        graph.add_tensor(out_size, vkapi::kFloat, utils::kChannelsPacked);
+  }
+
+  VK_GET_OP_FN("aten._weight_int4pack_mm.default")
+  (graph,
+   {A.value,
+    B_int4.value,
+    graph.add_scalar<int64_t>(group_size),
+    scales_and_zeros.value,
+    out_int4.value});
+
+  out_int4.staging = graph.set_output_tensor(out_int4.value);
+
+  // Dequantized matmul for comparison
+  IOValueRef B_deq =
+      graph.add_input_tensor(mat2_size, vkapi::kFloat, storage_type);
+  std::vector<float> B_deq_data = int4mm_dequantize_weights(
+      mat2_size, B_quant_data.data(), group_size, s_data.data());
+  graph.copy_into_staging(B_deq.staging, B_deq_data.data(), B_deq_data.size());
+
+  IOValueRef out_deq;
+  out_deq.value = graph.add_tensor(out_size, vkapi::kFloat, storage_type);
+
+  VK_GET_OP_FN("aten.mm.default")
+  (graph, {A.value, B_deq.value, out_deq.value});
+
+  out_deq.staging = graph.set_output_tensor(out_deq.value);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+  graph.propagate_resize();
+  graph.execute();
+
+  // Compare outputs
+  std::vector<float> out_int4_data(graph.numel_of(out_int4.value));
+  graph.copy_from_staging(
+      out_int4.staging, out_int4_data.data(), out_int4_data.size());
+
+  std::vector<float> out_deq_data(graph.numel_of(out_deq.value));
+  graph.copy_from_staging(
+      out_deq.staging, out_deq_data.data(), out_deq_data.size());
+
+  for (int i = 0; i < out_int4_data.size(); i++) {
+    CHECK_VALUE(out_int4_data, i, out_deq_data[i]);
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, int4pack_mm_test) {
+  if (!context()->adapter_ptr()->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+
+  for (auto storage_type : {utils::kBuffer, utils::kTexture3D}) {
+    // Vector multiplication, single group per row
+    test_int4pack_mm({1, 32, 1}, 32, storage_type);
+
+    // Vector multiplication, multiple groups per row
+    test_int4pack_mm({1, 256, 1}, 64, storage_type);
+
+    // Square matrices, single group per row
+    test_int4pack_mm({32, 32, 32}, 32, storage_type);
+
+    // Irregular matrices, single group per row
+    test_int4pack_mm({37, 32, 19}, 32, storage_type);
+
+    // Irregular matrices, multiple groups per row
+    test_int4pack_mm({37, 256, 19}, 64, storage_type);
+  }
 }

@@ -31,7 +31,8 @@ foreach(kernel ${_kernels})
   add_custom_command(
     OUTPUT "${_wrapper_path}"
     COMMAND mkdir -p ${_wrapper_dir}
-    COMMAND echo "#include <executorch/kernels/${kernel}/Functions.h>" > "${_wrapper_path}"
+    COMMAND echo "#include <executorch/kernels/${kernel}/Functions.h>" >
+            "${_wrapper_path}"
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     COMMENT "Generating ${_wrapper_path}"
     VERBATIM
@@ -243,11 +244,19 @@ set(_optimized_kernels_test_sources
 )
 
 # We don't have sleef on OSS so we don't have gelu and log_softmax
-list(REMOVE_ITEM _optimized_kernels_test_sources "op_gelu_test.cpp" "op_log_softmax_test.cpp")
+list(REMOVE_ITEM _optimized_kernels_test_sources "op_gelu_test.cpp"
+     "op_log_softmax_test.cpp"
+)
 
 et_cxx_test(
-  optimized_kernels_test SOURCES ${_optimized_kernels_test_sources} EXTRA_LIBS
-  optimized_kernels optimized_ops_lib portable_kernels eigen_blas
+  optimized_kernels_test
+  SOURCES
+  ${_optimized_kernels_test_sources}
+  EXTRA_LIBS
+  optimized_kernels
+  optimized_ops_lib
+  portable_kernels
+  eigen_blas
 )
 add_dependencies(optimized_kernels_test generate_wrapper)
 target_include_directories(

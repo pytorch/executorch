@@ -32,8 +32,16 @@ find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
 
 set(link_libraries)
-list(APPEND link_libraries extension_data_loader extension_module executorch
-     fbjni
+list(
+  APPEND
+  link_libraries
+  executorch
+  extension_data_loader
+  extension_module
+  extension_runner_util
+  extension_tensor
+  extension_threadpool
+  fbjni
 )
 
 if(TARGET optimized_native_cpu_ops_lib)
@@ -93,13 +101,7 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
 
   target_link_options_shared_lib(quantized_ops_lib)
 
-  if(TARGET pthreadpool)
-    set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp
-                       ../../backends/xnnpack/threadpool/cpuinfo_utils.cpp
-    )
-  else()
-    set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp)
-  endif()
+  set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp)
   add_library(executorch_llama_jni SHARED ${LLAMA_JNI_SRCS})
   if(TARGET pthreadpool)
     target_compile_definitions(executorch_llama_jni PRIVATE ET_USE_THREADPOOL=1)
@@ -129,19 +131,18 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
     quantized_ops_lib
   )
   target_compile_options(executorch_llama_jni PUBLIC ${_common_compile_options})
-  if(EXECUTORCH_USE_TIKTOKEN)
-    set(ABSL_ENABLE_INSTALL ON)
-    set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-    add_subdirectory(
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/abseil-cpp
-      ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
-    )
-    add_subdirectory(
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/re2
-      ${CMAKE_CURRENT_BINARY_DIR}/re2
-    )
-    set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
-    target_link_libraries(executorch_llama_jni re2::re2)
-  endif()
+  # link re2
+  set(ABSL_ENABLE_INSTALL ON)
+  set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/abseil-cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/abseil-cpp
+  )
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../extension/llm/third-party/re2
+    ${CMAKE_CURRENT_BINARY_DIR}/re2
+  )
+  set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
+  target_link_libraries(executorch_llama_jni re2::re2)
 endif()

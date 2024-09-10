@@ -71,6 +71,7 @@ runtime.python_library(
         "export_llama_lib.py",
         "model.py",
         "source_transformation/quantize.py",
+        "source_transformation/rms_norm.py",
         "source_transformation/rope.py",
         "source_transformation/sdpa.py",
     ],

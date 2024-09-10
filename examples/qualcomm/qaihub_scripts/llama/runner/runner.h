@@ -21,7 +21,6 @@
 #include <executorch/extension/llm/sampler/sampler.h>
 #include <executorch/extension/llm/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 
 namespace torch {
 namespace executor {
@@ -68,6 +67,7 @@ class Runner {
   Error load();
   Error generate(
       const std::string& prompt,
+      const std::string& system_prompt,
       int32_t seq_len,
       std::function<void(const std::string&)> token_callback = {},
       std::function<void(const Stats&)> stats_callback = {});
@@ -81,11 +81,16 @@ class Runner {
     kUnsupported,
   };
 
+  enum LlamaVersion {
+    kLlama2 = 0,
+    kLlama3,
+  };
+
   int32_t logitsToToken(const exec_aten::Tensor& logits_tensor);
   void run_model_step(std::vector<std::vector<EValue>>& inputs);
   // metadata
-  const int32_t bos_id_;
-  const int32_t eos_id_;
+  int32_t bos_id_;
+  std::unordered_set<uint64_t> eos_id_;
   const int32_t n_bos_;
   const int32_t n_eos_;
   const int32_t vocab_size_;
@@ -96,11 +101,11 @@ class Runner {
   float temperature_;
   std::unique_ptr<Tokenizer> tokenizer_;
   std::unique_ptr<Sampler> sampler_;
-  bool shouldStop_{false};
   Stats stats_;
   std::unique_ptr<Memory> io_mem_;
   const float logits_scale_;
   const int32_t logits_offset_;
+  LlamaVersion version_;
 };
 
 } // namespace executor

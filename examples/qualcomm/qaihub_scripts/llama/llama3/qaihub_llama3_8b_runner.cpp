@@ -16,7 +16,6 @@
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/runner.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/platform/log.h>
 
 #include <gflags/gflags.h>
@@ -35,10 +34,14 @@ DEFINE_string(freq_sin_path, "", "Path to precomputed position embeddings");
 DEFINE_string(output_path, "outputs", "Executorch inference data output path.");
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
+DEFINE_string(
+    system_prompt,
+    "",
+    "Tells the model what kind of assistant it should be. For example, You are a helpful AI assistant for travel tips and recommendations. Default is None");
 DEFINE_double(
     temperature,
-    0.8f,
-    "Temperature; Default is 0.8f. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
+    0.0f,
+    "Temperature; Default is 0.0f. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
 DEFINE_int32(
     eval_mode,
     0,
@@ -77,9 +80,11 @@ int main(int argc, char** argv) {
 
   // generate tokens & store inference output
   std::ofstream fout(FLAGS_output_path.c_str());
-  runner.generate(FLAGS_prompt, FLAGS_seq_len, [&](const std::string& piece) {
-    fout << piece;
-  });
+  runner.generate(
+      FLAGS_prompt,
+      FLAGS_system_prompt,
+      FLAGS_seq_len,
+      [&](const std::string& piece) { fout << piece; });
   fout.close();
   return 0;
 }

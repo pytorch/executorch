@@ -60,7 +60,6 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/util.h>
 
 #include "llama_runner/LlamaConfig.h"
 #include "llama_runner/LlamaRuntime.h"

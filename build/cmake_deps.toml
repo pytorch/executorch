@@ -171,6 +171,18 @@ deps = [
   "extension_module",
   "extension_runner_util",
 ]
+
+[targets.extension_tensor]
+buck_targets = [
+  "//extension/tensor:tensor",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "executorch_no_prim_ops",
+]
 # ---------------------------------- extension end ----------------------------------
 # ---------------------------------- binary start ----------------------------------
 

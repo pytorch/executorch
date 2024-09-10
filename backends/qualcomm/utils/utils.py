@@ -38,7 +38,11 @@ from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
 from executorch.backends.qualcomm.passes.recompose_pixel_unshuffle import (
     RecomposePixelUnshuffle,
 )
+from executorch.backends.qualcomm.passes.recompose_rms_norm import RecomposeRmsNorm
 from executorch.backends.qualcomm.passes.remove_redundancy import RemoveRedundancy
+from executorch.backends.qualcomm.passes.replace_index_put_input import (
+    ReplaceIndexPutInput,
+)
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     _soc_info_table,
     QcomChipset,
@@ -56,6 +60,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize impor
     convert_to_option,
 )
 from executorch.backends.qualcomm.utils.constants import QCOM_QNN_COMPILE_SPEC
+
 from executorch.exir import ExirExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.lowered_backend_module import LoweredBackendModule
@@ -201,6 +206,7 @@ def _transform(edge_program: ExportedProgram) -> None:
     graph_module = edge_program.graph_module
     RemoveRedundancy()(graph_module)
     RecomposePixelUnshuffle()(graph_module)
+    RecomposeRmsNorm()(graph_module)
     ConvertToLinear()(graph_module)
     ConvertPReLU(edge_program)(graph_module)
     ConvertBmmToMatmul()(graph_module)
@@ -211,6 +217,7 @@ def _transform(edge_program: ExportedProgram) -> None:
     AnnotateDecomposed(edge_program)(graph_module)
     FoldQDQ()(graph_module)
     LayoutTransform(edge_program)(graph_module)
+    ReplaceIndexPutInput(edge_program)(graph_module)
 
     # Since QDQ nodes are stripped, update graph signature again to validate program
     edge_program._graph_signature = _get_updated_graph_signature(

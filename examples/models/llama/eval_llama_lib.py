@@ -29,6 +29,51 @@ from .export_llama_lib import (
 )
 
 
+class GraphModuleEvalWrapper(EagerEvalWrapper):
+    """
+    A wrapper class for ExecuTorch py-binded integration with the
+    lm-evaluation-harness library.
+    """
+
+    def __init__(
+        self,
+        model: torch.fx.GraphModule,
+        tokenizer: Union[SentencePieceTokenizer, Tiktoken],
+        max_seq_length: Optional[int] = None,
+        use_kv_cache: bool = False,
+        enable_dynamic_shape: bool = True,
+    ):
+        super().__init__(
+            model=model, tokenizer=tokenizer, max_seq_length=max_seq_length
+        )
+        self._model = model.to(self.device)
+        self._use_kv_cache = use_kv_cache
+        self._enable_dynamic_shape = enable_dynamic_shape
+
+    def _model_call(self, inps):
+        if self._use_kv_cache:
+            if not self._enable_dynamic_shape:
+                # graph module exported without dynamic shape won't work with a different shape.
+                # And we have to do single token prefill here.
+                result_logits = []
+                for pos in range(inps.shape[-1]):
+                    pos_tensor = torch.tensor([pos], dtype=torch.int64)
+                    logits = self._model(inps[:, pos : pos + 1], pos_tensor)
+                    result_logits.append(logits)
+                return torch.cat(result_logits, dim=1)
+            else:
+                pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
+                # Batch process the whole sequence.
+                logits = self._model(inps[:, : self._max_seq_length], pos_tensor)
+                return logits
+
+        else:
+            return self._model(inps)
+
+    def _model_generate(self, context, max_length, eos_token_id):
+        raise Exception("unimplemented")
+
+
 class ETPybindEvalWrapper(EagerEvalWrapper):
     """
     A wrapper class for ExecuTorch py-binded integration with the
@@ -62,15 +107,19 @@ class ETPybindEvalWrapper(EagerEvalWrapper):
         # Given inps (tokens), return the logits from a single forward call
         # inps: Tensor of shape (1, max_seq_len - 1)
         # logits: Tensor of shape (1, max_seq_len - 1, vocab_size)
+        result = []
         if self._use_kv_cache:
             pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
             result = self._et_model.forward(
                 (inps[:, : self._max_seq_length], pos_tensor)
             )
-            return result[0]
         else:
             result = self._et_model.forward((inps,))
-            return result[0]
+        if result[0].dim() != 3:
+            raise ValueError(
+                f"Dim of logits must be 3 for evaluation. Got {result[0].dim()} here. Add --generate_full_logits in export_llama to generate a pte file with full logits."
+            )
+        return result[0]
 
 
 class ETRunnerEvalWrapper(EagerEvalWrapper):
@@ -144,6 +193,13 @@ def gen_eval_wrapper(
             if torch.cuda.is_available()
             else manager.pre_autograd_graph_module.to(device="cpu")
         )
+        return GraphModuleEvalWrapper(
+            model=model,
+            tokenizer=tokenizer,
+            max_seq_length=args.max_seq_length,
+            use_kv_cache=args.use_kv_cache,
+            enable_dynamic_shape=args.enable_dynamic_shape,
+        )
     else:
         # TODO: use manager.pre_autograd_graph_module for the eval to remove the if-else branch
         # for quantizers. Currently capture_pre_autograd_graph only works with --kv_cache, but
@@ -154,12 +210,21 @@ def gen_eval_wrapper(
             else manager.model.eval().to(device="cpu")
         )
 
-    return EagerEvalWrapper(
-        model=model,
-        tokenizer=tokenizer,
-        max_seq_length=args.max_seq_length,
-        use_kv_cache=args.use_kv_cache,
-    )
+        # Save the checkpoint after the eager model preparation is done.
+        # The reason for this option is that the checkpoint can be used
+        # to do evaluations in other evaluation platforms, or with data
+        # that is not available in this eval_llama. We save the checkpoint
+        # here for consistency with eval_llama. The accuracy results we
+        # get from eval_llama can be used as a reference to other evaluations.
+        if args.output_eager_checkpoint_file is not None:
+            torch.save(model, args.output_eager_checkpoint_file)
+
+        return EagerEvalWrapper(
+            model=model,
+            tokenizer=tokenizer,
+            max_seq_length=args.max_seq_length,
+            use_kv_cache=args.use_kv_cache,
+        )
 
 
 def build_args_parser() -> argparse.ArgumentParser:
@@ -191,6 +256,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="[For ExecuTorch] Path to the Tokenizer binary for evaluating ExecuTorch models via runtime",
+    )
+    parser.add_argument(
+        "--output_eager_checkpoint_file",
+        type=str,
+        default=None,
+        help="Save the checkpoint after source transformations, for other evaluation platform to run the same checkpoint.",
     )
 
     return parser

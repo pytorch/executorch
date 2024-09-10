@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import List
+from typing import cast, List
 
 import executorch.backends.arm.tosa_quant_utils as tqutils
 import executorch.backends.arm.tosa_utils as tutils
@@ -35,8 +35,12 @@ class MulVisitor(NodeVisitor):
         if is_quant_node:
             input_A = inputs[0]
             input_B = inputs[1]
-            input_A_qargs = tqutils.get_quant_node_args(node.args[0])
-            input_B_qargs = tqutils.get_quant_node_args(node.args[1])
+            input_A_qargs = tqutils.get_quant_node_args(
+                cast(torch.fx.Node, node.args[0])
+            )
+            input_B_qargs = tqutils.get_quant_node_args(
+                cast(torch.fx.Node, node.args[1])
+            )
 
             input_A.shape = tutils.tosa_shape(input_A.shape, input_A.dim_order)
             input_B.shape = tutils.tosa_shape(input_B.shape, input_B.dim_order)

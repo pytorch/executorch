@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/android/*
   pull_request:
     paths:
       - .ci/docker/**
@@ -24,9 +26,6 @@ jobs:
   build-llm-demo:
     name: build-llm-demo
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-    strategy:
-      matrix:
-          tokenizer: [bpe, tiktoken]
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
@@ -44,7 +43,7 @@ jobs:
         export ARTIFACTS_DIR_NAME=artifacts-to-be-uploaded
 
         # Build LLM Demo for Android
-        bash build/build_android_llm_demo.sh ${{ matrix.tokenizer }} ${ARTIFACTS_DIR_NAME}
+        bash build/build_android_llm_demo.sh ${ARTIFACTS_DIR_NAME}
 
   # Upload artifacts to S3. The artifacts are needed not only by the device farm but also TorchChat
   upload-artifacts:
@@ -81,7 +80,8 @@ jobs:
   # Running Android emulator directly on the runner and not using Docker
   run-emulator:
     needs: build-llm-demo
-    runs-on: amz2023.linux.4xlarge
+    # NB: Use metal install for KVM support to run the emulator faster
+    runs-on: linux.24xl.spr-metal
     env:
       ANDROID_NDK_VERSION: r26c
       API_LEVEL: 34
@@ -129,9 +129,6 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
-          # NB: x86_64 emulator is slow because the lack of KVM support on AWS, it
-          # seems that we can use metal instance for that but it hasn't been tried
-          # out yet. Also arm64-v8a arch requires an ARM runner
           arch: x86_64
           script: ./build/run_android_emulator.sh
           # NB: This is to boot the emulator faster following the instructions on
@@ -155,13 +152,6 @@ jobs:
       id-token: write
       contents: read
     uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
-    strategy:
-      matrix:
-        # https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/LlamaDemo/README.md#alternative-2-build-from-local-machine
-        # mentions that tiktoken is only for Llama3. So, we can export it later in another archive
-        # like https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b-0717.zip when this is
-        # updated to run Llama3
-        tokenizer: [bpe]
     with:
       device-type: android
       runner: linux.2xlarge
@@ -171,8 +161,8 @@ jobs:
       # This is the custom Android device pool that only includes Samsung Galaxy S2x
       device-pool-arn: arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa
       # Uploaded to S3 from the previous job, the name of the app comes from the project itself
-      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_${{ matrix.tokenizer }}/app-debug.apk
-      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo_${{ matrix.tokenizer }}/app-debug-androidTest.apk
+      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo/app-debug.apk
+      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/llm_demo/app-debug-androidTest.apk
       test-spec: https://ossci-android.s3.amazonaws.com/executorch/android-llm-device-farm-test-spec.yml
       # Among the input, this is the biggest file, so it is cached on AWS to make the test faster. Note that the file is deleted by AWS after 30
       # days and the job will automatically re-upload the file when that happens.

@@ -253,5 +253,20 @@ class TensorImpl {
   const TensorShapeDynamism shape_dynamism_;
 };
 
+/**
+ * Compute the number of elements based on the sizes of a tensor.
+ */
+ssize_t compute_numel(
+    const ::torch::executor::TensorImpl::SizesType* sizes,
+    ssize_t dim);
+
 } // namespace executor
 } // namespace torch
+
+namespace executorch {
+namespace runtime {
+// TODO(T197294990): Remove these deprecated aliases once all users have moved
+// to the new `::executorch` namespaces.
+using torch::executor::compute_numel;
+} // namespace runtime
+} // namespace executorch

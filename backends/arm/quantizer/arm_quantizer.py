@@ -268,6 +268,7 @@ class ArmQuantizer(Quantizer):
         "sigmoid",
         "mm",
         "cat",
+        "one_to_one",
     ]
 
     def __init__(self) -> None:

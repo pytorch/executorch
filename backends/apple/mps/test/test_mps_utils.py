@@ -229,7 +229,7 @@ class TestMPS(unittest.TestCase):
         compile_specs = [CompileSpec("use_fp16", bytes([use_fp16]))]
 
         if use_partitioner:
-            logging.info(f"Edge IR graph:\n{edge_program.exported_program().graph}")
+            logging.info(f"Edge IR graph:\n{edge_program.exported_program()}")
             delegated_program = edge_program
             delegated_program = edge_program.to_backend(
                 MPSPartitioner(compile_specs=compile_specs)
@@ -239,9 +239,7 @@ class TestMPS(unittest.TestCase):
             )
 
             executorch_program = delegated_program.to_executorch(
-                config=ExecutorchBackendConfig(
-                    extract_delegate_segments=False, extract_constant_segment=False
-                )
+                config=ExecutorchBackendConfig(extract_delegate_segments=False)
             )
         else:
             delegated_program = to_backend(
@@ -258,9 +256,7 @@ class TestMPS(unittest.TestCase):
                     _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
                 ),
             ).to_executorch(
-                config=ExecutorchBackendConfig(
-                    extract_delegate_segments=False, extract_constant_segment=False
-                )
+                config=ExecutorchBackendConfig(extract_delegate_segments=False)
             )
 
         if bundled_program:

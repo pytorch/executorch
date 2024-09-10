@@ -118,8 +118,9 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
     num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
     """
-    if n_rep == 1:
-        return hidden_states
+    # TODO: Encounter the bug about source partition, need to investigate more on it.
+    # if n_rep == 1:
+    #     return hidden_states
 
     new_kv = []
     batch, n_heads, seqlen, head_dim = hidden_states.shape

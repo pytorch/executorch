@@ -105,7 +105,9 @@ def get_coreml_partitioner(
 
 
 def get_qnn_partitioner(
-    quant_dtype, use_kv_cache: bool = False, pt2e_quantize: Optional[str] = None
+    use_kv_cache: bool = False,
+    pt2e_quantize: Optional[str] = None,
+    num_sharding: int = 0,
 ):
     assert (
         use_kv_cache is True
@@ -128,11 +130,11 @@ def get_qnn_partitioner(
         )
     except ImportError:
         raise ImportError(
-            "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
+            "Please install the Qualcomm backend following https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
         )
 
     use_fp16 = True
-    skip_node_op_set = {}
+    skip_node_op_set = {"llama.fallback.default", "aten.embedding.default"}
     if pt2e_quantize is not None:
         use_fp16 = False
 
@@ -140,7 +142,10 @@ def get_qnn_partitioner(
         generate_qnn_executorch_compiler_spec(  # pyre-fixme[16]
             soc_model=QcomChipset.SM8650,  # default to SM8650  # pyre-fixme[16]
             # pyre-fixme[16]
-            backend_options=generate_htp_compiler_spec(use_fp16=use_fp16),
+            backend_options=generate_htp_compiler_spec(
+                use_fp16=use_fp16,
+                use_multi_contexts=num_sharding > 0,
+            ),
             debug=False,
             saver=False,
         ),

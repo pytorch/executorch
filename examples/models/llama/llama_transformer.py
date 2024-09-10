@@ -39,6 +39,7 @@ class RMSNorm(torch.nn.Module):
 
         """
         super().__init__()
+        self.dim = dim
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
 

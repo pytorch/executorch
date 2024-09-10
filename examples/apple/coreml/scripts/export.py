@@ -104,11 +104,7 @@ def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
     lowered_module(*example_inputs)
     exec_prog = to_edge(
         export(lowered_module, example_inputs), compile_config=_EDGE_COMPILE_CONFIG
-    ).to_executorch(
-        config=exir.ExecutorchBackendConfig(
-            extract_constant_segment=False, extract_delegate_segments=True
-        )
-    )
+    ).to_executorch(config=exir.ExecutorchBackendConfig(extract_delegate_segments=True))
 
     return exec_prog
 
@@ -178,9 +174,7 @@ if __name__ == "__main__":
         )
         delegated_program_manager = edge_program_manager.to_backend(partitioner)
         exec_program = delegated_program_manager.to_executorch(
-            config=exir.ExecutorchBackendConfig(
-                extract_constant_segment=False, extract_delegate_segments=True
-            )
+            config=exir.ExecutorchBackendConfig(extract_delegate_segments=True)
         )
     else:
         lowered_module, edge_copy = lower_module_to_coreml(

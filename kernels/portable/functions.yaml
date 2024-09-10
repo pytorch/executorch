@@ -248,6 +248,11 @@
     - arg_meta: null
       kernel_name: torch::executor::convolution_out
 
+- op: convolution_backward.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::convolution_backward_out
+
 - op: copy.out
   kernels:
     - arg_meta: null
@@ -391,6 +396,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::full_like_out
+
+- op: gather.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::gather_out
 
 - op: ge.Scalar_out
   kernels:
@@ -577,6 +587,11 @@
     - arg_meta: null
       kernel_name: torch::executor::mul_scalar_out
 
+- op: narrow_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::narrow_copy_out
+
 - op: native_group_norm.out
   kernels:
     - arg_meta: null
@@ -621,6 +636,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::pixel_shuffle_out
+
+- op: pixel_unshuffle.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::pixel_unshuffle_out
 
 - op: pow.Scalar_out
   kernels:
@@ -727,6 +747,16 @@
     - arg_meta: null
       kernel_name: torch::executor::scalar_tensor_out
 
+- op: scatter.src_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::scatter_src_out
+
+- op: scatter.value_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::scatter_value_out
+
 - op: scatter_add.out
   kernels:
     - arg_meta: null
@@ -831,6 +861,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::tanh_out
+
+- op: topk.values
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::topk_values
 
 - op: transpose_copy.int_out
   kernels:

@@ -229,6 +229,31 @@ TEST_F(OpDivOutTest, BroadcastScalarSupported2) {
 
   Tensor ret = tf.make({3, 1, 1}, {4, 2, 1});
   EXPECT_TENSOR_EQ(out, ret);
+
+  std::swap(a, b);
+  out = tf.zeros({3, 1, 1});
+  op_div_out(a, b, out);
+  ret = tf.make({3, 1, 1}, {0.25, 0.5, 1});
+  EXPECT_TENSOR_EQ(out, ret);
+}
+
+TEST_F(OpDivOutTest, BroadcastScalarRank0Supported) {
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor a = tf.make({1}, {8});
+  Tensor b = tf.make({}, {2});
+
+  Tensor out = tf.zeros({1});
+
+  op_div_out(a, b, out);
+
+  Tensor ret = tf.make({1}, {4});
+  EXPECT_TENSOR_EQ(out, ret);
+
+  op_div_out(b, a, out);
+
+  ret = tf.make({1}, {0.25});
+  EXPECT_TENSOR_EQ(out, ret);
 }
 
 TEST_F(OpDivOutTest, BroadcastDimSizeIsOneAB) {

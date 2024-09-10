@@ -17,7 +17,6 @@
 #include <executorch/examples/qualcomm/qaihub_scripts/llama/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/llm/runner/util.h>
-#include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
@@ -50,8 +49,6 @@ Runner::Runner(
     const int logits_offset)
     : tokenizer_path_(tokenizer_path),
       temperature_(temperature),
-      bos_id_(1),
-      eos_id_(2),
       n_bos_(1),
       n_eos_(1),
       vocab_size_(QAIHUB_LLAMA_LOGITS),
@@ -66,6 +63,21 @@ Runner::Runner(
     ET_LOG(Info, "creating module: model_path=%s", models_path[i].c_str());
   }
   ET_LOG(Info, "creating runner: tokenizer_path=%s", tokenizer_path_.c_str());
+
+// load tokenizer
+#if defined(QAIHUB_LLAMA3_RUNNER)
+  tokenizer_ = get_tiktoken_for_llama();
+  tokenizer_->load(tokenizer_path_);
+  eos_id_.insert(tokenizer_->encode("<|eot_id|>", 0, 0).get()[0]);
+  version_ = LlamaVersion::kLlama3;
+#else
+  tokenizer_ = std::make_unique<BPETokenizer>();
+  tokenizer_->load(tokenizer_path_);
+  version_ = LlamaVersion::kLlama2;
+#endif
+
+  bos_id_ = tokenizer_->bos_tok();
+  eos_id_.insert(tokenizer_->eos_tok());
 
   switch (eval_mode_) {
     case EvalMode::kBert:
@@ -97,14 +109,6 @@ Error Runner::load() {
   for (std::shared_ptr<Module>& module : modules_) {
     ET_CHECK_OK_OR_RETURN_ERROR(module->load_method("forward"));
   }
-
-// load tokenizer
-#if defined(QAIHUB_LLAMA3_RUNNER)
-  tokenizer_ = get_tiktoken_for_llama();
-#else
-  tokenizer_ = std::make_unique<BPETokenizer>();
-#endif
-  tokenizer_->load(tokenizer_path_);
 
   // create sampler
   sampler_ = std::make_unique<Sampler>(
@@ -157,6 +161,7 @@ void Runner::run_model_step(std::vector<std::vector<EValue>>& inputs) {
 // TODO: add overloaded method for on-device tokenize
 Error Runner::generate(
     const std::string& prompt,
+    const std::string& system_prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
     std::function<void(const Stats&)> stats_callback) {
@@ -185,13 +190,43 @@ Error Runner::generate(
   }
 
   stats_.inference_start_ms = util::time_in_ms();
-  shouldStop_ = false;
   seq_len = (seq_len > 0 && seq_len <= max_seq_len_) ? seq_len : max_seq_len_;
 
+  std::string post_process_prompt;
+  switch (version_) {
+    case LlamaVersion::kLlama2:
+      post_process_prompt.append(prompt);
+      break;
+    case LlamaVersion::kLlama3:
+      if (!system_prompt.empty()) {
+        post_process_prompt.append(
+            "<|start_header_id|>system<|end_header_id|>\n\n");
+        post_process_prompt.append(system_prompt);
+        post_process_prompt.append("<|eot_id|>\n");
+      }
+      post_process_prompt.append(
+          "<|start_header_id|>user<|end_header_id|>\n\n");
+      post_process_prompt.append(prompt);
+      post_process_prompt.append(
+          "<|eot_id|><|start_header_id|>assistant<|end_header_id|>");
+      // tokenizer_->encode will add <|begin_of_text|> token for us.
+      // For now, do token call back so the output format looks the same as
+      // llama3 model card.
+      if (token_callback && eval_mode_ == EvalMode::kKVCached) {
+        token_callback("<|begin_of_text|>");
+      }
+      break;
+    default:
+      ET_CHECK_MSG(false, "unsupported llama version");
+      break;
+  }
+
   Result<std::vector<uint64_t>> encode_res =
-      tokenizer_->encode(prompt, n_bos_, 0);
+      tokenizer_->encode(post_process_prompt, n_bos_, 0);
   ET_CHECK_OK_OR_RETURN_ERROR(
-      encode_res.error(), "failed to encode prompt %s", prompt.c_str());
+      encode_res.error(),
+      "failed to encode prompt %s",
+      post_process_prompt.c_str());
 
   std::vector<uint64_t> prompt_tokens = encode_res.get();
   int num_prompt_tokens = prompt_tokens.size();
@@ -264,11 +299,7 @@ Error Runner::generate(
       token_callback(piece_res.get().c_str());
     }
 
-    if (shouldStop_) {
-      break;
-    }
-
-    if (pos >= num_prompt_tokens && cur_token == eos_id_) {
+    if (pos >= num_prompt_tokens && eos_id_.count(cur_token) > 0) {
       ET_LOG(Info, "\nReached to the end of generation");
       break;
     }
@@ -366,10 +397,6 @@ std::string statsToJsonString(const Runner::Stats& stats) {
   return ss.str();
 }
 } // namespace
-
-void Runner::stop() {
-  shouldStop_ = true;
-}
 
 std::vector<Result<MethodMeta>> Runner::get_methods_meta() {
   std::vector<Result<MethodMeta>> methods_meta;

@@ -39,6 +39,9 @@ Tensor& amin_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   ET_SWITCH_REAL_TYPES_AND(
       Bool, in.scalar_type(), ctx, "amin.out", CTYPE, [&]() {
         CTYPE* out_data = out.mutable_data_ptr<CTYPE>();

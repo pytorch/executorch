@@ -734,6 +734,16 @@ class ResizeNearest2D(torch.nn.Module):
         )
 
 
+class RmsNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.eps = 1e-5
+        self.rms = torch.nn.RMSNorm([4], 1e-5)
+
+    def forward(self, x):
+        return self.rms(x)
+
+
 class Rsqrt(torch.nn.Module):
     def __init__(self):
         super().__init__()
