@@ -60,7 +60,7 @@ public class LlamaModule {
    * @param llamaCallback callback object to receive results.
    */
   public int generate(String prompt, LlamaCallback llamaCallback) {
-    return generate(prompt, DEFAULT_SEQ_LEN, DEFAULT_ECHO, llamaCallback);
+    return generate(prompt, DEFAULT_SEQ_LEN, llamaCallback, DEFAULT_ECHO);
   }
 
   /**
@@ -71,18 +71,18 @@ public class LlamaModule {
    * @param llamaCallback callback object to receive results.
    */
   public int generate(String prompt, int seqLen, LlamaCallback llamaCallback) {
-    return generate(null, 0, 0, 0, prompt, seqLen, DEFAULT_ECHO, llamaCallback);
+    return generate(null, 0, 0, 0, prompt, seqLen, llamaCallback, DEFAULT_ECHO);
   }
 
   /**
    * Start generating tokens from the module.
    *
    * @param prompt Input prompt
+   * @param llamaCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
-   * @param llamaCallback callback object to receive results.
    */
-  public int generate(String prompt, boolean echo, LlamaCallback llamaCallback) {
-    return generate(null, 0, 0, 0, prompt, DEFAULT_SEQ_LEN, echo, llamaCallback);
+  public int generate(String prompt, LlamaCallback llamaCallback, boolean echo) {
+    return generate(null, 0, 0, 0, prompt, DEFAULT_SEQ_LEN, llamaCallback, echo);
   }
 
   /**
@@ -90,11 +90,11 @@ public class LlamaModule {
    *
    * @param prompt Input prompt
    * @param seqLen sequence length
+   * @param llamaCallback callback object to receive results
    * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
-   * @param llamaCallback callback object to receive results.
    */
-  public int generate(String prompt, int seqLen, boolean echo, LlamaCallback llamaCallback) {
-    return generate(null, 0, 0, 0, prompt, seqLen, echo, llamaCallback);
+  public int generate(String prompt, int seqLen, LlamaCallback llamaCallback, boolean echo) {
+    return generate(null, 0, 0, 0, prompt, seqLen, llamaCallback, echo);
   }
 
   /**
@@ -106,8 +106,8 @@ public class LlamaModule {
    * @param channels Input image number of channels
    * @param prompt Input prompt
    * @param seqLen sequence length
-   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    * @param llamaCallback callback object to receive results.
+   * @param echo indicate whether to echo the input prompt or not (text completion vs chat)
    */
   @DoNotStrip
   public native int generate(
@@ -117,8 +117,8 @@ public class LlamaModule {
       int channels,
       String prompt,
       int seqLen,
-      boolean echo,
-      LlamaCallback llamaCallback);
+      LlamaCallback llamaCallback,
+      boolean echo);
 
   /**
    * Prefill an LLaVA Module with the given images input.
@@ -172,10 +172,11 @@ public class LlamaModule {
    * @param seqLen The total sequence length, including the prompt tokens and new tokens.
    * @param startPos The starting position in KV cache of the input in the LLM.
    * @param llamaCallback callback object to receive results.
+   * @param echo indicate whether to echo the input prompt or not.
    * @return The error code.
    */
   public native int generateFromPos(
-      String prompt, int seqLen, long startPos, LlamaCallback callback);
+      String prompt, int seqLen, long startPos, LlamaCallback callback, boolean echo);
 
   /** Stop current generate() before it finishes. */
   @DoNotStrip

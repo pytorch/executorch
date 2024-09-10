@@ -242,7 +242,7 @@ void warp_size(const App& app, const bool verbose = false) {
     });
 
     std::vector<int32_t> data(app.nthread_logic);
-    copy_staging_to_ptr(out_buf, data.data(), out_buf.nbytes());
+    out_buf.copy_to(data.data(), out_buf.nbytes());
 
     if (verbose) {
       std::stringstream ss;

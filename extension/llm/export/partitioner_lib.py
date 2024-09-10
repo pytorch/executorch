@@ -56,11 +56,10 @@ def get_mps_partitioner(use_kv_cache: bool = False):
 
 
 def get_coreml_partitioner(
-    use_kv_cache: bool = False, pt2e_quantize: Optional[str] = None
+    enable_state: bool = False,
+    embedding_quantize: Optional[str] = None,
+    pt2e_quantize: Optional[str] = None,
 ):
-    assert (
-        use_kv_cache is True
-    ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
     try:
         import coremltools as ct
         from executorch.backends.apple.coreml.compiler import (  # pyre-ignore
@@ -75,22 +74,22 @@ def get_coreml_partitioner(
         )
 
     minimum_deployment_target = ct.target.iOS15
-    # In Core ML, quantization in introduced in iOS 16
-    if pt2e_quantize is not None:
+    # In Core ML, stateful execution is introduced in iOS 18
+    if enable_state:
+        minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
+    # In Core ML, quantization is introduced in iOS 16
+    if embedding_quantize is not None or pt2e_quantize is not None:
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS16)
     # In Core ML, 8-bit activation quantization is introduced in iOS 17
-    if pt2e_quantize in ("coreml_8a_c8w", "coreml_baseline_8a_c8w"):
+    if (
+        embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 8
+    ) or pt2e_quantize in ("coreml_8a_c8w", "coreml_baseline_8a_c8w"):
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS17)
     # In Core ML, 4-bit weight compression is introduced in iOS 18
-    if pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w"):
+    if (
+        embedding_quantize is not None and int(embedding_quantize.split(",")[0]) == 4
+    ) or pt2e_quantize in ("coreml_c4w", "coreml_8a_c4w", "coreml_baseline_8a_c4w"):
         minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
-    # In Core ML, stateful execution is introduced in iOS 18
-    # TODO (https://github.com/pytorch/executorch/issues/4209)
-    # For now, since mutable buffer is kept in executorch runtime,
-    # state is out of place and can be handled by older iOS.
-    # Once mutable buffer can be handed over to delegate, i.e. state becomes in-place, we will have
-    # if use_kv_cache:
-    #     minimum_deployment_target = max(minimum_deployment_target, ct.target.iOS18)
 
     compile_specs = CoreMLBackend.generate_compile_specs(  # pyre-fixme[16]
         minimum_deployment_target=minimum_deployment_target,
@@ -101,6 +100,7 @@ def get_coreml_partitioner(
     )
     return CoreMLPartitioner(  # pyre-fixme[16]
         compile_specs=compile_specs,
+        take_over_mutable_buffer=enable_state,
     )
 
 
@@ -108,6 +108,7 @@ def get_qnn_partitioner(
     use_kv_cache: bool = False,
     pt2e_quantize: Optional[str] = None,
     num_sharding: int = 0,
+    soc_model: str = "SM8650",  # default to SM8650
 ):
     assert (
         use_kv_cache is True
@@ -130,17 +131,24 @@ def get_qnn_partitioner(
         )
     except ImportError:
         raise ImportError(
-            "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
+            "Please install the Qualcomm backend following https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html"
         )
 
     use_fp16 = True
-    skip_node_op_set = {"llama.fallback.default"}
+    skip_node_op_set = {"llama.fallback.default", "aten.embedding.default"}
     if pt2e_quantize is not None:
         use_fp16 = False
 
+    soc_chip_table = {
+        "SM8650": QcomChipset.SM8650,
+        "SM8550": QcomChipset.SM8550,
+        "SM8475": QcomChipset.SM8475,
+        "SM8450": QcomChipset.SM8450,
+    }
+
     return QnnPartitioner(  # pyre-fixme[16]
         generate_qnn_executorch_compiler_spec(  # pyre-fixme[16]
-            soc_model=QcomChipset.SM8650,  # default to SM8650  # pyre-fixme[16]
+            soc_model=soc_chip_table[soc_model],  # pyre-fixme[16]
             # pyre-fixme[16]
             backend_options=generate_htp_compiler_spec(
                 use_fp16=use_fp16,

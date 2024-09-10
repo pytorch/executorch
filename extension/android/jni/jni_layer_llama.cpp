@@ -150,8 +150,8 @@ class ExecuTorchLlamaJni
       jint channels,
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
-      jboolean echo,
-      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
+      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback,
+      jboolean echo) {
     if (model_type_category_ == MODEL_TYPE_CATEGORY_MULTIMODAL) {
       auto image_size = image->size();
       std::vector<Image> images;
@@ -170,7 +170,8 @@ class ExecuTorchLlamaJni
           prompt->toStdString(),
           seq_len,
           [callback](std::string result) { callback->onResult(result); },
-          [callback](const Stats& result) { callback->onStats(result); });
+          [callback](const Stats& result) { callback->onStats(result); },
+          echo);
     } else if (model_type_category_ == MODEL_TYPE_CATEGORY_LLM) {
       runner_->generate(
           prompt->toStdString(),
@@ -248,7 +249,8 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> prompt,
       jint seq_len,
       jlong start_pos,
-      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
+      facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback,
+      jboolean echo) {
     if (model_type_category_ != MODEL_TYPE_CATEGORY_MULTIMODAL) {
       return static_cast<jint>(Error::NotSupported);
     }
@@ -259,7 +261,8 @@ class ExecuTorchLlamaJni
         [callback](const std::string& result) { callback->onResult(result); },
         [callback](const ::executorch::extension::llm::Stats& stats) {
           callback->onStats(stats);
-        }));
+        },
+        echo));
   }
 
   void stop() {
@@ -285,6 +288,12 @@ class ExecuTorchLlamaJni
         makeNativeMethod("generate", ExecuTorchLlamaJni::generate),
         makeNativeMethod("stop", ExecuTorchLlamaJni::stop),
         makeNativeMethod("load", ExecuTorchLlamaJni::load),
+        makeNativeMethod(
+            "prefillImagesNative", ExecuTorchLlamaJni::prefill_images),
+        makeNativeMethod(
+            "prefillPromptNative", ExecuTorchLlamaJni::prefill_prompt),
+        makeNativeMethod(
+            "generateFromPos", ExecuTorchLlamaJni::generate_from_pos),
     });
   }
 };
