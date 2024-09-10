@@ -88,7 +88,7 @@ You can export and run the original Llama 2 7B model.
 
 3. Export model and generate `.pte` file:
     ```
-    python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
+    python -m examples.models.llama.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
     ```
 4. Create tokenizer.bin.
 
@@ -111,7 +111,7 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     ```
 3. Export model and generate `.pte` file.
     ```
-    python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X
+    python -m examples.models.llama.export_llama -c stories110M.pt -p params.json -X
     ```
 4. Create tokenizer.bin.
 
@@ -127,7 +127,7 @@ You can export and run the original Llama 3 8B instruct model.
 
 2. Export model and generate `.pte` file
     ```
-    python -m examples.models.llama2.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
+    python -m examples.models.llama.export_llama --checkpoint <consolidated.00.pth> -p <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w  --group_size 128 -d fp32 --metadata '{"get_bos_id":128000, "get_eos_ids":[128009, 128001]}' --embedding-quantize 4,32 --output_name="llama3_kv_sdpa_xnn_qe_4_32.pte"
     ```
 
     Due to the larger vocabulary size of Llama 3, we recommend quantizing the embeddings with `--embedding-quantize 4,32` as shown above to further reduce the model size.
@@ -187,7 +187,7 @@ tokenizer.path=<path_to_checkpoint_folder>/tokenizer.model
 
 Using the same arguments from above
 ```
-python -m examples.models.llama2.eval_llama -c <checkpoint.pth> -p <params.json> -t <tokenizer.model> -d fp32 --max_seq_len <max sequence length> --limit <number of samples>
+python -m examples.models.llama.eval_llama -c <checkpoint.pth> -p <params.json> -t <tokenizer.model> -d fp32 --max_seq_len <max sequence length> --limit <number of samples>
 ```
 
 The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
@@ -315,9 +315,9 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 Currently we supported lowering the stories model to other backends, including, CoreML, MPS and QNN. Please refer to the instruction
 for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.html), [MPS](https://pytorch.org/executorch/main/build-run-mps.html), [QNN](https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
 
-- Lower to CoreML: `python -m examples.models.llama2.export_llama -kv --disable_dynamic_shape --coreml -c stories110M.pt -p params.json `
-- MPS: `python -m examples.models.llama2.export_llama -kv --disable_dynamic_shape --mps -c stories110M.pt -p params.json `
-- QNN: `python -m examples.models.llama2.export_llama -kv --disable_dynamic_shape --qnn -c stories110M.pt -p params.json `
+- Lower to CoreML: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --coreml -c stories110M.pt -p params.json `
+- MPS: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --mps -c stories110M.pt -p params.json `
+- QNN: `python -m examples.models.llama.export_llama -kv --disable_dynamic_shape --qnn -c stories110M.pt -p params.json `
 
 The iOS LLAMA app supports the CoreML and MPS model and the Android LLAMA app supports the QNN model. On Android, it also allow to cross compiler the llama runner binary, push to the device and run.
 

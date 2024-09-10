@@ -48,9 +48,9 @@ build_llama_runner() {
     -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
     -DEXECUTORCH_BUILD_KERNELS_CUSTOM=ON \
-    -Bcmake-android-out/examples/models/llama2 examples/models/llama2
+    -Bcmake-android-out/examples/models/llama examples/models/llama
 
-    cmake --build cmake-android-out/examples/models/llama2 -j4 --config Release
+    cmake --build cmake-android-out/examples/models/llama -j4 --config Release
 }
 install_flatc_from_source
 install_executorch_and_backend_lib

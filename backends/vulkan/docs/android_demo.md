@@ -71,7 +71,7 @@ python -m extension.llm.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 Finally, export the `stories110M.pt` file into an ExecuTorch program:
 
 ```shell
-python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json --vulkan
+python -m examples.models.llama.export_llama -c stories110M.pt -p params.json --vulkan
 ```
 
 A `vulkan_llama2.pte` file should have been created as a result of the last step.
