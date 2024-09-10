@@ -98,7 +98,7 @@ TEST_F(TensorPtrTest, TensorWithCustomDataDeleter) {
       data,
       {},
       {},
-      exec_aten::TensorShapeDynamism::STATIC,
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [&deleter_called](void* ptr) {
         deleter_called = true;
         delete[] static_cast<float*>(ptr);
@@ -118,7 +118,7 @@ TEST_F(TensorPtrTest, TensorManagesMovedVector) {
       data_ptr,
       {},
       {},
-      exec_aten::TensorShapeDynamism::STATIC,
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [moved_data = std::move(data), &deleter_called](void*) mutable {
         deleter_called = true;
       });
@@ -140,7 +140,7 @@ TEST_F(TensorPtrTest, TensorDeleterReleasesCapturedSharedPtr) {
       data_ptr.get(),
       {},
       {},
-      exec_aten::TensorShapeDynamism::STATIC,
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
   EXPECT_EQ(data_ptr.use_count(), 2);

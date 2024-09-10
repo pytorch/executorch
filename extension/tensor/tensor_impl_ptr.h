@@ -66,7 +66,7 @@ TensorImplPtr make_tensor_impl_ptr(
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC,
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
     std::function<void(void*)> deleter = nullptr);
 
 /**
@@ -93,7 +93,7 @@ TensorImplPtr make_tensor_impl_ptr(
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   constexpr exec_aten::ScalarType scalar_type =
       runtime::CppTypeToScalarType<T>::value;
   const auto raw_data_ptr = data.data();
@@ -126,7 +126,7 @@ template <typename T = float>
 TensorImplPtr make_tensor_impl_ptr(
     std::vector<T> data,
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   constexpr exec_aten::ScalarType scalar_type =
       runtime::CppTypeToScalarType<T>::value;
   std::vector<exec_aten::SizesType> sizes{exec_aten::SizesType(data.size())};
@@ -165,7 +165,7 @@ TensorImplPtr make_tensor_impl_ptr(
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC);
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND);
 
 } // namespace extension
 } // namespace executorch

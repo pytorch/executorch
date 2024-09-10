@@ -138,7 +138,7 @@ class TensorPtrMaker final {
   void* data_ = nullptr;
   exec_aten::ScalarType type_ = exec_aten::ScalarType::Float;
   exec_aten::TensorShapeDynamism dynamism_ =
-      exec_aten::TensorShapeDynamism::STATIC;
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND;
 };
 
 /**
@@ -182,7 +182,7 @@ inline TensorPtr from_blob(
     std::vector<exec_aten::SizesType> sizes,
     exec_aten::ScalarType type = exec_aten::ScalarType::Float,
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
       .dynamism(dynamism)
       .make_tensor_ptr();
@@ -210,7 +210,7 @@ inline TensorPtr from_blob(
     std::vector<exec_aten::StridesType> strides,
     exec_aten::ScalarType type = exec_aten::ScalarType::Float,
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
       .strides(std::move(strides))
       .dynamism(dynamism)
@@ -239,7 +239,7 @@ inline TensorPtr from_blob(
     exec_aten::ScalarType type,
     std::function<void(void*)>&& deleter,
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
       .deleter(std::move(deleter))
       .dynamism(dynamism)
@@ -270,7 +270,7 @@ inline TensorPtr from_blob(
     exec_aten::ScalarType type,
     std::function<void(void*)>&& deleter,
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return for_blob(data, std::move(sizes), type)
       .strides(std::move(strides))
       .deleter(std::move(deleter))
