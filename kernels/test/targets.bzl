@@ -226,6 +226,7 @@ def define_common_targets():
     _common_op_test("op_le_test", ["aten", "portable", "optimized"])
     _common_op_test("op_leaky_relu_test", ["aten", "portable"])
     _common_op_test("op_lift_fresh_copy_test", ["aten", "portable"])
+    _common_op_test("op_linear_test", ["aten", "optimized"])
     _common_op_test("op_log_softmax_test", ["aten", "portable", "optimized"])
     _common_op_test("op_log_test", ["aten", "portable"])
     _common_op_test("op_log10_test", ["aten", "portable"])
