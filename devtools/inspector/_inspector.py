@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import dataclasses
 import logging
 import sys
@@ -39,6 +41,7 @@ from executorch.devtools.etdump.schema_flatcc import (
 )
 from executorch.devtools.etrecord import ETRecord, parse_etrecord
 from executorch.devtools.inspector._inspector_utils import (
+    calculate_time_scale_factor,
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
     EXCLUDED_COLUMNS_WHEN_PRINTING,
@@ -52,7 +55,6 @@ from executorch.devtools.inspector._inspector_utils import (
     is_inference_output_equal,
     ProgramOutput,
     RESERVED_FRAMEWORK_EVENT_NAMES,
-    TIME_SCALE_DICT,
     TimeScale,
     verify_debug_data_equivalence,
 )
@@ -799,9 +801,7 @@ class EventBlock:
 
         # Construct the EventBlocks
         event_blocks = []
-        scale_factor = (
-            TIME_SCALE_DICT[source_time_scale] / TIME_SCALE_DICT[target_time_scale]
-        )
+        scale_factor = calculate_time_scale_factor(source_time_scale, target_time_scale)
         for run_signature, grouped_run_instance in run_groups.items():
             run_group: OrderedDict[EventSignature, List[InstructionEvent]] = (
                 grouped_run_instance.events
@@ -966,6 +966,9 @@ class Inspector:
             debug_buffer_path: Debug buffer file path that contains the debug data referenced by ETDump for intermediate and program outputs.
             delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is:
                     (delegate_metadata_list: List[bytes]) -> Union[List[str], Dict[str, Any]]
+            delegate_time_scale_converter: Optional function to convert the time scale of delegate profiling data. If not given, use the conversion ratio of
+                    target_time_scale/source_time_scale.
+            enable_module_hierarchy: Enable submodules in the operator graph. Defaults to False.
 
         Returns:
             None
@@ -979,6 +982,14 @@ class Inspector:
             )
         self._source_time_scale = source_time_scale
         self._target_time_scale = target_time_scale
+
+        if delegate_time_scale_converter is None:
+            scale_factor = calculate_time_scale_factor(
+                source_time_scale, target_time_scale
+            )
+            delegate_time_scale_converter = (
+                lambda event_name, input_time: input_time / scale_factor
+            )
 
         if etrecord is None:
             self._etrecord = None
@@ -1002,10 +1013,10 @@ class Inspector:
             )
 
         self.event_blocks = EventBlock._gen_from_etdump(
-            etdump,
-            self._source_time_scale,
-            self._target_time_scale,
-            output_buffer,
+            etdump=etdump,
+            source_time_scale=self._source_time_scale,
+            target_time_scale=self._target_time_scale,
+            output_buffer=output_buffer,
             delegate_metadata_parser=delegate_metadata_parser,
             delegate_time_scale_converter=delegate_time_scale_converter,
         )

@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import math
 from enum import Enum
 from typing import Dict, List, Mapping, Optional, Tuple, TypeAlias, Union
@@ -61,6 +63,15 @@ TIME_SCALE_DICT = {
     TimeScale.S: 1,
     TimeScale.CYCLES: 1,
 }
+
+
+def calculate_time_scale_factor(
+    source_time_scale: TimeScale, target_time_scale: TimeScale
+) -> float:
+    """
+    Calculate the factor (source divided by target) between two time scales
+    """
+    return TIME_SCALE_DICT[source_time_scale] / TIME_SCALE_DICT[target_time_scale]
 
 
 # Model Debug Output

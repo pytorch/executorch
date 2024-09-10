@@ -20,8 +20,20 @@
 #include <cstring>
 #include <memory>
 
-namespace torch {
-namespace executor {
+using ::exec_aten::ScalarType;
+using ::exec_aten::Tensor;
+using ::executorch::etdump::ETDumpGen;
+using ::executorch::etdump::ETDumpResult;
+using ::executorch::runtime::AllocatorID;
+using ::executorch::runtime::ArrayRef;
+using ::executorch::runtime::BoxedEvalueList;
+using ::executorch::runtime::DelegateDebugIdType;
+using ::executorch::runtime::EValue;
+using ::executorch::runtime::EventTracerEntry;
+using ::executorch::runtime::LoggedEValueType;
+using ::executorch::runtime::Span;
+using ::executorch::runtime::Tag;
+using ::executorch::runtime::testing::TensorFactory;
 
 class ProfilerETDumpTest : public ::testing::Test {
  protected:
@@ -49,7 +61,7 @@ TEST_F(ProfilerETDumpTest, SingleProfileEvent) {
     EventTracerEntry entry = etdump_gen[i]->start_profiling("test_event", 0, 1);
     etdump_gen[i]->end_profiling(entry);
 
-    etdump_result result = etdump_gen[i]->get_etdump_data();
+    ETDumpResult result = etdump_gen[i]->get_etdump_data();
     ASSERT_TRUE(result.buf != nullptr);
     ASSERT_TRUE(result.size != 0);
 
@@ -105,7 +117,7 @@ TEST_F(ProfilerETDumpTest, EmptyBlocks) {
         etdump_gen[i]->start_profiling("test_event_1", 0, 1);
     etdump_gen[i]->end_profiling(entry);
 
-    etdump_result result = etdump_gen[i]->get_etdump_data();
+    ETDumpResult result = etdump_gen[i]->get_etdump_data();
     ASSERT_TRUE(result.buf != nullptr);
     ASSERT_TRUE(result.size != 0);
 
@@ -160,7 +172,7 @@ TEST_F(ProfilerETDumpTest, AllocationEvents) {
 
 TEST_F(ProfilerETDumpTest, DebugEvent) {
   for (size_t i = 0; i < 2; i++) {
-    testing::TensorFactory<ScalarType::Float> tf;
+    TensorFactory<ScalarType::Float> tf;
     EValue evalue(tf.ones({3, 2}));
 
     etdump_gen[i]->create_event_block("test_block");
@@ -189,7 +201,7 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
 
 TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
   for (size_t i = 0; i < 2; i++) {
-    testing::TensorFactory<ScalarType::Int> tf;
+    TensorFactory<ScalarType::Int> tf;
     exec_aten::Tensor storage[2] = {tf.ones({3, 2}), tf.ones({3, 2})};
     EValue evalue_1(storage[0]);
     EValue evalue_2(storage[1]);
@@ -212,7 +224,7 @@ TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
 }
 
 TEST_F(ProfilerETDumpTest, VerifyLogging) {
-  testing::TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Float> tf;
   EValue evalue(tf.ones({3, 2}));
 
   for (size_t i = 0; i < 2; i++) {
@@ -225,7 +237,7 @@ TEST_F(ProfilerETDumpTest, VerifyLogging) {
     etdump_gen[i]->log_evalue(evalue);
     etdump_gen[i]->log_evalue(evalue, LoggedEValueType::kProgramOutput);
 
-    etdump_result result = etdump_gen[i]->get_etdump_data();
+    ETDumpResult result = etdump_gen[i]->get_etdump_data();
     ASSERT_TRUE(result.buf != nullptr);
     ASSERT_TRUE(result.size != 0);
 
@@ -297,7 +309,7 @@ TEST_F(ProfilerETDumpTest, MultipleBlocksWithEvents) {
     entry = etdump_gen[i]->start_profiling("test_event", 0, 1);
     etdump_gen[i]->end_profiling(entry);
 
-    etdump_result result = etdump_gen[i]->get_etdump_data();
+    ETDumpResult result = etdump_gen[i]->get_etdump_data();
     ASSERT_TRUE(result.buf != nullptr);
     ASSERT_TRUE(result.size != 0);
 
@@ -363,7 +375,7 @@ TEST_F(ProfilerETDumpTest, VerifyData) {
     entry = etdump_gen[i]->start_profiling("test_event2", 0, 1);
     etdump_gen[i]->end_profiling(entry);
 
-    etdump_result result = etdump_gen[i]->get_etdump_data();
+    ETDumpResult result = etdump_gen[i]->get_etdump_data();
     ASSERT_TRUE(result.buf != nullptr);
     ASSERT_TRUE(result.size != 0);
 
@@ -421,7 +433,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
     Span<uint8_t> buffer((uint8_t*)ptr, 2048);
 
     etdump_gen[i]->create_event_block("test_block");
-    testing::TensorFactory<ScalarType::Float> tf;
+    TensorFactory<ScalarType::Float> tf;
 
     ET_EXPECT_DEATH(
         etdump_gen[i]->log_intermediate_output_delegate(
@@ -462,7 +474,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
         static_cast<torch::executor::DebugHandle>(-1),
         true);
 
-    etdump_result result = etdump_gen[i]->get_etdump_data();
+    ETDumpResult result = etdump_gen[i]->get_etdump_data();
     ASSERT_TRUE(result.buf != nullptr);
     ASSERT_TRUE(result.size != 0);
 
@@ -474,7 +486,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateIntermediateOutput) {
 }
 
 TEST_F(ProfilerETDumpTest, VerifyDelegateIntermediateLogging) {
-  testing::TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Float> tf;
   EValue evalue(tf.ones({3, 2}));
 
   for (size_t i = 0; i < 2; i++) {
@@ -492,7 +504,7 @@ TEST_F(ProfilerETDumpTest, VerifyDelegateIntermediateLogging) {
     etdump_gen[i]->log_intermediate_output_delegate(
         nullptr, 258, tf.ones({5, 6}));
 
-    etdump_result result = etdump_gen[i]->get_etdump_data();
+    ETDumpResult result = etdump_gen[i]->get_etdump_data();
     ASSERT_TRUE(result.buf != nullptr);
     ASSERT_TRUE(result.size != 0);
 
@@ -603,7 +615,7 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
         etdump_gen[i]->end_profiling(entry),
         "Delegate events must use end_profiling_delegate to mark the end of a delegate profiling event.");
 
-    etdump_result result = etdump_gen[i]->get_etdump_data();
+    ETDumpResult result = etdump_gen[i]->get_etdump_data();
     ASSERT_TRUE(result.buf != nullptr);
     ASSERT_TRUE(result.size != 0);
 
@@ -681,7 +693,7 @@ TEST_F(ProfilerETDumpTest, WriteAfterGetETDumpData) {
           etdump_gen[i]->start_profiling("test_event", 0, 1);
       etdump_gen[i]->end_profiling(entry);
 
-      etdump_result result = etdump_gen[i]->get_etdump_data();
+      ETDumpResult result = etdump_gen[i]->get_etdump_data();
       ASSERT_TRUE(result.buf != nullptr);
       ASSERT_TRUE(result.size != 0);
 
@@ -712,6 +724,3 @@ TEST_F(ProfilerETDumpTest, WriteAfterGetETDumpData) {
     }
   }
 }
-
-} // namespace executor
-} // namespace torch

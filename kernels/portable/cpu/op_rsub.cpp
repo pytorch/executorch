@@ -31,6 +31,9 @@ Tensor& rsub_scalar_out(
       out,
       "Failed to resize output tensor.");
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(a, out), InvalidArgument, out);
+
   ET_KERNEL_CHECK(ctx, tensor_is_realhb_type(out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
