@@ -52,6 +52,11 @@
     - arg_meta: null
       kernel_name: torch::executor::opt_le_tensor_out
 
+- op: mm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_mm_out
+
 - op: mul.out
   kernels:
     - arg_meta: null
