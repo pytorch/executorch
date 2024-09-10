@@ -66,4 +66,9 @@ public class PromptFormat {
         return "";
     }
   }
+
+  public static String getLlavaPresetPrompt() {
+    return "A chat between a curious human and an artificial intelligence assistant. The assistant"
+        + " gives helpful, detailed, and polite answers to the human's questions. USER: ";
+  }
 }
