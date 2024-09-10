@@ -139,16 +139,9 @@ def get_qnn_partitioner(
     if pt2e_quantize is not None:
         use_fp16 = False
 
-    soc_chip_table = {
-        "SM8650": QcomChipset.SM8650,
-        "SM8550": QcomChipset.SM8550,
-        "SM8475": QcomChipset.SM8475,
-        "SM8450": QcomChipset.SM8450,
-    }
-
     return QnnPartitioner(  # pyre-fixme[16]
         generate_qnn_executorch_compiler_spec(  # pyre-fixme[16]
-            soc_model=soc_chip_table[soc_model],  # pyre-fixme[16]
+            soc_model=getattr(QcomChipset, soc_model),  # pyre-fixme[16]
             # pyre-fixme[16]
             backend_options=generate_htp_compiler_spec(
                 use_fp16=use_fp16,
