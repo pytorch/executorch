@@ -33,6 +33,9 @@ Tensor& slice_copy_Tensor_out(
     dim += in.dim();
   }
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   // If user do not set value to end_val, set end to in.size(dim) (largest
   // value available)
   int64_t end = end_val.has_value() ? end_val.value() : in.size(dim);

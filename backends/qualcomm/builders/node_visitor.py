@@ -202,7 +202,7 @@ class NodeVisitor:
 
         dtype = quant_configs[QCOM_DTYPE]
 
-        tensor = tensor.div(scale + 1e-6).add(zero_point).round().to(dtype)
+        tensor = tensor.div(scale).add(zero_point).round().to(dtype)
         # Make the backends access data correctly
         if quant_configs.get(QCOM_BITWIDTH) == 4:
             mask = torch.full(tensor.size(), 0x0F, dtype=torch.int8)

@@ -41,6 +41,7 @@ class GraphModuleEvalWrapper(EagerEvalWrapper):
         tokenizer: Union[SentencePieceTokenizer, Tiktoken],
         max_seq_length: Optional[int] = None,
         use_kv_cache: bool = False,
+        generate_full_logits: bool = False,
         enable_dynamic_shape: bool = True,
     ):
         super().__init__(
@@ -48,6 +49,7 @@ class GraphModuleEvalWrapper(EagerEvalWrapper):
         )
         self._model = model.to(self.device)
         self._use_kv_cache = use_kv_cache
+        self._generate_full_logits = generate_full_logits
         self._enable_dynamic_shape = enable_dynamic_shape
 
     def _model_call(self, inps):
@@ -60,7 +62,10 @@ class GraphModuleEvalWrapper(EagerEvalWrapper):
                     pos_tensor = torch.tensor([pos], dtype=torch.int64)
                     logits = self._model(inps[:, pos : pos + 1], pos_tensor)
                     result_logits.append(logits)
-                return torch.cat(result_logits, dim=1)
+                if self._generate_full_logits:
+                    return torch.cat(result_logits, dim=1)
+                else:
+                    return torch.stack(result_logits, dim=1)
             else:
                 pos_tensor = torch.tensor([0], dtype=torch.int64, device=self.device)
                 # Batch process the whole sequence.

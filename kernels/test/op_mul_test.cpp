@@ -182,6 +182,23 @@ class OpMulOutTest : public OperatorTest {
     EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
     EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
   }
+
+  template <ScalarType DTYPE>
+  void test_both_scalar_input_broadcast() {
+    TensorFactory<DTYPE> tf_a;
+
+    // a is a rank-1 scalar and b is a rank-0 scalar
+    Tensor a = tf_a.make({1}, /*data=*/{2});
+    Tensor b = tf_a.make({}, /*data=*/{2});
+
+    // Destination for output of mul.
+    Tensor out = tf_a.make({1}, /*data=*/{2});
+    Tensor expected = tf_a.make({1}, /*data=*/{4});
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
+    EXPECT_TENSOR_CLOSE(op_mul_out(b, a, out), expected);
+  }
 };
 
 class OpMulScalarOutTest : public OperatorTest {
@@ -307,6 +324,12 @@ TEST_F(OpMulOutTest, ScalarInputBroadcastTest) {
   test_scalar_input_broadcast<ScalarType::Int>();
   test_scalar_input_broadcast<ScalarType::Half>();
   test_scalar_input_broadcast<ScalarType::BFloat16>();
+}
+
+TEST_F(OpMulOutTest, BothScalarInputBroadcastTest) {
+  test_both_scalar_input_broadcast<ScalarType::Int>();
+  test_both_scalar_input_broadcast<ScalarType::Half>();
+  test_both_scalar_input_broadcast<ScalarType::BFloat16>();
 }
 
 TEST_F(OpMulOutTest, MismatchedOutputShapesDies) {
@@ -553,6 +576,32 @@ TEST_F(OpMulScalarOutTest, SanityCheck) {
 
 TEST_F(OpMulScalarOutTest, OptimizedSanityCheck) {
   TensorFactory<ScalarType::Float> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor out = tf.zeros(sizes);
+
+  op_mul_scalar_out(tf.make(sizes, {1.3, 2.1, 4.6, 8.2}), 2.0, out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {2.6, 4.2, 9.2, 16.4}));
+}
+
+TEST_F(OpMulScalarOutTest, HalfSanityCheck) {
+  TensorFactory<ScalarType::Half> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor out = tf.zeros(sizes);
+
+  op_mul_scalar_out(tf.make(sizes, {1.3, 2.1, 4.6, 8.2}), 2.0, out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {2.6, 4.2, 9.2, 16.4}));
+}
+
+TEST_F(OpMulScalarOutTest, BFloat16SanityCheck) {
+  TensorFactory<ScalarType::BFloat16> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
 

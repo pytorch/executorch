@@ -14,7 +14,7 @@ from executorch.exir.program._program import ExecutorchProgramManager
 from executorch.extension.llm.custom_ops import preprocess_custom_ops  # noqa
 
 from torch.export import Dim, ExportedProgram
-from torchtune.models.clip.inference._transforms import _CLIPImageTransform
+from torchtune.models.clip.inference._transform import _CLIPImageTransform
 
 
 def get_example_inputs() -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

@@ -85,13 +85,12 @@ Tensor& opt_add_out(
   if (b.numel() == 1) {
     if (a_type == b_type && a_type == out_type && a_type != ScalarType::Half &&
         a_type != ScalarType::BFloat16) {
-      auto error = resize_tensor(out, a.sizes());
-      ET_KERNEL_CHECK_MSG(
+      ET_KERNEL_CHECK(
           ctx,
-          error == Error::Ok,
+          resize_to_broadcast_target_size(a, b, out) == Error::Ok,
           InvalidArgument,
-          out,
-          "Failed to resize output tensor.");
+          out);
+
       ET_SWITCH_REALB_TYPES(a_type, ctx, "add.out", CTYPE, [&]() {
         ET_SWITCH_REALB_TYPES(b_type, ctx, "add.out", CTYPE_B, [&]() {
           CTYPE alpha_val;
