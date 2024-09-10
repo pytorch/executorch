@@ -319,7 +319,7 @@ def build_args_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--soc_model",
-        help="SoC model of current device. e.g. 'SM8650' for Snapdragon 8 Gen 3.",
+        help="[QNN backend] SoC model of current device. e.g. 'SM8650' for Snapdragon 8 Gen 3.",
         type=str,
         required=False,
         default="SM8650",
