@@ -106,7 +106,12 @@ class TestMeanDim(unittest.TestCase):
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .partition()
-            .check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_mean_dim",
+                    "executorch_exir_dialects_edge__ops_aten_avg_pool2d_default",
+                ]
+            )
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )
