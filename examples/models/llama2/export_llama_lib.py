@@ -230,7 +230,8 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--optimized_rotation_path",
         default=None,
         required=False,
-        help="Optimized rotation checkpoint path. You can download the optimized rotation matrices from https://github.com/facebookresearch/SpinQuant/tree/main",
+        help="[QNN Backend] Optimized rotation checkpoint path. Just apply R1/R2 here."
+        "You can download the optimized rotation matrices from https://github.com/facebookresearch/SpinQuant/tree/main",
     )
     parser.add_argument(
         "-m",
