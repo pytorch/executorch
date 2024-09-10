@@ -78,6 +78,7 @@ class AnnotateAndQuantScalar(ExportPass):
             float,
             torch.float32,
             torch.int32,
+            torch.int64,
         ]:
             return
 
