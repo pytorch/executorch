@@ -42,6 +42,7 @@
 #define ET_NORETURN [[noreturn]]
 #define ET_NOINLINE __attribute__((noinline))
 #define ET_INLINE __attribute__((always_inline)) inline
+#define ET_INLINE_ATTRIBUTE __attribute__((always_inline))
 
 #if defined(__GNUC__)
 
