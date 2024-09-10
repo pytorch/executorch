@@ -23,13 +23,21 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch {
-namespace executor {
+using exec_aten::ArrayRef;
+using exec_aten::Half;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using ::executorch::runtime::Error;
+using ::executorch::runtime::EValue;
+using ::executorch::runtime::Method;
+using ::executorch::runtime::Result;
+
+namespace executorch {
 namespace bundled_program {
 
 namespace {
 
-#define kMaxDim 16
+constexpr size_t kMaxDim = 16;
 
 #ifdef USE_ATEN_LIB
 
@@ -53,6 +61,7 @@ at::Tensor tensor_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
 }
 
 #else // !USE_ATEN_LIB
+using torch::executor::TensorImpl;
 // Create a tensorimpl with same content using bundled tensor
 TensorImpl impl_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
   ScalarType scalar_type =
@@ -234,9 +243,9 @@ get_method_test_suite(
 } // namespace
 
 // Load testset_idx-th bundled data into the Method
-ET_NODISCARD Error LoadBundledInput(
+ET_NODISCARD Error load_bundled_input(
     Method& method,
-    serialized_bundled_program* bundled_program_ptr,
+    SerializedBundledProgram* bundled_program_ptr,
     size_t testset_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       bundled_program_flatbuffer::BundledProgramBufferHasIdentifier(
@@ -319,19 +328,19 @@ ET_NODISCARD Error LoadBundledInput(
     ET_CHECK_OR_RETURN_ERROR(
         status == Error::Ok,
         NotSupported,
-        "set_input failed during load bundled inputs with status %" PRIu32,
-        static_cast<error_code_t>(status));
+        "set_input failed during load bundled inputs with status 0%" PRIx32,
+        static_cast<uint32_t>(status));
   }
 
-  internal::event_tracer_set_bundled_input_index(
+  ::executorch::runtime::internal::event_tracer_set_bundled_input_index(
       method.get_event_tracer(), testset_idx);
 
   return Error::Ok;
 }
 
-ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
+ET_NODISCARD Error verify_method_outputs(
     Method& method,
-    serialized_bundled_program* bundled_program_ptr,
+    SerializedBundledProgram* bundled_program_ptr,
     size_t testset_idx,
     double rtol,
     double atol) {
@@ -390,12 +399,12 @@ ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
   return Error::Ok;
 }
 
-ET_NODISCARD Error GetProgramData(
+ET_NODISCARD Error get_program_data(
     void* file_data,
     size_t file_data_len,
     const void** out_program_data,
     size_t* out_program_data_len) {
-  if (IsBundledProgram(file_data)) {
+  if (is_bundled_program(file_data, file_data_len)) {
     auto program_bundled =
         bundled_program_flatbuffer::GetBundledProgram(file_data);
     *out_program_data = program_bundled->program()->data();
@@ -410,11 +419,13 @@ ET_NODISCARD Error GetProgramData(
   return Error::Ok;
 }
 
-bool IsBundledProgram(void* file_data) {
+bool is_bundled_program(void* file_data, ET_UNUSED size_t file_data_len) {
+  // Even though the flatbuffer API doesn't accept a length, it's important to
+  // require one so that we could change the internal representation, or use a
+  // future API that does require a length.
   return bundled_program_flatbuffer::BundledProgramBufferHasIdentifier(
       file_data);
 }
 
 } // namespace bundled_program
-} // namespace executor
-} // namespace torch
+} // namespace executorch
