@@ -359,7 +359,7 @@ class vTensor final {
 
   /*
    * Returns the image extents of the underlying image texture, but re-ordered
-   * suchthat the first element is the extent of the axis used to represent the
+   * such that the first element is the extent of the axis used to represent the
    * tensor's width dimension, the second element is the extent of the axis used
    * to represent the tensor's height dimension, and the third element is the
    * extent of the axis used to represent the tensor's channels dimension.

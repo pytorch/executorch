@@ -40,9 +40,6 @@ $if HAS_BIAS:
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 layout(constant_id = 3) const int out_packed_dim = C_DIM;
-layout(constant_id = 4) const int mat1_packed_dim = W_DIM;
-layout(constant_id = 5) const int mat2_packed_dim = H_DIM;
-layout(constant_id = 6) const int bias_packed_dim = W_DIM;
 
 // To convince the SPIR-V compiler to unroll the loops optimally, need this
 // macro
@@ -64,7 +61,7 @@ struct FloatMatrix_3d {
   #define FloatMatrix FloatMatrix_3d
 #else
   #define FloatMatrix FloatMatrix_2d
-#endif //BATCH_MODE
+#endif // BATCH_MODE
 
 #ifdef HAS_BIAS
 // get texel from self tensor (channel_packed) in addmm
@@ -91,7 +88,7 @@ FloatMatrix matmul_partial(const ivec4 out_idx_tl) {
       }
 #else
       results.data[i][j] = 0.0f;
-#endif
+#endif // BATCH_MODE
     }
   }
   vec4 mat1_tensor_partial_load[TILE_ROWS];
@@ -103,14 +100,14 @@ FloatMatrix matmul_partial(const ivec4 out_idx_tl) {
 #else
   const int mat2_k_axis = mat2_axis_mapping.y;
   const int mat2_row_axis = mat2_axis_mapping.x;
-#endif
+#endif // MAT2_IS_TRANSPOSED
 
 #ifdef BATCH_MODE
   for (int batch_idx = 0; batch_idx < FOUR; batch_idx++) {
     if (out_idx_tl.z + batch_idx >= out_sizes.z) {
       break;
     }
-#endif
+#endif // BATCH_MODE
   for (int k = 0; k < mat1_sizes.x; k+=4) {
     const int k_div4 = k >> 2;
     // read and cache (4 x TILE_ROWS) tile of mat1
@@ -144,14 +141,14 @@ FloatMatrix matmul_partial(const ivec4 out_idx_tl) {
         results.data[out_row][out_col][batch_idx] +=
 #else
         results.data[out_row][out_col] +=
-#endif
+#endif // BATCH_MODE
             dot(mat1_tensor_partial_load[out_row], mat2_tensor_partial_load[out_col]);
       }
     }
   }
 #ifdef BATCH_MODE
   }
-#endif
+#endif // BATCH_MODE
 
   return results;
 }
@@ -197,13 +194,13 @@ void write_results_C_packed(const ivec4 out_idx_tl, FloatMatrix results) {
             0.0,
             0.0,
             0.0);
-#endif
+#endif // BATCH_MODE
 
 #ifdef HAS_BIAS
       imageStore(out_tensor, out_pos, beta * bias_texel + alpha * out_texel);
 #else
       imageStore(out_tensor, out_pos, out_texel);
-#endif
+#endif // HAS_BIAS
     }
   }
 }
@@ -223,7 +220,7 @@ void main() {
       tile_idx.z * 4,
 #else
       tile_idx.z,
-#endif
+#endif // BATCH_MODE
       0);
 
   // If the top left element is already out of range, then skip

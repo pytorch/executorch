@@ -175,11 +175,11 @@ void add_addmm_optimized_node(
 
   utils::uvec3 global_size;
 
-  // The each thread computes a W=(2/4) x H=4 x C=(1/4) output tile. Therefore,
-  // the total number of threads is W/(2 or 4) x H/4 x C/1. Since the out tensor
-  // is channels packed, C does not need to be divided by 4. The "identity" of
-  // each thread is the (x, y, z) coordinate of the output tile it is computing,
-  // and this identity can be used to compute the tensor index of the top left
+  // Each thread computes a W=(2/4) x H=4 x C=(1/4) output tile. Therefore, the
+  // total number of threads is W/(2 or 4) x H/4 x C/1. Since the out tensor is
+  // channels packed, C does not need to be divided by 4. The "identity" of each
+  // thread is the (x, y, z) coordinate of the output tile it is computing, and
+  // this identity can be used to compute the tensor index of the top left
   // element in the tile, which will be [W=x*(2 or 4), H=y*4, C=z*(1 or 4), N=0]
   if (mat1_sizes.at(mat1_dims - 2) < 8) {
     // Use `mapped_extents` instead of `image_extents` because the workgroup
@@ -211,7 +211,7 @@ void add_addmm_optimized_node(
           graph.create_params_buffer(params),
       },
       // Specialization Constants
-      {},
+      {graph.packed_dim_whcn_idx_of(out)},
       // Resizing Logic
       resize_addmm_node,
       {mat2_is_transposed}));
