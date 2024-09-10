@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.examples.models.llama2.llama_transformer import RMSNorm
+from executorch.examples.models.llama.llama_transformer import RMSNorm
 
 
 def replace_rms_norm_with_native_rms_norm(module: torch.nn.Module):
