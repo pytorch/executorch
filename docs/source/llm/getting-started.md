@@ -198,25 +198,21 @@ Create a file called main.cpp with the following contents:
 // main.cpp
 
 #include <cstdint>
-#include <functional>
-#include <memory>
-#include <unordered_map>
 
-#include "basic_tokenizer.h"
 #include "basic_sampler.h"
-#include "managed_tensor.h"
+#include "basic_tokenizer.h"
 
 #include <executorch/extension/module/module.h>
-#include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/extension/tensor/tensor.h>
+#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/core/result.h>
 
-using namespace torch::executor;
-
-using SizesType = exec_aten::SizesType;
-using DimOrderType = exec_aten::DimOrderType;
-using StridesType = exec_aten::StridesType;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using executorch::extension::Module;
+using executorch::runtime::EValue;
+using executorch::runtime::Result;
 ```
 
 The model inputs and outputs take the form of tensors. A tensor can be thought of as an multi-dimensional array.
@@ -248,14 +244,13 @@ std::string generate(
     for (auto i = 0u; i < max_output_length; i++) {
         // Convert the input_tokens from a vector of int64_t to EValue.
         // EValue is a unified data type in the ExecuTorch runtime.
-        ManagedTensor tensor_tokens(
+        auto inputs = from_blob(
             input_tokens.data(),
             {1, static_cast<int>(input_tokens.size())},
             ScalarType::Long);
-        std::vector<EValue> inputs = {tensor_tokens.get_tensor()};
 
         // Run the model. It will return a tensor of logits (log-probabilities).
-        Result<std::vector<EValue>> logits_evalue = llm_model.forward(inputs);
+        auto logits_evalue = llm_model.forward(inputs);
 
         // Convert the output logits from EValue to std::vector, which is what
         // the sampler expects.
@@ -343,7 +338,6 @@ Finally, download the following files into the same directory as main.h:
 ```
 curl -O https://raw.githubusercontent.com/pytorch/executorch/main/examples/llm_manual/basic_sampler.h
 curl -O https://raw.githubusercontent.com/pytorch/executorch/main/examples/llm_manual/basic_tokenizer.h
-curl -O https://raw.githubusercontent.com/pytorch/executorch/main/examples/llm_manual/managed_tensor.h
 ```
 
 To learn more, see the [Runtime APIs Tutorial](../extension-module.md).
@@ -368,6 +362,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Set options for executorch build.
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
+option(EXECUTORCH_BUILD_EXTENSION_TENSOR "" ON)
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
 
 # Include the executorch subdirectory.
@@ -381,6 +376,7 @@ target_link_libraries(
     PRIVATE
     executorch
     extension_module_static # Provides the Module class
+    extension_tensor # Provides the TensorPtr class
     optimized_native_cpu_ops_lib) # Provides baseline cross-platform kernels
 ```
 
@@ -390,7 +386,6 @@ At this point, the working directory should contain the following files:
 - main.cpp
 - basic_tokenizer.h
 - basic_sampler.h
-- managed_tensor.h
 - export_nanogpt.py
 - model.py
 - vocab.json
@@ -522,6 +517,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Set options for executorch build.
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
+option(EXECUTORCH_BUILD_EXTENSION_TENSOR "" ON)
 option(EXECUTORCH_BUILD_KERNELS_OPTIMIZED "" ON)
 option(EXECUTORCH_BUILD_XNNPACK "" ON) # Build with Xnnpack backend
 
@@ -538,6 +534,7 @@ target_link_libraries(
     PRIVATE
     executorch
     extension_module_static # Provides the Module class
+    extension_tensor # Provides the TensorPtr class
     optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
     xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
 ```
@@ -552,7 +549,6 @@ At this point, the working directory should contain the following files:
 - main.cpp
 - basic_tokenizer.h
 - basic_sampler.h
-- managed_tensor.h
 - export_nanogpt.py
 - model.py
 - vocab.json

@@ -230,19 +230,12 @@ def build_executorch_binary(
     else:
         edge_prog = capture_program(model, inputs)
 
-    arch_table = {
-        "SM8650": QcomChipset.SM8650,
-        "SM8550": QcomChipset.SM8550,
-        "SM8475": QcomChipset.SM8475,
-        "SM8450": QcomChipset.SM8450,
-    }
-
     backend_options = generate_htp_compiler_spec(
         use_fp16=False if quant_dtype else True
     )
     qnn_partitioner = QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
-            soc_model=arch_table[soc_model],
+            soc_model=getattr(QcomChipset, soc_model),
             backend_options=backend_options,
             debug=False,
             saver=False,
@@ -254,7 +247,6 @@ def build_executorch_binary(
     )
 
     executorch_config = ExecutorchBackendConfig(
-        extract_constant_segment=False,
         # For shared buffer, user must pass the memory address
         # which is allocated by RPC memory to executor runner.
         # Therefore, won't want to pre-allocate
@@ -353,7 +345,7 @@ def setup_common_args_and_variables():
     parser.add_argument(
         "-b",
         "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/cmake-out-android",
+        help="path to cmake binary directory for android, e.g., /path/to/build-android",
         type=str,
         required=True,
     )
@@ -416,6 +408,13 @@ def setup_common_args_and_variables():
         "--shared_buffer",
         help="Enables usage of shared buffer between application and backend for graph I/O.",
         action="store_true",
+    )
+
+    parser.add_argument(
+        "--skip_push",
+        help="If specified, skip pushing files to device.",
+        action="store_true",
+        default=False,
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.

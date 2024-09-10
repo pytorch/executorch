@@ -79,7 +79,6 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 )
 
 _EDGE_BACKEND_CONFIG = exir.ExecutorchBackendConfig(
-    extract_constant_segment=False,
     extract_delegate_segments=True,
 )
 

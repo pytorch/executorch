@@ -116,7 +116,7 @@ class QnnQuantizer(Quantizer):
         if enable:
             self.use_per_channel_weight_quant_ops.update(ops)
         else:
-            self.use_per_channel_weight_quant_ops.difference(ops)
+            self.use_per_channel_weight_quant_ops.difference_update(ops)
 
     def add_16bit_quant_ops(self, ops: Set[OpOverload]) -> None:
         for op in ops:

@@ -27,6 +27,7 @@
 
 #include <executorch/extension/llm/tokenizer/base64.h>
 #include <executorch/extension/llm/tokenizer/tiktoken.h>
+#include <executorch/runtime/core/result.h>
 #include <fstream>
 #include <limits>
 
@@ -65,33 +66,43 @@ static Re2UPtr _build_special_token_regex(const Encoder& special_encoder) {
   return _create_regex(special_pattern);
 }
 
-static std::pair<std::string, uint64_t> _parse(const std::string& line) {
+static Result<std::pair<std::string, uint64_t>> _parse(
+    const std::string& line) {
+  // Tiktoken format
+  // https://github.com/openai/tiktoken/blob/main/tiktoken/load.py#L140 <base64
+  // encoded token str> <rank>
   auto pos = line.find(" ");
-  ET_CHECK_MSG(
-      pos != std::string::npos, "invalid encoder line: %s", line.c_str());
+  ET_CHECK_OR_RETURN_ERROR(
+      pos != std::string::npos,
+      InvalidArgument,
+      "invalid tiktoken line: %s",
+      line.c_str());
 
-  auto token = base64::decode({line.data(), pos});
+  auto token = ET_UNWRAP(base64::decode({line.data(), pos}));
   uint64_t rank = 0;
   try {
     rank = std::stoul(line.substr(pos + 1));
   } catch (const std::exception&) {
-    ET_CHECK_MSG(false, "invalid encoder rank: %s", line.c_str());
+    ET_CHECK_OR_RETURN_ERROR(
+        false, InvalidArgument, "invalid encoder rank: %s", line.c_str());
   }
 
-  return {std::move(token), rank};
+  return std::pair{std::move(token), rank};
 }
 
-static Encoder _load_encoder(const std::string& path) {
+static Result<Encoder> _load_encoder(const std::string& path) {
   std::ifstream file(path);
-  ET_CHECK_MSG(file, "failed to open encoder file: %s", path.c_str());
+  ET_CHECK_OR_RETURN_ERROR(
+      file, InvalidArgument, "failed to open encoder file: %s", path.c_str());
 
   Encoder encoder;
   std::string line;
   while (std::getline(file, line)) {
-    auto [token, rank] = _parse(line);
+    auto [token, rank] = ET_UNWRAP(_parse(line));
 
-    ET_CHECK_MSG(
+    ET_CHECK_OR_RETURN_ERROR(
         encoder.emplace(std::move(token), rank).second,
+        InvalidArgument,
         "duplicate item: %s",
         line.c_str());
   }
@@ -99,13 +110,16 @@ static Encoder _load_encoder(const std::string& path) {
   return encoder;
 }
 
-static Decoder _build_decoder(const Encoder& encoder) {
+static Result<Decoder> _build_decoder(const Encoder& encoder) {
   Decoder decoder;
   for (const auto& [k, v] : encoder) {
     decoder.emplace(v, k);
   }
 
-  ET_CHECK_MSG(encoder.size() == decoder.size(), "duplicate items in encoder");
+  ET_CHECK_OR_RETURN_ERROR(
+      encoder.size() == decoder.size(),
+      InvalidArgument,
+      "duplicate items in encoder");
 
   return decoder;
 }
@@ -252,7 +266,11 @@ Tiktoken::_split_with_allowed_special_token(
     return std::make_pair(std::nullopt, input);
   }
 
+#if __cplusplus >= 202002L
   auto start = input.begin();
+#else
+  const char* start = input.data();
+#endif
   std::string special;
   while (true) {
     if (!re2::RE2::FindAndConsume(&input, *_special_token_regex, &special)) {
@@ -262,9 +280,15 @@ Tiktoken::_split_with_allowed_special_token(
 
     if (allowed_special.count(special) == 1) {
       // Found an allowed special token, split the text with it.
+#if __cplusplus >= 202002L
       return std::make_pair(
           special,
           re2::StringPiece(start, input.begin() - start - special.size()));
+#else
+      return std::make_pair(
+          special,
+          re2::StringPiece(start, (input.data() - start) - special.size()));
+#endif
     } // else try to find the next special token
   }
 
@@ -356,11 +380,11 @@ Tiktoken::Tiktoken(
 }
 
 Error Tiktoken::load(const std::string& path) {
-  _encoder = _load_encoder(path);
+  _encoder = ET_UNWRAP(_load_encoder(path));
   _special_token_encoder = _build_special_token_encoder(_encoder.size());
 
-  _decoder = _build_decoder(_encoder);
-  _special_token_decoder = _build_decoder(_special_token_encoder);
+  _decoder = ET_UNWRAP(_build_decoder(_encoder));
+  _special_token_decoder = ET_UNWRAP(_build_decoder(_special_token_encoder));
 
   _regex = _create_regex(_pattern);
   // Warmup re2 as it is slow on the first run, void the return value as it's
@@ -393,7 +417,7 @@ Tiktoken::encode(const std::string& text, int8_t bos, int8_t eos) const {
   for (auto i = 0; i < eos; ++i) {
     res.push_back(eos_tok_);
   }
-  return Result(res);
+  return Result<std::vector<uint64_t>>(std::move(res));
 }
 
 Result<std::string> Tiktoken::decode(uint64_t prev, uint64_t cur) const {

@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <executorch/runtime/core/portable_type/bfloat16.h>
+#include <executorch/runtime/core/portable_type/half.h>
 #include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -39,6 +41,8 @@ class Scalar {
   /*implicit*/ Scalar(double val) : tag(Tag::Double) {
     v.as_double = val;
   }
+  /*implicit*/ Scalar(BFloat16 val) : Scalar((double)(float)val) {}
+  /*implicit*/ Scalar(Half val) : Scalar((double)(float)val) {}
 
   /// Returns the concrete scalar value stored within.
   template <typename T>

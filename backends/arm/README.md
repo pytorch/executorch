@@ -33,7 +33,7 @@ Quantization:
 - `arm_quantizer_utils.py` - Utilities for quantization
 
 Runtime:
-- `runtime/ArmBackendEthosU.cpp` - The Arm backend implementation of the ExecuTorch runtime backend (PyTorchBackendInterface) for Ethos-U
+- `runtime/ArmBackendEthosU.cpp` - The Arm backend implementation of the ExecuTorch runtime backend (BackendInterface) for Ethos-U
 
 Other:
 - `third-party/` - Dependencies on other code - in particular the TOSA serialization_lib for compiling to TOSA and the ethos-u-core-driver for the bare-metal backend supporting Ethos-U

@@ -200,8 +200,9 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DEXECUTORCH_ENABLE_LOGGING=1 \
         -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
         -DEXECUTORCH_BUILD_KERNELS_QUANTIZED=ON \
         -DEXECUTORCH_BUILD_KERNELS_OPTIMIZED=ON \
@@ -227,8 +228,6 @@ Note for Mac users: There's a known linking issue with Xcode 15.1. Refer to the 
     cmake --build cmake-out/examples/models/llama2 -j16 --config Release
     ```
 
-For Llama3, add `-DEXECUTORCH_USE_TIKTOKEN=ON` option when building the llama runner.
-
 3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L18-L40).
     ```
     cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
@@ -253,8 +252,9 @@ cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_PLATFORM=android-23 \
     -DCMAKE_INSTALL_PREFIX=cmake-out-android \
     -DCMAKE_BUILD_TYPE=Release \
-    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_TENSOR=ON \
     -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
@@ -283,7 +283,6 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
 
 cmake --build cmake-out-android/examples/models/llama2 -j16 --config Release
 ```
-For Llama3, add `-DEXECUTORCH_USE_TIKTOKEN=ON` option when building the llama runner.
 
 **2. Run on Android via adb shell**
 
@@ -316,9 +315,9 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 Currently we supported lowering the stories model to other backends, including, CoreML, MPS and QNN. Please refer to the instruction
 for each backend ([CoreML](https://pytorch.org/executorch/main/build-run-coreml.html), [MPS](https://pytorch.org/executorch/main/build-run-mps.html), [QNN](https://pytorch.org/executorch/main/build-run-qualcomm-ai-engine-direct-backend.html)) before trying to lower them. After the backend library is installed, the script to export a lowered model is
 
-- Lower to CoreML: `python -m examples.models.llama2.export_llama -kv --coreml -c stories110M.pt -p params.json`
-- MPS: `python -m examples.models.llama2.export_llama -kv --mps -c stories110M.pt -p params.json`
-- QNN: `python -m examples.models.llama2.export_llama -kv --qnn -c stories110M.pt -p params.json`
+- Lower to CoreML: `python -m examples.models.llama2.export_llama -kv --disable_dynamic_shape --coreml -c stories110M.pt -p params.json `
+- MPS: `python -m examples.models.llama2.export_llama -kv --disable_dynamic_shape --mps -c stories110M.pt -p params.json `
+- QNN: `python -m examples.models.llama2.export_llama -kv --disable_dynamic_shape --qnn -c stories110M.pt -p params.json `
 
 The iOS LLAMA app supports the CoreML and MPS model and the Android LLAMA app supports the QNN model. On Android, it also allow to cross compiler the llama runner binary, push to the device and run.
 

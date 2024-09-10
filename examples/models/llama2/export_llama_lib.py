@@ -16,7 +16,7 @@ import shlex
 from enum import Enum
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import pkg_resources
 
@@ -49,6 +49,7 @@ from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
+from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
 from .source_transformation.sdpa import (
     replace_causal_mask,
@@ -166,19 +167,25 @@ def build_args_parser() -> argparse.ArgumentParser:
         nargs="+",
         type=str,
         default=None,
-        help="Tasks for GPTQ calibration",
+        help="Tasks for GPTQ calibration from lm_eval",
     )
     parser.add_argument(
         "--calibration_limit",
         type=int,
         default=None,
-        help="number of samples used for calibration",
+        help="number of samples used for calibration from lm_eval",
     )
     parser.add_argument(
         "--calibration_seq_length",
         type=int,
         default=None,
-        help="Sequence length for GPTQ calibration",
+        help="Sequence length for GPTQ calibration from lm_eval",
+    )
+    parser.add_argument(
+        "--calibration_data",
+        type=str,
+        default="Once upon a time",
+        help="Calibration prompts from users",
     )
     parser.add_argument(
         "-t",
@@ -192,6 +199,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="Whether or not to export a model using kv cache",
+    )
+    parser.add_argument(
+        "--num_sharding",
+        type=int,
+        default=0,
+        help="Specify the number of splits by inserting the fallback custom op. The graph will be split evenly by layers.",
     )
     parser.add_argument(
         "--use_sdpa_with_kv_cache",
@@ -250,9 +263,9 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--dtype-override",
         default="fp32",
         type=str,
-        choices=["fp32", "fp16"],
+        choices=["fp32", "fp16", "bf16"],
         help="Override the dtype of the model (default is the checkpoint dtype)."
-        "Options: fp32, fp16. Please be aware that only some backends support fp16.",
+        "Options: fp32, fp16, bf16. Please be aware that only some backends support fp16 and bf16.",
     )
 
     parser.add_argument(
@@ -275,6 +288,11 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
+    parser.add_argument(
+        "--coreml-enable-state",
+        action="store_true",
+        help="This option is only for coreml, and is only supported for MacOS15+/iOS18+",
+    )
     parser.add_argument(
         "--qnn",
         action="store_true",
@@ -303,11 +321,18 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         help="Generate logits for all inputs.",
     )
+
+    parser.add_argument(
+        "--soc_model",
+        help="[QNN backend] SoC model of current device. e.g. 'SM8650' for Snapdragon 8 Gen 3.",
+        type=str,
+        required=False,
+        default="SM8650",
+    )
     return parser
 
 
 def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
-
     path = str(path)
 
     if verbose_export():
@@ -395,9 +420,16 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
 
     if args.use_kv_cache:
         if args.qnn:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
+            from executorch.backends.qualcomm.utils.utils import (
+                convert_linear_to_conv2d,
+            )
+
             transforms.append(replace_kv_cache_with_simple_kv_cache)
             transforms.append(replace_sdpa_with_flex_sdpa)
             transforms.append(replace_causal_mask)
+            transforms.append(replace_rms_norm_with_native_rms_norm)
+            transforms.append(convert_linear_to_conv2d)
 
         elif args.coreml or args.mps:
             # Currently qnn/coreml/mps doesn't support sdpa op, use the simpler decomposition
@@ -415,9 +447,15 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             generate_full_logits=args.generate_full_logits,
             weight_type=weight_type,
             enable_dynamic_shape=args.enable_dynamic_shape,
+            calibration_tasks=args.calibration_tasks,
+            calibration_limit=args.calibration_limit,
+            calibration_seq_length=args.calibration_seq_length,
+            calibration_data=args.calibration_data,
+            tokenizer_path=args.tokenizer_path,
             verbose=args.verbose,
             max_seq_len=args.max_seq_length,
             metadata_str=args.metadata,
+            args=args,
         )
         .set_output_dir(output_dir_path)
         .to_dtype(dtype_override)
@@ -454,6 +492,9 @@ def _validate_args(args):
             "Dynamic shape is not supported with coreml, MPS or qnn backends."
             " Please use --disable_dynamic_shape."
         )
+
+    if args.num_sharding > 0 and not args.qnn:
+        raise ValueError("Model shard is only supported with qnn backend now.")
 
 
 def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
@@ -495,17 +536,19 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     if args.coreml:
         coreml_partitioner = get_coreml_partitioner(
-            args.use_kv_cache, args.pt2e_quantize
+            args.use_kv_cache and args.coreml_enable_state,
+            args.embedding_quantize,
+            args.pt2e_quantize,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
 
     if args.qnn:
+        from executorch.extension.llm.custom_ops import model_sharding
+
         partitioners.append(
             get_qnn_partitioner(
-                quant_dtype,
-                args.use_kv_cache,
-                args.pt2e_quantize,
+                args.use_kv_cache, args.pt2e_quantize, args.num_sharding, args.soc_model
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
@@ -514,6 +557,13 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`, Optional type has no attribute `exported_program`
         _transform(builder_exported_to_edge.edge_manager.exported_program())
 
+        if args.num_sharding > 0:
+            model_sharding.split_graph(
+                builder_exported_to_edge.edge_manager.exported_program(),
+                builder_exported_to_edge.metadata["get_n_layers"],
+                shares=args.num_sharding,
+            )
+
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
@@ -521,7 +571,16 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
         logging.info("Generating etrecord")
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners)
+        if args.num_sharding > 0 and args.qnn:
+            from executorch.backends.qualcomm.utils.utils import canonicalize_program
+
+            # TODO: Need to remove this once we have better way to handle buffer size
+            canonicalize_program(
+                builder.edge_manager.exported_program(), custom_buffer_size=542048256
+            )
+
+        builder = builder.to_executorch()
 
         # Generate ETRecord
         if edge_manager_copy:
@@ -532,7 +591,16 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
             )
             logging.info("Generated etrecord.bin")
     else:
-        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners)
+        if args.num_sharding > 0 and args.qnn:
+            from executorch.backends.qualcomm.utils.utils import canonicalize_program
+
+            # TODO: Need to remove this once we have better way to handle buffer size
+            canonicalize_program(
+                builder.edge_manager.exported_program(), custom_buffer_size=542048256
+            )
+
+        builder = builder.to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
@@ -575,6 +643,7 @@ def _load_llama_model_metadata(
         "get_max_seq_len": model_args.max_seq_len,
         "get_n_bos": 1,
         "get_n_eos": 2 if is_fairseq2 else 1,
+        "get_n_layers": model_args.n_layers,
         "get_vocab_size": model_args.vocab_size,
         "use_kv_cache": use_kv_cache,
         "use_sdpa_with_kv_cache": use_sdpa_with_kv_cache,
@@ -601,9 +670,15 @@ def _load_llama_model(
     generate_full_logits: bool = False,
     weight_type: WeightType = WeightType.LLAMA,
     enable_dynamic_shape: bool = False,
+    calibration_tasks: Optional[List[str]] = None,
+    calibration_limit: Optional[int] = None,
+    calibration_seq_length: Optional[int] = None,
+    calibration_data: Optional[str] = None,
+    tokenizer_path: Optional[str] = None,
     verbose: bool = False,
     max_seq_len: int = 128,
     metadata_str: Optional[str] = None,
+    args,
 ) -> "LLMEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LLMEdgeManager that
@@ -656,6 +731,11 @@ def _load_llama_model(
         use_kv_cache=use_kv_cache,
         example_inputs=example_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
+        calibration_tasks=calibration_tasks,
+        calibration_limit=calibration_limit,
+        calibration_seq_length=calibration_seq_length,
+        calibration_data=calibration_data,
+        tokenizer_path=tokenizer_path,
         verbose=verbose,
         metadata=_load_llama_model_metadata(
             weight_type,
@@ -665,4 +745,5 @@ def _load_llama_model(
             model.params,
             metadata_str,
         ),
+        args=args,
     )

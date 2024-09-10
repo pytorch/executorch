@@ -25,6 +25,5 @@ def define_common_targets():
             "fbsource//xplat/executorch/extension/data_loader:buffer_data_loader",
             "fbsource//xplat/executorch/kernels/portable:generated_lib",
             "fbsource//xplat/executorch/runtime/executor:program",
-            "fbsource//xplat/executorch/util:util",
         ],
     )

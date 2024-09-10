@@ -26,10 +26,10 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
-add_library(executor_backend STATIC ExecutorBackendRegister.cpp ExecutorBackend.cpp)
-target_link_libraries(
-  executor_backend PRIVATE executorch_no_prim_ops
+add_library(
+  executor_backend STATIC ExecutorBackendRegister.cpp ExecutorBackend.cpp
 )
+target_link_libraries(executor_backend PRIVATE executorch_no_prim_ops)
 
 target_include_directories(
   executor_backend PUBLIC ${_common_include_directories}
@@ -38,4 +38,5 @@ install(
   TARGETS executor_backend
   DESTINATION lib
   INCLUDES
-  DESTINATION ${_common_include_directories})
+  DESTINATION ${_common_include_directories}
+)

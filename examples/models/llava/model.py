@@ -8,7 +8,7 @@
 
 import re
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import requests
 import torch
@@ -21,7 +21,6 @@ from executorch.examples.models.llava.image_util import prepare_image
 from executorch.examples.models.model_base import EagerModelBase
 from PIL import Image
 
-from torch import nn
 from torch.export import Dim
 from torchvision.transforms.v2 import functional as F
 
@@ -39,6 +38,7 @@ class Llava(torch.nn.Module):
         llava_model: LlavaForConditionalGeneration,
         image_processor: CLIPImageProcessor,
         use_sdpa_with_kv_cache_op: bool = True,
+        max_seq_len: int = 768,
     ):
         super().__init__()
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
@@ -57,11 +57,7 @@ class Llava(torch.nn.Module):
             enable_dynamic_shape=True,  # allow parallel prefill
             use_sdpa_with_kv_cache_op=use_sdpa_with_kv_cache_op,  # use sdpa_with_kv_cache op
             use_hf_rope=True,
-        )
-        self.embed_tokens = nn.Embedding(
-            self.model_.config.text_config.vocab_size,
-            self.model_.config.text_config.hidden_size,
-            self.model_.config.pad_token_id,
+            max_seq_len=max_seq_len,
         )
         self.text_model = Transformer(self.text_model_args)
         # use custom op for SDPA.
@@ -71,11 +67,6 @@ class Llava(torch.nn.Module):
         self.text_model.load_state_dict(
             state_dict=self._translate_state_dict_for_text_model(),
             strict=False,
-            assign=True,
-        )
-        self.embed_tokens.load_state_dict(
-            state_dict=self.model_.language_model.model.embed_tokens.state_dict(),
-            strict=True,
             assign=True,
         )
 
@@ -130,6 +121,9 @@ class Llava(torch.nn.Module):
 
     def get_model(self):
         return self.model_.get_model()
+
+    def embed_tokens(self, tokens: torch.Tensor) -> torch.Tensor:
+        return self.model_.language_model.model.embed_tokens(tokens)
 
     def encode_images(self, images: torch.Tensor) -> torch.Tensor:
         images = images.to(dtype=self.model_.dtype)
@@ -233,7 +227,7 @@ class Llava(torch.nn.Module):
         prompt_before_image: torch.Tensor,
         images: torch.Tensor,
         prompt_after_image: torch.Tensor,
-    ) -> (int, torch.Tensor):
+    ) -> Tuple[int, torch.Tensor]:
         """Avoiding the torch.where() call to find <image> placeholder and insert image embedding. Taking 3 inputs instead."""
         embeds = self.prefill_embedding(prompt_before_image, images, prompt_after_image)
         # returns the prefilled token length too, because the text model generates one logits in each forward call.
@@ -264,8 +258,9 @@ class Llava(torch.nn.Module):
 
 
 class LlavaModel(EagerModelBase):
-    def __init__(self, use_sdpa_with_kv_cache_op=True):
+    def __init__(self, use_sdpa_with_kv_cache_op=True, max_seq_len=768):
         self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
+        self.max_seq_len = max_seq_len
         self.processor = AutoProcessor.from_pretrained("llava-hf/llava-1.5-7b-hf")
         self.tokenizer = self.processor.tokenizer
         self.image_processor = self.processor.image_processor
@@ -290,6 +285,7 @@ What are the things I should be cautious about when I visit here? ASSISTANT:"""
             self.model,
             self.image_processor,
             self.use_sdpa_with_kv_cache_op,
+            self.max_seq_len,
         )
         model.to(dtype=torch.float32)
         return model
@@ -338,6 +334,6 @@ What are the things I should be cautious about when I visit here? ASSISTANT:"""
         return dynamic_shapes
 
     def _get_prompt_dynamic_shapes(self):
-        dim = torch.export.Dim("token_dim", min=2, max=2048)
+        dim = torch.export.Dim("token_dim", min=2, max=self.max_seq_len)
         text_model_dynamic_shapes = ({0: 1}, {1: dim})
         return text_model_dynamic_shapes

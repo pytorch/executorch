@@ -56,7 +56,7 @@ class PrepackNode final {
   const vkapi::SpecVarList spec_vars_;
 
  private:
-  api::StorageBuffer create_staging_buffer(ComputeGraph* graph);
+  api::StagingBuffer create_staging_buffer(ComputeGraph* graph);
 };
 
 } // namespace vkcompute

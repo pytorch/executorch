@@ -13,6 +13,7 @@ import LLaMARunner
 
 class RunnerHolder: ObservableObject {
   var runner: Runner?
+  var llavaRunner: LLaVARunner?
 }
 
 struct ContentView: View {
@@ -219,13 +220,11 @@ struct ContentView: View {
             let count = tokens.count
             tokens = []
             DispatchQueue.main.async {
-              withAnimation {
-                var message = messages.removeLast()
-                message.text += text
-                message.tokenCount += count
-                message.dateUpdated = Date()
-                messages.append(message)
-              }
+              var message = messages.removeLast()
+              message.text += text
+              message.tokenCount += count
+              message.dateUpdated = Date()
+              messages.append(message)
             }
           }
           if shouldStopGenerating {

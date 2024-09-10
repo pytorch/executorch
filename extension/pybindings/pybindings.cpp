@@ -31,7 +31,6 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/read_file.h>
 
 #include <ATen/Functions.h>
 #include <ATen/Tensor.h>
@@ -80,7 +79,7 @@ using ::executorch::runtime::DataLoader;
 using ::executorch::runtime::Error;
 using ::executorch::runtime::EValue;
 using ::executorch::runtime::EventTracerDebugLogLevel;
-using ::executorch::runtime::get_kernels;
+using ::executorch::runtime::get_registered_kernels;
 using ::executorch::runtime::HierarchicalAllocator;
 using ::executorch::runtime::Kernel;
 using ::executorch::runtime::MemoryAllocator;
@@ -775,7 +774,7 @@ void create_profile_block(const std::string& name) {
 }
 
 py::list get_operator_names() {
-  ArrayRef<Kernel> kernels = get_kernels();
+  Span<const Kernel> kernels = get_registered_kernels();
   py::list res;
   for (const Kernel& k : kernels) {
     if (k.name_ != nullptr) {

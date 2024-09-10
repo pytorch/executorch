@@ -40,12 +40,12 @@ class Runner {
       const std::string& prompt,
       int32_t seq_len = 128,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {});
+      std::function<void(const Stats&)> stats_callback = {},
+      bool echo = true);
   void stop();
 
  private:
   float temperature_;
-  bool enable_parallel_prefill_;
   bool shouldStop_{false};
 
   // model

@@ -6,6 +6,7 @@
 
 import json
 import os
+import sys
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -61,10 +62,14 @@ def main(args):
     os.makedirs(args.artifact, exist_ok=True)
 
     data_num = 100
-    inputs, targets, input_list = get_dataset(
-        dataset_path=f"{args.dataset}",
-        data_size=data_num,
-    )
+    if args.compile_only:
+        inputs = [(torch.rand(1, 3, 224, 224),)]
+    else:
+        inputs, targets, input_list = get_dataset(
+            dataset_path=f"{args.dataset}",
+            data_size=data_num,
+        )
+
     pte_filename = "vit_qnn"
     instance = TorchVisionViTModel()
     build_executorch_binary(
@@ -76,12 +81,10 @@ def main(args):
         quant_dtype=QuantDtype.use_8a8w,
         shared_buffer=args.shared_buffer,
     )
-    # setup required paths accordingly
-    # qnn_sdk       : QNN SDK path setup in environment variable
-    # build_path : path where QNN delegate artifacts were built
-    # pte_path      : path where executorch binary was stored
-    # device_id     : serial number of android device
-    # workspace     : folder for storing artifacts on android device
+
+    if args.compile_only:
+        sys.exit(0)
+
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         build_path=f"{args.build_folder}",
@@ -131,13 +134,14 @@ if __name__ == "__main__":
             "for https://www.kaggle.com/datasets/ifigotin/imagenetmini-1000)"
         ),
         type=str,
-        required=True,
+        required=False,
     )
     parser.add_argument(
         "-a",
         "--artifact",
-        help="path for storing generated artifacts by this example. " "Default ./vit",
-        default="./vit",
+        help="path for storing generated artifacts by this example. "
+        "Default ./torchvision_vit",
+        default="./torchvision_vit",
         type=str,
     )
 

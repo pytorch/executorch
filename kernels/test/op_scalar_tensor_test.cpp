@@ -80,7 +80,7 @@ class OpScalarTensorOutTest : public OperatorTest {
     test_scalar_tensor_out_0d<ctype, ScalarType::dtype>(9); \
   }
 
-ET_FORALL_REAL_TYPES(GENERATE_TEST_0D)
+ET_FORALL_REAL_TYPES_AND3(Half, Bool, BFloat16, GENERATE_TEST_0D)
 
 #define GENERATE_TEST(ctype, dtype)                                    \
   TEST_F(OpScalarTensorOutTest, dtype##Tensors) {                      \
@@ -98,7 +98,7 @@ ET_FORALL_REAL_TYPES(GENERATE_TEST_0D)
     test_scalar_tensor_out_3d<ctype, ScalarType::dtype>(7);            \
   }
 
-ET_FORALL_REAL_TYPES(GENERATE_TEST)
+ET_FORALL_REAL_TYPES_AND3(Half, Bool, BFloat16, GENERATE_TEST)
 
 TEST_F(OpScalarTensorOutTest, InvalidOutShapeFails) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {

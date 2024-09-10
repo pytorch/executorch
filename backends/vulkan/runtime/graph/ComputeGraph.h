@@ -11,6 +11,7 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
 #include <optional>
+#include <stack>
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
@@ -58,13 +59,87 @@ class ComputeGraph;
 
 DECL_VALUE_PTR_CLASS(vTensorPtr, api::vTensor)
 DECL_VALUE_PTR_CLASS(TensorRefPtr, TensorRef)
-DECL_VALUE_PTR_CLASS(StagingPtr, api::StorageBuffer)
+DECL_VALUE_PTR_CLASS(StagingPtr, api::StagingBuffer)
 DECL_VALUE_PTR_CLASS(IntListPtr, std::vector<int64_t>)
 DECL_VALUE_PTR_CLASS(DoubleListPtr, std::vector<double>)
 DECL_VALUE_PTR_CLASS(BoolListPtr, std::vector<bool>)
 DECL_VALUE_PTR_CLASS(ValueListPtr, std::vector<ValueRef>)
+DECL_VALUE_PTR_CLASS(SymIntPtr, SymInt);
 
 #undef DECL_VALUE_PTR_CLASS
+
+//
+// TmpTensor
+//
+
+/*
+ * This struct is used to recycle the memory of temporary tensors that are
+ * created during the execution of a node. Upon construction, this struct will
+ * check the `tmp_shared_object_idxs_` of the provided `ComputeGraph` instance
+ * if any shared objects are available; if not, then a new one is created. A
+ * tensor value is then added to the `ComputeGraph` instance with the requested
+ * specifications. Upon destruction, the shared object index of the temporary
+ * tensor is returned to `tmp_shared_object_idxs_`.
+ *
+ * Note that instances of this struct can be used as if they were `ValueRef` due
+ * to implementation of a custom casting operator.
+ *
+ * This class should only be used to create tensors whose lifetimes exist only
+ * in a well defined scope (i.e. within a function).
+ */
+struct TmpTensor {
+  ComputeGraph* graph_p;
+  int64_t sobj_idx;
+  ValueRef vref;
+
+  //
+  // Match all available overloads of `add_tensor`
+  //
+
+  TmpTensor(
+      ComputeGraph* const graph_ptr,
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::StorageType storage_type,
+      const utils::GPUMemoryLayout memory_layout);
+
+  TmpTensor(
+      ComputeGraph* const graph_ptr,
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::StorageType storage_type);
+
+  TmpTensor(
+      ComputeGraph* const graph_ptr,
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype,
+      const utils::GPUMemoryLayout memory_layout);
+
+  TmpTensor(
+      ComputeGraph* const graph_ptr,
+      const std::vector<int64_t>& sizes,
+      const vkapi::ScalarType dtype);
+
+  // No copy construction or assignment
+  TmpTensor(TmpTensor& other) = delete;
+  TmpTensor& operator=(TmpTensor& other) = delete;
+
+  // No move construction or assignment
+  TmpTensor(TmpTensor&& other) = delete;
+  TmpTensor& operator=(TmpTensor&& other) = delete;
+
+  // Custom cast to ValueRef
+  operator ValueRef() const {
+    return vref;
+  };
+
+  ~TmpTensor();
+
+ private:
+  // Helper function to get first available shared object index or request a new
+  // one to be created.
+  int64_t get_sobj_idx();
+};
 
 //
 // ComputeGraph
@@ -93,7 +168,12 @@ class ComputeGraph final {
   vkapi::DescriptorPoolConfig execute_descriptor_counts_;
 
   std::unique_ptr<api::Context> context_;
+
   std::vector<SharedObject> shared_objects_;
+  // This stack is used by `TmpTensor` instances to recycle shared objects
+  // for temporary tensors. See the comments of `TmpTensor` for more details
+  std::stack<int64_t> tmp_shared_object_idxs_;
+
   std::vector<Value> values_;
   std::vector<api::ParamsBuffer> param_ubos_;
 
@@ -154,6 +234,7 @@ class ComputeGraph final {
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(DoubleListPtr, double_list, DoubleList)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(BoolListPtr, bool_list, BoolList)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(ValueListPtr, value_list, ValueList)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(SymIntPtr, symint, SymInt);
 
 #undef GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS
 
@@ -244,6 +325,10 @@ class ComputeGraph final {
 
   inline vkapi::BufferBindInfo numel_ubo(const ValueRef idx) {
     return values_.at(idx).toTensor().numel_ubo();
+  }
+
+  inline vkapi::BufferBindInfo axis_mapping_ubo(const ValueRef idx) {
+    return values_.at(idx).toTensor().axis_mapping_ubo();
   }
 
   inline vkapi::BufferBindInfo texture_limits_ubo(const ValueRef idx) {
@@ -422,14 +507,27 @@ class ComputeGraph final {
 
   ValueRef add_string(std::string&& str);
 
+  ValueRef add_symint(const int32_t val);
+
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
   template <typename Block>
-  const vkapi::BufferBindInfo create_params_buffer(const Block& data) {
+  vkapi::BufferBindInfo create_params_buffer(const Block& data) {
     param_ubos_.emplace_back(api::ParamsBuffer(context_.get(), data));
     return vkapi::BufferBindInfo(param_ubos_.back().buffer());
   }
+
+  /*
+   * Given a ValueRef, do the following depending on the type of the Value:
+   * - If it is a SymInt, return the BufferBindInfo of the ParamsBuffer object
+   *   backing the SymInt.
+   * - If it is a regular Int, create a new ParamsBuffer using the integer value
+   *   and return the BufferBindInfo of the created ParamsBuffer.
+   */
+  vkapi::BufferBindInfo get_or_create_int_param_buffer(const ValueRef idx);
+
+  void set_symint(const ValueRef idx, const int32_t val);
 
   /*
    * Convenience function to add an input tensor along with its staging buffer
@@ -577,6 +675,9 @@ class ComputeGraph final {
   friend class DoubleListPtr;
   friend class BoolListPtr;
   friend class ValueListPtr;
+  friend class SymIntPtr;
+
+  friend struct TmpTensor;
 };
 
 template <typename T>

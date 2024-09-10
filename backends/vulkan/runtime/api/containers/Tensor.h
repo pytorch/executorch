@@ -60,11 +60,11 @@ std::vector<int64_t> calculate_padded_sizes(
     const utils::GPUMemoryLayout memory_layout);
 
 /*
- * Given the padded sizes of a tensor and the GPU memory layout, calculate the
- * 3D image extents required to store the tensor data as an image texture.
+ * Calculate the image extents required of a texture backed tensor.
  */
 utils::uvec3 calculate_image_extents(
     const std::vector<int64_t>& padded_sizes,
+    const std::vector<int64_t>& axis_mapping,
     const utils::GPUMemoryLayout memory_layout);
 
 struct LastAccess {
@@ -90,7 +90,8 @@ class vTensorStorage final {
       Context* context,
       const utils::StorageType storage_type,
       const utils::GPUMemoryLayout gpu_memory_layout,
-      const std::vector<int64_t>& sizes,
+      const std::vector<int64_t>& axis_mapping,
+      const std::vector<int64_t>& padded_sizes,
       const vkapi::ScalarType dtype,
       const bool allocate_memory = true);
 
@@ -159,6 +160,7 @@ class vTensorStorage final {
 
   void discard_and_reallocate(
       const std::vector<int64_t>& padded_sizes,
+      const std::vector<int64_t>& axis_mapping,
       const utils::GPUMemoryLayout gpu_memory_layout,
       const vkapi::ScalarType dtype);
 };
@@ -218,21 +220,58 @@ class vTensor final {
   vTensor& operator=(vTensor&& other) = default;
 
  private:
-  vkapi::ScalarType dtype_;
-  utils::GPUMemoryLayout memory_layout_;
+  /*
+   * "Core" tensor metadata. They are the minimum amount of information required
+   * to construct a tensor.
+   */
 
+  // Whether the tensor has elements of type float, int, etc.
+  vkapi::ScalarType dtype_;
+  // Describes which dimension is "tightly packed". For texture backed tensors,
+  // this describes which dimension is packed along a texel. For buffer backed
+  // tensors, this describes which dimension has a stride of 1 (i.e. is last in
+  // the dim order).
+  utils::GPUMemoryLayout memory_layout_;
   // sizes of the tensor in NCHW dimension order
   std::vector<int64_t> sizes_;
+
+  /*
+   * "Layout" metadata. These describe with further detail how tensor data is
+   * laid out in memory. However, they are considered secondary to the "core"
+   * metadata members above because defaults can be assumed based on a given
+   * memory layout. When permuting the tensor without performing a copy, these
+   * metadata members are the ones that will be changed. All other metadata is
+   * derived from a combination of sizes, memory layout, and the below members.
+   */
+
   // dim order of the tensor; dimension indices are in NCHW dimension order
   // i.e. 0 is N, 1 is C, 2 is H, 3 is W for a 4D tensor. The dims with larger
   // strides precede the dims with smaller strides in the dim order. The last
   // dim is always the fastest moving dim with a stride of 1.
   std::vector<int64_t> dim_order_;
+  // Describes which axis of an image texture each dimension of the tensor maps
+  // to. The axis mapping allows texture based tensors to be permuted and
+  // transposed without modifying the underlying texture storage. For a more in
+  // depth explanation of axis mapping, see the `default_axis_mapping()`
+  // function.
+  std::vector<int64_t> axis_mapping_;
+
+  /*
+   * The below can be consider "layout" metadata as well, but are derived from
+   * the above data members.
+   */
+
   // strides of the tensor in NCHW dimension order
   std::vector<int64_t> strides_;
   // Contains the number of elements in the tensor according to the canonical
   // sizes.
   size_t numel_;
+
+  /*
+   * The below metadata members are derived from the above, and are typically
+   * to i.e. pass tensor metadata to compute shaders.
+   */
+
   // padded sizes of the tensor in NCHW dimension order. See the
   // calculate_padded_sizes() function for more context. Note that padded sizes
   // are only used for texture storage, and not for buffer storage.
@@ -260,6 +299,7 @@ class vTensor final {
   ParamsBuffer sizes_uniform_;
   ParamsBuffer strides_uniform_;
   ParamsBuffer numel_uniform_;
+  ParamsBuffer axis_mapping_uniform_;
   ParamsBuffer texture_limits_uniform_;
 
   vTensorStorage storage_;
@@ -366,13 +406,17 @@ class vTensor final {
   const vkapi::BufferBindInfo strides_ubo();
 
   /*
+   * Returns a GPU buffer containing the texture axis mapping for each dimension
+   * of the tensor, in WHCN dimension order.
+   */
+  const vkapi::BufferBindInfo axis_mapping_ubo();
+
+  /*
    * Returns a GPU buffer containing the virtual image extents of the tensor.
    * Since a tensor can be resized with the virtual_resize() function, this
    * GPU buffer contains the image extents of the tensor calculated using the
    * virtual_resize() function. This allows shaders to exit early if they are
    * working outside the limits of the texture.
-   *
-   * This buffer should only be used to
    */
   const vkapi::BufferBindInfo texture_limits_ubo();
 
@@ -423,13 +467,10 @@ class vTensor final {
 
  private:
   /*
-   * Given new sizes and new strides of the dim order, update the sizes and dim
-   * order metadata of the vTensor. New strides are computed using the new sizes
-   * and new dim order.
+   * Assuming sizes, dim order, or axis mapping was modified, recompute all
+   * derived metadata and update metadata UBO with new values.
    */
-  void update_metadata(
-      const std::vector<int64_t>& new_sizes,
-      const std::vector<int64_t>& new_dim_order);
+  void update_metadata();
 
   /*
    * Check that tensor sizes are valid given the current storage resource's
