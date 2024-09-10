@@ -71,11 +71,12 @@ if(TARGET vulkan_backend)
 endif()
 
 if(EXECUTORCH_BUILD_KERNELS_CUSTOM)
-  list(APPEND link_libraries custom_ops)
   add_subdirectory(
     ${EXECUTORCH_ROOT}/extension/llm/custom_ops
     ${CMAKE_CURRENT_BINARY_DIR}/../../extension/llm/custom_ops
   )
+  list(APPEND link_libraries custom_ops)
+  target_link_options_shared_lib(custom_ops)
 endif()
 
 add_library(executorch_jni SHARED jni/jni_layer.cpp)
