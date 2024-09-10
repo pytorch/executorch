@@ -424,13 +424,11 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_causal_mask)
     return (
-        load_llama_model(
-            model=model,
-            example_inputs=example_inputs,
+        _load_llama_model(
             modelname=modelname,
-            # checkpoint=checkpoint_path,
-            # checkpoint_dir=checkpoint_dir,
-            # params_path=params_path, # params path is to load params from file manually, these params can technically be retrived from the model itself. Should decide whether to have that params file going forward.
+            checkpoint=checkpoint_path,
+            checkpoint_dir=checkpoint_dir,
+            params_path=params_path,
             use_kv_cache=args.use_kv_cache,
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             generate_full_logits=args.generate_full_logits,
@@ -619,9 +617,7 @@ def _load_llama_model_metadata(
     use_kv_cache: bool,
     use_sdpa_with_kv_cache: bool,
     enable_dynamic_shape: bool,
-    max_seq_len: int,
-    vocab_size: int,
-    # model_args: ModelArgs,
+    model_args: ModelArgs,
     metadata_str: Optional[str] = None,
 ):
     is_fairseq2 = weight_type == WeightType.FAIRSEQ2
@@ -629,7 +625,7 @@ def _load_llama_model_metadata(
         "append_eos_to_prompt": is_fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
         "get_bos_id": 3 if is_fairseq2 else 1,
         "get_eos_ids": [3] if is_fairseq2 else [2],
-        "get_max_seq_len": max_seq_len,
+        "get_max_seq_len": model_args.max_seq_len,
         "get_n_bos": 1,
         "get_n_eos": 2 if is_fairseq2 else 1,
         "get_n_layers": model_args.n_layers,
@@ -679,7 +675,7 @@ def _load_llama_model(
         checkpoint or checkpoint_dir
     ) and params_path, "Both checkpoint/checkpoint_dir and params can't be empty"
     logging.info(
-        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weighMot_type={weight_type}"
+        f"Loading model with checkpoint={checkpoint}, params={params_path}, use_kv_cache={use_kv_cache}, weight_type={weight_type}"
     )
     model, example_inputs, _ = EagerModelFactory.create_model(
         "llama",
@@ -735,72 +731,4 @@ def _load_llama_model(
             metadata_str,
         ),
         args=args,
-    )
-
-def load_llama_model(
-    *,
-    model: torch.nn.Module,
-    example_inputs: torch.Tensor,
-    modelname: str,
-    use_kv_cache: bool = False,
-    use_sdpa_with_kv_cache: bool = False,
-    generate_full_logits: bool = False,
-    weight_type: WeightType = WeightType.LLAMA,
-    enable_dynamic_shape: bool = False,
-    verbose: bool = False,
-    max_seq_len: int = 128,
-    metadata_str: Optional[str] = None,
-) -> "LLMEdgeManager":
-    """
-    A helper util that builds a Llama model. It returns a LLMEdgeManager that
-    can help further lower the model to ExecuTorch.
-    Returns:
-        An instance of LLMEdgeManager which contains the eager mode model.
-    """
-    # Figure out the dtype of the model.
-    state_dict = model.state_dict()
-    for param_name, param_weight in model.named_parameters():
-        if 'layer' in param_name:
-            dtype = param_weight.dtype
-            break
-    # dtype = state_dict[next(iter(state_dict))].dtype
-    
-    assert dtype in [
-        torch.bfloat16,
-        torch.float16,
-        torch.float32,
-    ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
-    logging.info(f"Loaded model with dtype={dtype}")
-
-    if dtype == torch.bfloat16:
-        dtype = DType.bf16
-    elif dtype == torch.float16:
-        dtype = DType.fp16
-    elif dtype == torch.float32:
-        dtype = DType.fp32
-    else:
-        raise ValueError(f"Unsupported dtype {dtype}")
-
-    # TODO: constants to refactor out
-    max_seq_len = 8192
-    vocab_size=128_256
-    
-    return LLMEdgeManager(
-        model=model,
-        modelname=modelname,
-        max_seq_len=max_seq_len,
-        dtype=dtype,
-        use_kv_cache=use_kv_cache,
-        example_inputs=example_inputs,
-        enable_dynamic_shape=enable_dynamic_shape,
-        verbose=verbose,
-        metadata=_load_llama_model_metadata(
-            weight_type,
-            use_kv_cache,
-            use_sdpa_with_kv_cache,
-            enable_dynamic_shape,
-            max_seq_len,
-            vocab_size,
-            metadata_str,
-        ),
     )
