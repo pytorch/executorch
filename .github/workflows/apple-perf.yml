@@ -160,7 +160,7 @@ jobs:
         if [[ ${{ matrix.model }} =~ ^stories* ]]; then
           # Install requirements for export_llama
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-            bash examples/models/llama2/install_requirements.sh
+            bash examples/models/llama/install_requirements.sh
 
           # Test llama2
           if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then

@@ -83,7 +83,7 @@ fb_android_cxx_library(
         "//fbandroid/libraries/fbjni:fbjni",
         "//fbandroid/native/fb:fb",
         "//third-party/glog:glog",
-        "//xplat/executorch/examples/models/llama2/runner:runner_static",
+        "//xplat/executorch/examples/models/llama/runner:runner_static",
         "//xplat/executorch/examples/models/llava/runner:runner_static",
         "//xplat/executorch/extension/threadpool:cpuinfo_utils_static",
         "//xplat/executorch/extension/threadpool:threadpool_static",

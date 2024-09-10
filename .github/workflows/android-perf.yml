@@ -158,7 +158,7 @@ jobs:
 
         if [[ ${{ matrix.model }} =~ ^stories* ]]; then
             # Install requirements for export_llama
-            PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
+            PYTHON_EXECUTABLE=python bash examples/models/llama/install_requirements.sh
             # Test llama2
             if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
                 DELEGATE_CONFIG="xnnpack+custom+qe"

@@ -23,7 +23,7 @@ def define_common_targets():
         ],
         _is_external_target = True,
         deps = [
-            "//executorch/examples/models/llama2/tokenizer:tiktoken_py",
+            "//executorch/examples/models/llama/tokenizer:tiktoken_py",
         ],
         external_deps = [
             "sentencepiece-py",

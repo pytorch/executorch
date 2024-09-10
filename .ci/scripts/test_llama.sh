@@ -125,7 +125,7 @@ cmake_install_executorch_libraries() {
 
 cmake_build_llama_runner() {
     echo "Building llama runner"
-    dir="examples/models/llama2"
+    dir="examples/models/llama"
     retry cmake \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Debug \
@@ -171,7 +171,7 @@ else
 fi
 
 # Check dtype.
-EXPORTED_MODEL_NAME="llama2"
+EXPORTED_MODEL_NAME="llama"
 if [[ "${DTYPE}" == "fp16" ]]; then
   EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}_h"
 elif [[ "${DTYPE}" == "fp32" ]]; then
@@ -204,7 +204,7 @@ if [[ "${QNN}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -kv -v --qnn --disable_dynamic_shape"
 fi
 # Add dynamically linked library location
-$PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
+$PYTHON_EXECUTABLE -m examples.models.llama.export_llama ${EXPORT_ARGS}
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"
@@ -217,7 +217,7 @@ echo "Running ${EXPORTED_MODEL_NAME} in portable mode"
 if [[ "${BUILD_TOOL}" == "buck2" ]]; then
   # Run model.
   # shellcheck source=/dev/null
-  $BUCK run examples/models/llama2:main -- ${RUNTIME_ARGS} > result.txt
+  $BUCK run examples/models/llama:main -- ${RUNTIME_ARGS} > result.txt
 elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
   cmake_install_executorch_libraries
   cmake_build_llama_runner
@@ -225,7 +225,7 @@ elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
   NOW=$(date +"%H:%M:%S")
   echo "Starting to run llama runner at ${NOW}"
   # shellcheck source=/dev/null
-  cmake-out/examples/models/llama2/llama_main ${RUNTIME_ARGS} > result.txt
+  cmake-out/examples/models/llama/llama_main ${RUNTIME_ARGS} > result.txt
   NOW=$(date +"%H:%M:%S")
   echo "Finished at ${NOW}"
 else

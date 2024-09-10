@@ -324,7 +324,7 @@ deps = [
 
 [targets.llama_runner]
 buck_targets = [
-  "//examples/models/llama2/runner:runner",
+  "//examples/models/llama/runner:runner",
 ]
 filters = [
   ".cpp$",

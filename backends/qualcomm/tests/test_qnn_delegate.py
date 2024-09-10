@@ -46,7 +46,7 @@ from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
 from executorch.examples.models.inception_v4 import InceptionV4Model
 
-# from executorch.examples.models.llama2 import Llama2Model
+# from executorch.examples.models.llama import LlamaModel
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
@@ -561,7 +561,7 @@ class TestQNNFloatingPointModel(TestQNN):
             InceptionV3Model(),
             InceptionV4Model(),
             # The module of llama is changing frequently. Reopen it when it's stable
-            # Llama2Model(),
+            # LlamaModel(),
             MV2Model(),
             MV3Model(),
             MobileBertModelExample(),
@@ -1218,7 +1218,7 @@ class TestQNNQuantizedModel(TestQNN):
                 QCOM_QUANT_DTYPE: QuantDtype.use_8a8w,
             },
             # The module of llama is changing frequently. Reopen it when it's stable
-            # {QCOM_MODULE: Llama2Model(), QCOM_ANNOTATION: (), QCOM_QUANT_DTYPE: QuantDtype.use_8a8w},
+            # {QCOM_MODULE: LlamaModel(), QCOM_ANNOTATION: (), QCOM_QUANT_DTYPE: QuantDtype.use_8a8w},
             {
                 QCOM_MODULE: MV2Model(),
                 QCOM_ANNOTATION: (),

@@ -52,7 +52,7 @@ def define_common_targets():
             exclude = ["Logging.h"],
         ),
         define_static_target = True,
-        link_whole = True,  # needed for executorch/examples/models/llama2:main to register QnnBackend
+        link_whole = True,  # needed for executorch/examples/models/llama:main to register QnnBackend
         platforms = [ANDROID],
         visibility = ["@EXECUTORCH_CLIENTS"],
         deps = [

@@ -18,7 +18,7 @@ python3 -m venv .venv && source .venv/bin/activate
 ```
 
 ## Exporting models
-Please refer to the [ExecuTorch Llama2 docs](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md) to export the model.
+Please refer to the [ExecuTorch Llama2 docs](https://github.com/pytorch/executorch/blob/main/examples/models/llama/README.md) to export the model.
 
 ## Run the App
 

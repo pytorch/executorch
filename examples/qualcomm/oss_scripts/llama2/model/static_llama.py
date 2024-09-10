@@ -9,7 +9,7 @@ from typing import List, Tuple
 import torch
 import torch.nn as nn
 
-from executorch.examples.models.llama2.llama_transformer import (
+from executorch.examples.models.llama.llama_transformer import (
     FeedForward,
     ModelArgs,
     precompute_freqs_cis,
