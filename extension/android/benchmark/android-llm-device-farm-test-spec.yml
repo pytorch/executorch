@@ -76,7 +76,7 @@ phases:
       # Run the new generic benchmark activity https://developer.android.com/tools/adb#am
       - echo "Run LLM benchmark"
       - |
-        adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n com.example.executorchllamademo/.LlmBenchmarkRunner \
+        adb -s $DEVICEFARM_DEVICE_UDID shell am start -W -n org.pytorch.minibench/.LlmBenchmarkActivity \
         --es "model_dir" "/data/local/tmp/llama" \
         --es "tokenizer_path" "/data/local/tmp/llama/tokenizer.bin"
 
@@ -89,12 +89,12 @@ phases:
         MAX_ATTEMPT=10
         while [ -z "${BENCHMARK_RESULTS}" ] && [ $ATTEMPT -lt $MAX_ATTEMPT ]; do
           echo "Waiting for benchmark results..."
-          BENCHMARK_RESULTS=$(adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo cat files/benchmark_results.json)
+          BENCHMARK_RESULTS=$(adb -s $DEVICEFARM_DEVICE_UDID shell run-as org.pytorch.minibench cat files/benchmark_results.json)
           sleep 30
           ((ATTEMPT++))
         done
 
-        adb -s $DEVICEFARM_DEVICE_UDID shell run-as com.example.executorchllamademo ls -la files/
+        adb -s $DEVICEFARM_DEVICE_UDID shell run-as org.pytorch.minibench ls -la files/
         # Trying to pull the file using adb ends up with permission error, but this works too, so why not
         echo "${BENCHMARK_RESULTS}" > $DEVICEFARM_LOG_DIR/benchmark_results.json
 
