@@ -121,5 +121,28 @@ TensorImplPtr make_tensor_impl_ptr(
 #endif // USE_ATEN_LIB
 }
 
+TensorImplPtr make_tensor_impl_ptr(
+    exec_aten::ScalarType scalar_type,
+    std::vector<exec_aten::SizesType> sizes,
+    std::vector<uint8_t> data,
+    std::vector<exec_aten::DimOrderType> dim_order,
+    std::vector<exec_aten::StridesType> strides,
+    exec_aten::TensorShapeDynamism dynamism) {
+  ET_CHECK_MSG(
+      data.size() >= exec_aten::compute_numel(sizes.data(), sizes.size()) *
+              exec_aten::elementSize(scalar_type),
+      "Data size is smaller than required by sizes and scalar type.");
+  auto raw_data_ptr = data.data();
+  auto data_ptr = std::make_shared<std::vector<uint8_t>>(std::move(data));
+  return make_tensor_impl_ptr(
+      scalar_type,
+      std::move(sizes),
+      raw_data_ptr,
+      std::move(dim_order),
+      std::move(strides),
+      dynamism,
+      [data_ptr = std::move(data_ptr)](void*) {});
+}
+
 } // namespace extension
 } // namespace executorch
