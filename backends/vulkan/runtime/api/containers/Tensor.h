@@ -347,9 +347,24 @@ class vTensor final {
     return storage_.storage_type_ == utils::kBuffer;
   }
 
+  /*
+   * Returns the raw image extents of the underlying image texture used to store
+   * the tensor's data. Note that due to axis mapping, the X, Y, and Z extents
+   * may not correspond to the width, height, or channels dimension of the
+   * tensor.
+   */
   inline const utils::uvec3& image_extents() const {
     return storage_.image_extents_;
   }
+
+  /*
+   * Returns the image extents of the underlying image texture, but re-ordered
+   * suchthat the first element is the extent of the axis used to represent the
+   * tensor's width dimension, the second element is the extent of the axis used
+   * to represent the tensor's height dimension, and the third element is the
+   * extent of the axis used to represent the tensor's channels dimension.
+   */
+  utils::uvec3 mapped_extents() const;
 
   /*
    * Extract an `vkapi::ScalarType` from the TensorOptions member
