@@ -16,6 +16,7 @@ import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
     DuplicateDynamicQuantChainPass,
 )
+from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
 from executorch.exir import EdgeProgramManager
 from executorch.exir.backend.partitioner import Partitioner
 
@@ -374,6 +375,10 @@ class LLMEdgeManager:
             ExecutorchBackendConfig(
                 extract_delegate_segments=True,
                 passes=[
+                    # If there are Linear operations left in the graph, let's execute
+                    # them with the optimized op_linear rather than materializing a
+                    # transpose followed by a regular op_mm.
+                    ConvertToLinearPass(),
                     QuantFusionPass(),
                 ],
                 memory_planning_pass=MemoryPlanningPass(
