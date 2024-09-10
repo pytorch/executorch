@@ -60,6 +60,9 @@ Tensor& roll_out(
   ET_KERNEL_CHECK(
       ctx, check_roll_args(in, shifts, dims, out), InvalidArgument, out);
 
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_dim_order(in, out), InvalidArgument, out);
+
   if (in.numel() == 0) {
     return out;
   }
