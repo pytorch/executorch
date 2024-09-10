@@ -45,13 +45,16 @@ from executorch.extension.llm.export.quantizer_lib import (
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
+from .source_transformation.apply_spin_quant_r1_r2 import (
+    fuse_layer_norms,
+    get_model_with_r1_r2,
+)
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
 )
 from .source_transformation.rms_norm import replace_rms_norm_with_native_rms_norm
 from .source_transformation.rope import materialze_broadcast_of_rope_freq_cis
-from .source_transformation.rotation import fuse_layer_norms, get_rotate_model
 from .source_transformation.sdpa import (
     replace_causal_mask,
     replace_kv_cache_with_simple_kv_cache,
@@ -434,7 +437,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
 
     if args.optimized_rotation_path:
         transforms.append(fuse_layer_norms)
-        transforms.append(get_rotate_model(args.optimized_rotation_path))
+        transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
     return (
         _load_llama_model(
             modelname=modelname,

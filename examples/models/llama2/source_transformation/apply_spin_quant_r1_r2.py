@@ -93,11 +93,11 @@ def cleanup_memory() -> None:
     gc.collect()
 
 
-def get_rotate_model(optimized_rotation_path: str):
-    return lambda model: rotate_model(model, optimized_rotation_path)
+def get_model_with_r1_r2(optimized_rotation_path: str):
+    return lambda model: apply_spin_quant_r1_r2(model, optimized_rotation_path)
 
 
-def rotate_model(model: torch.nn.Module, optimized_rotation_path: str):
+def apply_spin_quant_r1_r2(model: torch.nn.Module, optimized_rotation_path: str):
     optimized_rotation = torch.load(optimized_rotation_path, weights_only=True)
     R1 = optimized_rotation["R1"].to(torch.float32)
     config = model.params
