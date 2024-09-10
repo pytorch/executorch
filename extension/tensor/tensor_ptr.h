@@ -125,7 +125,7 @@ inline TensorPtr make_tensor_ptr(
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     const exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC,
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
     std::function<void(void*)> deleter = nullptr) {
   return make_tensor_ptr(make_tensor_impl_ptr(
       type,
@@ -160,7 +160,7 @@ TensorPtr make_tensor_ptr(
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return make_tensor_ptr(make_tensor_impl_ptr(
       std::move(sizes),
       std::move(data),
@@ -186,7 +186,7 @@ template <typename T = float>
 TensorPtr make_tensor_ptr(
     std::vector<T> data,
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return make_tensor_ptr(make_tensor_impl_ptr(std::move(data), dynamism));
 }
 
@@ -212,7 +212,7 @@ inline TensorPtr make_tensor_ptr(
     std::vector<exec_aten::DimOrderType> dim_order = {},
     std::vector<exec_aten::StridesType> strides = {},
     exec_aten::TensorShapeDynamism dynamism =
-        exec_aten::TensorShapeDynamism::STATIC) {
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND) {
   return make_tensor_ptr(make_tensor_impl_ptr(
       scalar_type,
       std::move(sizes),

@@ -45,6 +45,10 @@ from executorch.extension.llm.export.quantizer_lib import (
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from ..model_factory import EagerModelFactory
+from .source_transformation.apply_spin_quant_r1_r2 import (
+    fuse_layer_norms,
+    get_model_with_r1_r2,
+)
 from .source_transformation.quantize import (
     get_quant_embedding_transform,
     get_quant_weight_transform,
@@ -226,6 +230,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="config.json",
     )
     parser.add_argument(
+        "--optimized_rotation_path",
+        default=None,
+        required=False,
+        help="[QNN backend] Optimized rotation checkpoint path. Just apply R1/R2 here."
+        "You can download the optimized rotation matrices from https://github.com/facebookresearch/SpinQuant/tree/main",
+    )
+    parser.add_argument(
         "-m",
         "--metadata",
         default=None,
@@ -289,6 +300,11 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
     parser.add_argument(
+        "--coreml-enable-state",
+        action="store_true",
+        help="This option is only for coreml, and is only supported for MacOS15+/iOS18+",
+    )
+    parser.add_argument(
         "--qnn",
         action="store_true",
         help="Delegate llama2 to qnn backend (Qualcomm), please use it --kv_cahce=True",
@@ -315,6 +331,14 @@ def build_args_parser() -> argparse.ArgumentParser:
         required=False,
         default=False,
         help="Generate logits for all inputs.",
+    )
+
+    parser.add_argument(
+        "--soc_model",
+        help="[QNN backend] SoC model of current device. e.g. 'SM8650' for Snapdragon 8 Gen 3.",
+        type=str,
+        required=False,
+        default="SM8650",
     )
     return parser
 
@@ -416,6 +440,9 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             transforms.append(replace_sdpa_with_flex_sdpa)
             transforms.append(replace_causal_mask)
             transforms.append(replace_rms_norm_with_native_rms_norm)
+            if args.optimized_rotation_path:
+                transforms.append(fuse_layer_norms)
+                transforms.append(get_model_with_r1_r2(args.optimized_rotation_path))
             transforms.append(convert_linear_to_conv2d)
 
         elif args.coreml or args.mps:
@@ -423,6 +450,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LLMEdgeManager:
             # to get free perf gain.
             transforms.append(replace_sdpa_with_simple_sdpa)
             transforms.append(replace_causal_mask)
+
     return (
         _load_llama_model(
             modelname=modelname,
@@ -523,7 +551,9 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
     if args.coreml:
         coreml_partitioner = get_coreml_partitioner(
-            args.use_kv_cache, args.pt2e_quantize
+            args.use_kv_cache and args.coreml_enable_state,
+            args.embedding_quantize,
+            args.pt2e_quantize,
         )
         partitioners.append(coreml_partitioner)
         modelname = f"coreml_{modelname}"
@@ -533,7 +563,7 @@ def _export_llama(modelname, args) -> LLMEdgeManager:  # noqa: C901
 
         partitioners.append(
             get_qnn_partitioner(
-                args.use_kv_cache, args.pt2e_quantize, args.num_sharding
+                args.use_kv_cache, args.pt2e_quantize, args.num_sharding, args.soc_model
             )
         )
         # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
@@ -714,6 +744,7 @@ def _load_llama_model(
         max_seq_len=model.params.max_seq_len,
         dtype=dtype,
         use_kv_cache=use_kv_cache,
+        generate_full_logits=generate_full_logits,
         example_inputs=example_inputs,
         enable_dynamic_shape=enable_dynamic_shape,
         calibration_tasks=calibration_tasks,

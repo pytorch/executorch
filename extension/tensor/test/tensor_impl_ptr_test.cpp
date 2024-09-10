@@ -145,7 +145,7 @@ TEST_F(TensorImplPtrTest, TensorImplDataDeleterReleasesCapturedSharedPtr) {
       data_ptr.get(),
       {},
       {},
-      exec_aten::TensorShapeDynamism::STATIC,
+      exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
       [data_ptr, &deleter_called](void*) mutable { deleter_called = true; });
 
   EXPECT_EQ(data_ptr.use_count(), 2);
@@ -280,7 +280,7 @@ TEST_F(TensorImplPtrTest, CustomDeleterWithSharedData) {
         data->data(),
         {},
         {},
-        exec_aten::TensorShapeDynamism::STATIC,
+        exec_aten::TensorShapeDynamism::DYNAMIC_BOUND,
         [data, &deleter_called](void*) mutable {
           deleter_called = true;
           data.reset();

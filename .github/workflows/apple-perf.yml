@@ -165,6 +165,8 @@ jobs:
           # Test llama2
           if [[ ${{ matrix.delegate }} == "xnnpack" ]]; then
             DELEGATE_CONFIG="xnnpack+custom+qe"
+          elif [[ ${{ matrix.delegate }} == "coreml" ]]; then
+            DELEGATE_CONFIG="coreml"
           fi
           PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
             bash .ci/scripts/test_llama.sh "${{ matrix.model }}" "${BUILD_MODE}" "${DTYPE}" "${DELEGATE_CONFIG}" "${ARTIFACTS_DIR_NAME}"
