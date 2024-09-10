@@ -475,6 +475,8 @@
 <span class="c1"># This source code is licensed under the BSD-style license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
+<span class="c1"># pyre-unsafe</span>
+
 <span class="kn">import</span> <span class="nn">dataclasses</span>
 <span class="kn">import</span> <span class="nn">logging</span>
 <span class="kn">import</span> <span class="nn">sys</span>
@@ -510,6 +512,7 @@
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.devtools.etrecord</span> <span class="kn">import</span> <span class="n">ETRecord</span><span class="p">,</span> <span class="n">parse_etrecord</span>
 <span class="kn">from</span> <span class="nn">executorch.devtools.inspector._inspector_utils</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">calculate_time_scale_factor</span><span class="p">,</span>
     <span class="n">create_debug_handle_to_op_node_mapping</span><span class="p">,</span>
     <span class="n">EDGE_DIALECT_GRAPH_KEY</span><span class="p">,</span>
     <span class="n">EXCLUDED_COLUMNS_WHEN_PRINTING</span><span class="p">,</span>
@@ -523,7 +526,6 @@
     <span class="n">is_inference_output_equal</span><span class="p">,</span>
     <span class="n">ProgramOutput</span><span class="p">,</span>
     <span class="n">RESERVED_FRAMEWORK_EVENT_NAMES</span><span class="p">,</span>
-    <span class="n">TIME_SCALE_DICT</span><span class="p">,</span>
     <span class="n">TimeScale</span><span class="p">,</span>
     <span class="n">verify_debug_data_equivalence</span><span class="p">,</span>
 <span class="p">)</span>
@@ -1270,9 +1272,7 @@
 
         <span class="c1"># Construct the EventBlocks</span>
         <span class="n">event_blocks</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="n">scale_factor</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">TIME_SCALE_DICT</span><span class="p">[</span><span class="n">source_time_scale</span><span class="p">]</span> <span class="o">/</span> <span class="n">TIME_SCALE_DICT</span><span class="p">[</span><span class="n">target_time_scale</span><span class="p">]</span>
-        <span class="p">)</span>
+        <span class="n">scale_factor</span> <span class="o">=</span> <span class="n">calculate_time_scale_factor</span><span class="p">(</span><span class="n">source_time_scale</span><span class="p">,</span> <span class="n">target_time_scale</span><span class="p">)</span>
         <span class="k">for</span> <span class="n">run_signature</span><span class="p">,</span> <span class="n">grouped_run_instance</span> <span class="ow">in</span> <span class="n">run_groups</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="n">run_group</span><span class="p">:</span> <span class="n">OrderedDict</span><span class="p">[</span><span class="n">EventSignature</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">InstructionEvent</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="n">grouped_run_instance</span><span class="o">.</span><span class="n">events</span>
@@ -1437,6 +1437,9 @@
 <span class="sd">            debug_buffer_path: Debug buffer file path that contains the debug data referenced by ETDump for intermediate and program outputs.</span>
 <span class="sd">            delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is:</span>
 <span class="sd">                    (delegate_metadata_list: List[bytes]) -&gt; Union[List[str], Dict[str, Any]]</span>
+<span class="sd">            delegate_time_scale_converter: Optional function to convert the time scale of delegate profiling data. If not given, use the conversion ratio of</span>
+<span class="sd">                    target_time_scale/source_time_scale.</span>
+<span class="sd">            enable_module_hierarchy: Enable submodules in the operator graph. Defaults to False.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            None</span>
@@ -1450,6 +1453,14 @@
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_source_time_scale</span> <span class="o">=</span> <span class="n">source_time_scale</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_target_time_scale</span> <span class="o">=</span> <span class="n">target_time_scale</span>
+
+        <span class="k">if</span> <span class="n">delegate_time_scale_converter</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">scale_factor</span> <span class="o">=</span> <span class="n">calculate_time_scale_factor</span><span class="p">(</span>
+                <span class="n">source_time_scale</span><span class="p">,</span> <span class="n">target_time_scale</span>
+            <span class="p">)</span>
+            <span class="n">delegate_time_scale_converter</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="k">lambda</span> <span class="n">event_name</span><span class="p">,</span> <span class="n">input_time</span><span class="p">:</span> <span class="n">input_time</span> <span class="o">/</span> <span class="n">scale_factor</span>
+            <span class="p">)</span>
 
         <span class="k">if</span> <span class="n">etrecord</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span> <span class="o">=</span> <span class="kc">None</span>
@@ -1473,10 +1484,10 @@
             <span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">event_blocks</span> <span class="o">=</span> <span class="n">EventBlock</span><span class="o">.</span><span class="n">_gen_from_etdump</span><span class="p">(</span>
-            <span class="n">etdump</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_source_time_scale</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_target_time_scale</span><span class="p">,</span>
-            <span class="n">output_buffer</span><span class="p">,</span>
+            <span class="n">etdump</span><span class="o">=</span><span class="n">etdump</span><span class="p">,</span>
+            <span class="n">source_time_scale</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_source_time_scale</span><span class="p">,</span>
+            <span class="n">target_time_scale</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_target_time_scale</span><span class="p">,</span>
+            <span class="n">output_buffer</span><span class="o">=</span><span class="n">output_buffer</span><span class="p">,</span>
             <span class="n">delegate_metadata_parser</span><span class="o">=</span><span class="n">delegate_metadata_parser</span><span class="p">,</span>
             <span class="n">delegate_time_scale_converter</span><span class="o">=</span><span class="n">delegate_time_scale_converter</span><span class="p">,</span>
         <span class="p">)</span>

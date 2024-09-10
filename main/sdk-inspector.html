@@ -509,6 +509,9 @@ and optional ETRecord path.</p>
 <li><p><strong>debug_buffer_path</strong> – Debug buffer file path that contains the debug data referenced by ETDump for intermediate and program outputs.</p></li>
 <li><p><strong>delegate_metadata_parser</strong> – Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is:
 (delegate_metadata_list: List[bytes]) -&gt; Union[List[str], Dict[str, Any]]</p></li>
+<li><p><strong>delegate_time_scale_converter</strong> – Optional function to convert the time scale of delegate profiling data. If not given, use the conversion ratio of
+target_time_scale/source_time_scale.</p></li>
+<li><p><strong>enable_module_hierarchy</strong> – Enable submodules in the operator graph. Defaults to False.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
